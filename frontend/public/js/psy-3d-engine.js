@@ -885,12 +885,15 @@ global.initPsy3D = function(container, opts){
     _styleMsToggle(msOptBtn,    '#c084fc', 595, 'Opt-SA');
     /* Two-layer hybrid: B1-B10 (climate-driven, every 5 min) sets the SA
        envelope; Dyn-Reset (zone-driven, every 1 min) trims SA \u00b12 \u00b0C inside
-       that envelope.  Falls back to pure B1-B10 on zone-telemetry loss. */
-    msBandDynBtn.title = 'Two-layer hybrid:\n  Layer 1 (every 5 min): B1-B10 picks band from OA T/RH \u2192 sets SA envelope\n  Layer 2 (every 1 min): Dyn-Reset trims SA \u00b12\u00b0C inside the envelope from zone demand\nFailsafe: zone-telemetry loss \u2192 falls back to pure B1-B10.';
-    msBandBtn.title    = 'Climate-driven only: classifies (OA T, OA RH) into B1\u2013B10 every 5 min, applies that band\u2019s SA target + OA-damper fraction. No zone feedback.';
-    msDynBtn.title     = 'Zone-driven only (ASHRAE G36 Trim & Respond): SA tracks 24-h trailing mean of OA enthalpy; aggregate model of "raise SA when zones are cold, lower when hot". No band logic.';
-    msFixedBtn.title   = 'Naked fixed setpoint: SA held at the slider-set (T, RH) all year. Worst-case baseline \u2014 no modulation, no feedback.';
-    msOptBtn.title     = 'Optimal SA (theoretical floor): SA tracks the SITE\u2019S OWN ANNUAL MEAN h_oa, so \u03a3|h_oa \u2212 h_mean| is mathematically minimized. Practically unrealizable (requires perfect foresight) but the lowest-possible energy curve any control strategy could achieve. Same metric the T\u00d7Time chart shows as "Opt-SA".';
+       that envelope.  Falls back to pure B1-B10 on zone-telemetry loss.
+       NOTE on chart math (2026-05-08): all 5 strategies share the same
+       band-derived OA damper schedule so the visible gap is purely
+       setpoint-reset quality (operators never run 100% OA in practice). */
+    msBandDynBtn.title = 'Two-layer hybrid (band damper applied):\n  Layer 1 (every 5 min): B1-B10 picks band from OA T/RH \u2192 sets SA envelope\n  Layer 2 (every 1 min): Dyn-Reset trims SA \u00b12\u00b0C inside the envelope from zone demand\nFailsafe: zone-telemetry loss \u2192 falls back to pure B1-B10.';
+    msBandBtn.title    = 'Climate-driven only (band damper applied): classifies (OA T, OA RH) into B1\u2013B10 every 5 min, applies that band\u2019s SA target. No zone feedback.';
+    msDynBtn.title     = 'Zone-driven only (Trim & Respond, band damper applied): SA tracks 24-h trailing mean of OA enthalpy. Aggregate model of "raise SA when zones are cold, lower when hot". No band SA logic but uses band damper schedule for fair comparison.';
+    msFixedBtn.title   = 'Naked fixed setpoint (band damper applied): SA held at the slider-set (T, RH) all year. Worst-case SETPOINT baseline \u2014 same OA modulation as the others, only the SA reset strategy differs.';
+    msOptBtn.title     = 'Optimal SA (theoretical floor, band damper applied): SA tracks the SITE\u2019S OWN ANNUAL MEAN h_oa, so \u03a3|h_oa \u2212 h_mean| is mathematically minimized. Same OA damper schedule as the others. Practically unrealizable (requires perfect foresight) but the lowest-possible energy curve any setpoint-reset strategy could achieve under realistic OA modulation.';
     _refreshMsBtn(msFixedBtn,   _msShowFixed);
     _refreshMsBtn(msDynBtn,     _msShowDyn);
     _refreshMsBtn(msBandBtn,    _msShowBand);
@@ -2524,14 +2527,23 @@ global.initPsy3D = function(container, opts){
         }
         var h_sa_dyn = rollSum / Math.min(i+1, win);
         var m=parseInt(tm[i].slice(5,7),10)-1;
-        base[m]    += Math.abs(h_oa - _h_sa_u);
-        dyn[m]     += Math.abs(h_oa - h_sa_dyn);
         var b=classifyBand(T,R);
         var h_sa_b=enthalpy(b.sa_t, getW(b.sa_t,b.sa_rh));
+        // Apples-to-apples damper assumption (request 2026-05-08 from
+        // operator): real-world buildings minimize OA based on outdoor
+        // conditions — they NEVER run 100% OA naively.  All five
+        // strategies therefore share the same band-derived damper
+        // schedule `damp`, so the visible gap between curves reflects
+        // ONLY the quality of the SA setpoint-reset strategy.  Without
+        // this normalization, B1-B10 strategies got a free 70-80% boost
+        // from the damper alone, which made the "energy reduction"
+        // numbers misleading.
         var damp = b.oa_damper/100;
-        band[m]    += Math.abs(damp*(h_oa - h_sa_b));
-        bandDyn[m] += Math.abs(damp*(h_oa - h_sa_dyn));
-        opt[m]     += Math.abs(h_oa - hMean);
+        base[m]    += Math.abs(damp*(h_oa - _h_sa_u));      // Fixed-SA   + band damper
+        dyn[m]     += Math.abs(damp*(h_oa - h_sa_dyn));     // Dyn-Reset  + band damper
+        band[m]    += Math.abs(damp*(h_oa - h_sa_b));       // B1-B10
+        bandDyn[m] += Math.abs(damp*(h_oa - h_sa_dyn));     // B1-B10 + Dyn
+        opt[m]     += Math.abs(damp*(h_oa - hMean));        // Opt-SA     + band damper
         bandCounts[b.id]=(bandCounts[b.id]||0)+1;
       }
       d.base=base; d.dyn=dyn; d.band=band; d.bandDyn=bandDyn; d.opt=opt;

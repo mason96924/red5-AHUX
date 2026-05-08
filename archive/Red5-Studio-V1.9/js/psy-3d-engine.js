@@ -285,6 +285,26 @@ global.initPsy3D = function(container, opts){
   /* enthalpy helper */
   function enthalpy(T,W){return 1.006*T+W*(2501+1.86*T);}
 
+  /* Rounded-rectangle helper used by chart legends / chips.  Browser
+     ctx.roundRect() is not universally available on the embedded WebView
+     versions some controllers ship with, so do it manually with arc
+     fillets and let the caller invoke fill() / stroke() as needed.    */
+  function _roundRect(ctx, x, y, w, h, r){
+    if (r > w/2) r = w/2;
+    if (r > h/2) r = h/2;
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+w-r, y);
+    ctx.arcTo(x+w, y,   x+w, y+r,   r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+    ctx.lineTo(x+r, y+h);
+    ctx.arcTo(x,   y+h, x,   y+h-r, r);
+    ctx.lineTo(x, y+r);
+    ctx.arcTo(x,   y,   x+r, y,     r);
+    ctx.closePath();
+  }
+
   /* Givoni-style band table — must mirror collector.py BANDS verbatim.
      Module-scoped so renderTimeSeries2D and buildDeltaH share the same logic. */
   var BANDS=[
@@ -2066,9 +2086,19 @@ global.initPsy3D = function(container, opts){
       //   \u26A0 Total / Dyn-Rst lack humidity (latent) control \u2014 NOT for deployment.
       ctx.fillStyle=P.textMuted; ctx.font='7px monospace'; ctx.textAlign='left';
       ctx.fillText('* clamp(h_oa, env) floor   \u2020 G36 estimate', lgX, lgY+2);
-      lgY += 9;
+      lgY += 10;
+      // Amber chip drawing the same NO-LATENT warning the Monthly \u00d7 Sites
+      // chart uses, sized to fit inside the boxed legend.
+      var warnTxt = '\u26A0  NO latent (RH) control \u2014 not for deployment';
+      ctx.font = 'bold 8px monospace';
+      var warnW = ctx.measureText(warnTxt).width + 14;
+      var warnH = 14;
       ctx.fillStyle = '#fbbf24';
-      ctx.fillText('\u26A0 no latent (RH) control \u2014 not for deployment', lgX, lgY+2);
+      _roundRect(ctx, lgX-2, lgY-1, warnW, warnH, 3); ctx.fill();
+      ctx.strokeStyle = '#b45309'; ctx.lineWidth = 0.8;
+      _roundRect(ctx, lgX-2, lgY-1, warnW, warnH, 3); ctx.stroke();
+      ctx.fillStyle = '#1c1917';
+      ctx.fillText(warnTxt, lgX+5, lgY+9);
 
       // ---- B1 → B10 cold→hot color ramp at the TOP-MIDDLE of the chart ----
       // Only rendered when Show B1-B10 Strategy is on.  Tally hours per band
@@ -3107,20 +3137,35 @@ global.initPsy3D = function(container, opts){
     var klX = 20;
     /* Comfort-control caveat row.  When Fixed-SA or Dyn-Reset is visible
        (both lack any explicit humidity / latent control loop), drop a
-       small amber caveat line above the bottom strip so operators don't
+       prominent amber CHIP above the bottom strip so operators don't
        interpret a low energy number as "best to deploy".  Real comfort
-       requires latent control \u2014 missing in both flagged strategies. */
+       requires latent control \u2014 missing in both flagged strategies.
+       Rendered as a filled rounded rect with dark text so it punches
+       against the dark chart background. */
     if (_msShowFixed || _msShowDyn) {
-      ctx.fillStyle = '#fbbf24';
-      ctx.font = 'bold 9px monospace';
-      ctx.textAlign = 'left';
       var caveatLbls = [];
       if (_msShowFixed) caveatLbls.push('Fixed-SA');
       if (_msShowDyn)   caveatLbls.push('Dyn-Reset');
-      var caveatTxt = '\u26A0 ' + caveatLbls.join(' + ') +
-        ': no humidity (latent) control \u2014 may meet kJ/kg target ' +
-        'while violating zone RH / comfort. NOT recommended for deployment.';
-      ctx.fillText(caveatTxt, 20, klY - 14);
+      var caveatTxt = '\u26A0  ' + caveatLbls.join(' + ') +
+        ': NO humidity (latent) control \u2014 may meet kJ/kg target ' +
+        'while violating zone RH / comfort.  NOT RECOMMENDED FOR DEPLOYMENT.';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
+      var cw = ctx.measureText(caveatTxt).width + 22;
+      var ch = 22;
+      var cxp = 20, cyp = klY - 30;
+      // Soft drop-shadow first so the chip floats off the panel.
+      ctx.fillStyle = 'rgba(0,0,0,.45)';
+      _roundRect(ctx, cxp+1, cyp+2, cw, ch, 5); ctx.fill();
+      // Filled amber chip (high-contrast).
+      ctx.fillStyle = '#fbbf24';
+      _roundRect(ctx, cxp, cyp, cw, ch, 5); ctx.fill();
+      // Subtle darker amber border for definition.
+      ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1;
+      _roundRect(ctx, cxp, cyp, cw, ch, 5); ctx.stroke();
+      // Dark slate text — picked for AA contrast against #fbbf24.
+      ctx.fillStyle = '#1c1917';
+      ctx.fillText(caveatTxt, cxp + 11, cyp + 14);
     }
     // Context preamble: title + SA baseline + data source (the title used
     // to be a separate top header but was squeezed out by the control

@@ -14,7 +14,9 @@ function runLoop({oaT, W, bandFn, h_sa_u, optMin, optMax, TR_DH=4}) {
   for (let i=0;i<hOa.length;i++) {
     rollSum += hOa[i];
     if (i>=win) rollSum -= hOa[i-win];
-    const h_sa_dyn = rollSum / Math.min(i+1, win);
+    const h_sa_dyn_raw = rollSum / Math.min(i+1, win);
+    // Same envelope clamp the engine applies — guarantees Opt-SA is the floor.
+    const h_sa_dyn = Math.max(optMin, Math.min(optMax, h_sa_dyn_raw));
     const b = bandFn(oaT[i]);
     const h_sa_b = enthalpy(b.sa_t, W);
     const h_sa_bd = Math.max(h_sa_b - TR_DH, Math.min(h_sa_b + TR_DH, h_sa_dyn));
@@ -89,6 +91,30 @@ console.log('\nTest: when OA sits inside [optMin,optMax] envelope, Opt-SA → 0'
     optMin: 25, optMax: 50,
   });
   assert(r.opt < 0.001, 'Opt-SA energy ≈ 0 when OA fully within envelope (got '+r.opt.toFixed(4)+')');
+}
+
+console.log('\nTest: Opt-SA must remain the floor in EXTREME climates (Seoul-style)');
+{
+  // Seoul-style: deep winter h_oa down to ~0 kJ/kg, hot summer up to ~80 kJ/kg.
+  // Without clamping the rolling-mean Dyn-Reset target, Dyn would undercut
+  // Opt-SA because rm tracks h_oa closely on long windows.  With the
+  // envelope clamp on Dyn, Opt-SA must remain ≤ Dyn pointwise.
+  const oaT = [];
+  for (let h=0; h<200; h++) {
+    // Temperature ramp -10 → 35 over the dataset (sinusoidal-ish).
+    oaT.push(-10 + 45 * Math.sin(h/200 * Math.PI));
+  }
+  const r = runLoop({
+    oaT,
+    W: 0.005,
+    bandFn: () => ({sa_t:14, oa_damper:50}),
+    h_sa_u: enthalpy(13, 0.005),
+    optMin: 25, optMax: 50,
+  });
+  console.log('  Seoul-style totals: opt='+r.opt.toFixed(0)+'  dyn='+r.dyn.toFixed(0)+'  bandDyn='+r.bandDyn.toFixed(0)+'  band='+r.band.toFixed(0)+'  base='+r.base.toFixed(0));
+  assert(r.opt <= r.dyn,     'Opt-SA ≤ Dyn-Rst even in extreme climate');
+  assert(r.opt <= r.bandDyn, 'Opt-SA ≤ B1-B10+Dyn even in extreme climate');
+  assert(r.opt <= r.band,    'Opt-SA ≤ B1-B10 even in extreme climate');
 }
 
 console.log('\n----------------------------------------------');

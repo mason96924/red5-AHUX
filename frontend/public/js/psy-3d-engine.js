@@ -1870,7 +1870,15 @@ global.initPsy3D = function(container, opts){
       for(var di=0;di<n;di++){
         rollSum += hOaArr[di];
         if(di>=win){ rollSum -= hOaArr[di-win]; }
-        var hSaDyn = rollSum / Math.min(di+1, win);
+        var hSaDynRaw = rollSum / Math.min(di+1, win);
+        // Same physical-envelope clamp as Monthly \u00d7 Sites: real ASHRAE
+        // G36 Trim & Respond loops cap the SA target to a min/max range
+        // (typically 55\u201365 \u00b0F).  Without this the unconstrained 24-h
+        // mean drifts to extremes (e.g. 5 kJ/kg in winter) and lets
+        // Dyn-Rst undercut Opt-SA \u2014 physically impossible (you cannot
+        // deliver \u22125 \u00b0C SA without freezing the coil).  Clamping to the
+        // same comfort envelope Opt-SA uses guarantees Opt-SA \u2264 Dyn-Rst.
+        var hSaDyn = Math.max(ttOptMin, Math.min(ttOptMax, hSaDynRaw));
         cDyn += Math.abs(hOaArr[di] - hSaDyn);
         cumDyn.push(cDyn);
       }
@@ -2624,25 +2632,32 @@ global.initPsy3D = function(container, opts){
         if(i>=win){
           var prev=hOa[i-win]; if(!isNaN(prev)) rollSum -= prev;
         }
-        var h_sa_dyn = rollSum / Math.min(i+1, win);
+        var h_sa_dyn_raw = rollSum / Math.min(i+1, win);
+        // Physical-envelope clamp on Dyn-Reset.  Real ASHRAE G36 Trim &
+        // Respond loops cap the SA target between a min and max (e.g.
+        // 55 \u00b0F \u2013 65 \u00b0F).  Without this clamp, the unconstrained
+        // 24-h rolling mean can drift to e.g. 5 kJ/kg in Seoul winter or
+        // 60 kJ/kg in summer, which makes |h_oa \u2212 rm| collapse to zero
+        // and lets Dyn-Reset undercut Opt-SA \u2014 physically impossible
+        // (you cannot deliver \u22125 \u00b0C SA without freezing the coil).  Clamp
+        // it to the same comfort envelope Opt-SA uses so Opt-SA is
+        // provably the lowest curve.
+        var h_sa_dyn = Math.max(optMinH, Math.min(optMaxH, h_sa_dyn_raw));
         var m=parseInt(tm[i].slice(5,7),10)-1;
         var b=classifyBand(T,R);
         var h_sa_b=enthalpy(b.sa_t, getW(b.sa_t,b.sa_rh));
         // B1-B10 + Dyn-Reset hybrid: Trim & Respond clamps the dyn-reset
-        // target to ±_TR_DH kJ/kg around h_sa_b.  When h_sa_dyn drifts
+        // target to \u00b1_TR_DH kJ/kg around h_sa_b.  When h_sa_dyn drifts
         // outside the envelope (e.g. 24-h mean lags a heat wave) the
         // controller falls back to the B1-B10 setpoint.  Without this
         // clamp `bandDyn` is mathematically identical to `dyn` and the
-        // hybrid line collapses on top of Dyn-Reset.
+        // hybrid line collapses on top of Dyn-Reset.  Built on the
+        // already-envelope-clamped h_sa_dyn so band+dyn is also
+        // provably \u2265 Opt-SA.
         var h_sa_bd = Math.max(h_sa_b - _TR_DH,
                                Math.min(h_sa_b + _TR_DH, h_sa_dyn));
-        // Opt-SA — true thermodynamic floor.  SA is whatever value
-        // inside the [optMinH, optMaxH] envelope is closest to h_oa, so
-        // any time the OA itself sits inside the comfort envelope the
-        // conditioning load drops to zero.  This is the lowest enthalpy
-        // delta any setpoint-reset strategy could possibly demand of
-        // the cooling/heating coils.  Replaces the previous L2-optimal
-        // mean(h_oa) target which had no physical interpretation.
+        // Opt-SA \u2014 true thermodynamic floor.  SA is whatever value
+        // inside the [optMinH, optMaxH] envelope is closest to h_oa.
         var h_sa_opt = Math.max(optMinH, Math.min(optMaxH, h_oa));
         // Apples-to-apples damper assumption (request 2026-05-08 from
         // operator): real-world buildings minimize OA based on outdoor
@@ -2986,25 +3001,44 @@ global.initPsy3D = function(container, opts){
       */
       if (_msShowOA && d.oaPct){
         // (1) per-month damper line, clipped to plot rect.
+        // Catmull-Rom smoothing through the 12 monthly midpoints so the
+        // user reads it as a continuous "OA modulation rhythm" rather
+        // than a 12-segment polyline.  Tension 0.5 keeps it close to
+        // the data points without overshooting.  Duplicate first/last
+        // points as control anchors so the spline meets month 1 and
+        // month 12 cleanly.
+        var oaPts = [];
+        for (var oi=0; oi<12; oi++){
+          oaPts.push({x: plotX + (oi + 0.5) * colW,
+                      y: plotY + plotH - (d.oaPct[oi]/100) * plotH});
+        }
         ctx.save();
         ctx.beginPath(); ctx.rect(plotX, plotY, plotW, plotH); ctx.clip();
         ctx.strokeStyle = 'rgba(251,191,36,.85)'; // amber-400 @ 85%
-        ctx.lineWidth = 1.4;
-        ctx.setLineDash([4,2]);
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([5,3]);
         ctx.beginPath();
-        for (var oi=0; oi<12; oi++){
-          var ox = plotX + (oi + 0.5) * colW;
-          var oy = plotY + plotH - (d.oaPct[oi]/100) * plotH;
-          oi ? ctx.lineTo(ox, oy) : ctx.moveTo(ox, oy);
+        ctx.moveTo(oaPts[0].x, oaPts[0].y);
+        for (var ci=0; ci<oaPts.length-1; ci++){
+          var p0 = oaPts[Math.max(0, ci-1)];
+          var p1 = oaPts[ci];
+          var p2 = oaPts[ci+1];
+          var p3 = oaPts[Math.min(oaPts.length-1, ci+2)];
+          // Centripetal Catmull-Rom \u2192 cubic Bezier conversion.
+          var cp1x = p1.x + (p2.x - p0.x) / 6;
+          var cp1y = p1.y + (p2.y - p0.y) / 6;
+          var cp2x = p2.x - (p3.x - p1.x) / 6;
+          var cp2y = p2.y - (p3.y - p1.y) / 6;
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
         }
         ctx.stroke();
         ctx.setLineDash([]);
-        // tiny dot markers per month so the line reads even on low-DPR
+        // small dot markers per month so each datum is locatable on the
+        // smoothed curve (Catmull-Rom passes through every control point
+        // by construction, but the markers make it explicit).
         for (var oj=0; oj<12; oj++){
-          var ox2 = plotX + (oj + 0.5) * colW;
-          var oy2 = plotY + plotH - (d.oaPct[oj]/100) * plotH;
           ctx.fillStyle = 'rgba(251,191,36,.95)';
-          ctx.beginPath(); ctx.arc(ox2, oy2, 1.6, 0, 6.283); ctx.fill();
+          ctx.beginPath(); ctx.arc(oaPts[oj].x, oaPts[oj].y, 1.6, 0, 6.283); ctx.fill();
         }
         ctx.restore();
         // (2) damper opacity strip directly below the season strip.
@@ -3025,7 +3059,7 @@ global.initPsy3D = function(container, opts){
         //     "100" doesn't crowd the cumulative axis labels).
         ctx.fillStyle='rgba(251,191,36,.85)'; ctx.font='bold 7px monospace';
         ctx.textAlign='left';
-        ctx.fillText('OA%', plotX+plotW+4, plotY+plotH+10);
+        ctx.fillText('OA% (0\u2013100)', plotX+plotW+4, plotY+plotH+10);
       }
       // Annual totals — the headline depends on what's currently visible:
       //   * Fixed-SA hidden → show the SMALLEST visible strategy's total.

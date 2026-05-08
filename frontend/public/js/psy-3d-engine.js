@@ -1825,24 +1825,29 @@ global.initPsy3D = function(container, opts){
       }
 
       // ===================================================================
-      //  Equivalent Optimal Fixed-SA \u2014 theoretical floor of fixed-setpoint
-      //  control for THIS window only.  Computes mean(h_oa), back-solves a
-      //  (T_sa, RH_sa) pair sitting on the saturation curve closest to that
-      //  enthalpy, then integrates |h_oa - h_mean| as a centered absolute
-      //  deviation.  Drawn as a darker purple DOTTED line.  Always labelled
-      //  "theoretical only" so no engineer hardcodes it as a real setpoint.
+      //  Opt-SA \u2014 true thermodynamic floor of any setpoint-reset strategy
+      //  (T\u00d7Time chart).  Redefined 2026-02 to match the Monthly \u00d7 Sites
+      //  chart: SA target = clamp(h_oa, optMinH, optMaxH).  When OA itself
+      //  sits inside the comfort envelope the conditioning load drops to
+      //  zero, so cOpt is the lowest achievable cumulative |\u0394h| under
+      //  perfect foresight.  Previously this used mean(h_oa) which was
+      //  L2-optimal but physically meaningless and produced the bug where
+      //  Dyn-Rst could undercut Opt-SA whenever the dataset was bimodal
+      //  (e.g. cold-then-hot annual cycle).  Drawn as a dotted purple line.
       // ===================================================================
-      var hMean=0;
       var hOaArr=new Float64Array(n);
       for(var hi=0;hi<n;hi++){
         hOaArr[hi]=enthalpy(weatherData[hi].t, weatherData[hi].w);
-        hMean += hOaArr[hi];
       }
-      hMean /= Math.max(1,n);
-      // Build cumulative |h_oa - hMean|
+      // Read live envelope sliders so the curve responds instantly when
+      // the user drags them on the Monthly \u00d7 Sites toolbar (shared state).
+      var ttOptMin = _optMinH, ttOptMax = _optMaxH;
+      if (ttOptMax < ttOptMin) { var _tmp = ttOptMin; ttOptMin = ttOptMax; ttOptMax = _tmp; }
+      // Build cumulative |h_oa - clamp(h_oa, optMin, optMax)|
       var cumOpt=[], cOpt=0;
       for(var oi=0;oi<n;oi++){
-        cOpt += Math.abs(hOaArr[oi] - hMean);
+        var hSaOpt = Math.max(ttOptMin, Math.min(ttOptMax, hOaArr[oi]));
+        cOpt += Math.abs(hOaArr[oi] - hSaOpt);
         cumOpt.push(cOpt);
       }
       drawCurve(cumOpt, P.optSa || '#c084fc', 1.5, [2,3]);      // dotted purple
@@ -1871,26 +1876,16 @@ global.initPsy3D = function(container, opts){
       }
       drawCurve(cumDyn, P.dynRst || '#c084fc', 2);              // solid purple
 
-      // Back-solve a representative (T_sa, RH_sa) sitting at hMean.
-      // Using the band 13 \u00b0C / 50 % RH as anchor and solving:
-      //   h_mean = 1.006 T + W * (2501 + 1.86 T)
-      // We fix RH_sa = 50 % and Newton-iterate T_sa.
-      var optT = 13.0;
-      for(var ni=0;ni<20;ni++){
-        var Wt = getW(optT,50);
-        var hT = enthalpy(optT,Wt);
-        if(Math.abs(hT - hMean) < 0.05) break;
-        // numerical derivative
-        var Wt2 = getW(optT+0.5,50);
-        var hT2 = enthalpy(optT+0.5,Wt2);
-        var dh = (hT2 - hT) / 0.5;
-        if(Math.abs(dh) < 1e-6) break;
-        optT -= (hT - hMean)/dh;
-        if(optT < -10) optT = -10;
-        if(optT > 35)  optT = 35;
-      }
-      // Cache for label render
-      var _optInfo = {hMean:hMean, optT:optT, optRh:50, total:cOpt, dynTotal:cDyn};
+      // _optInfo: T\u00d7Time-renderer cache for legend label, hover tooltip,
+      // and inline curve labels.  Carries the envelope bounds and totals
+      // so the boxed legend can show "(25\u201350 kJ/kg envelope)" instead of
+      // a back-solved single setpoint (which no longer applies after the
+      // 2026-02 redefinition of Opt-SA as a clamp envelope rather than a
+      // single mean-anchor target).
+      var _optInfo = {
+        optMinH: ttOptMin, optMaxH: ttOptMax,
+        total: cOpt, dynTotal: cDyn
+      };
 
       // ======================================================================
       //  Inline curve labels at the right edge — the user sees which color is
@@ -2047,10 +2042,11 @@ global.initPsy3D = function(container, opts){
       // of OA enthalpy, modelling Trim & Respond aggregate behaviour.
       var dynPctVsTotal = cT>0 ? Math.max(0,Math.round((1-cDyn/cT)*100)) : 0;
       legendItem(P.dynRst,'Dyn-Rst',cDyn, dynPctVsTotal>0?'  -'+dynPctVsTotal+'% \u2020':' \u2020');
-      // Optimal-SA reference \u2014 with the back-solved (T,RH) so the user can
-      // see exactly which fixed setpoint would yield this lower bound.
-      // Suffixed "*" \u2192 footnoted in subtitle as "theoretical only".
-      var optSuffix = '  ('+_optInfo.optT.toFixed(1)+'\u00b0C / '+_optInfo.optRh+'%) *';
+      // Optimal-SA reference \u2014 envelope-clamped thermodynamic floor.
+      // Suffix shows the active envelope so the user knows which bounds
+      // produced this curve (live-driven by the Monthly \u00d7 Sites toolbar
+      // sliders).  Suffixed "*" \u2192 footnoted as "theoretical only".
+      var optSuffix = '  ('+_optInfo.optMinH.toFixed(0)+'\u2013'+_optInfo.optMaxH.toFixed(0)+' kJ/kg env) *';
       legendItem(P.optSa,'Opt-SA',_optInfo.total,optSuffix,[2,3]);
       var savePct=cT>0?Math.max(0,Math.round((1-cBe/cT)*100)):0;
       if(_p3ShowBandStrategy){
@@ -2060,7 +2056,7 @@ global.initPsy3D = function(container, opts){
       //   *  Opt-SA = theoretical floor (impossible without foresight)
       //   \u2020 Dyn-Rst = ASHRAE G36 estimate (24h trailing-mean SA model)
       ctx.fillStyle=P.textMuted; ctx.font='7px monospace'; ctx.textAlign='left';
-      ctx.fillText('* theoretical fixed-SA floor   \u2020 Dyn Reset estimate (G36)', lgX, lgY+2);
+      ctx.fillText('* clamp(h_oa, env) thermodynamic floor   \u2020 Dyn Reset estimate (G36)', lgX, lgY+2);
 
       // ---- B1 → B10 cold→hot color ramp at the TOP-MIDDLE of the chart ----
       // Only rendered when Show B1-B10 Strategy is on.  Tally hours per band

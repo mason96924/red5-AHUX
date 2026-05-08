@@ -517,6 +517,10 @@ global.initPsy3D = function(container, opts){
      panel.  ON by default since the user explicitly asked for an OA
      intake indication on the chart. */
   var _msShowOA = true;
+  // Hover-hitbox cache for OA-curve tooltips.  Cleared and repopulated on
+  // every Monthly \u00d7 Sites render; consumed by the canvas mousemove
+  // handler attached in setupControls() below.
+  var _msOaHits = [];
   var spinning=false,panelOpen=true;
   /* Set by buildScene() to refresh the Sites checkbox dropdown trigger
      label and panel content from inside renderMonthlySitesChart so the
@@ -1118,6 +1122,41 @@ global.initPsy3D = function(container, opts){
         var rect=overlay.getBoundingClientRect();
         var mx=e.clientX-rect.left,my=e.clientY-rect.top;
         var vw=rect.width,vh=rect.height;
+
+        // ---- Monthly \u00d7 Sites mode: OA-curve hover tooltip ----
+        // Walks the cached OA hitboxes (one per site \u00d7 month dot) and
+        // shows the nearest match within 12 px.  Tooltip surfaces the
+        // panel name, month name, and exact damper % so audiences can
+        // verify the band-coverage math without taking my word for it.
+        // Gated on _msShowOA so when OA visualisation is hidden, hover
+        // doesn't accidentally pop tooltips for invisible data.
+        if(chart2DMode==='monthly-sites' && _msShowOA && _msOaHits.length){
+          var bestHit = null, bestD2 = 144; // 12px squared
+          for(var hi=0; hi<_msOaHits.length; hi++){
+            var h = _msOaHits[hi];
+            var d2 = (h.x-mx)*(h.x-mx) + (h.y-my)*(h.y-my);
+            if(d2 < bestD2){ bestD2 = d2; bestHit = h; }
+          }
+          if(bestHit){
+            var monthNames=['January','February','March','April','May','June',
+                            'July','August','September','October','November','December'];
+            var html='<div style="color:#fbbf24;font-weight:900;margin-bottom:2px">OA Damper</div>'+
+              '<div style="color:#e2e8f0;margin-bottom:3px"><b>'+bestHit.siteName+'</b> ('+bestHit.panel+')</div>'+
+              '<div style="color:#94a3b8;font-size:9px;margin-bottom:4px">'+monthNames[bestHit.month]+' monthly mean</div>'+
+              '<div style="color:#fbbf24;font-size:14px;font-weight:900">'+bestHit.val.toFixed(1)+'%</div>'+
+              '<div style="color:#64748b;font-size:8px;margin-top:4px;max-width:180px;line-height:1.3">'+
+                'Mean of band-prescribed OA damper over all hours in this month.  See B1\u2013B10 table for the lookup.'+
+              '</div>';
+            tip2d.innerHTML = html;
+            tip2d.style.display='block';
+            tip2d.style.left = Math.min(rect.width-200, mx+12)+'px';
+            tip2d.style.top  = Math.max(8, my-12)+'px';
+            return;
+          }
+          tip2d.style.display='none';
+          // fall through so X-Y / Psy hover doesn't accidentally fire below
+          return;
+        }
 
         // ---- T×Time mode: index → band-aware tooltip ----
         // (X-Y Detail / W×Time fall through to the original psychrometric
@@ -2601,6 +2640,9 @@ global.initPsy3D = function(container, opts){
 
   function renderMonthlySitesChart(ctx,vw,vh){
     _monthlyPanelRects = {};
+    // Reset OA hover hitboxes so stale hits from the previous render
+    // can't poison tooltips after the user toggles strategies / scrolls.
+    _msOaHits.length = 0;
     /* Re-derive per-month base/band totals from each site's cached raw
        hourly arrays using the CURRENT SA Temp / SA RH slider values.  This
        runs on every render so the user sees totals update live as they
@@ -3058,7 +3100,6 @@ global.initPsy3D = function(container, opts){
           var p1 = oaPts[ci];
           var p2 = oaPts[ci+1];
           var p3 = oaPts[Math.min(oaPts.length-1, ci+2)];
-          // Centripetal Catmull-Rom \u2192 cubic Bezier conversion.
           var cp1x = p1.x + (p2.x - p0.x) / 6;
           var cp1y = p1.y + (p2.y - p0.y) / 6;
           var cp2x = p2.x - (p3.x - p1.x) / 6;
@@ -3067,12 +3108,26 @@ global.initPsy3D = function(container, opts){
         }
         ctx.stroke();
         ctx.setLineDash([]);
-        // small dot markers per month so each datum is locatable on the
-        // smoothed curve (Catmull-Rom passes through every control point
-        // by construction, but the markers make it explicit).
+        // dot markers + per-month numeric labels.  Labels make the value
+        // unmistakable at-a-glance (no hover required) so audiences can
+        // verify the band-coverage math directly without taking my word.
+        ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
         for (var oj=0; oj<12; oj++){
           ctx.fillStyle = 'rgba(251,191,36,.95)';
-          ctx.beginPath(); ctx.arc(oaPts[oj].x, oaPts[oj].y, 1.6, 0, 6.283); ctx.fill();
+          ctx.beginPath(); ctx.arc(oaPts[oj].x, oaPts[oj].y, 1.8, 0, 6.283); ctx.fill();
+          // Push hover hitbox so the canvas mousemove handler can find
+          // this datum and pop a tooltip with month name + damper %.
+          _msOaHits.push({x: oaPts[oj].x, y: oaPts[oj].y,
+                          panel: code, month: oj, val: d.oaPct[oj],
+                          siteName: d.site.name});
+          // Static numeric label above each dot — readable from across
+          // the room, no interaction required.
+          var lblY = oaPts[oj].y - 5;
+          // If the dot is too close to the top edge, drop the label below
+          // the dot instead so it doesn't get clipped.
+          if (lblY - 6 < plotY) lblY = oaPts[oj].y + 11;
+          ctx.fillStyle = 'rgba(251,191,36,.95)';
+          ctx.fillText(Math.round(d.oaPct[oj])+'', oaPts[oj].x, lblY);
         }
         ctx.restore();
         // (2) damper opacity strip directly below the season strip.
@@ -3089,11 +3144,28 @@ global.initPsy3D = function(container, opts){
         ctx.fillStyle = 'rgba(251,191,36,.95)'; ctx.font='bold 7px monospace';
         ctx.textAlign='right';
         ctx.fillText('OA%', plotX-4, oaStripY+oaStripH-0.5);
-        // (3) right-axis 0–100% caption (only when OA toggle on so the
-        //     "100" doesn't crowd the cumulative axis labels).
-        ctx.fillStyle='rgba(251,191,36,.85)'; ctx.font='bold 7px monospace';
-        ctx.textAlign='left';
-        ctx.fillText('OA% (0\u2013100)', plotX+plotW+4, plotY+plotH+10);
+        // (3) Right-side Y-axis dedicated to the OA% scale.  Mirror tick
+        //     marks at 0/25/50/75/100% so audiences can read the line's
+        //     value off the axis without guessing or hovering.  Drawn in
+        //     amber to stay visually paired with the OA curve and not
+        //     compete with the cumulative-energy left axis.
+        ctx.fillStyle   = 'rgba(251,191,36,.85)';
+        ctx.strokeStyle = 'rgba(251,191,36,.55)';
+        ctx.lineWidth   = 0.7;
+        ctx.font        = 'bold 7px monospace';
+        ctx.textAlign   = 'left';
+        var oaTicks = [0, 25, 50, 75, 100];
+        for (var ti=0; ti<oaTicks.length; ti++){
+          var pct = oaTicks[ti];
+          var ty = plotY + plotH - (pct/100) * plotH;
+          ctx.beginPath();
+          ctx.moveTo(plotX + plotW,     ty);
+          ctx.lineTo(plotX + plotW + 3, ty);
+          ctx.stroke();
+          ctx.fillText(pct+'%', plotX + plotW + 5, ty + 2.5);
+        }
+        // Axis caption under the tick column.
+        ctx.fillText('OA damper', plotX + plotW + 5, plotY + plotH + 11);
       }
       // Annual totals — the headline depends on what's currently visible:
       //   * Fixed-SA hidden → show the SMALLEST visible strategy's total.

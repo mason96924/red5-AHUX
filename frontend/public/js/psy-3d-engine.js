@@ -911,11 +911,11 @@ global.initPsy3D = function(container, opts){
        NOTE on chart math (2026-05-08): all 5 strategies share the same
        band-derived OA damper schedule so the visible gap is purely
        setpoint-reset quality (operators never run 100% OA in practice). */
-    msBandDynBtn.title = 'Two-layer hybrid (band damper applied):\n  Layer 1 (every 5 min): B1-B10 picks band from OA T/RH \u2192 sets SA envelope\n  Layer 2 (every 1 min): Dyn-Reset trims SA \u00b12\u00b0C inside the envelope from zone demand\nFailsafe: zone-telemetry loss \u2192 falls back to pure B1-B10.';
-    msBandBtn.title    = 'Climate-driven only (band damper applied): classifies (OA T, OA RH) into B1\u2013B10 every 5 min, applies that band\u2019s SA target. No zone feedback.';
-    msDynBtn.title     = 'Zone-driven only (Trim & Respond, band damper applied): SA tracks 24-h trailing mean of OA enthalpy. Aggregate model of "raise SA when zones are cold, lower when hot". No band SA logic but uses band damper schedule for fair comparison.';
-    msFixedBtn.title   = 'Naked fixed setpoint (band damper applied): SA held at the slider-set (T, RH) all year. Worst-case SETPOINT baseline \u2014 same OA modulation as the others, only the SA reset strategy differs.';
-    msOptBtn.title     = 'Optimal SA (theoretical floor, band damper applied): SA tracks the SITE\u2019S OWN ANNUAL MEAN h_oa, so \u03a3|h_oa \u2212 h_mean| is mathematically minimized. Same OA damper schedule as the others. Practically unrealizable (requires perfect foresight) but the lowest-possible energy curve any setpoint-reset strategy could achieve under realistic OA modulation.';
+    msBandDynBtn.title = 'Two-layer hybrid (band damper applied):\n  Layer 1 (every 5 min): B1-B10 picks band from OA T/RH \u2192 sets SA envelope\n  Layer 2 (every 1 min): Dyn-Reset trims SA \u00b12\u00b0C inside the envelope from zone demand\nFailsafe: zone-telemetry loss \u2192 falls back to pure B1-B10.\nINCLUDES latent (humidity) control via the band SA target.';
+    msBandBtn.title    = 'Climate-driven only (band damper applied): classifies (OA T, OA RH) into B1\u2013B10 every 5 min, applies that band\u2019s SA target. No zone feedback.\nINCLUDES latent (humidity) control via the band SA target.';
+    msDynBtn.title     = '\u26A0 NOT recommended for deployment.\nZone-driven only (Trim & Respond, band damper applied): SA tracks 24-h trailing mean of OA enthalpy. Aggregate model of "raise SA when zones are cold, lower when hot". No band SA logic but uses band damper schedule for fair comparison.\nLACKS latent (humidity) control \u2014 may hit the kJ/kg target while violating zone RH / comfort.';
+    msFixedBtn.title   = '\u26A0 NOT recommended for deployment.\nFixed setpoint with band-derived OA damper schedule: SA held at the slider-set (T, RH) all year. Same OA modulation as the others, only the SA reset strategy differs.\nLACKS latent (humidity) control \u2014 will overcool/undercool zones in shoulder seasons and humid summer days.';
+    msOptBtn.title     = 'Optimal SA (theoretical floor, band damper applied): SA tracks the comfort envelope clamp(h_oa, optMin, optMax). Same OA damper schedule as the others. Practically unrealizable (requires perfect foresight + perfectly modulating coils) but the lowest-possible energy curve any setpoint-reset strategy could achieve.';
     _refreshMsBtn(msFixedBtn,   _msShowFixed);
     _refreshMsBtn(msDynBtn,     _msShowDyn);
     _refreshMsBtn(msBandBtn,    _msShowBand);
@@ -2045,11 +2045,11 @@ global.initPsy3D = function(container, opts){
       ctx.fillStyle=P.oaLine;ctx.fillText('OA temp',lgX+22,lgY+3);lgY+=14;
       legendItem(P.heat,'Heating',cH);
       legendItem(P.cool,'Cooling',cC);
-      legendItem(P.total,'Total',cT,'',[6,4]);
+      legendItem(P.total,'Total \u26A0',cT,'',[6,4]);
       // Dynamic Reset (ASHRAE G36 estimate) \u2014 SA tracks 24h trailing mean
       // of OA enthalpy, modelling Trim & Respond aggregate behaviour.
       var dynPctVsTotal = cT>0 ? Math.max(0,Math.round((1-cDyn/cT)*100)) : 0;
-      legendItem(P.dynRst,'Dyn-Rst',cDyn, dynPctVsTotal>0?'  -'+dynPctVsTotal+'% \u2020':' \u2020');
+      legendItem(P.dynRst,'Dyn-Rst \u26A0',cDyn, dynPctVsTotal>0?'  -'+dynPctVsTotal+'% \u2020':' \u2020');
       // Optimal-SA reference \u2014 envelope-clamped thermodynamic floor.
       // Suffix shows the active envelope so the user knows which bounds
       // produced this curve (live-driven by the Monthly \u00d7 Sites toolbar
@@ -2063,8 +2063,12 @@ global.initPsy3D = function(container, opts){
       // Footnotes inside the boxed legend:
       //   *  Opt-SA = theoretical floor (impossible without foresight)
       //   \u2020 Dyn-Rst = ASHRAE G36 estimate (24h trailing-mean SA model)
+      //   \u26A0 Total / Dyn-Rst lack humidity (latent) control \u2014 NOT for deployment.
       ctx.fillStyle=P.textMuted; ctx.font='7px monospace'; ctx.textAlign='left';
-      ctx.fillText('* clamp(h_oa, env) thermodynamic floor   \u2020 Dyn Reset estimate (G36)', lgX, lgY+2);
+      ctx.fillText('* clamp(h_oa, env) floor   \u2020 G36 estimate', lgX, lgY+2);
+      lgY += 9;
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText('\u26A0 no latent (RH) control \u2014 not for deployment', lgX, lgY+2);
 
       // ---- B1 → B10 cold→hot color ramp at the TOP-MIDDLE of the chart ----
       // Only rendered when Show B1-B10 Strategy is on.  Tally hours per band
@@ -3101,6 +3105,23 @@ global.initPsy3D = function(container, opts){
     };
     var klY = vh - 10;
     var klX = 20;
+    /* Comfort-control caveat row.  When Fixed-SA or Dyn-Reset is visible
+       (both lack any explicit humidity / latent control loop), drop a
+       small amber caveat line above the bottom strip so operators don't
+       interpret a low energy number as "best to deploy".  Real comfort
+       requires latent control \u2014 missing in both flagged strategies. */
+    if (_msShowFixed || _msShowDyn) {
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'left';
+      var caveatLbls = [];
+      if (_msShowFixed) caveatLbls.push('Fixed-SA');
+      if (_msShowDyn)   caveatLbls.push('Dyn-Reset');
+      var caveatTxt = '\u26A0 ' + caveatLbls.join(' + ') +
+        ': no humidity (latent) control \u2014 may meet kJ/kg target ' +
+        'while violating zone RH / comfort. NOT recommended for deployment.';
+      ctx.fillText(caveatTxt, 20, klY - 14);
+    }
     // Context preamble: title + SA baseline + data source (the title used
     // to be a separate top header but was squeezed out by the control
     // cluster; moved here where it has room).
@@ -3152,11 +3173,11 @@ global.initPsy3D = function(container, opts){
       if (denom <= 0) return null;
       return ((aggBase - stratTotal) / denom) * 100;
     }
-    if(_msShowFixed)   _strategyKey(P.cFixed,   'Fixed-SA',           [5,3], _msShowOpt ? _capPct(aggBase)    : null);
-    if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset',          [2,3], _msShowOpt ? _capPct(aggDyn)     : null);
-    if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10',             null,  _msShowOpt ? _capPct(aggBand)    : null);
-    if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset', null,  _msShowOpt ? _capPct(aggBandDyn) : null);
-    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',         [1,2], _capPct(aggOpt));
+    if(_msShowFixed)   _strategyKey(P.cFixed,   'Fixed-SA + band damper \u26A0', [5,3], _msShowOpt ? _capPct(aggBase)    : null);
+    if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset \u26A0',              [2,3], _msShowOpt ? _capPct(aggDyn)     : null);
+    if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10',                       null,  _msShowOpt ? _capPct(aggBand)    : null);
+    if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset',           null,  _msShowOpt ? _capPct(aggBandDyn) : null);
+    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',                   [1,2], _capPct(aggOpt));
     if(_msShowOA){
       // Yellow dashed line key matches the per-panel OA-damper line.
       ctx.strokeStyle='rgba(251,191,36,.95)'; ctx.lineWidth=2.2;

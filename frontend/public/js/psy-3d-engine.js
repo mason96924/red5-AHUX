@@ -1754,16 +1754,26 @@ global.initPsy3D = function(container, opts){
     var h_sa=enthalpy(saT,W_sa);
 
     if(mode==='tt'){
-      // === Compute the 4 cumulative curves ===
+      // === Compute the 5 cumulative curves ===
+      // Apples-to-apples OA-damper assumption: every strategy is integrated
+      // against the SAME band-derived OA damper schedule.  This mirrors
+      // the Monthly x Sites chart -- without it, B1-B10 silently inherits
+      // a 70-80% damper-modulation advantage no other strategy gets,
+      // making it look ~3x better than reality.  See dampSeq below.
       var cumHeat=[],cumCool=[],cH=0,cC=0;
       var cumB=[],cBe=0;
       // Per-point band id ('B1'..'B10') so we can later draw transition
       // tick-markers along the green B1-B10 cumulative curve.
       var bandSeq=[];
+      // Per-point band-derived damper fraction (0..1) cached so the
+      // Dyn-Rst and Opt-SA loops further down apply the same schedule
+      // without re-running classifyBand.  This is the load-bearing
+      // line that makes the 5-curve comparison fair.
+      var dampSeq=[];
       // Per-point dh (h_oa - h_sa). Captured here so the shading pass below
-      // can color each segment by enthalpy polarity (matches the curves) —
+      // can color each segment by enthalpy polarity (matches the curves) --
       // not by temperature polarity, which can disagree when SA is humid
-      // (e.g. 13 °C / 95 % RH → h_sa is high → warm-but-dry OA still has
+      // (e.g. 13 deg C / 95 % RH -> h_sa is high -> warm-but-dry OA still has
       //  h_oa < h_sa and is therefore HEATING, not cooling).
       var dhSeq=[];
       var tMin=Infinity,tMax=-Infinity;
@@ -1771,16 +1781,21 @@ global.initPsy3D = function(container, opts){
         var p=weatherData[i];
         if(p.t<tMin)tMin=p.t;if(p.t>tMax)tMax=p.t;
         var h_oa=enthalpy(p.t,p.w);
-        var dh=h_oa-h_sa; // + needs cooling, - needs heating
-        dhSeq.push(dh);
-        if(dh>0)cC+=dh; else cH+=Math.abs(dh);
-        cumHeat.push(cH);cumCool.push(cC);
         var oa_rh=p.rh!=null?p.rh:50;
         var b=classifyBand(p.t,oa_rh);
         bandSeq.push(b.id);
+        var damp = b.oa_damper/100;
+        dampSeq.push(damp);
+        var dh=h_oa-h_sa; // + needs cooling, - needs heating
+        // Heating/Cooling/Total now scaled by the band's damper -- matches
+        // Monthly x Sites, removes the 100%-OA bias for these curves.
+        var dh_d = damp * dh;
+        dhSeq.push(dh_d);
+        if(dh_d>0)cC+=dh_d; else cH+=Math.abs(dh_d);
+        cumHeat.push(cH);cumCool.push(cC);
         var W_sa_b=getW(b.sa_t,b.sa_rh);
         var h_sa_b=enthalpy(b.sa_t,W_sa_b);
-        cBe+=Math.abs((b.oa_damper/100)*(h_oa-h_sa_b));
+        cBe+=Math.abs(damp*(h_oa-h_sa_b));
         cumB.push(cBe);
       }
       var cT=cH+cC;
@@ -1902,11 +1917,13 @@ global.initPsy3D = function(container, opts){
       // the user drags them on the Monthly \u00d7 Sites toolbar (shared state).
       var ttOptMin = _optMinH, ttOptMax = _optMaxH;
       if (ttOptMax < ttOptMin) { var _tmp = ttOptMin; ttOptMin = ttOptMax; ttOptMax = _tmp; }
-      // Build cumulative |h_oa - clamp(h_oa, optMin, optMax)|
+      // Build cumulative |h_oa - clamp(h_oa, optMin, optMax)| scaled by
+      // the SAME band-derived damper schedule the other curves use,
+      // so all 5 strategies are benchmarked under identical OA modulation.
       var cumOpt=[], cOpt=0;
       for(var oi=0;oi<n;oi++){
         var hSaOpt = Math.max(ttOptMin, Math.min(ttOptMax, hOaArr[oi]));
-        cOpt += Math.abs(hOaArr[oi] - hSaOpt);
+        cOpt += Math.abs(dampSeq[oi] * (hOaArr[oi] - hSaOpt));
         cumOpt.push(cOpt);
       }
       drawCurve(cumOpt, P.optSa || '#c084fc', 1.5, [2,3]);      // dotted purple
@@ -1938,7 +1955,7 @@ global.initPsy3D = function(container, opts){
         // deliver \u22125 \u00b0C SA without freezing the coil).  Clamping to the
         // same comfort envelope Opt-SA uses guarantees Opt-SA \u2264 Dyn-Rst.
         var hSaDyn = Math.max(ttOptMin, Math.min(ttOptMax, hSaDynRaw));
-        cDyn += Math.abs(hOaArr[di] - hSaDyn);
+        cDyn += Math.abs(dampSeq[di] * (hOaArr[di] - hSaDyn));
         cumDyn.push(cDyn);
       }
       drawCurve(cumDyn, P.dynRst || '#c084fc', 2);              // solid purple
@@ -2104,7 +2121,7 @@ global.initPsy3D = function(container, opts){
       ctx.fillStyle=P.oaLine;ctx.fillText('OA temp',lgX+22,lgY+3);lgY+=14;
       legendItem(P.heat,'Heating',cH);
       legendItem(P.cool,'Cooling',cC);
-      legendItem(P.total,'Total \u26A0',cT,'',[6,4]);
+      legendItem(P.total,'Fixed-SA + band damper \u26A0',cT,'',[6,4]);
       // Dynamic Reset (ASHRAE G36 estimate) \u2014 SA tracks 24h trailing mean
       // of OA enthalpy, modelling Trim & Respond aggregate behaviour.
       var dynPctVsTotal = cT>0 ? Math.max(0,Math.round((1-cDyn/cT)*100)) : 0;

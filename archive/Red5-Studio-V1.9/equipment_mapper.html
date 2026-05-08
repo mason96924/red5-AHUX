@@ -2231,6 +2231,144 @@
                 link.download = filename;
                 link.click();
             };
+
+            // Multi-file GET — packs the user's checkbox-selected files
+            // into a single ZIP via /api/zip-files and triggers a normal
+            // browser download.  All file roots are honored (data /
+            // scripts / pgpy) by passing the active root + path to the
+            // backend.  Falls back to per-file downloads if zip endpoint
+            // is unavailable on an older controller.
+            const batchDownloadFromController = async () => {
+                const names = Array.from(selectedFiles);
+                if (names.length === 0) return;
+                if (names.length === 1) {
+                    downloadFileFromController(names[0]);
+                    return;
+                }
+                try {
+                    const apiUrl = window.API_BASE_URL || '';
+                    const r = await fetch(`${apiUrl}/api/zip-files`, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ names, root: fileBrowserRoot, path: fileBrowserPath }),
+                    });
+                    if (!r.ok) {
+                        const j = await r.json().catch(() => ({}));
+                        alert('GET selected failed: ' + (j.error || r.status));
+                        return;
+                    }
+                    const blob = await r.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url;
+                    a.download = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || `red5_files_${Date.now()}.zip`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                } catch (err) {
+                    alert('GET selected error: ' + err.message);
+                }
+            };
+
+            // GET on directory — zips the entire subtree (preserving
+            // structure) and downloads it as a single archive.  Honors
+            // the active fileBrowserRoot / fileBrowserPath.
+            const downloadDirFromController = async (dirname) => {
+                if (!dirname) return;
+                try {
+                    const apiUrl = window.API_BASE_URL || '';
+                    const r = await fetch(`${apiUrl}/api/zip-dir`, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ dirname, root: fileBrowserRoot, path: fileBrowserPath }),
+                    });
+                    if (!r.ok) {
+                        const j = await r.json().catch(() => ({}));
+                        alert('GET dir failed: ' + (j.error || r.status));
+                        return;
+                    }
+                    const blob = await r.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url;
+                    a.download = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || `${dirname}.zip`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                } catch (err) {
+                    alert('GET dir error: ' + err.message);
+                }
+            };
+
+            // Directory upload (request 3) — uses webkitdirectory so the
+            // browser surfaces every file under the chosen tree, preserves
+            // each file's relative path on the controller, and degrades
+            // to per-file chunking so partial failures leave the
+            // controller recoverable.  Pre-flight checks /api/disk-status
+            // and refuses if free disk < 2 \u00d7 total upload size.
+            const uploadDirectoryToController = () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.webkitdirectory = true;  // Chrome / Edge / FF / Safari 13+
+                input.directory = true;        // legacy Firefox alias
+                input.onchange = async (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length === 0) return;
+                    const totalBytes = files.reduce((s, f) => s + f.size, 0);
+                    const apiUrl = window.API_BASE_URL || '';
+
+                    // Pre-flight: check the controller has space.  Refuse
+                    // if free disk < 2x upload size; user picks a smaller
+                    // upload or runs the disk-status cleanup first.
+                    try {
+                        const ds = await fetch(`${apiUrl}/api/disk-status`).then(r => r.json());
+                        if (ds && typeof ds.free_bytes === 'number' && ds.free_bytes < totalBytes * 2) {
+                            const ok = confirm(
+                                'Disk headroom low.\n\n' +
+                                'Total upload: ' + (totalBytes/1048576).toFixed(2) + ' MB (' + files.length + ' files)\n' +
+                                'Controller free: ' + (ds.free_bytes/1048576).toFixed(2) + ' MB\n' +
+                                'Recommended free \u2265 ' + (totalBytes*2/1048576).toFixed(2) + ' MB\n\n' +
+                                'Run /api/disk-status?cleanup=1 first?  Click OK to abort, Cancel to upload anyway.'
+                            );
+                            if (ok) return;
+                        }
+                    } catch (_) { /* disk-status optional */ }
+
+                    // Chunk by file: each file is its own upload.  Partial
+                    // failure leaves earlier files committed; failed files
+                    // are reported in the summary so the operator can
+                    // retry just those.
+                    const results = [];
+                    let okCount = 0, failCount = 0;
+                    for (let i = 0; i < files.length; i++) {
+                        const f = files[i];
+                        const relPath = f.webkitRelativePath || f.name;
+                        const uploadName = fileBrowserPath ? `${fileBrowserPath}/${relPath}` : relPath;
+                        try {
+                            const dataURL = await new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onload  = (ev) => resolve(ev.target.result);
+                                reader.onerror = reject;
+                                reader.readAsDataURL(f);
+                            });
+                            const r = await fetch(`${apiUrl}/api/upload-file`, {
+                                method:  'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body:    JSON.stringify({ filename: uploadName, file_data: dataURL, root: fileBrowserRoot }),
+                            });
+                            const j = await r.json();
+                            if (j.success) { okCount++; }
+                            else { failCount++; results.push(relPath + ' \u2014 ' + (j.error || 'failed')); }
+                        } catch (err) {
+                            failCount++;
+                            results.push(relPath + ' \u2014 ' + err.message);
+                        }
+                    }
+                    alert('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
+                          (results.length ? '\n\n' + results.join('\n') : ''));
+                    openFileBrowser(fileBrowserPath);
+                };
+                input.click();
+            };
             
             const createDirectoryOnController = async () => {
                 const name = prompt('New folder name:');
@@ -5154,6 +5292,9 @@
                             } catch (err) { alert(`Could not reach controller: ${err.message}`); }
                         }}
                         onDownload={downloadFileFromController}
+                        onDownloadDir={downloadDirFromController}
+                        onBatchDownload={batchDownloadFromController}
+                        onUploadDir={uploadDirectoryToController}
                         onMove={moveFileOnController}
                         onDelete={deleteFileFromController}
                         onDeleteDir={deleteDirectoryFromController}

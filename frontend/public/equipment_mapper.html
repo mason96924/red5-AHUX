@@ -154,7 +154,7 @@
 <body class="flex h-screen">
     <div id="root" class="w-full h-full flex"></div>
     <script type="text/plain" id="main-source">
-        const { useState, useRef, useEffect, useMemo } = React;
+        const { useState, useRef, useEffect, useMemo, useCallback } = React;
 
         // --- DEFINITIVE ERROR BOUNDARY ---
         class ErrorBoundary extends React.Component {
@@ -359,6 +359,81 @@
             
             const [localTest, setLocalTest] = useState({});
             
+            // ---- Sidebar pop-out (extra-monitor support) ----
+            // popupWin: the spawned browser window that hosts the sidebar
+            // when "popped out".  null = sidebar is in the main page.
+            // popupHost: the <div> inside the popup that React renders into
+            // via createPortal — re-uses the existing sidebar JSX verbatim
+            // so behaviour is identical whether docked or popped out.
+            const [popupWin,  setPopupWin]  = useState(null);
+            const [popupHost, setPopupHost] = useState(null);
+
+            const popOutSidebar = useCallback(() => {
+                // Refuse double-popout (idempotent on repeated clicks).
+                if (popupWin && !popupWin.closed) { popupWin.focus(); return; }
+                const win = window.open('', 'red5_sidebar',
+                    'width=480,height=900,resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no');
+                if (!win) {
+                    alert('Popup window blocked. Please allow popups for this site, then click "Pop Out" again.');
+                    return;
+                }
+                // Wipe any default content; build a clean shell.
+                win.document.open(); win.document.write('<!doctype html><html><head></head><body></body></html>'); win.document.close();
+                // Title + favicon parity with the main window.
+                const titleEl = win.document.createElement('title');
+                titleEl.textContent = 'Red5 Sidebar (popped out)';
+                win.document.head.appendChild(titleEl);
+                // Resolve relative URLs (images, fonts, etc.) against the
+                // main window's URL so all assets keep loading.
+                const baseEl = win.document.createElement('base');
+                baseEl.href = window.location.href;
+                win.document.head.appendChild(baseEl);
+                // Clone parent <style> blocks + <link rel="stylesheet"> +
+                // the Tailwind CDN <script>.  This gives the popup the
+                // exact same look-and-feel without needing a separate
+                // build pipeline.  Stays correct even on the offline
+                // controller because the Tailwind script is loaded in the
+                // main window's cache and re-fetched (or served by the
+                // controller's own static file route).
+                document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
+                    win.document.head.appendChild(node.cloneNode(true));
+                });
+                const tailwind = document.querySelector('script[src*="tailwindcss"]');
+                if (tailwind) {
+                    const tw = win.document.createElement('script');
+                    tw.src = tailwind.src;
+                    win.document.head.appendChild(tw);
+                }
+                // Mirror parent <body> classes so dark/light theme is honoured.
+                win.document.body.className = document.body.className;
+                win.document.body.style.margin = '0';
+                win.document.body.style.background = 'transparent';
+                // Mount point for createPortal.
+                const root = win.document.createElement('div');
+                root.id = 'sidebar-portal-root';
+                root.style.cssText = 'display:flex;flex-direction:column;width:100vw;min-height:100vh;';
+                win.document.body.appendChild(root);
+                setPopupWin(win);
+                setPopupHost(root);
+                // Snap back automatically when the operator closes the popup.
+                const closeWatcher = setInterval(() => {
+                    if (win.closed) {
+                        clearInterval(closeWatcher);
+                        setPopupWin(null);
+                        setPopupHost(null);
+                    }
+                }, 400);
+            }, [popupWin]);
+
+            // If the parent tab is navigated away or refreshed, kill the
+            // orphan popup so the operator isn't left with a stale window
+            // (its React portal would be detached and useless).
+            useEffect(() => {
+                const onUnload = () => { if (popupWin && !popupWin.closed) popupWin.close(); };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, [popupWin]);
+
             const imageRef = useRef(null);
 
             // Load saved password hash from localStorage on mount (for verification, not auto-auth)
@@ -413,25 +488,21 @@
                 const entry = schema[category][typeId];
                 const pts = entry.points || [];
                 const sensorGroups = entry.sensor_groups || [];
-                // Lookup: group id -> definition (preserves group order
-                // as defined in sensor_groups[], so the UI is stable).
                 const groupDefs = new Map();
                 sensorGroups.forEach(g => groupDefs.set(g.id, g));
 
                 const groups = [];
-                const processed = new Set();
 
-                // Emit one "isGroup: true" entry per defined sensor_groups[]
-                // member, in the order the operator arranged them.  Read
-                // canvas position (x/y/scale) from the FIRST member point
-                // so existing pill placements survive the migration.
+                // PHASE 1 — One `isGroup: true` row per defined sensor_group
+                // that has at least one member.  Used by the canvas to
+                // render grouped pills (e.g. the "SA" pill containing
+                // SAF/SAT/SAH stacked rows).  Position/scale come from
+                // the FIRST member point so existing pill placements
+                // survive the migration.
                 sensorGroups.forEach(g => {
                     const groupIndices = [];
                     pts.forEach((p, i) => {
-                        if (!processed.has(i) && p.group_id === g.id) {
-                            groupIndices.push(i);
-                            processed.add(i);
-                        }
+                        if (p.group_id === g.id) groupIndices.push(i);
                     });
                     if (groupIndices.length === 0) return;
                     const firstPt = pts[groupIndices[0]];
@@ -448,17 +519,20 @@
                     });
                 });
 
-                // Any remaining points (no group_id, or group_id pointing
-                // at a deleted group) become standalone "isGroup: false"
-                // rows.  Defensive: if a point references a missing
-                // group, it falls through to here so the UI never hides
-                // a configured sensor.
+                // PHASE 2 — One `isGroup: false` row per individual point,
+                // INCLUDING points that are already members of a group.
+                // The SENSORS sidebar panel uses these rows to render
+                // each member inside its parent group expansion (filter:
+                // !isGroup && group_id === g.id).  The canvas skips
+                // these for grouped points (they're already drawn as
+                // part of the parent isGroup:true pill — see the
+                // `inGroupMember` short-circuit in the canvas map).
+                //
+                // Defensive: if a point references a deleted group, we
+                // clear the dangling group_id here so the row falls
+                // through to "Ungrouped Sensors" instead of vanishing.
                 pts.forEach((p, i) => {
-                    if (processed.has(i)) return;
                     if (p.group_id && !groupDefs.has(p.group_id)) {
-                        // Stale reference — clear it so saves no longer
-                        // carry the orphan.  Mutation here is safe: the
-                        // schema state copy is owned by this render.
                         p.group_id = null;
                     }
                     groups.push({
@@ -2157,6 +2231,144 @@
                 link.download = filename;
                 link.click();
             };
+
+            // Multi-file GET — packs the user's checkbox-selected files
+            // into a single ZIP via /api/zip-files and triggers a normal
+            // browser download.  All file roots are honored (data /
+            // scripts / pgpy) by passing the active root + path to the
+            // backend.  Falls back to per-file downloads if zip endpoint
+            // is unavailable on an older controller.
+            const batchDownloadFromController = async () => {
+                const names = Array.from(selectedFiles);
+                if (names.length === 0) return;
+                if (names.length === 1) {
+                    downloadFileFromController(names[0]);
+                    return;
+                }
+                try {
+                    const apiUrl = window.API_BASE_URL || '';
+                    const r = await fetch(`${apiUrl}/api/zip-files`, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ names, root: fileBrowserRoot, path: fileBrowserPath }),
+                    });
+                    if (!r.ok) {
+                        const j = await r.json().catch(() => ({}));
+                        alert('GET selected failed: ' + (j.error || r.status));
+                        return;
+                    }
+                    const blob = await r.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url;
+                    a.download = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || `red5_files_${Date.now()}.zip`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                } catch (err) {
+                    alert('GET selected error: ' + err.message);
+                }
+            };
+
+            // GET on directory — zips the entire subtree (preserving
+            // structure) and downloads it as a single archive.  Honors
+            // the active fileBrowserRoot / fileBrowserPath.
+            const downloadDirFromController = async (dirname) => {
+                if (!dirname) return;
+                try {
+                    const apiUrl = window.API_BASE_URL || '';
+                    const r = await fetch(`${apiUrl}/api/zip-dir`, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ dirname, root: fileBrowserRoot, path: fileBrowserPath }),
+                    });
+                    if (!r.ok) {
+                        const j = await r.json().catch(() => ({}));
+                        alert('GET dir failed: ' + (j.error || r.status));
+                        return;
+                    }
+                    const blob = await r.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url;
+                    a.download = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || `${dirname}.zip`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                } catch (err) {
+                    alert('GET dir error: ' + err.message);
+                }
+            };
+
+            // Directory upload (request 3) — uses webkitdirectory so the
+            // browser surfaces every file under the chosen tree, preserves
+            // each file's relative path on the controller, and degrades
+            // to per-file chunking so partial failures leave the
+            // controller recoverable.  Pre-flight checks /api/disk-status
+            // and refuses if free disk < 2 \u00d7 total upload size.
+            const uploadDirectoryToController = () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.webkitdirectory = true;  // Chrome / Edge / FF / Safari 13+
+                input.directory = true;        // legacy Firefox alias
+                input.onchange = async (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length === 0) return;
+                    const totalBytes = files.reduce((s, f) => s + f.size, 0);
+                    const apiUrl = window.API_BASE_URL || '';
+
+                    // Pre-flight: check the controller has space.  Refuse
+                    // if free disk < 2x upload size; user picks a smaller
+                    // upload or runs the disk-status cleanup first.
+                    try {
+                        const ds = await fetch(`${apiUrl}/api/disk-status`).then(r => r.json());
+                        if (ds && typeof ds.free_bytes === 'number' && ds.free_bytes < totalBytes * 2) {
+                            const ok = confirm(
+                                'Disk headroom low.\n\n' +
+                                'Total upload: ' + (totalBytes/1048576).toFixed(2) + ' MB (' + files.length + ' files)\n' +
+                                'Controller free: ' + (ds.free_bytes/1048576).toFixed(2) + ' MB\n' +
+                                'Recommended free \u2265 ' + (totalBytes*2/1048576).toFixed(2) + ' MB\n\n' +
+                                'Run /api/disk-status?cleanup=1 first?  Click OK to abort, Cancel to upload anyway.'
+                            );
+                            if (ok) return;
+                        }
+                    } catch (_) { /* disk-status optional */ }
+
+                    // Chunk by file: each file is its own upload.  Partial
+                    // failure leaves earlier files committed; failed files
+                    // are reported in the summary so the operator can
+                    // retry just those.
+                    const results = [];
+                    let okCount = 0, failCount = 0;
+                    for (let i = 0; i < files.length; i++) {
+                        const f = files[i];
+                        const relPath = f.webkitRelativePath || f.name;
+                        const uploadName = fileBrowserPath ? `${fileBrowserPath}/${relPath}` : relPath;
+                        try {
+                            const dataURL = await new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onload  = (ev) => resolve(ev.target.result);
+                                reader.onerror = reject;
+                                reader.readAsDataURL(f);
+                            });
+                            const r = await fetch(`${apiUrl}/api/upload-file`, {
+                                method:  'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body:    JSON.stringify({ filename: uploadName, file_data: dataURL, root: fileBrowserRoot }),
+                            });
+                            const j = await r.json();
+                            if (j.success) { okCount++; }
+                            else { failCount++; results.push(relPath + ' \u2014 ' + (j.error || 'failed')); }
+                        } catch (err) {
+                            failCount++;
+                            results.push(relPath + ' \u2014 ' + err.message);
+                        }
+                    }
+                    alert('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
+                          (results.length ? '\n\n' + results.join('\n') : ''));
+                    openFileBrowser(fileBrowserPath);
+                };
+                input.click();
+            };
             
             const createDirectoryOnController = async () => {
                 const name = prompt('New folder name:');
@@ -2643,14 +2855,17 @@
                 );
             }
 
-            return (
-                <div className={`flex w-full h-full ${colors.bg}`}>
-                    {/* SIDEBAR */}
-                    <div 
-                        className={`w-[420px] ${colors.bgPrimary} border-r ${colors.border} flex flex-col shadow-2xl z-20 overflow-y-auto custom-scrollbar text-xs`} 
-                        onMouseUp={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
-                        onMouseMove={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}
-                    >
+            // Sidebar shell + content, factored out so it can be either
+            // rendered in-page (when docked) or portaled into a popup
+            // window (when popped out).  Portal preserves the React event
+            // tree so click handlers, state updates, and re-renders work
+            // identically across windows — no extra plumbing needed.
+            const sidebarTree = (
+                <div 
+                    className={`${popupWin ? 'w-full' : 'w-[420px]'} ${colors.bgPrimary} ${popupWin ? '' : 'border-r ' + colors.border} flex flex-col shadow-2xl z-20 overflow-y-auto custom-scrollbar text-xs h-full min-h-screen`} 
+                    onMouseUp={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
+                    onMouseMove={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}
+                >
                         <div className="p-3 pb-2 shrink-0 flex justify-between items-center">
                             <div className="flex items-center gap-2">
                                 <h2 className="text-sm font-black italic uppercase tracking-tighter leading-none">
@@ -2681,6 +2896,18 @@
                                 >
                                     PWD
                                 </button>
+                                {/* Pop-out / re-attach toggle. */}
+                                <button
+                                    onClick={() => {
+                                        if (popupWin && !popupWin.closed) { popupWin.close(); }
+                                        else { popOutSidebar(); }
+                                    }}
+                                    className={`px-1.5 py-0.5 border rounded text-[7px] font-black uppercase tracking-wider transition-all ${popupWin ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300'}`}
+                                    title={popupWin ? 'Re-attach sidebar to this window' : 'Pop sidebar out into a draggable window (move it to another monitor)'}
+                                    data-testid="popout-sidebar-btn"
+                                >
+                                    {popupWin ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                </button>
                                 <button 
                                     onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
                                     className={`p-1 rounded transition-colors text-sm ${theme === 'dark' ? 'bg-slate-800 text-yellow-400 hover:bg-indigo-600' : 'bg-slate-200 border border-slate-400 text-slate-700 hover:bg-slate-300'}`}
@@ -2694,10 +2921,7 @@
 
                         <div className="px-6 pb-4 flex flex-col gap-4 shrink-0">
                             
-                            {/* Inline AHU Sizing Pulse — always visible, collapsible.
-                                Reads the AHU count from the live floorMarkers state so
-                                the recommended-vs-configured pulse stays live as the user
-                                drops AHU markers on the floor plan in any tab. */}
+                            {/* Inline AHU Sizing Pulse */}
                             {window.SizingInlineCard && (
                                 <window.SizingInlineCard
                                     configuredAhus={floorMarkers.filter(m => m.type === 'ahu').length}
@@ -2932,7 +3156,9 @@
                                 return (
                                 <>
                                     <div className="mb-4 pb-4 border-b border-slate-800 space-y-2">
-                                        <div className="text-[8px] text-slate-600 italic px-1 mb-1" data-testid="drag-hint">Tip: drag a sensor onto a group header to regroup.</div>
+                                        <div className="text-[9px] text-slate-400 italic px-1 mb-1" data-testid="drag-hint">
+                                            Click a <span className="text-emerald-300 font-bold">group name</span> or <span className="text-emerald-300 font-bold">sensor row</span> to select it, then click on the AHU image to place it. Drag a sensor onto another group's header to regroup.
+                                        </div>
                                         <button onClick={addPoint} className="w-full py-2 bg-slate-800 border border-emerald-500 text-emerald-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all hover:bg-emerald-900/30">
                                             + New Sensor Point
                                         </button>
@@ -2946,25 +3172,72 @@
                                         const groupSensors = groupedPoints.filter((grp, idx) => 
                                             !grp.isGroup && grp.points[0]?.group_id === group.id
                                         );
+                                        // Locate the parent isGroup:true row for this group so the
+                                        // header click can select it as activeTarget for canvas
+                                        // placement.  Returns -1 when the group has no members yet
+                                        // (nothing to place); we leave the header in collapse-only
+                                        // mode in that case.
+                                        const groupRowIdx = groupedPoints.findIndex(
+                                            g => g.isGroup && g.groupId === group.id
+                                        );
+                                        const groupOnCanvas = groupRowIdx >= 0
+                                            && groupedPoints[groupRowIdx].x != null
+                                            && groupedPoints[groupRowIdx].y != null;
+                                        const groupActive = groupRowIdx >= 0
+                                            && isTargetActive('point_group', groupRowIdx);
+                                        // Header click: select the group as the placement target
+                                        // (only when the group HAS members).  Falls back to plain
+                                        // collapse-toggle for empty groups so the user can still
+                                        // hide them.  Auto-position to centre on first selection
+                                        // so the pill becomes visible immediately.
+                                        const handleHeaderClick = (e) => {
+                                            // Clicks on the chevron or any descendant <input> are
+                                            // handled by their own onClick + stopPropagation; here
+                                            // we only care about clicks on the bare header.
+                                            if (groupRowIdx < 0) {
+                                                toggleGroupCollapse(group.id);
+                                                return;
+                                            }
+                                            setActiveTarget({ type: 'point_group', idx: groupRowIdx });
+                                            const grp = groupedPoints[groupRowIdx];
+                                            if (grp && grp.x == null && bgImage) {
+                                                handleFineTuneGroup(grp.indices, 'x', 50);
+                                                handleFineTuneGroup(grp.indices, 'y', 50);
+                                            }
+                                        };
                                         
                                         return (
-                                            <div key={group.id} className={`mb-3 bg-slate-900/50 border rounded-lg overflow-hidden transition-colors ${dragOverGroupId === group.id ? 'border-amber-400 ring-2 ring-amber-400/40' : 'border-blue-700/30'}`}>
+                                            <div key={group.id} className={`mb-3 bg-slate-900/50 border rounded-lg overflow-hidden transition-colors ${dragOverGroupId === group.id ? 'border-amber-400 ring-2 ring-amber-400/40' : groupActive ? 'border-emerald-500 ring-2 ring-emerald-500/40' : 'border-blue-700/30'}`}>
                                                 <div 
-                                                    className={`flex items-center justify-between p-2 cursor-pointer transition-colors ${dragOverGroupId === group.id ? 'bg-amber-500/20' : 'bg-blue-900/20 hover:bg-blue-900/30'}`}
-                                                    onClick={() => toggleGroupCollapse(group.id)}
+                                                    className={`flex items-center justify-between p-2 cursor-pointer transition-colors ${dragOverGroupId === group.id ? 'bg-amber-500/20' : groupActive ? 'bg-emerald-900/30' : 'bg-blue-900/20 hover:bg-blue-900/30'}`}
+                                                    onClick={handleHeaderClick}
                                                     {...dropProps(group.id)}
                                                     data-testid={`drop-group-${group.id}`}
                                                 >
                                                     <div className="flex items-center gap-2">
-                                                        <span className={`text-blue-400 text-[10px] transition-transform ${group.collapsed ? '' : 'rotate-90'}`}>▶</span>
+                                                        {/* Dedicated chevron — toggles expand/collapse
+                                                            without affecting placement target. */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => { e.stopPropagation(); toggleGroupCollapse(group.id); }}
+                                                            className={`text-blue-400 text-[10px] transition-transform px-1 hover:text-blue-200 ${group.collapsed ? '' : 'rotate-90'}`}
+                                                            title={group.collapsed ? 'Expand group' : 'Collapse group'}
+                                                            data-testid={`toggle-group-${group.id}`}
+                                                        >▶</button>
                                                         <input 
                                                             type="text" 
                                                             value={group.name} 
                                                             onChange={(e) => {e.stopPropagation(); renameSensorGroup(group.id, e.target.value);}}
                                                             onClick={(e) => e.stopPropagation()}
-                                                            className="bg-transparent border-none text-[10px] font-bold text-blue-300 outline-none focus:bg-slate-900/50 px-1 rounded"
+                                                            className={`bg-transparent border-none text-[10px] font-bold outline-none focus:bg-slate-900/50 px-1 rounded ${groupActive ? 'text-emerald-200' : 'text-blue-300'}`}
                                                         />
                                                         <span className="text-[7px] text-slate-500">({groupSensors.length})</span>
+                                                        {groupOnCanvas && (
+                                                            <span className="text-[8px] text-emerald-400 font-bold leading-none" title="Group is placed on the canvas">●</span>
+                                                        )}
+                                                        {groupActive && (
+                                                            <span className="text-[7px] text-emerald-300 font-bold uppercase tracking-widest animate-pulse">→ click image</span>
+                                                        )}
                                                     </div>
                                                     <button 
                                                         onClick={(e) => {e.stopPropagation(); if(confirm('Delete this group?')) deleteSensorGroup(group.id);}}
@@ -4137,6 +4410,19 @@
                             )}
                         </div>
                     </div>
+            );
+            // ===== END const sidebarTree =====
+
+            return (
+                <div className={`flex w-full h-full ${colors.bg}`}>
+                    {/* SIDEBAR — docked vs popped-out.  The same JSX tree
+                        renders into either spot via React's createPortal,
+                        so all click handlers + state flow continue to work
+                        identically without any plumbing.  When popped out,
+                        the in-page sidebar disappears and the canvas
+                        below reflows to fill the freed width. */}
+                    {!popupWin && sidebarTree}
+                    {popupWin && popupHost && ReactDOM.createPortal(sidebarTree, popupHost)}
 
                     {/* MAIN INFINITE CANVAS */}
                     {configMode !== 'points' && configMode !== 'sizing' && (
@@ -4595,6 +4881,11 @@
                                         {/* SENSOR PILLS (Grouped and Independent) */}
                                         {groupedPoints.map((grp, i) => {
                                             if (grp.x == null || grp.y == null) return null;
+                                            // Skip the duplicate isGroup:false row for any point that
+                                            // is also represented by an isGroup:true parent above —
+                                            // canvas should only render each pill once.  See the
+                                            // PHASE 2 comment in groupedPoints for why both rows exist.
+                                            if (!grp.isGroup && grp.points[0]?.group_id) return null;
                                             const isActive = isTargetActive('point_group', i);
                                             const isDraggingThis = isDraggingMode.current === 'move' && draggingTarget?.idx === i && draggingTarget?.type === 'point_group';
                                             const showExpanded = isActive && !isDraggingThis;
@@ -5001,6 +5292,9 @@
                             } catch (err) { alert(`Could not reach controller: ${err.message}`); }
                         }}
                         onDownload={downloadFileFromController}
+                        onDownloadDir={downloadDirFromController}
+                        onBatchDownload={batchDownloadFromController}
+                        onUploadDir={uploadDirectoryToController}
                         onMove={moveFileOnController}
                         onDelete={deleteFileFromController}
                         onDeleteDir={deleteDirectoryFromController}

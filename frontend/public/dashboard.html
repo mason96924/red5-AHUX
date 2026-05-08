@@ -720,10 +720,12 @@
             };
 
             // Poll telemetry data from separated backend
-            const fetchTelemetry = React.useCallback(async () => {
+            // NOTE: accepts optional AbortSignal so the polling loop can cancel
+            // an in-flight request when the component unmounts.
+            const fetchTelemetry = React.useCallback(async (signal) => {
                 try {
                     const API_URL = window.API_BASE_URL || window.location.origin;
-                    const response = await fetch(`${API_URL}/api/data`);
+                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal } : undefined);
                     if (!response.ok) return;
                     const data = await response.json();
                     if (!Array.isArray(data)) return;
@@ -744,12 +746,37 @@
                     }
                     setAhuData(data);
                     _setForceApTick(t => t + 1);
-                } catch (e) { }
+                } catch (e) { /* AbortError or network blip - ignore */ }
             }, []);
+            // Self-rescheduling poll loop: a new fetch is NEVER scheduled until the
+            // previous one resolves/aborts. Prevents the queued-fetch DDoS bug where
+            // a 1s setInterval would stack 20+ pending /api/data requests when the
+            // controller was slow.
             useEffect(() => {
-                fetchTelemetry();
-                const interval = setInterval(fetchTelemetry, 1000);
-                return () => clearInterval(interval);
+                const POLL_MS = 2000; // gap between completion of one poll and start of the next
+                let cancelled = false;
+                let timer = null;
+                let controller = null;
+
+                const tick = async () => {
+                    if (cancelled) return;
+                    controller = new AbortController();
+                    try {
+                        await fetchTelemetry(controller.signal);
+                    } finally {
+                        controller = null;
+                        if (!cancelled) {
+                            timer = setTimeout(tick, POLL_MS);
+                        }
+                    }
+                };
+                tick();
+
+                return () => {
+                    cancelled = true;
+                    if (timer) clearTimeout(timer);
+                    if (controller) { try { controller.abort(); } catch (e) {} }
+                };
             }, [fetchTelemetry]);
             // Expose refetch so writeRW can trigger immediate refresh
             useEffect(() => { window._refetchTelemetry = fetchTelemetry; }, [fetchTelemetry]);
@@ -1479,9 +1506,15 @@
                     {activeView === 'dynamics' && (
                         <div ref={dynRef} className="flex-1 relative" style={{width:'100%',height:'100%'}} data-testid="dynamics-view" />
                     )}
-                    {activeView === 'weather3d' && (
-                        <div ref={psy3dRef} className="flex-1 relative" style={{width:'100%',height:'100%'}} data-testid="weather3d-view" />
-                    )}
+                    {/* weather3d (Monthly × Sites): keep the container PERSISTENTLY mounted
+                        and toggle visibility instead of unmounting.  Unmounting kills the
+                        WebGL canvas without running dispose(), so window.__psy3dActive stays
+                        stuck true and the next initPsy3D() aborts -> blank screen on return.
+                        See psy-3d-engine.js lines 38-43 for the page-wide one-context guard. */}
+                    <div ref={psy3dRef}
+                         className="flex-1 relative"
+                         style={{width:'100%', height:'100%', display: activeView === 'weather3d' ? 'block' : 'none'}}
+                         data-testid="weather3d-view" />
                     <div className="flex flex-col flex-1 overflow-hidden" style={activeView !== 'chart' ? {display:'none'} : {}}>
                     <div className="flex-1 relative flex items-center justify-center overflow-hidden font-black shadow-black shadow-inner">
                         <div className="absolute top-10 left-24 z-10 pointer-events-none font-black shadow-black"><h2 className={`text-3xl font-black italic uppercase ${ui.heading} tracking-tight font-black shadow-black shadow-black`}>{t('psychrometric_chart')}</h2></div>

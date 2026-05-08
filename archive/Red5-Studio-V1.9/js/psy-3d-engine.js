@@ -473,6 +473,11 @@ global.initPsy3D = function(container, opts){
   var _msShowDyn = false;
   var _msShowBand = false;
   var _msShowBandDyn = false;
+  /* Opt-SA cumulative — theoretical floor (T×Time chart already exposes
+     this). Per-site monthly Σ|h_oa − h_mean|, where h_mean is each site's
+     own dataset mean enthalpy. Toggle disabled by default to keep the
+     default view uncluttered. */
+  var _msShowOpt = false;
   var spinning=false,panelOpen=true;
   /* Set by buildScene() to refresh the Sites checkbox dropdown trigger
      label and panel content from inside renderMonthlySitesChart so the
@@ -697,7 +702,7 @@ global.initPsy3D = function(container, opts){
           // Monthly \u00d7 Sites multi-city comparison only in T\u00d7Time.
           var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display = (c[0]==='front') ? 'block' : 'none';
           // Strategy-overlay toggles only valid inside Monthly \u00d7 Sites mode.
-          ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-sites-dd'].forEach(function(id){
+          ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-sites-dd'].forEach(function(id){
             var el=$('#'+id); if(el) el.style.display='none';
           });
           var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -725,7 +730,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-sites-dd'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-sites-dd'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -743,7 +748,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-sites-dd'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-sites-dd'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -816,7 +821,7 @@ global.initPsy3D = function(container, opts){
       // band-strategy toggle while in Monthly \u00d7 Sites mode (it doesn't apply
       // to the multi-city panel grid).
       var inMs = (chart2DMode==='monthly-sites');
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display = inMs ? 'block' : 'none';
       });
       // Sites dropdown trigger follows the strategy toggles' visibility.
@@ -857,6 +862,18 @@ global.initPsy3D = function(container, opts){
     var msBandBtn=$('#p3-btn-ms-band');
     var msBandDynBtn=$('#p3-btn-ms-banddyn');
     var msFixedBtn=$('#p3-btn-ms-fixed');
+    /* Opt-SA toggle — created dynamically (the original overlay HTML
+       hard-coded the original 4 strategies).  Sits just to the right of
+       the "+ B1-B10" toggle so the row reads Fixed → Dyn → Band →
+       Band+Dyn → Opt left-to-right at the top of the canvas. */
+    var msOptBtn = $('#p3-btn-ms-opt');
+    if (!msOptBtn) {
+        msOptBtn = document.createElement('button');
+        msOptBtn.id = 'p3-btn-ms-opt';
+        msOptBtn.type = 'button';
+        msOptBtn.textContent = '+ Opt-SA';
+        $('#p3-overlay2d').appendChild(msOptBtn);
+    }
     _styleMsToggle(msFixedBtn,  '#a855f7', 170, 'Fixed-SA');
     _styleMsToggle(msDynBtn,    '#d8b4fe', 320, 'Dyn-Reset');
     _styleMsToggle(msBandBtn,   '#10b981', 470, 'B1-B10');
@@ -865,6 +882,7 @@ global.initPsy3D = function(container, opts){
        at canvas-x \u2248 270) where it cannot collide with the centered
        "MONTHLY AIR-SIDE ENERGY \u00d7 SITES" heading. */
     _styleMsToggleLeft(msBandDynBtn,'#22d3ee', 280, 'B1-B10 + Dyn-Reset');
+    _styleMsToggle(msOptBtn,    '#c084fc', 595, 'Opt-SA');
     /* Two-layer hybrid: B1-B10 (climate-driven, every 5 min) sets the SA
        envelope; Dyn-Reset (zone-driven, every 1 min) trims SA \u00b12 \u00b0C inside
        that envelope.  Falls back to pure B1-B10 on zone-telemetry loss. */
@@ -872,14 +890,17 @@ global.initPsy3D = function(container, opts){
     msBandBtn.title    = 'Climate-driven only: classifies (OA T, OA RH) into B1\u2013B10 every 5 min, applies that band\u2019s SA target + OA-damper fraction. No zone feedback.';
     msDynBtn.title     = 'Zone-driven only (ASHRAE G36 Trim & Respond): SA tracks 24-h trailing mean of OA enthalpy; aggregate model of "raise SA when zones are cold, lower when hot". No band logic.';
     msFixedBtn.title   = 'Naked fixed setpoint: SA held at the slider-set (T, RH) all year. Worst-case baseline \u2014 no modulation, no feedback.';
+    msOptBtn.title     = 'Optimal SA (theoretical floor): SA tracks the SITE\u2019S OWN ANNUAL MEAN h_oa, so \u03a3|h_oa \u2212 h_mean| is mathematically minimized. Practically unrealizable (requires perfect foresight) but the lowest-possible energy curve any control strategy could achieve. Same metric the T\u00d7Time chart shows as "Opt-SA".';
     _refreshMsBtn(msFixedBtn,   _msShowFixed);
     _refreshMsBtn(msDynBtn,     _msShowDyn);
     _refreshMsBtn(msBandBtn,    _msShowBand);
     _refreshMsBtn(msBandDynBtn, _msShowBandDyn);
+    _refreshMsBtn(msOptBtn,     _msShowOpt);
     msFixedBtn.onclick  = function(){ _msShowFixed   = !_msShowFixed;   _refreshMsBtn(msFixedBtn,   _msShowFixed);   render2DChart(); };
     msDynBtn.onclick    = function(){ _msShowDyn     = !_msShowDyn;     _refreshMsBtn(msDynBtn,     _msShowDyn);     render2DChart(); };
     msBandBtn.onclick   = function(){ _msShowBand    = !_msShowBand;    _refreshMsBtn(msBandBtn,    _msShowBand);    render2DChart(); };
     msBandDynBtn.onclick= function(){ _msShowBandDyn = !_msShowBandDyn; _refreshMsBtn(msBandDynBtn, _msShowBandDyn); render2DChart(); };
+    msOptBtn.onclick    = function(){ _msShowOpt     = !_msShowOpt;     _refreshMsBtn(msOptBtn,     _msShowOpt);     render2DChart(); };
 
     /* Sites dropdown (replaces the in-canvas chip ribbon).  Opens a
        checkbox menu listing every loaded site so users can scope the
@@ -2473,18 +2494,26 @@ global.initPsy3D = function(container, opts){
       var t=d.raw.t, rh=d.raw.rh, tm=d.raw.tm;
       var n=t.length;
       var base=new Float64Array(12), dyn=new Float64Array(12),
-          band=new Float64Array(12), bandDyn=new Float64Array(12);
+          band=new Float64Array(12), bandDyn=new Float64Array(12),
+          opt=new Float64Array(12);
       var bandCounts={};
       // 24-h trailing-mean of h_oa, scaled to data resolution.
       var win=Math.min(24, Math.max(2, Math.floor(n/4)));
       var rollSum=0;
       // Pre-compute h_oa once; we walk twice (once for the rolling window).
       var hOa=new Float64Array(n);
+      var hSumAll=0, hCntAll=0;
       for(var i=0;i<n;i++){
         var T=t[i], R=rh[i];
         if(T==null||R==null){ hOa[i]=NaN; continue; }
         hOa[i]=enthalpy(T, getW(T,R));
+        hSumAll += hOa[i]; hCntAll++;
       }
+      // Opt-SA per-site mean: SA tracks the dataset-wide mean h_oa, so
+      // \u03a3|h_oa \u2212 h_mean| is mathematically minimized. Same metric as the
+      // T\u00d7Time chart's "Opt-SA" line, just split into 12 monthly buckets.
+      var hMean = hCntAll ? (hSumAll / hCntAll) : 0;
+      d.optMeanH = hMean;
       for(var i=0;i<n;i++){
         var T=t[i], R=rh[i]; if(T==null||R==null) continue;
         var h_oa=hOa[i];
@@ -2502,26 +2531,30 @@ global.initPsy3D = function(container, opts){
         var damp = b.oa_damper/100;
         band[m]    += Math.abs(damp*(h_oa - h_sa_b));
         bandDyn[m] += Math.abs(damp*(h_oa - h_sa_dyn));
+        opt[m]     += Math.abs(h_oa - hMean);
         bandCounts[b.id]=(bandCounts[b.id]||0)+1;
       }
-      d.base=base; d.dyn=dyn; d.band=band; d.bandDyn=bandDyn;
+      d.base=base; d.dyn=dyn; d.band=band; d.bandDyn=bandDyn; d.opt=opt;
       d.bandCounts=bandCounts;
       d.baseTotal=_sumArr(base); d.dynTotal=_sumArr(dyn);
       d.bandTotal=_sumArr(band); d.bandDynTotal=_sumArr(bandDyn);
+      d.optTotal=_sumArr(opt);
     });
     var isLight=_p3Theme()==='light';
     var P = isLight
       ? {bg:'#e2e8f0', panel:'#f1f5f9', text:'#1e293b', textDim:'#475569', textMuted:'#64748b',
          frame:'#94a3b8', grid:'rgba(100,116,139,.25)',
          baseline:'#7c3aed', baselineEdge:'#4c1d95', savingTxt:'#64748b',
-         /* 4-curve cumulative palette (monthly × sites). Picked so the two
+         /* 5-curve cumulative palette (monthly × sites). Picked so the two
             "fixed" strategies stay purple-family while the two band-driven
-            strategies stay green→cyan; dashes disambiguate within family. */
-         cFixed:'#7c3aed', cDyn:'#a855f7', cBand:'#059669', cBandDyn:'#0891b2'}
+            strategies stay green→cyan; dashes disambiguate within family.
+            Opt-SA shares purple family (theoretical floor of fixed family)
+            with a lighter shade + dotted line. */
+         cFixed:'#7c3aed', cDyn:'#a855f7', cBand:'#059669', cBandDyn:'#0891b2', cOpt:'#c084fc'}
       : {bg:'#020617', panel:'#0f172a', text:'#e2e8f0', textDim:'#cbd5e1', textMuted:'#94a3b8',
          frame:'#334155', grid:'rgba(148,163,184,.18)',
          baseline:'#a855f7', baselineEdge:'#7c3aed', savingTxt:'#94a3b8',
-         cFixed:'#a855f7', cDyn:'#d8b4fe', cBand:'#10b981', cBandDyn:'#22d3ee'};
+         cFixed:'#a855f7', cDyn:'#d8b4fe', cBand:'#10b981', cBandDyn:'#22d3ee', cOpt:'#f0abfc'};
     ctx.fillStyle=P.bg; ctx.fillRect(0,0,vw,vh);
 
     // Header \u2014 single-line compact title, centered over the chart area that's
@@ -2606,11 +2639,13 @@ global.initPsy3D = function(container, opts){
         if(_msShowDyn     && d.dyn[i]    >monthlyMax)monthlyMax=d.dyn[i];
         if(_msShowBand    && d.band[i]   >monthlyMax)monthlyMax=d.band[i];
         if(_msShowBandDyn && d.bandDyn[i]>monthlyMax)monthlyMax=d.bandDyn[i];
+        if(_msShowOpt     && d.opt && d.opt[i]>monthlyMax)monthlyMax=d.opt[i];
       }
       if(_msShowFixed   && d.baseTotal   >cumMax)cumMax=d.baseTotal;
       if(_msShowDyn     && d.dynTotal    >cumMax)cumMax=d.dynTotal;
       if(_msShowBand    && d.bandTotal   >cumMax)cumMax=d.bandTotal;
       if(_msShowBandDyn && d.bandDynTotal>cumMax)cumMax=d.bandDynTotal;
+      if(_msShowOpt     && d.optTotal    >cumMax)cumMax=d.optTotal;
     });
     // Pad to nice round numbers + 8% headroom so tallest values clear panel edges.
     monthlyMax = _niceCeil(monthlyMax * 1.08);
@@ -2689,12 +2724,14 @@ global.initPsy3D = function(container, opts){
 
       // Build monthly arrays + cumulative arrays in lock-step.
       var cumBase=new Float64Array(13), cumDyn=new Float64Array(13),
-          cumBand=new Float64Array(13), cumBandDyn=new Float64Array(13);
+          cumBand=new Float64Array(13), cumBandDyn=new Float64Array(13),
+          cumOpt=new Float64Array(13);
       for(var mi=0;mi<12;mi++){
         cumBase[mi+1]    = cumBase[mi]    + d.base[mi];
         cumDyn[mi+1]     = cumDyn[mi]     + d.dyn[mi];
         cumBand[mi+1]    = cumBand[mi]    + d.band[mi];
         cumBandDyn[mi+1] = cumBandDyn[mi] + d.bandDyn[mi];
+        cumOpt[mi+1]     = cumOpt[mi]     + (d.opt ? d.opt[mi] : 0);
       }
 
       // ----- Grouped monthly bars per month (left-axis scale) -----
@@ -2710,7 +2747,8 @@ global.initPsy3D = function(container, opts){
         {arr:d.base,    c:P.cFixed,    on:_msShowFixed  },
         {arr:d.dyn,     c:P.cDyn,      on:_msShowDyn    },
         {arr:d.band,    c:P.cBand,     on:_msShowBand   },
-        {arr:d.bandDyn, c:P.cBandDyn,  on:_msShowBandDyn}
+        {arr:d.bandDyn, c:P.cBandDyn,  on:_msShowBandDyn},
+        {arr:d.opt,     c:P.cOpt,      on:_msShowOpt && !!d.opt}
       ];
       // Only allocate visible-bar slots.  When fewer strategies are toggled
       // on, the remaining bars get more horizontal real estate so each is
@@ -2720,7 +2758,7 @@ global.initPsy3D = function(container, opts){
       for(var m=0;m<12;m++){
         var bx0 = plotX + m*colW + groupL;
         var slot = 0;
-        for(var s=0;s<4;s++){
+        for(var s=0;s<SERIES.length;s++){
           if(!SERIES[s].on) continue;
           var v = SERIES[s].arr[m];
           var bx = bx0 + slot*(subW+1);
@@ -2753,6 +2791,10 @@ global.initPsy3D = function(container, opts){
       if(_msShowDyn)     _drawCum(cumDyn,     P.cDyn,     1.4, [2,3]);  // Dyn-Reset (lavender dotted)
       if(_msShowBand)    _drawCum(cumBand,    P.cBand,    1.6);         // B1-B10 (green solid)
       if(_msShowBandDyn) _drawCum(cumBandDyn, P.cBandDyn, 1.8);         // B1-B10 + Dyn-Reset (cyan thick)
+      // Opt-SA (theoretical floor) drawn LAST so it sits on top, with a
+      // distinct fine-dotted pattern + light purple to read clearly even
+      // when overlapping the Dyn-Reset trace.
+      if(_msShowOpt && d.opt) _drawCum(cumOpt, P.cOpt, 1.6, [1,2]);
 
       // X-axis month labels — centered under each month's bar group.
       ctx.fillStyle=P.textMuted; ctx.font='8px monospace'; ctx.textAlign='center';
@@ -2849,6 +2891,7 @@ global.initPsy3D = function(container, opts){
     if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset',          [2,3]);
     if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10');
     if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset');
+    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',         [1,2]);
     ctx.fillStyle='#10b981'; ctx.font='bold 9px monospace';
     ctx.fillText('\u25C6=saved',klX,klY);
     klX += ctx.measureText('\u25C6=saved').width + 16;

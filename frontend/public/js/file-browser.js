@@ -5,7 +5,8 @@ const FileBrowserModal = ({
     isOpen, onClose, data, loading, currentPath, activeRoot,
     onNavigate, onSwitchRoot, onRefresh, onUpload, onCreateDir, onInitScaffold,
     onDownload, onMove, onDelete, onDeleteDir,
-    selectedFiles, onToggleSelect, onToggleSelectAll, onBatchMove, onBatchDelete, onClearSelection
+    selectedFiles, onToggleSelect, onToggleSelectAll, onBatchMove, onBatchDelete, onClearSelection,
+    onDownloadDir, onBatchDownload, onUploadDir
 }) => {
     if (!isOpen) return null;
     const isAtRootView = !activeRoot;
@@ -32,6 +33,7 @@ const FileBrowserModal = ({
                     <h2 className="text-xl font-black text-sky-400 uppercase tracking-tight">Controller Assets</h2>
                     {!isAtRootView && <button onClick={onRefresh} className="px-2 py-1 bg-slate-800 border border-slate-600 text-slate-400 rounded text-[8px] font-black uppercase tracking-wider hover:border-sky-500 hover:text-sky-400 transition-all">Refresh</button>}
                     {!isAtRootView && <button onClick={onUpload} className="px-2 py-1 bg-slate-800 border border-emerald-600 text-emerald-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-emerald-900/30 transition-all">Upload File</button>}
+                    {!isAtRootView && onUploadDir && <button onClick={onUploadDir} title="Upload an entire directory tree (preserves subfolder structure). Pre-flight checks free disk." className="px-2 py-1 bg-slate-800 border border-emerald-600 text-emerald-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-emerald-900/30 transition-all">Upload Dir</button>}
                     {!isAtRootView && <button onClick={onCreateDir} className="px-2 py-1 bg-slate-800 border border-amber-600 text-amber-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-amber-900/30 transition-all">New Folder</button>}
                     {activeRoot === 'data' && <button onClick={onInitScaffold} className="px-2 py-1 bg-slate-800 border border-purple-600 text-purple-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-purple-900/30 transition-all">Init Scaffold</button>}
                 </div>
@@ -102,6 +104,7 @@ const FileBrowserModal = ({
                                     <span className="text-[10px] font-black text-sky-400">{selectedFiles.size} selected</span>
                                     <button onClick={onBatchMove} className="px-2 py-1 bg-amber-900/40 border border-amber-600/50 text-amber-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-amber-900/60 transition-all">MOV Selected</button>
                                     <button onClick={onBatchDelete} className="px-2 py-1 bg-red-900/40 border border-red-600/50 text-red-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-red-900/60 transition-all">DEL Selected</button>
+                                    {onBatchDownload && <button onClick={onBatchDownload} className="px-2 py-1 bg-sky-900/40 border border-sky-600/50 text-sky-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-sky-900/60 transition-all" title="Download selected files as a single ZIP">GET Selected</button>}
                                     <button onClick={onClearSelection} className="px-2 py-1 bg-slate-800 border border-slate-600 text-slate-400 rounded text-[8px] font-black uppercase tracking-wider hover:bg-slate-700 transition-all ml-auto">Clear</button>
                                 </div>
                             )}
@@ -147,7 +150,10 @@ const FileBrowserModal = ({
                                             <td className="px-3 py-1.5 text-center">
                                                 <div className="flex items-center justify-center gap-1">
                                                     {file.type === 'directory' ? (
-                                                        <button onClick={() => onDeleteDir(file.name)} className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 text-slate-500 rounded text-[8px] font-black uppercase tracking-wider hover:bg-red-900/40 hover:border-red-500 hover:text-red-400 transition-all" title={`Delete folder ${file.name}`}>RMDIR</button>
+                                                        <React.Fragment>
+                                                            {onDownloadDir && <button onClick={() => onDownloadDir(file.name)} className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 text-slate-500 rounded text-[8px] font-black uppercase tracking-wider hover:bg-sky-900/40 hover:border-sky-500 hover:text-sky-400 transition-all" title={`Download ${file.name}/ as ZIP (preserves subfolder structure)`}>GET DIR</button>}
+                                                            <button onClick={() => onDeleteDir(file.name)} className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 text-slate-500 rounded text-[8px] font-black uppercase tracking-wider hover:bg-red-900/40 hover:border-red-500 hover:text-red-400 transition-all" title={`Delete folder ${file.name}`}>RMDIR</button>
+                                                        </React.Fragment>
                                                     ) : (
                                                         <React.Fragment>
                                                             <button onClick={() => onDownload(file.name)} className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 text-slate-500 rounded text-[8px] font-black uppercase tracking-wider hover:bg-sky-900/40 hover:border-sky-500 hover:text-sky-400 transition-all" title={`Download ${file.name}`}>GET</button>

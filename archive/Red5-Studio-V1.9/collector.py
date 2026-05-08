@@ -47,9 +47,35 @@ DEFAULT_INTERVAL = 5
 HISTORY_MAX = 60  # Ring buffer size (60 readings x 5s = 5 min)
 VERSION = '1.2'
 
+# ---- dibt is preloaded as a global by the controller runtime, no import needed ----
+# (On dev hosts without dibt, mock mode bypasses all dibt.Read/Write calls.)
+
+
 # ===== dibt API compat shim =====
+# Different Delta Controls runtime versions expose `dibt` differently:
+#   - Some inject `dibt` as a module that defines a `dibt.Error` class for
+#     read/write outcomes (the original v1.0 contract this script targeted).
+#   - Newer firmware injects a `BACnetInterface` instance bound to the
+#     `dibt` global which does NOT expose `.Error` as a class attribute.
+#     Calls like `isinstance(outcome, dibt.Error)` then raise
+#     AttributeError, the surrounding try/except catches it and logs
+#     "Exception writing CSV1.Present_Value: 'BACnetInterface' object
+#     has no attribute 'Error'" -- masking the real outcome of the
+#     dibt.Read/Write call (which usually succeeded).
+# This helper resolves the correct check at runtime so the rest of the
+# script doesn't need to know which runtime it's on.
 def _dibt_is_error(outcome):
-    """Return True iff the dibt outcome represents an error."""
+    """Return True iff the dibt outcome represents an error.
+
+    Strategy in priority order:
+      1. If ``dibt.Error`` exists as a class, use isinstance (original API).
+      2. If the outcome itself exposes a duck-typed error indicator
+         (``.error``, ``.is_error``, or a callable ``isError()``),
+         honor that.
+      3. Otherwise return False -- trust the call succeeded.  Real
+         hard failures still raise exceptions which the caller catches
+         separately.
+    """
     err_cls = getattr(dibt, 'Error', None)
     if isinstance(err_cls, type):
         try:
@@ -72,7 +98,15 @@ def _dibt_is_error(outcome):
         return bool(err_attr)
     return False
 
+
 # ===== Write Queue =====
+# /api/write-point in telemetry_service.py runs in the Flask process,
+# which does NOT have dibt available (the auto-loaded plug-in cannot
+# import the controller's runtime-injected dibt global).  Instead the
+# Flask side appends each write request to write_queue.json; collector
+# (which IS an enteliWEB object with dibt available) drains the queue
+# on every poll cycle.  Audit log lands in write_results.json.
+# Added 2026-05-08 alongside the PLUGINS_ROOT split.
 
 def _atomic_write_json(path, data):
     """Write JSON to ``path`` atomically (write to .tmp + os.replace)."""
@@ -80,6 +114,7 @@ def _atomic_write_json(path, data):
     with open(tmp, 'w') as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, path)
+
 
 def _load_json_list(path):
     """Load a JSON file expected to be a list. Return [] on any error."""
@@ -92,8 +127,22 @@ def _load_json_list(path):
     except (IOError, OSError, json.JSONDecodeError):
         return []
 
+
 def process_write_queue(mock_mode=False):
-    """Drain pending write requests from write_queue.json."""
+    """Drain pending write requests from write_queue.json.
+
+    For each entry, execute dibt.Write(csv_object.Present_Value, csv_value)
+    and append a result record (success, error, timestamp) to
+    write_results.json (capped at WRITE_RESULTS_MAX entries).  In
+    mock_mode (or when dibt is unavailable on a dev host), record a
+    'mock' result without actually calling dibt.
+
+    Idempotent against concurrent writers: read+rename guarantees the
+    queue file is replaced atomically; entries we've already processed
+    are removed before we release the file.
+
+    Safe to call every cycle -- does nothing if the queue is empty.
+    """
     queue = _load_json_list(WRITE_QUEUE_PATH)
     if not queue:
         return 0
@@ -148,6 +197,7 @@ def process_write_queue(mock_mode=False):
         log('[write-queue] ERROR persisting results/queue: {}'.format(oe))
     return processed
 
+
 # ===== JSON Loading =====
 
 def load_json(path, fallback_path=None):
@@ -160,6 +210,7 @@ def load_json(path, fallback_path=None):
                 log(f'Error reading {p}: {e}')
     return {}
 
+
 def load_collector_config():
     config = load_json(COLLECTOR_CONFIG_PATH)
     config.setdefault('version', VERSION)
@@ -171,11 +222,14 @@ def load_collector_config():
     })
     return config
 
+
 def load_equipment_types():
     return load_json(EQUIPMENT_TYPES_PATH, EQUIPMENT_TYPES_ALT)
 
+
 def load_map_config():
     return load_json(MAP_CONFIG_PATH, MAP_CONFIG_ALT)
+
 
 # ===== Logging =====
 
@@ -189,6 +243,7 @@ def log(msg):
     if len(_log_buffer) > 200:
         _log_buffer.pop(0)
 
+
 def flush_log():
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -196,6 +251,7 @@ def flush_log():
             json.dump(_log_buffer[-100:], f, indent=1)
     except Exception:
         pass
+
 
 # ===== Map Config Wiring =====
 
@@ -215,11 +271,13 @@ def build_equipment_lookup(map_config):
                 }
     return lookup
 
+
 def get_point_defs(equipment_types, equip_type, type_id):
     """Retrieve point definitions for a given type."""
     type_key = 'ahu_types' if equip_type == 'ahu' else 'vav_types'
     type_data = equipment_types.get(type_key, {}).get(str(type_id), {})
     return type_data.get('points', [])
+
 
 # ===== BACnet I/O =====
 
@@ -234,6 +292,7 @@ def read_bacnet_csv(csv_object_name):
     except Exception as e:
         log(f'Exception reading {ref}: {e}')
         return None
+
 
 # ===== CSV Parsing =====
 
@@ -261,8 +320,16 @@ def parse_csv_segment(csv_values, point_defs, start_index):
             points[label] = None
     return points, start_index + len(point_defs)
 
+
 def build_write_csv(ahu_point_defs, vav_entries, write_target, write_dict):
-    """Build a full CSV write string for an AHU group."""
+    """
+    Build a full CSV write string for an AHU group.
+    write_target: equipment name being written to.
+    write_dict: {label: value} for the RW points.
+    
+    CSV structure: [AHU points],[VAV1 points],[VAV2 points],...*
+    Only the target equipment's RW positions get values; everything else is empty.
+    """
     all_segments = []
 
     # AHU segment
@@ -285,6 +352,7 @@ def build_write_csv(ahu_point_defs, vav_entries, write_target, write_dict):
                 all_segments.append('')
 
     return ','.join(all_segments) + '*'
+
 
 # ===== Mock Data =====
 
@@ -354,6 +422,7 @@ def generate_mock_value(pt, equip_name):
     else:
         return round(random.uniform(0, 100), 1)
 
+
 def generate_mock_csv_for_group(ahu_name, ahu_point_defs, vav_entries):
     """Generate a full mock CSV string for an AHU group (AHU + all VAVs)."""
     random.seed(hash(ahu_name) % 10000 + int(time.time()) // 5)
@@ -364,6 +433,7 @@ def generate_mock_csv_for_group(ahu_name, ahu_point_defs, vav_entries):
         for pt in vav_point_defs:
             values.append(str(generate_mock_value(pt, vav_name)))
     return ','.join(values)
+
 
 # ===== Band Classification =====
 
@@ -379,6 +449,7 @@ BANDS = [
     {'id': 'B8',  'oa_t': (32, 38),  'oa_rh': (70, 100),  'sa_t': 13.0, 'sa_rh': 95, 'reheat_t': 22.0,  'oa_damper': 15,  'cc': 'MAXIMUM',    'hc': 'REHEAT',     'hum': 'SUBCOOL_REHEAT'},
     {'id': 'B9',  'oa_t': (35, 50),  'oa_rh': (0, 30),    'sa_t': 15.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 15,  'cc': 'AGGRESSIVE', 'hc': 'OFF',        'hum': 'OFF'},
 ]
+
 
 def classify_band(oa_t, oa_rh):
     """Classify current OA conditions into B1-B10.
@@ -400,6 +471,7 @@ def classify_band(oa_t, oa_rh):
             best_dist = dist
             best = band
     return best
+
 
 def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
     """Write the active band's control setpoints back to the AHU's CSV object.
@@ -427,10 +499,18 @@ def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
     except Exception as e:
         log('Exception writing {}: {}'.format(ref, e))
 
+
+# Cache of active-band-id per AHU (avoid re-writing when band is unchanged)
 _bg_written = {}
 
 def write_band_guide_to_description(csv_object, band=None):
-    """Write the CURRENTLY ACTIVE band to CSV_AHUnn.Description so a BACnet"""
+    """Write the CURRENTLY ACTIVE band to CSV_AHUnn.Description so a BACnet
+    observer can see which band is active for that AHU. Single-band payload
+    (not the full 10-band lookup -- that lives in band_guide.csv).
+
+    Idempotent: skips write if the same band was already pushed for that
+    object during the current collector run.
+    """
     if band is None:
         return
     try:
@@ -455,6 +535,7 @@ def write_band_guide_to_description(csv_object, band=None):
             log('Band {} guide written to {} ({}c)'.format(band['id'], ref, len(desc)))
     except Exception as e:
         log('Exception writing {}: {} (value was: {})'.format(ref, e, desc))
+
 
 # ===== Equipment Discovery =====
 
@@ -504,6 +585,7 @@ def discover_ahu_groups(collector_config, equipment_lookup, equipment_types):
 
     return groups
 
+
 # ===== History Ring Buffer =====
 
 _history = {}  # {"AHU-01-E.OAT": [val1, val2, ...], ...}
@@ -521,6 +603,7 @@ def load_existing_history():
                 log(f'Loaded history: {len(_history)} point series')
         except:
             pass
+
 
 def update_history(telemetry):
     """Append current readings to the ring buffer."""
@@ -547,6 +630,7 @@ def update_history(telemetry):
                     if len(_history[key]) > HISTORY_MAX:
                         _history[key] = _history[key][-HISTORY_MAX:]
 
+
 def get_history_payload():
     """Return compact history for embedding in telemetry.json."""
     return {
@@ -554,6 +638,7 @@ def get_history_payload():
         'point_count': len(_history),
         'data': _history
     }
+
 
 # ===== Collection Cycle =====
 
@@ -667,8 +752,17 @@ def collect_all(ahu_groups, mock_mode=False):
     telemetry['read_errors'] = err_count
     return telemetry
 
+
 def write_telemetry(telemetry):
-    """Write telemetry.json. On the PG-object runtime, the classic"""
+    """Write telemetry.json. On the PG-object runtime, the classic
+    open->json.dump streams bytes over seconds and an overlapping Flask
+    /api/data read can land on a half-written file, causing the dashboard
+    to momentarily see empty AHU/VAV state.
+
+    Fix: serialize the entire payload to a string in memory FIRST, then
+    issue a single write() -- so the file is either fully old or fully
+    new, never partial.
+    """
     try:
         os.makedirs(os.path.dirname(TELEMETRY_PATH), exist_ok=True)
     except Exception:
@@ -683,6 +777,7 @@ def write_telemetry(telemetry):
             f.write(payload)
     except Exception as e:
         log(f'write_telemetry write failed: {e}')
+
 
 # ===== Main Loop =====
 

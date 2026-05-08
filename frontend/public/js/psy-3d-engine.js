@@ -62,6 +62,15 @@ global.initPsy3D = function(container, opts){
                                  dispose() pops + calls each so listeners,
                                  timers, and observers are all released */
 
+  /* Opt-SA envelope defaults — declared at the very top of initPsy3D
+     because loadScripts() may invoke its callback synchronously when
+     THREE is already cached, which lets setupControls() run before
+     the lower-down `var _optMinH = 25;` initialisation, leaving the
+     value `undefined` and `.toFixed()` crashes the engine.  Keep the
+     authoritative initialisation here. */
+  var _optMinH = 25; // kJ/kg dry air
+  var _optMaxH = 50; // kJ/kg dry air
+
   /* ---------- theme helpers (synced with dashboard via localStorage.red5.theme) ---------- */
   function _p3Theme(){ try { return localStorage.getItem('red5.theme') || 'dark'; } catch(e){ return 'dark'; } }
   var P3_DARK_BG = 0x0f172a, P3_LIGHT_BG = 0xc5cbd2;
@@ -473,11 +482,21 @@ global.initPsy3D = function(container, opts){
   var _msShowDyn = false;
   var _msShowBand = false;
   var _msShowBandDyn = false;
-  /* Opt-SA cumulative — theoretical floor (T×Time chart already exposes
-     this). Per-site monthly Σ|h_oa − h_mean|, where h_mean is each site's
-     own dataset mean enthalpy. Toggle disabled by default to keep the
-     default view uncluttered. */
+  /* Opt-SA cumulative — theoretical floor.  Redefined 2026-02 as a true
+     thermodynamic floor: h_sa_opt(t) = clamp(h_oa(t), optMinH, optMaxH).
+     The system only conditions air whose enthalpy falls outside the
+     [optMinH, optMaxH] comfort envelope; inside the envelope the OA can
+     be supplied as-is (zero conditioning energy).  This is unrealizable
+     in practice (requires perfect foresight + perfectly modulating coils)
+     but represents the lowest-possible air-side conditioning load any
+     SA-reset strategy could ever achieve.  Bounds default to 25–50 kJ/kg
+     (≈ 12 °C @ 50 % RH … 22 °C @ 60 % RH) and are user-adjustable via
+     the two sliders rendered next to the Opt-SA toggle button. */
   var _msShowOpt = false;
+  /* Visualisation toggle — show OA-damper line + monthly strip on each
+     panel.  ON by default since the user explicitly asked for an OA
+     intake indication on the chart. */
+  var _msShowOA = true;
   var spinning=false,panelOpen=true;
   /* Set by buildScene() to refresh the Sites checkbox dropdown trigger
      label and panel content from inside renderMonthlySitesChart so the
@@ -702,7 +721,7 @@ global.initPsy3D = function(container, opts){
           // Monthly \u00d7 Sites multi-city comparison only in T\u00d7Time.
           var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display = (c[0]==='front') ? 'block' : 'none';
           // Strategy-overlay toggles only valid inside Monthly \u00d7 Sites mode.
-          ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-sites-dd'].forEach(function(id){
+          ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg'].forEach(function(id){
             var el=$('#'+id); if(el) el.style.display='none';
           });
           var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -730,7 +749,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-sites-dd'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -748,7 +767,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-sites-dd'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -821,9 +840,12 @@ global.initPsy3D = function(container, opts){
       // band-strategy toggle while in Monthly \u00d7 Sites mode (it doesn't apply
       // to the multi-city panel grid).
       var inMs = (chart2DMode==='monthly-sites');
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display = inMs ? 'block' : 'none';
       });
+      // Opt-SA bound sliders only relevant when the Opt-SA curve is on.
+      var ocfg = $('#p3-ms-optcfg');
+      if (ocfg) ocfg.style.display = (inMs && _msShowOpt) ? 'block' : 'none';
       // Sites dropdown trigger follows the strategy toggles' visibility.
       var sdd = $('#p3-btn-sites-dd'); if (sdd) sdd.style.display = inMs ? 'block' : 'none';
       var sddP = $('#p3-sites-dd-panel'); if (sddP && !inMs) sddP.style.display = 'none';
@@ -903,7 +925,75 @@ global.initPsy3D = function(container, opts){
     msDynBtn.onclick    = function(){ _msShowDyn     = !_msShowDyn;     _refreshMsBtn(msDynBtn,     _msShowDyn);     render2DChart(); };
     msBandBtn.onclick   = function(){ _msShowBand    = !_msShowBand;    _refreshMsBtn(msBandBtn,    _msShowBand);    render2DChart(); };
     msBandDynBtn.onclick= function(){ _msShowBandDyn = !_msShowBandDyn; _refreshMsBtn(msBandDynBtn, _msShowBandDyn); render2DChart(); };
-    msOptBtn.onclick    = function(){ _msShowOpt     = !_msShowOpt;     _refreshMsBtn(msOptBtn,     _msShowOpt);     render2DChart(); };
+    msOptBtn.onclick    = function(){ _msShowOpt     = !_msShowOpt;     _refreshMsBtn(msOptBtn,     _msShowOpt);
+                                       _refreshOptCfg();                render2DChart(); };
+
+    /* OA-intake visualisation toggle.  Controls the OA-damper line on
+       each panel + the monthly damper strip below the X axis + the
+       header annotation ("Avg OA: 35%").  Defaults ON because the
+       operator explicitly asked the chart to show OA intake.  Sits
+       just past the Opt-SA toggle (left:595 ends ~720 → start at 730). */
+    var msOaBtn = $('#p3-btn-ms-oa');
+    if (!msOaBtn) {
+      msOaBtn = document.createElement('button');
+      msOaBtn.id = 'p3-btn-ms-oa';
+      msOaBtn.type = 'button';
+      msOaBtn.textContent = '+ OA Intake';
+      $('#p3-overlay2d').appendChild(msOaBtn);
+    }
+    _styleMsToggle(msOaBtn, '#fbbf24', 730, 'OA Intake');
+    msOaBtn.title = 'Show OA-damper utilisation:\n  • Header annotation: site-wide annual mean damper %\n  • Translucent yellow line: per-month OA-damper % (right axis remapped 0–100%)\n  • Strip below X axis: 12 monthly cells, opacity scales with damper %';
+    _refreshMsBtn(msOaBtn, _msShowOA);
+    msOaBtn.onclick = function(){ _msShowOA = !_msShowOA; _refreshMsBtn(msOaBtn, _msShowOA); render2DChart(); };
+
+    /* Opt-SA enthalpy-bound sliders.  Two range inputs sitting just
+       under the Opt-SA toggle button so the user can dial the
+       theoretical comfort envelope live and watch the Opt-SA curve
+       float up/down accordingly.  Hidden until the Opt-SA toggle is
+       on (otherwise they'd just be dead chrome). */
+    var optCfg = $('#p3-ms-optcfg');
+    if (!optCfg) {
+      optCfg = document.createElement('div');
+      optCfg.id = 'p3-ms-optcfg';
+      optCfg.style.cssText = 'position:absolute;top:42px;left:595px;z-index:51;'+
+        'background:rgba(15,23,42,.92);border:1px solid #c084fc;border-radius:6px;'+
+        'padding:6px 10px;font-size:9px;color:#e2e8f0;font-family:inherit;'+
+        'backdrop-filter:blur(14px);display:none;min-width:170px;'+
+        'box-shadow:0 6px 18px rgba(0,0,0,.45)';
+      optCfg.innerHTML =
+        '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#c084fc;margin-bottom:6px">Opt-SA envelope (kJ/kg)</div>'+
+        '<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
+          '<span style="width:28px;color:#c084fc;font-weight:700">min</span>'+
+          '<input id="p3-opt-min" type="range" min="10" max="50" step="0.5" value="'+_optMinH+'" style="flex:1;accent-color:#c084fc">'+
+          '<span id="p3-opt-min-v" style="width:32px;text-align:right;font-variant-numeric:tabular-nums">'+_optMinH.toFixed(1)+'</span>'+
+        '</label>'+
+        '<label style="display:flex;align-items:center;gap:6px">'+
+          '<span style="width:28px;color:#c084fc;font-weight:700">max</span>'+
+          '<input id="p3-opt-max" type="range" min="20" max="80" step="0.5" value="'+_optMaxH+'" style="flex:1;accent-color:#c084fc">'+
+          '<span id="p3-opt-max-v" style="width:32px;text-align:right;font-variant-numeric:tabular-nums">'+_optMaxH.toFixed(1)+'</span>'+
+        '</label>';
+      $('#p3-overlay2d').appendChild(optCfg);
+      var minInp = optCfg.querySelector('#p3-opt-min');
+      var maxInp = optCfg.querySelector('#p3-opt-max');
+      var minV   = optCfg.querySelector('#p3-opt-min-v');
+      var maxV   = optCfg.querySelector('#p3-opt-max-v');
+      minInp.addEventListener('input', function(){
+        _optMinH = parseFloat(this.value);
+        if (_optMinH > _optMaxH - 1) { _optMinH = _optMaxH - 1; this.value = _optMinH; }
+        minV.textContent = _optMinH.toFixed(1);
+        render2DChart();
+      });
+      maxInp.addEventListener('input', function(){
+        _optMaxH = parseFloat(this.value);
+        if (_optMaxH < _optMinH + 1) { _optMaxH = _optMinH + 1; this.value = _optMaxH; }
+        maxV.textContent = _optMaxH.toFixed(1);
+        render2DChart();
+      });
+    }
+    function _refreshOptCfg(){
+      optCfg.style.display = _msShowOpt ? 'block' : 'none';
+    }
+    _refreshOptCfg();
 
     /* Sites dropdown (replaces the in-canvas chip ribbon).  Opens a
        checkbox menu listing every loaded site so users can scope the
@@ -2482,11 +2572,21 @@ global.initPsy3D = function(container, opts){
     var _saT=parseFloat(($('#p3-sa-t')||{}).value)||13;
     var _saRh=parseFloat(($('#p3-sa-rh')||{}).value)||50;
     var _h_sa_u=enthalpy(_saT, getW(_saT, _saRh));
-    /* Re-derive 4 strategy arrays per site, all expressed as monthly Σ|Δh|:
+    /* Trim & Respond envelope half-width for the B1-B10 + Dyn-Reset
+       hybrid: Dyn-Reset can only push the SA target ±_TR_DH kJ/kg
+       above/below the band's own SA enthalpy h_sa_b.  Outside that
+       envelope the layered controller falls back to h_sa_b (= pure
+       B1-B10) — without this clamp, bandDyn collapses to plain dyn
+       because the rolling 24-h h_oa mean is allowed to wander
+       arbitrarily far from the band setpoint.  ±2 °C @ 50 %RH ≈
+       ±4 kJ/kg dry air. */
+    var _TR_DH = 4;
+    /* Re-derive 5 strategy arrays per site, all expressed as monthly Σ|Δh|:
          base    = Fixed SA-T/RH    (slider setpoint, no damper modulation)
          dyn     = Dyn-Reset (G36)  (SA tracks 24-h trailing mean of h_oa)
          band    = B1-B10           (band-driven SA target × OA-damper fraction)
-         bandDyn = B1-B10 + Dyn-Reset (band's OA-damper × dyn-reset SA target)
+         bandDyn = B1-B10 + Dyn-Reset (h_sa_b ± _TR_DH-clamped dyn target)
+         opt     = Opt-SA           (h_sa_opt(t) = clamp(h_oa, optMinH, optMaxH))
        Open-Meteo data is hourly so the 24-sample trailing window equals 24 h.
        Sparser datasets fall back to ¼ of the array length (same logic as the
        T×Time Dyn-Rst curve, kept consistent so cross-chart numbers reconcile).
@@ -2499,24 +2599,27 @@ global.initPsy3D = function(container, opts){
       var base=new Float64Array(12), dyn=new Float64Array(12),
           band=new Float64Array(12), bandDyn=new Float64Array(12),
           opt=new Float64Array(12);
+      // OA-damper utilisation tracker (visualisation only — does not
+      // feed back into the strategy math).  oaSum/oaCnt → monthly mean
+      // damper % per panel; oaAnnSum/oaAnnCnt → site-wide annual mean
+      // for the panel header annotation.
+      var oaSum=new Float64Array(12), oaCnt=new Uint32Array(12);
+      var oaAnnSum=0, oaAnnCnt=0;
       var bandCounts={};
       // 24-h trailing-mean of h_oa, scaled to data resolution.
       var win=Math.min(24, Math.max(2, Math.floor(n/4)));
       var rollSum=0;
       // Pre-compute h_oa once; we walk twice (once for the rolling window).
       var hOa=new Float64Array(n);
-      var hSumAll=0, hCntAll=0;
       for(var i=0;i<n;i++){
         var T=t[i], R=rh[i];
         if(T==null||R==null){ hOa[i]=NaN; continue; }
         hOa[i]=enthalpy(T, getW(T,R));
-        hSumAll += hOa[i]; hCntAll++;
       }
-      // Opt-SA per-site mean: SA tracks the dataset-wide mean h_oa, so
-      // \u03a3|h_oa \u2212 h_mean| is mathematically minimized. Same metric as the
-      // T\u00d7Time chart's "Opt-SA" line, just split into 12 monthly buckets.
-      var hMean = hCntAll ? (hSumAll / hCntAll) : 0;
-      d.optMeanH = hMean;
+      // Read live Opt-SA bounds at render-time so the curve responds
+      // instantly when the user drags the new toolbar sliders.
+      var optMinH = _optMinH, optMaxH = _optMaxH;
+      if (optMaxH < optMinH) { var _tmp = optMinH; optMinH = optMaxH; optMaxH = _tmp; }
       for(var i=0;i<n;i++){
         var T=t[i], R=rh[i]; if(T==null||R==null) continue;
         var h_oa=hOa[i];
@@ -2529,6 +2632,22 @@ global.initPsy3D = function(container, opts){
         var m=parseInt(tm[i].slice(5,7),10)-1;
         var b=classifyBand(T,R);
         var h_sa_b=enthalpy(b.sa_t, getW(b.sa_t,b.sa_rh));
+        // B1-B10 + Dyn-Reset hybrid: Trim & Respond clamps the dyn-reset
+        // target to ±_TR_DH kJ/kg around h_sa_b.  When h_sa_dyn drifts
+        // outside the envelope (e.g. 24-h mean lags a heat wave) the
+        // controller falls back to the B1-B10 setpoint.  Without this
+        // clamp `bandDyn` is mathematically identical to `dyn` and the
+        // hybrid line collapses on top of Dyn-Reset.
+        var h_sa_bd = Math.max(h_sa_b - _TR_DH,
+                               Math.min(h_sa_b + _TR_DH, h_sa_dyn));
+        // Opt-SA — true thermodynamic floor.  SA is whatever value
+        // inside the [optMinH, optMaxH] envelope is closest to h_oa, so
+        // any time the OA itself sits inside the comfort envelope the
+        // conditioning load drops to zero.  This is the lowest enthalpy
+        // delta any setpoint-reset strategy could possibly demand of
+        // the cooling/heating coils.  Replaces the previous L2-optimal
+        // mean(h_oa) target which had no physical interpretation.
+        var h_sa_opt = Math.max(optMinH, Math.min(optMaxH, h_oa));
         // Apples-to-apples damper assumption (request 2026-05-08 from
         // operator): real-world buildings minimize OA based on outdoor
         // conditions — they NEVER run 100% OA naively.  All five
@@ -2542,11 +2661,19 @@ global.initPsy3D = function(container, opts){
         base[m]    += Math.abs(damp*(h_oa - _h_sa_u));      // Fixed-SA   + band damper
         dyn[m]     += Math.abs(damp*(h_oa - h_sa_dyn));     // Dyn-Reset  + band damper
         band[m]    += Math.abs(damp*(h_oa - h_sa_b));       // B1-B10
-        bandDyn[m] += Math.abs(damp*(h_oa - h_sa_dyn));     // B1-B10 + Dyn
-        opt[m]     += Math.abs(damp*(h_oa - hMean));        // Opt-SA     + band damper
+        bandDyn[m] += Math.abs(damp*(h_oa - h_sa_bd));      // B1-B10 + Dyn (TR-clamped)
+        opt[m]     += Math.abs(damp*(h_oa - h_sa_opt));     // Opt-SA (clamped floor)
+        oaSum[m]   += b.oa_damper; oaCnt[m]++;              // damper utilisation
+        oaAnnSum   += b.oa_damper; oaAnnCnt++;
         bandCounts[b.id]=(bandCounts[b.id]||0)+1;
       }
+      // Monthly mean OA damper % (0 when the month has no samples).
+      var oaPct=new Float64Array(12);
+      for(var mi=0;mi<12;mi++) oaPct[mi] = oaCnt[mi] ? (oaSum[mi]/oaCnt[mi]) : 0;
       d.base=base; d.dyn=dyn; d.band=band; d.bandDyn=bandDyn; d.opt=opt;
+      d.oaPct=oaPct;
+      d.oaAnnPct = oaAnnCnt ? (oaAnnSum/oaAnnCnt) : 0;
+      d.optBounds = {min:optMinH, max:optMaxH};
       d.bandCounts=bandCounts;
       d.baseTotal=_sumArr(base); d.dynTotal=_sumArr(dyn);
       d.bandTotal=_sumArr(band); d.bandDynTotal=_sumArr(bandDyn);
@@ -2686,14 +2813,29 @@ global.initPsy3D = function(container, opts){
       // Title
       ctx.fillStyle=P.text; ctx.font='bold 11px monospace'; ctx.textAlign='left';
       var nm = d ? (d.site.name+' ('+code+')') : code;
+      // Build the annual OA-intake suffix when the OA toggle is on so
+      // operators can see at a glance how much of each site's air is
+      // outdoor-derived.  Lives inside the title row to avoid eating
+      // plot real estate.
+      var oaTitleSuffix = (_msShowOA && d && typeof d.oaAnnPct==='number')
+        ? '   \u2022 Avg OA: '+d.oaAnnPct.toFixed(0)+'%'
+        : '';
       if(isSaved){
         // tiny SAVED tag before the name
         ctx.fillStyle='#10b981'; ctx.font='bold 8px monospace';
         ctx.fillText('\u25C6 SAVED',x0+8,y0+15);
         ctx.fillStyle=P.text; ctx.font='bold 11px monospace';
         ctx.fillText(nm,x0+68,y0+15);
+        if(oaTitleSuffix){
+          ctx.fillStyle='#fbbf24'; ctx.font='bold 9px monospace';
+          ctx.fillText(oaTitleSuffix, x0+68+ctx.measureText(nm).width, y0+15);
+        }
       } else {
         ctx.fillText(nm,x0+8,y0+15);
+        if(oaTitleSuffix){
+          ctx.fillStyle='#fbbf24'; ctx.font='bold 9px monospace';
+          ctx.fillText(oaTitleSuffix, x0+8+ctx.measureText(nm).width, y0+15);
+        }
       }
 
       if(!d){
@@ -2835,6 +2977,60 @@ global.initPsy3D = function(container, opts){
       // Subtle outline so the strip is legible on both themes
       ctx.strokeStyle = P.frame; ctx.lineWidth = .3;
       ctx.strokeRect(plotX, stripY, colW*12, stripH);
+
+      /* ---- OA-intake visualisations (toggle: _msShowOA) ----
+         Three coordinated cues so the operator can read OA-damper
+         utilisation alongside the SA-strategy comparison:
+           1. Translucent yellow line on the plot (right axis remapped
+              0–100% damper) — shows monthly OA modulation curve.
+           2. Below the season strip: a 12-cell band whose opacity
+              scales with each month's mean damper %.
+           3. Header annotation appended to the panel title:
+              "Avg OA: 35%" (site-wide annual mean).
+      */
+      if (_msShowOA && d.oaPct){
+        // (1) per-month damper line, clipped to plot rect.
+        ctx.save();
+        ctx.beginPath(); ctx.rect(plotX, plotY, plotW, plotH); ctx.clip();
+        ctx.strokeStyle = 'rgba(251,191,36,.85)'; // amber-400 @ 85%
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([4,2]);
+        ctx.beginPath();
+        for (var oi=0; oi<12; oi++){
+          var ox = plotX + (oi + 0.5) * colW;
+          var oy = plotY + plotH - (d.oaPct[oi]/100) * plotH;
+          oi ? ctx.lineTo(ox, oy) : ctx.moveTo(ox, oy);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // tiny dot markers per month so the line reads even on low-DPR
+        for (var oj=0; oj<12; oj++){
+          var ox2 = plotX + (oj + 0.5) * colW;
+          var oy2 = plotY + plotH - (d.oaPct[oj]/100) * plotH;
+          ctx.fillStyle = 'rgba(251,191,36,.95)';
+          ctx.beginPath(); ctx.arc(ox2, oy2, 1.6, 0, 6.283); ctx.fill();
+        }
+        ctx.restore();
+        // (2) damper opacity strip directly below the season strip.
+        var oaStripY = stripY + stripH + 1;
+        var oaStripH = 4;
+        for (var ok=0; ok<12; ok++){
+          var op = Math.max(0.08, Math.min(1, d.oaPct[ok]/100));
+          ctx.fillStyle = 'rgba(251,191,36,'+op.toFixed(2)+')';
+          ctx.fillRect(plotX + ok*colW, oaStripY, colW, oaStripH);
+        }
+        ctx.strokeStyle = P.frame; ctx.lineWidth = .3;
+        ctx.strokeRect(plotX, oaStripY, colW*12, oaStripH);
+        // tiny "OA%" caption left of the strip
+        ctx.fillStyle = 'rgba(251,191,36,.95)'; ctx.font='bold 7px monospace';
+        ctx.textAlign='right';
+        ctx.fillText('OA%', plotX-4, oaStripY+oaStripH-0.5);
+        // (3) right-axis 0–100% caption (only when OA toggle on so the
+        //     "100" doesn't crowd the cumulative axis labels).
+        ctx.fillStyle='rgba(251,191,36,.85)'; ctx.font='bold 7px monospace';
+        ctx.textAlign='left';
+        ctx.fillText('OA%', plotX+plotW+4, plotY+plotH+10);
+      }
       // Annual totals — the headline depends on what's currently visible:
       //   * Fixed-SA hidden → show the SMALLEST visible strategy's total.
       //   * Fixed-SA visible alone → just print "Fixed-SA Xk / yr".
@@ -2889,21 +3085,59 @@ global.initPsy3D = function(container, opts){
     klX += ctx.measureText(ctxNote).width + 10;
     // 4-strategy key — one swatch + label per cumulative curve drawn in each
     // panel.  Uses the same colors and dash patterns the panels use so the
-    // user can map legend → chart line at a glance.
-    function _strategyKey(color, label, dash){
+    // user can map legend → chart line at a glance.  Optional `capPct`
+    // appends "(N% of Opt-SA captured)" — fraction of the Fixed-SA → Opt-SA
+    // gap that this strategy actually realised.  Aggregated across all
+    // currently-visible sites so the headline matches the panel grid.
+    function _strategyKey(color, label, dash, capPct){
       ctx.strokeStyle=color; ctx.lineWidth=2.2;
       if(dash){ctx.setLineDash(dash);} else {ctx.setLineDash([]);}
       ctx.beginPath();ctx.moveTo(klX,klY-3);ctx.lineTo(klX+18,klY-3);ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle=P.text; ctx.font='bold 9px monospace'; ctx.textAlign='left';
       ctx.fillText(label, klX+22, klY);
-      klX += 22 + ctx.measureText(label).width + 12;
+      klX += 22 + ctx.measureText(label).width;
+      if (capPct != null && isFinite(capPct)) {
+        var capTxt = ' ('+Math.max(0,Math.min(100,Math.round(capPct)))+'% of Opt-SA captured)';
+        ctx.fillStyle = P.textMuted; ctx.font='9px monospace';
+        ctx.fillText(capTxt, klX, klY);
+        klX += ctx.measureText(capTxt).width;
+      }
+      klX += 12;
     }
-    if(_msShowFixed)   _strategyKey(P.cFixed,   'Fixed-SA',           [5,3]);
-    if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset',          [2,3]);
-    if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10');
-    if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset');
-    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',         [1,2]);
+    // Aggregate totals across the currently-visible sites so the
+    // "% of Opt-SA captured" denominator uses the same population as the
+    // panel grid.
+    var aggBase=0, aggDyn=0, aggBand=0, aggBandDyn=0, aggOpt=0;
+    keys.forEach(function(code){
+      var dd=_monthlyCache[code]; if(!dd||!dd.base)return;
+      aggBase    += dd.baseTotal||0;
+      aggDyn     += dd.dynTotal||0;
+      aggBand    += dd.bandTotal||0;
+      aggBandDyn += dd.bandDynTotal||0;
+      aggOpt     += dd.optTotal||0;
+    });
+    function _capPct(stratTotal){
+      var denom = aggBase - aggOpt;
+      if (denom <= 0) return null;
+      return ((aggBase - stratTotal) / denom) * 100;
+    }
+    if(_msShowFixed)   _strategyKey(P.cFixed,   'Fixed-SA',           [5,3], _msShowOpt ? _capPct(aggBase)    : null);
+    if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset',          [2,3], _msShowOpt ? _capPct(aggDyn)     : null);
+    if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10',             null,  _msShowOpt ? _capPct(aggBand)    : null);
+    if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset', null,  _msShowOpt ? _capPct(aggBandDyn) : null);
+    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',         [1,2], _capPct(aggOpt));
+    if(_msShowOA){
+      // Yellow dashed line key matches the per-panel OA-damper line.
+      ctx.strokeStyle='rgba(251,191,36,.95)'; ctx.lineWidth=2.2;
+      ctx.setLineDash([4,2]);
+      ctx.beginPath();ctx.moveTo(klX,klY-3);ctx.lineTo(klX+18,klY-3);ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle=P.text; ctx.font='bold 9px monospace';
+      var oaLbl='OA Intake (band damper)';
+      ctx.fillText(oaLbl, klX+22, klY);
+      klX += 22 + ctx.measureText(oaLbl).width + 12;
+    }
     ctx.fillStyle='#10b981'; ctx.font='bold 9px monospace';
     ctx.fillText('\u25C6=saved',klX,klY);
     klX += ctx.measureText('\u25C6=saved').width + 16;

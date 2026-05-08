@@ -45,10 +45,58 @@ WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 
 DEFAULT_INTERVAL = 5
 HISTORY_MAX = 60  # Ring buffer size (60 readings × 5s = 5 min)
-VERSION = '1.1'
+VERSION = '1.2'
 
 # ---- dibt is preloaded as a global by the controller runtime, no import needed ----
 # (On dev hosts without dibt, mock mode bypasses all dibt.Read/Write calls.)
+
+
+# ===== dibt API compat shim =====
+# Different Delta Controls runtime versions expose `dibt` differently:
+#   - Some inject `dibt` as a module that defines a `dibt.Error` class for
+#     read/write outcomes (the original v1.0 contract this script targeted).
+#   - Newer firmware injects a `BACnetInterface` instance bound to the
+#     `dibt` global which does NOT expose `.Error` as a class attribute.
+#     Calls like `isinstance(outcome, dibt.Error)` then raise
+#     AttributeError, the surrounding try/except catches it and logs
+#     "Exception writing CSV1.Present_Value: 'BACnetInterface' object
+#     has no attribute 'Error'" — masking the real outcome of the
+#     dibt.Read/Write call (which usually succeeded).
+# This helper resolves the correct check at runtime so the rest of the
+# script doesn't need to know which runtime it's on.
+def _dibt_is_error(outcome):
+    """Return True iff the dibt outcome represents an error.
+
+    Strategy in priority order:
+      1. If ``dibt.Error`` exists as a class, use isinstance (original API).
+      2. If the outcome itself exposes a duck-typed error indicator
+         (``.error``, ``.is_error``, or a callable ``isError()``),
+         honor that.
+      3. Otherwise return False — trust the call succeeded.  Real
+         hard failures still raise exceptions which the caller catches
+         separately.
+    """
+    err_cls = getattr(dibt, 'Error', None)
+    if isinstance(err_cls, type):
+        try:
+            return isinstance(outcome, err_cls)
+        except TypeError:
+            return False
+    # Duck-typed fallbacks (covers BACnetInterface-style outcomes)
+    if hasattr(outcome, 'is_error'):
+        try:
+            return bool(outcome.is_error)
+        except Exception:
+            return False
+    if hasattr(outcome, 'isError') and callable(outcome.isError):
+        try:
+            return bool(outcome.isError())
+        except Exception:
+            return False
+    err_attr = getattr(outcome, 'error', None)
+    if err_attr is not None and not callable(err_attr):
+        return bool(err_attr)
+    return False
 
 
 # ===== Write Queue =====
@@ -121,10 +169,10 @@ def process_write_queue(mock_mode=False):
         else:
             try:
                 outcome = dibt.Write(ref, Value=csv_val)
-                if isinstance(outcome, dibt.Error):
-                    log('[write-queue] dibt.Write error for {}: {}'.format(ref, outcome))
+                if _dibt_is_error(outcome):
+                    log('[write-queue] dibt.Write error for {}: {!r}'.format(ref, outcome))
                     result_record['success'] = False
-                    result_record['error']   = str(outcome)
+                    result_record['error']   = repr(outcome)
                 else:
                     log('[write-queue] wrote {} from {} ({})'.format(ref, equip, csv_val[:60]))
                     result_record['success'] = True
@@ -237,8 +285,8 @@ def read_bacnet_csv(csv_object_name):
     ref = f'{csv_object_name}.Present_Value'
     try:
         value = dibt.Read(ref)
-        if isinstance(value, dibt.Error):
-            log(f'dibt.Read error for {ref}: {value}')
+        if _dibt_is_error(value):
+            log(f'dibt.Read error for {ref}: {value!r}')
             return None
         return str(value)
     except Exception as e:
@@ -444,8 +492,8 @@ def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
     ref = csv_object + '.Present_Value'
     try:
         result = dibt.Write(ref, Value=csv_str)
-        if isinstance(result, dibt.Error):
-            log('dibt.Write error for {}: {}'.format(ref, result))
+        if _dibt_is_error(result):
+            log('dibt.Write error for {}: {!r}'.format(ref, result))
         else:
             log('Band {} setpoints written to {}'.format(band['id'], csv_object))
     except Exception as e:
@@ -480,8 +528,8 @@ def write_band_guide_to_description(csv_object, band=None):
 
     try:
         result = dibt.Write(ref, Value=desc)
-        if isinstance(result, dibt.Error):
-            log('dibt.Write ERROR for {}: {} (value was: {})'.format(ref, result, desc))
+        if _dibt_is_error(result):
+            log('dibt.Write ERROR for {}: {!r} (value was: {})'.format(ref, result, desc))
         else:
             _bg_written[csv_object] = desc
             log('Band {} guide written to {} ({}c)'.format(band['id'], ref, len(desc)))

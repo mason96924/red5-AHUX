@@ -80,10 +80,22 @@ WRITE_HISTORY_MAX = 100
 # overwritten by another write — this matches real BACnet setpoint behavior.
 _sim_overrides = {}
 
-def _record_write(equip_name, writes, csv_object, csv_value, success, mock=False):
+def _record_write(equip_name, writes, csv_object, csv_value, success, mock=False, queued=False):
     """Record a write command in history, and cache value as sim override.
-    Overrides persist until the next write for that (equip, label)."""
-    if mock and success:
+
+    The optimistic UI override (``_sim_overrides``) is populated whenever
+    the write was reported successful, regardless of whether it was a
+    BACnet mock or a real-but-still-queued write — so the dashboard
+    reflects the user's requested value immediately and the next
+    telemetry refresh keeps showing it until BACnet feedback contradicts
+    it (real BACnet point eventually catches up; in mock mode the
+    override is the only source of truth).
+
+    ``mock``  - explicitly true only for genuine MOCK runs (no dibt).
+    ``queued`` - true for real-but-pending writes whose final BACnet
+                  outcome lives in ``write_results.json``.
+    """
+    if success and (mock or queued):
         per_equip = _sim_overrides.setdefault(equip_name, {})
         for k, v in (writes or {}).items():
             per_equip[k] = v
@@ -95,7 +107,8 @@ def _record_write(equip_name, writes, csv_object, csv_value, success, mock=False
         'csv_object': csv_object,
         'csv_value_len': len(csv_value),
         'success': success,
-        'mock': mock
+        'mock': mock,
+        'queued': queued,
     })
     if len(_write_history) > WRITE_HISTORY_MAX:
         _write_history.pop(0)
@@ -556,7 +569,13 @@ def write_point():
 
         # Cache as a UI override so the dashboard reflects the requested
         # value immediately even before collector.py executes the write.
-        _record_write(equip_name, writes, csv_object, csv_value, True, mock=True)
+        # NOTE: `mock=False` here because the Flask side has no way to know
+        # whether the dibt.Write inside collector.py will hit MOCK or real
+        # path — the truthful state is "queued, outcome pending".  The
+        # actual mock flag is only set in collector.py's write_results.json.
+        # The optimistic UI override is still applied (the helper checks
+        # `success`, not `mock`, when caching).
+        _record_write(equip_name, writes, csv_object, csv_value, True, mock=False, queued=True)
         return jsonify({
             'success': True,
             'message': 'Queued for collector to write to ' + csv_object,

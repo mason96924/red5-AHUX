@@ -44,59 +44,11 @@ WRITE_RESULTS_PATH  = os.path.join(CONFIG_DIR, 'write_results.json')
 WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 
 DEFAULT_INTERVAL = 5
-HISTORY_MAX = 60  # Ring buffer size (60 readings x 5s = 5 min)
+HISTORY_MAX = 60  # Ring buffer size (60 readings × 5s = 5 min)
 VERSION = '1.2'
 
 # ---- dibt is preloaded as a global by the controller runtime, no import needed ----
 # (On dev hosts without dibt, mock mode bypasses all dibt.Read/Write calls.)
-
-
-# ===== dibt API compat shim =====
-# Different Delta Controls runtime versions expose `dibt` differently:
-#   - Some inject `dibt` as a module that defines a `dibt.Error` class for
-#     read/write outcomes (the original v1.0 contract this script targeted).
-#   - Newer firmware injects a `BACnetInterface` instance bound to the
-#     `dibt` global which does NOT expose `.Error` as a class attribute.
-#     Calls like `isinstance(outcome, dibt.Error)` then raise
-#     AttributeError, the surrounding try/except catches it and logs
-#     "Exception writing CSV1.Present_Value: 'BACnetInterface' object
-#     has no attribute 'Error'" -- masking the real outcome of the
-#     dibt.Read/Write call (which usually succeeded).
-# This helper resolves the correct check at runtime so the rest of the
-# script doesn't need to know which runtime it's on.
-def _dibt_is_error(outcome):
-    """Return True iff the dibt outcome represents an error.
-
-    Strategy in priority order:
-      1. If ``dibt.Error`` exists as a class, use isinstance (original API).
-      2. If the outcome itself exposes a duck-typed error indicator
-         (``.error``, ``.is_error``, or a callable ``isError()``),
-         honor that.
-      3. Otherwise return False -- trust the call succeeded.  Real
-         hard failures still raise exceptions which the caller catches
-         separately.
-    """
-    err_cls = getattr(dibt, 'Error', None)
-    if isinstance(err_cls, type):
-        try:
-            return isinstance(outcome, err_cls)
-        except TypeError:
-            return False
-    # Duck-typed fallbacks (covers BACnetInterface-style outcomes)
-    if hasattr(outcome, 'is_error'):
-        try:
-            return bool(outcome.is_error)
-        except Exception:
-            return False
-    if hasattr(outcome, 'isError') and callable(outcome.isError):
-        try:
-            return bool(outcome.isError())
-        except Exception:
-            return False
-    err_attr = getattr(outcome, 'error', None)
-    if err_attr is not None and not callable(err_attr):
-        return bool(err_attr)
-    return False
 
 
 # ===== Write Queue =====
@@ -141,7 +93,7 @@ def process_write_queue(mock_mode=False):
     queue file is replaced atomically; entries we've already processed
     are removed before we release the file.
 
-    Safe to call every cycle -- does nothing if the queue is empty.
+    Safe to call every cycle — does nothing if the queue is empty.
     """
     queue = _load_json_list(WRITE_QUEUE_PATH)
     if not queue:
@@ -169,10 +121,14 @@ def process_write_queue(mock_mode=False):
         else:
             try:
                 outcome = dibt.Write(ref, Value=csv_val)
-                if _dibt_is_error(outcome):
-                    log('[write-queue] dibt.Write error for {}: {!r}'.format(ref, outcome))
+                try:
+                    _is_err = isinstance(outcome, dibt.Error)
+                except AttributeError:
+                    _is_err = False  # newer firmware: dibt has no .Error class
+                if _is_err:
+                    log('[write-queue] dibt.Write error for {}: {}'.format(ref, outcome))
                     result_record['success'] = False
-                    result_record['error']   = repr(outcome)
+                    result_record['error']   = str(outcome)
                 else:
                     log('[write-queue] wrote {} from {} ({})'.format(ref, equip, csv_val[:60]))
                     result_record['success'] = True
@@ -257,7 +213,7 @@ def flush_log():
 
 def build_equipment_lookup(map_config):
     """
-    Walk map_config.json markers -> build lookup:
+    Walk map_config.json markers → build lookup:
       { "AHU-01-E": {"type": "ahu", "type_id": "1"}, ... }
     """
     lookup = {}
@@ -285,8 +241,12 @@ def read_bacnet_csv(csv_object_name):
     ref = f'{csv_object_name}.Present_Value'
     try:
         value = dibt.Read(ref)
-        if _dibt_is_error(value):
-            log(f'dibt.Read error for {ref}: {value!r}')
+        try:
+            _is_err = isinstance(value, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
+            log(f'dibt.Read error for {ref}: {value}')
             return None
         return str(value)
     except Exception as e:
@@ -492,8 +452,12 @@ def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
     ref = csv_object + '.Present_Value'
     try:
         result = dibt.Write(ref, Value=csv_str)
-        if _dibt_is_error(result):
-            log('dibt.Write error for {}: {!r}'.format(ref, result))
+        try:
+            _is_err = isinstance(result, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
+            log('dibt.Write error for {}: {}'.format(ref, result))
         else:
             log('Band {} setpoints written to {}'.format(band['id'], csv_object))
     except Exception as e:
@@ -506,7 +470,7 @@ _bg_written = {}
 def write_band_guide_to_description(csv_object, band=None):
     """Write the CURRENTLY ACTIVE band to CSV_AHUnn.Description so a BACnet
     observer can see which band is active for that AHU. Single-band payload
-    (not the full 10-band lookup -- that lives in band_guide.csv).
+    (not the full 10-band lookup — that lives in band_guide.csv).
 
     Idempotent: skips write if the same band was already pushed for that
     object during the current collector run.
@@ -528,8 +492,12 @@ def write_band_guide_to_description(csv_object, band=None):
 
     try:
         result = dibt.Write(ref, Value=desc)
-        if _dibt_is_error(result):
-            log('dibt.Write ERROR for {}: {!r} (value was: {})'.format(ref, result, desc))
+        try:
+            _is_err = isinstance(result, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
+            log('dibt.Write ERROR for {}: {} (value was: {})'.format(ref, result, desc))
         else:
             _bg_written[csv_object] = desc
             log('Band {} guide written to {} ({}c)'.format(band['id'], ref, len(desc)))
@@ -714,7 +682,7 @@ def collect_all(ahu_groups, mock_mode=False):
                         oa_t_val = round(random.uniform(-5, 38), 1)
                     if oa_rh_val is None:
                         oa_rh_val = round(random.uniform(20, 95), 0)
-                    log(f'[{ahu_name}] OAT/OAH missing from payload -- using simulated {oa_t_val}C / {oa_rh_val}% for band classification')
+                    log(f'[{ahu_name}] OAT/OAH missing from payload — using simulated {oa_t_val}C / {oa_rh_val}% for band classification')
 
                 try:
                     band = classify_band(float(oa_t_val), float(oa_rh_val))
@@ -755,12 +723,12 @@ def collect_all(ahu_groups, mock_mode=False):
 
 def write_telemetry(telemetry):
     """Write telemetry.json. On the PG-object runtime, the classic
-    open->json.dump streams bytes over seconds and an overlapping Flask
+    open→json.dump streams bytes over seconds and an overlapping Flask
     /api/data read can land on a half-written file, causing the dashboard
     to momentarily see empty AHU/VAV state.
 
     Fix: serialize the entire payload to a string in memory FIRST, then
-    issue a single write() -- so the file is either fully old or fully
+    issue a single write() — so the file is either fully old or fully
     new, never partial.
     """
     try:
@@ -787,7 +755,7 @@ def main():
     parser.add_argument('--mock', action='store_true', help='Force mock mode (overrides config)')
     parser.add_argument('--once', action='store_true', help='Run once then exit')
     parser.add_argument('--config', type=str, help='Path to collector_config.json')
-    # PG (Program-object) on the controller cannot pass CLI args -- parse_known_args
+    # PG (Program-object) on the controller cannot pass CLI args — parse_known_args
     # tolerates being invoked with no argv so the script still starts.
     args, _unknown = parser.parse_known_args()
 

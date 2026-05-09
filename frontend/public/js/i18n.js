@@ -167,7 +167,70 @@
     play:                     ['Play','播放','播放','再生','재생'],
     light_theme:              ['Light','浅色','淺色','ライト','라이트'],
     dark_theme:               ['Dark','深色','深色','ダーク','다크'],
-    controller:               ['Controller','控制器','控制器','コントローラ','컨트롤러']
+    controller:               ['Controller','控制器','控制器','コントローラ','컨트롤러'],
+
+    /* ── Chart common (T×Time + Monthly × Sites) ── */
+    cumulative_energy_time:    ['Cumulative Energy × Time  +  OA Tracking','累计能量 × 时间  +  外气追踪','累計能量 × 時間  +  外氣追蹤','累積エネルギー × 時間  +  外気追跡','누적 에너지 × 시간  +  외기 추적'],
+    monthly_energy_sites:      ['Monthly Air-Side Energy × Sites','月度空气侧能量 × 站点','月度空氣側能量 × 站點','月別エアサイドエネルギー × サイト','월별 공기측 에너지 × 사이트'],
+    humidity_time_scatter:     ['Humidity × Time (scatter)','湿度 × 时间 (散点图)','濕度 × 時間 (散點圖)','湿度 × 時間 (散布図)','습도 × 시간 (산점도)'],
+    no_weather_data:           ['No weather data — click FETCH WEATHER DATA to load','无天气数据 — 点击 FETCH WEATHER DATA 加载','無天氣資料 — 點擊 FETCH WEATHER DATA 載入','気象データなし — FETCH WEATHER DATA をクリックして読み込み','날씨 데이터 없음 — FETCH WEATHER DATA 클릭하여 로드'],
+    no_weather_loaded:         ['No weather data loaded','未加载天气数据','未載入天氣資料','気象データ未読込','날씨 데이터 미로드'],
+    oa_temp_axis:              ['OA Temperature (°C)','外气温度 (°C)','外氣溫度 (°C)','外気温度 (°C)','외기온도 (°C)'],
+    cum_dh_axis:               ['Cumulative Δh (kJ/kg)','累计 Δh (kJ/kg)','累計 Δh (kJ/kg)','累積 Δh (kJ/kg)','누적 Δh (kJ/kg)'],
+    humidity_ratio_axis:       ['Humidity ratio (g/kg)','含湿量 (g/kg)','含濕量 (g/kg)','絶対湿度 (g/kg)','절대습도 (g/kg)'],
+    time_season_axis:          ['Time (Season)','时间 (季节)','時間 (季節)','時間 (季節)','시간 (계절)'],
+    fetch_weather_data:        ['Fetch weather data','获取天气数据','獲取天氣資料','気象データ取得','날씨 데이터 가져오기'],
+    fetching_dots:             ['Fetching...','获取中...','獲取中...','取得中...','가져오는 중...'],
+    invalid_coords:            ['Invalid coords','坐标无效','座標無效','座標が無効','잘못된 좌표'],
+    set_dates:                 ['Set dates','请设置日期','請設定日期','日付を設定','날짜 설정'],
+    from_gt_to:                ['From > To','起始 > 结束','起始 > 結束','開始 > 終了','시작 > 종료'],
+
+    /* ── Strategy labels (kept terse so legend stays compact) ── */
+    fixed_sa_band_damper:      ['Fixed-SA + band damper','固定送风 + 段位风阀','固定送風 + 段位風閥','固定SA + バンドダンパ','고정 SA + 밴드 댐퍼'],
+    dyn_reset:                 ['Dyn-Reset','动态复位','動態復位','動的リセット','동적 리셋'],
+    band_b1_b10:               ['B1-B10','B1-B10','B1-B10','B1-B10','B1-B10'],
+    band_b1_b10_dyn:           ['B1-B10 + Dyn-Reset','B1-B10 + 动态复位','B1-B10 + 動態復位','B1-B10 + 動的リセット','B1-B10 + 동적 리셋'],
+    opt_sa:                    ['Opt-SA','最优送风','最優送風','最適SA','최적 SA'],
+    opt_sa_cum:                ['Opt-SA cum','最优送风 累计','最優送風 累計','最適SA 累積','최적 SA 누적'],
+    oa_intake_band_damper:     ['OA Intake (band damper)','外气引入 (段位风阀)','外氣引入 (段位風閥)','外気導入 (バンドダンパ)','외기 도입 (밴드 댐퍼)'],
+    saved:                     ['SAVED','已保存','已儲存','保存済み','저장됨'],
+
+    /* ── Legend Mode buttons + summary banner ── */
+    legend_mode:               ['Legend mode:','图例模式:','圖例模式:','凡例モード:','범례 모드:'],
+    mode_a_comfort:            ['A: Comfort hours','A: 舒适时数','A: 舒適時數','A: 快適時間','A: 쾌적 시간'],
+    mode_b_sens_lat:           ['B: Sens / Lat','B: 显热/潜热','B: 顯熱/潛熱','B: 顕熱/潜熱','B: 현열/잠열'],
+    mode_c_tradeoff:           ['C: Trade-off','C: 权衡','C: 權衡','C: トレードオフ','C: 트레이드오프'],
+    mode_d_cost:               ['$: Cost / yr','$: 年成本','$: 年成本','$: 年間コスト','$: 연간 비용'],
+    mode_label_prefix:         ['MODE','模式','模式','モード','모드'],
+
+    /* ── Mode banner labels ── */
+    mode_a_full:               ['A: COMFORT HOURS','A: 舒适时数','A: 舒適時數','A: 快適時間','A: 쾌적 시간'],
+    mode_b_full:               ['B: SENS / LAT','B: 显热/潜热','B: 顯熱/潛熱','B: 顕熱/潜熱','B: 현열/잠열'],
+    mode_c_full:               ['C: TRADE-OFF','C: 权衡','C: 權衡','C: トレードオフ','C: 트레이드오프'],
+    mode_d_full:               ['$ : COST / yr','$ : 年成本','$ : 年成本','$ : 年間コスト','$ : 연간 비용'],
+
+    /* ── Cost model panel ── */
+    cost_model_title:          ['Cost Model -- plug your numbers','成本模型 -- 输入您的数据','成本模型 -- 輸入您的數據','コストモデル -- 数値を入力','비용 모델 -- 숫자 입력'],
+    cost_airflow:              ['Airflow','风量','風量','風量','풍량'],
+    cost_utility_rate:         ['Utility rate','电费率','電費率','電気料金','전기 요금'],
+    cost_cooling_cop:          ['Cooling COP','制冷 COP','製冷 COP','冷房 COP','냉방 COP'],
+    cost_heating_eff:          ['Heating eff.','制热效率','製熱效率','暖房効率','난방 효율'],
+    cost_violation_rate:       ['Violation rate','违反成本','違反成本','違反コスト','위반 비용'],
+
+    /* ── OA / Comfort caveat ── */
+    no_humidity_caveat:        ['NO humidity (latent) control -- may meet kJ/kg target while violating zone RH / comfort.  NOT RECOMMENDED FOR DEPLOYMENT.','无湿度（潜热）控制 -- 可能达到 kJ/kg 目标但违反区域湿度/舒适性。不建议部署。','無濕度（潛熱）控制 -- 可能達到 kJ/kg 目標但違反區域濕度/舒適性。不建議部署。','湿度（潜熱）制御なし -- kJ/kg 目標を達成してもゾーン RH / 快適性違反の可能性。展開非推奨。','습도(잠열) 제어 없음 -- kJ/kg 목표는 충족해도 구역 RH/쾌적성 위반 가능. 배포 권장하지 않음.'],
+    no_latent_short:           ['NO latent (RH) control -- not for deployment','无潜热（RH）控制 -- 不可部署','無潛熱（RH）控制 -- 不可部署','潜熱（RH）制御なし -- 展開不可','잠열(RH) 제어 없음 -- 배포 불가'],
+    oa_damper:                 ['OA damper','外气风阀','外氣風閥','外気ダンパ','외기 댐퍼'],
+    oa_intake_short:           ['OA Intake','外气引入','外氣引入','外気導入','외기 도입'],
+    avg_oa_label:              ['Avg OA','平均外气','平均外氣','平均外気','평균 외기'],
+
+    /* ── T×Time annotations ── */
+    sa_setpoint_legend:        ['SA T','送风温度','送風溫度','給気温度','급기 온도'],
+    heating:                   ['Heating','加热','加熱','暖房','난방'],
+    cooling:                   ['Cooling','制冷','製冷','冷房','냉방'],
+    total_label:               ['Total','合计','合計','合計','합계'],
+    oa_temp_legend:            ['OA temp','外气温度','外氣溫度','外気温度','외기온도'],
+    vav_zones_in_cz:           ['VAV ZONES IN CZ','VAV 区域在舒适区','VAV 區域在舒適區','VAVゾーンが快適域内','VAV 구역 적정구역 내']
   };
 
   /* ── Build fast lookup: key -> { en, 'zh-CN', 'zh-TW', ja, ko } ── */

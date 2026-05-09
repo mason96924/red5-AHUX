@@ -285,6 +285,17 @@ global.initPsy3D = function(container, opts){
   /* enthalpy helper */
   function enthalpy(T,W){return 1.006*T+W*(2501+1.86*T);}
 
+  /* i18n shim -- safely calls window.t() if i18n.js is loaded, otherwise
+     falls back to the English default passed in.  Lets every chart string
+     be wrapped without ordering or load-race concerns.                  */
+  function _t(key, fallback){
+    if (typeof window !== 'undefined' && typeof window.t === 'function') {
+      var v = window.t(key);
+      if (v && v !== key) return v;
+    }
+    return fallback != null ? fallback : key;
+  }
+
   /* Inverse psychrometric helper: given enthalpy h (kJ/kg dry air) and a
      target relative humidity (%), back-solve the dry-bulb T.  Used by
      the new A/B/C/$ display modes to decompose strategy energies into
@@ -1083,13 +1094,13 @@ global.initPsy3D = function(container, opts){
         'border:1px solid #94a3b8;border-radius:6px;padding:6px 10px;'+
         'box-shadow:0 4px 12px rgba(0,0,0,.25)';
       var modeDefs = [
-        {key:'A', lbl:'A: Comfort hours', tip:'Latent-load coverage per strategy: how many of the year\u2019s humid hours each strategy can actually dehumidify.\nPure facts; no assumptions.'},
-        {key:'B', lbl:'B: Sens / Lat',    tip:'Sensible vs latent decomposition of each strategy\u2019s annual load.  Shows WHY B1-B10 \u201cspends more energy\u201d \u2014 it\u2019s doing latent work the others skip.'},
-        {key:'C', lbl:'C: Trade-off',     tip:'Architectural fact-sheet per strategy:\n  E   = energy axis (lower is better)\n  C   = comfort / latent control\n  Code= maps to ASHRAE/Title-24/etc.\n  FS  = failsafe behaviour on sensor faults'},
-        {key:'$', lbl:'$: Cost / yr',     tip:'Total cost of ownership = (energy x utility rate) + (uncovered humid hours x violation cost).\nALL inputs user-editable; defaults are documented and conservative.'}
+        {key:'A', lbl:_t('mode_a_comfort','A: Comfort hours'), tip:'Latent-load coverage per strategy: how many of the year\u2019s humid hours each strategy can actually dehumidify.\nPure facts; no assumptions.'},
+        {key:'B', lbl:_t('mode_b_sens_lat','B: Sens / Lat'),    tip:'Sensible vs latent decomposition of each strategy\u2019s annual load.  Shows WHY B1-B10 \u201cspends more energy\u201d \u2014 it\u2019s doing latent work the others skip.'},
+        {key:'C', lbl:_t('mode_c_tradeoff','C: Trade-off'),     tip:'Architectural fact-sheet per strategy:\n  E   = energy axis (lower is better)\n  C   = comfort / latent control\n  Code= maps to ASHRAE/Title-24/etc.\n  FS  = failsafe behaviour on sensor faults'},
+        {key:'$', lbl:_t('mode_d_cost','$: Cost / yr'),         tip:'Total cost of ownership = (energy x utility rate) + (uncovered humid hours x violation cost).\nALL inputs user-editable; defaults are documented and conservative.'}
       ];
       modeRow.innerHTML =
-        '<span style="color:#475569;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-right:8px">Legend mode:</span>' +
+        '<span style="color:#475569;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-right:8px">'+_t('legend_mode','Legend mode:')+'</span>' +
         modeDefs.map(function(m){
           return '<button type="button" data-mode="'+m.key+'" title="'+m.tip+'"'+
             ' style="background:#ffffff;border:1px solid #94a3b8;color:#1e293b;'+
@@ -1140,12 +1151,12 @@ global.initPsy3D = function(container, opts){
         '</label>';
       }
       costCfg.innerHTML =
-        '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#047857;margin-bottom:6px">Cost Model -- plug your numbers</div>'+
-        _row('p3-cost-air',  'Airflow',         _costAirM3h,    'm\u00b3/h, 6 ACH @ 3m for 1000 sqm',  500,  100000, 100,  'AHU supply airflow.  Default = 18,000 m\u00b3/h (6 ACH at 3m ceiling for 1000 sqm). Replace with your AHU\u2019s actual CFM x 1.7 for m\u00b3/h.') +
-        _row('p3-cost-rate', 'Utility rate',    _costRate,      'USD / kWh',                    0.05, 1.0,    0.01, 'Blended electric rate (or oil/gas equivalent). Default 0.15. US average ~0.16; check your utility bill.') +
-        _row('p3-cost-cop',  'Cooling COP',     _costCopCool,   'electric chiller, typical 3.0-4.5', 1.0,  6.0,    0.1,  'Coefficient of Performance for cooling. 3.5 = typical electric chiller; 5.0 = high-efficiency VRF; 1.0 = window AC.') +
-        _row('p3-cost-eff',  'Heating eff.',    _costEffHeat,   '0.95 gas / 3.0 heat pump',     0.5,  4.0,    0.05, 'Heating efficiency. 0.95 = condensing gas furnace; 3.0 = heat pump COP. Mind the units.') +
-        _row('p3-cost-viol', 'Violation rate',  _costViolRate,  'USD / humid-hour uncovered',   0,    200,    1,    'Cost per hour of unmet humidity control. 5 = complaint handling only; 15 = + productivity loss; 50+ = regulated environments.') +
+        '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#047857;margin-bottom:6px">'+_t('cost_model_title','Cost Model -- plug your numbers')+'</div>'+
+        _row('p3-cost-air',  _t('cost_airflow','Airflow'),         _costAirM3h,    'm\u00b3/h, 6 ACH @ 3m for 1000 sqm',  500,  100000, 100,  'AHU supply airflow.  Default = 18,000 m\u00b3/h (6 ACH at 3m ceiling for 1000 sqm). Replace with your AHU\u2019s actual CFM x 1.7 for m\u00b3/h.') +
+        _row('p3-cost-rate', _t('cost_utility_rate','Utility rate'),    _costRate,      'USD / kWh',                    0.05, 1.0,    0.01, 'Blended electric rate (or oil/gas equivalent). Default 0.15. US average ~0.16; check your utility bill.') +
+        _row('p3-cost-cop',  _t('cost_cooling_cop','Cooling COP'),     _costCopCool,   'electric chiller, typical 3.0-4.5', 1.0,  6.0,    0.1,  'Coefficient of Performance for cooling. 3.5 = typical electric chiller; 5.0 = high-efficiency VRF; 1.0 = window AC.') +
+        _row('p3-cost-eff',  _t('cost_heating_eff','Heating eff.'),    _costEffHeat,   '0.95 gas / 3.0 heat pump',     0.5,  4.0,    0.05, 'Heating efficiency. 0.95 = condensing gas furnace; 3.0 = heat pump COP. Mind the units.') +
+        _row('p3-cost-viol', _t('cost_violation_rate','Violation rate'),  _costViolRate,  'USD / humid-hour uncovered',   0,    200,    1,    'Cost per hour of unmet humidity control. 5 = complaint handling only; 15 = + productivity loss; 50+ = regulated environments.') +
         '<div style="font-size:8px;color:#475569;margin-top:6px;line-height:1.4">'+
           'Annual cost = (cool_kJ + heat_kJ) x mass_flow / 3600 / efficiency x rate'+
           '<br>+ uncovered_humid_hours x violation_rate.  All five strategies use the same inputs; only their own energy and coverage differ.'+
@@ -1174,6 +1185,35 @@ global.initPsy3D = function(container, opts){
       costCfg.style.display = (_msMode === '$') ? 'block' : 'none';
     }
     _refreshCostCfg();
+
+    /* Re-renders DOM-based labels (mode-row buttons + cost-config inputs)
+       in the current language.  Called by the langchange listener wired
+       up at the bottom of init().                                       */
+    function _refreshI18nDomLabels(){
+      var lblSpan = modeRow.querySelector('span');
+      if (lblSpan) lblSpan.textContent = _t('legend_mode','Legend mode:');
+      var modeMap = {
+        A: _t('mode_a_comfort','A: Comfort hours'),
+        B: _t('mode_b_sens_lat','B: Sens / Lat'),
+        C: _t('mode_c_tradeoff','C: Trade-off'),
+        '$': _t('mode_d_cost','$: Cost / yr')
+      };
+      Array.prototype.forEach.call(modeRow.querySelectorAll('button'), function(b){
+        var k = b.getAttribute('data-mode');
+        if (modeMap[k]) b.textContent = modeMap[k];
+      });
+      var labels = costCfg.querySelectorAll('label > span:first-child');
+      var keys = ['cost_airflow','cost_utility_rate','cost_cooling_cop',
+                  'cost_heating_eff','cost_violation_rate'];
+      var fbs  = ['Airflow','Utility rate','Cooling COP','Heating eff.','Violation rate'];
+      for (var i = 0; i < labels.length && i < keys.length; i++){
+        labels[i].textContent = _t(keys[i], fbs[i]);
+      }
+      var titleDiv = costCfg.querySelector('div:first-child');
+      if (titleDiv) titleDiv.textContent = _t('cost_model_title','Cost Model -- plug your numbers');
+    }
+    // Expose to the langchange listener installed at the bottom of init().
+    root._refreshI18nDomLabels = _refreshI18nDomLabels;
 
     /* Sites dropdown (replaces the in-canvas chip ribbon).  Opens a
        checkbox menu listing every loaded site so users can scope the
@@ -1514,6 +1554,25 @@ global.initPsy3D = function(container, opts){
     });
     ro.observe(root);
     _cleanupTasks.push(function(){ try { ro.disconnect(); } catch(e){} });
+
+    /* Language change: redraw the 2D overlay (chart titles, axis labels,
+       legend strings) and refresh any DOM elements whose textContent was
+       set with t() at construction time.  3D scene uses no localized
+       strings so it doesn't need a re-render here. */
+    var _onLangChange = function(){
+      // Refresh DOM-based labels rebuilt from t():
+      try {
+        if (root && typeof root._refreshI18nDomLabels === 'function') {
+          root._refreshI18nDomLabels();
+        }
+      } catch(e) {}
+      // Redraw 2D chart so canvas-drawn text picks up the new language.
+      try { render2DChart && render2DChart(); } catch(e) {}
+    };
+    window.addEventListener('langchange', _onLangChange);
+    _cleanupTasks.push(function(){
+      window.removeEventListener('langchange', _onLangChange);
+    });
   }
 
   /* ---------- FETCH DATA ---------- */
@@ -1872,7 +1931,7 @@ global.initPsy3D = function(container, opts){
     if(weatherData.length===0){
       ctx.fillStyle=P.bg;ctx.fillRect(0,0,vw,vh);
       ctx.fillStyle=P.textDim;ctx.font='bold 14px monospace';ctx.textAlign='center';
-      ctx.fillText('No weather data — click FETCH WEATHER DATA to load',vw/2,vh/2);
+      ctx.fillText(_t('no_weather_data','No weather data \u2014 click FETCH WEATHER DATA to load'),vw/2,vh/2);
       return;
     }
     var n=weatherData.length;
@@ -2242,14 +2301,14 @@ global.initPsy3D = function(container, opts){
 
       // Title + axis labels
       ctx.fillStyle=P.text;ctx.font='bold 13px monospace';ctx.textAlign='left';
-      ctx.fillText('CUMULATIVE ENERGY × TIME  +  OA TRACKING',pad.left,24);
+      ctx.fillText(_t('cumulative_energy_time','CUMULATIVE ENERGY \u00d7 TIME  +  OA TRACKING'),pad.left,24);
       ctx.fillStyle=P.oaLine;ctx.font='10px monospace';
       ctx.save();ctx.translate(15,pad.top+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';
-      ctx.fillText('OA Temperature (°C)',0,0);ctx.restore();
+      ctx.fillText(_t('oa_temp_axis','OA Temperature (\u00b0C)'),0,0);ctx.restore();
       ctx.fillStyle=P.total;
       ctx.save();ctx.translate(vw-12,pad.top+ph/2);ctx.rotate(Math.PI/2);ctx.textAlign='center';
-      ctx.fillText('Cumulative Δh (kJ/kg)',0,0);ctx.restore();
-      ctx.fillStyle=P.textMuted;ctx.textAlign='center';ctx.fillText('Time (Season)',pad.left+pw/2,vh-12);
+      ctx.fillText(_t('cum_dh_axis','Cumulative \u0394h (kJ/kg)'),0,0);ctx.restore();
+      ctx.fillStyle=P.textMuted;ctx.textAlign='center';ctx.fillText(_t('time_season_axis','Time (Season)'),pad.left+pw/2,vh-12);
 
       // Compact legend in the top-left of the plot area (above the curves).
       // Boxed background so it stays legible on either theme even when the
@@ -2274,23 +2333,23 @@ global.initPsy3D = function(container, opts){
       }
       // OA tracking key (no total — it's a state line, not an integral)
       ctx.strokeStyle=P.oaLine;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(lgX,lgY);ctx.lineTo(lgX+18,lgY);ctx.stroke();
-      ctx.fillStyle=P.oaLine;ctx.fillText('OA temp',lgX+22,lgY+3);lgY+=14;
-      legendItem(P.heat,'Heating',cH);
-      legendItem(P.cool,'Cooling',cC);
-      legendItem(P.total,'Fixed-SA + band damper \u26A0',cT,'',[6,4]);
+      ctx.fillStyle=P.oaLine;ctx.fillText(_t('oa_temp_legend','OA temp'),lgX+22,lgY+3);lgY+=14;
+      legendItem(P.heat,_t('heating','Heating'),cH);
+      legendItem(P.cool,_t('cooling','Cooling'),cC);
+      legendItem(P.total,_t('fixed_sa_band_damper','Fixed-SA + band damper')+' \u26A0',cT,'',[6,4]);
       // Dynamic Reset (ASHRAE G36 estimate) \u2014 SA tracks 24h trailing mean
       // of OA enthalpy, modelling Trim & Respond aggregate behaviour.
       var dynPctVsTotal = cT>0 ? Math.max(0,Math.round((1-cDyn/cT)*100)) : 0;
-      legendItem(P.dynRst,'Dyn-Rst \u26A0',cDyn, dynPctVsTotal>0?'  -'+dynPctVsTotal+'% \u2020':' \u2020');
+      legendItem(P.dynRst,_t('dyn_reset','Dyn-Rst')+' \u26A0',cDyn, dynPctVsTotal>0?'  -'+dynPctVsTotal+'% \u2020':' \u2020');
       // Optimal-SA reference \u2014 envelope-clamped thermodynamic floor.
       // Suffix shows the active envelope so the user knows which bounds
       // produced this curve (live-driven by the Monthly \u00d7 Sites toolbar
       // sliders).  Suffixed "*" \u2192 footnoted as "theoretical only".
       var optSuffix = '  ('+_optInfo.optMinH.toFixed(0)+'\u2013'+_optInfo.optMaxH.toFixed(0)+' kJ/kg env) *';
-      legendItem(P.optSa,'Opt-SA',_optInfo.total,optSuffix,[2,3]);
+      legendItem(P.optSa,_t('opt_sa','Opt-SA'),_optInfo.total,optSuffix,[2,3]);
       var savePct=cT>0?Math.max(0,Math.round((1-cBe/cT)*100)):0;
       if(_p3ShowBandStrategy){
-        legendItem(P.band,'B1-B10',cBe,savePct>0?'  -'+savePct+'%':'');
+        legendItem(P.band,_t('band_b1_b10','B1-B10'),cBe,savePct>0?'  -'+savePct+'%':'');
       }
       // Footnotes inside the boxed legend:
       //   *  Opt-SA = theoretical floor (impossible without foresight)
@@ -2301,7 +2360,7 @@ global.initPsy3D = function(container, opts){
       lgY += 10;
       // Amber chip drawing the same NO-LATENT warning the Monthly \u00d7 Sites
       // chart uses, sized to fit inside the boxed legend.
-      var warnTxt = '\u26A0  NO latent (RH) control \u2014 not for deployment';
+      var warnTxt = '\u26A0  '+_t('no_latent_short','NO latent (RH) control -- not for deployment');
       ctx.font = 'bold 8px monospace';
       var warnW = ctx.measureText(warnTxt).width + 14;
       var warnH = 14;
@@ -2416,11 +2475,11 @@ global.initPsy3D = function(container, opts){
 
       // Title + axis labels
       ctx.fillStyle=P.text;ctx.font='bold 13px monospace';ctx.textAlign='left';
-      ctx.fillText('HUMIDITY × TIME (scatter)',pad.left,24);
+      ctx.fillText(_t('humidity_time_scatter','HUMIDITY \u00d7 TIME (scatter)'),pad.left,24);
       ctx.fillStyle=P.textMuted;ctx.font='10px monospace';
       ctx.save();ctx.translate(15,pad.top+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';
-      ctx.fillText('Humidity ratio (g/kg)',0,0);ctx.restore();
-      ctx.textAlign='center';ctx.fillText('Time (Season)',pad.left+pw/2,vh-12);
+      ctx.fillText(_t('humidity_ratio_axis','Humidity ratio (g/kg)'),0,0);ctx.restore();
+      ctx.textAlign='center';ctx.fillText(_t('time_season_axis','Time (Season)'),pad.left+pw/2,vh-12);
 
       // Legend
       var lx2=pad.left+pw+10, ly2=pad.top+10;
@@ -3198,21 +3257,26 @@ global.initPsy3D = function(container, opts){
       ctx.lineWidth = 1;
       ctx.strokeRect(pLeft, bnY, vw - pLeft - pRight, bnH);
       // Mode label pill on the left
-      var modeLbls = {A:'A: COMFORT HOURS', B:'B: SENS / LAT', C:'C: TRADE-OFF', '$':'$ : COST / yr'};
+      var modeLbls = {
+        A: _t('mode_a_full','A: COMFORT HOURS'),
+        B: _t('mode_b_full','B: SENS / LAT'),
+        C: _t('mode_c_full','C: TRADE-OFF'),
+        '$': _t('mode_d_full','$ : COST / yr')
+      };
       ctx.fillStyle = '#7c3aed';
       ctx.fillRect(pLeft, bnY, 130, bnH);
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('MODE   '+(modeLbls[_msMode]||_msMode), pLeft + 65, bnY + 18);
+      ctx.fillText(_t('mode_label_prefix','MODE')+'   '+(modeLbls[_msMode]||_msMode), pLeft + 65, bnY + 18);
       // Per-strategy headline numbers in a single row.
       var agg = _msAgg || {b:{},d:{},band:{},bd:{},opt:{},humidHours:0};
       var strats = [
-        {key:'b',    name:'Fixed-SA',     col:P.cFixed},
-        {key:'d',    name:'Dyn-Reset',    col:P.cDyn},
-        {key:'band', name:'B1-B10',       col:P.cBand},
-        {key:'bd',   name:'B1-B10+Dyn',   col:P.cBandDyn},
-        {key:'opt',  name:'Opt-SA',       col:P.cOpt}
+        {key:'b',    name:'Fixed-SA',                                  col:P.cFixed},
+        {key:'d',    name:_t('dyn_reset','Dyn-Reset'),                 col:P.cDyn},
+        {key:'band', name:_t('band_b1_b10','B1-B10'),                  col:P.cBand},
+        {key:'bd',   name:_t('band_b1_b10_dyn','B1-B10+Dyn'),          col:P.cBandDyn},
+        {key:'opt',  name:_t('opt_sa','Opt-SA'),                       col:P.cOpt}
       ];
       // Compute per-strategy display value based on mode.
       var disp = strats.map(function(s){
@@ -3332,12 +3396,12 @@ global.initPsy3D = function(container, opts){
       // outdoor-derived.  Lives inside the title row to avoid eating
       // plot real estate.
       var oaTitleSuffix = (_msShowOA && d && typeof d.oaAnnPct==='number')
-        ? '   \u2022 Avg OA: '+d.oaAnnPct.toFixed(0)+'%'
+        ? '   \u2022 '+_t('avg_oa_label','Avg OA')+': '+d.oaAnnPct.toFixed(0)+'%'
         : '';
       if(isSaved){
         // tiny SAVED tag before the name
         ctx.fillStyle='#10b981'; ctx.font='bold 8px monospace';
-        ctx.fillText('\u25C6 SAVED',x0+8,y0+15);
+        ctx.fillText('\u25C6 '+_t('saved','SAVED'),x0+8,y0+15);
         ctx.fillStyle=P.text; ctx.font='bold 11px monospace';
         ctx.fillText(nm,x0+68,y0+15);
         if(oaTitleSuffix){
@@ -3592,7 +3656,7 @@ global.initPsy3D = function(container, opts){
           ctx.fillText(pct+'%', plotX + plotW + 5, ty + 2.5);
         }
         // Axis caption under the tick column.
-        ctx.fillText('OA damper', plotX + plotW + 5, plotY + plotH + 11);
+        ctx.fillText(_t('oa_damper','OA damper'), plotX + plotW + 5, plotY + plotH + 11);
       }
       // Annual totals — the headline depends on what's currently visible:
       //   * Fixed-SA hidden → show the SMALLEST visible strategy's total.
@@ -3642,12 +3706,13 @@ global.initPsy3D = function(container, opts){
        Rendered as a filled rounded rect with dark text so it punches
        against the dark chart background. */
     if (_msShowFixed || _msShowDyn) {
+      // Translate just the caveat sentence body; the strategy-name prefix
+      // stays in technical English (Fixed-SA, Dyn-Reset are jargon).
       var caveatLbls = [];
       if (_msShowFixed) caveatLbls.push('Fixed-SA');
       if (_msShowDyn)   caveatLbls.push('Dyn-Reset');
-      var caveatTxt = '\u26A0  ' + caveatLbls.join(' + ') +
-        ': NO humidity (latent) control \u2014 may meet kJ/kg target ' +
-        'while violating zone RH / comfort.  NOT RECOMMENDED FOR DEPLOYMENT.';
+      var caveatTxt = '\u26A0  ' + caveatLbls.join(' + ') + ': ' +
+        _t('no_humidity_caveat','NO humidity (latent) control -- may meet kJ/kg target while violating zone RH / comfort.  NOT RECOMMENDED FOR DEPLOYMENT.');
       ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'left';
       var cw = ctx.measureText(caveatTxt).width + 22;
@@ -3670,7 +3735,7 @@ global.initPsy3D = function(container, opts){
     // to be a separate top header but was squeezed out by the control
     // cluster; moved here where it has room).
     ctx.fillStyle=P.text; ctx.font='bold 10px monospace'; ctx.textAlign='left';
-    var titleTxt='MONTHLY AIR-SIDE ENERGY \u00d7 SITES';
+    var titleTxt=_t('monthly_energy_sites','MONTHLY AIR-SIDE ENERGY \u00d7 SITES').toUpperCase();
     ctx.fillText(titleTxt, klX, klY);
     klX += ctx.measureText(titleTxt).width + 10;
     ctx.fillStyle=P.textMuted; ctx.fillText('\u2502',klX,klY); klX += 8;
@@ -3793,11 +3858,11 @@ global.initPsy3D = function(container, opts){
       }
       return '';
     }
-    if(_msShowFixed)   _strategyKey(P.cFixed,   'Fixed-SA + band damper \u26A0', [5,3], _msShowOpt ? _capPct(aggBase)    : null, _suffixFor('b'));
-    if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset \u26A0',              [2,3], _msShowOpt ? _capPct(aggDyn)     : null, _suffixFor('d'));
-    if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10',                       null,  _msShowOpt ? _capPct(aggBand)    : null, _suffixFor('band'));
-    if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset',           null,  _msShowOpt ? _capPct(aggBandDyn) : null, _suffixFor('bd'));
-    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',                   [1,2], _capPct(aggOpt), _suffixFor('opt'));
+    if(_msShowFixed)   _strategyKey(P.cFixed,   _t('fixed_sa_band_damper','Fixed-SA + band damper')+' \u26A0', [5,3], _msShowOpt ? _capPct(aggBase)    : null, _suffixFor('b'));
+    if(_msShowDyn)     _strategyKey(P.cDyn,     _t('dyn_reset','Dyn-Reset')+' \u26A0',              [2,3], _msShowOpt ? _capPct(aggDyn)     : null, _suffixFor('d'));
+    if(_msShowBand)    _strategyKey(P.cBand,    _t('band_b1_b10','B1-B10'),                       null,  _msShowOpt ? _capPct(aggBand)    : null, _suffixFor('band'));
+    if(_msShowBandDyn) _strategyKey(P.cBandDyn, _t('band_b1_b10_dyn','B1-B10 + Dyn-Reset'),       null,  _msShowOpt ? _capPct(aggBandDyn) : null, _suffixFor('bd'));
+    if(_msShowOpt)     _strategyKey(P.cOpt,     _t('opt_sa_cum','Opt-SA cum'),                    [1,2], _capPct(aggOpt), _suffixFor('opt'));
     if(_msShowOA){
       // Yellow dashed line key matches the per-panel OA-damper line.
       ctx.strokeStyle='rgba(251,191,36,.95)'; ctx.lineWidth=2.2;
@@ -3805,7 +3870,7 @@ global.initPsy3D = function(container, opts){
       ctx.beginPath();ctx.moveTo(klX,klY-3);ctx.lineTo(klX+18,klY-3);ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle=P.text; ctx.font='bold 9px monospace';
-      var oaLbl='OA Intake (band damper)';
+      var oaLbl=_t('oa_intake_band_damper','OA Intake (band damper)');
       ctx.fillText(oaLbl, klX+22, klY);
       klX += 22 + ctx.measureText(oaLbl).width + 12;
     }
@@ -3934,7 +3999,7 @@ global.initPsy3D = function(container, opts){
     if(weatherData.length===0){
       /* Show prompt when no weather data loaded */
       ctx.fillStyle='rgba(251,191,36,.8)';ctx.font='bold 16px monospace';ctx.textAlign='center';
-      ctx.fillText('No weather data loaded',vw/2,vh/2-10);
+      ctx.fillText(_t('no_weather_loaded','No weather data loaded'),vw/2,vh/2-10);
       ctx.fillStyle='rgba(148,163,184,.6)';ctx.font='bold 11px monospace';
       ctx.fillText('Click "Back to 3D" \u2192 "'+_t('fetch_weather_data')+'" to load',vw/2,vh/2+10);
     }

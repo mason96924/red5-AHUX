@@ -1078,9 +1078,10 @@ global.initPsy3D = function(container, opts){
       modeRow = document.createElement('div');
       modeRow.id = 'p3-ms-modes';
       modeRow.style.cssText = 'position:absolute;right:20px;top:48px;z-index:51;'+
-        'display:none;font-family:inherit;font-size:9px;color:#94a3b8;'+
-        'background:rgba(15,23,42,.92);backdrop-filter:blur(10px);'+
-        'border:1px solid rgba(148,163,184,.5);border-radius:6px;padding:6px 10px';
+        'display:none;font-family:inherit;font-size:9px;color:#1e293b;'+
+        'background:rgba(241,245,249,.96);backdrop-filter:blur(10px);'+
+        'border:1px solid #94a3b8;border-radius:6px;padding:6px 10px;'+
+        'box-shadow:0 4px 12px rgba(0,0,0,.25)';
       var modeDefs = [
         {key:'A', lbl:'A: Comfort hours', tip:'Latent-load coverage per strategy: how many of the year\u2019s humid hours each strategy can actually dehumidify.\nPure facts; no assumptions.'},
         {key:'B', lbl:'B: Sens / Lat',    tip:'Sensible vs latent decomposition of each strategy\u2019s annual load.  Shows WHY B1-B10 \u201cspends more energy\u201d \u2014 it\u2019s doing latent work the others skip.'},
@@ -1088,10 +1089,10 @@ global.initPsy3D = function(container, opts){
         {key:'$', lbl:'$: Cost / yr',     tip:'Total cost of ownership = (energy x utility rate) + (uncovered humid hours x violation cost).\nALL inputs user-editable; defaults are documented and conservative.'}
       ];
       modeRow.innerHTML =
-        '<span style="color:#cbd5e1;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-right:8px">Legend mode:</span>' +
+        '<span style="color:#475569;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-right:8px">Legend mode:</span>' +
         modeDefs.map(function(m){
           return '<button type="button" data-mode="'+m.key+'" title="'+m.tip+'"'+
-            ' style="background:transparent;border:1px solid #475569;color:#94a3b8;'+
+            ' style="background:#ffffff;border:1px solid #94a3b8;color:#1e293b;'+
             'padding:3px 8px;border-radius:4px;margin-right:4px;cursor:pointer;'+
             'font-family:inherit;font-size:9px;font-weight:900">'+m.lbl+'</button>';
         }).join('');
@@ -1109,9 +1110,9 @@ global.initPsy3D = function(container, opts){
     function _refreshModeRow(){
       Array.prototype.forEach.call(modeRow.querySelectorAll('button'), function(b){
         var on = (b.getAttribute('data-mode') === _msMode);
-        b.style.background = on ? '#7c3aed' : 'transparent';
-        b.style.color      = on ? '#ffffff' : '#94a3b8';
-        b.style.borderColor= on ? '#7c3aed' : '#475569';
+        b.style.background = on ? '#7c3aed' : '#ffffff';
+        b.style.color      = on ? '#ffffff' : '#1e293b';
+        b.style.borderColor= on ? '#7c3aed' : '#94a3b8';
       });
     }
     _refreshModeRow();

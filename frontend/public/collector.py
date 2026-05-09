@@ -45,7 +45,7 @@ WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 
 DEFAULT_INTERVAL = 5
 HISTORY_MAX = 60  # Ring buffer size (60 readings × 5s = 5 min)
-VERSION = '1.1'
+VERSION = '1.2'
 
 # ---- dibt is preloaded as a global by the controller runtime, no import needed ----
 # (On dev hosts without dibt, mock mode bypasses all dibt.Read/Write calls.)
@@ -121,7 +121,11 @@ def process_write_queue(mock_mode=False):
         else:
             try:
                 outcome = dibt.Write(ref, Value=csv_val)
-                if isinstance(outcome, dibt.Error):
+                try:
+                    _is_err = isinstance(outcome, dibt.Error)
+                except AttributeError:
+                    _is_err = False  # newer firmware: dibt has no .Error class
+                if _is_err:
                     log('[write-queue] dibt.Write error for {}: {}'.format(ref, outcome))
                     result_record['success'] = False
                     result_record['error']   = str(outcome)
@@ -237,7 +241,11 @@ def read_bacnet_csv(csv_object_name):
     ref = f'{csv_object_name}.Present_Value'
     try:
         value = dibt.Read(ref)
-        if isinstance(value, dibt.Error):
+        try:
+            _is_err = isinstance(value, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
             log(f'dibt.Read error for {ref}: {value}')
             return None
         return str(value)
@@ -444,7 +452,11 @@ def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
     ref = csv_object + '.Present_Value'
     try:
         result = dibt.Write(ref, Value=csv_str)
-        if isinstance(result, dibt.Error):
+        try:
+            _is_err = isinstance(result, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
             log('dibt.Write error for {}: {}'.format(ref, result))
         else:
             log('Band {} setpoints written to {}'.format(band['id'], csv_object))
@@ -480,7 +492,11 @@ def write_band_guide_to_description(csv_object, band=None):
 
     try:
         result = dibt.Write(ref, Value=desc)
-        if isinstance(result, dibt.Error):
+        try:
+            _is_err = isinstance(result, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
             log('dibt.Write ERROR for {}: {} (value was: {})'.format(ref, result, desc))
         else:
             _bg_written[csv_object] = desc

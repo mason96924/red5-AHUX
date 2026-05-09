@@ -682,6 +682,45 @@ Plus regression: `tests/test_streaming_upload.py` **36/36 PASS**, `tests/test_re
 4. **Done.** No script-editor toggle, no SSH, no waiting for boot.
 
 
+## V1.9 Bundle Resync — Stale `psy-3d-engine.js` + 6 other files (2026-02-09)
+**Brief**: User reported the strategy multi-mode UI (Fixed-SA / B1-B10 / B1-B10 + Dyn / Dyn-Reset / Opt-SA toggles + Mode Summary banner + Comfort/Trade-off/Cost modes + configurable Opt-SA bound sliders) was missing from a controller deploy. Root cause: every bundle rebuild this session inherited the previous bundle as a base and only swapped the *currently changed* files, so files that were updated in **earlier** sessions (but never rebundled at the time) carried forward indefinitely as stale.
+
+### What was stale in the bundle vs the live archive
+| File | Bundle (stale) | Live archive | Δ |
+|---|---:|---:|---:|
+| `js/psy-3d-engine.js` | 188 KB / 3257 lines | **248 KB / 4282 lines** | +60 KB / +1025 lines |
+| `js/i18n.js` | 23 KB | 30 KB | +7.5 KB |
+| `js/schema-config.js` | 8 KB | 11 KB | +3 KB |
+| `js/file-browser.js` | 15.7 KB | 17 KB | +1.3 KB |
+| `collector.py` | 27 KB | 32 KB | +5.3 KB |
+| `simulator.py` | 21.9 KB | 22.2 KB | +0.26 KB |
+| `telemetry_service.py` | 28.5 KB | 30.9 KB | +2.4 KB |
+
+### Multi-mode features that were missing in the deployed `psy-3d-engine.js`
+- `optMinH`/`optMaxH` configurable Opt-SA bounds (count went 0 → 27/26)
+- `opt-min`/`opt-max` slider IDs (0 → 4/4)
+- `Mode Summary` banner (0 → 4)
+- `Trade-off` matrix mode (0 → 3)
+- `Cost` dollar-model mode (0 → 10)
+- `Comfort` hours metric — the real mechanism-aware version (4 → 11)
+- `+ OA Intake` toggle + Catmull-Rom smoothed curve (0 → 1 each)
+
+### Fix
+- Resynced 7 files from `archive/Red5-Studio-V1.9/` → `red5_bundle.zip`.
+- Resynced same files to `/app/frontend/public/` (cloud-preview served copy).
+- Resynced 16 files (those + 9 more that had 0-byte gaps) to `/app/frontend/public/red5-files/` (deploy-folder copy).
+- All 3 bundle locations now identical: MD5 `c6ac7cc9ca6d591205beb655adc9e916` (1.65 MB).
+- `app.py` intentionally still excluded (operator-managed per 2026-05-08 architectural decision).
+
+### Verified
+- Direct curl against cloud preview: `GET /js/psy-3d-engine.js` returns 248,792 bytes / 4282 lines.
+- Bundle's embedded `psy-3d-engine.js` byte-identical to served + archive copies.
+- All 16 strategy/multi-mode/i18n keyword counts post-resync match the live archive.
+
+### Process improvement
+Going forward, the bundle rebuild script should treat the **live archive directory** as the source of truth for ALL files in the bundle, not just the explicitly-listed updates. Future `update_bundle` invocations will re-include every file from `archive/Red5-Studio-V1.9/` with content from disk, so files updated in earlier sessions can never go stale.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

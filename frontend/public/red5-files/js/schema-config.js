@@ -41,6 +41,57 @@ const rawFallback = {
   }
 };
 
+// =====================================================================
+// Auto-group migration (Concept B — single source of truth)
+// =====================================================================
+// Earlier versions of equipment_mapper.html derived sensor groups from
+// a hard-coded label-match list inside the React component, while the
+// drag-and-drop UI (added later) operated on a parallel `sensor_groups[]`
+// array + `group_id` field on each point.  This split caused operators
+// to see "Ungrouped Sensors" in the Schema view even when the canvas
+// rendered a "SAF" (SA) pill from the auto-match.
+//
+// Migration rule (idempotent):
+//   For every point whose `label` matches one of the SEED_GROUPS rules
+//   AND whose `group_id` is not already set, we
+//     1. Ensure a sensor_groups[] entry with `id = seed.id` exists
+//        (creating it with `name = seed.defaultName` if not).
+//     2. Set the point's `group_id` to that id.
+//   Subsequent loads are no-ops because group_id is now sticky on disk.
+//
+// Operators can then add / remove members through the standard
+// drag-and-drop UI; the seed list never runs against them again.
+// =====================================================================
+const SEED_GROUPS = [
+    { id: 'OA',              defaultName: 'OA',              match: ['OAT', 'OAH', 'OAD'] },
+    { id: 'SA',              defaultName: 'SA',              match: ['SAT', 'SAH', 'SAF', 'SAD', 'SAFM', 'SAPT', 'SATSP'], matchRegex: /^INV\d+_F$/ },
+    { id: 'Hydration',       defaultName: 'Hydration',       match: ['HM', 'HV', 'HSP'] },
+    { id: 'AHU',             defaultName: 'AHU',             match: ['AHUSS', 'AHUM', 'HCM'] },
+    { id: 'Static_Pressure', defaultName: 'Static Pressure', match: ['SPR', 'SPRSP'] },
+];
+
+function migrateAutoGroups(entry) {
+    if (!entry || !Array.isArray(entry.points)) return;
+    if (!Array.isArray(entry.sensor_groups)) entry.sensor_groups = [];
+    const existingIds = new Set(entry.sensor_groups.map(g => g.id));
+
+    SEED_GROUPS.forEach(seed => {
+        const matchedIndices = [];
+        entry.points.forEach((p, i) => {
+            if (p.group_id) return; // already user-grouped — leave alone
+            if (seed.match.includes(p.label) || (seed.matchRegex && seed.matchRegex.test(p.label))) {
+                matchedIndices.push(i);
+            }
+        });
+        if (matchedIndices.length === 0) return;
+        if (!existingIds.has(seed.id)) {
+            entry.sensor_groups.push({ id: seed.id, name: seed.defaultName, collapsed: false });
+            existingIds.add(seed.id);
+        }
+        matchedIndices.forEach(i => { entry.points[i].group_id = seed.id; });
+    });
+}
+
 const sanitizeSchema = (data) => {
     const sanitized = JSON.parse(JSON.stringify(data));
     ['ahu_types', 'vav_types'].forEach(cat => {
@@ -133,7 +184,13 @@ const sanitizeSchema = (data) => {
                     if(p.label === undefined) p.label = 'UNNAMED';
                     if(p.name === undefined) p.name = p.label; 
                     if(p.unit === undefined) p.unit = '';
+                    // Default group_id to null so migrateAutoGroups can
+                    // detect "not yet grouped" and assign the seed bucket.
+                    if(p.group_id === undefined) p.group_id = null;
                 });
+                // One-shot auto-group migration (idempotent — leaves
+                // points whose group_id is already set untouched).
+                migrateAutoGroups(entry2);
             });
         }
     });

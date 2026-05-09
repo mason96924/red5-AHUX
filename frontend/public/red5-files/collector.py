@@ -39,13 +39,119 @@ EQUIPMENT_TYPES_ALT = os.path.join(DATA_ROOT, 'equipment_types.json')
 MAP_CONFIG_PATH = os.path.join(CONFIG_DIR, 'map_config.json')
 MAP_CONFIG_ALT = os.path.join(DATA_ROOT, 'map_config.json')
 COLLECTOR_LOG_PATH = os.path.join(CONFIG_DIR, 'collector_log.json')
+WRITE_QUEUE_PATH    = os.path.join(CONFIG_DIR, 'write_queue.json')
+WRITE_RESULTS_PATH  = os.path.join(CONFIG_DIR, 'write_results.json')
+WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 
 DEFAULT_INTERVAL = 5
 HISTORY_MAX = 60  # Ring buffer size (60 readings × 5s = 5 min)
-VERSION = '1.1'
+VERSION = '1.2'
 
 # ---- dibt is preloaded as a global by the controller runtime, no import needed ----
 # (On dev hosts without dibt, mock mode bypasses all dibt.Read/Write calls.)
+
+
+# ===== Write Queue =====
+# /api/write-point in telemetry_service.py runs in the Flask process,
+# which does NOT have dibt available (the auto-loaded plug-in cannot
+# import the controller's runtime-injected dibt global).  Instead the
+# Flask side appends each write request to write_queue.json; collector
+# (which IS an enteliWEB object with dibt available) drains the queue
+# on every poll cycle.  Audit log lands in write_results.json.
+# Added 2026-05-08 alongside the PLUGINS_ROOT split.
+
+def _atomic_write_json(path, data):
+    """Write JSON to ``path`` atomically (write to .tmp + os.replace)."""
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
+def _load_json_list(path):
+    """Load a JSON file expected to be a list. Return [] on any error."""
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (IOError, OSError, json.JSONDecodeError):
+        return []
+
+
+def process_write_queue(mock_mode=False):
+    """Drain pending write requests from write_queue.json.
+
+    For each entry, execute dibt.Write(csv_object.Present_Value, csv_value)
+    and append a result record (success, error, timestamp) to
+    write_results.json (capped at WRITE_RESULTS_MAX entries).  In
+    mock_mode (or when dibt is unavailable on a dev host), record a
+    'mock' result without actually calling dibt.
+
+    Idempotent against concurrent writers: read+rename guarantees the
+    queue file is replaced atomically; entries we've already processed
+    are removed before we release the file.
+
+    Safe to call every cycle — does nothing if the queue is empty.
+    """
+    queue = _load_json_list(WRITE_QUEUE_PATH)
+    if not queue:
+        return 0
+
+    results = _load_json_list(WRITE_RESULTS_PATH)
+    processed = 0
+    for entry in queue:
+        ref      = (entry.get('csv_object') or '') + '.Present_Value'
+        csv_val  = entry.get('csv_value', '')
+        equip    = entry.get('equip_name', '')
+        result_record = {
+            'id':         entry.get('id'),
+            'ts':         entry.get('ts'),
+            'completed':  time.time(),
+            'csv_object': entry.get('csv_object'),
+            'csv_value':  csv_val,
+            'equip_name': equip,
+            'writes':     entry.get('writes'),
+        }
+        if mock_mode or 'dibt' not in globals():
+            log('[write-queue MOCK] would write {} = {}'.format(ref, csv_val))
+            result_record['success'] = True
+            result_record['mock']    = True
+        else:
+            try:
+                outcome = dibt.Write(ref, Value=csv_val)
+                try:
+                    _is_err = isinstance(outcome, dibt.Error)
+                except AttributeError:
+                    _is_err = False  # newer firmware: dibt has no .Error class
+                if _is_err:
+                    log('[write-queue] dibt.Write error for {}: {}'.format(ref, outcome))
+                    result_record['success'] = False
+                    result_record['error']   = str(outcome)
+                else:
+                    log('[write-queue] wrote {} from {} ({})'.format(ref, equip, csv_val[:60]))
+                    result_record['success'] = True
+            except Exception as exc:
+                log('[write-queue] exception writing {}: {}'.format(ref, exc))
+                result_record['success'] = False
+                result_record['error']   = type(exc).__name__ + ': ' + str(exc)
+
+        results.append(result_record)
+        processed += 1
+
+    # Trim audit log to ring-buffer size.
+    if len(results) > WRITE_RESULTS_MAX:
+        results = results[-WRITE_RESULTS_MAX:]
+
+    try:
+        _atomic_write_json(WRITE_RESULTS_PATH, results)
+        # Atomically empty the queue so any in-flight Flask append
+        # to .tmp before our rename is preserved next cycle.
+        _atomic_write_json(WRITE_QUEUE_PATH, [])
+    except OSError as oe:
+        log('[write-queue] ERROR persisting results/queue: {}'.format(oe))
+    return processed
 
 
 # ===== JSON Loading =====
@@ -135,7 +241,11 @@ def read_bacnet_csv(csv_object_name):
     ref = f'{csv_object_name}.Present_Value'
     try:
         value = dibt.Read(ref)
-        if isinstance(value, dibt.Error):
+        try:
+            _is_err = isinstance(value, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
             log(f'dibt.Read error for {ref}: {value}')
             return None
         return str(value)
@@ -342,7 +452,11 @@ def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
     ref = csv_object + '.Present_Value'
     try:
         result = dibt.Write(ref, Value=csv_str)
-        if isinstance(result, dibt.Error):
+        try:
+            _is_err = isinstance(result, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
             log('dibt.Write error for {}: {}'.format(ref, result))
         else:
             log('Band {} setpoints written to {}'.format(band['id'], csv_object))
@@ -378,7 +492,11 @@ def write_band_guide_to_description(csv_object, band=None):
 
     try:
         result = dibt.Write(ref, Value=desc)
-        if isinstance(result, dibt.Error):
+        try:
+            _is_err = isinstance(result, dibt.Error)
+        except AttributeError:
+            _is_err = False  # newer firmware: dibt has no .Error class
+        if _is_err:
             log('dibt.Write ERROR for {}: {} (value was: {})'.format(ref, result, desc))
         else:
             _bg_written[csv_object] = desc
@@ -694,6 +812,16 @@ def main():
             telemetry['history'] = get_history_payload()
 
             write_telemetry(telemetry)
+
+            # Drain pending write requests from /api/write-point.  Done
+            # AFTER telemetry write so a fresh poll never overwrites a
+            # just-applied setpoint (next cycle picks up the new value).
+            try:
+                _written = process_write_queue(mock_mode=mock_mode)
+                if _written:
+                    log('[write-queue] processed {} pending writes'.format(_written))
+            except Exception as _qe:
+                log('[write-queue] processor crashed: {}'.format(_qe))
 
             if cycle % 12 == 0:
                 log(f'Cycle {cycle}: {telemetry["read_ok"]} OK, '

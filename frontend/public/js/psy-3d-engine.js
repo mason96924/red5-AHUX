@@ -495,11 +495,38 @@ global.initPsy3D = function(container, opts){
   });
 
   /* ---------- SCENE ---------- */
-  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup;
+  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup,saDropGroup;
   var _p3RedrawPsyTex = null; /* populated by buildScene so theme listener can redraw floor chart */
   var weatherData=[],timeLabels=[],vavData=[];
   var projMode='lines'; /* 'lines' | 'dots' | 'vav' — shared between setupControls and render2DChart */
   var chart2DMode='psy'; /* 'psy' | 'tt' | 'wt' — drives the 2D overlay layout */
+
+  /* ---- Shared SA-reset model ----------------------------------------------
+     Module-level (was previously closed over inside render2DChart).  Used by
+     both the 2D OA→SA Lines/Landing Zones/VAV projections AND the new 3D
+     "OA→SA Drops" rain-on-floor visualization, so the two views show
+     IDENTICAL setpoint targets (single source of truth, no math drift).
+     Returns {t, w} = (SA dry-bulb °C, SA humidity ratio kg/kg) given an OA
+     sample (t °C, rh %, w kg/kg).  Comments inline document each band's
+     control intent so this stays an unbiased model.
+     ----------------------------------------------------------------------- */
+  function _saReset(t, rh, w){
+    var st, sw;
+    if(t<5&&rh<30){st=Math.min(22,Math.max(20,20+(5-t)*.15));sw=getW(st,40);}
+    else if(t>=5&&t<15&&rh>=30&&rh<=60){st=Math.min(21,Math.max(18,18+(15-t)*.3));sw=w<.004?getW(st,35):w;}
+    else if(t>=15&&t<20&&rh<30){st=Math.min(21,Math.max(18.5,t+1));sw=getW(st,45);}
+    else if(t>=18&&t<22&&rh>=30&&rh<=50){st=t;sw=w;}
+    else if(t>=22&&t<=25&&rh>=40&&rh<=60){st=t;sw=w;}
+    else if(t>25&&t<=27&&rh>=50&&rh<=70){st=Math.min(26,Math.max(23.5,t-1));sw=rh>65?getW(st,55):w;}
+    else if(t>27&&t<=32&&rh>60&&rh<=80){st=12;sw=getW(12,95);}
+    else if(t>32&&t<=38&&rh>70){st=13;sw=getW(13,95);}
+    else if(t>35&&rh<30){st=15;sw=w<.004?getW(15,40):w;}
+    else if(t>30&&rh>85){st=11;sw=getW(11,95);}
+    else{var h=1.006*t+w*(2501+1.86*t);if(h<30){st=19;sw=getW(19,35);}else if(h<50){st=t;sw=w;}else if(h<65){st=Math.max(23.5,t-1);sw=getW(st,55);}else{st=13;sw=getW(13,95);}}
+    var wSat=getW(st,100);if(sw>wSat)sw=wSat*0.98;
+    return {t:st, w:sw};
+  }
+
   /* Whether the green B1-B10 cumulative curve, its transition markers, its
      endpoint label, and the band-ramp legend are rendered.  Off by default so
      the user opts into the band-strategy view via the dedicated button. */
@@ -701,6 +728,10 @@ global.initPsy3D = function(container, opts){
     projGroup=new THREE.Group();scene.add(projGroup);
     dhFloorGroup=new THREE.Group();scene.add(dhFloorGroup);
     vavGroup=new THREE.Group();scene.add(vavGroup);
+    /* OA→SA "rain drops": OA points float at their time-Y position, drop
+       lines descend to each point's computed SA on the basePlane (Y=0).
+       Hidden by default so existing scenes stay uncluttered. */
+    saDropGroup=new THREE.Group();saDropGroup.visible=false;scene.add(saDropGroup);
 
     setupControls(mkT);
     startRender();
@@ -764,10 +795,12 @@ global.initPsy3D = function(container, opts){
 
     /* toggles */
     var tgEl=$('#p3-toggles');
-    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup};
-    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ']].forEach(function(t){
+    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,saDrop:saDropGroup};
+    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ'],['saDrop','#22d3ee','OA\u2192SA Drops']].forEach(function(t){
       var div=document.createElement('div');div.className='p3-tgl';div.id='p3-tgl-'+t[0];
       div.innerHTML='<span class="p3td" style="background:'+t[1]+'"></span>'+t[2];
+      // Sync initial off-state for layers that start hidden (saDropGroup).
+      if (layers[t[0]] && layers[t[0]].visible === false) div.classList.add('p3off');
       div.onclick=function(){var o=layers[t[0]];if(!o)return;o.visible=!o.visible;div.classList.toggle('p3off',!o.visible);};
       tgEl.appendChild(div);
     });
@@ -1729,6 +1762,7 @@ global.initPsy3D = function(container, opts){
     var THREE=window.THREE;
     while(pathGroup.children.length)pathGroup.remove(pathGroup.children[0]);
     while(projGroup.children.length)projGroup.remove(projGroup.children[0]);
+    if(saDropGroup) while(saDropGroup.children.length)saDropGroup.remove(saDropGroup.children[0]);
     timeLabels.forEach(function(s){scene.remove(s);});timeLabels=[];
     if(!weatherData.length)return;
 
@@ -1750,6 +1784,52 @@ global.initPsy3D = function(container, opts){
     pathGroup.add(new THREE.Line(lnGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.35})));
     var prGeo=new THREE.BufferGeometry();prGeo.setAttribute('position',new THREE.Float32BufferAttribute(prV,3));prGeo.setAttribute('color',new THREE.Float32BufferAttribute(prC,3));
     projGroup.add(new THREE.Points(prGeo,new THREE.PointsMaterial({size:1.5,vertexColors:true,transparent:true,opacity:.4,sizeAttenuation:true,depthWrite:false})));
+
+    /* ---------- OA→SA "Rain-on-Floor" 3D Drops -----------------------------
+       For each weather sample at (T, W, time-Y):
+         1. Compute the controller's chosen SA via _saReset (same model used
+            by the 2D OA→SA Lines projection — single source of truth).
+         2. Drop a vertical-ish line from OA at its time-Y down to SA on the
+            basePlane (Y=0).  Line vertex colors fade from full at top → 30%
+            at floor so it visually reads as "raindrops landing".
+         3. Place an SA dot at the floor.
+       Hidden by default (saDropGroup.visible=false at scene init); the user
+       enables it via the "OA→SA Drops" toggle in the layer panel.
+       ----------------------------------------------------------------------- */
+    while(saDropGroup.children.length)saDropGroup.remove(saDropGroup.children[0]);
+    var saV=[],saC=[],dV=[],dC=[];
+    weatherData.forEach(function(p){
+      var sa=_saReset(p.t,p.rh,p.w);
+      var oaX=t2sx(p.t), oaY=frac2sy(p.frac), oaZ=w2sz(p.w);
+      var saX=t2sx(sa.t), saZ=w2sz(sa.w);
+      var c=t2rgb(p.t);
+      // Cull samples where the controller's SA equals OA (no reset action) —
+      // they'd render as zero-length drops and clutter the floor for nothing.
+      if(Math.abs(sa.t-p.t)<0.5 && Math.abs(sa.w-p.w)<0.0003) return;
+      // SA dot on floor (full color, slight alpha so dense floors stay legible).
+      saV.push(saX, 0.3, saZ);
+      saC.push(c[0], c[1], c[2]);
+      // Drop line: top = OA at full color; bottom = SA at floor with color
+      // attenuated to 35 % so the line visually fades as it descends.  Two
+      // vertices per drop → THREE.LineSegments builds one segment each.
+      dV.push(oaX, oaY, oaZ, saX, 0, saZ);
+      dC.push(c[0], c[1], c[2],   c[0]*0.35, c[1]*0.35, c[2]*0.35);
+    });
+    if (saV.length){
+      var saGeo=new THREE.BufferGeometry();
+      saGeo.setAttribute('position', new THREE.Float32BufferAttribute(saV, 3));
+      saGeo.setAttribute('color',    new THREE.Float32BufferAttribute(saC, 3));
+      saDropGroup.add(new THREE.Points(saGeo, new THREE.PointsMaterial({
+        size:2.6, vertexColors:true, transparent:true, opacity:.95,
+        sizeAttenuation:true, depthWrite:false
+      })));
+      var dropGeo=new THREE.BufferGeometry();
+      dropGeo.setAttribute('position', new THREE.Float32BufferAttribute(dV, 3));
+      dropGeo.setAttribute('color',    new THREE.Float32BufferAttribute(dC, 3));
+      saDropGroup.add(new THREE.LineSegments(dropGeo, new THREE.LineBasicMaterial({
+        vertexColors:true, transparent:true, opacity:.45, depthWrite:false
+      })));
+    }
 
     /* time labels */
     function mkTl(text,col,sz){var c=document.createElement('canvas'),x=c.getContext('2d');c.width=512;c.height=64;x.font='bold 30px monospace';x.fillStyle=col||'#94a3b8';x.textAlign='center';x.textBaseline='middle';x.fillText(text,256,32);var t=new THREE.CanvasTexture(c);var s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(sz||28,(sz||28)*.125,1);return s;}
@@ -4123,23 +4203,7 @@ global.initPsy3D = function(container, opts){
       ctx.fillText('Click "Back to 3D" \u2192 "'+_t('fetch_weather_data')+'" to load',vw/2,vh/2+10);
     }
     if(weatherData.length>0){
-      function computeSA(t,rh,w){
-        var st,sw;
-        if(t<5&&rh<30){st=Math.min(22,Math.max(20,20+(5-t)*.15));sw=getW(st,40);}
-        else if(t>=5&&t<15&&rh>=30&&rh<=60){st=Math.min(21,Math.max(18,18+(15-t)*.3));sw=w<.004?getW(st,35):w;}
-        else if(t>=15&&t<20&&rh<30){st=Math.min(21,Math.max(18.5,t+1));sw=getW(st,45);}
-        else if(t>=18&&t<22&&rh>=30&&rh<=50){st=t;sw=w;}
-        else if(t>=22&&t<=25&&rh>=40&&rh<=60){st=t;sw=w;}
-        else if(t>25&&t<=27&&rh>=50&&rh<=70){st=Math.min(26,Math.max(23.5,t-1));sw=rh>65?getW(st,55):w;}
-        else if(t>27&&t<=32&&rh>60&&rh<=80){st=12;sw=getW(12,95);}
-        else if(t>32&&t<=38&&rh>70){st=13;sw=getW(13,95);}
-        else if(t>35&&rh<30){st=15;sw=w<.004?getW(15,40):w;}
-        else if(t>30&&rh>85){st=11;sw=getW(11,95);}
-        else{var h=1.006*t+w*(2501+1.86*t);if(h<30){st=19;sw=getW(19,35);}else if(h<50){st=t;sw=w;}else if(h<65){st=Math.max(23.5,t-1);sw=getW(st,55);}else{st=13;sw=getW(13,95);}}
-        /* saturation cap — SA humidity ratio cannot exceed saturation at SA temp */
-        var wSat=getW(st,100);if(sw>wSat)sw=wSat*0.98;
-        return{t:st,w:sw};
-      }
+      function computeSA(t,rh,w){ return _saReset(t,rh,w); }
       function bandCol(t,rh,alpha){
         var a=alpha||.35;
         if(t<5&&rh<30)return'rgba(59,130,246,'+a+')';

@@ -764,6 +764,41 @@ Zero `pageerror`s.
 - `red5_bundle.zip` rebuilt (1.65 MB, MD5 `4192ed146396fa26c45cf76c4f152b73`) with updated `js/psy-3d-engine.js`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
 
 
+## V1.9 OA→SA "Rain-on-Floor" 3D Layer (2026-02-09)
+**Brief**: Operator asked for a 3D version of the existing 2D `OA→SA Lines` projection — same psychrometric chart on the floor, but with weather samples lifted up the time-Y axis and "raindrop" lines descending from each OA point down to its computed SA target on the chart floor.
+
+### What renders
+- **Floor (Y=0)** = standard psychrometric chart (basePlane texture, T on X, W on Z).
+- **Floating cloud** = 8760 hourly OA samples at world `(t2sx(t), frac2sy(timeFrac), w2sz(w))` — already there from the existing `pathGroup`.
+- **NEW: SA dots** at world `(t2sx(sa.t), 0.3, w2sz(sa.w))` — concentrated cluster on the floor showing where the controller actually lands SA after reset.
+- **NEW: Drop lines** as `THREE.LineSegments` — one 2-vertex segment per OA sample, top vertex at full color, bottom vertex at 35 % color so the line visually fades as it descends (rain-on-floor metaphor).
+- Time-Y axis already runs bottom (Jan) → top (Dec).
+
+### Code changes (single file: `js/psy-3d-engine.js`)
+1. **Hoisted `_saReset(t, rh, w)`** to module scope. The old `computeSA` was closed over inside `render2DChart()` and only the 2D layer could call it. Now both 2D and 3D layers share the SAME 11-band SA-reset model — single source of truth, zero math drift between views.
+2. **`render2DChart`** now has `function computeSA(t,rh,w){ return _saReset(t,rh,w); }` — pure delegation, no behaviour change.
+3. **New `saDropGroup` THREE.Group** declared at scene level, created at scene init with `visible=false` (so existing scenes stay uncluttered until the user opts in).
+4. **Toggle wiring**: added `saDrop:saDropGroup` to the layer map at line 768; added `['saDrop','#22d3ee','OA→SA Drops']` to the toggle list. Initial off-state is mirrored to the UI via a small enhancement to the toggle-creation forEach: any layer with `visible===false` gets `.p3off` class on its toggle.
+5. **`buildWeatherVis`** clears `saDropGroup` on every fetch (so successive weather refreshes don't accumulate stale geometry), then walks `weatherData[]`:
+   - For each sample: compute `sa = _saReset(p.t, p.rh, p.w)`.
+   - Cull no-action samples (`|sa.t - p.t| < 0.5 && |sa.w - p.w| < 0.0003`) — they'd render as zero-length drops and clutter the floor.
+   - Push 1 vertex into the SA-floor scatter (`Float32Array`).
+   - Push 2 vertices into the drop-line `LineSegments` (top at OA, bottom at SA).
+6. Both Points + LineSegments built with `depthWrite:false` so they don't z-fight with the floor psy chart texture.
+
+### End-to-end browser verification
+Drove the live page through `3D WX → fetch 2920 NYC weather points → click OA→SA Drops toggle`. Confirmed:
+- 7 toggles in the panel (was 6); new `OA→SA Drops` toggle present, starts in `off=True` state, flips to `off=False` after click.
+- 2920 points loaded, drop lines + SA floor cluster render correctly (visible in screenshot — yellow-green concentration on the floor representing landed SA, blue/red diagonal raindrops descending from the time-floating OA cloud).
+- Zero `pageerror`s.
+
+### Tests (`tests/test_oa_sa_3d_drops.js`)
+**19/19 PASS** covering: `_saReset` hoist + 2D delegation, `saDropGroup` creation + default-hidden, toggle wiring (layer map + toggle entry + initial off-state mirror), clear-on-refresh, drop math (`saReset` per sample, OA world coords, SA at Y=0, drop-line 2-vertex assembly, vertex-color fade), no-action culling, guarded build (no empty BufferGeometry), Points + LineSegments build, `depthWrite:false` on both.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.66 MB, MD5 `8a21f17a07a780b4d0298393100fbd1c`) with updated `js/psy-3d-engine.js`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

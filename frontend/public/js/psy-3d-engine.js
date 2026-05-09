@@ -1077,10 +1077,10 @@ global.initPsy3D = function(container, opts){
     if (!modeRow) {
       modeRow = document.createElement('div');
       modeRow.id = 'p3-ms-modes';
-      modeRow.style.cssText = 'position:absolute;left:20px;top:48px;z-index:51;'+
+      modeRow.style.cssText = 'position:absolute;right:20px;top:48px;z-index:51;'+
         'display:none;font-family:inherit;font-size:9px;color:#94a3b8;'+
-        'background:rgba(15,23,42,.85);backdrop-filter:blur(10px);'+
-        'border:1px solid rgba(148,163,184,.35);border-radius:6px;padding:6px 10px';
+        'background:rgba(15,23,42,.92);backdrop-filter:blur(10px);'+
+        'border:1px solid rgba(148,163,184,.5);border-radius:6px;padding:6px 10px';
       var modeDefs = [
         {key:'A', lbl:'A: Comfort hours', tip:'Latent-load coverage per strategy: how many of the year\u2019s humid hours each strategy can actually dehumidify.\nPure facts; no assumptions.'},
         {key:'B', lbl:'B: Sens / Lat',    tip:'Sensible vs latent decomposition of each strategy\u2019s annual load.  Shows WHY B1-B10 \u201cspends more energy\u201d \u2014 it\u2019s doing latent work the others skip.'},
@@ -1124,9 +1124,9 @@ global.initPsy3D = function(container, opts){
     if (!costCfg) {
       costCfg = document.createElement('div');
       costCfg.id = 'p3-ms-costcfg';
-      costCfg.style.cssText = 'position:absolute;left:20px;top:82px;z-index:52;'+
+      costCfg.style.cssText = 'position:absolute;right:20px;top:82px;z-index:52;'+
         'display:none;font-family:inherit;font-size:9px;color:#e2e8f0;'+
-        'background:rgba(15,23,42,.92);backdrop-filter:blur(14px);'+
+        'background:rgba(15,23,42,.95);backdrop-filter:blur(14px);'+
         'border:1px solid #10b981;border-radius:6px;padding:8px 12px;'+
         'min-width:380px;box-shadow:0 6px 18px rgba(0,0,0,.45)';
       function _row(id, label, value, unit, min, max, step, tip){
@@ -3050,17 +3050,22 @@ global.initPsy3D = function(container, opts){
             s = _split(d_bn, b.sa_t,  W_sa_b ); sens_bn += s[0]; lat_bn += s[1];
             s = _split(d_bd, T_sa_bd, W_sa_bd); sens_bd += s[0]; lat_bd += s[1];
             s = _split(d_o , T_sa_opt,W_sa_opt);sens_o  += s[0]; lat_o  += s[1];
-        // ---- latent-load coverage ----
+        // ---- latent-load coverage (architectural, not coincidental) ----
         // Humid hour = OA enthalpy > threshold AND OA W requires drying.
-        // Strategy "covers" the hour iff its SA W is at or below the
-        // dehumid target (i.e. it can actually dry the air).
+        // Credit only goes to strategies whose MECHANISM is OA-RH aware:
+        // Fixed-SA, Dyn-Reset, and Opt-SA all have SA targets that don't
+        // adapt to OA humidity (Fixed = constant; Dyn = h_oa trend;
+        // Opt = clamp(h_oa)) -- so even if their SA happens to be humid
+        // by coincidence (e.g. user picks 95 % RH Fixed-SA), they earn
+        // zero credit here.  Earlier metric "W_sa <= dehumid_target"
+        // gave Fixed-SA a misleading 100 % when set to 95 % RH because
+        // the SA happened to be just below the target by 0.0001 kg/kg.
+        // B1-B10 / B1-B10+Dyn earn credit when the classifier picks a
+        // band whose SA is >= 90 % RH (the explicit dehumid bands
+        // B7/B8/B10: "subcool + reheat" / "max cool + dehumid").
         if (h_oa > H_OA_HUMID_THRESH && WOa[i] > W_DEHUMID_TARGET) {
           humid_hours++;
-          if (W_sa_u   <= W_DEHUMID_TARGET) latMet_b++;
-          if (W_sa_dyn <= W_DEHUMID_TARGET) latMet_d++;
-          if (W_sa_b   <= W_DEHUMID_TARGET) latMet_bn++;
-          if (W_sa_bd  <= W_DEHUMID_TARGET) latMet_bd++;
-          if (W_sa_opt <= W_DEHUMID_TARGET) latMet_o++;
+          if (b.sa_rh >= 90) { latMet_bn++; latMet_bd++; }
         }
         oaSum[m]   += b.oa_damper; oaCnt[m]++;              // damper utilisation
         oaAnnSum   += b.oa_damper; oaAnnCnt++;

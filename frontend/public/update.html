@@ -80,6 +80,15 @@ h1 span{color:#ef4444;font-style:italic}
 .disk-pill.ok{background:#064e3b;color:#34d399;border:1px solid #047857}
 .disk-pill.warn{background:#451a03;color:#fbbf24;border:1px solid #b45309}
 .disk-pill.crit{background:#450a0a;color:#fca5a5;border:1px solid #b91c1c}
+/* Chunked-upload progress bar (matches disk-meter look-and-feel) */
+.up-prog{margin-top:12px;display:none}
+.up-prog .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:11px;color:#94a3b8;letter-spacing:.05em;text-transform:uppercase}
+.up-prog .row .pct{color:#a5b4fc;font-weight:700}
+.up-prog .bar{position:relative;height:8px;background:#020617;border:1px solid #1e293b;border-radius:4px;overflow:hidden}
+.up-prog .bar > div{height:100%;width:0%;background:linear-gradient(90deg,#4f46e5,#6366f1);transition:width .15s linear}
+.up-prog .bar.done > div{background:linear-gradient(90deg,#059669,#22c55e)}
+.up-prog .bar.fail > div{background:linear-gradient(90deg,#dc2626,#ef4444)}
+.up-prog .meta{margin-top:4px;font-size:10px;color:#64748b;font-style:italic}
 </style>
 
 <div class="card">
@@ -95,6 +104,11 @@ h1 span{color:#ef4444;font-style:italic}
 </div>
 <div class="selected-file" id="selectedFile" style="display:none"></div>
 <button class="btn btn-primary" id="uploadBtn" disabled onclick="uploadBundle()">Deploy Bundle</button>
+<div class="up-prog" id="upProg">
+  <div class="row"><span>Uploading</span><span class="pct" id="upPct">0%</span></div>
+  <div class="bar" id="upBar"><div></div></div>
+  <div class="meta" id="upMeta"></div>
+</div>
 <p class="note">Accepts zip encrypted with your password or the master key.</p>
 <div id="status"></div>
 <div class="report" id="report" style="display:none"></div>
@@ -111,6 +125,16 @@ h1 span{color:#ef4444;font-style:italic}
 <p class="note"><b>Full</b>: complete clone including telemetry, weather caches, band states, and collector logs.<br>
 <b>Replication</b>: app code + equipment configs + graphics + saved weather locations. Excludes per-controller runtime state (telemetry.json, weather caches, band_guide.csv, collector logs) so the destination controller keeps its own runtime state but adopts the source's setup. Use this when copying a configured controller's setup onto a fresh controller.</p>
 <div id="dlStatus" style="margin-top:12px;font-size:13px"></div>
+</div>
+
+<div class="card">
+<h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>Repair Mode</span>
+  <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#422006;color:#fbbf24;border:1px solid #b45309;vertical-align:middle">Out-of-Band</span>
+</h2>
+<p class="note" style="margin-bottom:12px">Direct single-file replacement &mdash; bypasses the bundle/decrypt/extract pipeline. Use when the regular bundle upload is blocked by <code style="background:#1e293b;padding:1px 4px;border-radius:3px">Low disk headroom</code> or you need to hotfix one plug-in without re-uploading the full bundle. Each upload writes via tmp+rename so a corrupted transfer can never leave a half-written plug-in on disk.</p>
+<div id="repairList" style="display:flex;flex-direction:column;gap:6px"></div>
+<p class="note" style="margin-top:12px;font-style:normal;color:#fbbf24"><b>After upload:</b> Restart Flask (toggle <code>app.py</code> off/on in the enteliWEB script editor) so Python re-imports the new module. The file is on disk immediately; the running process keeps the old one cached until restart.</p>
+<div id="repairStatus" style="margin-top:10px;font-size:12px"></div>
 </div>
 
 <div class="card">
@@ -338,6 +362,52 @@ function pickFile(f) {
     reportEl.style.display = 'none';
 }
 
+function _newUploadId(){
+    // Random 16-char id matching server-side validation [A-Za-z0-9_-]{8,64}.
+    var s = '';
+    var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    for (var i = 0; i < 16; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+    return 'up-' + Date.now().toString(36) + '-' + s;
+}
+
+function _setUploadProgress(pct, meta, state){
+    var pe = document.getElementById('upProg');
+    var bar = document.getElementById('upBar');
+    var fill = bar.querySelector('div');
+    pe.style.display = 'block';
+    fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    document.getElementById('upPct').textContent = pct.toFixed(0) + '%';
+    if (meta) document.getElementById('upMeta').textContent = meta;
+    bar.className = 'bar' + (state === 'done' ? ' done' : (state === 'fail' ? ' fail' : ''));
+}
+
+function _renderUploadResult(data){
+    if (data && data.success) {
+        statusEl.className = 'status-ok';
+        statusEl.textContent = data.message + '\nExtracted: ' + data.total_extracted + '  Skipped: ' + data.total_skipped + '  Errors: ' + data.total_errors;
+        var html = '';
+        (data.extracted || []).forEach(function(f) { html += '<div class="file ok">' + f.file + ' (' + f.size + ' B)</div>'; });
+        (data.skipped || []).forEach(function(f) { html += '<div class="file skip">' + f.file + ' - ' + f.reason + '</div>'; });
+        (data.errors || []).forEach(function(f) { html += '<div class="file err">' + f.file + ' - ' + f.error + '</div>'; });
+        reportEl.innerHTML = html;
+        reportEl.style.display = 'block';
+        _setUploadProgress(100, 'Deploy complete', 'done');
+        refreshDiskStatus();
+        return true;
+    } else {
+        statusEl.className = 'status-err';
+        statusEl.textContent = 'Error: ' + (data && data.error ? data.error : 'unknown') + ((data && data.free_bytes != null) ? '\nFree bytes: ' + _fmtBytes(data.free_bytes) + ' / inodes: ' + _fmtNum(data.free_inodes) : '');
+        _setUploadProgress(100, 'Deploy failed', 'fail');
+        refreshDiskStatus();
+        return false;
+    }
+}
+
+// Chunked upload — 256 KB chunks, server-side appended to a spool file.
+// Uses /api/upload-bundle-chunk + /api/upload-bundle-finalize on V1.9+
+// controllers; falls back to a single-shot multipart POST if the chunked
+// endpoint returns 404 (so this UI keeps working against older app.py
+// versions that haven't been redeployed yet).
 function uploadBundle() {
     var base = getApiBase();
     if (!base) return;
@@ -352,39 +422,97 @@ function uploadBundle() {
     statusEl.className = 'status-info';
     statusEl.textContent = 'Uploading and extracting...';
     reportEl.style.display = 'none';
+    _setUploadProgress(0, 'Starting upload (' + _fmtBytes(chosenFile.size) + ')', '');
 
-    var fd = new FormData();
-    fd.append('bundle', chosenFile);
-    fd.append('password', pwd);
+    var CHUNK = 262144; // 256 KB
+    var total = chosenFile.size;
+    var totalChunks = Math.max(1, Math.ceil(total / CHUNK));
+    var uploadId = _newUploadId();
 
-    fetch(base + '/api/upload-bundle', { method: 'POST', body: fd })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.success) {
-            statusEl.className = 'status-ok';
-            statusEl.textContent = data.message + '\nExtracted: ' + data.total_extracted + '  Skipped: ' + data.total_skipped + '  Errors: ' + data.total_errors;
-            var html = '';
-            (data.extracted || []).forEach(function(f) { html += '<div class="file ok">' + f.file + ' (' + f.size + ' B)</div>'; });
-            (data.skipped || []).forEach(function(f) { html += '<div class="file skip">' + f.file + ' - ' + f.reason + '</div>'; });
-            (data.errors || []).forEach(function(f) { html += '<div class="file err">' + f.file + ' - ' + f.error + '</div>'; });
-            reportEl.innerHTML = html;
-            reportEl.style.display = 'block';
-            // Refresh disk meter so operators can see post-deploy free space
-            // (and any inode reclaim from the auto __pycache__ purge).
-            refreshDiskStatus();
-        } else {
+    function postOneChunk(idx){
+        var start = idx * CHUNK;
+        var end = Math.min(start + CHUNK, total);
+        var blob = chosenFile.slice(start, end);
+        return fetch(base + '/api/upload-bundle-chunk', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'X-Upload-Id': uploadId,
+                'X-Chunk-Index': String(idx),
+                'X-Total-Chunks': String(totalChunks),
+                'X-Total-Size': String(total)
+            },
+            body: blob
+        }).then(function(r){
+            if (r.status === 404) {
+                // Old controller — no chunked endpoint.  Fall back.
+                throw new Error('__FALLBACK_TO_SINGLESHOT__');
+            }
+            return r.json().then(function(j){ return {status: r.status, body: j}; });
+        }).then(function(res){
+            if (res.status !== 200 || !res.body || !res.body.success) {
+                var err = (res.body && res.body.error) || ('HTTP ' + res.status);
+                throw new Error(err);
+            }
+            var pct = ((idx + 1) / totalChunks) * 95; // reserve last 5% for finalize
+            _setUploadProgress(pct, 'Chunk ' + (idx + 1) + ' / ' + totalChunks + '  (' + _fmtBytes(end) + ' / ' + _fmtBytes(total) + ')', '');
+            return res.body;
+        });
+    }
+
+    function uploadAllChunks(idx){
+        if (idx >= totalChunks) return Promise.resolve();
+        return postOneChunk(idx).then(function(){ return uploadAllChunks(idx + 1); });
+    }
+
+    function finalize(){
+        _setUploadProgress(96, 'Decrypting and extracting on controller...', '');
+        return fetch(base + '/api/upload-bundle-finalize', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({upload_id: uploadId, password: pwd, total_size: total})
+        }).then(function(r){ return r.json(); });
+    }
+
+    function singleShotFallback(){
+        _setUploadProgress(0, 'Old controller detected — falling back to single-shot upload', '');
+        var fd = new FormData();
+        fd.append('bundle', chosenFile);
+        fd.append('password', pwd);
+        // Best-effort progress via XHR (fetch has no upload progress in browsers).
+        return new Promise(function(resolve, reject){
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', base + '/api/upload-bundle', true);
+            if (xhr.upload) {
+                xhr.upload.onprogress = function(e){
+                    if (e.lengthComputable) {
+                        var pct = (e.loaded / e.total) * 95;
+                        _setUploadProgress(pct, _fmtBytes(e.loaded) + ' / ' + _fmtBytes(e.total), '');
+                    }
+                };
+            }
+            xhr.onload = function(){
+                try { resolve(JSON.parse(xhr.responseText)); }
+                catch (e) { reject(new Error('Bad response from controller')); }
+            };
+            xhr.onerror = function(){ reject(new Error('Network error')); };
+            xhr.send(fd);
+        });
+    }
+
+    uploadAllChunks(0)
+        .then(finalize)
+        .then(_renderUploadResult)
+        .then(function(){ uploadBtn.disabled = false; })
+        .catch(function(err){
+            if (err && err.message === '__FALLBACK_TO_SINGLESHOT__') {
+                return singleShotFallback().then(_renderUploadResult).then(function(){ uploadBtn.disabled = false; });
+            }
             statusEl.className = 'status-err';
-            statusEl.textContent = 'Error: ' + data.error + (data.free_bytes != null ? '\nFree bytes: ' + _fmtBytes(data.free_bytes) + ' / inodes: ' + _fmtNum(data.free_inodes) : '');
-            // 507 ENOSPC: re-pull disk meter so the user sees exactly why.
-            refreshDiskStatus();
-        }
-        uploadBtn.disabled = false;
-    })
-    .catch(function(err) {
-        statusEl.className = 'status-err';
-        statusEl.textContent = 'Upload failed: ' + err.message;
-        uploadBtn.disabled = false;
-    });
+            statusEl.textContent = 'Upload failed: ' + (err && err.message ? err.message : err);
+            _setUploadProgress(100, 'Upload failed', 'fail');
+            uploadBtn.disabled = false;
+        });
 }
 
 function downloadBundle(mode) {
@@ -435,6 +563,98 @@ function downloadBundle(mode) {
         replicateBtn.disabled = false;
     });
 }
+
+// ---------- Repair Mode (out-of-band single-file plug-in upload) ----------
+var REPAIR_FILES = [
+    {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status', kind: 'plugin'},
+    {name: 'weather_service.py',   label: 'Weather Service',   desc: 'Open-Meteo + tomorrow forecast routes',           kind: 'plugin'},
+    {name: 'band_service.py',      label: 'Band Service',      desc: 'B1-B10 CSV generator + guide download',           kind: 'plugin'},
+    {name: 'telemetry_service.py', label: 'Telemetry Service', desc: '/api/data, /api/write-point, collector config',   kind: 'plugin'},
+    {name: 'update.html',          label: 'update.html',       desc: 'This page',                                       kind: 'ui'},
+    {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
+    {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
+    {name: 'landing.html',         label: 'landing.html',      desc: 'Landing page',                                    kind: 'ui'},
+];
+
+function _renderRepairList(){
+    var box = document.getElementById('repairList');
+    if (!box) return;
+    box.innerHTML = '';
+    REPAIR_FILES.forEach(function(f){
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#020617;border:1px solid #1e293b;border-radius:6px';
+        var color = f.kind === 'plugin' ? '#a5b4fc' : '#86efac';
+        var bg    = f.kind === 'plugin' ? '#312e81' : '#064e3b';
+        row.innerHTML = ''
+            + '<span style="display:inline-block;padding:2px 6px;border-radius:3px;background:' + bg + ';color:' + color + ';font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">' + f.kind + '</span>'
+            + '<span style="flex:1"><span style="color:#e2e8f0;font-size:12px;font-weight:700">' + f.name + '</span><span style="color:#64748b;font-size:10px;display:block;margin-top:1px">' + f.desc + '</span></span>'
+            + '<input type="file" accept=".py,.html" id="rf_' + f.name.replace(/\W/g,'_') + '" style="display:none">'
+            + '<button class="btn" data-act="pick" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em">Replace</button>'
+            + '<a href="#" data-act="dl" data-name="' + f.name + '" class="btn" style="padding:6px 10px;font-size:10px;background:#020617;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em;text-decoration:none">View</a>';
+        box.appendChild(row);
+    });
+    box.addEventListener('click', _onRepairClick);
+    box.addEventListener('change', _onRepairFileChange);
+}
+function _onRepairClick(e){
+    var btn = e.target.closest('[data-act]'); if (!btn) return;
+    var act = btn.getAttribute('data-act');
+    var name = btn.getAttribute('data-name');
+    if (act === 'pick'){
+        e.preventDefault();
+        var fi = document.getElementById('rf_' + name.replace(/\W/g,'_'));
+        if (fi) fi.click();
+    } else if (act === 'dl'){
+        e.preventDefault();
+        var base = (document.getElementById('serverUrl').value || '').replace(/\/$/, '');
+        if (!base) { alert('Set Controller URL first.'); return; }
+        window.open(base + '/api/repair/download-plugin/' + encodeURIComponent(name), '_blank');
+    }
+}
+function _onRepairFileChange(e){
+    var fi = e.target;
+    if (!fi.files || !fi.files[0]) return;
+    var match = fi.id.match(/^rf_(.+)$/); if (!match) return;
+    var file = fi.files[0];
+    // Map munged id back to actual name from REPAIR_FILES
+    var picked = REPAIR_FILES.find(function(f){ return f.name.replace(/\W/g,'_') === match[1]; });
+    if (!picked) return;
+    if (file.name !== picked.name && !confirm('Selected file name ('+file.name+') does not match expected ('+picked.name+'). Upload anyway as '+picked.name+'?')){
+        fi.value = '';
+        return;
+    }
+    _doRepairUpload(picked.name, file);
+    fi.value = '';
+}
+function _doRepairUpload(name, file){
+    var status = document.getElementById('repairStatus');
+    var base = (document.getElementById('serverUrl').value || '').replace(/\/$/, '');
+    if (!base) { status.className = 'status-err'; status.textContent = 'Set Controller URL first.'; return; }
+    status.className = 'status-info';
+    status.textContent = 'Uploading ' + name + ' (' + (file.size/1024).toFixed(1) + ' KB)…';
+    var fd = new FormData();
+    fd.append('file', file, name);
+    fd.append('filename', name);
+    fetch(base + '/api/repair/upload-plugin', {method:'POST', body: fd})
+        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); })
+        .then(function(rs){
+            if (rs.ok && rs.j && rs.j.success){
+                status.className = 'status-ok';
+                status.textContent = 'OK: replaced ' + (rs.j.dest || name) + ' (' + rs.j.bytes + ' bytes). ' + (rs.j.note || '');
+                // Auto-refresh disk status after a plug-in replace
+                if (typeof refreshDiskStatus === 'function') refreshDiskStatus();
+            } else {
+                status.className = 'status-err';
+                var msg = (rs.j && rs.j.error) || ('HTTP ' + rs.status);
+                status.textContent = 'Error: ' + msg + (rs.j && rs.j.allowed ? ' [allowed: ' + rs.j.allowed.join(', ') + ']' : '');
+            }
+        })
+        .catch(function(err){
+            status.className = 'status-err';
+            status.textContent = 'Network error: ' + err.message;
+        });
+}
+_renderRepairList();
 
 // Auto-detect server from current page origin (works when served by controller)
 (function() {

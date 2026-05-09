@@ -462,20 +462,29 @@ def _finalize_bundle_from_disk(spool_path, password):
             return {'success': False, 'error': 'File is not a valid zip archive (after decryption).'}, 400
 
         # Pre-flight: refuse the deploy if free space is dangerously low.
+        # Headroom calibrated to the actual zip size (zip is on disk here):
+        # peak disk use during _extract_zip_streaming is ~zip_size + extracted_files
+        # (~1.1× zip).  Floor at 5 MB so tiny bundles still get a sane minimum.
+        try:
+            _zip_size = os.path.getsize(zip_path)
+        except OSError:
+            _zip_size = 0
+        _min_need = max(5 * 1024 * 1024, _zip_size * 2)
         ok, free_bytes, free_inodes = _check_free_space(DATA_ROOT,
-                                                       min_bytes=20 * 1024 * 1024,
+                                                       min_bytes=_min_need,
                                                        min_inodes=400)
         if not ok:
             # Try a quick auto-cleanup pass before giving up.
             _purge_pycache()
             _purge_uploads_scratch()
-            ok2, free_bytes, free_inodes = _check_free_space(DATA_ROOT, 20 * 1024 * 1024, 400)
+            ok2, free_bytes, free_inodes = _check_free_space(DATA_ROOT, _min_need, 400)
             if not ok2:
                 return {
                     'success': False,
                     'error': '[Errno 28] Low disk headroom; refusing to deploy.',
                     'free_bytes': free_bytes,
                     'free_inodes': free_inodes,
+                    'required_bytes': _min_need,
                 }, 507
 
         extracted, skipped, errors = _extract_zip_streaming(zip_path)
@@ -549,7 +558,7 @@ def upload_bundle_chunk():
                     os.unlink(spool)
             except OSError:
                 pass
-            need = max(20 * 1024 * 1024, total_size * 3)
+            need = max(5 * 1024 * 1024, total_size * 2)
             ok, free_bytes, free_inodes = _check_free_space(DATA_ROOT, min_bytes=need, min_inodes=400)
             if not ok:
                 _purge_uploads_scratch()
@@ -1034,6 +1043,127 @@ def serve_update_page():
 
 
 
+def repair_upload_plugin():
+    """Out-of-band repair upload: replaces a single plug-in `.py` file in
+    PLUGINS_ROOT (or a UI/asset file in DATA_ROOT) directly, bypassing the
+    bundle/decrypt/extract pipeline.
+
+    Use case: the operator's controller is stuck below the headroom floor
+    of the bundle uploader, OR a single plug-in has a broken release that
+    needs a hotfix without re-uploading the whole bundle.
+
+    Security: the file must match a strict allow-list — only known plug-in
+    names + a small set of UI/asset files.  Refuses `app.py` (bootloader).
+
+    POST multipart/form-data:
+        file: <file blob>
+        filename (optional): override (defaults to the upload's filename)
+    Returns: {success, dest, bytes, root}
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file in form data'}), 400
+        f = request.files['file']
+        # Caller can override filename if needed (rare).
+        name = (request.form.get('filename') or f.filename or '').strip()
+        if not name:
+            return jsonify({'success': False, 'error': 'Missing filename'}), 400
+
+        # Strip any path components — we only care about the basename.
+        name = os.path.basename(name)
+
+        # Allow-list — narrow attack surface.  These map to a specific dest root.
+        plugin_files = {
+            'upload_service.py',
+            'weather_service.py',
+            'band_service.py',
+            'telemetry_service.py',
+        }
+        ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
+                    'landing.html', 'psy_3d.html'}
+        if name == 'app.py':
+            return jsonify({'success': False, 'error': 'app.py is the bootloader — refused. Replace via enteliWEB script editor.'}), 403
+        if name in plugin_files:
+            dest_root = PLUGINS_ROOT
+            dest_label = 'pgpy'
+        elif name in ui_files:
+            dest_root = DATA_ROOT
+            dest_label = 'data'
+        else:
+            return jsonify({'success': False, 'error': 'Filename not in repair allow-list', 'allowed': sorted(plugin_files | ui_files)}), 403
+
+        # Disk-full guard (very lenient — only refuse if we literally cannot
+        # write a few KB safely).  No 20 MB / 5 MB floor here: this endpoint
+        # exists EXPRESSLY to unblock low-headroom controllers.
+        ok_disk, free_b, free_i = _check_free_space(DATA_ROOT, min_bytes=64 * 1024, min_inodes=10)
+        if not ok_disk:
+            _purge_pycache()
+            _purge_uploads_scratch()
+            ok_disk, free_b, free_i = _check_free_space(DATA_ROOT, min_bytes=64 * 1024, min_inodes=10)
+            if not ok_disk:
+                return jsonify({'success': False, 'error': 'Disk genuinely full', 'free_bytes': free_b, 'free_inodes': free_i}), 507
+
+        os.makedirs(dest_root, exist_ok=True)
+        dest_path = os.path.join(dest_root, name)
+        # Write to a temp side-file then rename, so we never leave a
+        # half-written replacement of a critical plug-in.
+        tmp_path = dest_path + '.repair_tmp'
+        try:
+            bytes_written = _stream_save_request_to_file(f.stream, tmp_path,
+                                                         max_bytes=10 * 1024 * 1024,
+                                                         chunk=65536)
+            os.replace(tmp_path, dest_path)
+        except Exception:
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
+        # Drop any stale .pyc that the new .py made obsolete.
+        if name.endswith('.py'):
+            _purge_pycache()
+
+        return jsonify({
+            'success': True,
+            'dest': dest_label + '/' + name,
+            'bytes': bytes_written,
+            'root': dest_label,
+            'note': 'Restart Flask (or toggle the app.py enteliWEB script object) for Python to re-import the new module.',
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def repair_download_plugin(plugin_name):
+    """Out-of-band repair download: serve the current copy of a plug-in
+    file directly so the operator can see what's deployed before deciding
+    to overwrite.  Same allow-list as the upload counterpart.
+    """
+    plugin_files = {
+        'upload_service.py', 'weather_service.py',
+        'band_service.py', 'telemetry_service.py',
+    }
+    ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
+                'landing.html', 'psy_3d.html'}
+    name = os.path.basename(plugin_name or '')
+    if name == 'app.py':
+        return jsonify({'success': False, 'error': 'app.py refused (bootloader)'}), 403
+    if name in plugin_files:
+        path = os.path.join(PLUGINS_ROOT, name)
+    elif name in ui_files:
+        path = os.path.join(DATA_ROOT, name)
+    else:
+        return jsonify({'success': False, 'error': 'not in repair allow-list'}), 403
+    if not os.path.isfile(path):
+        return jsonify({'success': False, 'error': 'file not on disk', 'path': path}), 404
+    mime = 'text/x-python' if name.endswith('.py') else 'text/html'
+    return _no_cache(send_from_directory(os.path.dirname(path),
+                                         os.path.basename(path),
+                                         mimetype=mime, as_attachment=False))
+
+
 def register(app, ctx):
     """Attach this module's routes to ``app`` and stash shared constants.
 
@@ -1072,5 +1202,10 @@ def register(app, ctx):
                      disk_status,            methods=['GET'])
     app.add_url_rule('/api/upload-bundle',          'upload_bundle',
                      upload_bundle,          methods=['POST'])
+    app.add_url_rule('/api/repair/upload-plugin',   'repair_upload_plugin',
+                     repair_upload_plugin,   methods=['POST'])
+    app.add_url_rule('/api/repair/download-plugin/<path:plugin_name>',
+                     'repair_download_plugin',
+                     repair_download_plugin, methods=['GET'])
     app.add_url_rule('/update',                     'serve_update_page',
                      serve_update_page,      methods=['GET'])

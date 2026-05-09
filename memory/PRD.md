@@ -593,6 +593,56 @@ The fix lives in `upload_service.py`, which is *deployed by* the upload service.
 - `red5_bundle.zip` rebuilt (1.62 MB, MD5 `b5465c64a40f2ca63a1e4299e132de4d`) with updated `upload_service.py`. Standalone `upload_service.py` (48 KB) also synced to `/app/frontend/public/upload_service.py` and `/app/frontend/public/red5-files/upload_service.py` for direct out-of-band deployment.
 
 
+## V1.9 Out-of-Band Repair Mode (2026-02-09)
+**Brief**: Permanently solves the chicken-and-egg deployment problem where a fix to `upload_service.py` couldn't be applied via the bundle uploader because the bundle uploader's pre-flight was the thing being fixed. Now any plug-in or UI file can be replaced via a direct single-file POST that bypasses the bundle/decrypt/extract pipeline entirely.
+
+### Backend (`upload_service.py`)
+Two new routes:
+- **POST `/api/repair/upload-plugin`** — multipart/form-data with `file` + optional `filename` override. Strict allow-list (only `upload_service.py`, `weather_service.py`, `band_service.py`, `telemetry_service.py` go to `PLUGINS_ROOT`; `update.html`, `dashboard.html`, `equipment_mapper.html`, `landing.html`, `psy_3d.html` go to `DATA_ROOT`). Refuses `app.py` (HTTP 403, "bootloader — refused"). Refuses anything off-list (HTTP 403, response includes the allow-list).
+  - Path-traversal safe: `os.path.basename()` strips any directory components from filename header.
+  - **No 5 MB / 20 MB headroom floor here** — exists expressly to unblock low-headroom controllers. Only refuses if disk genuinely cannot accept a 64 KB write (`min_bytes=64 KB, min_inodes=10`) after auto-cleanup.
+  - **Atomic rename**: writes to `<dest>.repair_tmp` first, then `os.replace()` to final path → corrupted transfers can never leave a half-written replacement of a critical plug-in.
+  - 10 MB per-file ceiling on `_stream_save_request_to_file` so individual files can't fill a controller.
+  - Auto-`_purge_pycache()` after every `.py` upload (drops any stale `.pyc` the new module made obsolete).
+  - Response includes a `note` reminding the operator to Restart Flask for Python to re-import the module.
+- **GET `/api/repair/download-plugin/<plugin_name>`** — same allow-list. Serves the current on-disk copy of any plug-in/UI file. Refuses `app.py` (403). Returns 404 if file missing on disk. Useful for "what's deployed?" inspection before deciding to overwrite.
+
+### Frontend (`update.html`)
+New "Repair Mode" card (between Download Bundle and Documentation):
+- "Out-of-Band" amber pill in the heading.
+- 8-row list: 4 PLUGIN entries (purple badge) + 4 UI entries (green badge), each showing the filename + a one-line description.
+- Per-row **Replace** button → triggers a hidden `<input type=file>` → on file pick, posts to `/api/repair/upload-plugin` with FormData. Confirms before sending if the picked filename doesn't match the slot.
+- Per-row **View** button → opens `/api/repair/download-plugin/<name>` in a new tab.
+- Status line below the list shows OK / error / network failure with byte counts.
+- Auto-refreshes the Disk Capacity widget after every successful repair upload.
+- Bottom-of-card footer reminds operator that the file is on disk immediately but the running Python process keeps the old module cached until Flask is restarted (toggle `app.py` off/on in the enteliWEB script editor).
+
+### Tests (`tests/test_repair_mode.py`)
+**25/25 PASS** covering:
+- Plug-in upload happy path (verifies file on disk, byte-equality, dest label, restart-flask note)
+- UI .html upload happy path (verifies routed to DATA_ROOT not PLUGINS_ROOT)
+- `app.py` upload refused (403 + bootloader error message + file NOT written anywhere)
+- Off-list filename refused (403 + response includes allow-list)
+- Path-traversal `../../../etc/passwd` rejected (basename strip → off-list → 403)
+- No `.repair_tmp` files lingering after success (atomic rename worked)
+- Download endpoint round-trip equivalence
+- `app.py` download refused (403)
+- Missing-file download returns 404
+- Off-list download returns 403
+
+Plus `tests/test_streaming_upload.py` **36/36 PASS** (regression — the new endpoint didn't break the legacy/chunked paths).
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.62 MB, MD5 `44040dc62848e82035653c439b873dc3`) with updated `upload_service.py` + `update.html`. Standalone copies synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+### Operator workflow when bundle uploader is blocked
+1. Open `/update`. Scroll to **Repair Mode** card.
+2. Click **VIEW** on `upload_service.py` (or any plug-in) to confirm what's currently deployed.
+3. Click **REPLACE** → pick the new file → confirm if name doesn't match → upload posts directly to `/api/repair/upload-plugin`.
+4. Toggle `app.py` off then on in the enteliWEB script editor (Python module re-import).
+5. Retry the bundle upload — now uses the updated logic.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

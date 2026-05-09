@@ -3042,9 +3042,14 @@ global.initPsy3D = function(container, opts){
         // in strict-mode script contexts (Babel compiles to strict mode).
         var _split = function(dh_signed, T_sa, W_sa){
           var sens = damp * CP_DRY * (T - T_sa);                 // signed
-          var lat  = damp * H_FG  * (WOa[i] - W_sa);             // signed
-          // Use absolute value for cumulative load (matches |dh|).
-          return [Math.abs(sens), Math.abs(lat)];
+          // Latent counts ONLY during dehumidification (W_oa > W_sa).
+          // Real AHUs don't typically humidify (humidifier is a separate
+          // device, often absent in commercial systems); when OA is drier
+          // than the SA target, the coil doesn't add water -- the air
+          // simply arrives drier than commanded.  Earlier abs() over-
+          // counted humidification work that doesn't physically happen.
+          var lat  = (WOa[i] > W_sa) ? damp * H_FG * (WOa[i] - W_sa) : 0;
+          return [Math.abs(sens), lat];
         };
         var s = _split(d_b , _saT,    W_sa_u);  sens_b  += s[0]; lat_b  += s[1];
             s = _split(d_d , T_sa_dyn,W_sa_dyn);sens_d  += s[0]; lat_d  += s[1];
@@ -3219,7 +3224,11 @@ global.initPsy3D = function(container, opts){
         if (_msMode === 'B') {
           var tot = (m.sens||0) + (m.lat||0);
           if (tot <= 0) return '--';
-          return Math.round((m.lat/tot)*100)+'% latent';
+          var rhAware = (s.key === 'band' || s.key === 'bd');
+          var pct = Math.round((m.lat/tot)*100);
+          // Trailing 'a' (adaptive) or 'i' (incidental) so the banner
+          // chip doesn't lie about what the latent number means.
+          return pct + '% lat ' + (rhAware ? '(a)' : '(i)');
         }
         if (_msMode === 'C') {
           var c = {b:'E= C\u2717',  d:'E\u2193 C\u2717',  band:'E\u2191 C\u2713',
@@ -3732,7 +3741,12 @@ global.initPsy3D = function(container, opts){
         var tot = m.sens + m.lat;
         if (tot <= 0) return '';
         var sPct = (m.sens/tot)*100, lPct = (m.lat/tot)*100;
-        return '  -- '+sPct.toFixed(0)+'% sensible / '+lPct.toFixed(0)+'% latent';
+        // Mark the latent column as adaptive vs incidental so the
+        // audience can't mistake non-RH-aware strategies' thermodynamic
+        // latent byproduct for designed humidity control.
+        var rhAware = (stratKey === 'band' || stratKey === 'bd');
+        var marker = rhAware ? 'adaptive' : 'incidental';
+        return '  -- '+sPct.toFixed(0)+'% sensible / '+lPct.toFixed(0)+'% latent ('+marker+')';
       }
       // Mode C: trade-off chip (Energy / Comfort / Compliance / Failsafe)
       if (_msMode === 'C') {

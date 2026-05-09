@@ -221,6 +221,42 @@ with app.test_client() as c:
     ok, err = _decrypt_bundle_to_file(enc_path2, plain_path + '.bad', 'definitely-wrong')
     test('8c. streaming decrypt wrong-pw fails', not ok, 'err=' + str(err))
 
+    # --- 9. Headroom-floor regression (2026-02-09 fix) ---
+    # The pre-flight on /api/upload-bundle-chunk first chunk used to demand
+    # a flat 20 MB free even for a 1.6 MB bundle (3× total_size capped at 20 MB
+    # floor).  Now it's max(5 MB, total_size * 2).  Verify a small bundle
+    # can pre-flight against a controller-realistic ~6 MB free disk.
+    chunk_url = '/api/upload-bundle-chunk'
+    # Bundle ~ 1 MB, total_size = 1_000_000 → need = max(5_242_880, 2_000_000) = 5 MB
+    # The actual disk under tempfile has tens of GB free in CI, so the check
+    # passes; we verify the SHAPE: header echoed, chunk written, no 507.
+    small_bundle = b'\x00' * 1_000_000
+    r = c.post(chunk_url, data=small_bundle, headers={
+        'X-Upload-Id': 'headroom-floor-test',
+        'X-Chunk-Index': '0',
+        'X-Total-Chunks': '1',
+        'X-Total-Size': str(len(small_bundle)),
+        'Content-Type': 'application/octet-stream',
+    })
+    j = r.get_json() or {}
+    test('9a. small-bundle first-chunk pre-flight passes (not 507)', r.status_code == 200, 'status=' + str(r.status_code) + ' err=' + str(j.get('error')))
+    test('9b. accumulated_bytes matches written', j.get('accumulated_bytes') == len(small_bundle))
+    # Clean up
+    try:
+        os.unlink(td + '/data/_uploads/inbound_headroom-floor-test.bin')
+    except OSError:
+        pass
+
+    # Verify the source-of-truth formula directly so a future refactor
+    # raising the floor breaks the test.
+    upload_service_src = open('/app/archive/Red5-Studio-V1.9/upload_service.py').read()
+    test('9c. chunked floor is 5MB / 2× total_size',
+         'need = max(5 * 1024 * 1024, total_size * 2)' in upload_service_src,
+         'expected formula not found in upload_service.py')
+    test('9d. legacy finalize floor is 5MB / 2× zip_size',
+         '_min_need = max(5 * 1024 * 1024, _zip_size * 2)' in upload_service_src,
+         'expected formula not found in upload_service.py')
+
 print()
 print('SUMMARY:', len(PASSED), 'passed,', len(FAILED), 'failed')
 if FAILED:

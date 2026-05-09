@@ -569,6 +569,30 @@ When an air-flow animation is selected in the Config Tool's Aligners tab (and no
 - `red5_bundle.zip` rebuilt (1.62 MB, MD5 `3424221775d13a09604843a753f438c8`) with updated `equipment_mapper.html`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
 
 
+## V1.9 Headroom Pre-Flight Floor Lowered (2026-02-09)
+**Brief**: Operator reported `/api/upload-bundle` repeatedly failing with `[Errno 28] Low disk headroom` even when the bundle was identical to the one already extracted on disk (would be reclaimed by overwrite).
+
+### Root cause
+Pre-flight `_check_free_space` required a flat 20 MB floor (`max(20 MB, total_size × 3)`), regardless of bundle size or the fact that the existing extracted copy on disk would be replaced. For a 1.62 MB bundle the realistic peak disk use during the `_extract_zip_streaming` pass is ~zip_size + extracted_files (~2× zip_size), nowhere near 20 MB.
+
+### Fix
+Lowered both pre-flight call sites in `upload_service.py`:
+- **Chunked path** (`/api/upload-bundle-chunk` first chunk): `need = max(5 MB, total_size × 2)`.
+- **Legacy / finalize path** (`_finalize_bundle_from_disk`): now uses `os.path.getsize(zip_path)` (the actual zip is on disk at this point) → `_min_need = max(5 MB, _zip_size × 2)`. Also added `_min_need` to the 507 response body so the operator can see required vs free.
+
+### Tests (`tests/test_streaming_upload.py`)
+- **36/36 PASS** (32 original + 4 new):
+  - `9a` small-bundle first-chunk pre-flight returns 200 (not 507)
+  - `9b` accumulated_bytes matches written
+  - `9c`/`9d` source-of-truth formula assertions in `upload_service.py` (locks the floor against future regressions)
+
+### Deployment chicken-and-egg
+The fix lives in `upload_service.py`, which is *deployed by* the upload service. Operators stuck below the old 20 MB floor must replace `/root/data/pgpy/upload_service.py` out-of-band (file-management UI, SCP, or enteliWEB script editor) before the next bundle upload. Subsequent bundles benefit automatically.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.62 MB, MD5 `b5465c64a40f2ca63a1e4299e132de4d`) with updated `upload_service.py`. Standalone `upload_service.py` (48 KB) also synced to `/app/frontend/public/upload_service.py` and `/app/frontend/public/red5-files/upload_service.py` for direct out-of-band deployment.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

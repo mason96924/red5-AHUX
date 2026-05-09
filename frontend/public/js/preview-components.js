@@ -506,7 +506,25 @@ glowColor = '#ef4444';
     );
 };
 
-const PreviewAirFlowSimulator = ({ segments, fanSpeed, isActive, antiFreeze, heating, oat, sat, onSegmentMouseDown, allSensors }) => {
+const PreviewAirFlowSimulator = ({ segments, fanSpeed, isActive, antiFreeze, heating, oat, sat, onSegmentMouseDown, allSensors, containerW, naturalW }) => {
+    // ---- Coordinate-system note (2026-02 schema migration) -------------------
+    // CANONICAL  : seg.offsetXFrac / seg.offsetYFrac  -- fraction of the AHU image
+    //              natural width. Render px = offsetXFrac * containerW, where
+    //              containerW is the CSS-rendered width of the AHU image.
+    // LEGACY     : seg.offsetX / seg.offsetY          -- raw pixels, interpreted
+    //              as "px at the image's natural size" and auto-scaled by
+    //              (containerW / naturalW) so they stay locked to image features
+    //              when the image is shrunk/grown. Migrated to Frac on next save.
+    // FALLBACK   : if neither containerW nor naturalW are supplied (e.g. a host
+    //              that hasn't been updated yet), legacy values render unscaled,
+    //              which is the pre-migration behavior.
+    // ------------------------------------------------------------------------
+    const _legacyScale = (containerW && naturalW) ? (containerW / naturalW) : 1;
+    const _resolveSegPx = (seg) => {
+        const fx = (seg.offsetXFrac != null && containerW != null) ? (seg.offsetXFrac * containerW) : ((seg.offsetX || 0) * _legacyScale);
+        const fy = (seg.offsetYFrac != null && containerW != null) ? (seg.offsetYFrac * containerW) : ((seg.offsetY || 0) * _legacyScale);
+        return { x: fx, y: fy };
+    };
     const animDuration = fanSpeed === 0 ? '0s' : `${(100 / fanSpeed) * 0.7}s`;
     
     // Enhanced temperature resolution with sensor lookup
@@ -599,8 +617,8 @@ const PreviewAirFlowSimulator = ({ segments, fanSpeed, isActive, antiFreeze, hea
                         key={segId} 
                         style={{ 
                             position: 'absolute',
-                            left: `${seg.offsetX || 0}px`, 
-                            top: `${seg.offsetY || 0}px`,
+                            left: `${_resolveSegPx(seg).x}px`, 
+                            top: `${_resolveSegPx(seg).y}px`,
                             width: '100px', height: '100px', 
                             marginLeft: '-50px', marginTop: '-50px', 
                             display: 'block', // Always visible

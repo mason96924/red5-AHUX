@@ -518,6 +518,36 @@ Every call to those endpoints raised `NameError`, Flask returned its default HTM
 - Verification status: rendered & screenshot-tested in the Emergent preview (Adelaide preset). Pending controller deployment via `red5_bundle.zip` reupload (or manual upload of just `js/psy-3d-engine.js`).
 
 
+## V1.9 Air-Flow Segment Schema Migration to Fractional Coords (2026-02-09)
+**Brief**: User reported air-flow segment aligners landing in different on-screen positions in the Config Tool vs the Dashboard's AHU equipment-diagram modal. Root cause: segment offsets were stored as **raw pixels** anchored at a `%` point on the AHU image, but the AHU image renders at **different physical sizes** in the two hosts (Config Tool: `max-h-[85vh]` + `view.scale`; Dashboard: `maxHeight: calc(100% - 4px)` of a resizable modal). Same `offsetX=480` lands at different image-feature-relative positions when display widths diverge.
+
+### Schema (forward-canonical)
+- New fields on each `air_flow_path.segments[i]`: `offsetXFrac`, `offsetYFrac` ∈ [-1, +1] as fraction of the AHU image **natural width**. Both axes use width as the canonical denominator so offsets stay isotropic when display dimensions scale uniformly with the image's aspect ratio.
+- Legacy `offsetX`/`offsetY` fields kept for read-compat. New `Frac` fields take precedence when both are present.
+
+### Render (`PreviewAirFlowSimulator` in `js/preview-components.js`)
+- New props: `containerW` (CSS width of AHU image) + `naturalW` (intrinsic pixel width).
+- Resolution: (1) `offsetXFrac` × `containerW` if both defined; (2) legacy `offsetX` × `(containerW/naturalW)` (auto-scale); (3) raw legacy px if no dims passed (pre-migration behavior).
+
+### Drag handler (`equipment_mapper.html` `move-segment`)
+- `dxFrac = dxScreen / rect.width` (rect.width includes `view.scale` so the math is uniform). Stores `offsetXFrac/offsetYFrac` as canonical; keeps legacy px in sync.
+- On grab, captures `initOffXFrac/Y` preferring frac, falling back to legacy migrated via `imageRef.naturalWidth`.
+- Rotate/scale handles compute segment center via frac if present, else legacy auto-scaled.
+- New segment init writes both Frac=0 and legacy=0.
+
+### Dashboard wiring
+- AHU + VAV modals now pass `containerW` + `naturalW` to the simulator. Previous `transform: scale(vavImgScale)` workaround on the VAV wrapper is **removed** (no longer needed — simulator scales internally).
+
+### Tests
+- `tests/test_airflow_frac_migration.js`: **17/17 PASS** — canonical Frac→px math, legacy fallback with auto-scale, legacy with no dims, Frac-wins precedence, drag-delta math (incl. view.scale cases), cross-host alignment guarantee, full drag→save→reload round-trip.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.62 MB, MD5 `a1b2218d6dd55d19b963cd5cc948f7f0`) with `equipment_mapper.html` + `dashboard.html` + `js/preview-components.js`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+### One-time user action
+Existing configs render via the auto-scale legacy fallback. May shift slightly on first render depending on how close original calibration display was to natural size. To finalize: open each AHU type in Config Tool, nudge each segment once → drag-save persists `offsetXFrac/Y` as canonical → pixel-perfect alignment from then on across both hosts at any display size.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

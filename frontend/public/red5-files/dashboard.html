@@ -17,11 +17,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="js/i18n.js"></script>
-    <link rel="stylesheet" href="dashboard.css" id="app-css">
     <script>
-        if (window.location.pathname.indexOf('.html') === -1) {
-            document.getElementById('app-css').href = '/assets/dashboard.css';
-        }
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
             var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
@@ -34,16 +30,22 @@
         }
     </script>
     <script>
+        // Cache-busting query string. Changes once per page load so even if a
+        // pre-existing browser cached `js/dynamics-animation.js` against the
+        // old (cache-permissive) headers, the very next reload pulls fresh.
+        window.__BUST__ = '?v=' + Date.now();
         // Load dynamics animation as plain JS (not via Babel)
         (function() {
             var s = document.createElement('script');
-            s.src = (window.location.pathname.indexOf('.html') !== -1) ? 'js/dynamics-animation.js' : '/assets/js/dynamics-animation.js';
+            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/dynamics-animation.js' : '/assets/js/dynamics-animation.js';
+            s.src = base + window.__BUST__;
             document.head.appendChild(s);
         })();
         // Load 3D weather strip engine
         (function() {
             var s = document.createElement('script');
-            s.src = (window.location.pathname.indexOf('.html') !== -1) ? 'js/psy-3d-engine.js' : '/assets/js/psy-3d-engine.js';
+            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/psy-3d-engine.js' : '/assets/js/psy-3d-engine.js';
+            s.src = base + window.__BUST__;
             document.head.appendChild(s);
         })();
         // Preload Three.js so 3D Weather tab opens instantly
@@ -103,7 +105,7 @@
 <body>
     <div id="root"></div>
     <script type="text/plain" id="main-source">
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
         // Components loaded from: js/psychrometric.js, js/dashboard-components.js
 
@@ -118,7 +120,39 @@
 
             const [theme, setTheme] = useState(() => (typeof localStorage !== 'undefined' && localStorage.getItem('red5.theme')) || 'dark');
             useEffect(() => { try { localStorage.setItem('red5.theme', theme); } catch(e){} }, [theme]);
+            // Resizable left sidebar — bounded to [250, 320] so the header
+            // ("AHU DIAGNOSTIC HUB" + theme toggle) keeps a small gap at min,
+            // and the original baseline (320 px) stays the comfortable max.
+            const [sidebarWidth, setSidebarWidth] = useState(() => {
+                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(250, Math.min(320, v)); } catch (e) {}
+                return 320;
+            });
             const API_URL = window.API_BASE_URL || window.location.origin;
+
+            // === Stale-cache detector ===
+            // Flask injects window.__BUILD_MTIME__ at HTTP response time. We compare it
+            // against the live /api/version to detect when this browser is running a
+            // stale-cached HTML while the controller has a newer build deployed.
+            const [staleCache, setStaleCache] = useState(null);
+            useEffect(() => {
+                const myMtime = window.__BUILD_MTIME__;
+                if (!myMtime) return; // older app.py (pre-build-stamp); skip detector
+                const check = () => {
+                    fetch(`${API_URL}/api/version`, { cache: 'no-store' })
+                        .then(r => r.ok ? r.json() : null)
+                        .then(v => {
+                            if (!v) return;
+                            const live = v['dashboard.html'];
+                            if (live && live > myMtime) {
+                                setStaleCache({ mine: myMtime, latest: live });
+                            }
+                        })
+                        .catch(() => {});
+                };
+                check();
+                const id = setInterval(check, 60000);
+                return () => clearInterval(id);
+            }, []);
             const [tempRange, setTempRange] = useState({ min: -15, max: 50 });
             const [searchTerm, setSearchTerm] = useState('');
             const [ahuData, setAhuData] = useState([]);
@@ -175,7 +209,22 @@
             const [vavModalSize, setVavModalSize] = useState({ w: 1400, h: 850 });
 
             const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
-            const [floorPlanOffset, setFloorPlanOffset] = useState({ x: 100, y: 50 }); 
+            const [floorPlanOffset, setFloorPlanOffset] = useState({ x: 100, y: 50 });
+
+            /* Sun-Path Phase A integration (Dashboard). Tracks live sun-state
+               (enabled, azimuth, elevation) + building lat/lon for façade
+               exposure highlighting + directional shadows on AHU/VAV markers
+               inside the Floor Plan modal.  Read-only here — authored by the
+               Config Tool's Sun-Path compass; the dashboard only consumes. */
+            const [sunState, setSunState] = useState(null);
+            const [buildingLatLon, setBuildingLatLon] = useState({lat: 40.7128, lon: -74.0060});
+            useEffect(() => {
+                fetch('/api/weather-location').then(r => r.ok ? r.json() : null).then(data => {
+                    if (Array.isArray(data) && data[0] && typeof data[0].lat === 'number') {
+                        setBuildingLatLon({lat: data[0].lat, lon: data[0].lon});
+                    }
+                }).catch(() => {});
+            }, []); 
             const [isFloorPlanDragging, setIsFloorPlanDragging] = useState(false);
             const [mapConfig, setMapConfig] = useState(null);
             
@@ -187,22 +236,102 @@
             const [weatherLocation, setWeatherLocation] = useState(() => {
                 try { return JSON.parse(localStorage.getItem('weatherLocation')) || null; } catch { return null; }
             });
-            // Sync weather location from controller → localStorage on mount (controller is source of truth)
-            useEffect(() => {
-                fetch(`${API_URL}/api/weather-location`)
+            // Saved-location list is now controller-backed (single source of truth on the
+            // controller). Local copy mirrors `savedWeatherLocations` so the modal can
+            // render synchronously without flicker.
+            const [savedWeatherLocations, setSavedWeatherLocations] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('savedWeatherLocations')) || []; } catch { return []; }
+            });
+            const [weatherSaveError, setWeatherSaveError] = useState('');
+            // Hydrate weather state (active + saved list) from controller. Run on
+            // mount and whenever the operator opens the location modal — that's
+            // sufficient for cross-PC visibility of newly added/removed entries.
+            // Background polling was tried earlier but raced against in-flight
+            // POSTs from the same browser, occasionally reverting the local
+            // selection back to the controller's previous state. Keep it
+            // simple: pull on demand only.
+            const hydrateWeatherState = useCallback(() => {
+                return fetch(`${API_URL}/api/weather-location`, { cache: 'no-store' })
                     .then(r => r.ok ? r.json() : null)
-                    .then(serverLoc => {
-                        if (serverLoc && typeof serverLoc.lat === 'number' && typeof serverLoc.lon === 'number') {
-                            try { localStorage.setItem('weatherLocation', JSON.stringify(serverLoc)); } catch (e) {}
-                            setWeatherLocation(serverLoc);
-                        }
+                    .then(state => {
+                        if (!state) return;
+                        const active = state.active && typeof state.active.lat === 'number' && typeof state.active.lon === 'number' ? state.active : null;
+                        const saved = Array.isArray(state.saved) ? state.saved.filter(s => s && typeof s.lat === 'number' && typeof s.lon === 'number') : [];
+                        try { localStorage.setItem('savedWeatherLocations', JSON.stringify(saved)); } catch (e) {}
+                        setSavedWeatherLocations(saved);
+                        // Active is only adopted from the server on first mount —
+                        // i.e. when local state has no active yet. Otherwise the
+                        // operator's just-clicked selection could be reverted.
+                        setWeatherLocation(prev => {
+                            if (prev) return prev;
+                            return active || prev;
+                        });
                     })
                     .catch(() => {});
+            }, []);
+            // Initial hydrate on mount only. (No polling — see comment above.)
+            useEffect(() => {
+                hydrateWeatherState();
+            }, [hydrateWeatherState]);
+            // Persist full weather state (active + saved list) to controller.
+            const persistWeatherState = useCallback((active, savedList) => {
+                setWeatherSaveError('');
+                // 60 s timeout. Embedded controllers writing to flash with fsync
+                // can take several seconds; if the request queues behind the
+                // background prefetch's GET storm on a thread-limited Flask
+                // instance, total budget can run long. 60 s is generous but
+                // still bounded so a truly stalled connection (Opera GX VPN,
+                // disconnected network) doesn't leave the operator wondering
+                // whether the save landed.
+                const controller = new AbortController();
+                const TIMEOUT_MS = 60000;
+                const timer = setTimeout(() => controller.abort('timeout'), TIMEOUT_MS);
+                const _t0 = performance.now();
+                return fetch(`${API_URL}/api/weather-location`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ active: active || null, saved: savedList || [] }),
+                    signal: controller.signal
+                })
+                .then(async r => {
+                    if (!r.ok) {
+                        const txt = await r.text().catch(() => '');
+                        throw new Error(`HTTP ${r.status}: ${txt.slice(0, 120)}`);
+                    }
+                    return r.json();
+                })
+                .catch(e => {
+                    const elapsed = Math.round(performance.now() - _t0);
+                    console.warn(`weather-location save failed after ${elapsed}ms:`, e);
+                    // Reliable abort detection across browsers — modern browsers
+                    // throw the abort reason directly (e === 'timeout'), older
+                    // ones throw a DOMException named 'AbortError'. Check the
+                    // signal state itself.
+                    const wasAborted = controller.signal.aborted;
+                    let reason;
+                    if (wasAborted) {
+                        reason = `Save timed out after ${Math.round(TIMEOUT_MS/1000)} s (took ~${elapsed}ms). The list shown locally is not persisted on the controller. Possible causes: VPN/ad-blocker, slow flash write, or the controller is unreachable.`;
+                    } else {
+                        const msg = (e && e.message) ? e.message : (typeof e === 'string' ? e : 'unknown');
+                        reason = 'Save to controller failed: ' + msg;
+                    }
+                    setWeatherSaveError(reason);
+                    setTimeout(() => setWeatherSaveError(prev => prev === reason ? '' : prev), 60000);
+                })
+                .finally(() => {
+                    clearTimeout(timer);
+                });
             }, []);
             const [weatherZoom, setWeatherZoom] = useState(null);
             const [weatherDragStart, setWeatherDragStart] = useState(null);
             const [weatherDragCurrent, setWeatherDragCurrent] = useState(null);
             const [showWeatherSettings, setShowWeatherSettings] = useState(false);
+            // Whenever the operator opens the weather location modal, re-pull the
+            // controller-side state so the dropdown reflects any additions/removals
+            // performed on a different PC since this browser was last synced.
+            useEffect(() => {
+                if (showWeatherSettings) hydrateWeatherState();
+            }, [showWeatherSettings, hydrateWeatherState]);
             const [weatherError, setWeatherError] = useState(null);
             const [weatherViewMode, setWeatherViewMode] = useState('active_year');
             const [weatherNavDate, setWeatherNavDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -227,6 +356,22 @@
 
             const loadCollectorCfg = async () => {
                 try {
+                    // If equipment types are already loaded at page startup
+                    // (initial asset fetch stashes them into ccEquipTypes /
+                    // window._equipTypesCache), skip the redundant 1.7 MB
+                    // download on modal open.  The modal was blocking on a
+                    // full equipment-types re-fetch every time; reusing the
+                    // cached copy collapses open time from ~500ms to ~5ms.
+                    const cached = (window._equipTypesCache && Object.keys(window._equipTypesCache).length)
+                        ? window._equipTypesCache : null;
+                    if (cached) {
+                        const cfgRes = await fetch(API_URL + '/api/collector-config');
+                        const cfgData = await cfgRes.json();
+                        setCcConfig(cfgData.config || cfgData);
+                        setCcEquipTypes(cached);
+                        setCcMsg('');
+                        return;
+                    }
                     const [cfgRes, etRes] = await Promise.all([
                         fetch(API_URL + '/api/collector-config'),
                         fetch(API_URL + '/api/equipment-types')
@@ -235,6 +380,7 @@
                     const etData = await etRes.json();
                     setCcConfig(cfgData.config || cfgData);
                     setCcEquipTypes(etData);
+                    window._equipTypesCache = etData;
                     setCcMsg('');
                 } catch (e) { setCcMsg('Load failed: ' + e.message); }
             };
@@ -354,11 +500,36 @@
                     .catch(() => setMapConfig(null));
             }, []);
 
+            // Browser-session memoization of weather history. After loading
+            // a city's data once in this tab, switching back to it is instant
+            // (no controller round-trip). Saves the operator from waiting
+            // ~1-3 s per switch on slow embedded controllers.
+            const weatherCacheRef = useRef({});
+            // Guard against stale fetch results overwriting newer data when the
+            // operator quickly switches between locations.
+            const weatherFetchSeqRef = useRef(0);
+            // Status of the most recent weather-history fetch — surfaced as a
+            // small badge in the UI so the operator can see whether the data
+            // came from the browser, the controller cache, or open-meteo.
+            const [weatherFetchStatus, setWeatherFetchStatus] = useState(null);
+
             // Fetch weather history - both current year and previous year
             const fetchWeatherHistory = async (loc) => {
                 if (!loc || !loc.lat || !loc.lon) return;
+                const mySeq = ++weatherFetchSeqRef.current;
+                const cacheKey = loc.lat.toFixed(2) + ',' + loc.lon.toFixed(2);
+                const memo = weatherCacheRef.current[cacheKey];
+                if (memo) {
+                    setWeatherAllDaily(memo.daily);
+                    setWeatherAllHourly(memo.hourly);
+                    setWeatherError(null);
+                    setWeatherLoading(false);
+                    setWeatherFetchStatus({ source: 'browser', ms: 0, name: loc.name || cacheKey });
+                    return;
+                }
                 setWeatherLoading(true);
                 setWeatherError(null);
+                const _t0 = performance.now();
                 try {
                     const API_URL = window.API_BASE_URL || window.location.origin;
                     const thisYear = new Date().getFullYear();
@@ -367,6 +538,8 @@
                         fetch(`${API_URL}/api/weather-history?lat=${loc.lat}&lon=${loc.lon}&year=${lastYear}`).then(r => r.json()),
                         fetch(`${API_URL}/api/weather-history?lat=${loc.lat}&lon=${loc.lon}&year=${thisYear}`).then(r => r.json())
                     ]);
+                    // If a newer selection started while we were waiting, drop our results.
+                    if (mySeq !== weatherFetchSeqRef.current) return;
                     const d1 = (r1.success && r1.daily) ? r1.daily : [];
                     const d2 = (r2.success && r2.daily) ? r2.daily : [];
                     const h1 = (r1.success && r1.hourly) ? r1.hourly : [];
@@ -376,19 +549,84 @@
                     if (merged.length > 0) {
                         setWeatherAllDaily(merged);
                         setWeatherAllHourly(mergedHourly);
+                        weatherCacheRef.current[cacheKey] = { daily: merged, hourly: mergedHourly };
+                        const bothCached = (r1._from_cache === true) && (r2._from_cache === true);
+                        setWeatherFetchStatus({
+                            source: bothCached ? 'controller' : 'net',
+                            ms: Math.round(performance.now() - _t0),
+                            name: loc.name || cacheKey
+                        });
                     } else {
                         setWeatherError(r1.error || r2.error || 'No weather data returned');
+                        setWeatherFetchStatus(null);
                     }
                 } catch (err) {
+                    if (mySeq !== weatherFetchSeqRef.current) return;
                     console.error('[Weather] Fetch error:', err);
-                    setWeatherError('Fetch failed: ' + err.message);
+                    setWeatherError('Fetch failed: ' + (err && err.message ? err.message : err));
+                    setWeatherFetchStatus(null);
+                } finally {
+                    if (mySeq === weatherFetchSeqRef.current) setWeatherLoading(false);
                 }
-                setWeatherLoading(false);
             };
             
             useEffect(() => {
                 if (weatherLocation) fetchWeatherHistory(weatherLocation);
             }, [weatherLocation]);
+
+            // Background prefetch: after the active location loads, quietly
+            // pre-populate the memo for every other saved location so the
+            // operator's NEXT selection is also instant. Runs sequentially
+            // (one location at a time) so we don't hammer the embedded
+            // controller's CPU all at once. Skips the active location and
+            // anything already memoized.
+            useEffect(() => {
+                if (!Array.isArray(savedWeatherLocations) || savedWeatherLocations.length === 0) return;
+                let cancelled = false;
+                const run = async () => {
+                    // Initial delay so the active location's fetch finishes first
+                    // and the operator's first interaction (click weather, pick a
+                    // location, settle UI) doesn't compete with prefetch GETs for
+                    // the controller's limited request slots.
+                    await new Promise(res => setTimeout(res, 4000));
+                    const API_URL = window.API_BASE_URL || window.location.origin;
+                    const thisYear = new Date().getFullYear();
+                    const lastYear = thisYear - 1;
+                    for (const loc of savedWeatherLocations) {
+                        if (cancelled) return;
+                        if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') continue;
+                        const key = loc.lat.toFixed(2) + ',' + loc.lon.toFixed(2);
+                        if (weatherCacheRef.current[key]) continue;
+                        try {
+                            // Sequential within a location too — keeps concurrent
+                            // requests against the controller at 1 at any moment,
+                            // leaving plenty of headroom for the operator's
+                            // interactive POSTs (selectLocation persist).
+                            const r1 = await fetch(`${API_URL}/api/weather-history?lat=${loc.lat}&lon=${loc.lon}&year=${lastYear}`).then(r => r.json());
+                            if (cancelled) return;
+                            const r2 = await fetch(`${API_URL}/api/weather-history?lat=${loc.lat}&lon=${loc.lon}&year=${thisYear}`).then(r => r.json());
+                            if (cancelled) return;
+                            const d1 = (r1.success && r1.daily) ? r1.daily : [];
+                            const d2 = (r2.success && r2.daily) ? r2.daily : [];
+                            const h1 = (r1.success && r1.hourly) ? r1.hourly : [];
+                            const h2 = (r2.success && r2.hourly) ? r2.hourly : [];
+                            const merged = [...d1, ...d2].sort((a, b) => a.date.localeCompare(b.date));
+                            const mergedHourly = [...h1, ...h2].sort((a, b) => a.time.localeCompare(b.time));
+                            if (merged.length > 0) {
+                                weatherCacheRef.current[key] = { daily: merged, hourly: mergedHourly };
+                            }
+                        } catch (e) {
+                            // Silent — prefetch is best-effort. The user's explicit
+                            // selection will retry through fetchWeatherHistory.
+                        }
+                        // Yield 1.5 s between locations so the controller stays
+                        // responsive to interactive POSTs.
+                        await new Promise(res => setTimeout(res, 1500));
+                    }
+                };
+                run();
+                return () => { cancelled = true; };
+            }, [savedWeatherLocations]);
 
             // Compute visible weather data based on view mode
             const getWeatherView = () => {
@@ -482,10 +720,12 @@
             };
 
             // Poll telemetry data from separated backend
-            const fetchTelemetry = React.useCallback(async () => {
+            // NOTE: accepts optional AbortSignal so the polling loop can cancel
+            // an in-flight request when the component unmounts.
+            const fetchTelemetry = React.useCallback(async (signal) => {
                 try {
                     const API_URL = window.API_BASE_URL || window.location.origin;
-                    const response = await fetch(`${API_URL}/api/data`);
+                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal } : undefined);
                     if (!response.ok) return;
                     const data = await response.json();
                     if (!Array.isArray(data)) return;
@@ -506,12 +746,37 @@
                     }
                     setAhuData(data);
                     _setForceApTick(t => t + 1);
-                } catch (e) { }
+                } catch (e) { /* AbortError or network blip - ignore */ }
             }, []);
+            // Self-rescheduling poll loop: a new fetch is NEVER scheduled until the
+            // previous one resolves/aborts. Prevents the queued-fetch DDoS bug where
+            // a 1s setInterval would stack 20+ pending /api/data requests when the
+            // controller was slow.
             useEffect(() => {
-                fetchTelemetry();
-                const interval = setInterval(fetchTelemetry, 1000);
-                return () => clearInterval(interval);
+                const POLL_MS = 2000; // gap between completion of one poll and start of the next
+                let cancelled = false;
+                let timer = null;
+                let controller = null;
+
+                const tick = async () => {
+                    if (cancelled) return;
+                    controller = new AbortController();
+                    try {
+                        await fetchTelemetry(controller.signal);
+                    } finally {
+                        controller = null;
+                        if (!cancelled) {
+                            timer = setTimeout(tick, POLL_MS);
+                        }
+                    }
+                };
+                tick();
+
+                return () => {
+                    cancelled = true;
+                    if (timer) clearTimeout(timer);
+                    if (controller) { try { controller.abort(); } catch (e) {} }
+                };
             }, [fetchTelemetry]);
             // Expose refetch so writeRW can trigger immediate refresh
             useEffect(() => { window._refetchTelemetry = fetchTelemetry; }, [fetchTelemetry]);
@@ -800,6 +1065,49 @@
                 let ySW = yI + diagSlope * (xSW - xI); 
                 if (ySW > yAxis) { ySW = yAxis; if (diagSlope !== 0) xSW = xI + (yAxis - yI) / diagSlope; }
 
+                // === Saturation clipping for the Diagnostic line ===
+                // The diagnostic line is a straight line in (t,w) space with slope chosen
+                // for visual emphasis, NOT one of the physically-bounded canonical lines.
+                // Below ~10°C the saturation curve dw_sat/dt is GENTLER than this line's
+                // slope, so a SW path that starts safely below saturation can curve into
+                // (and cross) the saturation boundary at lower temperatures — a physical
+                // impossibility (the air would just condense). Clip both ends at the
+                // first sat-curve crossing so the arrow tip terminates exactly on the
+                // saturation curve, never past it.
+                const clipLineToSat = (t0, w0, t1, w1) => {
+                    if (!Number.isFinite(t0) || !Number.isFinite(w0) || !Number.isFinite(t1) || !Number.isFinite(w1)) {
+                        return { t: t1, w: w1 };
+                    }
+                    if (w0 >= getW(t0, 100)) return { t: t0, w: w0 };
+                    const steps = 80;
+                    let pT = t0, pW = w0;
+                    for (let i = 1; i <= steps; i++) {
+                        const f = i / steps;
+                        const t = t0 + f * (t1 - t0);
+                        const w = w0 + f * (w1 - w0);
+                        if (w >= getW(t, 100)) {
+                            let lo = 0, hi = 1;
+                            for (let k = 0; k < 24; k++) {
+                                const m = (lo + hi) / 2;
+                                const tm = pT + m * (t - pT);
+                                const wm = pW + m * (w - pW);
+                                if (wm >= getW(tm, 100)) hi = m;
+                                else lo = m;
+                            }
+                            const f2 = (lo + hi) / 2;
+                            return { t: pT + f2 * (t - pT), w: pW + f2 * (w - pW) };
+                        }
+                        pT = t; pW = w;
+                    }
+                    return { t: t1, w: w1 };
+                };
+                const wNEchart = invY(yNE);
+                const neClip = clipLineToSat(pos.t, pos.w, tNE, wNEchart);
+                const xNEc = safe(x(neClip.t)), yNEc = safe(y(neClip.w));
+                const wSWchart = invY(ySW);
+                const swClip = clipLineToSat(pos.t, pos.w, tSW, wSWchart);
+                const xSWc = safe(x(swClip.t)), ySWc = safe(y(swClip.w));
+
                 const satPointer = `M ${xI - 75},${ySat - 25} L ${xI - 15},${ySat - 25} L ${xI},${ySat}`;
                 const dpPointer = `M ${xDp - 75},${yI - 25} L ${xDp - 15},${yI - 25} L ${xDp},${yI}`;
 
@@ -846,8 +1154,8 @@
                         )}
                         {vecVis.diagnostic && (
                             <g>
-                                <line x1={xI} y1={yI} x2={xNE} y2={yNE} stroke="#10b981" strokeWidth="2" strokeDasharray="6,3" markerEnd="url(#arrow-emerald)" />
-                                <line x1={xI} y1={yI} x2={xI + (xSW - xI)} y2={yI + (ySW - yI)} stroke="#10b981" strokeWidth="2" strokeDasharray="6,3" markerEnd="url(#arrow-emerald)" />
+                                <line x1={xI} y1={yI} x2={xNEc} y2={yNEc} stroke="#10b981" strokeWidth="2" strokeDasharray="6,3" markerEnd="url(#arrow-emerald)" />
+                                <line x1={xI} y1={yI} x2={xSWc} y2={ySWc} stroke="#10b981" strokeWidth="2" strokeDasharray="6,3" markerEnd="url(#arrow-emerald)" />
                             </g>
                         )}
                     </g>
@@ -1003,7 +1311,17 @@
             };
 
             return (
-                <div className={`flex h-screen overflow-hidden ${ui.text} ${ui.bg} transition-colors duration-500`} onMouseMove={(e) => {
+                <React.Fragment>
+                {staleCache && (
+                    <div data-testid="stale-cache-banner" style={{position:'fixed', top:0, left:0, right:0, zIndex:99999, background:'#dc2626', color:'#fff', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'center', gap:'12px', fontSize:'12px', fontWeight:900, letterSpacing:'0.05em', boxShadow:'0 4px 12px rgba(0,0,0,0.4)', fontFamily:'SF Mono,Fira Code,monospace'}}>
+                        <span style={{textTransform:'uppercase'}}>⚠ Stale Cache Detected</span>
+                        <span style={{fontWeight:600, opacity:0.9, textTransform:'none'}}>
+                            This browser is running build {staleCache.mine} but controller has {staleCache.latest}. Press <kbd style={{padding:'2px 6px', background:'#fff', color:'#dc2626', borderRadius:'4px', fontFamily:'monospace', fontWeight:900}}>Ctrl + Shift + R</kbd> to load the new build.
+                        </span>
+                        <button onClick={() => { try { if (caches && caches.keys) caches.keys().then(ks => ks.forEach(k => caches.delete(k))); } catch (e) {} location.reload(); }} style={{padding:'4px 10px', background:'#fff', color:'#dc2626', border:'none', borderRadius:'4px', fontWeight:900, cursor:'pointer', fontFamily:'inherit', fontSize:'10px', textTransform:'uppercase'}}>Reload Now</button>
+                    </div>
+                )}
+                <div className={`flex h-screen overflow-hidden ${ui.text} ${ui.bg} transition-colors duration-500`} style={staleCache ? {paddingTop:'42px'} : {}} onMouseMove={(e) => {
                     if (isCardDragging) setCardOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
                     else if (isVavDragging) setVavTableOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
                     else if (isVavModalDragging) setVavModalOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
@@ -1020,8 +1338,36 @@
                     }
                 }} onMouseUp={() => {setIsDraggingIndicator(false); setIsCardDragging(false); setIsVavDragging(false); setIsVavModalDragging(false); setIsAhuModalDragging(false); setIsFloorPlanDragging(false);}}>
                     
-                    {/* LEFT SIDEBAR */}
-                    <div className={`w-80 ${ui.sidebar} border-r ${ui.border} flex flex-col z-20 shadow-2xl overflow-hidden`}>
+                    {/* LEFT SIDEBAR — resizable */}
+                    <div
+                        className={`${ui.sidebar} border-r ${ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
+                        style={{ width: `${sidebarWidth}px` }}
+                        data-testid="left-sidebar"
+                    >
+                        {/* Drag handle on the right edge to resize the sidebar.
+                            Min width = 250px (tested: AHU title + theme toggle keep
+                            a small gap). Max width = 320px (original baseline). */}
+                        <div
+                            data-testid="sidebar-resize-handle"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                const startX = e.clientX;
+                                const startW = sidebarWidth;
+                                const onMove = (mv) => {
+                                    const next = Math.max(250, Math.min(320, startW + (mv.clientX - startX)));
+                                    setSidebarWidth(next);
+                                    try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
+                                };
+                                const onUp = () => {
+                                    window.removeEventListener('mousemove', onMove);
+                                    window.removeEventListener('mouseup', onUp);
+                                };
+                                window.addEventListener('mousemove', onMove);
+                                window.addEventListener('mouseup', onUp);
+                            }}
+                            className="absolute top-0 right-0 h-full w-1 cursor-col-resize z-30 hover:bg-indigo-500/40"
+                            title="Drag to resize"
+                        />
                         <div className="p-4 pb-3 border-b border-slate-800 font-black" style={{overflow:'visible'}}>
                             <div className="flex justify-between items-start">
                                 <div>
@@ -1085,7 +1431,64 @@
                         </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-50`}><button onClick={() => setShowGivoni(!showGivoni)} className={`w-full py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button></div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-10 space-y-2`}><h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] px-1 font-black shadow-black">{t('asset_search')}</h2><input type="text" placeholder="Search ID (Wildcard *, ?)..." className={`w-full ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-xl py-2 px-4 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-                        <div className={`p-4 border-b ${ui.border} bg-opacity-20 space-y-3`}><h2 className="text-[10px] font-black uppercase text-pink-500 tracking-[0.2em] px-1 font-black shadow-black">{t('axis_settings')}</h2><div className="space-y-4 px-1"><div className="space-y-1"><div className="flex justify-between text-[9px] font-bold uppercase text-slate-500 italic font-black shadow-black"><span>{t('min_temp')}</span><span>{tempRange.min}°C</span></div><input type="range" min="-15" max="20" step="1" value={tempRange.min} onChange={(e) => setTempRange({...tempRange, min: parseInt(e.target.value)})} className={`w-full h-1 ${ui.rangeTrack} rounded-lg appearance-none cursor-pointer accent-indigo-500`} /></div><div className="space-y-1"><div className="flex justify-between text-[9px] font-bold uppercase text-slate-500 italic font-black shadow-black"><span>{t('max_temp')}</span><span>{tempRange.max}°C</span></div><input type="range" min="30" max="50" step="1" value={tempRange.max} onChange={(e) => setTempRange({...tempRange, max: parseInt(e.target.value)})} className={`w-full h-1 ${ui.rangeTrack} rounded-lg appearance-none cursor-pointer accent-indigo-500`} /></div></div></div>
+                        {/* AXIS SETTINGS — dual-handle range slider, bounded to [-15, 50] */}
+                        <div className={`p-4 border-b ${ui.border} bg-opacity-20 space-y-3`}>
+                            <h2 className="text-[10px] font-black uppercase text-pink-500 tracking-[0.2em] px-1 font-black shadow-black">{t('axis_settings')}</h2>
+                            {(() => {
+                                const ABS_MIN = -15, ABS_MAX = 50, GAP = 5;
+                                const pct = (v) => ((v - ABS_MIN) / (ABS_MAX - ABS_MIN)) * 100;
+                                const pickHandle = (clientX, trackEl) => {
+                                    const r = trackEl.getBoundingClientRect();
+                                    const v = ABS_MIN + ((clientX - r.left) / r.width) * (ABS_MAX - ABS_MIN);
+                                    return Math.abs(v - tempRange.min) <= Math.abs(v - tempRange.max) ? 'min' : 'max';
+                                };
+                                const startDrag = (e, handle) => {
+                                    e.preventDefault();
+                                    const trackEl = e.currentTarget.closest('[data-testid="axis-range-track"]');
+                                    const r = trackEl.getBoundingClientRect();
+                                    const which = handle || pickHandle(e.clientX, trackEl);
+                                    const onMove = (mv) => {
+                                        const raw = ABS_MIN + ((mv.clientX - r.left) / r.width) * (ABS_MAX - ABS_MIN);
+                                        const v = Math.round(Math.max(ABS_MIN, Math.min(ABS_MAX, raw)));
+                                        setTempRange(prev => {
+                                            if (which === 'min') return { ...prev, min: Math.min(v, prev.max - GAP) };
+                                            return { ...prev, max: Math.max(v, prev.min + GAP) };
+                                        });
+                                    };
+                                    const onUp = () => {
+                                        window.removeEventListener('mousemove', onMove);
+                                        window.removeEventListener('mouseup', onUp);
+                                    };
+                                    window.addEventListener('mousemove', onMove);
+                                    window.addEventListener('mouseup', onUp);
+                                };
+                                const trackBg = theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300';
+                                const handleCls = `absolute -top-1 w-4 h-4 -ml-2 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing ${theme==='dark'?'bg-indigo-400':'bg-indigo-500'}`;
+                                const labelCls = `absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold whitespace-nowrap pointer-events-none ${theme==='dark'?'bg-slate-900 text-indigo-300 border border-indigo-500/40':'bg-white text-indigo-700 border border-indigo-300'}`;
+                                return (
+                                    <div className="px-1 pt-6 pb-1">
+                                        <div data-testid="axis-range-track" className={`relative h-2 ${trackBg} rounded-full`}
+                                             onMouseDown={(e) => startDrag(e)}>
+                                            <div className="absolute h-2 bg-indigo-500 rounded-full"
+                                                 style={{left:`${pct(tempRange.min)}%`, width:`${pct(tempRange.max)-pct(tempRange.min)}%`}} />
+                                            <div className={handleCls} style={{left:`${pct(tempRange.min)}%`}}
+                                                 data-testid="axis-min-handle"
+                                                 onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'min'); }}>
+                                                <span className={labelCls} style={{left:'50%'}}>{tempRange.min}°C</span>
+                                            </div>
+                                            <div className={handleCls} style={{left:`${pct(tempRange.max)}%`}}
+                                                 data-testid="axis-max-handle"
+                                                 onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'max'); }}>
+                                                <span className={labelCls} style={{left:'50%'}}>{tempRange.max}°C</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between text-[8px] font-mono mt-1.5 text-slate-500">
+                                            <span>−15°C</span><span>50°C</span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-5`}><div className="flex justify-between items-center px-2">{['OA', 'SA', 'RA'].map(p => { const configs = { OA: { rgb: '59, 130, 246' }, SA: { rgb: '16, 185, 129' }, RA: { rgb: '244, 63, 94' } }; const labels = { OA: t('oa'), SA: t('sa'), RA: t('ra') }; const active = pointVisibility[p]; const c = configs[p]; return <button key={p} onClick={() => setPointVisibility({...pointVisibility, [p]: !pointVisibility[p]})} className="w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center font-black text-[10px] shadow-black" style={{ backgroundColor: active ? `rgb(${c.rgb})` : `rgba(${c.rgb}, 0.15)`, borderColor: active ? (theme==='dark'?'#fff':'#000') : `rgb(${c.rgb})`, color: active ? '#fff' : `rgb(${c.rgb})`, opacity: active ? 1 : 0.6 }}>{labels[p]}</button>; })}</div></div>
                         <div className={`flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar bg-opacity-20`}>{filteredAhuData.map(ahu => { 
                             const isSelected = selectedAhuId === ahu.id; 
@@ -1103,9 +1506,15 @@
                     {activeView === 'dynamics' && (
                         <div ref={dynRef} className="flex-1 relative" style={{width:'100%',height:'100%'}} data-testid="dynamics-view" />
                     )}
-                    {activeView === 'weather3d' && (
-                        <div ref={psy3dRef} className="flex-1 relative" style={{width:'100%',height:'100%'}} data-testid="weather3d-view" />
-                    )}
+                    {/* weather3d (Monthly × Sites): keep the container PERSISTENTLY mounted
+                        and toggle visibility instead of unmounting.  Unmounting kills the
+                        WebGL canvas without running dispose(), so window.__psy3dActive stays
+                        stuck true and the next initPsy3D() aborts -> blank screen on return.
+                        See psy-3d-engine.js lines 38-43 for the page-wide one-context guard. */}
+                    <div ref={psy3dRef}
+                         className="flex-1 relative"
+                         style={{width:'100%', height:'100%', display: activeView === 'weather3d' ? 'block' : 'none'}}
+                         data-testid="weather3d-view" />
                     <div className="flex flex-col flex-1 overflow-hidden" style={activeView !== 'chart' ? {display:'none'} : {}}>
                     <div className="flex-1 relative flex items-center justify-center overflow-hidden font-black shadow-black shadow-inner">
                         <div className="absolute top-10 left-24 z-10 pointer-events-none font-black shadow-black"><h2 className={`text-3xl font-black italic uppercase ${ui.heading} tracking-tight font-black shadow-black shadow-black`}>{t('psychrometric_chart')}</h2></div>
@@ -1233,7 +1642,14 @@
                             <text x={pad.left + gridWidth/2} y={pad.top + gridHeight + 70} textAnchor="middle" fill={ui.svgAxis} fontSize="14" fontWeight="900" className={`uppercase tracking-[0.3em] font-black italic shadow-black shadow-black`}>{t('dry_bulb_temp')} (°C)</text><text x={pad.left + gridWidth + 65} y={pad.top + gridHeight/2} transform={`rotate(-90, ${pad.left + gridWidth + 65}, ${pad.top+gridHeight/2})`} textAnchor="middle" fill={ui.svgAxis} fontSize="14" fontWeight="900" className={`uppercase tracking-[0.3em] font-black italic shadow-black shadow-black`}>{t('humidity_ratio')} (g/kg)</text>
                         </svg>
                         
-                        <div className={`absolute bottom-12 left-10 flex gap-6 p-4 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-2xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest`}><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-pink-400 border-b border-pink-400 border-dashed shadow-black shadow-black"></div> {t('enthalpy')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-yellow-400 border-b border-yellow-400 border-dashed shadow-black shadow-black"></div> {t('latent')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-blue-400 border-b border-blue-400 border-dashed shadow-black shadow-black"></div> {t('sensible')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-emerald-500 border-b border-emerald-500 border-dashed shadow-black shadow-black"></div> {t('diagnostic')}</div><button onClick={() => { if (!weatherLocation) { setShowWeatherSettings(true); } setShowWeatherStrip(p => !p); }} className={`ml-2 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${showWeatherStrip ? (theme==='dark'?'bg-indigo-600 text-white':'bg-indigo-500 text-white') : (theme==='dark'?'bg-slate-700 text-slate-400 border border-slate-600':'bg-slate-200 text-slate-500 border border-slate-300')}`}>{t('weather')}</button>{showWeatherStrip && <button onClick={() => setShowWeatherSettings(true)} className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-700 text-sky-400 border border-slate-600 hover:text-white':'bg-slate-200 text-sky-600 border border-slate-300 hover:text-sky-800'}`}>{weatherLocation ? (weatherLocation.name || weatherLocation.lat + ',' + weatherLocation.lon) : t('set_location')}</button>}{forecast && showWeatherStrip && <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[7px] font-mono font-bold ${theme==='dark'?'bg-slate-800 border border-slate-700 text-emerald-400':'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}><span className="uppercase tracking-wider">{t('tomorrow')}</span><span className="text-orange-400">{forecast.t_min}/{forecast.t_max}C</span><span className="text-sky-400">{forecast.rh_min}/{forecast.rh_max}%</span><span className="text-pink-400">{forecast.h_min}/{forecast.h_max}kJ</span></div>}</div>
+                        <div className={`absolute bottom-12 left-10 flex gap-6 p-4 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-2xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest`}><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-pink-400 border-b border-pink-400 border-dashed shadow-black shadow-black"></div> {t('enthalpy')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-yellow-400 border-b border-yellow-400 border-dashed shadow-black shadow-black"></div> {t('latent')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-blue-400 border-b border-blue-400 border-dashed shadow-black shadow-black"></div> {t('sensible')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-emerald-500 border-b border-emerald-500 border-dashed shadow-black shadow-black"></div> {t('diagnostic')}</div><button onClick={() => { if (!weatherLocation) { setShowWeatherSettings(true); } setShowWeatherStrip(p => !p); }} className={`ml-2 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${showWeatherStrip ? (theme==='dark'?'bg-indigo-600 text-white':'bg-indigo-500 text-white') : (theme==='dark'?'bg-slate-700 text-slate-400 border border-slate-600':'bg-slate-200 text-slate-500 border border-slate-300')}`}>{t('weather')}</button>{showWeatherStrip && <button onClick={() => setShowWeatherSettings(true)} className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-700 text-sky-400 border border-slate-600 hover:text-white':'bg-slate-200 text-sky-600 border border-slate-300 hover:text-sky-800'}`}>{weatherLocation ? (weatherLocation.name || weatherLocation.lat + ',' + weatherLocation.lon) : t('set_location')}</button>}{showWeatherStrip && weatherFetchStatus && (() => {
+                                const cfg = weatherFetchStatus.source === 'browser'
+                                    ? { label: 'BROWSER', color: theme==='dark'?'text-indigo-300 border-indigo-500/40 bg-indigo-500/10':'text-indigo-700 border-indigo-300 bg-indigo-50' }
+                                    : weatherFetchStatus.source === 'controller'
+                                    ? { label: 'CACHE',   color: theme==='dark'?'text-emerald-300 border-emerald-500/40 bg-emerald-500/10':'text-emerald-700 border-emerald-300 bg-emerald-50' }
+                                    : { label: 'NET',     color: theme==='dark'?'text-orange-300 border-orange-500/40 bg-orange-500/10':'text-orange-700 border-orange-300 bg-orange-50' };
+                                return <span data-testid="weather-fetch-status" className={`px-1.5 py-0.5 rounded border text-[7px] font-mono font-black tracking-widest ${cfg.color}`} title={`Source: ${weatherFetchStatus.source} | ${weatherFetchStatus.ms}ms`}>{cfg.label} {weatherFetchStatus.ms}ms</span>;
+                            })()}{weatherSaveError && <button onClick={() => setWeatherSaveError('')} data-testid="weather-save-error-inline" className={`px-1.5 py-0.5 rounded border text-[7px] font-mono font-black tracking-widest ${theme==='dark'?'text-red-300 border-red-500/40 bg-red-500/10 hover:bg-red-500/20':'text-red-700 border-red-300 bg-red-50 hover:bg-red-100'}`} title={weatherSaveError + ' — click to dismiss'}>SAVE FAILED ✕</button>}{forecast && showWeatherStrip && <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[7px] font-mono font-bold ${theme==='dark'?'bg-slate-800 border border-slate-700 text-emerald-400':'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}><span className="uppercase tracking-wider">{t('tomorrow')}</span><span className="text-orange-400">{forecast.t_min}/{forecast.t_max}C</span><span className="text-sky-400">{forecast.rh_min}/{forecast.rh_max}%</span><span className="text-pink-400">{forecast.h_min}/{forecast.h_max}kJ</span></div>}</div>
                     </div>
                     
                     {/* YEARLY WEATHER STRIP */}
@@ -1606,23 +2022,22 @@
                     
                     {/* Weather Location Settings Modal */}
                     {showWeatherSettings && (() => {
-                        const getSaved = () => { try { return JSON.parse(localStorage.getItem('savedWeatherLocations')) || []; } catch { return []; } };
-                        const setSaved = (list) => localStorage.setItem('savedWeatherLocations', JSON.stringify(list.slice(0, 20)));
-                        const savedLocs = getSaved();
+                        const savedLocs = savedWeatherLocations;
                         const currentKey = weatherLocation ? weatherLocation.lat.toFixed(4)+','+weatherLocation.lon.toFixed(4) : '';
                         const curName = weatherLocation ? (weatherLocation.name || weatherLocation.lat+', '+weatherLocation.lon) : 'Select location';
 
                         const selectLocation = (loc) => {
-                            localStorage.setItem('weatherLocation', JSON.stringify(loc));
+                            // Ensure the selected location is also in the saved list (top of it)
+                            const key = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
+                            const dedupedSaved = savedWeatherLocations.filter(l => (l.lat.toFixed(4)+','+l.lon.toFixed(4)) !== key);
+                            const nextSaved = [loc, ...dedupedSaved].slice(0, 20);
+                            try { localStorage.setItem('weatherLocation', JSON.stringify(loc)); } catch (e) {}
+                            try { localStorage.setItem('savedWeatherLocations', JSON.stringify(nextSaved)); } catch (e) {}
                             setWeatherLocation(loc);
+                            setSavedWeatherLocations(nextSaved);
                             setWeatherZoom(null);
                             setShowWeatherSettings(false);
-                            // Persist to controller so selection survives browser/device changes
-                            fetch(`${API_URL}/api/weather-location`, {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({ lat: loc.lat, lon: loc.lon, name: loc.name || '' })
-                            }).catch(e => console.warn('weather-location save failed:', e));
+                            persistWeatherState(loc, nextSaved);
                         };
                         const addNew = () => {
                             const name = document.getElementById('wl-new-name').value.trim();
@@ -1631,26 +2046,39 @@
                             if (!name) { alert('Enter a location name.'); return; }
                             if (isNaN(lat) || isNaN(lon)) { alert('Enter valid coordinates.'); return; }
                             const loc = { name, lat, lon };
-                            const list = getSaved();
-                            const key = lat.toFixed(4)+','+lon.toFixed(4);
-                            const filtered = list.filter(l => (l.lat.toFixed(4)+','+l.lon.toFixed(4)) !== key);
-                            filtered.unshift(loc);
-                            setSaved(filtered);
                             selectLocation(loc);
                         };
                         const removeLocation = (idx, e) => {
                             e.stopPropagation();
-                            const list = getSaved();
-                            list.splice(idx, 1);
-                            setSaved(list);
-                            setShowWeatherSettings(false);
-                            setTimeout(() => setShowWeatherSettings(true), 50);
+                            const removed = savedWeatherLocations[idx];
+                            const nextSaved = savedWeatherLocations.filter((_, i) => i !== idx);
+                            try { localStorage.setItem('savedWeatherLocations', JSON.stringify(nextSaved)); } catch (e) {}
+                            setSavedWeatherLocations(nextSaved);
+                            // If we removed the active one, clear active too
+                            let nextActive = weatherLocation;
+                            if (removed && weatherLocation
+                                && removed.lat.toFixed(4) === weatherLocation.lat.toFixed(4)
+                                && removed.lon.toFixed(4) === weatherLocation.lon.toFixed(4)) {
+                                nextActive = nextSaved[0] || null;
+                                if (nextActive) {
+                                    try { localStorage.setItem('weatherLocation', JSON.stringify(nextActive)); } catch (e) {}
+                                } else {
+                                    try { localStorage.removeItem('weatherLocation'); } catch (e) {}
+                                }
+                                setWeatherLocation(nextActive);
+                            }
+                            persistWeatherState(nextActive, nextSaved);
                         };
 
                         return (
                         <div onClick={() => setShowWeatherSettings(false)} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
                             <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-indigo-500/50':'bg-white border-slate-300'} border-2 rounded-2xl p-5`} style={{width:'320px', overflow:'hidden'}}>
                                 <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-indigo-400':'text-indigo-600'} mb-3`}>Weather Location</h3>
+                                {weatherSaveError && (
+                                    <div data-testid="weather-save-error" className={`mb-3 px-2 py-1.5 rounded text-[9px] font-mono font-bold ${theme==='dark'?'bg-red-900/40 border border-red-500/40 text-red-300':'bg-red-50 border border-red-300 text-red-700'}`}>
+                                        {weatherSaveError}
+                                    </div>
+                                )}
 
                                 {/* Custom dropdown with inline delete */}
                                 <div className="mb-3 relative">
@@ -1713,10 +2141,22 @@
                         // === Schema-driven VAV graphic & layout ===
                         // Look up VAV type_id from map_config marker, fall back to first vav_type.
                         let vavTypeId = null;
+                        let vavMarkerPos = null;
                         if (mapConfig && mapConfig.floors) {
                             for (const floor of mapConfig.floors) {
                                 const marker = (floor.markers || []).find(m => m.type === 'vav' && m.name === selectedVavForModal.id);
-                                if (marker) { vavTypeId = String(marker.equipment_type_id || ''); break; }
+                                if (marker) { vavTypeId = String(marker.equipment_type_id || ''); vavMarkerPos = {x:marker.x, y:marker.y}; break; }
+                            }
+                        }
+                        // Sun-Path → B1-B10 trim for this specific VAV (P0 hook).  Same
+                        // formula as the floor-plan tooltip; only computed when the sun
+                        // overlay is enabled and this VAV's position is known.
+                        let modalSunScore = null, modalBandTrim = null;
+                        if (sunState && sunState.enabled && sunState.sun && vavMarkerPos && window.red5SunExposureScore) {
+                            modalSunScore = window.red5SunExposureScore(vavMarkerPos.x/100, vavMarkerPos.y/100, sunState.sun);
+                            const _ahuForBand = ahuData.find(a => a.id === selectedAhuId) || ahuData[0];
+                            if (_ahuForBand && _ahuForBand.active_band && window.red5BandSunTrim) {
+                                modalBandTrim = window.red5BandSunTrim(_ahuForBand.active_band, modalSunScore);
                             }
                         }
                         if ((!vavTypeId || vavTypeId === 'null' || vavTypeId === 'undefined') && ccEquipTypes && ccEquipTypes.vav_types) {
@@ -1798,7 +2238,18 @@
                                 <div className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} rounded-xl shadow-2xl border-2 relative flex flex-col overflow-hidden`} style={{ width: `${vavModalSize.w}px`, height: `${vavModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' }} onMouseDown={e => e.stopPropagation()}>
                                     
                                     <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
-                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>Drag corner ↘ to resize</span></h3>
+                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}{modalBandTrim && (
+                                            <span className={`ml-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold tracking-wider ${modalBandTrim.sun_trim_c < 0
+                                                ? (theme === 'dark' ? 'bg-amber-500/15 border-amber-500/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-amber-700')
+                                                : modalBandTrim.sun_trim_c > 0
+                                                ? (theme === 'dark' ? 'bg-sky-500/15 border-sky-500/50 text-sky-400' : 'bg-sky-100 border-sky-400 text-sky-700')
+                                                : (theme === 'dark' ? 'bg-slate-700/40 border-slate-600 text-slate-400' : 'bg-slate-200 border-slate-300 text-slate-500')
+                                            }`} title={`Sun-exposure ${(modalBandTrim.sun_score*100).toFixed(0)}% on this VAV → band ${modalBandTrim.id} SA target ${modalBandTrim.base_sa_t}°C ${modalBandTrim.sun_trim_c >= 0 ? '+' : ''}${modalBandTrim.sun_trim_c.toFixed(2)}°C ⇒ ${modalBandTrim.sa_t_sp}°C local target`}>
+                                                <span className="text-[8px] opacity-70 uppercase">{modalBandTrim.id}</span>
+                                                <span>SA {modalBandTrim.sa_t_sp}°C</span>
+                                                {modalBandTrim.sun_trim_c !== 0 && <span className="opacity-80">({modalBandTrim.sun_trim_c > 0 ? '+' : ''}{modalBandTrim.sun_trim_c.toFixed(2)} sun)</span>}
+                                            </span>
+                                        )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>Drag corner ↘ to resize</span></h3>
                                         <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer mr-1`} onMouseDown={e => e.stopPropagation()} onClick={() => setSelectedVavForModal(null)}>
                                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                         </button>
@@ -1907,12 +2358,13 @@
                                                         const atype = a.animation_type;
 
                                                         if (atype === 'air_flow_path' && typeof PreviewAirFlowSimulator !== 'undefined') {
-                                                            // Config Tool positions this with plain left/top (no translate) — the simulator's top-left IS the anchor,
-                                                            // and segment pixel offsets are measured from there. Scale from the top-left origin so segment offsets
-                                                            // shrink proportionally when the image is shrunk.
+                                                            // Schema-migration (2026-02): segment offsets are now stored as
+                                                            // offsetXFrac/offsetYFrac (fraction of natural image width). The
+                                                            // simulator renders them at containerW px directly, so the wrapper
+                                                            // no longer needs a transform: scale(vavImgScale) workaround.
                                                             return (
-                                                                <div key={`vanim_${ai}`} className="absolute z-10" style={{left:`${a.x}%`, top:`${a.y}%`, pointerEvents:'none', transform:`scale(${vavImgScale})`, transformOrigin:'0 0'}}>
-                                                                    <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={Math.max(vavVn('cfm') / 10, 20)} isActive={false} antiFreeze={false} heating={false} oat={22} sat={vavVn('t') || 22} allSensors={vavSchemaPoints} />
+                                                                <div key={`vanim_${ai}`} className="absolute z-10" style={{left:`${a.x}%`, top:`${a.y}%`, pointerEvents:'none'}}>
+                                                                    <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={Math.max(vavVn('cfm') / 10, 20)} isActive={false} antiFreeze={false} heating={false} oat={22} sat={vavVn('t') || 22} allSensors={vavSchemaPoints} containerW={vavImgDims.dispW} naturalW={vavImgDims.natW} />
                                                                 </div>
                                                             );
                                                         }
@@ -2018,6 +2470,22 @@
                                                         style={{ maxWidth: 'calc(min(1400px, 95vw) - 20px)', maxHeight: 'calc(min(850px, 90vh) - 90px)', filter: theme === 'dark' ? 'invert(1) hue-rotate(180deg)' : 'none', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }}
                                                         alt={floorData.floor.name}
                                                     />
+                                                    {/* Sun-Path Phase A: compass + directional ray overlay.
+                                                        Compass lives in the top-right corner of the floor plan
+                                                        image.  Ray overlay washes a warm gradient across the
+                                                        plan from the sun's incoming direction.  Both only
+                                                        visible when the Sun-Path toggle is ON. */}
+                                                    {window.SunCompass && (
+                                                        <window.SunCompass
+                                                            lat={buildingLatLon.lat}
+                                                            lon={buildingLatLon.lon}
+                                                            theme={theme}
+                                                            onChange={(s) => setSunState(s)}
+                                                        />
+                                                    )}
+                                                    {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                                                        <window.SunRayOverlay sun={sunState.sun} theme={theme} />
+                                                    )}
                                                     <div className="absolute inset-0 pointer-events-none">
                                                     <div className={`absolute top-4 left-4 z-10 text-sm font-mono px-3 py-1.5 rounded pointer-events-auto ${theme === 'dark' ? 'text-emerald-400 bg-slate-900/80' : 'text-emerald-700 bg-white/80'}`}>
                                                         {floorData.floor.name} - {floorData.floor.image_path}
@@ -2026,25 +2494,50 @@
                                                     {/* Render ALL AHU markers from map_config */}
                                                     {floorData.allMarkers.filter(m => m.type === 'ahu').map(marker => {
                                                         const isActive = marker.name === showFloorPlanForAhu || marker.id === showFloorPlanForAhu;
+                                                        // Sun-Path Phase A: compute exposure halo + directional
+                                                        // shadow for this marker when the overlay is active.
+                                                        let sunRing = null, sunShadow = null;
+                                                        if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
+                                                            const sc = window.red5SunExposureScore(marker.x/100, marker.y/100, sunState.sun);
+                                                            sunRing = window.red5ExposureColor(sc);
+                                                            if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                                        }
                                                         return (
                                                             <div key={marker.id} className="absolute flex flex-col items-center z-30 group pointer-events-auto" style={{ left: `${marker.x}%`, top: `${marker.y}%`, transform: 'translate(-50%, -50%)' }}>
+                                                                {sunShadow && (
+                                                                    <div style={{
+                                                                        position:'absolute', left:'50%', top:'28px',
+                                                                        width: sunShadow.length_px, height: 7,
+                                                                        transform: 'translate(0, -50%) rotate(' + (sunShadow.angle_deg - 90) + 'deg)',
+                                                                        transformOrigin: '0 50%',
+                                                                        background: 'linear-gradient(90deg, rgba(15,23,42,' + sunShadow.opacity + '), rgba(15,23,42,0))',
+                                                                        borderRadius: 999, pointerEvents:'none', zIndex:-1
+                                                                    }}/>
+                                                                )}
                                                                 <div 
                                                                     className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActive ? 'bg-orange-500 border-white shadow-[0_0_25px_rgba(249,115,22,0.9)] scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500 shadow-black' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
-                                                                    title={marker.name}
+                                                                    style={(sunRing && !isActive) ? {borderColor: sunRing, boxShadow: `0 0 18px ${sunRing}`} : {}}
+                                                                    title={marker.name + (sunRing ? ' · sun-exposed' : '')}
                                                                     onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(marker.name); setShowFloorPlanForAhu(marker.name); setLockedVavId(null); }}
                                                                 >
                                                                     <span className={`text-xs font-black ${isActive ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600')}`}>{(marker.name || '').split('-')[1] || 'AHU'}</span>
                                                                 </div>
-                                                                <div className={`mt-3 border px-3 py-2 rounded-lg text-xs min-w-[120px] text-center shadow-2xl font-mono cursor-pointer transition-colors flex flex-col items-center ${theme === 'dark' ? 'bg-slate-900/95 border-slate-700' : 'bg-white/95 border-slate-300'} ${isActive ? '!border-orange-500' : 'group-hover:border-orange-400'}`}
-                                                                    onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(marker.name); setShowFloorPlanForAhu(marker.name); setLockedVavId(null); }}
+                                                                <div className={`mt-3 border px-3 py-1.5 rounded-lg text-xs min-w-[80px] text-center shadow-2xl font-mono cursor-pointer transition-colors flex flex-col items-center ${theme === 'dark' ? 'bg-slate-900/95 border-slate-700' : 'bg-white/95 border-slate-300'} ${isActive ? '!border-orange-500' : 'group-hover:border-orange-400'}`}
+                                                                    title={isActive ? 'Click to view diagram' : 'Click to select'}
+                                                                    onMouseDown={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (isActive) {
+                                                                            // Clicking the active AHU box opens its diagram modal directly.
+                                                                            setShowAhuModalFor(marker.name);
+                                                                        } else {
+                                                                            // Otherwise, focus this AHU on the floor plan.
+                                                                            setSelectedAhuId(marker.name);
+                                                                            setShowFloorPlanForAhu(marker.name);
+                                                                            setLockedVavId(null);
+                                                                        }
+                                                                    }}
                                                                 >
-                                                                    <div className={`${isActive ? 'text-orange-500' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-700')} font-black mb-1`}>{marker.name}</div>
-                                                                    <div className="text-slate-500 text-[10px] uppercase mb-2">{isActive ? 'ACTIVE' : 'STANDBY'}</div>
-                                                                    {isActive && (
-                                                                        <button className="w-full bg-slate-800 hover:bg-orange-500 text-white text-[10px] py-1.5 rounded transition-colors uppercase tracking-widest font-black"
-                                                                            onMouseDown={(e) => { e.stopPropagation(); setShowAhuModalFor(marker.name); }}
-                                                                        >View Diagram</button>
-                                                                    )}
+                                                                    <div className={`${isActive ? 'text-orange-500' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-700')} font-black`}>{marker.name}</div>
                                                                 </div>
                                                             </div>
                                                         );
@@ -2063,20 +2556,72 @@
                                                             : diag.status === 'comfort' ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]'
                                                             : diag.status === 'warning' ? 'bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.8)]'
                                                             : 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)]';
-                                                        
+
+                                                        // Sun-Path → B1-B10 band trim (P0 hook).  Compute once per VAV
+                                                        // so both the ring tooltip path and the plain-marker path can
+                                                        // surface the per-VAV trimmed SA target.
+                                                        let vavSunScore = null, vavBandTrim = null;
+                                                        if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
+                                                            vavSunScore = window.red5SunExposureScore(marker.x/100, marker.y/100, sunState.sun);
+                                                            if (activeAhu && activeAhu.active_band && window.red5BandSunTrim) {
+                                                                vavBandTrim = window.red5BandSunTrim(activeAhu.active_band, vavSunScore);
+                                                            }
+                                                        }
+                                                        const trimSuffix = vavBandTrim && vavBandTrim.sun_trim_c !== 0
+                                                            ? ` · ${vavBandTrim.id} SA→${vavBandTrim.sa_t_sp}°C (${vavBandTrim.sun_trim_c > 0 ? '+' : ''}${vavBandTrim.sun_trim_c.toFixed(2)} sun)`
+                                                            : '';
+
                                                         return (
                                                             <div key={marker.id} className="absolute flex flex-col items-center z-20 group pointer-events-auto" style={{ left: `${marker.x}%`, top: `${marker.y}%`, transform: 'translate(-50%, -50%)' }}>
+                                                                {(() => {
+                                                                    // Sun-Path Phase A: directional shadow for this
+                                                                    // VAV marker pointing away from the sun.
+                                                                    if (!(sunState && sunState.enabled && sunState.sun && window.red5MarkerShadow)) return null;
+                                                                    const sh = window.red5MarkerShadow(sunState.sun);
+                                                                    if (!sh) return null;
+                                                                    return (
+                                                                        <div style={{
+                                                                            position:'absolute', left:'50%', top:'12px',
+                                                                            width: sh.length_px, height: 5,
+                                                                            transform: 'translate(0, -50%) rotate(' + (sh.angle_deg - 90) + 'deg)',
+                                                                            transformOrigin: '0 50%',
+                                                                            background: 'linear-gradient(90deg, rgba(15,23,42,' + sh.opacity + '), rgba(15,23,42,0))',
+                                                                            borderRadius: 999, pointerEvents:'none', zIndex:-1
+                                                                        }}/>
+                                                                    );
+                                                                })()}
+                                                                {(() => {
+                                                                    // Compute sun-exposure ring for the dot.
+                                                                    if (!(sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore)) return null;
+                                                                    const sc = vavSunScore != null ? vavSunScore : window.red5SunExposureScore(marker.x/100, marker.y/100, sunState.sun);
+                                                                    const ring = window.red5ExposureColor(sc);
+                                                                    if (!ring) return null;
+                                                                    return (
+                                                                        <div
+                                                                            className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : ''}`}
+                                                                            style={{borderColor: ring, boxShadow: `0 0 15px ${ring}`}}
+                                                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${diag ? ' — ' + diag.status : ''}` : marker.name) + ' · sun-exposed' + trimSuffix}
+                                                                            onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
+                                                                        ></div>
+                                                                    );
+                                                                })() || (
                                                                 <div 
                                                                     className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : 'border-white'}`}
-                                                                    title={liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${diag ? ' — ' + diag.status : ''}` : marker.name}
+                                                                    title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${diag ? ' — ' + diag.status : ''}` : marker.name) + trimSuffix}
                                                                     onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
-                                                                ></div>
+                                                                ></div>)}
                                                                 <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono cursor-pointer transition-colors ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'} ${isLocked ? '!border-cyan-400' : 'group-hover:border-indigo-400'}`}
                                                                     onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                                                 >
                                                                     <div className={`${isLocked ? 'text-cyan-400' : 'text-sky-500'} font-black mb-0.5`}>{marker.name}</div>
-                                                                    {liveVav && <div className={theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}>{liveVav.t.toFixed(1)}C</div>}
+                                                                    {liveVav && <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{liveVav.t.toFixed(1)}&deg;C</span><span className="text-slate-500">·</span><span>{liveVav.rh.toFixed(0)}%</span></div>}
                                                                     {!liveVav && <div className="text-slate-500">--</div>}
+                                                                    {vavBandTrim && vavBandTrim.sun_trim_c !== 0 && (
+                                                                        <div className={`mt-0.5 text-[8px] tracking-wider ${vavBandTrim.sun_trim_c < 0 ? (theme==='dark' ? 'text-amber-400' : 'text-amber-600') : (theme==='dark' ? 'text-sky-400' : 'text-sky-600')}`}
+                                                                            title={`Sun-exposure ${(vavBandTrim.sun_score*100).toFixed(0)}% → ${vavBandTrim.id} SA ${vavBandTrim.base_sa_t}°C ${vavBandTrim.sun_trim_c > 0 ? '+' : ''}${vavBandTrim.sun_trim_c.toFixed(2)}°C`}>
+                                                                            ΔSA {vavBandTrim.sun_trim_c > 0 ? '+' : ''}{vavBandTrim.sun_trim_c.toFixed(2)}°C
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         );
@@ -2086,12 +2631,29 @@
                                             );
                                         } else {
                                             // === FALLBACK: no map_config or no floor found ===
+                                            // Wrap in a fixed-ratio box so absolute-positioned markers +
+                                            // the sun compass have a non-zero canvas to sit on.
                                             return (
-                                                <React.Fragment>
+                                                <div className="relative" style={{width: '80vw', maxWidth: 1200, height: '70vh', maxHeight: 700}}>
+                                                    <React.Fragment>
                                                     {floorImage ? (
                                                         <img src={floorImage} className="absolute inset-0 w-full h-full object-contain z-0 opacity-40 transition-all duration-500" style={{ filter: theme === 'dark' ? 'invert(1) hue-rotate(180deg)' : 'none', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }} alt="Floor Plan" />
                                                     ) : (
                                                         <div className="absolute inset-0 blueprint-grid opacity-30 pointer-events-none z-0"></div>
+                                                    )}
+                                                    {/* Sun-Path Phase A: compass + ray overlay in the fallback
+                                                        layout.  Lets users exercise sun-path even without a
+                                                        real map_config.json uploaded. */}
+                                                    {window.SunCompass && (
+                                                        <window.SunCompass
+                                                            lat={buildingLatLon.lat}
+                                                            lon={buildingLatLon.lon}
+                                                            theme={theme}
+                                                            onChange={(s) => setSunState(s)}
+                                                        />
+                                                    )}
+                                                    {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                                                        <window.SunRayOverlay sun={sunState.sun} theme={theme} />
                                                     )}
                                                     <div className={`absolute top-4 left-4 z-10 text-sm font-mono px-3 py-1.5 rounded ${theme === 'dark' ? 'text-amber-400 bg-slate-900/80' : 'text-amber-700 bg-white/80'}`}>
                                                         No map_config.json — using fallback layout
@@ -2103,9 +2665,28 @@
                                                         const ahuPositions = [{ left: 25, top: 25 }, { left: 75, top: 25 }, { left: 25, top: 75 }, { left: 75, top: 75 }];
                                                         return floorAhus.map((ahu, i) => {
                                                             const pos = ahuPositions[i]; const isActiveAhu = showFloorPlanForAhu === ahu.id;
+                                                            // Sun-Path Phase A: halo + shadow for fallback AHU markers
+                                                            let sunRing = null, sunShadow = null;
+                                                            if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
+                                                                const sc = window.red5SunExposureScore(pos.left/100, pos.top/100, sunState.sun);
+                                                                sunRing = window.red5ExposureColor(sc);
+                                                                if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                                            }
                                                             return (
                                                                 <div key={ahu.id} className="absolute flex flex-col items-center z-30 group" style={{ left: `${pos.left}%`, top: `${pos.top}%`, transform: 'translate(-50%, -50%)' }}>
+                                                                    {sunShadow && (
+                                                                        <div style={{
+                                                                            position:'absolute', left:'50%', top:'28px',
+                                                                            width: sunShadow.length_px, height: 7,
+                                                                            transform: 'translate(0, -50%) rotate(' + (sunShadow.angle_deg - 90) + 'deg)',
+                                                                            transformOrigin: '0 50%',
+                                                                            background: 'linear-gradient(90deg, rgba(15,23,42,' + sunShadow.opacity + '), rgba(15,23,42,0))',
+                                                                            borderRadius: 999, pointerEvents:'none', zIndex:-1
+                                                                        }}/>
+                                                                    )}
                                                                     <div className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActiveAhu ? 'bg-orange-500 border-white scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
+                                                                        style={(sunRing && !isActiveAhu) ? {borderColor: sunRing, boxShadow: `0 0 18px ${sunRing}`} : {}}
+                                                                        title={ahu.id + (sunRing ? ' · sun-exposed' : '')}
                                                                         onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(ahu.id); setLockedVavId(null); }}
                                                                     >
                                                                         <span className={`text-xs font-black ${isActiveAhu ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600')}`}>{ahu.id.split('-')[1] || 'AHU'}</span>
@@ -2121,22 +2702,43 @@
                                                         const safePos = [{left:50,top:50},{left:40,top:30},{left:60,top:30},{left:40,top:70},{left:60,top:70},{left:12,top:50},{left:88,top:50},{left:50,top:15},{left:50,top:85},{left:25,top:50},{left:75,top:50},{left:35,top:50},{left:65,top:50},{left:50,top:33},{left:50,top:67},{left:35,top:15},{left:65,top:15},{left:35,top:85},{left:65,top:85}];
                                                         return activeAhu.vavs.map((v, i) => {
                                                             const gp = safePos[i % safePos.length]; const isLocked = lockedVavId === v.id;
+                                                            // Sun-Path Phase A: halo + directional shadow for
+                                                            // fallback-layout VAV dots.
+                                                            let sunRing = null, sunShadow = null;
+                                                            if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
+                                                                const sc = window.red5SunExposureScore(gp.left/100, gp.top/100, sunState.sun);
+                                                                sunRing = window.red5ExposureColor(sc);
+                                                                if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                                            }
                                                             return (
                                                                 <div key={v.id} className="absolute flex flex-col items-center z-20 group" style={{ left: `${gp.left}%`, top: `${gp.top}%`, transform: 'translate(-50%, -50%)' }}>
-                                                                    <div className={`w-6 h-6 rounded-full border-[3px] border-white cursor-pointer group-hover:scale-125 transition-all duration-300 ${isLocked ? 'bg-rose-500 scale-125' : 'bg-emerald-500'}`}
+                                                                    {sunShadow && (
+                                                                        <div style={{
+                                                                            position:'absolute', left:'50%', top:'12px',
+                                                                            width: sunShadow.length_px, height: 5,
+                                                                            transform: 'translate(0, -50%) rotate(' + (sunShadow.angle_deg - 90) + 'deg)',
+                                                                            transformOrigin: '0 50%',
+                                                                            background: 'linear-gradient(90deg, rgba(15,23,42,' + sunShadow.opacity + '), rgba(15,23,42,0))',
+                                                                            borderRadius: 999, pointerEvents:'none', zIndex:-1
+                                                                        }}/>
+                                                                    )}
+                                                                    <div className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${isLocked ? 'bg-rose-500 scale-125' : 'bg-emerald-500'} ${sunRing ? '' : 'border-white'}`}
+                                                                        style={sunRing ? {borderColor: sunRing, boxShadow: `0 0 15px ${sunRing}`} : {}}
+                                                                        title={v.id + (sunRing ? ' · sun-exposed' : '')}
                                                                         onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }}
                                                                     ></div>
                                                                     <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'}`}
                                                                         onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }}
                                                                     >
                                                                         <div className={`${isLocked ? 'text-rose-500' : 'text-sky-500'} font-black mb-0.5`}>{v.id}</div>
-                                                                        <div className={theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}>{v.t.toFixed(1)}C</div>
+                                                                        <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{v.t.toFixed(1)}&deg;C</span><span className="text-slate-500">·</span><span>{v.rh.toFixed(0)}%</span></div>
                                                                     </div>
                                                                 </div>
                                                             );
                                                         });
                                                     })()}
                                                 </React.Fragment>
+                                                </div>
                                             );
                                         }
                                     })()}
@@ -2527,7 +3129,7 @@
                                             if (atype === 'air_flow_path' && typeof PreviewAirFlowSimulator !== 'undefined') {
                                                 return (
                                                     <div key={`anim_${ai}`} className="absolute z-10" style={{left:`${a.x}%`, top:`${a.y}%`, pointerEvents:'none'}}>
-                                                        <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={fanSpeed} isActive={fanRunning} antiFreeze={isFreeze} heating={isHeatingMode} oat={oaTemp} sat={saTemp} allSensors={schemaPoints} />
+                                                        <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={fanSpeed} isActive={fanRunning} antiFreeze={isFreeze} heating={isHeatingMode} oat={oaTemp} sat={saTemp} allSensors={schemaPoints} containerW={ahuImgDims.dispW} naturalW={ahuImgDims.natW} />
                                                     </div>
                                                 );
                                             }
@@ -2771,6 +3373,7 @@
                     </div>
                 )}
                 </div>
+                </React.Fragment>
             );
         };
 
@@ -2785,7 +3388,8 @@
                 '/assets/js/psychrometric.js',
                 '/assets/js/dashboard-components.js',
                 '/assets/js/schema-config.js',
-                '/assets/js/preview-components.js'
+                '/assets/js/preview-components.js',
+                '/assets/js/sun-path.js'
             ];
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {

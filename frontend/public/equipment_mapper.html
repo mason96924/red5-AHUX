@@ -808,7 +808,7 @@
                     };
 
                     if (type === 'air_flow_path') {
-                        newEl.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
+                        newEl.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, offsetXFrac: 0, offsetYFrac: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
                     } else if (type === 'vfd_aligner') {
                         newEl.telemetry_keys = { target_hz: 'INV1_F', actual_hz: 'INV1_H', amps: 'INV1_A', alarm: 'INV1_ALM', run_cmd: 'INV1_SST', status: 'INV1_STATUS' };
                         newEl.base_w = 220; newEl.base_h = 300;
@@ -1257,7 +1257,7 @@
                 if (['outline_path', 'animation_type', 'element_id', 'telemetry_key', 'telemetry_keys', 'image_data', 'dp_active_channel', 'dp_active_row'].includes(axis)) {
                     const updates = { [axis]: value };
                     if (axis === 'animation_type' && value === 'air_flow_path') {
-                        updates.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
+                        updates.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, offsetXFrac: 0, offsetYFrac: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
                     }
                     if (axis === 'animation_type' && value === 'vfd_aligner') {
                         updates.telemetry_keys = { target_hz: 'INV1_F', actual_hz: 'INV1_H', amps: 'INV1_A', alarm: 'INV1_ALM', run_cmd: 'INV1_SST', status: 'INV1_STATUS' };
@@ -1331,6 +1331,12 @@
                         if (!anim.segments) anim.segments = [];
                         const offX = anim.segments.length * 120; 
                         const offY = anim.segments.length * 40; 
+                        // Convert default offset hint to canonical Frac using the
+                        // currently-displayed image natural width if available.
+                        // Falls back to 1500 px so segments don't pile up at origin.
+                        const refW = (imageRef.current && imageRef.current.naturalWidth) || 1500;
+                        const offXFrac = offX / refW;
+                        const offYFrac = offY / refW;
                         // NEW: Use temperature system instead of type
                         anim.segments.push({ 
                             id: Date.now(), 
@@ -1340,6 +1346,8 @@
                             end_temp_value: 'SAT',
                             offsetX: offX, 
                             offsetY: offY, 
+                            offsetXFrac: offXFrac,
+                            offsetYFrac: offYFrac,
                             scale: 1.0, 
                             stretchX: 1.0, 
                             stretchY: 1.0, 
@@ -1451,11 +1459,24 @@
                         updateTargetCoords(draggingTarget, { pill_x: xPct, pill_y: yPct });
                     }
                     else if (isDraggingMode.current === 'move-segment') {
+                        // Frac math: drag delta in screen px → fraction of image natural width.
+                        // rect.width includes view.scale, so dividing by it gives screen-fraction-of-image,
+                        // which equals natural-fraction (image scales uniformly).
+                        const dxScreen = (e.clientX - draggingTarget.startX);
+                        const dyScreen = (e.clientY - draggingTarget.startY);
+                        const dxFrac = rect.width > 0 ? (dxScreen / rect.width) : 0;
+                        const dyFrac = rect.width > 0 ? (dyScreen / rect.width) : 0; // use width as the canonical denominator for both axes
+                        // Legacy px: keep computing it for backward compat (old hosts that haven't been updated)
                         const dxScaled = (e.clientX - draggingTarget.startX) / view.scale;
                         const dyScaled = (e.clientY - draggingTarget.startY) / view.scale;
                         
                         const segIdx = item.segments?.findIndex(s => s.id === subtype) ?? -1;
                         if (segIdx > -1) {
+                            const initFx = (draggingTarget.initOffXFrac != null) ? draggingTarget.initOffXFrac : 0;
+                            const initFy = (draggingTarget.initOffYFrac != null) ? draggingTarget.initOffYFrac : 0;
+                            handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetXFrac', +(initFx + dxFrac).toFixed(6));
+                            handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetYFrac', +(initFy + dyFrac).toFixed(6));
+                            // Also keep legacy px in sync (best-effort, for backward compat with older renderers)
                             handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetX', Math.round(draggingTarget.initOffX + dxScaled));
                             handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetY', Math.round(draggingTarget.initOffY + dyScaled));
                         }
@@ -1465,8 +1486,13 @@
                             const segIdx = item.segments?.findIndex(s => s.id === subtype) ?? -1;
                             if (segIdx > -1) {
                                 const seg = item.segments[segIdx];
-                                const centerX = rect.left + (item.x / 100 * rect.width) + (seg.offsetX * view.scale);
-                                const centerY = rect.top + (item.y / 100 * rect.height) + (seg.offsetY * view.scale);
+                                // Prefer canonical Frac; fall back to legacy px scaled by current display ratio.
+                                const dispW = imageRef.current ? imageRef.current.offsetWidth : rect.width / Math.max(view.scale, 0.0001);
+                                const natW = imageRef.current ? imageRef.current.naturalWidth : dispW;
+                                const segPxX = (seg.offsetXFrac != null) ? (seg.offsetXFrac * dispW) : ((seg.offsetX || 0) * (dispW / Math.max(natW, 1)));
+                                const segPxY = (seg.offsetYFrac != null) ? (seg.offsetYFrac * dispW) : ((seg.offsetY || 0) * (dispW / Math.max(natW, 1)));
+                                const centerX = rect.left + (item.x / 100 * rect.width) + (segPxX * view.scale);
+                                const centerY = rect.top + (item.y / 100 * rect.height) + (segPxY * view.scale);
                                 let angle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
                                 angle += 90; if (angle < 0) angle += 360;
                                 handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'rotZ', angle);
@@ -1487,8 +1513,12 @@
                             const segIdx = item.segments?.findIndex(s => s.id === subtype) ?? -1;
                             if (segIdx > -1) {
                                 const seg = item.segments[segIdx];
-                                const centerX = rect.left + (item.x / 100 * rect.width) + (seg.offsetX * view.scale);
-                                const centerY = rect.top + (item.y / 100 * rect.height) + (seg.offsetY * view.scale);
+                                const dispW = imageRef.current ? imageRef.current.offsetWidth : rect.width / Math.max(view.scale, 0.0001);
+                                const natW = imageRef.current ? imageRef.current.naturalWidth : dispW;
+                                const segPxX = (seg.offsetXFrac != null) ? (seg.offsetXFrac * dispW) : ((seg.offsetX || 0) * (dispW / Math.max(natW, 1)));
+                                const segPxY = (seg.offsetYFrac != null) ? (seg.offsetYFrac * dispW) : ((seg.offsetY || 0) * (dispW / Math.max(natW, 1)));
+                                const centerX = rect.left + (item.x / 100 * rect.width) + (segPxX * view.scale);
+                                const centerY = rect.top + (item.y / 100 * rect.height) + (segPxY * view.scale);
                                 const dist = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
                                 const newScale = Math.max(0.1, (dist / 100).toFixed(2));
                                 handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'scale', newScale);
@@ -4855,6 +4885,8 @@
                                                                 oat={25} 
                                                                 sat={15}
                                                                 allSensors={currentType.points || []}
+                                                                containerW={imageRef.current ? imageRef.current.offsetWidth : null}
+                                                                naturalW={imageRef.current ? imageRef.current.naturalWidth : null}
                                                                 onSegmentMouseDown={(e, action, segId) => {
                                                                     if (panMode || e.button === 1) return;
                                                                     e.stopPropagation(); e.preventDefault();
@@ -4864,7 +4896,13 @@
                                                                     if (!seg) return;
 
                                                                     if (action === 'move-segment') {
-                                                                        setDraggingTarget({ type: 'animation', idx: i, subtype: segId, startX: e.clientX, startY: e.clientY, initOffX: seg.offsetX, initOffY: seg.offsetY });
+                                                                        // Capture both legacy px AND canonical Frac initial values, so the drag
+                                                                        // handler can update both fields (frac canonical, px for back-compat).
+                                                                        const dispW = imageRef.current ? imageRef.current.offsetWidth : 1;
+                                                                        const natW  = imageRef.current ? imageRef.current.naturalWidth : dispW;
+                                                                        const initOffXFrac = (seg.offsetXFrac != null) ? seg.offsetXFrac : ((seg.offsetX || 0) / Math.max(natW, 1));
+                                                                        const initOffYFrac = (seg.offsetYFrac != null) ? seg.offsetYFrac : ((seg.offsetY || 0) / Math.max(natW, 1));
+                                                                        setDraggingTarget({ type: 'animation', idx: i, subtype: segId, startX: e.clientX, startY: e.clientY, initOffX: seg.offsetX || 0, initOffY: seg.offsetY || 0, initOffXFrac, initOffYFrac });
                                                                         isDraggingMode.current = 'move-segment';
                                                                     } else {
                                                                         setDraggingTarget({ type: 'animation', idx: i, subtype: segId, startX: e.clientX, startY: e.clientY });

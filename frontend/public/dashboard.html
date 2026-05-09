@@ -2358,12 +2358,13 @@
                                                         const atype = a.animation_type;
 
                                                         if (atype === 'air_flow_path' && typeof PreviewAirFlowSimulator !== 'undefined') {
-                                                            // Config Tool positions this with plain left/top (no translate) — the simulator's top-left IS the anchor,
-                                                            // and segment pixel offsets are measured from there. Scale from the top-left origin so segment offsets
-                                                            // shrink proportionally when the image is shrunk.
+                                                            // Schema-migration (2026-02): segment offsets are now stored as
+                                                            // offsetXFrac/offsetYFrac (fraction of natural image width). The
+                                                            // simulator renders them at containerW px directly, so the wrapper
+                                                            // no longer needs a transform: scale(vavImgScale) workaround.
                                                             return (
-                                                                <div key={`vanim_${ai}`} className="absolute z-10" style={{left:`${a.x}%`, top:`${a.y}%`, pointerEvents:'none', transform:`scale(${vavImgScale})`, transformOrigin:'0 0'}}>
-                                                                    <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={Math.max(vavVn('cfm') / 10, 20)} isActive={false} antiFreeze={false} heating={false} oat={22} sat={vavVn('t') || 22} allSensors={vavSchemaPoints} />
+                                                                <div key={`vanim_${ai}`} className="absolute z-10" style={{left:`${a.x}%`, top:`${a.y}%`, pointerEvents:'none'}}>
+                                                                    <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={Math.max(vavVn('cfm') / 10, 20)} isActive={false} antiFreeze={false} heating={false} oat={22} sat={vavVn('t') || 22} allSensors={vavSchemaPoints} containerW={vavImgDims.dispW} naturalW={vavImgDims.natW} />
                                                                 </div>
                                                             );
                                                         }
@@ -3128,7 +3129,7 @@
                                             if (atype === 'air_flow_path' && typeof PreviewAirFlowSimulator !== 'undefined') {
                                                 return (
                                                     <div key={`anim_${ai}`} className="absolute z-10" style={{left:`${a.x}%`, top:`${a.y}%`, pointerEvents:'none'}}>
-                                                        <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={fanSpeed} isActive={fanRunning} antiFreeze={isFreeze} heating={isHeatingMode} oat={oaTemp} sat={saTemp} allSensors={schemaPoints} />
+                                                        <PreviewAirFlowSimulator segments={a.segments || []} fanSpeed={fanSpeed} isActive={fanRunning} antiFreeze={isFreeze} heating={isHeatingMode} oat={oaTemp} sat={saTemp} allSensors={schemaPoints} containerW={ahuImgDims.dispW} naturalW={ahuImgDims.natW} />
                                                     </div>
                                                 );
                                             }

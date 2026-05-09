@@ -128,6 +128,17 @@
         .trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
     </style>
     <script>
+        // Synchronous fallback stub so any bare `t('key')` call in the JSX
+        // resolves cleanly to the key text (English fallback) until the real
+        // i18n.js finishes loading.  Without this, JSX components that call
+        // t() during their first render throw "ReferenceError: t is not
+        // defined" when the relative `js/i18n.js` script tag below resolves
+        // to a 404 (e.g. `/mapper` route on Flask serving from /assets/).
+        // i18n.js itself overwrites window.t with the real implementation
+        // when it loads.
+        if (!window.t) window.t = function(k){ return k; };
+    </script>
+    <script>
         if (window.location.pathname.indexOf('.html') === -1) {
             document.getElementById('app-css').href = '/assets/equipment_mapper.css';
         }
@@ -143,7 +154,7 @@
 <body class="flex h-screen">
     <div id="root" class="w-full h-full flex"></div>
     <script type="text/plain" id="main-source">
-        const { useState, useRef, useEffect, useMemo } = React;
+        const { useState, useRef, useEffect, useMemo, useCallback } = React;
 
         // --- DEFINITIVE ERROR BOUNDARY ---
         class ErrorBoundary extends React.Component {
@@ -152,9 +163,9 @@
             render() {
                 if (this.state.hasError) {
                     return <div className="p-10 text-rose-500 font-mono bg-slate-950 h-full w-full flex flex-col items-center justify-center text-center">
-                        <h1 className="text-2xl font-black mb-4 uppercase text-white tracking-tighter italic leading-none">{window.t ? t('system_crash_prevented') : 'System Render Crash Prevented'}</h1>
+                        <h1 className="text-2xl font-black mb-4 uppercase text-white tracking-tighter italic leading-none">{window.t ? window.t('system_crash_prevented') : 'System Render Crash Prevented'}</h1>
                         <p className="bg-slate-900 p-4 rounded border border-rose-900/50 mb-6 max-w-2xl text-[10px] leading-relaxed shadow-black">{this.state.error?.toString()}</p>
-                        <button onClick={() => window.location.reload()} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">{window.t ? t('reload_system') : 'Reload System'}</button>
+                        <button onClick={() => window.location.reload()} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">{window.t ? window.t('reload_system') : 'Reload System'}</button>
                     </div>;
                 }
                 return this.props.children;
@@ -273,6 +284,35 @@
             
             // Configuration mode: 'equipment' or 'map' or 'points'
             const [configMode, setConfigMode] = useState(localStorage.getItem('configMode') || 'equipment');
+            // Equipment-mode sub-tab: equip / sensors / aligners / sim — one
+            // 4-tab row replaces the legacy stacked accordions (Equipment
+            // Category + Global Simulation Rig) and the 2-tab Sensors/Aligners
+            // strip below.  Defaults to 'sensors' to preserve the prior
+            // landing view; persisted across reloads.
+            // Drag-and-drop sensor regrouping: which drop target is being
+            // hovered over right now.  Value:
+            //   null              → no drag in progress (or not over a drop zone)
+            //   '__UNGROUPED__'   → over the "Ungrouped Sensors" header
+            //   <group.id>        → over that group's header
+            const [dragOverGroupId, setDragOverGroupId] = useState(null);
+            const [equipSubTab, setEquipSubTab] = useState(localStorage.getItem('equipSubTab') || 'sensors');
+            useEffect(() => { try { localStorage.setItem('equipSubTab', equipSubTab); } catch(e){} }, [equipSubTab]);
+
+            // Sun-path overlay state (Phase A of the "3D View" roadmap).
+            // sunState holds {enabled, sun:{azimuth,elevation,is_day}, hour, doy}
+            // reported by the SunCompass component; used to apply per-marker
+            // amber-ring exposure halos when `sunState.enabled` is true.
+            const [sunState, setSunState] = useState(null);
+            // Building lat/lon for solar math — attempt to read the first entry
+            // of weather_location.json (saved by Dashboard); fall back to NYC.
+            const [buildingLatLon, setBuildingLatLon] = useState({lat: 40.7128, lon: -74.0060});
+            useEffect(() => {
+                fetch('/api/weather-location').then(r => r.ok ? r.json() : null).then(data => {
+                    if (Array.isArray(data) && data[0] && typeof data[0].lat === 'number') {
+                        setBuildingLatLon({lat: data[0].lat, lon: data[0].lon});
+                    }
+                }).catch(() => {});
+            }, []);
             
             // ============= POINTS EDITOR STATE =============
             const [pointsEditorView, setPointsEditorView] = useState('table'); // Default to 'table' now, not 'json'
@@ -319,6 +359,81 @@
             
             const [localTest, setLocalTest] = useState({});
             
+            // ---- Sidebar pop-out (extra-monitor support) ----
+            // popupWin: the spawned browser window that hosts the sidebar
+            // when "popped out".  null = sidebar is in the main page.
+            // popupHost: the <div> inside the popup that React renders into
+            // via createPortal — re-uses the existing sidebar JSX verbatim
+            // so behaviour is identical whether docked or popped out.
+            const [popupWin,  setPopupWin]  = useState(null);
+            const [popupHost, setPopupHost] = useState(null);
+
+            const popOutSidebar = useCallback(() => {
+                // Refuse double-popout (idempotent on repeated clicks).
+                if (popupWin && !popupWin.closed) { popupWin.focus(); return; }
+                const win = window.open('', 'red5_sidebar',
+                    'width=480,height=900,resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no');
+                if (!win) {
+                    alert('Popup window blocked. Please allow popups for this site, then click "Pop Out" again.');
+                    return;
+                }
+                // Wipe any default content; build a clean shell.
+                win.document.open(); win.document.write('<!doctype html><html><head></head><body></body></html>'); win.document.close();
+                // Title + favicon parity with the main window.
+                const titleEl = win.document.createElement('title');
+                titleEl.textContent = 'Red5 Sidebar (popped out)';
+                win.document.head.appendChild(titleEl);
+                // Resolve relative URLs (images, fonts, etc.) against the
+                // main window's URL so all assets keep loading.
+                const baseEl = win.document.createElement('base');
+                baseEl.href = window.location.href;
+                win.document.head.appendChild(baseEl);
+                // Clone parent <style> blocks + <link rel="stylesheet"> +
+                // the Tailwind CDN <script>.  This gives the popup the
+                // exact same look-and-feel without needing a separate
+                // build pipeline.  Stays correct even on the offline
+                // controller because the Tailwind script is loaded in the
+                // main window's cache and re-fetched (or served by the
+                // controller's own static file route).
+                document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
+                    win.document.head.appendChild(node.cloneNode(true));
+                });
+                const tailwind = document.querySelector('script[src*="tailwindcss"]');
+                if (tailwind) {
+                    const tw = win.document.createElement('script');
+                    tw.src = tailwind.src;
+                    win.document.head.appendChild(tw);
+                }
+                // Mirror parent <body> classes so dark/light theme is honoured.
+                win.document.body.className = document.body.className;
+                win.document.body.style.margin = '0';
+                win.document.body.style.background = 'transparent';
+                // Mount point for createPortal.
+                const root = win.document.createElement('div');
+                root.id = 'sidebar-portal-root';
+                root.style.cssText = 'display:flex;flex-direction:column;width:100vw;min-height:100vh;';
+                win.document.body.appendChild(root);
+                setPopupWin(win);
+                setPopupHost(root);
+                // Snap back automatically when the operator closes the popup.
+                const closeWatcher = setInterval(() => {
+                    if (win.closed) {
+                        clearInterval(closeWatcher);
+                        setPopupWin(null);
+                        setPopupHost(null);
+                    }
+                }, 400);
+            }, [popupWin]);
+
+            // If the parent tab is navigated away or refreshed, kill the
+            // orphan popup so the operator isn't left with a stale window
+            // (its React portal would be detached and useless).
+            useEffect(() => {
+                const onUnload = () => { if (popupWin && !popupWin.closed) popupWin.close(); };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, [popupWin]);
+
             const imageRef = useRef(null);
 
             // Load saved password hash from localStorage on mount (for verification, not auto-auth)
@@ -370,57 +485,67 @@
 
             const groupedPoints = useMemo(() => {
                 if (!schema[category] || !schema[category][typeId]) return [];
-                const pts = schema[category][typeId].points || [];
-                const groups = [];
-                const processed = new Set();
-                
-                const SENSOR_GROUPS = [
-                    { id: 'OA', defaultName: 'OA', match: ['OAT', 'OAH', 'OAD'] },
-                    { id: 'SA', defaultName: 'SA', match: ['SAT', 'SAH', 'SAF', 'SAD', 'SAFM', 'SAPT', 'SATSP'], matchRegex: /^INV\d+_F$/ },
-                    { id: 'Hydration', defaultName: 'Hydration', match: ['HM', 'HV', 'HSP'] },
-                    { id: 'AHU', defaultName: 'AHU', match: ['AHUSS', 'AHUM', 'HCM'] },
-                    { id: 'Static_Pressure', defaultName: 'Static Pressure', match: ['SPR', 'SPRSP'] }
-                ];
+                const entry = schema[category][typeId];
+                const pts = entry.points || [];
+                const sensorGroups = entry.sensor_groups || [];
+                const groupDefs = new Map();
+                sensorGroups.forEach(g => groupDefs.set(g.id, g));
 
-                SENSOR_GROUPS.forEach(g => {
+                const groups = [];
+
+                // PHASE 1 — One `isGroup: true` row per defined sensor_group
+                // that has at least one member.  Used by the canvas to
+                // render grouped pills (e.g. the "SA" pill containing
+                // SAF/SAT/SAH stacked rows).  Position/scale come from
+                // the FIRST member point so existing pill placements
+                // survive the migration.
+                sensorGroups.forEach(g => {
                     const groupIndices = [];
                     pts.forEach((p, i) => {
-                        if (!processed.has(i) && (g.match.includes(p.label) || (g.matchRegex && g.matchRegex.test(p.label)))) {
-                            groupIndices.push(i);
-                            processed.add(i);
-                        }
+                        if (p.group_id === g.id) groupIndices.push(i);
                     });
-                    
-                    if (groupIndices.length > 0) {
-                        const firstPt = pts[groupIndices[0]];
-                        groups.push({
-                            isGroup: true,
-                            groupId: g.id,
-                            defaultName: g.defaultName,
-                            indices: groupIndices,
-                            points: groupIndices.map(i => pts[i]),
-                            x: firstPt.x,
-                            y: firstPt.y,
-                            scale: firstPt.scale || 1.0,
-                            name: (firstPt.name && firstPt.name !== firstPt.label) ? firstPt.name : g.defaultName
-                        });
-                    }
+                    if (groupIndices.length === 0) return;
+                    const firstPt = pts[groupIndices[0]];
+                    groups.push({
+                        isGroup: true,
+                        groupId: g.id,
+                        defaultName: g.name || g.id,
+                        indices: groupIndices,
+                        points: groupIndices.map(i => pts[i]),
+                        x: firstPt.x,
+                        y: firstPt.y,
+                        scale: firstPt.scale || 1.0,
+                        name: (firstPt.name && firstPt.name !== firstPt.label) ? firstPt.name : (g.name || g.id),
+                    });
                 });
 
+                // PHASE 2 — One `isGroup: false` row per individual point,
+                // INCLUDING points that are already members of a group.
+                // The SENSORS sidebar panel uses these rows to render
+                // each member inside its parent group expansion (filter:
+                // !isGroup && group_id === g.id).  The canvas skips
+                // these for grouped points (they're already drawn as
+                // part of the parent isGroup:true pill — see the
+                // `inGroupMember` short-circuit in the canvas map).
+                //
+                // Defensive: if a point references a deleted group, we
+                // clear the dangling group_id here so the row falls
+                // through to "Ungrouped Sensors" instead of vanishing.
                 pts.forEach((p, i) => {
-                    if (!processed.has(i)) {
-                        groups.push({
-                            isGroup: false,
-                            groupId: p.label,
-                            defaultName: p.label,
-                            indices: [i],
-                            points: [p],
-                            x: p.x,
-                            y: p.y,
-                            scale: p.scale || 1.0,
-                            name: (p.name && p.name !== p.label) ? p.name : p.label
-                        });
+                    if (p.group_id && !groupDefs.has(p.group_id)) {
+                        p.group_id = null;
                     }
+                    groups.push({
+                        isGroup: false,
+                        groupId: p.label,
+                        defaultName: p.label,
+                        indices: [i],
+                        points: [p],
+                        x: p.x,
+                        y: p.y,
+                        scale: p.scale || 1.0,
+                        name: (p.name && p.name !== p.label) ? p.name : p.label,
+                    });
                 });
 
                 return groups;
@@ -683,7 +808,7 @@
                     };
 
                     if (type === 'air_flow_path') {
-                        newEl.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
+                        newEl.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, offsetXFrac: 0, offsetYFrac: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
                     } else if (type === 'vfd_aligner') {
                         newEl.telemetry_keys = { target_hz: 'INV1_F', actual_hz: 'INV1_H', amps: 'INV1_A', alarm: 'INV1_ALM', run_cmd: 'INV1_SST', status: 'INV1_STATUS' };
                         newEl.base_w = 220; newEl.base_h = 300;
@@ -1132,7 +1257,7 @@
                 if (['outline_path', 'animation_type', 'element_id', 'telemetry_key', 'telemetry_keys', 'image_data', 'dp_active_channel', 'dp_active_row'].includes(axis)) {
                     const updates = { [axis]: value };
                     if (axis === 'animation_type' && value === 'air_flow_path') {
-                        updates.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
+                        updates.segments = [{ id: Date.now(), type: "SA", offsetX: 0, offsetY: 0, offsetXFrac: 0, offsetYFrac: 0, scale: 1.0, stretchX: 1.0, stretchY: 1.0, rotX: 0, rotY: 0, rotZ: 0, skewX: 0, skewY: 0, path: DEFAULT_WAVY_PATH }];
                     }
                     if (axis === 'animation_type' && value === 'vfd_aligner') {
                         updates.telemetry_keys = { target_hz: 'INV1_F', actual_hz: 'INV1_H', amps: 'INV1_A', alarm: 'INV1_ALM', run_cmd: 'INV1_SST', status: 'INV1_STATUS' };
@@ -1206,6 +1331,12 @@
                         if (!anim.segments) anim.segments = [];
                         const offX = anim.segments.length * 120; 
                         const offY = anim.segments.length * 40; 
+                        // Convert default offset hint to canonical Frac using the
+                        // currently-displayed image natural width if available.
+                        // Falls back to 1500 px so segments don't pile up at origin.
+                        const refW = (imageRef.current && imageRef.current.naturalWidth) || 1500;
+                        const offXFrac = offX / refW;
+                        const offYFrac = offY / refW;
                         // NEW: Use temperature system instead of type
                         anim.segments.push({ 
                             id: Date.now(), 
@@ -1215,6 +1346,8 @@
                             end_temp_value: 'SAT',
                             offsetX: offX, 
                             offsetY: offY, 
+                            offsetXFrac: offXFrac,
+                            offsetYFrac: offYFrac,
                             scale: 1.0, 
                             stretchX: 1.0, 
                             stretchY: 1.0, 
@@ -1326,11 +1459,24 @@
                         updateTargetCoords(draggingTarget, { pill_x: xPct, pill_y: yPct });
                     }
                     else if (isDraggingMode.current === 'move-segment') {
+                        // Frac math: drag delta in screen px → fraction of image natural width.
+                        // rect.width includes view.scale, so dividing by it gives screen-fraction-of-image,
+                        // which equals natural-fraction (image scales uniformly).
+                        const dxScreen = (e.clientX - draggingTarget.startX);
+                        const dyScreen = (e.clientY - draggingTarget.startY);
+                        const dxFrac = rect.width > 0 ? (dxScreen / rect.width) : 0;
+                        const dyFrac = rect.width > 0 ? (dyScreen / rect.width) : 0; // use width as the canonical denominator for both axes
+                        // Legacy px: keep computing it for backward compat (old hosts that haven't been updated)
                         const dxScaled = (e.clientX - draggingTarget.startX) / view.scale;
                         const dyScaled = (e.clientY - draggingTarget.startY) / view.scale;
                         
                         const segIdx = item.segments?.findIndex(s => s.id === subtype) ?? -1;
                         if (segIdx > -1) {
+                            const initFx = (draggingTarget.initOffXFrac != null) ? draggingTarget.initOffXFrac : 0;
+                            const initFy = (draggingTarget.initOffYFrac != null) ? draggingTarget.initOffYFrac : 0;
+                            handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetXFrac', +(initFx + dxFrac).toFixed(6));
+                            handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetYFrac', +(initFy + dyFrac).toFixed(6));
+                            // Also keep legacy px in sync (best-effort, for backward compat with older renderers)
                             handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetX', Math.round(draggingTarget.initOffX + dxScaled));
                             handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'offsetY', Math.round(draggingTarget.initOffY + dyScaled));
                         }
@@ -1340,8 +1486,13 @@
                             const segIdx = item.segments?.findIndex(s => s.id === subtype) ?? -1;
                             if (segIdx > -1) {
                                 const seg = item.segments[segIdx];
-                                const centerX = rect.left + (item.x / 100 * rect.width) + (seg.offsetX * view.scale);
-                                const centerY = rect.top + (item.y / 100 * rect.height) + (seg.offsetY * view.scale);
+                                // Prefer canonical Frac; fall back to legacy px scaled by current display ratio.
+                                const dispW = imageRef.current ? imageRef.current.offsetWidth : rect.width / Math.max(view.scale, 0.0001);
+                                const natW = imageRef.current ? imageRef.current.naturalWidth : dispW;
+                                const segPxX = (seg.offsetXFrac != null) ? (seg.offsetXFrac * dispW) : ((seg.offsetX || 0) * (dispW / Math.max(natW, 1)));
+                                const segPxY = (seg.offsetYFrac != null) ? (seg.offsetYFrac * dispW) : ((seg.offsetY || 0) * (dispW / Math.max(natW, 1)));
+                                const centerX = rect.left + (item.x / 100 * rect.width) + (segPxX * view.scale);
+                                const centerY = rect.top + (item.y / 100 * rect.height) + (segPxY * view.scale);
                                 let angle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
                                 angle += 90; if (angle < 0) angle += 360;
                                 handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'rotZ', angle);
@@ -1362,8 +1513,12 @@
                             const segIdx = item.segments?.findIndex(s => s.id === subtype) ?? -1;
                             if (segIdx > -1) {
                                 const seg = item.segments[segIdx];
-                                const centerX = rect.left + (item.x / 100 * rect.width) + (seg.offsetX * view.scale);
-                                const centerY = rect.top + (item.y / 100 * rect.height) + (seg.offsetY * view.scale);
+                                const dispW = imageRef.current ? imageRef.current.offsetWidth : rect.width / Math.max(view.scale, 0.0001);
+                                const natW = imageRef.current ? imageRef.current.naturalWidth : dispW;
+                                const segPxX = (seg.offsetXFrac != null) ? (seg.offsetXFrac * dispW) : ((seg.offsetX || 0) * (dispW / Math.max(natW, 1)));
+                                const segPxY = (seg.offsetYFrac != null) ? (seg.offsetYFrac * dispW) : ((seg.offsetY || 0) * (dispW / Math.max(natW, 1)));
+                                const centerX = rect.left + (item.x / 100 * rect.width) + (segPxX * view.scale);
+                                const centerY = rect.top + (item.y / 100 * rect.height) + (segPxY * view.scale);
                                 const dist = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
                                 const newScale = Math.max(0.1, (dist / 100).toFixed(2));
                                 handleAirflowSegmentChange(draggingTarget.idx, segIdx, 'scale', newScale);
@@ -2106,6 +2261,144 @@
                 link.download = filename;
                 link.click();
             };
+
+            // Multi-file GET — packs the user's checkbox-selected files
+            // into a single ZIP via /api/zip-files and triggers a normal
+            // browser download.  All file roots are honored (data /
+            // scripts / pgpy) by passing the active root + path to the
+            // backend.  Falls back to per-file downloads if zip endpoint
+            // is unavailable on an older controller.
+            const batchDownloadFromController = async () => {
+                const names = Array.from(selectedFiles);
+                if (names.length === 0) return;
+                if (names.length === 1) {
+                    downloadFileFromController(names[0]);
+                    return;
+                }
+                try {
+                    const apiUrl = window.API_BASE_URL || '';
+                    const r = await fetch(`${apiUrl}/api/zip-files`, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ names, root: fileBrowserRoot, path: fileBrowserPath }),
+                    });
+                    if (!r.ok) {
+                        const j = await r.json().catch(() => ({}));
+                        alert('GET selected failed: ' + (j.error || r.status));
+                        return;
+                    }
+                    const blob = await r.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url;
+                    a.download = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || `red5_files_${Date.now()}.zip`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                } catch (err) {
+                    alert('GET selected error: ' + err.message);
+                }
+            };
+
+            // GET on directory — zips the entire subtree (preserving
+            // structure) and downloads it as a single archive.  Honors
+            // the active fileBrowserRoot / fileBrowserPath.
+            const downloadDirFromController = async (dirname) => {
+                if (!dirname) return;
+                try {
+                    const apiUrl = window.API_BASE_URL || '';
+                    const r = await fetch(`${apiUrl}/api/zip-dir`, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ dirname, root: fileBrowserRoot, path: fileBrowserPath }),
+                    });
+                    if (!r.ok) {
+                        const j = await r.json().catch(() => ({}));
+                        alert('GET dir failed: ' + (j.error || r.status));
+                        return;
+                    }
+                    const blob = await r.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const a    = document.createElement('a');
+                    a.href     = url;
+                    a.download = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || `${dirname}.zip`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                } catch (err) {
+                    alert('GET dir error: ' + err.message);
+                }
+            };
+
+            // Directory upload (request 3) — uses webkitdirectory so the
+            // browser surfaces every file under the chosen tree, preserves
+            // each file's relative path on the controller, and degrades
+            // to per-file chunking so partial failures leave the
+            // controller recoverable.  Pre-flight checks /api/disk-status
+            // and refuses if free disk < 2 \u00d7 total upload size.
+            const uploadDirectoryToController = () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.webkitdirectory = true;  // Chrome / Edge / FF / Safari 13+
+                input.directory = true;        // legacy Firefox alias
+                input.onchange = async (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length === 0) return;
+                    const totalBytes = files.reduce((s, f) => s + f.size, 0);
+                    const apiUrl = window.API_BASE_URL || '';
+
+                    // Pre-flight: check the controller has space.  Refuse
+                    // if free disk < 2x upload size; user picks a smaller
+                    // upload or runs the disk-status cleanup first.
+                    try {
+                        const ds = await fetch(`${apiUrl}/api/disk-status`).then(r => r.json());
+                        if (ds && typeof ds.free_bytes === 'number' && ds.free_bytes < totalBytes * 2) {
+                            const ok = confirm(
+                                'Disk headroom low.\n\n' +
+                                'Total upload: ' + (totalBytes/1048576).toFixed(2) + ' MB (' + files.length + ' files)\n' +
+                                'Controller free: ' + (ds.free_bytes/1048576).toFixed(2) + ' MB\n' +
+                                'Recommended free \u2265 ' + (totalBytes*2/1048576).toFixed(2) + ' MB\n\n' +
+                                'Run /api/disk-status?cleanup=1 first?  Click OK to abort, Cancel to upload anyway.'
+                            );
+                            if (ok) return;
+                        }
+                    } catch (_) { /* disk-status optional */ }
+
+                    // Chunk by file: each file is its own upload.  Partial
+                    // failure leaves earlier files committed; failed files
+                    // are reported in the summary so the operator can
+                    // retry just those.
+                    const results = [];
+                    let okCount = 0, failCount = 0;
+                    for (let i = 0; i < files.length; i++) {
+                        const f = files[i];
+                        const relPath = f.webkitRelativePath || f.name;
+                        const uploadName = fileBrowserPath ? `${fileBrowserPath}/${relPath}` : relPath;
+                        try {
+                            const dataURL = await new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onload  = (ev) => resolve(ev.target.result);
+                                reader.onerror = reject;
+                                reader.readAsDataURL(f);
+                            });
+                            const r = await fetch(`${apiUrl}/api/upload-file`, {
+                                method:  'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body:    JSON.stringify({ filename: uploadName, file_data: dataURL, root: fileBrowserRoot }),
+                            });
+                            const j = await r.json();
+                            if (j.success) { okCount++; }
+                            else { failCount++; results.push(relPath + ' \u2014 ' + (j.error || 'failed')); }
+                        } catch (err) {
+                            failCount++;
+                            results.push(relPath + ' \u2014 ' + err.message);
+                        }
+                    }
+                    alert('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
+                          (results.length ? '\n\n' + results.join('\n') : ''));
+                    openFileBrowser(fileBrowserPath);
+                };
+                input.click();
+            };
             
             const createDirectoryOnController = async () => {
                 const name = prompt('New folder name:');
@@ -2592,14 +2885,17 @@
                 );
             }
 
-            return (
-                <div className={`flex w-full h-full ${colors.bg}`}>
-                    {/* SIDEBAR */}
-                    <div 
-                        className={`w-[420px] ${colors.bgPrimary} border-r ${colors.border} flex flex-col shadow-2xl z-20 overflow-y-auto custom-scrollbar text-xs`} 
-                        onMouseUp={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
-                        onMouseMove={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}
-                    >
+            // Sidebar shell + content, factored out so it can be either
+            // rendered in-page (when docked) or portaled into a popup
+            // window (when popped out).  Portal preserves the React event
+            // tree so click handlers, state updates, and re-renders work
+            // identically across windows — no extra plumbing needed.
+            const sidebarTree = (
+                <div 
+                    className={`${popupWin ? 'w-full' : 'w-[420px]'} ${colors.bgPrimary} ${popupWin ? '' : 'border-r ' + colors.border} flex flex-col shadow-2xl z-20 overflow-y-auto custom-scrollbar text-xs h-full min-h-screen`} 
+                    onMouseUp={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
+                    onMouseMove={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}
+                >
                         <div className="p-3 pb-2 shrink-0 flex justify-between items-center">
                             <div className="flex items-center gap-2">
                                 <h2 className="text-sm font-black italic uppercase tracking-tighter leading-none">
@@ -2630,6 +2926,18 @@
                                 >
                                     PWD
                                 </button>
+                                {/* Pop-out / re-attach toggle. */}
+                                <button
+                                    onClick={() => {
+                                        if (popupWin && !popupWin.closed) { popupWin.close(); }
+                                        else { popOutSidebar(); }
+                                    }}
+                                    className={`px-1.5 py-0.5 border rounded text-[7px] font-black uppercase tracking-wider transition-all ${popupWin ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300'}`}
+                                    title={popupWin ? 'Re-attach sidebar to this window' : 'Pop sidebar out into a draggable window (move it to another monitor)'}
+                                    data-testid="popout-sidebar-btn"
+                                >
+                                    {popupWin ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                </button>
                                 <button 
                                     onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
                                     className={`p-1 rounded transition-colors text-sm ${theme === 'dark' ? 'bg-slate-800 text-yellow-400 hover:bg-indigo-600' : 'bg-slate-200 border border-slate-400 text-slate-700 hover:bg-slate-300'}`}
@@ -2643,8 +2951,19 @@
 
                         <div className="px-6 pb-4 flex flex-col gap-4 shrink-0">
                             
+                            {/* Inline AHU Sizing Pulse */}
+                            {window.SizingInlineCard && (
+                                <window.SizingInlineCard
+                                    configuredAhus={floorMarkers.filter(m => m.type === 'ahu').length}
+                                    onOpenFullCheck={() => {
+                                        setConfigMode('sizing');
+                                        localStorage.setItem('configMode', 'sizing');
+                                    }}
+                                />
+                            )}
+
                             {/* Configuration Mode Selector - GLOBAL (always visible) */}
-                            <div className="grid grid-cols-3 gap-1.5">
+                            <div className="grid grid-cols-4 gap-1.5">
                                 <button
                                     onClick={() => {
                                         setConfigMode('equipment');
@@ -2686,66 +3005,107 @@
                                 >
                                     {t('points_editor')}
                                 </button>
+                                <button
+                                    onClick={() => {
+                                        setConfigMode('sizing');
+                                        localStorage.setItem('configMode', 'sizing');
+                                    }}
+                                    className={`py-1.5 rounded-lg font-black text-[8px] uppercase tracking-widest transition-all border ${
+                                        configMode === 'sizing'
+                                            ? 'bg-cyan-600 border-cyan-400 text-white shadow-lg shadow-cyan-500/30'
+                                            : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+                                    }`}
+                                    data-testid="sizing-tab-btn"
+                                    title="AHU sizing sanity check — heuristic guidance for high-rise / institutional HVAC zoning"
+                                >
+                                    Sizing
+                                </button>
                             </div>
                             
-                            {/* EQUIPMENT MODE SPECIFIC - Load Schema & Asset */}
-                            {configMode === 'equipment' && (
+                            {/* EQUIPMENT MODE — Compact Load Schema + Asset row.
+                                Filled pill = loaded, hollow pill = not loaded.
+                                Replaces the previous two-card grid that ate two rows. */}
+                            {configMode === 'equipment' && (() => {
+                                const schemaLoaded = schema && Object.keys(schema).length > 0;
+                                const assetLoaded = !!graphicAsset;
+                                return (
                                 <div className="grid grid-cols-2 gap-2">
-                                    <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 shadow-inner">
-                                        <label className="text-[8px] font-black uppercase text-slate-400 tracking-widest block mb-1">1. Load Schema</label>
-                                        <button onClick={loadSchemaWithChoice} className="w-full py-1 bg-slate-800 border border-slate-600 text-white rounded text-[8px] font-bold uppercase tracking-wider hover:bg-slate-700 hover:border-emerald-500 hover:text-emerald-400 transition-all cursor-pointer">
-                                            equipment_types.json
-                                        </button>
+                                    <button
+                                        onClick={loadSchemaWithChoice}
+                                        title="Load equipment_types.json"
+                                        data-testid="sb-load-schema-btn"
+                                        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${schemaLoaded ? 'bg-emerald-600/90 border-emerald-400 text-white hover:bg-emerald-500' : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-emerald-500 hover:text-emerald-300'}`}
+                                    >
+                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${schemaLoaded ? 'bg-white shadow-[0_0_6px_#fff]' : 'border border-slate-500'}`}></span>
+                                        <span className="truncate">1. Schema</span>
+                                    </button>
+                                    <button
+                                        onClick={loadAssetWithChoice}
+                                        title="Load asset image"
+                                        data-testid="sb-load-asset-btn"
+                                        className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${assetLoaded ? 'bg-indigo-600/90 border-indigo-400 text-white hover:bg-indigo-500' : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-indigo-500 hover:text-indigo-300'}`}
+                                    >
+                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${assetLoaded ? 'bg-white shadow-[0_0_6px_#fff]' : 'border border-slate-500'}`}></span>
+                                        <span className="truncate">2. Asset</span>
+                                    </button>
+                                </div>
+                                );
+                            })()}
+
+                            {/* EQUIPMENT MODE — 4 sub-tabs in one row, replacing the
+                                old stacked accordions (Equipment Category + Global
+                                Simulation Rig) + the Sensors/Aligners 2-tab strip.
+                                State lives in equipSubTab. */}
+                            {configMode === 'equipment' && (
+                                <div className="flex bg-slate-950 rounded-xl p-1 border border-slate-800 shadow-inner">
+                                    {[
+                                        {id: 'equip',    label: 'Equip',   tone: 'emerald'},
+                                        {id: 'sensors',  label: 'Sensors', tone: 'emerald'},
+                                        {id: 'aligners', label: 'Align',   tone: 'sky'},
+                                        {id: 'sim',      label: 'Sim',     tone: 'rose'},
+                                    ].map(t_ => {
+                                        const active = equipSubTab === t_.id;
+                                        const toneCls = t_.tone === 'rose' ? 'bg-rose-500' : (t_.tone === 'sky' ? 'bg-sky-500' : 'bg-emerald-600');
+                                        return (
+                                        <button
+                                            key={t_.id}
+                                            onClick={() => {
+                                                setEquipSubTab(t_.id);
+                                                if (t_.id === 'sensors')  setActiveTarget({type: 'point_group', idx: 0});
+                                                if (t_.id === 'aligners') setActiveTarget({type: 'animation', idx: 0});
+                                            }}
+                                            data-testid={`sb-sub-tab-${t_.id}`}
+                                            className={`flex-1 text-[9px] font-black py-1.5 rounded uppercase tracking-wider transition-all ${active ? toneCls + ' text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                        >{t_.label}</button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* EQUIP sub-tab content: Category + Type dropdowns.
+                                (Was an open accordion; now scoped to its tab.) */}
+                            {configMode === 'equipment' && equipSubTab === 'equip' && (
+                                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 shadow-inner space-y-3">
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Category</label>
+                                        <select value={category} onChange={e => {setCategory(e.target.value); const tIds = Object.keys(schema[e.target.value] || {}); setTypeId(tIds.length > 0 ? tIds[0] : ''); setActiveTarget({ type: 'point_group', idx: 0 });}} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-slate-300 outline-none font-mono text-[11px]">
+                                            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                        </select>
                                     </div>
-                                    <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 shadow-inner">
-                                        <label className="text-[8px] font-black uppercase text-slate-400 tracking-widest block mb-1">2. Load Asset</label>
-                                        <button onClick={loadAssetWithChoice} className="w-full py-1 bg-indigo-600 border border-indigo-500 text-white rounded text-[8px] font-bold uppercase tracking-wider hover:bg-indigo-500 transition-all cursor-pointer">
-                                            Asset Image
-                                        </button>
+                                    <div>
+                                        <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Select Type</label>
+                                        <select value={typeId} onChange={e => {setTypeId(e.target.value); setActiveTarget({type: 'point_group', idx: 0});}} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-slate-300 outline-none font-mono text-[11px]">
+                                            {schema[category] && Object.keys(schema[category]).map(id => (
+                                                <option key={id} value={id}>Type {id}: {schema[category][id].name}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                 </div>
                             )}
-                            
-                            {configMode === 'equipment' && (
-                                <>
-                            <div className="flex gap-3">
-                                <button onClick={exportCleanJSON} className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-black text-[10px] uppercase tracking-widest transition-colors shadow-lg">
-                                    {deploymentPath ? '💾 ' + t('save_clean_template') : '📥 ' + t('export_clean_json')}
-                                </button>
-                                <button onClick={exportConfig} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-black text-[10px] uppercase tracking-widest transition-colors">
-                                    {deploymentPath ? '💾 ' + t('save_working_file') : '📥 ' + t('download_current')}
-                                </button>
-                            </div>
-                            
-                            <details open className="bg-slate-950 p-3 rounded-xl border border-slate-800 shadow-inner group">
-                                <summary className="text-[9px] font-black uppercase text-slate-400 tracking-widest cursor-pointer list-none flex justify-between outline-none">
-                                    <span>Equipment Category</span>
-                                    <span className="text-slate-500 group-open:rotate-180 transition-transform">&#9660;</span>
-                                </summary>
-                                <div className="mt-3 space-y-3">
-                                <div>
-                                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Category</label>
-                                    <select value={category} onChange={e => {setCategory(e.target.value); const tIds = Object.keys(schema[e.target.value] || {}); setTypeId(tIds.length > 0 ? tIds[0] : ''); setActiveTarget({ type: 'point_group', idx: 0 });}} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-slate-300 outline-none font-mono text-[11px]">
-                                        {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Select Type</label>
-                                    <select value={typeId} onChange={e => {setTypeId(e.target.value); setActiveTarget({type: 'point_group', idx: 0});}} className="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-slate-300 outline-none font-mono text-[11px]">
-                                        {schema[category] && Object.keys(schema[category]).map(id => (
-                                            <option key={id} value={id}>Type {id}: {schema[category][id].name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                </div>
-                            </details>
-                            
-                            <details className="bg-slate-950 p-3 rounded-xl border border-slate-800 shadow-inner group">
-                                <summary className="text-[9px] font-black uppercase text-rose-400 tracking-widest cursor-pointer list-none flex justify-between outline-none">
-                                    <span>3. Global Simulation Rig</span>
-                                    <span className="text-rose-500 group-open:rotate-180 transition-transform">▼</span>
-                                </summary>
-                                <div className="mt-4 space-y-3">
+
+                            {/* SIM sub-tab content: Global Simulation Rig sliders. */}
+                            {configMode === 'equipment' && equipSubTab === 'sim' && (
+                                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 shadow-inner space-y-3">
                                     <div className="flex gap-1 mb-2">
                                         <button onClick={() => setSimAuto(true)} className={`flex-1 py-1 rounded font-black text-[9px] uppercase transition-all ${simAuto ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-500'}`}>Auto</button>
                                         <button onClick={() => setSimAuto(false)} className={`flex-1 py-1 rounded font-black text-[9px] uppercase transition-all ${!simAuto ? 'bg-slate-200 text-slate-800' : 'bg-slate-800 text-slate-500'}`}>Manual</button>
@@ -2773,26 +3133,62 @@
                                         </button>
                                     </div>
                                 </div>
-                            </details>
-                                </>
                             )}
                         </div>
 
-                        {/* Tab Navigation - Equipment sub-tabs (Sensors/Aligners) */}
-                        {configMode === 'equipment' && (
-                        <div className="flex bg-slate-950 mx-6 mb-4 rounded-xl p-1 border border-slate-800 shadow-inner shrink-0">
-                            <button onClick={() => setActiveTarget({ type: 'point_group', idx: 0 })} className={`flex-1 text-[10px] font-bold py-2 rounded uppercase transition-all ${activeTarget.type === 'point_group' ? 'bg-emerald-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>Sensors</button>
-                            <button onClick={() => setActiveTarget({ type: 'animation', idx: 0 })} className={`flex-1 text-[10px] font-bold py-2 rounded uppercase transition-all ${activeTarget.type === 'animation' ? 'bg-emerald-600 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}>Aligners</button>
-                        </div>
-                        )}
+                        {/* (No legacy Sensors/Aligners sub-tab strip — that
+                            row was promoted into the 4-tab sub-nav above.) */}
 
                         <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-2">
                             {/* EQUIPMENT MODE CONTENT */}
                             {configMode === 'equipment' && (
                                 <>
-                            {activeTarget.type === 'point_group' && (
+                            {activeTarget.type === 'point_group' && equipSubTab === 'sensors' && (() => {
+                                // Build small helpers for HTML5 drag-and-drop sensor regrouping.
+                                // Drag sources: every sensor row (grouped + ungrouped).
+                                // Drop targets: every group header + the "Ungrouped Sensors" header.
+                                const dragProps = (grp) => ({
+                                    draggable: true,
+                                    onDragStart: (e) => {
+                                        e.stopPropagation();
+                                        // Carry the indices (into currentType.points) being dragged.
+                                        try {
+                                            e.dataTransfer.setData('application/x-red5-sensor', JSON.stringify(grp.indices || []));
+                                        } catch (err) { /* ignore */ }
+                                        e.dataTransfer.effectAllowed = 'move';
+                                    },
+                                    onDragEnd: () => setDragOverGroupId(null),
+                                });
+                                const dropProps = (targetGroupId) => ({
+                                    onDragOver: (e) => {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                        if (dragOverGroupId !== targetGroupId) setDragOverGroupId(targetGroupId);
+                                    },
+                                    onDragLeave: (e) => {
+                                        // Only clear if we're truly leaving (not a child move).
+                                        if (e.currentTarget.contains(e.relatedTarget)) return;
+                                        if (dragOverGroupId === targetGroupId) setDragOverGroupId(null);
+                                    },
+                                    onDrop: (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setDragOverGroupId(null);
+                                        let indices = [];
+                                        try {
+                                            indices = JSON.parse(e.dataTransfer.getData('application/x-red5-sensor') || '[]');
+                                        } catch (err) { /* ignore */ }
+                                        if (!Array.isArray(indices) || indices.length === 0) return;
+                                        const newGroupId = targetGroupId === '__UNGROUPED__' ? null : targetGroupId;
+                                        moveSensorToGroup(indices, newGroupId);
+                                    },
+                                });
+                                return (
                                 <>
                                     <div className="mb-4 pb-4 border-b border-slate-800 space-y-2">
+                                        <div className="text-[9px] text-slate-400 italic px-1 mb-1" data-testid="drag-hint">
+                                            Click a <span className="text-emerald-300 font-bold">group name</span> or <span className="text-emerald-300 font-bold">sensor row</span> to select it, then click on the AHU image to place it. Drag a sensor onto another group's header to regroup.
+                                        </div>
                                         <button onClick={addPoint} className="w-full py-2 bg-slate-800 border border-emerald-500 text-emerald-400 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all hover:bg-emerald-900/30">
                                             + New Sensor Point
                                         </button>
@@ -2806,23 +3202,72 @@
                                         const groupSensors = groupedPoints.filter((grp, idx) => 
                                             !grp.isGroup && grp.points[0]?.group_id === group.id
                                         );
+                                        // Locate the parent isGroup:true row for this group so the
+                                        // header click can select it as activeTarget for canvas
+                                        // placement.  Returns -1 when the group has no members yet
+                                        // (nothing to place); we leave the header in collapse-only
+                                        // mode in that case.
+                                        const groupRowIdx = groupedPoints.findIndex(
+                                            g => g.isGroup && g.groupId === group.id
+                                        );
+                                        const groupOnCanvas = groupRowIdx >= 0
+                                            && groupedPoints[groupRowIdx].x != null
+                                            && groupedPoints[groupRowIdx].y != null;
+                                        const groupActive = groupRowIdx >= 0
+                                            && isTargetActive('point_group', groupRowIdx);
+                                        // Header click: select the group as the placement target
+                                        // (only when the group HAS members).  Falls back to plain
+                                        // collapse-toggle for empty groups so the user can still
+                                        // hide them.  Auto-position to centre on first selection
+                                        // so the pill becomes visible immediately.
+                                        const handleHeaderClick = (e) => {
+                                            // Clicks on the chevron or any descendant <input> are
+                                            // handled by their own onClick + stopPropagation; here
+                                            // we only care about clicks on the bare header.
+                                            if (groupRowIdx < 0) {
+                                                toggleGroupCollapse(group.id);
+                                                return;
+                                            }
+                                            setActiveTarget({ type: 'point_group', idx: groupRowIdx });
+                                            const grp = groupedPoints[groupRowIdx];
+                                            if (grp && grp.x == null && bgImage) {
+                                                handleFineTuneGroup(grp.indices, 'x', 50);
+                                                handleFineTuneGroup(grp.indices, 'y', 50);
+                                            }
+                                        };
                                         
                                         return (
-                                            <div key={group.id} className="mb-3 bg-slate-900/50 border border-blue-700/30 rounded-lg overflow-hidden">
+                                            <div key={group.id} className={`mb-3 bg-slate-900/50 border rounded-lg overflow-hidden transition-colors ${dragOverGroupId === group.id ? 'border-amber-400 ring-2 ring-amber-400/40' : groupActive ? 'border-emerald-500 ring-2 ring-emerald-500/40' : 'border-blue-700/30'}`}>
                                                 <div 
-                                                    className="flex items-center justify-between p-2 bg-blue-900/20 cursor-pointer hover:bg-blue-900/30 transition-colors"
-                                                    onClick={() => toggleGroupCollapse(group.id)}
+                                                    className={`flex items-center justify-between p-2 cursor-pointer transition-colors ${dragOverGroupId === group.id ? 'bg-amber-500/20' : groupActive ? 'bg-emerald-900/30' : 'bg-blue-900/20 hover:bg-blue-900/30'}`}
+                                                    onClick={handleHeaderClick}
+                                                    {...dropProps(group.id)}
+                                                    data-testid={`drop-group-${group.id}`}
                                                 >
                                                     <div className="flex items-center gap-2">
-                                                        <span className={`text-blue-400 text-[10px] transition-transform ${group.collapsed ? '' : 'rotate-90'}`}>▶</span>
+                                                        {/* Dedicated chevron — toggles expand/collapse
+                                                            without affecting placement target. */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => { e.stopPropagation(); toggleGroupCollapse(group.id); }}
+                                                            className={`text-blue-400 text-[10px] transition-transform px-1 hover:text-blue-200 ${group.collapsed ? '' : 'rotate-90'}`}
+                                                            title={group.collapsed ? 'Expand group' : 'Collapse group'}
+                                                            data-testid={`toggle-group-${group.id}`}
+                                                        >▶</button>
                                                         <input 
                                                             type="text" 
                                                             value={group.name} 
                                                             onChange={(e) => {e.stopPropagation(); renameSensorGroup(group.id, e.target.value);}}
                                                             onClick={(e) => e.stopPropagation()}
-                                                            className="bg-transparent border-none text-[10px] font-bold text-blue-300 outline-none focus:bg-slate-900/50 px-1 rounded"
+                                                            className={`bg-transparent border-none text-[10px] font-bold outline-none focus:bg-slate-900/50 px-1 rounded ${groupActive ? 'text-emerald-200' : 'text-blue-300'}`}
                                                         />
                                                         <span className="text-[7px] text-slate-500">({groupSensors.length})</span>
+                                                        {groupOnCanvas && (
+                                                            <span className="text-[8px] text-emerald-400 font-bold leading-none" title="Group is placed on the canvas">●</span>
+                                                        )}
+                                                        {groupActive && (
+                                                            <span className="text-[7px] text-emerald-300 font-bold uppercase tracking-widest animate-pulse">→ click image</span>
+                                                        )}
                                                     </div>
                                                     <button 
                                                         onClick={(e) => {e.stopPropagation(); if(confirm('Delete this group?')) deleteSensorGroup(group.id);}}
@@ -2841,15 +3286,39 @@
                                                                 const actualIdx = groupedPoints.indexOf(grp);
                                                                 const isActive = isTargetActive('point_group', actualIdx);
                                                                 return (
-                                                                    <div key={`grp-sensor-${actualIdx}`} onClick={() => handleSidebarClick('point_group', actualIdx)} className={`p-1.5 rounded border cursor-pointer transition-all text-[9px] ${isActive ? 'bg-slate-800 border-emerald-500' : 'bg-slate-900/50 border-slate-700 hover:border-slate-600'}`}>
+                                                                    <div key={`grp-sensor-${actualIdx}`}
+                                                                         {...dragProps(grp)}
+                                                                         onClick={() => handleSidebarClick('point_group', actualIdx)}
+                                                                         className={`p-1.5 rounded border cursor-grab active:cursor-grabbing transition-all text-[9px] ${isActive ? 'bg-slate-800 border-emerald-500' : 'bg-slate-900/50 border-slate-700 hover:border-slate-600'}`}>
                                                                         <div className="flex items-center gap-2">
                                                                             <div className={`w-1.5 h-1.5 rounded-full ${grp.x != null ? 'bg-emerald-400' : 'bg-slate-600'}`}></div>
-                                                                            <span className="font-mono text-white">{grp.name}</span>
+                                                                            <span className="font-mono text-white flex-1 truncate">{grp.name}</span>
                                                                             {grp.points[0]?.access && (
                                                                                 <span className={`text-[6px] px-1 py-0.5 rounded font-bold ${grp.points[0].access === 'RW' ? 'bg-amber-900/30 text-amber-400' : 'bg-blue-900/30 text-blue-400'}`}>
                                                                                     {grp.points[0].access}
                                                                                 </span>
                                                                             )}
+                                                                            {/* Per-sensor ungroup: pulls this single sensor
+                                                                                out of the group and back into Ungrouped
+                                                                                Sensors below.  Tooltip + accessible label
+                                                                                so it's obvious on hover. */}
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    // grp.indices is the array of indices into
+                                                                                    // currentType.points that this grouped row
+                                                                                    // represents.  Strip group_id from all of
+                                                                                    // them so the sensor reappears under
+                                                                                    // "Ungrouped Sensors".
+                                                                                    if (Array.isArray(grp.indices) && grp.indices.length) {
+                                                                                        moveSensorToGroup(grp.indices, null);
+                                                                                    }
+                                                                                }}
+                                                                                title="Ungroup this sensor (move back to Ungrouped Sensors)"
+                                                                                aria-label="Ungroup sensor"
+                                                                                data-testid={`ungroup-sensor-${grp.name}`}
+                                                                                className="text-[10px] text-slate-500 hover:text-amber-300 px-1 leading-none"
+                                                                            >&#x2197;</button>
                                                                         </div>
                                                                     </div>
                                                                 );
@@ -2861,8 +3330,10 @@
                                         );
                                     })}
                                     
-                                    {/* UNGROUPED SENSORS */}
-                                    <div className="mt-4 pt-4 border-t border-slate-700">
+                                    {/* UNGROUPED SENSORS — also a drop zone (drop here to ungroup). */}
+                                    <div className={`mt-4 pt-4 border-t transition-colors rounded ${dragOverGroupId === '__UNGROUPED__' ? 'border-amber-400 bg-amber-500/10' : 'border-slate-700'}`}
+                                         {...dropProps('__UNGROUPED__')}
+                                         data-testid="drop-ungrouped">
                                         <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2 px-2">Ungrouped Sensors</div>
                                         {groupedPoints.filter((grp) => !grp.isGroup && !grp.points[0]?.group_id).length === 0 ? (
                                             <div className="text-center text-slate-600 font-mono text-[9px] py-2">All sensors are grouped</div>
@@ -2871,7 +3342,10 @@
                                                 const actualIdx = groupedPoints.indexOf(grp);
                                                 const isActive = isTargetActive('point_group', actualIdx);
                                                 return (
-                                                    <div key={`ungrouped-${actualIdx}`} onClick={() => handleSidebarClick('point_group', actualIdx)} className={`p-2 rounded-lg border cursor-pointer transition-all mb-1 ${isActive ? 'bg-slate-900 border-emerald-500 shadow-lg' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}>
+                                                    <div key={`ungrouped-${actualIdx}`}
+                                                         {...dragProps(grp)}
+                                                         onClick={() => handleSidebarClick('point_group', actualIdx)}
+                                                         className={`p-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all mb-1 ${isActive ? 'bg-slate-900 border-emerald-500 shadow-lg' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}>
                                                         <div className="flex items-center gap-2">
                                                             <div className={`w-2 h-2 rounded-full ${grp.x != null ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-slate-600'}`}></div>
                                                             <span className="font-mono font-black text-[11px] text-white italic">{grp.name}</span>
@@ -2968,9 +3442,10 @@
                                             )}
                                     </div>
                                 </>
-                            )}
+                                );
+                            })()}
                             
-                            {activeTarget.type === 'animation' && (
+                            {activeTarget.type === 'animation' && equipSubTab === 'aligners' && (
                                 <>
                                     <details className="mb-4 pb-4 border-b border-slate-800 group">
                                         <summary className="text-[9px] font-black uppercase text-fuchsia-400 tracking-widest cursor-pointer list-none flex justify-between outline-none py-2">
@@ -3714,12 +4189,30 @@
                                     </div>
                                     )}
                                     
-                                    {/* 3D View button placeholder */}
-                                    <div className="mt-3">
-                                        <button className="w-full py-2 bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/50 text-purple-300 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all hover:border-purple-400" disabled>
-                                            🔮 3D View (Coming Soon)
+                                    {/* Sun-Path overlay toggle — was "3D View (Coming Soon)".
+                                        Phase A: shows a floating compass + time slider over the
+                                        floor plan and tints AHU/VAV markers by façade sun-exposure.
+                                        The compass itself is rendered inside the floor-plan canvas
+                                        below, so this button just scrolls attention to it. */}
+                                    <div className="mt-3" data-testid="sun-path-launcher">
+                                        <button
+                                            className={'w-full py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ' + (sunState && sunState.enabled
+                                                ? 'bg-amber-500 text-slate-900 border-amber-300 shadow-lg shadow-amber-500/30'
+                                                : 'bg-gradient-to-r from-purple-900/30 to-blue-900/30 border-purple-500/50 text-purple-300 hover:border-purple-400')}
+                                            onClick={() => {
+                                                try {
+                                                    var state = JSON.parse(localStorage.getItem('red5SunCompass') || '{}');
+                                                    state.enabled = !(sunState && sunState.enabled);
+                                                    localStorage.setItem('red5SunCompass', JSON.stringify(state));
+                                                } catch(e){}
+                                                window.dispatchEvent(new CustomEvent('red5-sun-reload'));
+                                            }}
+                                        >
+                                            ☀ Sun-Path Overlay {sunState && sunState.enabled ? '(ON)' : '(OFF)'}
                                         </button>
-                                        <p className="text-[7px] text-slate-500 text-center mt-1 px-2">Isometric view with sun path rendering</p>
+                                        <p className="text-[7px] text-slate-500 text-center mt-1 px-2">
+                                            Highlights AHU/VAV markers on sun-exposed façades · Phase B (isometric + shadows) requires room polygons
+                                        </p>
                                     </div>
                                 </>
                             )}
@@ -3912,23 +4405,57 @@
                             {/* END EQUIPMENT/MAP/POINTS MODE */}
                         </div>
 
-                        {/* Bottom Action Buttons - Conditional based on mode */}
+                        {/* Bottom Action Buttons - 3-button row when in Equipment mode
+                            (Save Clean Template + Save Working File + Save to Controller),
+                            single button when in Map mode.  Replaces the old 2-button
+                            row that lived under Load Schema/Asset + the original solo
+                            bottom Save-to-Controller button. */}
                         <div className="px-6 pb-6 mt-auto shrink-0">
                             {configMode === 'equipment' && (
-                            <button onClick={exportConfig} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] uppercase tracking-[0.2em] rounded-xl shadow-lg active:scale-95 transition-all shadow-emerald-500/20">
-                                {deploymentPath ? t('save_to_controller') : t('download_to_browser')}
-                            </button>
+                            <div className="grid grid-cols-3 gap-1.5">
+                                <button onClick={exportCleanJSON}
+                                        title={deploymentPath ? t('save_clean_template') : t('export_clean_json')}
+                                        data-testid="sb-save-clean-btn"
+                                        className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-emerald-700 text-emerald-300 hover:text-emerald-200 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all">
+                                    Clean Tpl
+                                </button>
+                                <button onClick={exportConfig}
+                                        title={deploymentPath ? t('save_working_file') : t('download_current')}
+                                        data-testid="sb-save-working-btn"
+                                        className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all">
+                                    Working
+                                </button>
+                                <button onClick={exportConfig}
+                                        title={deploymentPath ? t('save_to_controller') : t('download_to_browser')}
+                                        data-testid="sb-save-controller-btn"
+                                        className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-black text-[9px] uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/20">
+                                    Controller
+                                </button>
+                            </div>
                             )}
                             {configMode === 'map' && floorPlans.length > 0 && (
-                            <button onClick={exportMapConfig} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-black text-[11px] uppercase tracking-[0.2em] rounded-xl shadow-lg active:scale-95 transition-all shadow-blue-500/20">
+                            <button onClick={exportMapConfig} data-testid="sb-save-map-btn" className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-black text-[11px] uppercase tracking-[0.2em] rounded-xl shadow-lg active:scale-95 transition-all shadow-blue-500/20">
                                 {deploymentPath ? t('save_to_controller') : t('download_to_browser')}
                             </button>
                             )}
                         </div>
                     </div>
+            );
+            // ===== END const sidebarTree =====
+
+            return (
+                <div className={`flex w-full h-full ${colors.bg}`}>
+                    {/* SIDEBAR — docked vs popped-out.  The same JSX tree
+                        renders into either spot via React's createPortal,
+                        so all click handlers + state flow continue to work
+                        identically without any plumbing.  When popped out,
+                        the in-page sidebar disappears and the canvas
+                        below reflows to fill the freed width. */}
+                    {!popupWin && sidebarTree}
+                    {popupWin && popupHost && ReactDOM.createPortal(sidebarTree, popupHost)}
 
                     {/* MAIN INFINITE CANVAS */}
-                    {configMode !== 'points' && (
+                    {configMode !== 'points' && configMode !== 'sizing' && (
                     <div 
                         id="canvas-bg"
                         className={`flex-1 relative overflow-hidden shadow-inner border-l ${colors.border} canvas-container ${panMode ? 'pan-mode-active' : ''} ${isPanning ? 'panning' : ''}`}
@@ -3990,10 +4517,42 @@
                                             draggable="false" 
                                             alt="Floor Plan"
                                         />
+
+                                        {/* Sun-Path Phase A: floating compass.  Mounted inside the
+                                            floor-plan image wrapper so the compass visually belongs
+                                            to the floor and its slider doesn't conflict with the
+                                            sidebar scroll. */}
+                                        {window.SunCompass && (
+                                            <window.SunCompass
+                                                lat={buildingLatLon.lat}
+                                                lon={buildingLatLon.lon}
+                                                onChange={(s) => setSunState(s)}
+                                            />
+                                        )}
+
+                                        {/* Sun-Ray overlay — soft warm gradient coming from the sun's
+                                            direction.  Sits below markers (zIndex 5) so clicks still
+                                            reach markers at zIndex 10+.  Only visible when overlay on. */}
+                                        {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                                            <window.SunRayOverlay sun={sunState.sun} />
+                                        )}
                                         
                                         {/* Floor Markers */}
                                         {floorMarkers.filter(m => m.floorIdx === currentFloorIdx).map(marker => {
                                             const isSelected = selectedMarkerId === marker.id;
+                                            // Compute sun-exposure halo color when overlay is enabled.
+                                            // marker.x, marker.y are 0..100 (%) from the top-left.
+                                            let exposureRing = null;
+                                            let shadowGeom  = null;
+                                            if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
+                                                const score = window.red5SunExposureScore(
+                                                    marker.x / 100, marker.y / 100, sunState.sun
+                                                );
+                                                exposureRing = window.red5ExposureColor(score);
+                                                if (window.red5MarkerShadow) {
+                                                    shadowGeom = window.red5MarkerShadow(sunState.sun);
+                                                }
+                                            }
                                             return (
                                                 <div
                                                     key={marker.id}
@@ -4010,8 +4569,23 @@
                                                     className="pointer-events-auto"
                                                 >
                                                     {marker.type === 'ahu' ? (
-                                                        <div className={`relative ${isSelected ? 'scale-125' : 'scale-100'} transition-transform`}>
-                                                            <div className={`w-8 h-8 rounded-sm ${marker.active ? 'bg-green-500' : 'bg-gray-500'} border-2 ${isSelected ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'border-white'} shadow-xl flex items-center justify-center`}>
+                                                        <div className={`relative ${isSelected ? 'scale-125' : 'scale-100'} transition-transform`}
+                                                             style={exposureRing ? {filter: `drop-shadow(0 0 10px ${exposureRing}) drop-shadow(0 0 4px ${exposureRing})`} : {}}>
+                                                            {/* Directional shadow pointing away from sun */}
+                                                            {shadowGeom && (
+                                                                <div style={{
+                                                                    position:'absolute', left:'50%', top:'50%',
+                                                                    width: shadowGeom.length_px, height: 6,
+                                                                    transform: 'translate(0, -50%) rotate(' + (shadowGeom.angle_deg - 90) + 'deg)',
+                                                                    transformOrigin: '0 50%',
+                                                                    background: 'linear-gradient(90deg, rgba(15,23,42,' + shadowGeom.opacity + '), rgba(15,23,42,0))',
+                                                                    borderRadius: 999,
+                                                                    pointerEvents: 'none',
+                                                                    zIndex: -1
+                                                                }}/>
+                                                            )}
+                                                            <div className={`w-8 h-8 rounded-sm ${marker.active ? 'bg-green-500' : 'bg-gray-500'} border-2 ${isSelected ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'border-white'} shadow-xl flex items-center justify-center`}
+                                                                 style={exposureRing ? {borderColor: exposureRing, boxShadow: `0 0 14px ${exposureRing}`} : {}}>
                                                                 <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
                                                                     <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm0-10c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4z"/>
                                                                 </svg>
@@ -4023,8 +4597,23 @@
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        <div className={`relative ${isSelected ? 'scale-125' : 'scale-100'} transition-transform`}>
-                                                            <div className={`w-6 h-6 rounded-full ${marker.active ? 'bg-blue-500' : 'bg-gray-500'} border-2 ${isSelected ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'border-white'} shadow-xl`}></div>
+                                                        <div className={`relative ${isSelected ? 'scale-125' : 'scale-100'} transition-transform`}
+                                                             style={exposureRing ? {filter: `drop-shadow(0 0 8px ${exposureRing}) drop-shadow(0 0 3px ${exposureRing})`} : {}}>
+                                                            {/* Directional shadow pointing away from sun */}
+                                                            {shadowGeom && (
+                                                                <div style={{
+                                                                    position:'absolute', left:'50%', top:'50%',
+                                                                    width: shadowGeom.length_px, height: 5,
+                                                                    transform: 'translate(0, -50%) rotate(' + (shadowGeom.angle_deg - 90) + 'deg)',
+                                                                    transformOrigin: '0 50%',
+                                                                    background: 'linear-gradient(90deg, rgba(15,23,42,' + shadowGeom.opacity + '), rgba(15,23,42,0))',
+                                                                    borderRadius: 999,
+                                                                    pointerEvents: 'none',
+                                                                    zIndex: -1
+                                                                }}/>
+                                                            )}
+                                                            <div className={`w-6 h-6 rounded-full ${marker.active ? 'bg-blue-500' : 'bg-gray-500'} border-2 ${isSelected ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]' : 'border-white'} shadow-xl`}
+                                                                 style={exposureRing ? {borderColor: exposureRing, boxShadow: `0 0 12px ${exposureRing}`} : {}}></div>
                                                             {marker.name && (
                                                                 <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-slate-900/90 text-white px-2 py-0.5 rounded text-[8px] font-bold">
                                                                     {marker.name}
@@ -4296,6 +4885,8 @@
                                                                 oat={25} 
                                                                 sat={15}
                                                                 allSensors={currentType.points || []}
+                                                                containerW={imageRef.current ? imageRef.current.offsetWidth : null}
+                                                                naturalW={imageRef.current ? imageRef.current.naturalWidth : null}
                                                                 onSegmentMouseDown={(e, action, segId) => {
                                                                     if (panMode || e.button === 1) return;
                                                                     e.stopPropagation(); e.preventDefault();
@@ -4305,7 +4896,13 @@
                                                                     if (!seg) return;
 
                                                                     if (action === 'move-segment') {
-                                                                        setDraggingTarget({ type: 'animation', idx: i, subtype: segId, startX: e.clientX, startY: e.clientY, initOffX: seg.offsetX, initOffY: seg.offsetY });
+                                                                        // Capture both legacy px AND canonical Frac initial values, so the drag
+                                                                        // handler can update both fields (frac canonical, px for back-compat).
+                                                                        const dispW = imageRef.current ? imageRef.current.offsetWidth : 1;
+                                                                        const natW  = imageRef.current ? imageRef.current.naturalWidth : dispW;
+                                                                        const initOffXFrac = (seg.offsetXFrac != null) ? seg.offsetXFrac : ((seg.offsetX || 0) / Math.max(natW, 1));
+                                                                        const initOffYFrac = (seg.offsetYFrac != null) ? seg.offsetYFrac : ((seg.offsetY || 0) / Math.max(natW, 1));
+                                                                        setDraggingTarget({ type: 'animation', idx: i, subtype: segId, startX: e.clientX, startY: e.clientY, initOffX: seg.offsetX || 0, initOffY: seg.offsetY || 0, initOffXFrac, initOffYFrac });
                                                                         isDraggingMode.current = 'move-segment';
                                                                     } else {
                                                                         setDraggingTarget({ type: 'animation', idx: i, subtype: segId, startX: e.clientX, startY: e.clientY });
@@ -4322,6 +4919,11 @@
                                         {/* SENSOR PILLS (Grouped and Independent) */}
                                         {groupedPoints.map((grp, i) => {
                                             if (grp.x == null || grp.y == null) return null;
+                                            // Skip the duplicate isGroup:false row for any point that
+                                            // is also represented by an isGroup:true parent above —
+                                            // canvas should only render each pill once.  See the
+                                            // PHASE 2 comment in groupedPoints for why both rows exist.
+                                            if (!grp.isGroup && grp.points[0]?.group_id) return null;
                                             const isActive = isTargetActive('point_group', i);
                                             const isDraggingThis = isDraggingMode.current === 'move' && draggingTarget?.idx === i && draggingTarget?.type === 'point_group';
                                             const showExpanded = isActive && !isDraggingThis;
@@ -4488,6 +5090,13 @@
                             )
                         )}
                     </div>
+                    )}
+                    
+                    {/* ============= SIZING TAB CANVAS (V1.9) ============= */}
+                    {configMode === 'sizing' && window.SizingTab && (
+                        <window.SizingTab
+                            configuredAhus={floorMarkers.filter(m => m.type === 'ahu').length}
+                        />
                     )}
                     
                     {/* ============= POINTS EDITOR CANVAS ============= */}
@@ -4721,6 +5330,9 @@
                             } catch (err) { alert(`Could not reach controller: ${err.message}`); }
                         }}
                         onDownload={downloadFileFromController}
+                        onDownloadDir={downloadDirFromController}
+                        onBatchDownload={batchDownloadFromController}
+                        onUploadDir={uploadDirectoryToController}
                         onMove={moveFileOnController}
                         onDelete={deleteFileFromController}
                         onDeleteDir={deleteDirectoryFromController}
@@ -4795,7 +5407,9 @@
                 '/assets/js/preview-components.js',
                 '/assets/js/schema-config.js',
                 '/assets/js/image-picker.js',
-                '/assets/js/file-browser.js'
+                '/assets/js/file-browser.js',
+                '/assets/js/sizing-check.js',
+                '/assets/js/sun-path.js'
             ];
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {

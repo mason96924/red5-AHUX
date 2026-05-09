@@ -1077,7 +1077,7 @@ global.initPsy3D = function(container, opts){
     if (!modeRow) {
       modeRow = document.createElement('div');
       modeRow.id = 'p3-ms-modes';
-      modeRow.style.cssText = 'position:absolute;left:20px;bottom:8px;z-index:51;'+
+      modeRow.style.cssText = 'position:absolute;left:20px;top:48px;z-index:51;'+
         'display:none;font-family:inherit;font-size:9px;color:#94a3b8;'+
         'background:rgba(15,23,42,.85);backdrop-filter:blur(10px);'+
         'border:1px solid rgba(148,163,184,.35);border-radius:6px;padding:6px 10px';
@@ -1124,7 +1124,7 @@ global.initPsy3D = function(container, opts){
     if (!costCfg) {
       costCfg = document.createElement('div');
       costCfg.id = 'p3-ms-costcfg';
-      costCfg.style.cssText = 'position:absolute;left:20px;bottom:42px;z-index:52;'+
+      costCfg.style.cssText = 'position:absolute;left:20px;top:82px;z-index:52;'+
         'display:none;font-family:inherit;font-size:9px;color:#e2e8f0;'+
         'background:rgba(15,23,42,.92);backdrop-filter:blur(14px);'+
         'border:1px solid #10b981;border-radius:6px;padding:8px 12px;'+
@@ -3156,13 +3156,106 @@ global.initPsy3D = function(container, opts){
     else if(nSites<=12){cols=4; rows=3;}
     else {cols=4; rows=Math.ceil(nSites/4);}
     var gutter=12;
-    /* Top padding clears the strategy toggle row at top:12.  No chip
-       ribbon or canvas title to reserve space for anymore (title moved
-       into the bottom legend strip). */
-    var pLeft=18, pTop=40, pRight=10, pBottom=28;
+    /* Top padding clears the strategy toggle row at top:12, plus the new
+       mode-selector row at top:48 (~26 px tall) and a Mode Summary banner
+       drawn on canvas at ~top:84.  Total reserved height ~110 px. */
+    var pLeft=18, pTop=120, pRight=10, pBottom=28;
     var cellW=(vw-pLeft-pRight-gutter*(cols-1))/cols;
     var cellH=(vh-pTop-pBottom-gutter*(rows-1))/rows;
     var months=['J','F','M','A','M','J','J','A','S','O','N','D'];
+
+    /* Aggregate metrics needed by the Mode Summary banner (drawn next).
+       Computed BEFORE the panel grid so the banner can reference per-
+       strategy headline numbers; legend rendering below reuses the same
+       cached object. */
+    var _msAgg = _aggregateMs(keys);
+
+    /* ===== Mode Summary banner =====
+       Drawn on canvas (above the panel grid) so the active legend mode is
+       impossible to miss.  Each mode prints the same headline numbers per
+       strategy that show in the bottom legend, but in larger text + with
+       a left-pinned "MODE: X" prefix so a glance at the chart immediately
+       tells you which lens the audience is looking through.            */
+    (function _drawModeBanner(){
+      var bnY = 84;             // sits between mode-selector row and panel grid
+      var bnH = 28;
+      // Background panel (subtle so the canvas-drawn banner lives in the
+      // same visual layer as the panel grid below).
+      ctx.fillStyle = isLight ? 'rgba(241,245,249,.85)' : 'rgba(15,23,42,.85)';
+      ctx.fillRect(pLeft, bnY, vw - pLeft - pRight, bnH);
+      ctx.strokeStyle = '#7c3aed';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(pLeft, bnY, vw - pLeft - pRight, bnH);
+      // Mode label pill on the left
+      var modeLbls = {A:'A: COMFORT HOURS', B:'B: SENS / LAT', C:'C: TRADE-OFF', '$':'$ : COST / yr'};
+      ctx.fillStyle = '#7c3aed';
+      ctx.fillRect(pLeft, bnY, 130, bnH);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('MODE   '+(modeLbls[_msMode]||_msMode), pLeft + 65, bnY + 18);
+      // Per-strategy headline numbers in a single row.
+      var agg = _msAgg || {b:{},d:{},band:{},bd:{},opt:{},humidHours:0};
+      var strats = [
+        {key:'b',    name:'Fixed-SA',     col:P.cFixed},
+        {key:'d',    name:'Dyn-Reset',    col:P.cDyn},
+        {key:'band', name:'B1-B10',       col:P.cBand},
+        {key:'bd',   name:'B1-B10+Dyn',   col:P.cBandDyn},
+        {key:'opt',  name:'Opt-SA',       col:P.cOpt}
+      ];
+      // Compute per-strategy display value based on mode.
+      var disp = strats.map(function(s){
+        var m = agg[s.key] || {};
+        if (_msMode === 'A') {
+          if (agg.humidHours <= 0) return '--';
+          return Math.round((m.latMet/agg.humidHours)*100)+'% covered';
+        }
+        if (_msMode === 'B') {
+          var tot = (m.sens||0) + (m.lat||0);
+          if (tot <= 0) return '--';
+          return Math.round((m.lat/tot)*100)+'% latent';
+        }
+        if (_msMode === 'C') {
+          var c = {b:'E= C\u2717',  d:'E\u2193 C\u2717',  band:'E\u2191 C\u2713',
+                   bd:'E\u2191 C\u2713', opt:'E\u2193\u2193 C*'};
+          return c[s.key] || '';
+        }
+        if (_msMode === '$') {
+          var energyD = _strategyDollars(m.cool||0, m.heat||0);
+          var uncov   = Math.max(0, agg.humidHours - (m.latMet||0));
+          var totalD  = energyD + uncov * _costViolRate;
+          if (totalD < 1000) return '$'+Math.round(totalD);
+          if (totalD < 1e6)  return '$'+(totalD/1000).toFixed(1)+'k';
+          return '$'+(totalD/1e6).toFixed(2)+'M';
+        }
+        return '';
+      });
+      // Render strategy chips evenly spread across the rest of the banner.
+      // Skip the [pLeft+140..580] region because the floating Weather-Strip
+      // config panel docks there and would visually overlay the chips.
+      // Effective area starts past the panel; if the canvas is narrower than
+      // the panel, fall back to right after the mode pill.
+      var WX_PANEL_RIGHT = 580;
+      var cellX0 = Math.max(pLeft + 140, WX_PANEL_RIGHT + 20);
+      var cellW0 = (vw - pRight - cellX0) / strats.length;
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'left';
+      for (var i=0; i<strats.length; i++){
+        var cx = cellX0 + i * cellW0;
+        // strategy color swatch
+        ctx.fillStyle = strats[i].col;
+        ctx.fillRect(cx + 4, bnY + 9, 10, 10);
+        // strategy short name
+        ctx.fillStyle = P.text;
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(strats[i].name, cx + 18, bnY + 12);
+        // headline value
+        ctx.fillStyle = strats[i].col;
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(disp[i], cx + 18, bnY + 24);
+      }
+    })();
+
 
     /* Uniform Y axes across all visible panels so users can do honest
        cross-city comparison.  The frame of reference is the LARGEST value
@@ -3603,8 +3696,8 @@ global.initPsy3D = function(container, opts){
       klX += 12;
     }
     // Aggregate totals across the currently-visible sites so the headline
-    // metrics use the same population as the panel grid.
-    var _msAgg = _aggregateMs(keys);
+    // metrics use the same population as the panel grid.  Uses the
+    // _msAgg already computed by the Mode Summary banner above.
     var aggBase     = _msAgg.b.energy;
     var aggDyn      = _msAgg.d.energy;
     var aggBand     = _msAgg.band.energy;

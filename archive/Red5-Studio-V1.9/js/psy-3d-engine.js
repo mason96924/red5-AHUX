@@ -800,7 +800,7 @@ global.initPsy3D = function(container, opts){
           // Monthly \u00d7 Sites multi-city comparison only in T\u00d7Time.
           var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display = (c[0]==='front') ? 'block' : 'none';
           // Strategy-overlay toggles only valid inside Monthly \u00d7 Sites mode.
-          ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
+          ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
             var el=$('#'+id); if(el) el.style.display='none';
           });
           var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -828,7 +828,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
+      ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -846,7 +846,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
+      ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -919,9 +919,11 @@ global.initPsy3D = function(container, opts){
       // band-strategy toggle while in Monthly \u00d7 Sites mode (it doesn't apply
       // to the multi-city panel grid).
       var inMs = (chart2DMode==='monthly-sites');
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa'].forEach(function(id){
+      ['p3-btn-strat-dd','p3-btn-ms-oa'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display = inMs ? 'block' : 'none';
       });
+      // Strategy dropdown panel: close it whenever we leave MS mode.
+      var sdp = $('#p3-strat-dd-panel'); if (sdp && !inMs) sdp.style.display = 'none';
       // Opt-SA bound sliders only relevant when the Opt-SA curve is on.
       var ocfg = $('#p3-ms-optcfg');
       if (ocfg) ocfg.style.display = (inMs && _msShowOpt) ? 'block' : 'none';
@@ -1037,7 +1039,7 @@ global.initPsy3D = function(container, opts){
     if (!optCfg) {
       optCfg = document.createElement('div');
       optCfg.id = 'p3-ms-optcfg';
-      optCfg.style.cssText = 'position:absolute;top:42px;left:595px;z-index:51;'+
+      optCfg.style.cssText = 'position:absolute;top:42px;left:660px;z-index:51;'+
         'background:rgba(15,23,42,.92);border:1px solid #c084fc;border-radius:6px;'+
         'padding:6px 10px;font-size:9px;color:#e2e8f0;font-family:inherit;'+
         'backdrop-filter:blur(14px);display:none;min-width:170px;'+
@@ -1307,6 +1309,123 @@ global.initPsy3D = function(container, opts){
     // Expose for the renderer to refresh the trigger label live (e.g. when
     // late-arriving Open-Meteo fetches expand the loaded site list).
     _refreshSitesDD = _refreshSitesDropdown;
+
+    /* ------------------------------------------------------------------------
+       Strategy dropdown (replaces the 5 individual + Fixed/+Dyn-Reset/+B1-B10/
+       +B1-B10 & Dyn-Reset/+Opt-SA toggle buttons).  Same UX pattern as the
+       Sites dropdown above.  Each row is a checkbox that toggles the matching
+       _msShow* state var via .click() on the (now permanently hidden) legacy
+       button — keeps all the existing render math untouched.
+       Position: just past the Sites dropdown (left:485 ends ≈635) so the row
+       reads HEADER → SITES → STRATEGIES → OA, matching the operator's
+       requested layout.
+       ----------------------------------------------------------------------- */
+    var stratDdBtn = document.createElement('button');
+    stratDdBtn.id = 'p3-btn-strat-dd';
+    stratDdBtn.type = 'button';
+    stratDdBtn.style.cssText = 'position:absolute;top:12px;left:660px;z-index:51;background:rgba(15,23,42,.92);border:1px solid #c084fc;color:#c084fc;padding:6px 14px;border-radius:6px;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;backdrop-filter:blur(14px);display:none;min-width:170px;text-align:left';
+    stratDdBtn.textContent = 'Strategies \u25BE';
+    $('#p3-overlay2d').appendChild(stratDdBtn);
+
+    var stratDdPanel = document.createElement('div');
+    stratDdPanel.id = 'p3-strat-dd-panel';
+    stratDdPanel.style.cssText = 'position:absolute;top:42px;left:660px;z-index:60;background:rgba(15,23,42,.96);border:1px solid #c084fc;border-radius:6px;padding:0;font-size:10px;color:#e2e8f0;font-family:inherit;backdrop-filter:blur(14px);display:none;min-width:240px;max-height:360px;overflow-y:auto;box-shadow:0 10px 28px rgba(0,0,0,.55)';
+    $('#p3-overlay2d').appendChild(stratDdPanel);
+
+    /* Each entry binds a state-var getter to a hidden legacy button so we can
+       fire the existing onclick (which toggles the var, refreshes the legacy
+       button cosmetics, and calls render2DChart()) instead of duplicating
+       any render math here. */
+    function _stratDefs(){
+      return [
+        {key:'fixed',   id:'p3-btn-ms-fixed',   color:'#a855f7', label:'Fixed-SA',
+         on:function(){return _msShowFixed;}},
+        {key:'dyn',     id:'p3-btn-ms-dyn',     color:'#d8b4fe', label:'Dyn-Reset',
+         on:function(){return _msShowDyn;}},
+        {key:'band',    id:'p3-btn-ms-band',    color:'#10b981', label:'B1-B10',
+         on:function(){return _msShowBand;}},
+        {key:'banddyn', id:'p3-btn-ms-banddyn', color:'#22d3ee', label:'B1-B10 + Dyn-Reset',
+         on:function(){return _msShowBandDyn;}},
+        {key:'opt',     id:'p3-btn-ms-opt',     color:'#c084fc', label:'Opt-SA',
+         on:function(){return _msShowOpt;}}
+      ];
+    }
+
+    function _refreshStratDropdown(){
+      var defs = _stratDefs();
+      var nOn = defs.filter(function(d){return d.on();}).length;
+      stratDdBtn.textContent = 'Strategies: ' + nOn + '/' + defs.length + ' \u25BE';
+      var html = '';
+      // All / None convenience row matches the Sites dropdown styling.
+      html += '<div style="display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid #334155;background:rgba(2,6,23,.4);position:sticky;top:0">'+
+        '<button data-stract="all"  style="flex:1;background:rgba(192,132,252,.15);border:1px solid #c084fc;color:#c084fc;padding:4px 6px;border-radius:4px;font-size:9px;font-weight:900;letter-spacing:.05em;cursor:pointer;font-family:inherit;text-transform:uppercase">All</button>'+
+        '<button data-stract="none" style="flex:1;background:rgba(15,23,42,.6);border:1px solid #475569;color:#94a3b8;padding:4px 6px;border-radius:4px;font-size:9px;font-weight:900;letter-spacing:.05em;cursor:pointer;font-family:inherit;text-transform:uppercase">None</button>'+
+        '</div>';
+      defs.forEach(function(d){
+        var isOn = d.on();
+        var labelEsc = d.label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        // Inline color swatch matches the chart curve color so operators can
+        // map checkbox → curve at a glance without reading the legend.
+        html += '<label data-strat="'+d.key+'" style="display:flex;align-items:center;padding:6px 12px;cursor:pointer;border-bottom:1px solid rgba(51,65,85,.4);' + (isOn?'background:rgba(192,132,252,.10)':'') + '">'+
+          '<input type="checkbox" '+(isOn?'checked':'')+' style="margin-right:8px;accent-color:'+d.color+';cursor:pointer;width:13px;height:13px">'+
+          '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+d.color+';margin-right:8px;flex-shrink:0"></span>'+
+          '<span style="flex:1;color:'+(isOn?'#e2e8f0':'#cbd5e1')+';font-weight:'+(isOn?'900':'700')+'">'+labelEsc+'</span>'+
+        '</label>';
+      });
+      stratDdPanel.innerHTML = html;
+      // Bind row clicks → fire the legacy button's onclick (which toggles the
+      // state var, refreshes the hidden button cosmetics, and re-renders).
+      Array.prototype.forEach.call(stratDdPanel.querySelectorAll('label[data-strat]'), function(lbl){
+        lbl.addEventListener('click', function(e){
+          // Browser is mid-toggling cb.checked. Defer so we read post-click state.
+          setTimeout(function(){
+            var key = lbl.dataset.strat;
+            var def = _stratDefs().find(function(d){return d.key === key;});
+            if (!def) return;
+            var legacyBtn = $('#'+def.id);
+            if (!legacyBtn) return;
+            // Only fire .click() if the desired state differs from current.
+            // (Without this, clicking the input AND the label would fire twice.)
+            var wantOn = lbl.querySelector('input[type=checkbox]').checked;
+            if (def.on() !== wantOn) {
+              legacyBtn.click();
+            }
+            _refreshStratDropdown();
+          }, 0);
+        });
+      });
+      Array.prototype.forEach.call(stratDdPanel.querySelectorAll('button[data-stract]'), function(btn){
+        btn.onclick = function(e){
+          e.stopPropagation();
+          var act = btn.dataset.stract;
+          var defs = _stratDefs();
+          defs.forEach(function(d){
+            var legacyBtn = $('#'+d.id);
+            if (!legacyBtn) return;
+            var want = (act === 'all');
+            if (d.on() !== want) legacyBtn.click();
+          });
+          _refreshStratDropdown();
+        };
+      });
+    }
+
+    stratDdBtn.onclick = function(e){
+      e.stopPropagation();
+      var open = stratDdPanel.style.display === 'block';
+      if (open) { stratDdPanel.style.display = 'none'; return; }
+      _refreshStratDropdown();
+      stratDdPanel.style.display = 'block';
+    };
+    var _stratDdOutsideHandler = function(e){
+      if (_disposed || !stratDdPanel || stratDdPanel.style.display !== 'block') return;
+      if (stratDdPanel.contains(e.target) || stratDdBtn.contains(e.target)) return;
+      stratDdPanel.style.display = 'none';
+    };
+    document.addEventListener('click', _stratDdOutsideHandler);
+    _cleanupTasks.push(function(){ document.removeEventListener('click', _stratDdOutsideHandler); });
+    // Initial label render (so the trigger reads "Strategies: 5/5 ▾" not "Strategies ▾").
+    _refreshStratDropdown();
 
     /* 2D hover tooltip */
     (function(){

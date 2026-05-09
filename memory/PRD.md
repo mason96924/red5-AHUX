@@ -721,6 +721,49 @@ Plus regression: `tests/test_streaming_upload.py` **36/36 PASS**, `tests/test_re
 Going forward, the bundle rebuild script should treat the **live archive directory** as the source of truth for ALL files in the bundle, not just the explicitly-listed updates. Future `update_bundle` invocations will re-include every file from `archive/Red5-Studio-V1.9/` with content from disk, so files updated in earlier sessions can never go stale.
 
 
+## V1.9 Strategy Toggle Consolidation into Dropdown (2026-02-09)
+**Brief**: Operator requested the 5 inline strategy-toggle buttons (Fixed-SA / Dyn-Reset / B1-B10 / B1-B10 + Dyn-Reset / Opt-SA) on the Monthly × Sites chart row be consolidated into a single dropdown with checkboxes — matching the existing Sites dropdown UX. Target row layout: `HEADER → SITES → STRATEGIES → OA Intake`.
+
+### Implementation
+Added a new `#p3-btn-strat-dd` dropdown (left:660px) just past the Sites dropdown (left:485px) and before OA Intake (left:730px) inside `js/psy-3d-engine.js`.
+
+- **Trigger label** dynamically reads `Strategies: N/5 ▾` reflecting how many are currently checked.
+- **Panel** (z-index 60) lists 5 rows, each with: native checkbox (accent-color matched to the chart curve color) + 10px color swatch (same color again, so checkbox→curve mapping is visible at a glance) + strategy label.
+- **All / None** convenience row at the top (sticky), matching the Sites dropdown styling.
+- **Outside-click** closes the panel via a single `document` listener registered in `_cleanupTasks` so it auto-removes on disposal.
+- **Auto-closes** on leaving Monthly × Sites mode (added to all 4 visibility-controlling forEach lists at lines 803/831/849/922).
+
+### Zero render-math change
+The 5 legacy buttons (`#p3-btn-ms-fixed`, `#p3-btn-ms-dyn`, `#p3-btn-ms-band`, `#p3-btn-ms-banddyn`, `#p3-btn-ms-opt`) stay in DOM but are removed from the visibility forEach lists, so they remain `display:none` permanently. Each dropdown checkbox click forwards to `legacyBtn.click()`, which fires the existing `onclick` handler that toggles `_msShow{Fixed,Dyn,Band,BandDyn,Opt}`, refreshes the (hidden) button cosmetics, and calls `render2DChart()`. This guarantees the chart math is byte-identical to before — the dropdown is purely a UX layer.
+
+### Opt-SA bound sliders
+The `#p3-ms-optcfg` panel (min/max enthalpy sliders for the Opt-SA envelope) was repositioned from `left:595px` (under the now-hidden Opt-SA button) to `left:660px` (under the new Strategies dropdown), so when the operator checks Opt-SA the bound sliders pop up directly under the dropdown.
+
+### Tests (`tests/test_strategy_dropdown.js`)
+**28/28 PASS** covering:
+- All new IDs, helpers, and class-pattern markers exist in source
+- All 5 strategy entries exist in `_stratDefs`
+- Each `_msShow*` getter is referenced (they stay live, never duplicated)
+- All 5 legacy `onclick` handlers are intact (zero render-math touch verified at the source level)
+- Dropdown is added to the visibility forEach lists; legacy 5-button forEach lists are GONE
+- Layout-order assertion: `stratDdBtn left:660` > `sitesDdBtn left:485` (row reads SITES → STRATEGIES correctly)
+- Outside-click handler registered + cleanup on dispose
+
+### End-to-end browser verification
+Drove the live page through `3D WX → 2D toggle → Monthly × Sites`. Live state:
+```
+strat_text:           'Strategies: 0/5 ▾'
+legacy_fixed_visible: False                   ← legacy buttons correctly hidden
+oa_visible:           True                    ← OA Intake still visible
+sites_visible:        True                    ← Sites dropdown still visible
+panel labels:         [X] Fixed-SA, [ ] Dyn-Reset, [ ] B1-B10, [ ] B1-B10 + Dyn-Reset, [ ] Opt-SA
+```
+Zero `pageerror`s.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.65 MB, MD5 `4192ed146396fa26c45cf76c4f152b73`) with updated `js/psy-3d-engine.js`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

@@ -27,10 +27,12 @@ _service_dependencies = [
 ]
 import os
 import re
+import sys
 import time
 import base64
 import hashlib
 import hmac as hmac_mod
+import importlib
 import zipfile
 
 from flask import jsonify, request, Response, send_from_directory, make_response
@@ -45,6 +47,10 @@ MASTER_KEY_CONST = None
 UPLOADS_SCRATCH_DIR = None
 _derive_key = None         # callable from app.py
 _no_cache = None           # callable from app.py
+# Reload-module endpoint needs a back-reference to the live ctx + app so it
+# can rebind plug-in globals after importlib.reload().  Stashed by register().
+_FLASK_APP_REF = None
+_SERVICE_CTX_REF = None
 
 
 # ----------------------------------------------------------------------
@@ -1164,6 +1170,107 @@ def repair_download_plugin(plugin_name):
                                          mimetype=mime, as_attachment=False))
 
 
+def repair_reload_module(plugin_name):
+    """Hot-reload a single plug-in module inside the running Flask process,
+    so newly-uploaded plug-in code takes effect WITHOUT toggling app.py
+    via the enteliWEB script editor.
+
+    Mechanism:
+      1. importlib.reload(mod)                      → new function objects
+      2. mod.register(app, ctx) with add_url_rule no-op'd
+                                                    → rebind module globals
+                                                       (DATA_ROOT, etc.) without
+                                                       trying to re-attach routes
+                                                       (which would AssertionError
+                                                       on duplicate endpoints)
+      3. swap app.view_functions[ep] for every endpoint registered by this
+         module (matched via the bound function's __module__ attr)
+                                                    → next request hits new code
+
+    Caveats:
+      - Cannot ADD or REMOVE routes (Flask url_map is rebuilt only on full
+        process restart). For schema changes use a real restart.
+      - Background threads started inside register() will NOT be re-spawned
+        (we suppress them via start_*_thread=False during the rebind call).
+    """
+    # Restrict to the same plug-in allow-list as repair_upload_plugin.
+    plugin_files = {
+        'upload_service.py', 'weather_service.py',
+        'band_service.py', 'telemetry_service.py',
+    }
+    name = os.path.basename(plugin_name or '').strip()
+    if not name.endswith('.py'):
+        name = name + '.py'
+    if name not in plugin_files:
+        return jsonify({'success': False, 'error': 'not in reload allow-list',
+                        'allowed': sorted(plugin_files)}), 403
+
+    mod_name = name[:-3]   # strip .py
+    mod = sys.modules.get(mod_name)
+    if mod is None:
+        return jsonify({'success': False,
+                        'error': 'module not currently loaded; full Flask restart required'}), 404
+
+    if _FLASK_APP_REF is None or _SERVICE_CTX_REF is None:
+        return jsonify({'success': False,
+                        'error': 'reload context not initialised'}), 500
+    # Capture refs to LOCALS — importlib.reload() re-executes the module body
+    # which resets these globals to None until the new register() runs.
+    app = _FLASK_APP_REF
+    ctx_snapshot = _SERVICE_CTX_REF
+
+    # 1. Snapshot which endpoints belong to this module BEFORE reload.
+    pre_endpoints = []
+    for ep, fn in list(app.view_functions.items()):
+        if getattr(fn, '__module__', '') == mod_name:
+            pre_endpoints.append((ep, fn.__name__))
+
+    # 2. Reload the module — new function objects are created here.
+    try:
+        importlib.reload(mod)
+    except Exception as ex:
+        return jsonify({'success': False,
+                        'error': 'importlib.reload failed: ' + str(ex),
+                        'module': mod_name}), 500
+
+    # 3. Re-bind module globals (DATA_ROOT, etc.) by calling register() with
+    #    add_url_rule no-op'd so it can't AssertionError on dup endpoints.
+    #    Suppress background threads — they're already running.
+    real_add_url_rule = app.add_url_rule
+    rebind_ctx = dict(ctx_snapshot)
+    rebind_ctx['start_forecast_thread'] = False
+    rebind_ctx['start_band_thread']     = False
+    app.add_url_rule = lambda *args, **kw: None
+    try:
+        if hasattr(mod, 'register'):
+            mod.register(app, rebind_ctx)
+    except Exception as ex:
+        app.add_url_rule = real_add_url_rule
+        return jsonify({'success': False,
+                        'error': 'rebind register() failed: ' + str(ex)}), 500
+    finally:
+        app.add_url_rule = real_add_url_rule
+
+    # 4. Re-point every previously-registered endpoint at the new function.
+    swapped = []
+    missing = []
+    for ep, fn_name in pre_endpoints:
+        new_fn = getattr(mod, fn_name, None)
+        if new_fn is not None:
+            app.view_functions[ep] = new_fn
+            swapped.append(ep)
+        else:
+            missing.append(ep + ':' + fn_name)
+
+    return jsonify({
+        'success': True,
+        'module': mod_name,
+        'swapped_endpoints': swapped,
+        'missing_endpoints': missing,
+        'note': 'Module hot-reloaded. New routes (if any) require a full Flask restart to register.',
+    })
+
+
 def register(app, ctx):
     """Attach this module's routes to ``app`` and stash shared constants.
 
@@ -1173,6 +1280,7 @@ def register(app, ctx):
     """
     global DATA_ROOT, SCRIPTS_ROOT, PLUGINS_ROOT, ALLOWED_EXTENSIONS, MASTER_KEY_CONST
     global UPLOADS_SCRATCH_DIR, _derive_key, _no_cache
+    global _FLASK_APP_REF, _SERVICE_CTX_REF
 
     DATA_ROOT          = ctx['DATA_ROOT']
     SCRIPTS_ROOT       = ctx['SCRIPTS_ROOT']
@@ -1182,6 +1290,8 @@ def register(app, ctx):
     _derive_key        = ctx['_derive_key']
     _no_cache          = ctx['_no_cache']
     UPLOADS_SCRATCH_DIR = os.path.join(DATA_ROOT, '_uploads')
+    _FLASK_APP_REF     = app
+    _SERVICE_CTX_REF   = ctx
 
     # Re-route Python's tempfile module away from the /tmp tmpfs (which is
     # RAM-backed on the embedded controller).
@@ -1207,5 +1317,8 @@ def register(app, ctx):
     app.add_url_rule('/api/repair/download-plugin/<path:plugin_name>',
                      'repair_download_plugin',
                      repair_download_plugin, methods=['GET'])
+    app.add_url_rule('/api/repair/reload-module/<path:plugin_name>',
+                     'repair_reload_module',
+                     repair_reload_module,   methods=['POST'])
     app.add_url_rule('/update',                     'serve_update_page',
                      serve_update_page,      methods=['GET'])

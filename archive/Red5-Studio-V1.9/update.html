@@ -133,7 +133,7 @@ h1 span{color:#ef4444;font-style:italic}
 </h2>
 <p class="note" style="margin-bottom:12px">Direct single-file replacement &mdash; bypasses the bundle/decrypt/extract pipeline. Use when the regular bundle upload is blocked by <code style="background:#1e293b;padding:1px 4px;border-radius:3px">Low disk headroom</code> or you need to hotfix one plug-in without re-uploading the full bundle. Each upload writes via tmp+rename so a corrupted transfer can never leave a half-written plug-in on disk.</p>
 <div id="repairList" style="display:flex;flex-direction:column;gap:6px"></div>
-<p class="note" style="margin-top:12px;font-style:normal;color:#fbbf24"><b>After upload:</b> Restart Flask (toggle <code>app.py</code> off/on in the enteliWEB script editor) so Python re-imports the new module. The file is on disk immediately; the running process keeps the old one cached until restart.</p>
+<p class="note" style="margin-top:12px;font-style:normal;color:#fbbf24"><b>One-click flow:</b> click <b>Replace</b> &rarr; pick file &rarr; the new module is auto hot-reloaded into the running Flask process &mdash; no enteliWEB script-toggle needed. The standalone <b>Reload</b> button re-imports a plug-in without a fresh upload (useful after editing on disk via SCP). For changes that <i>add or remove routes</i>, a full Flask restart is still required (the live <code>app.url_map</code> only rebuilds on full process boot).</p>
 <div id="repairStatus" style="margin-top:10px;font-size:12px"></div>
 </div>
 
@@ -590,6 +590,9 @@ function _renderRepairList(){
             + '<span style="flex:1"><span style="color:#e2e8f0;font-size:12px;font-weight:700">' + f.name + '</span><span style="color:#64748b;font-size:10px;display:block;margin-top:1px">' + f.desc + '</span></span>'
             + '<input type="file" accept=".py,.html" id="rf_' + f.name.replace(/\W/g,'_') + '" style="display:none">'
             + '<button class="btn" data-act="pick" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em">Replace</button>'
+            + (f.kind === 'plugin'
+                ? '<button class="btn" data-act="reload" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#312e81;color:#a5b4fc;border:1px solid #4338ca;text-transform:uppercase;letter-spacing:.05em" title="Hot-reload — re-imports the module without restarting Flask">Reload</button>'
+                : '')
             + '<a href="#" data-act="dl" data-name="' + f.name + '" class="btn" style="padding:6px 10px;font-size:10px;background:#020617;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em;text-decoration:none">View</a>';
         box.appendChild(row);
     });
@@ -609,7 +612,33 @@ function _onRepairClick(e){
         var base = (document.getElementById('serverUrl').value || '').replace(/\/$/, '');
         if (!base) { alert('Set Controller URL first.'); return; }
         window.open(base + '/api/repair/download-plugin/' + encodeURIComponent(name), '_blank');
+    } else if (act === 'reload'){
+        e.preventDefault();
+        _doRepairReload(name);
     }
+}
+function _doRepairReload(name){
+    var status = document.getElementById('repairStatus');
+    var base = (document.getElementById('serverUrl').value || '').replace(/\/$/, '');
+    if (!base) { status.className = 'status-err'; status.textContent = 'Set Controller URL first.'; return; }
+    status.className = 'status-info';
+    status.textContent = 'Hot-reloading ' + name + '…';
+    fetch(base + '/api/repair/reload-module/' + encodeURIComponent(name.replace(/\.py$/, '')), {method:'POST'})
+        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); })
+        .then(function(rs){
+            if (rs.ok && rs.j && rs.j.success){
+                status.className = 'status-ok';
+                var n = (rs.j.swapped_endpoints || []).length;
+                status.textContent = 'OK: hot-reloaded ' + name + ' — swapped ' + n + ' endpoint(s): ' + (rs.j.swapped_endpoints || []).join(', ');
+            } else {
+                status.className = 'status-err';
+                status.textContent = 'Reload error: ' + ((rs.j && rs.j.error) || ('HTTP ' + rs.status));
+            }
+        })
+        .catch(function(err){
+            status.className = 'status-err';
+            status.textContent = 'Network error: ' + err.message;
+        });
 }
 function _onRepairFileChange(e){
     var fi = e.target;
@@ -640,9 +669,28 @@ function _doRepairUpload(name, file){
         .then(function(rs){
             if (rs.ok && rs.j && rs.j.success){
                 status.className = 'status-ok';
-                status.textContent = 'OK: replaced ' + (rs.j.dest || name) + ' (' + rs.j.bytes + ' bytes). ' + (rs.j.note || '');
+                status.textContent = 'OK: replaced ' + (rs.j.dest || name) + ' (' + rs.j.bytes + ' bytes). ';
                 // Auto-refresh disk status after a plug-in replace
                 if (typeof refreshDiskStatus === 'function') refreshDiskStatus();
+                // Auto-trigger hot-reload for plug-in .py files so the running
+                // process picks up the new code immediately — no enteliWEB
+                // script-toggle needed.  HTML files don't need a reload (they
+                // are served fresh on every request).
+                if (name.endsWith('.py')){
+                    status.textContent += 'Auto-reloading…';
+                    return fetch(base + '/api/repair/reload-module/' + encodeURIComponent(name.replace(/\.py$/, '')),
+                                 {method:'POST'})
+                        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); })
+                        .then(function(rl){
+                            if (rl.ok && rl.j && rl.j.success){
+                                var n = (rl.j.swapped_endpoints || []).length;
+                                status.textContent = 'OK: replaced + hot-reloaded ' + name + ' — ' + n + ' endpoint(s) now serve the new code, no Flask restart needed.';
+                            } else {
+                                status.className = 'status-info';
+                                status.textContent = 'Replace OK, reload failed: ' + ((rl.j && rl.j.error) || ('HTTP ' + rl.status)) + '. Restart Flask manually to activate the new module.';
+                            }
+                        });
+                }
             } else {
                 status.className = 'status-err';
                 var msg = (rs.j && rs.j.error) || ('HTTP ' + rs.status);

@@ -643,6 +643,45 @@ Plus `tests/test_streaming_upload.py` **36/36 PASS** (regression — the new end
 5. Retry the bundle upload — now uses the updated logic.
 
 
+## V1.9 Hot-Reload Module Endpoint (2026-02-09)
+**Brief**: Layered on top of Repair Mode. Eliminates the enteliWEB script-toggle dance entirely — newly-uploaded plug-in code now takes effect inside the running Flask process WITHOUT a restart.
+
+### Backend (`upload_service.py`)
+- New `POST /api/repair/reload-module/<plugin_name>` endpoint. Allow-listed to the same 4 plug-ins (`upload_service.py`, `weather_service.py`, `band_service.py`, `telemetry_service.py`).
+- Mechanism (3 steps inside the handler):
+  1. **`importlib.reload(mod)`** — Python re-executes the module body, creating fresh function objects in `mod.__dict__`.
+  2. **Rebind module globals** by calling `mod.register(app, ctx)` again — but with `app.add_url_rule` monkey-patched to a no-op so it doesn't AssertionError on duplicate endpoint names. Background threads suppressed via `start_*_thread=False` in the rebind ctx so we don't spawn duplicates.
+  3. **Swap `app.view_functions[ep]`** for every endpoint registered by this module (matched by `fn.__module__`) → next request hits the new code.
+- Caveat surfaced to the operator: cannot ADD or REMOVE routes — Flask `url_map` is immutable post-boot. For schema changes (new endpoints) a real Flask restart is required. Response includes a clear `note` explaining this.
+- Stashes `_FLASK_APP_REF` + `_SERVICE_CTX_REF` in module globals at `register()` time so the reload handler can re-bind without needing the test harness to thread state through.
+- **Critical gotcha discovered + fixed during testing**: `importlib.reload()` re-executes the module body, which resets `_FLASK_APP_REF/_SERVICE_CTX_REF` to None mid-handler. Captured both refs to LOCAL variables BEFORE the reload call so the handler keeps working through the reload.
+
+### Frontend (`update.html`)
+- Added indigo **Reload** button on each PLUGIN row (`upload_service.py`, `weather_service.py`, `band_service.py`, `telemetry_service.py`). UI rows (.html) correctly do NOT show a Reload button — HTML files are served fresh on every request, no module re-import needed.
+- **Auto-reload after Replace**: when a `.py` Replace upload succeeds, the UI now chains a `POST /api/repair/reload-module/<name>` automatically. Operator gets a single status message: `"OK: replaced + hot-reloaded upload_service.py — 5 endpoint(s) now serve the new code, no Flask restart needed."`
+- Replaced the "After upload: Restart Flask" footer with the new "One-click flow" language.
+
+### Tests (`tests/test_reload_module.py`)
+**18/18 PASS** covering:
+- Off-allowlist refused (403)
+- `app.py` refused (403)
+- Module-not-loaded → 404 (module removed from `sys.modules`)
+- Source-on-disk mutation → reload → response confirms `swapped_endpoints` populated, `swapped_endpoints` includes specific endpoints, response includes restart-for-new-routes note, file-on-disk has the sentinel value, **view_function identity actually changed** (proves the swap really repointed Flask, not just left a stale ref)
+- Subsequent calls (`/api/disk-status`, `/api/repair/upload-plugin`) still work after reload (no breakage)
+- `weather_service.py` reload happy path
+
+Plus regression: `tests/test_streaming_upload.py` **36/36 PASS**, `tests/test_repair_mode.py` **25/25 PASS**.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.63 MB, MD5 `ea0255f923153b54e0bc81ced42f25c6`) with updated `upload_service.py` + `update.html`. Standalone copies synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+### One-click operator workflow (post-deploy)
+1. Open `/update`. Scroll to **Repair Mode** card.
+2. Click **REPLACE** on a plug-in → pick local file.
+3. UI uploads → server replaces on disk → UI auto-fires reload → operator sees "OK: replaced + hot-reloaded — N endpoints now serve the new code".
+4. **Done.** No script-editor toggle, no SSH, no waiting for boot.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

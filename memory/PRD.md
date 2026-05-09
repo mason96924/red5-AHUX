@@ -548,6 +548,27 @@ Every call to those endpoints raised `NameError`, Flask returned its default HTM
 Existing configs render via the auto-scale legacy fallback. May shift slightly on first render depending on how close original calibration display was to natural size. To finalize: open each AHU type in Config Tool, nudge each segment once → drag-save persists `offsetXFrac/Y` as canonical → pixel-perfect alignment from then on across both hosts at any display size.
 
 
+## V1.9 Snap-Guide Overlay for Air-Flow Segments (2026-02-09)
+**Brief**: Added a precision-alignment overlay in the Config Tool to help operators drop air-flow segments exactly on coil/filter/duct edges of the AHU image — eliminating guess-and-check.
+
+### What renders
+When an air-flow animation is selected in the Config Tool's Aligners tab (and not in pan mode), each of its segments now displays:
+- **Vertical + horizontal dashed crosshair** (amber `rgba(245,158,11,0.55)`, 1 px) extending across the entire AHU image, intersecting at the segment's center. Lines auto-track image resizes (CSS-`%`-positioned within the `inset-0` 3D engine wrapper, no JS resize listeners needed).
+- **Numeric Frac badge** floating diagonally near each segment center: `Frac: 0.234, 0.158 · 451,304 px` — shows the canonical `offsetXFrac/offsetYFrac` values plus the resolved pixel offset at the current display size. Operators can read and compare values across AHU types to enforce consistent placement.
+
+### Implementation
+- New state `imgAspect` (default 1) populated on image `onLoad` from `naturalWidth/naturalHeight`. Used to convert width-fraction → %-of-height for horizontal crosshair positioning: `topPct = a.y + offsetYFrac * 100 * imgAspect`.
+- Snap-guide block lives inside the existing 3D engine wrapper (`<div className="absolute inset-0">`) at the same level as the airflow simulator, so it inherits CSS-percentage anchoring relative to the AHU image bounds.
+- Gating: `isActive && !panMode` — only the currently-selected airflow animation shows guides; pan-mode hides them so the overlay doesn't interfere with image panning.
+- Dashboard never receives this guide (the snap overlay is rendered in `equipment_mapper.html` only — not inside `PreviewAirFlowSimulator` itself, which is shared with the dashboard).
+
+### `data-testid`s
+- `snapguide-vert-<segIdx>`, `snapguide-horiz-<segIdx>`, `snapguide-badge-<segIdx>` per segment, for E2E verification.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.62 MB, MD5 `3424221775d13a09604843a753f438c8`) with updated `equipment_mapper.html`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

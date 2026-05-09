@@ -278,6 +278,10 @@
             const [psychroChartData, setPsychroChartData] = useState(null);
             const [draggingFloorMarker, setDraggingFloorMarker] = useState(null);
             const floorCanvasRef = useRef(null);
+            // Image aspect ratio (natural width / height) used by the air-flow
+            // segment Snap-Guide overlay to convert width-fraction to %-of-height
+            // for horizontal crosshair positioning.  Updated on image onLoad.
+            const [imgAspect, setImgAspect] = useState(1);
             
             // Deployment path - hardcoded for flat /root/data structure
             const deploymentPath = '/root';
@@ -4643,7 +4647,7 @@
                                         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transition: isPanning ? 'none' : 'transform 0.15s ease-out' }}
                                         className="relative inline-block border border-slate-700 shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-slate-200 max-w-full max-h-full pointer-events-auto"
                                     >
-                                        <img ref={imageRef} src={bgImage} className="block max-w-full max-h-[85vh] opacity-95 mix-blend-multiply pointer-events-none shadow-black shadow-inner" draggable="false" />
+                                        <img ref={imageRef} src={bgImage} className="block max-w-full max-h-[85vh] opacity-95 mix-blend-multiply pointer-events-none shadow-black shadow-inner" draggable="false" onLoad={(e) => { const im = e.target; if (im.naturalHeight > 0) setImgAspect(im.naturalWidth / im.naturalHeight); }} />
                                         {showGrid && <div className="absolute inset-0 blueprint-grid pointer-events-none opacity-50 mix-blend-multiply"></div>}
                                         <div className="absolute inset-0 z-0" onClick={handleImageClick}></div>
 
@@ -4857,6 +4861,58 @@
 
                                                     {/* MULTI-SEGMENT AIRFLOW SIMULATOR */}
                                                     {isAirflow && a.segments && Array.isArray(a.segments) && a.segments.length > 0 && (
+                                                        <React.Fragment>
+
+                                                        {/* SNAP-GUIDE OVERLAY (image-spanning crosshair + numeric Frac badge per segment, only when segment-anim is selected) */}
+                                                        {isActive && !panMode && a.segments.map((seg, segIdx) => {
+                                                            // Convert canonical Frac (or scaled legacy) → image-relative %.
+                                                            // CSS percentages auto-track image resizes (no JS resize listeners needed).
+                                                            const dispW = imageRef.current ? imageRef.current.offsetWidth : 1;
+                                                            const natW  = imageRef.current ? imageRef.current.naturalWidth : dispW;
+                                                            const fx = (seg.offsetXFrac != null) ? seg.offsetXFrac : ((seg.offsetX || 0) / Math.max(natW, 1));
+                                                            const fy = (seg.offsetYFrac != null) ? seg.offsetYFrac : ((seg.offsetY || 0) / Math.max(natW, 1));
+                                                            // segment center on the AHU image:
+                                                            //   leftPct = a.x + fx*100         (frac-of-width × 100 = %-of-width)
+                                                            //   topPct  = a.y + fy*100*aspect  (convert width-frac to %-of-height via aspect)
+                                                            const leftPct = a.x + fx * 100;
+                                                            const topPct  = a.y + fy * 100 * imgAspect;
+                                                            const segKey = `snapguide_${i}_${seg.id || segIdx}`;
+                                                            return (
+                                                                <React.Fragment key={segKey}>
+                                                                    {/* Vertical crosshair */}
+                                                                    <div className="absolute pointer-events-none" style={{
+                                                                        left: `${leftPct}%`, top: 0, height: '100%', width: '0px',
+                                                                        borderLeft: '1px dashed rgba(245,158,11,0.55)',
+                                                                        zIndex: 45,
+                                                                    }} data-testid={`snapguide-vert-${segIdx}`}/>
+                                                                    {/* Horizontal crosshair */}
+                                                                    <div className="absolute pointer-events-none" style={{
+                                                                        top: `${topPct}%`, left: 0, width: '100%', height: '0px',
+                                                                        borderTop: '1px dashed rgba(245,158,11,0.55)',
+                                                                        zIndex: 45,
+                                                                    }} data-testid={`snapguide-horiz-${segIdx}`}/>
+                                                                    {/* Numeric Frac badge near segment center (offset diagonally to avoid covering it) */}
+                                                                    <div className="absolute pointer-events-none" style={{
+                                                                        left: `calc(${leftPct}% + 14px)`,
+                                                                        top:  `calc(${topPct}% + 14px)`,
+                                                                        background: 'rgba(2,6,23,0.88)',
+                                                                        color: '#fcd34d',
+                                                                        fontSize: '9px',
+                                                                        fontFamily: 'ui-monospace, monospace',
+                                                                        fontWeight: 900,
+                                                                        padding: '2px 6px',
+                                                                        borderRadius: '3px',
+                                                                        border: '1px solid rgba(245,158,11,0.45)',
+                                                                        letterSpacing: '0.5px',
+                                                                        whiteSpace: 'nowrap',
+                                                                        zIndex: 46,
+                                                                    }} data-testid={`snapguide-badge-${segIdx}`}>
+                                                                        {`Frac: ${fx.toFixed(3)}, ${fy.toFixed(3)} · ${Math.round(fx * dispW)},${Math.round(fy * dispW)} px`}
+                                                                    </div>
+                                                                </React.Fragment>
+                                                            );
+                                                        })}
+
                                                         <div className={`absolute ${isActive ? 'z-50' : 'z-40'}`} style={{ 
                                                             left: `${a.x}%`, 
                                                             top: `${a.y}%`,
@@ -4911,6 +4967,7 @@
                                                                 }}
                                                             />
                                                         </div>
+                                                        </React.Fragment>
                                                     )}
                                                 </React.Fragment>
                                             );

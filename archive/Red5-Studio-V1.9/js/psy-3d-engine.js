@@ -285,6 +285,33 @@ global.initPsy3D = function(container, opts){
   /* enthalpy helper */
   function enthalpy(T,W){return 1.006*T+W*(2501+1.86*T);}
 
+  /* Inverse psychrometric helper: given enthalpy h (kJ/kg dry air) and a
+     target relative humidity (%), back-solve the dry-bulb T.  Used by
+     the new A/B/C/$ display modes to decompose strategy energies into
+     sensible vs latent components: strategies like Dyn-Reset and
+     Opt-SA target an h_sa with no explicit RH, so we assume 50 % RH
+     at the implied T to get a defensible W_sa for the latent term.
+     Newton iteration usually converges in 4-6 steps; bail at 20.
+     We deliberately return T inside the [-15, 50] climate envelope so
+     a degenerate h doesn't blow up subsequent arithmetic.            */
+  function _T_from_h(h_target, rh_pct){
+    var T = 13;  // start at typical AHU SA temperature
+    for (var k=0; k<20; k++){
+      var W   = getW(T, rh_pct);
+      var hT  = enthalpy(T, W);
+      if (Math.abs(hT - h_target) < 0.05) break;
+      // numerical derivative dh/dT at fixed RH
+      var W2  = getW(T + 0.5, rh_pct);
+      var hT2 = enthalpy(T + 0.5, W2);
+      var dh  = (hT2 - hT) / 0.5;
+      if (Math.abs(dh) < 1e-6) break;
+      T -= (hT - h_target) / dh;
+      if (T < -15) T = -15;
+      if (T >  50) T =  50;
+    }
+    return T;
+  }
+
   /* Rounded-rectangle helper used by chart legends / chips.  Browser
      ctx.roundRect() is not universally available on the embedded WebView
      versions some controllers ship with, so do it manually with arc
@@ -517,6 +544,23 @@ global.initPsy3D = function(container, opts){
      panel.  ON by default since the user explicitly asked for an OA
      intake indication on the chart. */
   var _msShowOA = true;
+  // Monthly x Sites legend display mode.  Selectable A/B/C/$.
+  //   'A' Comfort hours met per strategy (ASHRAE latent coverage proxy)
+  //   'B' Sensible vs Latent decomposition (mini stacked bar per strategy)
+  //   'C' Trade-off chip [Energy / Comfort / Compliance / Failsafe]
+  //   '$' Total cost of ownership = Energy_cost + Comfort_violation_cost
+  // Defaults to 'C' so first impression is the holistic fact sheet, not
+  // the reductive single-axis number that confused the audience earlier.
+  var _msMode = 'C';
+  // Cost-model defaults (user 2026-05-09 inputs).  All editable in the
+  // toolbar when '$' mode is on.  Defaults chosen to match a 1,000 sqm
+  // office AHU with electric chiller + gas furnace; user can plug their
+  // own utility rate / COP / violation cost so audience can sanity-check.
+  var _costAirM3h    = 18000;  // m3/h, ~6 ACH @ 3 m ceiling for 1000 sqm
+  var _costRate      = 0.15;   // USD per kWh
+  var _costCopCool   = 3.5;    // typical electric chiller
+  var _costEffHeat   = 0.95;   // typical gas furnace
+  var _costViolRate  = 15;     // USD per humid-hour-uncovered (mid-realistic)
   // Hover-hitbox cache for OA-curve tooltips.  Cleared and repopulated on
   // every Monthly \u00d7 Sites render; consumed by the canvas mousemove
   // handler attached in setupControls() below.
@@ -745,7 +789,7 @@ global.initPsy3D = function(container, opts){
           // Monthly \u00d7 Sites multi-city comparison only in T\u00d7Time.
           var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display = (c[0]==='front') ? 'block' : 'none';
           // Strategy-overlay toggles only valid inside Monthly \u00d7 Sites mode.
-          ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg'].forEach(function(id){
+          ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
             var el=$('#'+id); if(el) el.style.display='none';
           });
           var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -773,7 +817,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -791,7 +835,7 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
-      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg'].forEach(function(id){
+      ['p3-btn-ms-fixed','p3-btn-ms-dyn','p3-btn-ms-band','p3-btn-ms-banddyn','p3-btn-ms-opt','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
       var sddP=$('#p3-sites-dd-panel'); if(sddP) sddP.style.display='none';
@@ -874,6 +918,9 @@ global.initPsy3D = function(container, opts){
       var sdd = $('#p3-btn-sites-dd'); if (sdd) sdd.style.display = inMs ? 'block' : 'none';
       var sddP = $('#p3-sites-dd-panel'); if (sddP && !inMs) sddP.style.display = 'none';
       if (inMs && typeof _refreshSitesDD === 'function') _refreshSitesDD();
+      // Mode selector + cost-config follow Monthly x Sites visibility.
+      var mr = $('#p3-ms-modes');   if (mr) mr.style.display   = inMs ? 'block' : 'none';
+      var cc = $('#p3-ms-costcfg'); if (cc) cc.style.display = (inMs && _msMode === '$') ? 'block' : 'none';
       var bs2=$('#p3-btn-band-strategy'); if(bs2) bs2.style.display = inMs ? 'none' : 'block';
       render2DChart();
     };
@@ -1018,6 +1065,114 @@ global.initPsy3D = function(container, opts){
       optCfg.style.display = _msShowOpt ? 'block' : 'none';
     }
     _refreshOptCfg();
+
+    /* ========================================================================
+       Monthly x Sites legend display-mode selector (A/B/C/$).
+       Four buttons in a tight row sitting at the bottom of the overlay so
+       they don't crowd the strategy toggles up top.  Each updates _msMode
+       and triggers a re-render.  '$' toggle also reveals the cost-config
+       panel for editing airflow / utility rate / COP / violation cost.
+       ======================================================================== */
+    var modeRow = $('#p3-ms-modes');
+    if (!modeRow) {
+      modeRow = document.createElement('div');
+      modeRow.id = 'p3-ms-modes';
+      modeRow.style.cssText = 'position:absolute;left:20px;bottom:8px;z-index:51;'+
+        'display:none;font-family:inherit;font-size:9px;color:#94a3b8;'+
+        'background:rgba(15,23,42,.85);backdrop-filter:blur(10px);'+
+        'border:1px solid rgba(148,163,184,.35);border-radius:6px;padding:6px 10px';
+      var modeDefs = [
+        {key:'A', lbl:'A: Comfort hours', tip:'Latent-load coverage per strategy: how many of the year\u2019s humid hours each strategy can actually dehumidify.\nPure facts; no assumptions.'},
+        {key:'B', lbl:'B: Sens / Lat',    tip:'Sensible vs latent decomposition of each strategy\u2019s annual load.  Shows WHY B1-B10 \u201cspends more energy\u201d \u2014 it\u2019s doing latent work the others skip.'},
+        {key:'C', lbl:'C: Trade-off',     tip:'Architectural fact-sheet per strategy:\n  E   = energy axis (lower is better)\n  C   = comfort / latent control\n  Code= maps to ASHRAE/Title-24/etc.\n  FS  = failsafe behaviour on sensor faults'},
+        {key:'$', lbl:'$: Cost / yr',     tip:'Total cost of ownership = (energy x utility rate) + (uncovered humid hours x violation cost).\nALL inputs user-editable; defaults are documented and conservative.'}
+      ];
+      modeRow.innerHTML =
+        '<span style="color:#cbd5e1;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-right:8px">Legend mode:</span>' +
+        modeDefs.map(function(m){
+          return '<button type="button" data-mode="'+m.key+'" title="'+m.tip+'"'+
+            ' style="background:transparent;border:1px solid #475569;color:#94a3b8;'+
+            'padding:3px 8px;border-radius:4px;margin-right:4px;cursor:pointer;'+
+            'font-family:inherit;font-size:9px;font-weight:900">'+m.lbl+'</button>';
+        }).join('');
+      $('#p3-overlay2d').appendChild(modeRow);
+      // Bind clicks
+      Array.prototype.forEach.call(modeRow.querySelectorAll('button'), function(b){
+        b.addEventListener('click', function(){
+          _msMode = b.getAttribute('data-mode');
+          _refreshModeRow();
+          _refreshCostCfg();
+          render2DChart();
+        });
+      });
+    }
+    function _refreshModeRow(){
+      Array.prototype.forEach.call(modeRow.querySelectorAll('button'), function(b){
+        var on = (b.getAttribute('data-mode') === _msMode);
+        b.style.background = on ? '#7c3aed' : 'transparent';
+        b.style.color      = on ? '#ffffff' : '#94a3b8';
+        b.style.borderColor= on ? '#7c3aed' : '#475569';
+      });
+    }
+    _refreshModeRow();
+
+    /* Cost-config panel: sliders/inputs for airflow, utility rate, COPs,
+       and comfort-violation rate.  Only shown when '$' mode is active so
+       it doesn't clutter the chart in A/B/C modes.  Every input is
+       documented with a minimal tooltip explaining the assumption. */
+    var costCfg = $('#p3-ms-costcfg');
+    if (!costCfg) {
+      costCfg = document.createElement('div');
+      costCfg.id = 'p3-ms-costcfg';
+      costCfg.style.cssText = 'position:absolute;left:20px;bottom:42px;z-index:52;'+
+        'display:none;font-family:inherit;font-size:9px;color:#e2e8f0;'+
+        'background:rgba(15,23,42,.92);backdrop-filter:blur(14px);'+
+        'border:1px solid #10b981;border-radius:6px;padding:8px 12px;'+
+        'min-width:380px;box-shadow:0 6px 18px rgba(0,0,0,.45)';
+      function _row(id, label, value, unit, min, max, step, tip){
+        return '<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px" title="'+tip+'">'+
+          '<span style="width:140px;color:#10b981;font-weight:700">'+label+'</span>'+
+          '<input id="'+id+'" type="number" value="'+value+'" min="'+min+'" max="'+max+'" step="'+step+'"'+
+          ' style="width:80px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;'+
+          'padding:2px 6px;border-radius:3px;font-family:inherit;font-size:9px">'+
+          '<span style="color:#64748b;font-size:8px">'+unit+'</span>'+
+        '</label>';
+      }
+      costCfg.innerHTML =
+        '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#10b981;margin-bottom:6px">Cost Model -- plug your numbers</div>'+
+        _row('p3-cost-air',  'Airflow',         _costAirM3h,    'm\u00b3/h, 6 ACH @ 3m for 1000 sqm',  500,  100000, 100,  'AHU supply airflow.  Default = 18,000 m\u00b3/h (6 ACH at 3m ceiling for 1000 sqm). Replace with your AHU\u2019s actual CFM x 1.7 for m\u00b3/h.') +
+        _row('p3-cost-rate', 'Utility rate',    _costRate,      'USD / kWh',                    0.05, 1.0,    0.01, 'Blended electric rate (or oil/gas equivalent). Default 0.15. US average ~0.16; check your utility bill.') +
+        _row('p3-cost-cop',  'Cooling COP',     _costCopCool,   'electric chiller, typical 3.0-4.5', 1.0,  6.0,    0.1,  'Coefficient of Performance for cooling. 3.5 = typical electric chiller; 5.0 = high-efficiency VRF; 1.0 = window AC.') +
+        _row('p3-cost-eff',  'Heating eff.',    _costEffHeat,   '0.95 gas / 3.0 heat pump',     0.5,  4.0,    0.05, 'Heating efficiency. 0.95 = condensing gas furnace; 3.0 = heat pump COP. Mind the units.') +
+        _row('p3-cost-viol', 'Violation rate',  _costViolRate,  'USD / humid-hour uncovered',   0,    200,    1,    'Cost per hour of unmet humidity control. 5 = complaint handling only; 15 = + productivity loss; 50+ = regulated environments.') +
+        '<div style="font-size:8px;color:#64748b;margin-top:6px;line-height:1.4">'+
+          'Annual cost = (cool_kJ + heat_kJ) x mass_flow / 3600 / efficiency x rate'+
+          '<br>+ uncovered_humid_hours x violation_rate.  All five strategies use the same inputs; only their own energy and coverage differ.'+
+        '</div>';
+      $('#p3-overlay2d').appendChild(costCfg);
+      // Bind input listeners
+      var bind = function(id, key, parser){
+        $('#'+id).addEventListener('input', function(){
+          var v = parser(this.value);
+          if (isFinite(v)) { window['_'+key] = v; render2DChart(); }
+        });
+      };
+      // Direct-state binding
+      var inpAir  = costCfg.querySelector('#p3-cost-air');
+      var inpRate = costCfg.querySelector('#p3-cost-rate');
+      var inpCop  = costCfg.querySelector('#p3-cost-cop');
+      var inpEff  = costCfg.querySelector('#p3-cost-eff');
+      var inpViol = costCfg.querySelector('#p3-cost-viol');
+      inpAir.addEventListener('input',  function(){ var v=parseFloat(this.value); if(isFinite(v))_costAirM3h  =v; render2DChart(); });
+      inpRate.addEventListener('input', function(){ var v=parseFloat(this.value); if(isFinite(v))_costRate    =v; render2DChart(); });
+      inpCop.addEventListener('input',  function(){ var v=parseFloat(this.value); if(isFinite(v))_costCopCool =v; render2DChart(); });
+      inpEff.addEventListener('input',  function(){ var v=parseFloat(this.value); if(isFinite(v))_costEffHeat =v; render2DChart(); });
+      inpViol.addEventListener('input', function(){ var v=parseFloat(this.value); if(isFinite(v))_costViolRate=v; render2DChart(); });
+    }
+    function _refreshCostCfg(){
+      costCfg.style.display = (_msMode === '$') ? 'block' : 'none';
+    }
+    _refreshCostCfg();
 
     /* Sites dropdown (replaces the in-canvas chip ribbon).  Opens a
        checkbox menu listing every loaded site so users can scope the
@@ -2655,6 +2810,59 @@ global.initPsy3D = function(container, opts){
   }
   function _sumArr(a){var s=0;for(var i=0;i<a.length;i++)s+=a[i];return s;}
 
+  /* Compute aggregate metrics across the currently-visible Monthly x Sites
+     panels for use by the A/B/C/$ legend modes.  Returns an object with
+     totals per strategy { b: Fixed-SA, d: Dyn-Reset, band: B1-B10,
+     bd: B1-B10+Dyn, opt: Opt-SA }, expressed in:
+       energy   (kJ/kg, sum of monthly arrays)
+       cool/heat split (kJ/kg)
+       sens/lat split  (kJ/kg)
+       latentMet hours / humidHours
+     Plus dollar conversions when costMode is on.  ALL inputs are user-
+     editable so the audience can plug their own numbers; defaults are
+     transparent and surface in the chart subtitle.                       */
+  function _aggregateMs(keys){
+    var agg = {
+      b:  {energy:0, cool:0, heat:0, sens:0, lat:0, latMet:0},
+      d:  {energy:0, cool:0, heat:0, sens:0, lat:0, latMet:0},
+      band:{energy:0, cool:0, heat:0, sens:0, lat:0, latMet:0},
+      bd: {energy:0, cool:0, heat:0, sens:0, lat:0, latMet:0},
+      opt:{energy:0, cool:0, heat:0, sens:0, lat:0, latMet:0},
+      humidHours: 0
+    };
+    keys.forEach(function(code){
+      var d = _monthlyCache[code];
+      if (!d || !d.base) return;
+      agg.b.energy   += d.baseTotal||0;
+      agg.d.energy   += d.dynTotal||0;
+      agg.band.energy+= d.bandTotal||0;
+      agg.bd.energy  += d.bandDynTotal||0;
+      agg.opt.energy += d.optTotal||0;
+      ['b','d','band','bd','opt'].forEach(function(k){
+        agg[k].cool   += (d.cool   && d.cool[k])   || 0;
+        agg[k].heat   += (d.heat   && d.heat[k])   || 0;
+        agg[k].sens   += (d.sens   && d.sens[k])   || 0;
+        agg[k].lat    += (d.lat    && d.lat[k])    || 0;
+        agg[k].latMet += (d.latMet && d.latMet[k]) || 0;
+      });
+      agg.humidHours += d.humidHours || 0;
+    });
+    return agg;
+  }
+
+  /* Convert a strategy's (cool_kJperKg, heat_kJperKg) pair into annual
+     electric/fuel cost given user-set airflow + utility rate + COP.
+     mass_flow [kg/h] = airflow [m3/h] * 1.2 [kg/m3].
+     Each cumulative kJ/kg already integrates over all hourly samples;
+     multiply by mass_flow once to get total kJ.
+     Total kWh = total_kJ / 3600.  Apply COP (cooling) or 1/eff (heating).*/
+  function _strategyDollars(coolKjPerKg, heatKjPerKg){
+    var massPerH = _costAirM3h * 1.2;   // kg/h
+    var coolKwh  = (coolKjPerKg * massPerH / 3600) / _costCopCool;
+    var heatKwh  = (heatKjPerKg * massPerH / 3600) / _costEffHeat;
+    return (coolKwh + heatKwh) * _costRate;
+  }
+
   function renderMonthlySitesChart(ctx,vw,vh){
     _monthlyPanelRects = {};
     // Reset OA hover hitboxes so stale hits from the previous render
@@ -2703,15 +2911,46 @@ global.initPsy3D = function(container, opts){
       var oaSum=new Float64Array(12), oaCnt=new Uint32Array(12);
       var oaAnnSum=0, oaAnnCnt=0;
       var bandCounts={};
+      // Per-strategy cooling vs heating split (kJ/kg, damper-scaled).
+      // Needed for the dollar model: cooling and heating use different
+      // efficiencies (cooling COP ~3.5 vs heating eff ~0.95 for gas).
+      // Without this split, "$" mode would average them and over- or
+      // under-state cost depending on climate.
+      var cool_b=0,heat_b=0,  cool_d=0,heat_d=0,  cool_bd=0,heat_bd=0,
+          cool_bn=0,heat_bn=0,cool_o=0,heat_o=0;
+      // Sensible vs latent decomposition.  Standard psychrometric split:
+      //   sensible Q_s = cp_dry * (T_oa - T_sa) per kg dry air
+      //   latent   Q_l = h_fg  * (W_oa - W_sa) per kg dry air
+      //   total    Q_t = sensible + latent ~= Δh
+      // Used by Mode B (sensible/latent stacked bars).
+      var sens_b=0,lat_b=0,  sens_d=0,lat_d=0,  sens_bd=0,lat_bd=0,
+          sens_bn=0,lat_bn=0,sens_o=0,lat_o=0;
+      // Latent-load coverage tracker.  We define a "humid hour" as an
+      // hour where OA needs active dehumidification (OA dewpoint > 12 \u00b0C,
+      // which is the standard dehumid coil leaving-air target).  Each
+      // strategy gets credit for handling that hour iff its SA is at a
+      // lower W (drier) than OA.  Fixed-SA fixed user setting drives
+      // this; Dyn-Reset has no W target so we infer SA W from h_sa_dyn
+      // assuming the AHU cools to saturation when needed.
+      var humid_hours = 0;
+      var latMet_b=0, latMet_d=0, latMet_bd=0, latMet_bn=0, latMet_o=0;
+      // Standardized comfort thresholds used across all strategies.
+      var W_DEHUMID_TARGET = 0.0089;  // ~12 \u00b0C dewpoint, ASHRAE common target
+      var H_OA_HUMID_THRESH = 50;     // kJ/kg; OA enthalpy above which dehumid is needed
+      var CP_DRY = 1.006;             // kJ/(kg\u00b7K), dry-air specific heat
+      var H_FG = 2501;                // kJ/kg, water latent heat at ~25 \u00b0C
       // 24-h trailing-mean of h_oa, scaled to data resolution.
       var win=Math.min(24, Math.max(2, Math.floor(n/4)));
       var rollSum=0;
-      // Pre-compute h_oa once; we walk twice (once for the rolling window).
+      // Pre-compute h_oa (and h_oa-decomposition) once.
       var hOa=new Float64Array(n);
+      var WOa=new Float64Array(n);
       for(var i=0;i<n;i++){
         var T=t[i], R=rh[i];
-        if(T==null||R==null){ hOa[i]=NaN; continue; }
-        hOa[i]=enthalpy(T, getW(T,R));
+        if(T==null||R==null){ hOa[i]=NaN; WOa[i]=NaN; continue; }
+        var W = getW(T,R);
+        WOa[i] = W;
+        hOa[i]=enthalpy(T, W);
       }
       // Read live Opt-SA bounds at render-time so the curve responds
       // instantly when the user drags the new toolbar sliders.
@@ -2762,11 +3001,67 @@ global.initPsy3D = function(container, opts){
         // from the damper alone, which made the "energy reduction"
         // numbers misleading.
         var damp = b.oa_damper/100;
-        base[m]    += Math.abs(damp*(h_oa - _h_sa_u));      // Fixed-SA   + band damper
-        dyn[m]     += Math.abs(damp*(h_oa - h_sa_dyn));     // Dyn-Reset  + band damper
-        band[m]    += Math.abs(damp*(h_oa - h_sa_b));       // B1-B10
-        bandDyn[m] += Math.abs(damp*(h_oa - h_sa_bd));      // B1-B10 + Dyn (TR-clamped)
-        opt[m]     += Math.abs(damp*(h_oa - h_sa_opt));     // Opt-SA (clamped floor)
+        // ---- per-strategy energy accumulators (existing) ----
+        var d_b  = damp*(h_oa - _h_sa_u);  // Fixed-SA
+        var d_d  = damp*(h_oa - h_sa_dyn); // Dyn-Reset
+        var d_bn = damp*(h_oa - h_sa_b);   // B1-B10
+        var d_bd = damp*(h_oa - h_sa_bd);  // B1-B10 + Dyn
+        var d_o  = damp*(h_oa - h_sa_opt); // Opt-SA
+        base[m]    += Math.abs(d_b);
+        dyn[m]     += Math.abs(d_d);
+        band[m]    += Math.abs(d_bn);
+        bandDyn[m] += Math.abs(d_bd);
+        opt[m]     += Math.abs(d_o);
+        // ---- cooling vs heating split (sign of dh determines which) ----
+        // Positive dh = h_oa > h_sa = AHU is COOLING the OA stream.
+        // Negative dh = h_oa < h_sa = AHU is HEATING the OA stream.
+        if(d_b  > 0) cool_b  += d_b;  else heat_b  -= d_b;
+        if(d_d  > 0) cool_d  += d_d;  else heat_d  -= d_d;
+        if(d_bn > 0) cool_bn += d_bn; else heat_bn -= d_bn;
+        if(d_bd > 0) cool_bd += d_bd; else heat_bd -= d_bd;
+        if(d_o  > 0) cool_o  += d_o;  else heat_o  -= d_o;
+        // ---- sensible vs latent decomposition (per-strategy SA target) ----
+        // For each strategy compute the SA's W (humidity ratio), then split
+        // |dh| into sensible (T diff) and latent (W diff) components.
+        // Strategies without an explicit RH target (Dyn-Reset, Opt-SA)
+        // are assumed to track 50 % RH at the SA temperature implied by
+        // their h_sa -- a transparent assumption documented in the chart.
+        var W_sa_u = getW(_saT, _saRh);                          // Fixed-SA: user-set
+        var W_sa_b = getW(b.sa_t, b.sa_rh);                      // B1-B10: per-band
+        // Dyn-Reset and Opt-SA: no explicit RH target -> assume 50 % RH
+        // at the SA temperature implied by the strategy's h_sa.
+        var T_sa_dyn = _T_from_h(h_sa_dyn, 50);
+        var T_sa_bd  = _T_from_h(h_sa_bd, 50);
+        var T_sa_opt = _T_from_h(h_sa_opt, 50);
+        var W_sa_dyn = getW(T_sa_dyn, 50);
+        var W_sa_bd  = getW(T_sa_bd , 50);
+        var W_sa_opt = getW(T_sa_opt, 50);
+        // Note: declared via expression (not 'function name(){}') because
+        // function declarations inside for-loop blocks are not allowed
+        // in strict-mode script contexts (Babel compiles to strict mode).
+        var _split = function(dh_signed, T_sa, W_sa){
+          var sens = damp * CP_DRY * (T - T_sa);                 // signed
+          var lat  = damp * H_FG  * (WOa[i] - W_sa);             // signed
+          // Use absolute value for cumulative load (matches |dh|).
+          return [Math.abs(sens), Math.abs(lat)];
+        };
+        var s = _split(d_b , _saT,    W_sa_u);  sens_b  += s[0]; lat_b  += s[1];
+            s = _split(d_d , T_sa_dyn,W_sa_dyn);sens_d  += s[0]; lat_d  += s[1];
+            s = _split(d_bn, b.sa_t,  W_sa_b ); sens_bn += s[0]; lat_bn += s[1];
+            s = _split(d_bd, T_sa_bd, W_sa_bd); sens_bd += s[0]; lat_bd += s[1];
+            s = _split(d_o , T_sa_opt,W_sa_opt);sens_o  += s[0]; lat_o  += s[1];
+        // ---- latent-load coverage ----
+        // Humid hour = OA enthalpy > threshold AND OA W requires drying.
+        // Strategy "covers" the hour iff its SA W is at or below the
+        // dehumid target (i.e. it can actually dry the air).
+        if (h_oa > H_OA_HUMID_THRESH && WOa[i] > W_DEHUMID_TARGET) {
+          humid_hours++;
+          if (W_sa_u   <= W_DEHUMID_TARGET) latMet_b++;
+          if (W_sa_dyn <= W_DEHUMID_TARGET) latMet_d++;
+          if (W_sa_b   <= W_DEHUMID_TARGET) latMet_bn++;
+          if (W_sa_bd  <= W_DEHUMID_TARGET) latMet_bd++;
+          if (W_sa_opt <= W_DEHUMID_TARGET) latMet_o++;
+        }
         oaSum[m]   += b.oa_damper; oaCnt[m]++;              // damper utilisation
         oaAnnSum   += b.oa_damper; oaAnnCnt++;
         bandCounts[b.id]=(bandCounts[b.id]||0)+1;
@@ -2782,6 +3077,13 @@ global.initPsy3D = function(container, opts){
       d.baseTotal=_sumArr(base); d.dynTotal=_sumArr(dyn);
       d.bandTotal=_sumArr(band); d.bandDynTotal=_sumArr(bandDyn);
       d.optTotal=_sumArr(opt);
+      // Decomposition + comfort metrics for the new A/B/C/$ display modes.
+      d.cool   = {b:cool_b, d:cool_d, band:cool_bn, bd:cool_bd, opt:cool_o};
+      d.heat   = {b:heat_b, d:heat_d, band:heat_bn, bd:heat_bd, opt:heat_o};
+      d.sens   = {b:sens_b, d:sens_d, band:sens_bn, bd:sens_bd, opt:sens_o};
+      d.lat    = {b:lat_b , d:lat_d , band:lat_bn , bd:lat_bd , opt:lat_o };
+      d.humidHours = humid_hours;
+      d.latMet = {b:latMet_b, d:latMet_d, band:latMet_bn, bd:latMet_bd, opt:latMet_o};
     });
     var isLight=_p3Theme()==='light';
     var P = isLight
@@ -3274,7 +3576,7 @@ global.initPsy3D = function(container, opts){
     // appends "(N% of Opt-SA captured)" — fraction of the Fixed-SA → Opt-SA
     // gap that this strategy actually realised.  Aggregated across all
     // currently-visible sites so the headline matches the panel grid.
-    function _strategyKey(color, label, dash, capPct){
+    function _strategyKey(color, label, dash, capPct, modeSuffix){
       ctx.strokeStyle=color; ctx.lineWidth=2.2;
       if(dash){ctx.setLineDash(dash);} else {ctx.setLineDash([]);}
       ctx.beginPath();ctx.moveTo(klX,klY-3);ctx.lineTo(klX+18,klY-3);ctx.stroke();
@@ -3288,30 +3590,101 @@ global.initPsy3D = function(container, opts){
         ctx.fillText(capTxt, klX, klY);
         klX += ctx.measureText(capTxt).width;
       }
+      // Mode-specific suffix (A: comfort hours, B: sens/lat split, C: chip,
+      // $: dollars).  Drawn in a slightly muted colour and same font so
+      // the legend stays readable but the mode-specific data is clearly
+      // metadata not the primary label.
+      if (modeSuffix) {
+        ctx.fillStyle = P.textDim || P.textMuted;
+        ctx.font = '9px monospace';
+        ctx.fillText(modeSuffix, klX, klY);
+        klX += ctx.measureText(modeSuffix).width;
+      }
       klX += 12;
     }
-    // Aggregate totals across the currently-visible sites so the
-    // "% of Opt-SA captured" denominator uses the same population as the
-    // panel grid.
-    var aggBase=0, aggDyn=0, aggBand=0, aggBandDyn=0, aggOpt=0;
-    keys.forEach(function(code){
-      var dd=_monthlyCache[code]; if(!dd||!dd.base)return;
-      aggBase    += dd.baseTotal||0;
-      aggDyn     += dd.dynTotal||0;
-      aggBand    += dd.bandTotal||0;
-      aggBandDyn += dd.bandDynTotal||0;
-      aggOpt     += dd.optTotal||0;
-    });
+    // Aggregate totals across the currently-visible sites so the headline
+    // metrics use the same population as the panel grid.
+    var _msAgg = _aggregateMs(keys);
+    var aggBase     = _msAgg.b.energy;
+    var aggDyn      = _msAgg.d.energy;
+    var aggBand     = _msAgg.band.energy;
+    var aggBandDyn  = _msAgg.bd.energy;
+    var aggOpt      = _msAgg.opt.energy;
     function _capPct(stratTotal){
       var denom = aggBase - aggOpt;
       if (denom <= 0) return null;
       return ((aggBase - stratTotal) / denom) * 100;
     }
-    if(_msShowFixed)   _strategyKey(P.cFixed,   'Fixed-SA + band damper \u26A0', [5,3], _msShowOpt ? _capPct(aggBase)    : null);
-    if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset \u26A0',              [2,3], _msShowOpt ? _capPct(aggDyn)     : null);
-    if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10',                       null,  _msShowOpt ? _capPct(aggBand)    : null);
-    if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset',           null,  _msShowOpt ? _capPct(aggBandDyn) : null);
-    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',                   [1,2], _capPct(aggOpt));
+    /* Mode-aware suffix builder.  Each mode answers a different audience
+       question; chosen via the toolbar A/B/C/$ radio.  Returns the suffix
+       string that gets appended to the strategy's name in the legend.   */
+    function _suffixFor(stratKey){
+      var m = _msAgg[stratKey];
+      if (!m) return '';
+      // Mode A: comfort hours met (latent coverage) ----------------------
+      if (_msMode === 'A') {
+        if (_msAgg.humidHours <= 0) return '  (no humid hours in dataset)';
+        var pct = (m.latMet / _msAgg.humidHours) * 100;
+        return '  -- '+m.latMet+'/'+_msAgg.humidHours+' humid hrs covered ('+
+               pct.toFixed(0)+'%)';
+      }
+      // Mode B: sensible vs latent decomposition (compact text bar) ------
+      if (_msMode === 'B') {
+        var tot = m.sens + m.lat;
+        if (tot <= 0) return '';
+        var sPct = (m.sens/tot)*100, lPct = (m.lat/tot)*100;
+        return '  -- '+sPct.toFixed(0)+'% sensible / '+lPct.toFixed(0)+'% latent';
+      }
+      // Mode C: trade-off chip (Energy / Comfort / Compliance / Failsafe)
+      if (_msMode === 'C') {
+        // Static facts about each strategy.  These come from the strategy
+        // definitions themselves, not from the simulation -- they are
+        // architectural properties.  Brutally honest: B1-B10 is the only
+        // strategy that hits all 4 axes.
+        var facts = {
+          b:   {energy:'mid',  comfort:'no',     compliance:'no',     failsafe:'no'},
+          d:   {energy:'low',  comfort:'no',     compliance:'partial',failsafe:'no'},
+          band:{energy:'high', comfort:'yes',    compliance:'yes',    failsafe:'yes'},
+          bd:  {energy:'high', comfort:'yes',    compliance:'yes',    failsafe:'yes'},
+          opt: {energy:'min',  comfort:'theory', compliance:'no',     failsafe:'no'}
+        };
+        var f = facts[stratKey];
+        if (!f) return '';
+        var glyph = function(v){
+          if (v==='yes')     return '\u2713';     // check
+          if (v==='no')      return '\u2717';     // cross
+          if (v==='partial') return '~';
+          if (v==='theory')  return '*';
+          if (v==='min')     return '\u2193\u2193';
+          if (v==='low')     return '\u2193';
+          if (v==='mid')     return '=';
+          if (v==='high')    return '\u2191';
+          return '?';
+        };
+        return '  [E:'+glyph(f.energy)+
+               ' C:'+glyph(f.comfort)+
+               ' Code:'+glyph(f.compliance)+
+               ' FS:'+glyph(f.failsafe)+']';
+      }
+      // Mode $: total cost of ownership ---------------------------------
+      if (_msMode === '$') {
+        var energyD = _strategyDollars(m.cool, m.heat);
+        var uncoveredHumid = Math.max(0, _msAgg.humidHours - m.latMet);
+        var violD = uncoveredHumid * _costViolRate;
+        var totalD = energyD + violD;
+        // Format like $12,345
+        var fmt = function(v){
+          return '$'+Math.round(v).toLocaleString();
+        };
+        return '  -- E:'+fmt(energyD)+' + V:'+fmt(violD)+' = '+fmt(totalD)+'/yr';
+      }
+      return '';
+    }
+    if(_msShowFixed)   _strategyKey(P.cFixed,   'Fixed-SA + band damper \u26A0', [5,3], _msShowOpt ? _capPct(aggBase)    : null, _suffixFor('b'));
+    if(_msShowDyn)     _strategyKey(P.cDyn,     'Dyn-Reset \u26A0',              [2,3], _msShowOpt ? _capPct(aggDyn)     : null, _suffixFor('d'));
+    if(_msShowBand)    _strategyKey(P.cBand,    'B1-B10',                       null,  _msShowOpt ? _capPct(aggBand)    : null, _suffixFor('band'));
+    if(_msShowBandDyn) _strategyKey(P.cBandDyn, 'B1-B10 + Dyn-Reset',           null,  _msShowOpt ? _capPct(aggBandDyn) : null, _suffixFor('bd'));
+    if(_msShowOpt)     _strategyKey(P.cOpt,     'Opt-SA cum',                   [1,2], _capPct(aggOpt), _suffixFor('opt'));
     if(_msShowOA){
       // Yellow dashed line key matches the per-panel OA-damper line.
       ctx.strokeStyle='rgba(251,191,36,.95)'; ctx.lineWidth=2.2;

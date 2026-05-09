@@ -799,6 +799,35 @@ Drove the live page through `3D WX → fetch 2920 NYC weather points → click O
 - `red5_bundle.zip` rebuilt (1.66 MB, MD5 `8a21f17a07a780b4d0298393100fbd1c`) with updated `js/psy-3d-engine.js`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
 
 
+## V1.9 OA→SA Drops Color-Mode Chip (T | B) (2026-02-09)
+**Brief**: Operator approved adding a per-band color override for the new 3D Drops layer — small inline `T | B` chip that switches drop colors between OA temperature spectrum (default) and the SA-reset B1-B10 band palette so a B7 hot-humid hour is the same orange in both 2D and 3D views.
+
+### Implementation (`js/psy-3d-engine.js`)
+1. **Hoisted `_bandRGB(t, rh)`** to module scope — returns `[r,g,b]` floats (0–1) for direct push into a `THREE.Float32BufferAttribute` color buffer. Palette mirrors the `bandCol()` CSS function in the 2D layer (B1=#3b82f6 cold-dry, …, B7=#f97316 warm-hum, …, B10=#a855f7 ext-hum).
+2. **State var `_saDropColorMode`** (`'t'` | `'band'`) defaults to `'t'`.
+3. **Refactored** the inline drop-build code in `buildWeatherVis` into a reusable helper `_buildSaDropGeometry()` so a recolor doesn't require re-fetching weather data — chip click → `_buildSaDropGeometry()` → in-place geometry rebuild.
+4. **Per-sample color**: `c = bandMode ? _bandRGB(p.t, p.rh) : t2rgb(p.t)`. Drop-line vertex-color fade (full at top → 35% at floor) preserved in both modes.
+5. **Chip element** (`#p3-saDrop-color`) appended right after the `OA→SA Drops` toggle row in the layer panel. Two clickable spans (`data-mode="t"` and `data-mode="band"`) with active-mode highlighted in cyan (#22d3ee, layer accent).
+6. **Auto-show/hide** with the layer toggle: clicking the layer toggle shows/hides the chip; chip starts hidden because the layer starts hidden.
+7. **Self-heal** on first render: `if (_saDropColorMode !== 'band') _saDropColorMode = 't';` — guards against any closure-init race during page load.
+8. **Tooltip** documents both modes for operators who hover.
+
+### End-to-end browser verification
+Drove the live page through `3D WX → click OA→SA Drops toggle → fetch weather → click B`. Confirmed:
+- Initial render: T highlighted cyan (`color:#22d3ee;background:rgba(34,211,238,.15)`), B gray inactive.
+- After click B: B cyan-active, T gray-inactive, geometry rebuilt in place (no weather refetch).
+- Disable layer → chip hides; re-enable → chip restores.
+- Zero `pageerror`s.
+
+### Tests (`tests/test_sa_drop_color_chip.js`)
+**19/19 PASS** covering: `_bandRGB` palette (B1/B5/B7 anchors match `bandCol()`), default mode = t, drop builder reads mode at build time, per-sample color branch, reusable build helper called from ≥2 places, chip element id, self-heal default, click handler (no-op on active mode + sets mode from clicked span), auto-show/hide with layer, tooltip explains both modes.
+
+Plus `tests/test_oa_sa_3d_drops.js` updated and **19/19 PASS** after the helper-extraction refactor (assertions now match the new code structure).
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.66 MB, MD5 `25a9c0ff58c2325e713c9cae23faa006`) with updated `js/psy-3d-engine.js`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

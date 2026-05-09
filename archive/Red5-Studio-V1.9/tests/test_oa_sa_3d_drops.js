@@ -34,24 +34,24 @@ ok(SRC.includes('if(saDropGroup) while(saDropGroup.children.length)saDropGroup.r
    'saDropGroup cleared at start of buildWeatherVis (no stale geometry)');
 
 console.log('-- Drop math: same SA target as 2D, line per OA, dot per SA --');
-ok(SRC.includes('var sa=_saReset(p.t,p.rh,p.w);'), 'each OA sample → SA via _saReset');
-ok(SRC.includes('var oaX=t2sx(p.t), oaY=frac2sy(p.frac), oaZ=w2sz(p.w);'),
+ok(SRC.includes('var sa = _saReset(p.t, p.rh, p.w);'), 'each OA sample → SA via _saReset');
+ok(SRC.includes('var oaX = t2sx(p.t), oaY = frac2sy(p.frac), oaZ = w2sz(p.w);'),
    'OA at world (t→X, frac→Y, w→Z)');
-ok(SRC.includes('var saX=t2sx(sa.t), saZ=w2sz(sa.w);'),
+ok(SRC.includes('var saX = t2sx(sa.t),                      saZ = w2sz(sa.w);'),
    'SA at world (sa.t→X, Y=0, sa.w→Z) — Y=0 means "on the chart floor"');
 ok(SRC.includes('saV.push(saX, 0.3, saZ);'),
    'SA dot positioned at Y=0.3 (just above floor for visibility)');
-ok(SRC.includes('dV.push(oaX, oaY, oaZ, saX, 0, saZ);'),
+ok(SRC.includes('dV.push(oaX, oaY, oaZ,  saX, 0, saZ);'),
    'drop line: 2 vertices per sample (OA at top, SA at floor)');
-ok(SRC.includes('dC.push(c[0], c[1], c[2],   c[0]*0.35, c[1]*0.35, c[2]*0.35);'),
+ok(SRC.includes('dC.push(c[0], c[1], c[2],  c[0]*0.35, c[1]*0.35, c[2]*0.35);'),
    'line vertex colors fade from full at top → 35% at floor (rain-on-floor visual)');
 
 console.log('-- Cull no-action samples (zero-length drops) --');
-ok(SRC.includes('if(Math.abs(sa.t-p.t)<0.5 && Math.abs(sa.w-p.w)<0.0003) return;'),
+ok(SRC.includes('if (Math.abs(sa.t-p.t)<0.5 && Math.abs(sa.w-p.w)<0.0003) return;'),
    'samples where SA == OA (no reset action) culled to keep floor legible');
 
 console.log('-- Builds Points + LineSegments only when there are samples --');
-ok(SRC.includes('if (saV.length){'),
+ok(SRC.includes('if (!saV.length) return;'),
    'guarded build (no empty BufferGeometry on empty weather data)');
 ok(SRC.includes('saDropGroup.add(new THREE.Points(saGeo, new THREE.PointsMaterial'),
    'SA floor scatter as Points');

@@ -527,10 +527,34 @@ global.initPsy3D = function(container, opts){
     return {t:st, w:sw};
   }
 
+  /* SA-reset band → fixed RGB triplet (0–1).  Mirrors the bandCol() palette
+     used by the 2D OA→SA Lines projection so colors stay coherent across
+     2D and 3D views.  Returned as Float32-friendly [r,g,b] for direct
+     pushing into a THREE.BufferAttribute color buffer. */
+  function _bandRGB(t, rh){
+    if(t<5&&rh<30)                       return [0.231, 0.510, 0.965]; // B1  cold-dry         #3b82f6
+    if(t>=5&&t<15&&rh>=30&&rh<=60)       return [0.024, 0.714, 0.831]; // B2  cool-mid         #06b6d4
+    if(t>=15&&t<20&&rh<30)               return [0.078, 0.722, 0.651]; // B3  cool-dry         #14b8a6
+    if(t>=18&&t<22&&rh>=30&&rh<=50)      return [0.133, 0.773, 0.369]; // B4  econ             #22c55e
+    if(t>=22&&t<=25&&rh>=40&&rh<=60)     return [0.063, 0.725, 0.506]; // B5  comfort          #10b981
+    if(t>25&&t<=27&&rh>=50&&rh<=70)      return [0.918, 0.702, 0.031]; // B6  edge-hi          #eab308
+    if(t>27&&t<=32&&rh>60&&rh<=80)       return [0.976, 0.451, 0.086]; // B7  warm-hum         #f97316
+    if(t>32&&t<=38&&rh>70)               return [0.937, 0.267, 0.267]; // B8  hot-hum          #ef4444
+    if(t>35&&rh<30)                      return [0.961, 0.620, 0.043]; // B9  hot-dry          #f59e0b
+    if(t>30&&rh>85)                      return [0.659, 0.333, 0.969]; // B10 ext-hum          #a855f7
+    return [0.580, 0.639, 0.722];                                       // unclassified gray   #94a3b8
+  }
+
   /* Whether the green B1-B10 cumulative curve, its transition markers, its
      endpoint label, and the band-ramp legend are rendered.  Off by default so
      the user opts into the band-strategy view via the dedicated button. */
   var _p3ShowBandStrategy = false;
+  /* Color mode for the OA→SA Drops 3D layer.  't' = OA temperature spectrum
+     (blue-cold → red-hot, matches the existing weather-cloud coloring).
+     'band' = fixed B1-B10 SA-reset band palette (matches bandCol() in the
+     2D layer, so a B7 hot-humid hour is the same orange in both views).
+     Toggled via the chip next to the OA→SA Drops layer toggle. */
+  var _saDropColorMode = 't';
   /* Cached during T×Time render so the mousemove handler can build per-point
      tooltips that include the active control band, its SA setpoint and the
      OA damper % without re-running classifyBand on every mouse event. */
@@ -801,8 +825,46 @@ global.initPsy3D = function(container, opts){
       div.innerHTML='<span class="p3td" style="background:'+t[1]+'"></span>'+t[2];
       // Sync initial off-state for layers that start hidden (saDropGroup).
       if (layers[t[0]] && layers[t[0]].visible === false) div.classList.add('p3off');
-      div.onclick=function(){var o=layers[t[0]];if(!o)return;o.visible=!o.visible;div.classList.toggle('p3off',!o.visible);};
+      div.onclick=function(){var o=layers[t[0]];if(!o)return;o.visible=!o.visible;div.classList.toggle('p3off',!o.visible);
+        // Keep the OA→SA Drops color-mode chip in sync with its parent visibility.
+        if (t[0]==='saDrop') {
+          var chip=document.getElementById('p3-saDrop-color');
+          if (chip) chip.style.display = o.visible ? 'inline-flex' : 'none';
+        }
+      };
       tgEl.appendChild(div);
+      // Append the small `T | B` color-mode chip next to the OA→SA Drops row.
+      // Re-uses the same .p3-tgl styling but renders two clickable spans, with
+      // the active mode highlighted in the layer's accent color (cyan).
+      if (t[0]==='saDrop'){
+        var chip=document.createElement('div');
+        chip.id='p3-saDrop-color';
+        chip.style.cssText='display:none;align-items:center;gap:0;background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:4px;padding:0 0;cursor:pointer;font-size:7px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;user-select:none;backdrop-filter:blur(14px);overflow:hidden';
+        chip.title='Drop color mode\n  T    = OA temperature spectrum (blue-cold → red-hot)\n  Band = SA-reset band palette (B1-B10, matches 2D OA→SA Lines view)';
+        function _renderChip(){
+          // Self-heal: if anything else clobbered the closure variable to a
+          // non-string before first render, fall back to 't' (the default).
+          if (_saDropColorMode !== 'band') _saDropColorMode = 't';
+          var on = (_saDropColorMode === 't');
+          chip.innerHTML =
+            '<span data-mode="t"    style="padding:3px 7px;color:'    +(on?'#22d3ee':'#94a3b8')+';background:'+(on?'rgba(34,211,238,.15)':'transparent')+'">T</span>'+
+            '<span style="color:#475569">|</span>'+
+            '<span data-mode="band" style="padding:3px 7px;color:'    +(!on?'#22d3ee':'#94a3b8')+';background:'+(!on?'rgba(34,211,238,.15)':'transparent')+'">B</span>';
+        }
+        _renderChip();
+        chip.addEventListener('click', function(e){
+          var s = e.target.closest('[data-mode]');
+          if (!s) return;
+          var m = s.getAttribute('data-mode');
+          if (m === _saDropColorMode) return;
+          _saDropColorMode = m;
+          _renderChip();
+          _buildSaDropGeometry();   // recolor in place — no weather refetch
+        });
+        // Initial visibility tracks the layer (default: hidden until user enables it).
+        if (saDropGroup && saDropGroup.visible) chip.style.display = 'inline-flex';
+        tgEl.appendChild(chip);
+      }
     });
 
     /* camera presets */
@@ -1758,6 +1820,48 @@ global.initPsy3D = function(container, opts){
   }
 
   /* ---------- BUILD WEATHER VIS ---------- */
+  /* Helper: rebuilds the saDropGroup (SA floor scatter + drop lines) using
+     the current `_saDropColorMode`.  Called from buildWeatherVis on every
+     weather refresh AND directly from the color-mode chip click handler so
+     a recolor doesn't require re-fetching weather data. */
+  function _buildSaDropGeometry(){
+    var THREE = window.THREE;
+    if (!saDropGroup || !weatherData || !weatherData.length) return;
+    while (saDropGroup.children.length) saDropGroup.remove(saDropGroup.children[0]);
+    var saV=[], saC=[], dV=[], dC=[];
+    var bandMode = (_saDropColorMode === 'band');
+    weatherData.forEach(function(p){
+      var sa = _saReset(p.t, p.rh, p.w);
+      // Cull no-action samples (zero-length drops would clutter the floor).
+      if (Math.abs(sa.t-p.t)<0.5 && Math.abs(sa.w-p.w)<0.0003) return;
+      var oaX = t2sx(p.t), oaY = frac2sy(p.frac), oaZ = w2sz(p.w);
+      var saX = t2sx(sa.t),                      saZ = w2sz(sa.w);
+      // Color: temperature-spectrum OR band palette.
+      var c = bandMode ? _bandRGB(p.t, p.rh) : t2rgb(p.t);
+      // SA dot on floor (full color).
+      saV.push(saX, 0.3, saZ);
+      saC.push(c[0], c[1], c[2]);
+      // Drop line: top vertex = full OA color; bottom vertex = 35% color so
+      // the line visually fades as it descends to the floor.
+      dV.push(oaX, oaY, oaZ,  saX, 0, saZ);
+      dC.push(c[0], c[1], c[2],  c[0]*0.35, c[1]*0.35, c[2]*0.35);
+    });
+    if (!saV.length) return;
+    var saGeo = new THREE.BufferGeometry();
+    saGeo.setAttribute('position', new THREE.Float32BufferAttribute(saV, 3));
+    saGeo.setAttribute('color',    new THREE.Float32BufferAttribute(saC, 3));
+    saDropGroup.add(new THREE.Points(saGeo, new THREE.PointsMaterial({
+      size:2.6, vertexColors:true, transparent:true, opacity:.95,
+      sizeAttenuation:true, depthWrite:false
+    })));
+    var dropGeo = new THREE.BufferGeometry();
+    dropGeo.setAttribute('position', new THREE.Float32BufferAttribute(dV, 3));
+    dropGeo.setAttribute('color',    new THREE.Float32BufferAttribute(dC, 3));
+    saDropGroup.add(new THREE.LineSegments(dropGeo, new THREE.LineBasicMaterial({
+      vertexColors:true, transparent:true, opacity:.45, depthWrite:false
+    })));
+  }
+
   function buildWeatherVis(locName,fromD,toD){
     var THREE=window.THREE;
     while(pathGroup.children.length)pathGroup.remove(pathGroup.children[0]);
@@ -1793,43 +1897,13 @@ global.initPsy3D = function(container, opts){
             basePlane (Y=0).  Line vertex colors fade from full at top → 30%
             at floor so it visually reads as "raindrops landing".
          3. Place an SA dot at the floor.
+       Color mode (`_saDropColorMode`):
+         't'    — OA temperature spectrum (blue-cold → red-hot).
+         'band' — fixed B1-B10 palette (each band = same color across views).
        Hidden by default (saDropGroup.visible=false at scene init); the user
        enables it via the "OA→SA Drops" toggle in the layer panel.
        ----------------------------------------------------------------------- */
-    while(saDropGroup.children.length)saDropGroup.remove(saDropGroup.children[0]);
-    var saV=[],saC=[],dV=[],dC=[];
-    weatherData.forEach(function(p){
-      var sa=_saReset(p.t,p.rh,p.w);
-      var oaX=t2sx(p.t), oaY=frac2sy(p.frac), oaZ=w2sz(p.w);
-      var saX=t2sx(sa.t), saZ=w2sz(sa.w);
-      var c=t2rgb(p.t);
-      // Cull samples where the controller's SA equals OA (no reset action) —
-      // they'd render as zero-length drops and clutter the floor for nothing.
-      if(Math.abs(sa.t-p.t)<0.5 && Math.abs(sa.w-p.w)<0.0003) return;
-      // SA dot on floor (full color, slight alpha so dense floors stay legible).
-      saV.push(saX, 0.3, saZ);
-      saC.push(c[0], c[1], c[2]);
-      // Drop line: top = OA at full color; bottom = SA at floor with color
-      // attenuated to 35 % so the line visually fades as it descends.  Two
-      // vertices per drop → THREE.LineSegments builds one segment each.
-      dV.push(oaX, oaY, oaZ, saX, 0, saZ);
-      dC.push(c[0], c[1], c[2],   c[0]*0.35, c[1]*0.35, c[2]*0.35);
-    });
-    if (saV.length){
-      var saGeo=new THREE.BufferGeometry();
-      saGeo.setAttribute('position', new THREE.Float32BufferAttribute(saV, 3));
-      saGeo.setAttribute('color',    new THREE.Float32BufferAttribute(saC, 3));
-      saDropGroup.add(new THREE.Points(saGeo, new THREE.PointsMaterial({
-        size:2.6, vertexColors:true, transparent:true, opacity:.95,
-        sizeAttenuation:true, depthWrite:false
-      })));
-      var dropGeo=new THREE.BufferGeometry();
-      dropGeo.setAttribute('position', new THREE.Float32BufferAttribute(dV, 3));
-      dropGeo.setAttribute('color',    new THREE.Float32BufferAttribute(dC, 3));
-      saDropGroup.add(new THREE.LineSegments(dropGeo, new THREE.LineBasicMaterial({
-        vertexColors:true, transparent:true, opacity:.45, depthWrite:false
-      })));
-    }
+    _buildSaDropGeometry();
 
     /* time labels */
     function mkTl(text,col,sz){var c=document.createElement('canvas'),x=c.getContext('2d');c.width=512;c.height=64;x.font='bold 30px monospace';x.fillStyle=col||'#94a3b8';x.textAlign='center';x.textBaseline='middle';x.fillText(text,256,32);var t=new THREE.CanvasTexture(c);var s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(sz||28,(sz||28)*.125,1);return s;}

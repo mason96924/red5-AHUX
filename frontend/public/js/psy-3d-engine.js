@@ -1126,27 +1126,27 @@ global.initPsy3D = function(container, opts){
       costCfg = document.createElement('div');
       costCfg.id = 'p3-ms-costcfg';
       costCfg.style.cssText = 'position:absolute;right:20px;top:82px;z-index:52;'+
-        'display:none;font-family:inherit;font-size:9px;color:#e2e8f0;'+
-        'background:rgba(15,23,42,.95);backdrop-filter:blur(14px);'+
+        'display:none;font-family:inherit;font-size:9px;color:#1e293b;'+
+        'background:rgba(241,245,249,.97);backdrop-filter:blur(14px);'+
         'border:1px solid #10b981;border-radius:6px;padding:8px 12px;'+
-        'min-width:380px;box-shadow:0 6px 18px rgba(0,0,0,.45)';
+        'min-width:380px;box-shadow:0 6px 18px rgba(0,0,0,.25)';
       function _row(id, label, value, unit, min, max, step, tip){
         return '<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px" title="'+tip+'">'+
-          '<span style="width:140px;color:#10b981;font-weight:700">'+label+'</span>'+
+          '<span style="width:140px;color:#047857;font-weight:700">'+label+'</span>'+
           '<input id="'+id+'" type="number" value="'+value+'" min="'+min+'" max="'+max+'" step="'+step+'"'+
-          ' style="width:80px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;'+
+          ' style="width:80px;background:#ffffff;border:1px solid #94a3b8;color:#1e293b;'+
           'padding:2px 6px;border-radius:3px;font-family:inherit;font-size:9px">'+
           '<span style="color:#64748b;font-size:8px">'+unit+'</span>'+
         '</label>';
       }
       costCfg.innerHTML =
-        '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#10b981;margin-bottom:6px">Cost Model -- plug your numbers</div>'+
+        '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#047857;margin-bottom:6px">Cost Model -- plug your numbers</div>'+
         _row('p3-cost-air',  'Airflow',         _costAirM3h,    'm\u00b3/h, 6 ACH @ 3m for 1000 sqm',  500,  100000, 100,  'AHU supply airflow.  Default = 18,000 m\u00b3/h (6 ACH at 3m ceiling for 1000 sqm). Replace with your AHU\u2019s actual CFM x 1.7 for m\u00b3/h.') +
         _row('p3-cost-rate', 'Utility rate',    _costRate,      'USD / kWh',                    0.05, 1.0,    0.01, 'Blended electric rate (or oil/gas equivalent). Default 0.15. US average ~0.16; check your utility bill.') +
         _row('p3-cost-cop',  'Cooling COP',     _costCopCool,   'electric chiller, typical 3.0-4.5', 1.0,  6.0,    0.1,  'Coefficient of Performance for cooling. 3.5 = typical electric chiller; 5.0 = high-efficiency VRF; 1.0 = window AC.') +
         _row('p3-cost-eff',  'Heating eff.',    _costEffHeat,   '0.95 gas / 3.0 heat pump',     0.5,  4.0,    0.05, 'Heating efficiency. 0.95 = condensing gas furnace; 3.0 = heat pump COP. Mind the units.') +
         _row('p3-cost-viol', 'Violation rate',  _costViolRate,  'USD / humid-hour uncovered',   0,    200,    1,    'Cost per hour of unmet humidity control. 5 = complaint handling only; 15 = + productivity loss; 50+ = regulated environments.') +
-        '<div style="font-size:8px;color:#64748b;margin-top:6px;line-height:1.4">'+
+        '<div style="font-size:8px;color:#475569;margin-top:6px;line-height:1.4">'+
           'Annual cost = (cool_kJ + heat_kJ) x mass_flow / 3600 / efficiency x rate'+
           '<br>+ uncovered_humid_hours x violation_rate.  All five strategies use the same inputs; only their own energy and coverage differ.'+
         '</div>';

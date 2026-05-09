@@ -828,6 +828,68 @@ Plus `tests/test_oa_sa_3d_drops.js` updated and **19/19 PASS** after the helper-
 - `red5_bundle.zip` rebuilt (1.66 MB, MD5 `25a9c0ff58c2325e713c9cae23faa006`) with updated `js/psy-3d-engine.js`. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
 
 
+## V1.9 AHU Data Bridges (MQTT + Webhook + Modbus + WebSocket) (2026-02-09)
+**Brief**: Operator picked option (e) — ship all four bridges as independently-toggleable plug-ins. Each reads from the existing `/root/data/telemetry.json` snapshot collector.py emits, gracefully degrades when its optional library is missing, and (for the bidirectional ones) gates inbound BACnet writes behind an explicit per-bridge `write_allowlist` of object-IDs.
+
+### Architecture
+**8 new files** (~24 KB on the controller, plus optional libs):
+- `_bridges_lib.py` (~5 KB) — shared helpers: `load_bridges_config()` / `save_bridges_config()` (atomic, validated against allow-listed keys), `snapshot_telemetry()` (reads `/root/data/telemetry.json`), `enqueue_write(object_id, value, bridge_name, allowlist)` (ACL-gated, appends to `write_queue.json`), `register_bridge_status()` / `all_bridge_status()` (live status registry), `bridge_log()` (cap-rotated at 256 KB).
+- `webhook_bridge_service.py` (~3 KB) — stdlib-only `urllib.request` POST.
+- `mqtt_bridge_service.py` (~5 KB) — lazy `paho-mqtt` import. Subscribes to `<topic_prefix>/write/+` only when `write_allowlist` is non-empty. Connect/publish/sub error handling.
+- `modbus_bridge_service.py` (~5 KB) — lazy `pymodbus` import. Telemetry packed into 16 holding registers per AHU. Read-only (BMS pulls).
+- `ws_bridge_service.py` (~4 KB) — lazy `websockets` import (asyncio). Push to all connected clients on interval; accept inbound `{cmd:"write", object_id, value}` messages gated by allowlist.
+- `bridges_admin_service.py` (~1.5 KB) — exposes `GET /api/bridges/status`, `GET /api/bridges/config`, `POST /api/bridges/config`.
+- `configs/bridges.json` — single config file with one section per bridge. All four default to `enabled: false`. `write_allowlist` defaults to empty list (read-only by default).
+
+**Auto-discovery**: All `*_bridge_service.py` plug-ins land in `/root/data/pgpy/` and are picked up by the existing `app.py` plug-in autoloader at boot. `_bridges_lib.py` (underscore prefix) is NOT auto-loaded (loader looks for `*_service.py`) but is on `sys.path` so each bridge can `from _bridges_lib import ...`.
+
+**Graceful degradation**: Each lazy-import bridge sets `lib_available: False` in its status if its lib is missing. Boot never crashes; operator sees `LIB MISSING` chip in the Data Bridges UI and can `pip install` the libs they actually want.
+
+**Inbound write security**: `enqueue_write()` refuses any object_id NOT in the bridge's `write_allowlist`. Defaults to empty list. Writes go to `write_queue.json` with `source: "bridge:mqtt"` etc. for audit trail. `collector.py` drains the queue on its next BACnet cycle (existing behavior).
+
+### Frontend (`update.html`)
+New "Data Bridges" card with:
+- **AHU TELEMETRY OUT** blue pill in heading.
+- 4 rows, color-coded badges (HTTP Webhook = green, MQTT = purple, Modbus TCP = orange, WebSocket = cyan).
+- Per-row description + live state (disabled / pending / running / error) + counters (`pub:N`, `upd:N`, `push:N`, `err:N`) + `LIB OK` / `LIB MISSING` chip.
+- Per-row slider toggle. On toggle: POSTs new config → auto hot-reloads the affected bridge plug-in via `/api/repair/reload-module/<bridge>_bridge_service` (uses the reload-module endpoint we shipped earlier). One-click enable, no Flask restart needed.
+- Collapsible "Edit raw bridges.json" textarea + Save button for advanced config (broker URL, TLS, write_allowlist, etc.).
+- Auto-refreshes status every 15 s when tab is visible.
+
+### Tests (`tests/test_bridges.py`)
+**34/34 PASS** covering:
+- **Config** load/save/merge: defaults populate, save drops unknown keys, round-trip persists, bad body returns 400.
+- **Telemetry** snapshot: returns `(None, 0)` when file absent; returns parsed dict + mtime when present.
+- **Write-queue ACL**: empty allowlist → refused with "read-only" error; allowlisted target enqueues with `source: "bridge:mqtt"`; non-allowlisted target refused even when *other* targets are allowed; empty `object_id` refused.
+- **Bridge module imports**: all 5 plug-ins import cleanly even when optional libs are missing.
+- **Graceful degradation**: each lazy-import bridge sets `lib_available` to a bool.
+- **Admin endpoints**: GET status (4 bridges), GET config (4 sections), POST config (round-trip + restart-or-reload note in response).
+- **Webhook end-to-end**: spun up a local HTTP catcher server, configured webhook to point at it, drove one publish cycle, verified: URL path correct, `Authorization: Bearer <token>` header present, body has `telemetry.ahu.AHU01` key, status counters bumped, last_status_code = 204.
+
+Plus regression: streaming-upload **36/36**, repair-mode **25/25**, reload-module **18/18**, telemetry **32/32**, band **11/11**, weather **20/20** — total **196/196** across the session's controller-side tests.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.67 MB, MD5 `b2fb53746f3b365cf1c99c2a5b374d32`) with all 8 new files. Synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+### Operator workflow once deployed
+1. Install only the libs you need:
+   - MQTT: `pip install paho-mqtt`
+   - Modbus: `pip install pymodbus`
+   - WebSocket: `pip install websockets`
+   - HTTP webhook: nothing (stdlib)
+2. Open `/update`, scroll to **Data Bridges**.
+3. Click "Edit raw bridges.json", set broker URL / webhook URL / etc.
+4. Flip the slider on the bridge you want — UI auto hot-reloads the plug-in.
+5. Watch the per-bridge counters tick (`pub:N`, `push:N`, etc.) to confirm telemetry is flowing.
+
+### Inbound write opt-in (MQTT / WebSocket only)
+By default all four bridges are READ-ONLY for BACnet (no inbound writes). To enable a remote system to set a setpoint:
+1. Edit `bridges.json` → `mqtt.write_allowlist: ["AV1", "BV3"]` (only these object-IDs accepted).
+2. Hot-reload the bridge.
+3. Remote system publishes to `<topic_prefix>/write/AV1` with payload `{"value": 22.5}` (or just `22.5`).
+4. Bridge calls `enqueue_write()` → `write_queue.json` → `collector.py` drains on next BACnet cycle.
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

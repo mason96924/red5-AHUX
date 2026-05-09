@@ -138,6 +138,23 @@ h1 span{color:#ef4444;font-style:italic}
 </div>
 
 <div class="card">
+<h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>Data Bridges</span>
+  <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#1e3a8a;color:#93c5fd;border:1px solid #3b82f6;vertical-align:middle">AHU Telemetry Out</span>
+</h2>
+<p class="note" style="margin-bottom:12px">Push live AHU/VAV telemetry to MQTT brokers, HTTP webhooks, Modbus TCP slaves, or WebSocket clients. Each bridge is an independently-toggleable plug-in. Inbound BACnet writes (MQTT, WebSocket only) are gated by an explicit per-bridge <code style="background:#1e293b;padding:1px 4px;border-radius:3px">write_allowlist</code> &mdash; defaults to empty (read-only).</p>
+<div id="bridgesList" style="display:flex;flex-direction:column;gap:6px"></div>
+<details style="margin-top:12px;background:#020617;border:1px solid #1e293b;border-radius:6px;padding:8px 10px">
+  <summary style="cursor:pointer;color:#94a3b8;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Edit raw bridges.json</summary>
+  <textarea id="bridgesJsonEditor" style="width:100%;height:240px;margin-top:8px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:8px;font-family:ui-monospace,monospace;font-size:11px"></textarea>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <button id="bridgesSaveBtn" class="btn" style="background:#1e3a8a;color:#93c5fd;border:1px solid #3b82f6;padding:6px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:900">Save Config</button>
+    <button id="bridgesReloadBtn" class="btn" style="background:#020617;color:#94a3b8;border:1px solid #334155;padding:6px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.05em">Reload Editor</button>
+  </div>
+</details>
+<div id="bridgesStatus" style="margin-top:10px;font-size:12px"></div>
+</div>
+
+<div class="card">
 <h2>Documentation</h2>
 <p class="note">Reference docs that ship with the controller. Open in a new tab — share with engineers and operators on site.</p>
 <p style="margin-top:10px">
@@ -703,6 +720,119 @@ function _doRepairUpload(name, file){
         });
 }
 _renderRepairList();
+
+// ---------- Data Bridges UI ----------
+var BRIDGE_DEFS = [
+    {key:'webhook',  label:'HTTP Webhook',  color:'#86efac', bg:'#064e3b', desc:'POST telemetry JSON to a configured URL on every interval. Stdlib only.'},
+    {key:'mqtt',     label:'MQTT',          color:'#a5b4fc', bg:'#312e81', desc:'Publish to broker + subscribe to write topics. Needs paho-mqtt.'},
+    {key:'modbus',   label:'Modbus TCP',    color:'#fcd34d', bg:'#78350f', desc:'Expose telemetry as holding registers. Needs pymodbus.'},
+    {key:'websocket',label:'WebSocket',     color:'#67e8f9', bg:'#164e63', desc:'Push to connected clients + accept inbound writes. Needs websockets.'},
+];
+function _bridgesBase(){ return (document.getElementById('serverUrl').value || '').replace(/\/$/, ''); }
+function _renderBridgesList(cfg, status){
+    var box = document.getElementById('bridgesList'); if (!box) return;
+    box.innerHTML = '';
+    BRIDGE_DEFS.forEach(function(d){
+        var bcfg = (cfg && cfg[d.key]) || {};
+        var bs   = (status && status[d.key]) || {};
+        var en   = !!bcfg.enabled;
+        var lib  = bs.lib_available;
+        var libNote = lib === false ? '<span style="color:#fca5a5;font-size:9px;font-weight:700;margin-left:6px">LIB MISSING</span>' :
+                      (lib === true ? '<span style="color:#86efac;font-size:9px;font-weight:700;margin-left:6px">LIB OK</span>' : '');
+        var stateBadge = ''
+            + '<span style="display:inline-block;padding:2px 6px;border-radius:3px;background:'+d.bg+';color:'+d.color+';font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">' + d.label + '</span>';
+        var counts = '';
+        if (bs.publish_count != null)   counts += '<span style="color:#64748b;font-size:9px;margin-left:8px">pub:' + bs.publish_count + '</span>';
+        if (bs.update_count != null)    counts += '<span style="color:#64748b;font-size:9px;margin-left:8px">upd:' + bs.update_count + '</span>';
+        if (bs.push_count != null)      counts += '<span style="color:#64748b;font-size:9px;margin-left:8px">push:' + bs.push_count + '</span>';
+        if (bs.error_count)             counts += '<span style="color:#fca5a5;font-size:9px;margin-left:8px">err:' + bs.error_count + '</span>';
+        if (bs.last_error)              counts += '<span style="color:#fca5a5;font-size:9px;margin-left:8px;font-style:italic" title="'+(bs.last_error+'').replace(/"/g,'&quot;')+'">⚠</span>';
+        var stateText = (bs.state || (en ? 'pending' : 'disabled'));
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#020617;border:1px solid '+(en ? '#1e3a8a' : '#1e293b')+';border-radius:6px';
+        row.innerHTML = stateBadge + libNote
+            + '<span style="flex:1"><span style="color:#e2e8f0;font-size:11px;font-weight:700">'+d.desc+'</span><span style="color:#64748b;font-size:9px;display:block;margin-top:2px">state: '+stateText+counts+'</span></span>'
+            + '<label class="rw-slider" data-bridge="'+d.key+'" style="cursor:pointer;flex-shrink:0"><input type="checkbox" '+(en?'checked':'')+' style="display:none"><span class="rw-slider-track" style="display:inline-block;width:36px;height:18px;border-radius:9px;background:'+(en?'#3b82f6':'#334155')+';position:relative;transition:background 0.2s"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:'+(en?'20px':'2px')+';transition:left 0.2s"></span></span></label>';
+        box.appendChild(row);
+    });
+    box.addEventListener('click', _onBridgeToggleClick);
+}
+function _onBridgeToggleClick(e){
+    var lbl = e.target.closest('label[data-bridge]'); if (!lbl) return;
+    e.preventDefault();
+    var key = lbl.getAttribute('data-bridge');
+    var status = document.getElementById('bridgesStatus');
+    status.className = 'status-info'; status.textContent = 'Toggling ' + key + '…';
+    fetch(_bridgesBase() + '/api/bridges/config').then(function(r){return r.json();}).then(function(j){
+        if (!j || !j.success) { status.className='status-err'; status.textContent='Error fetching config'; return; }
+        var cfg = j.config;
+        cfg[key].enabled = !cfg[key].enabled;
+        return fetch(_bridgesBase() + '/api/bridges/config', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(cfg)
+        }).then(function(r){return r.json().then(function(j2){return {ok:r.ok,j:j2};});}).then(function(rs){
+            if (rs.ok && rs.j && rs.j.success){
+                status.className = 'status-ok';
+                status.textContent = 'OK: ' + key + ' set to enabled='+cfg[key].enabled+'. Hot-reloading bridge…';
+                // Auto hot-reload the affected bridge so the new setting takes effect.
+                return fetch(_bridgesBase() + '/api/repair/reload-module/' + key + '_bridge_service', {method:'POST'})
+                    .then(function(r){return r.json().then(function(j3){return {ok:r.ok,j:j3};});})
+                    .then(function(rl){
+                        if (rl.ok && rl.j && rl.j.success){
+                            status.textContent = 'OK: ' + key + ' enabled='+cfg[key].enabled+', hot-reloaded.';
+                        } else {
+                            status.textContent = 'Config saved. Reload failed: ' + ((rl.j && rl.j.error) || 'restart Flask manually');
+                        }
+                        _refreshBridges();
+                    });
+            } else {
+                status.className='status-err';
+                status.textContent='Save error: '+((rs.j && rs.j.error) || 'unknown');
+            }
+        });
+    }).catch(function(err){
+        status.className='status-err'; status.textContent='Network error: '+err.message;
+    });
+}
+function _refreshBridges(){
+    var base = _bridgesBase(); if (!base) return;
+    Promise.all([
+        fetch(base + '/api/bridges/config').then(function(r){return r.json();}),
+        fetch(base + '/api/bridges/status').then(function(r){return r.json();})
+    ]).then(function(rs){
+        var cfg = rs[0] && rs[0].config;
+        var st  = rs[1] && rs[1].bridges;
+        _renderBridgesList(cfg, st);
+        var ed = document.getElementById('bridgesJsonEditor');
+        if (ed) ed.value = JSON.stringify(cfg, null, 2);
+    }).catch(function(err){
+        var box = document.getElementById('bridgesList');
+        if (box) box.innerHTML = '<div style="color:#fca5a5;font-size:11px;padding:8px">Failed to fetch /api/bridges/* — bridges plug-in not deployed yet?</div>';
+    });
+}
+document.getElementById('bridgesSaveBtn').onclick = function(){
+    var ed = document.getElementById('bridgesJsonEditor');
+    var status = document.getElementById('bridgesStatus');
+    try { var parsed = JSON.parse(ed.value); }
+    catch(e){ status.className='status-err'; status.textContent='Invalid JSON: '+e.message; return; }
+    status.className='status-info'; status.textContent='Saving…';
+    fetch(_bridgesBase() + '/api/bridges/config', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(parsed)
+    }).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});}).then(function(rs){
+        if (rs.ok && rs.j && rs.j.success){
+            status.className='status-ok';
+            status.textContent='Saved. Hot-reload each enabled bridge from /update Repair Mode for changes to take effect.';
+            _refreshBridges();
+        } else {
+            status.className='status-err';
+            status.textContent='Save error: '+((rs.j && rs.j.error) || 'HTTP '+rs.j.status_code);
+        }
+    });
+};
+document.getElementById('bridgesReloadBtn').onclick = _refreshBridges;
+setTimeout(_refreshBridges, 800);
+setInterval(function(){ if (document.visibilityState === 'visible') _refreshBridges(); }, 15000);
 
 // Auto-detect server from current page origin (works when served by controller)
 (function() {

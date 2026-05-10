@@ -3166,6 +3166,17 @@
                                             const sX = a.sensor_x != null ? a.sensor_x : a.x;
                                             const sY = a.sensor_y != null ? a.sensor_y : a.y - 20;
                                             const sScale = a.sensor_scale != null ? a.sensor_scale : 0.8;
+                                            // Decoupled M|R/S pill for centrifugal_fan — mirrors the mapper's
+                                            // "DECOUPLED PILL BODY (For Fans)" block (equipment_mapper.html
+                                            // ~line 4840).  Driven by real telemetry (isAuto / isRunning /
+                                            // isAlarm) instead of the mapper's simulator state.  Position is
+                                            // independent of the fan body (a.pill_x / a.pill_y in the schema)
+                                            // so the operator can place the toggle wherever it reads best.
+                                            const hasFanPill = atype === 'centrifugal_fan';
+                                            const pX = a.pill_x != null ? a.pill_x : a.x;
+                                            const pY = a.pill_y != null ? a.pill_y : a.y + 10;
+                                            const pScale = a.pill_scale != null ? a.pill_scale : 1.0;
+                                            const fanOn = isRunning && !isAlarm;
                                             return (
                                                 <React.Fragment key={`anim_frag_${ai}`}>
                                                 <div key={`anim_${ai}`} className="absolute z-20" style={{left:`${a.x}%`,top:`${a.y}%`,width:wPx+'px',height:hPx+'px',marginLeft:`-${wPx/2}px`,marginTop:`-${hPx/2}px`,transform:transformStyle,transformStyle:'preserve-3d'}}>
@@ -3187,6 +3198,18 @@
                                                     <div className="absolute z-20" style={{left:`${sX}%`,top:`${sY}%`,width:'150px',height:'100px',marginLeft:'-75px',marginTop:'-50px',transform:`scale(${sScale}) scaleX(${a.sensor_stretchX||1}) scaleY(${a.sensor_stretchY||1}) skewX(${a.sensor_skewX||0}deg) skewY(${a.sensor_skewY||0}deg) rotateX(${a.sensor_rotX||0}deg) rotateY(${a.sensor_rotY||0}deg) rotateZ(${a.sensor_rotZ||0}deg)`,transformStyle:'preserve-3d'}}>
                                                         <div className="absolute inset-0 flex items-center justify-center" style={{transformStyle:'preserve-3d'}}>
                                                             <PreviewPressureSwitchDisplay filterLoad={tVal} />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {/* Centrifugal-fan M | R/S pill (mirrors mapper) */}
+                                                {hasFanPill && (
+                                                    <div className="absolute z-30 pointer-events-none" style={{left:`${pX}%`, top:`${pY}%`, transform:`translate(-50%,-50%) scale(${pScale})`}}>
+                                                        <div className="bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-700 shadow-[0_10px_20px_rgba(0,0,0,0.8)] flex items-center gap-3">
+                                                            <div className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-[9px] font-black text-slate-400">M</div>
+                                                            <div className={`w-9 h-5 rounded-full p-0.5 shadow-inner flex items-center ${fanOn ? 'bg-emerald-500' : 'bg-slate-800 border border-slate-600'}`}>
+                                                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${fanOn ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                            </div>
+                                                            <div className={`text-[10px] font-black w-3 text-center ${fanOn ? 'text-emerald-400' : 'text-slate-500'}`}>{fanOn ? 'R' : 'S'}</div>
                                                         </div>
                                                     </div>
                                                 )}

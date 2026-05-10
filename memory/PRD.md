@@ -890,6 +890,33 @@ By default all four bridges are READ-ONLY for BACnet (no inbound writes). To ena
 4. Bridge calls `enqueue_write()` → `write_queue.json` → `collector.py` drains on next BACnet cycle.
 
 
+## V1.9 Bridges Test-Fire + Beginner Setup Guide (2026-02-09)
+**Brief**: Operator approved adding a one-shot "Test Fire" button on each enabled bridge so they can verify the downstream pipeline parses messages without waiting for the next 30-s publish cycle. Also requested a plain-language setup guide explaining how to write each bridge's config.
+
+### Backend
+Each `*_bridge_service.py` plug-in now exposes `test_fire()` returning `(ok, msg, details)`:
+- **Webhook** — synchronously POSTs `{"test": true, "ts": <now>}` with the bearer-token header. Returns HTTP status.
+- **MQTT** — publishes one message to `<topic_prefix>/test`. Returns paho `info.rc`.
+- **Modbus** — writes sentinel `0xCAFE` (51966) to register 999. Response includes `verify_on_bms` instructions for the operator.
+- **WebSocket** — broadcasts `{"hello": "world", ...}` to connected clients via `asyncio.run_coroutine_threadsafe`.
+
+New admin endpoint **`POST /api/bridges/test/<bridge_name>`** in `bridges_admin_service.py`. Refuses unknown bridges (400). Lib-missing bridges return graceful `success:false` instead of 500.
+
+### Frontend
+Per-row **Test Fire** button (color-matched accent), only renders when that bridge is enabled. Status line shows `OK (webhook): POST 200 [...]` on success or the live error on failure. New **Setup Guide** pill in the card heading links to `data_bridges_guide.md`.
+
+### Setup guide (`data_bridges_guide.md`, 7.2 KB)
+Plain-language doc for non-engineer operators. One section per bridge with: when-to-use, copy-paste config block, sample receiver JSON, install commands, inbound-write opt-in. Includes a 4-row decision tree ("Do you have Home Assistant? → MQTT") and the full Modbus register map. Bundled as a static file.
+
+### Tests
+**+13 cases** in `tests/test_bridges.py` (now **47/47 PASS**): webhook test_fire end-to-end against local catcher (URL, bearer header, payload schema), unknown-bridge → 400, all 3 lib-dependent bridges report clean error JSON when not running, `data_bridges_guide.md` shipped in bundle.
+
+End-to-end browser verification: Setup Guide link present, served directly at 7,243 bytes, bridges card renders 4 rows with state badges, zero `pageerror`s.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1.68 MB, MD5 `c65cc3a674757110e5c01307dba5756d`).
+
+
 ## Backlog / Next
 - **VERIFICATION PENDING ON CONTROLLER (2026-05-08)**: Deploy `app.py` (manually as enteliWEB object) + `red5_bundle.zip`. After Flask restart, verify:
   1. `/api/version` shows non-null mtimes for `app.py` AND all 4 service files (now in `/root/data/pgpy/`).

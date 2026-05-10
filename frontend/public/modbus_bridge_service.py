@@ -141,6 +141,31 @@ def get_status():
     return dict(_status)
 
 
+_TEST_SENTINEL_REGISTER = 999
+_TEST_SENTINEL_VALUE    = 0xCAFE   # 51966 — distinctive, unlikely to occur naturally
+
+
+def test_fire():
+    """Writes 0xCAFE (51966) to register 999 so the BMS can read that
+    register and confirm it's polling the right slave + unit ID."""
+    if _context is None or _status.get('state') != 'running':
+        return False, 'modbus server not running (enable bridge + check port)', {}
+    cfg  = load_bridges_config().get(_NAME, {})
+    unit = int(cfg.get('unit_id', 1))
+    try:
+        _context[unit].setValues(3, _TEST_SENTINEL_REGISTER, [_TEST_SENTINEL_VALUE])
+        return True, ('wrote 0x%X to HR[%d]' % (_TEST_SENTINEL_VALUE, _TEST_SENTINEL_REGISTER)), {
+            'unit_id':   unit,
+            'register':  _TEST_SENTINEL_REGISTER,
+            'value_hex': '0x%X' % _TEST_SENTINEL_VALUE,
+            'value_dec': _TEST_SENTINEL_VALUE,
+            'verify_on_bms': 'Read holding-register %d on unit %d — should equal %d.'
+                             % (_TEST_SENTINEL_REGISTER, unit, _TEST_SENTINEL_VALUE),
+        }
+    except Exception as e:
+        return False, str(e), {}
+
+
 def register(app, ctx):
     register_bridge_status(_NAME, get_status)
     global _thread

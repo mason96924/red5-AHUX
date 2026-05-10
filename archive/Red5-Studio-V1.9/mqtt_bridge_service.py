@@ -157,6 +157,24 @@ def get_status():
     return dict(_status)
 
 
+def test_fire():
+    """One-shot manual publish — sends a test message to <topic_prefix>/test
+    so the operator can verify broker reachability + topic naming."""
+    cfg = load_bridges_config().get(_NAME, {})
+    if _client is None or not _status.get('connected'):
+        return False, 'mqtt client not connected (enable bridge + check broker host)', {}
+    topic = (cfg.get('topic_prefix') or 'controller/red5') + '/test'
+    payload = json.dumps({'test': True, 'ts': time.time(),
+                          'note': 'test-fire from /update Data Bridges card'})
+    try:
+        info = _client.publish(topic, payload, qos=int(cfg.get('qos', 1)), retain=False)
+        # paho returns MQTTMessageInfo; rc=0 means OK.
+        rc = getattr(info, 'rc', 0)
+        return rc == 0, ('publish rc=' + str(rc)), {'topic': topic, 'payload': payload}
+    except Exception as e:
+        return False, str(e), {'topic': topic}
+
+
 def register(app, ctx):
     register_bridge_status(_NAME, get_status)
     global _thread

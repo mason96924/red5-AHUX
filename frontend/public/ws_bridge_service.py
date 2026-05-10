@@ -134,6 +134,40 @@ def get_status():
     return dict(_status)
 
 
+def test_fire():
+    """Broadcasts a hello message to every connected WebSocket client so
+    the operator can verify their client-side handlers parse the format."""
+    if _status.get('state') != 'running':
+        return False, 'WS server not running (enable bridge + check port)', {}
+    if not _clients:
+        return False, 'no clients currently connected — open your WS client first', {
+            'tip': 'Connect to ws://<controller>:%d/ then click Test Fire again.'
+                   % int(load_bridges_config().get(_NAME, {}).get('port', 5021))
+        }
+    msg = json.dumps({'test': True, 'hello': 'world', 'ts': time.time(),
+                      'note': 'test-fire from /update Data Bridges card'})
+    # The WS server lives in its own asyncio loop; we can't easily await
+    # from here.  Instead schedule the broadcast via asyncio.run_coroutine_threadsafe.
+    sent = 0
+    dead = []
+    for ws in list(_clients):
+        try:
+            loop = getattr(ws, 'loop', None) or asyncio.get_event_loop()
+            fut = asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
+            fut.result(timeout=2)
+            sent += 1
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        _clients.discard(ws)
+    return sent > 0, ('broadcast to %d client(s)' % sent), {
+        'clients_now':    len(_clients),
+        'sent_to':        sent,
+        'failed':         len(dead),
+        'sample_payload': msg,
+    }
+
+
 def register(app, ctx):
     register_bridge_status(_NAME, get_status)
     global _thread

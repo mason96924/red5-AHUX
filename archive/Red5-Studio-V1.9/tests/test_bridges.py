@@ -215,6 +215,59 @@ try:
 finally:
     httpd.shutdown()
 
+# ---------- 8. test_fire on each bridge ----------
+print("\n-- 8. test_fire endpoints --")
+captured.clear()
+httpd2 = socketserver.TCPServer(('127.0.0.1', 0), _Catcher)
+port2  = httpd2.server_address[1]
+threading.Thread(target=httpd2.serve_forever, daemon=True).start()
+try:
+    cfg = bl.load_bridges_config()
+    cfg['webhook'].update({'enabled': True,
+                           'url': 'http://127.0.0.1:%d/test-fire' % port2,
+                           'bearer_token': 'fire-token',
+                           'publish_interval_s': 30,
+                           'timeout_s': 2})
+    bl.save_bridges_config(cfg)
+    with app.test_client() as c:
+        r = c.post('/api/bridges/test/webhook')
+        j = r.get_json() or {}
+        test('8a. POST /api/bridges/test/webhook returns 200', r.status_code == 200)
+        test('8b. webhook test_fire success',
+             j.get('success') and 'POST' in str(j.get('message', '')))
+        test('8c. webhook test_fire actually hit the catcher',
+             len(captured) == 1 and '/test-fire' == captured[0]['path'])
+        if captured:
+            body = json.loads(captured[0]['body'] or '{}')
+            test('8d. test-fire payload has test:true marker', body.get('test') is True)
+            test('8e. test-fire bearer token forwarded',
+                 captured[0]['auth'] == 'Bearer fire-token')
+
+        # Unknown bridge → 400
+        r = c.post('/api/bridges/test/totally-evil-bridge')
+        test('8f. unknown bridge → 400', r.status_code == 400)
+
+        # mqtt/modbus/ws bridges with libs missing should report not-running
+        # gracefully (success:false but a clear message, not a 500 crash).
+        for nm in ('mqtt', 'modbus', 'websocket'):
+            r = c.post('/api/bridges/test/' + nm)
+            jj = r.get_json() or {}
+            test('8g.' + nm + ' test_fire returns JSON (not crash)',
+                 r.status_code in (200, 503) and 'success' in jj,
+                 'status=' + str(r.status_code) + ' j=' + str(jj))
+            test('8h.' + nm + ' reports clear error when not running',
+                 jj.get('success') is False and len(jj.get('message') or jj.get('error') or '') > 0)
+finally:
+    httpd2.shutdown()
+
+# ---------- 9. Setup guide is shipped with the bundle ----------
+print("\n-- 9. Setup guide bundled --")
+import zipfile
+with zipfile.ZipFile('/app/archive/Red5-Studio-V1.9/red5_bundle.zip') as z:
+    names = z.namelist()
+    test('9a. data_bridges_guide.md present in bundle',
+         'data_bridges_guide.md' in names)
+
 print('\nSUMMARY:', len(PASSED), 'passed,', len(FAILED), 'failed')
 if FAILED:
     sys.exit(1)

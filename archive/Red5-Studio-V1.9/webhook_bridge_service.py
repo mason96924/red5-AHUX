@@ -76,6 +76,27 @@ def get_status():
     return dict(_status)
 
 
+def test_fire():
+    """One-shot manual publish — POST a test payload to the configured URL
+    immediately so the operator can verify their ingest pipeline parses
+    bridge messages without waiting publish_interval_s."""
+    cfg = load_bridges_config().get(_NAME, {})
+    if not cfg.get('url'):
+        return False, 'webhook.url is empty', {}
+    body = json.dumps({'test': True, 'ts': time.time(),
+                       'note': 'test-fire from /update Data Bridges card'}).encode('utf-8')
+    headers = {'Content-Type': 'application/json'}
+    if cfg.get('bearer_token'):
+        headers['Authorization'] = 'Bearer ' + str(cfg['bearer_token'])
+    req = urlreq.Request(cfg['url'], data=body, headers=headers, method='POST')
+    try:
+        with urlreq.urlopen(req, timeout=max(1, int(cfg.get('timeout_s', 5)))) as resp:
+            return True, 'POST ' + str(resp.status), {'status_code': resp.status,
+                                                      'url': cfg['url']}
+    except Exception as e:
+        return False, str(e), {'url': cfg.get('url')}
+
+
 def register(app, ctx):
     register_bridge_status(_NAME, get_status)
     global _thread

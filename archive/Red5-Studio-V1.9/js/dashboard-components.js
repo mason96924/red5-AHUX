@@ -11,8 +11,8 @@ class ErrorBoundary extends React.Component {
             return (
                 <div className="flex h-screen items-center justify-center bg-slate-900 text-red-500 p-10 font-mono text-sm">
                     <div>
-                        <h1 className="text-2xl font-bold mb-4">React Rendering Crash Prevented</h1>
-                        <p className="mb-4">System caught the following error instead of a black screen:</p>
+                        <h1 className="text-2xl font-bold mb-4">{(window.t && window.t('react_crash_prevented')) || 'React Rendering Crash Prevented'}</h1>
+                        <p className="mb-4">{(window.t && window.t('react_crash_msg')) || 'System caught the following error instead of a black screen:'}</p>
                         <p className="font-bold text-white">{this.state.error ? this.state.error.toString() : ''}</p>
                     </div>
                 </div>

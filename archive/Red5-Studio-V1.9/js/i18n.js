@@ -60,6 +60,7 @@
     latent:                ['Latent','潜热','潛熱','潜熱','잠열'],
     sensible:              ['Sensible','显热','顯熱','顕熱','현열'],
     natural_ventilation:   ['Natural Ventilation','自然通风','自然通風','自然換気','자연 환기'],
+    evaporative:           ['Evaporative','蒸发冷却','蒸發冷卻','蒸発冷却','증발 냉각'],
 
     /* ── Setpoints ── */
     t_setpoint:            ['T Setpoint','温度设定点','溫度設定點','温度設定値','온도 설정점'],
@@ -230,7 +231,45 @@
     cooling:                   ['Cooling','制冷','製冷','冷房','냉방'],
     total_label:               ['Total','合计','合計','合計','합계'],
     oa_temp_legend:            ['OA temp','外气温度','外氣溫度','外気温度','외기온도'],
-    vav_zones_in_cz:           ['VAV ZONES IN CZ','VAV 区域在舒适区','VAV 區域在舒適區','VAVゾーンが快適域内','VAV 구역 적정구역 내']
+    vav_zones_in_cz:           ['VAV ZONES IN CZ','VAV 区域在舒适区','VAV 區域在舒適區','VAVゾーンが快適域内','VAV 구역 적정구역 내'],
+
+    /* ── Dashboard DOM (added 2026-02-10) — translated strings for the
+       non-chart React UI: cards, modals, button labels, placeholders,
+       tooltips.  Keep keys lowercase + snake_case; one line each so a
+       quick scan shows what's still missing in any language. ── */
+    ahu_diagnostic_hub_v:      ['AHU Diagnostic HUB','空调机组诊断中心','空調機組診斷中心','空調機診断ハブ','공조기 진단 허브'],
+    real_time_diag_hub:        ['Real-time Diagnostic Hub','实时诊断中心','即時診斷中心','リアルタイム診断ハブ','실시간 진단 허브'],
+    mechanical_cooling:        ['Mechanical Cooling','机械制冷','機械製冷','機械冷房','기계 냉방'],
+    mass_cooling:              ['Mass Cooling','质量制冷','質量製冷','蓄熱冷房','대량 냉방'],
+    reload_now:                ['Reload Now','立即重新加载','立即重新載入','今すぐ再読み込み','지금 새로고침'],
+    drag_to_resize:            ['Drag to resize','拖动以调整大小','拖動以調整大小','ドラッグでサイズ変更','드래그하여 크기 조정'],
+    collector_configuration:   ['Collector Configuration','采集器配置','採集器配置','コレクター設定','콜렉터 구성'],
+    click_to_map_vavs:         ['Click to map VAVs on Floor Plan','点击在平面图上映射 VAV','點擊在平面圖上映射 VAV','フロアプランで VAV をマップ','평면도에서 VAV 매핑하려면 클릭'],
+    view_diagram:              ['View Diagram','查看示意图','查看示意圖','図面表示','다이어그램 보기'],
+    yearly_weather_dist:       ['Yearly Weather Distribution','年度气候分布','年度氣候分佈','年間気象分布','연간 기후 분포'],
+    no_data_for_period:        ['No data for this period','此时段无数据','此時段無資料','期間データなし','이 기간 데이터 없음'],
+    reset_zoom:                ['RESET ZOOM','重置缩放','重置縮放','ズームをリセット','확대/축소 재설정'],
+    no_weather_loaded:         ['No weather data loaded','未加载天气数据','未載入天氣資料','気象データ未読込','날씨 데이터 미적재'],
+    weather_location:          ['Weather Location','天气位置','天氣位置','気象位置','날씨 위치'],
+    current_location:          ['Current Location','当前位置','當前位置','現在地','현재 위치'],
+    no_saved_locations:        ['No saved locations','无已保存位置','無已儲存位置','保存済み位置なし','저장된 위치 없음'],
+    location_name_ph:          ['Location name','位置名称','位置名稱','位置名','위치 이름'],
+    vav_image_missing:         ['VAV IMAGE MISSING','VAV 图像缺失','VAV 影像缺失','VAV画像なし','VAV 이미지 누락'],
+    ahu_image_missing:         ['AHU IMAGE MISSING','AHU 图像缺失','AHU 影像缺失','AHU画像なし','AHU 이미지 누락'],
+    loading_configuration:     ['Loading configuration...','加载配置中...','載入配置中...','設定読み込み中...','구성 로딩 중...'],
+    no_vavs_assigned:          ['No VAVs assigned','未分配 VAV','未指派 VAV','VAV 未割当','VAV 미할당'],
+    add_vav_name_ph:           ['Add VAV name','添加 VAV 名称','新增 VAV 名稱','VAV 名追加','VAV 이름 추가'],
+    csv_object_label:          ['CSV Object:','CSV 对象:','CSV 物件:','CSV オブジェクト:','CSV 객체:'],
+    add_new_ahu_group:         ['Add New AHU Group','添加新 AHU 组','新增 AHU 群組','新規 AHU グループ追加','새 AHU 그룹 추가'],
+    ahu_name_ph:               ['AHU name (e.g. AHU-03-W)','AHU 名称 (例: AHU-03-W)','AHU 名稱 (例: AHU-03-W)','AHU 名 (例: AHU-03-W)','AHU 이름 (예: AHU-03-W)'],
+    csv_object_ph:             ['CSV object','CSV 对象','CSV 物件','CSV オブジェクト','CSV 객체'],
+    loading_equip_types:       ['Loading equipment types...','加载设备类型中...','載入設備類型中...','機器タイプ読み込み中...','장비 유형 로딩 중...'],
+    data_source_mode:          ['Data Source Mode','数据源模式','資料來源模式','データソースモード','데이터 소스 모드'],
+    dashboard_point_map:       ['Dashboard Point Map','仪表盘点位映射','儀表板點位映射','ダッシュボード点マップ','대시보드 포인트 맵'],
+    config_password:           ['Config Password','配置密码','配置密碼','設定パスワード','구성 비밀번호'],
+    enter_password_ph:         ['Enter password','输入密码','輸入密碼','パスワード入力','비밀번호 입력'],
+    react_crash_prevented:     ['React Rendering Crash Prevented','已阻止 React 渲染崩溃','已阻止 React 渲染崩潰','React レンダリング クラッシュを防止','React 렌더링 충돌 방지됨'],
+    react_crash_msg:           ['System caught the following error instead of a black screen:','系统捕获以下错误而非黑屏:','系統捕獲以下錯誤而非黑屏:','黒画面の代わりに以下のエラーを捕捉:','검은 화면 대신 다음 오류를 포착:']
   };
 
   /* ── Build fast lookup: key -> { en, 'zh-CN', 'zh-TW', ja, ko } ── */

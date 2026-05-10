@@ -1209,23 +1209,31 @@ def repair_reload_module(plugin_name):
     so newly-uploaded plug-in code takes effect WITHOUT toggling app.py
     via the enteliWEB script editor.
 
-    Mechanism:
-      1. importlib.reload(mod)                      → new function objects
-      2. mod.register(app, ctx) with add_url_rule no-op'd
-                                                    → rebind module globals
-                                                       (DATA_ROOT, etc.) without
-                                                       trying to re-attach routes
-                                                       (which would AssertionError
-                                                       on duplicate endpoints)
-      3. swap app.view_functions[ep] for every endpoint registered by this
-         module (matched via the bound function's __module__ attr)
-                                                    → next request hits new code
+    Three cases are handled:
+
+      (a) Module already loaded (auto-discovered at boot) →
+          importlib.reload(mod) → rebind globals via register() with
+          add_url_rule no-op'd → swap app.view_functions[ep] for every
+          previously-registered endpoint.  Next request hits new code.
+
+      (b) Module never loaded AND no endpoints registered yet (brand-new
+          plug-in just landed via /api/repair/upload-plugin in this
+          Flask session) → importlib.import_module() + mod.register()
+          attaches the new routes for the first time.  This is the
+          common path for hot-deploying a new plug-in WITHOUT a full
+          Flask restart.
+
+      (c) Module dropped from sys.modules but endpoints still live in
+          app.view_functions (unusual; happens in tests) →
+          import_module() then fall through to the rebind+swap path.
 
     Caveats:
-      - Cannot ADD or REMOVE routes (Flask url_map is rebuilt only on full
-        process restart). For schema changes use a real restart.
-      - Background threads started inside register() will NOT be re-spawned
-        (we suppress them via start_*_thread=False during the rebind call).
+      - For case (a), cannot ADD or REMOVE routes — only the function
+        bodies change.  For schema/route-shape changes use case (b) by
+        first uploading the new file as if it were brand new.
+      - Background threads started inside register() will NOT be
+        re-spawned in case (a) (we suppress them via start_*_thread=False
+        during the rebind call).
     """
     # Restrict to the same plug-in allow-list as repair_upload_plugin.
     plugin_files = {
@@ -1244,9 +1252,6 @@ def repair_reload_module(plugin_name):
 
     mod_name = name[:-3]   # strip .py
     mod = sys.modules.get(mod_name)
-    if mod is None:
-        return jsonify({'success': False,
-                        'error': 'module not currently loaded; full Flask restart required'}), 404
 
     if _FLASK_APP_REF is None or _SERVICE_CTX_REF is None:
         return jsonify({'success': False,
@@ -1262,13 +1267,70 @@ def repair_reload_module(plugin_name):
         if getattr(fn, '__module__', '') == mod_name:
             pre_endpoints.append((ep, fn.__name__))
 
-    # 2. Reload the module — new function objects are created here.
-    try:
-        importlib.reload(mod)
-    except Exception as ex:
-        return jsonify({'success': False,
-                        'error': 'importlib.reload failed: ' + str(ex),
-                        'module': mod_name}), 500
+    # 2a. Fresh-import case — module never imported in this Flask session
+    #     (e.g., a brand-new plug-in just dropped into PLUGINS_ROOT via
+    #     /api/repair/upload-plugin).  importlib.reload() would KeyError
+    #     here, so do a normal import_module().  PLUGINS_ROOT is already
+    #     on sys.path (set in app.py), so the new file resolves cleanly.
+    if mod is None:
+        try:
+            mod = importlib.import_module(mod_name)
+        except Exception as ex:
+            return jsonify({'success': False,
+                            'error': 'fresh import failed: ' + str(ex),
+                            'module': mod_name}), 500
+        # If no pre-existing endpoints belong to this module, register()
+        # has never run — call it now so the new routes go live.
+        if not pre_endpoints:
+            if not hasattr(mod, 'register'):
+                return jsonify({'success': False,
+                                'error': 'module has no register() function',
+                                'module': mod_name}), 500
+            # Flask refuses add_url_rule() after the app has handled its
+            # first request (sets _got_first_request=True).  We MUST bypass
+            # that lock here — the whole point of this endpoint is to add
+            # routes to a long-running, request-serving app.  Toggle the
+            # flag, run register(), restore the flag.  Same trick used by
+            # Flask's own test_client when reusing an app across requests.
+            _orig_first = getattr(app, '_got_first_request', False)
+            try:
+                app._got_first_request = False
+            except AttributeError:
+                pass
+            try:
+                mod.register(app, ctx_snapshot)
+            except Exception as ex:
+                return jsonify({'success': False,
+                                'error': 'fresh register() failed: ' + str(ex),
+                                'module': mod_name}), 500
+            finally:
+                try:
+                    app._got_first_request = _orig_first
+                except AttributeError:
+                    pass
+            new_endpoints = sorted(
+                ep for ep, fn in app.view_functions.items()
+                if getattr(fn, '__module__', '') == mod_name
+            )
+            return jsonify({
+                'success': True,
+                'module': mod_name,
+                'fresh_import': True,
+                'new_endpoints': new_endpoints,
+                'note': 'Fresh module imported and registered. Routes are live immediately.',
+            })
+        # else: module dropped from sys.modules but its endpoints still
+        # live in app.view_functions — fall through to the rebind+swap
+        # path below using the freshly-imported `mod`.
+
+    # 2b. Reload the module — new function objects are created here.
+    else:
+        try:
+            importlib.reload(mod)
+        except Exception as ex:
+            return jsonify({'success': False,
+                            'error': 'importlib.reload failed: ' + str(ex),
+                            'module': mod_name}), 500
 
     # 3. Re-bind module globals (DATA_ROOT, etc.) by calling register() with
     #    add_url_rule no-op'd so it can't AssertionError on dup endpoints.

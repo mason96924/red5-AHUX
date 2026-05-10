@@ -932,3 +932,13 @@ End-to-end browser verification: Setup Guide link present, served directly at 7,
 - P3: Mean Radiant Temperature (MRT / t̄ᵣ) integration.
 - P3: Test P2 + V1.9 sun-trim on physical controller with real BACnet CSV objects.
 - P4: Clean up Emergent workspace.
+
+
+## 2026-02-09 — Repair Mode hot-reload fresh-import fallback (P0 fix)
+- Fixed `repair_reload_module()` in `upload_service.py` so it handles three cases:
+  (a) module already loaded → `importlib.reload()` + rebind + endpoint swap (existing behaviour)
+  (b) module never loaded AND no endpoints registered → `importlib.import_module()` + temporarily clear `_got_first_request` + `mod.register()` to attach NEW routes live (this is the case for brand-new bridge plug-ins uploaded via Repair Mode without a Flask restart)
+  (c) module dropped from sys.modules but endpoints still alive → fresh import + rebind+swap
+- Response body now includes `fresh_import: True` and `new_endpoints: [...]` when case (b) fires, so the Repair Mode UI can show "Routes are live immediately."
+- Tests: `tests/test_reload_module.py` updated; 24/24 PASS including a new fresh-import scenario that pops `band_service` from sys.modules + strips its url_map rules + view_functions, then verifies the endpoint re-registers cleanly.
+- Unblocks deployment of the 4 AHU Data Bridges (MQTT, Modbus, Webhook, WebSocket) without requiring an enteliWEB script restart.

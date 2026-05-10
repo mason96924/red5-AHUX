@@ -42,16 +42,42 @@ with app.test_client() as c:
     r = c.post('/api/repair/reload-module/app')
     test('2a. app refused', r.status_code == 403)
 
-    # --- 3. Not-loaded module → 404 ---
-    # weather_service.py is loaded by auto-discovery on app boot, so to test
-    # 404 we'd need an unloaded allow-list module.  Skip to direct test:
-    # remove a module from sys.modules and try.
+    # --- 3. Fresh-import path: module not in sys.modules, no live
+    #         endpoints — should import + register and return 200 with
+    #         fresh_import=True.  Pop band_service from sys.modules AND
+    #         strip its endpoints + url_map rules so we simulate a
+    #         brand-new plug-in.
     saved = sys.modules.pop('band_service', None)
+    band_eps = [ep for ep, fn in list(app.view_functions.items())
+                if getattr(fn, '__module__', '') == 'band_service']
+    for _ep in band_eps:
+        app.view_functions.pop(_ep, None)
+    # Strip url_map rules in place (werkzeug Rule objects are bound to a
+    # Map and can't be reassigned to a fresh Map without a RuntimeError).
+    _to_remove = [r for r in list(app.url_map._rules) if r.endpoint in band_eps]
+    for _r in _to_remove:
+        try:
+            app.url_map._rules.remove(_r)
+        except ValueError:
+            pass
+        _by_ep = getattr(app.url_map, '_rules_by_endpoint', None)
+        if _by_ep is not None and _r.endpoint in _by_ep:
+            _by_ep[_r.endpoint] = [x for x in _by_ep[_r.endpoint] if x is not _r]
+            if not _by_ep[_r.endpoint]:
+                del _by_ep[_r.endpoint]
+    app.url_map.update()
+
     r = c.post('/api/repair/reload-module/band_service')
-    test('3a. unloaded module returns 404', r.status_code == 404, str(r.status_code))
-    # Restore so subsequent tests can find it
-    if saved:
-        sys.modules['band_service'] = saved
+    j = r.get_json() or {}
+    test('3a. fresh-import returns 200', r.status_code == 200, str(r.status_code) + ' / ' + str(j))
+    test('3b. fresh_import flag set', j.get('fresh_import') is True, str(j))
+    test('3c. new_endpoints populated',
+         isinstance(j.get('new_endpoints'), list) and len(j['new_endpoints']) > 0,
+         str(j.get('new_endpoints')))
+    # The previously-stripped endpoints should now be back via fresh register().
+    for _ep in band_eps:
+        test('3d. endpoint ' + _ep + ' restored after fresh import',
+             _ep in app.view_functions)
 
     # --- 4. Happy path: reload upload_service after modifying disk file ---
     # The test setup loaded /app/archive/Red5-Studio-V1.9/upload_service.py

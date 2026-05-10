@@ -989,3 +989,51 @@ End-to-end browser verification: Setup Guide link present, served directly at 7,
 - All inbound-write `write_allowlist` arrays default empty → bridges are read-only on first boot.
 - No simulator mode auto-enabled. `simulator.py` ships but only runs if explicitly imported.
 - Repair Mode allow-lists synced across `repair_upload_plugin` / `repair_download_plugin` / `update.html`'s `REPAIR_FILES`.
+
+
+## 2026-02-10 — SEALED v1.9.4 bundle (final)
+**Bundle:** `red5_bundle.zip` · 1715.0 KB · 46 files · md5 `12fb206f19cb4f8fd8911b0b2fb77b2a` · reproducible via `python build_bundle.py`.
+
+### Delta over v1.9.3
+- **P1a BACnet ObjectID hardening (COMPLETE):**
+  - `bacnet_diag_service.py` (new plug-in) exposes `GET /api/bacnet/diagnose-config` and `GET /api/bacnet/diagnose-config/csv`. Scans `collector_config.json`, classifies every AHU's `csv_object` as ID / NAME / MISSING, returns JSON report + paste-ready TSV skeleton.
+  - `collector.py` `process_write_queue()` now emits a loud `⚠ NAME-based target 'X' detected — writes will silently fail` log entry before any name-based `dibt.Write()` attempt; records `target_kind: NAME|ID` on every write-results entry so the audit log surfaces the issue.
+  - New "BACnet Config Health" card on `/update` with Run Diagnose + Download TSV Skeleton buttons; color-coded summary banner; per-AHU rows showing ObjectID / NAME / MISSING pills.
+  - `collector.py` now honours `RED5_DISABLE_BG_THREADS=1` so test harnesses can import it without firing the live poll loop. Production behaviour unchanged.
+
+- **P1b i18n DOM rollout (COMPLETE):**
+  - 35 new dictionary keys in `js/i18n.js` covering Dashboard DOM strings (cards, modals, button labels, placeholders, tooltips, chart-overlay labels, error boundaries). Full translations for English / 简体中文 / 繁體中文 / 日本語 / 한국어.
+  - 35 DOM references wrapped through `window.t()` in `dashboard.html` + `dashboard-components.js`.
+  - Browser tab title now updates dynamically on language switch via `useEffect` watching `lang` + `i18nReady`.
+  - Intentional non-translations: pre-React fatal-error messages, universal keyboard shortcut `Ctrl + Shift + R`.
+
+### Test status (FINAL)
+- 24/24 reload-module
+- 8/8 headroom-math
+- 22/22 bacnet-diag
+- 47/47 bridges
+- 13/13 dashboard-grouping
+- 16/16 i18n-coverage
+- **Total: 130/130 ✅**
+
+### Items explicitly deferred / out of scope
+- **Phase B Sun Path** — DEFERRED INDEFINITELY. Pre-req is room-polygon raycasting (3D scene graph required); standalone sun-path widget without raycasting adds no diagnostic value.
+- **Controller redundancy (1:1 hot-swap)** — OUT OF SCOPE. Tracked in a separate project.
+- **MRT (Mean Radiant Temperature) integration** — OUT OF SCOPE. Beyond data interaction boundary.
+- **P2 Atomic Route Rollback** — DEFERRED to v1.10+. Not blocking current ops; fresh-import path is stable.
+- **P2 `dibt.Write` error-class verification** — DEFERRED. Currently swallows `AttributeError` to avoid crashing on older firmware; switch to `type(value).__name__ == 'Error'` requires controller-side regression that's not worth the risk for the sealed release.
+- **P1 Live BACnet ObjectID config edit on hardware** — REMAINS USER-BLOCKED. The diagnose + warning + UI tools now exist to make the manual fix obvious; the actual `collector_config.json` edit is operator-side.
+
+### Bundle deployment posture (SEALED)
+- All 4 data bridges ship `enabled: false` in `configs/bridges.json`.
+- All inbound-write `write_allowlist` arrays default empty (read-only).
+- `simulator.py` ships but does NOT auto-run (only fires if explicitly imported).
+- Repair Mode allow-lists synced across `repair_upload_plugin` / `repair_download_plugin` / `update.html`'s `REPAIR_FILES` for: 11 plug-in files + 5 UI files + 2 markdown docs + 1 config file.
+- Master Encryption Password `b%9P$MdeQP][` remains hardcoded in three places (landing, mapper, bundle decryption) — rotate before any external demo / handoff.
+
+### Reproducibility
+- Build: `cd /app/archive/Red5-Studio-V1.9 && python build_bundle.py`
+- Verify: `md5sum red5_bundle.zip` → `12fb206f19cb4f8fd8911b0b2fb77b2a`
+- All tests: see Test status above; each test file is standalone & deterministic.
+
+**STATUS: SEALED.** No further edits planned for v1.9.x. Next iteration will be a separate project workstream.

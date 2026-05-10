@@ -713,7 +713,19 @@ function _onRepairFileChange(e){
     // Map munged id back to actual name from REPAIR_FILES
     var picked = REPAIR_FILES.find(function(f){ return f.name.replace(/\W/g,'_') === match[1]; });
     if (!picked) return;
-    if (file.name !== picked.name && !confirm('Selected file name ('+file.name+') does not match expected ('+picked.name+'). Upload anyway as '+picked.name+'?')){
+    // STRICT name check: refuse rename-on-upload outright.  Picking
+    // "dashboard.html" on the "update.html" row used to offer to upload
+    // it AS update.html — that overwrote /root/data/update.html with
+    // dashboard contents and broke the /update page.  Now we just say
+    // no and require the operator to pick the correctly-named file.
+    if (file.name !== picked.name){
+        var status = document.getElementById('repairStatus');
+        if (status){
+            status.className = 'status-err';
+            status.textContent = 'File name mismatch — you picked "' + file.name + '" but this row replaces "' + picked.name + '". Re-name the file on disk (or pick a different file) and try again.';
+        } else {
+            alert('File name mismatch — you picked "' + file.name + '" but this row replaces "' + picked.name + '".');
+        }
         fi.value = '';
         return;
     }

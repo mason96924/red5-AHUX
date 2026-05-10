@@ -1106,6 +1106,7 @@ def repair_upload_plugin():
             'ws_bridge_service.py',
             'bridges_admin_service.py',
             '_bridges_lib.py',          # shared helper, not a plug-in (no register())
+            'bacnet_diag_service.py',   # BACnet config diagnose/remediate (added 2026-02-10)
         }
         ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                     'landing.html', 'psy_3d.html',
@@ -1184,6 +1185,7 @@ def repair_download_plugin(plugin_name):
         'webhook_bridge_service.py', 'mqtt_bridge_service.py',
         'modbus_bridge_service.py', 'ws_bridge_service.py',
         'bridges_admin_service.py', '_bridges_lib.py',
+        'bacnet_diag_service.py',
     }
     ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                 'landing.html', 'psy_3d.html',

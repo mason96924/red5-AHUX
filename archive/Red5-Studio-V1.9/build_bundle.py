@@ -36,6 +36,7 @@ ROOT_FILES = [
     'modbus_bridge_service.py',
     'ws_bridge_service.py',
     '_bridges_lib.py',
+    'bacnet_diag_service.py',
     'band_csv_generator.py',
 
     # UI / static.

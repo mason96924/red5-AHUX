@@ -24,6 +24,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
 import argparse
@@ -42,6 +43,27 @@ COLLECTOR_LOG_PATH = os.path.join(CONFIG_DIR, 'collector_log.json')
 WRITE_QUEUE_PATH    = os.path.join(CONFIG_DIR, 'write_queue.json')
 WRITE_RESULTS_PATH  = os.path.join(CONFIG_DIR, 'write_results.json')
 WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
+
+# BACnet ObjectID format: 2-4 letter type prefix followed by an integer
+# instance.  Valid prefixes per ASHRAE 135 + Delta Controls extensions:
+#   AV / AI / AO  — analog value / input / output
+#   BV / BI / BO  — binary value / input / output
+#   MSV / MSI / MSO — multistate value / input / output
+#   CSV           — character-string value (used for AHU command bundles)
+#   TL / SCH / FILE / DEV / PROG / LSP / TLP / EE / NC / GRP / CAL — misc.
+# Names like 'AHU01_SAT_SP' or 'OAT_SENSOR_01' are Object NAMES not IDs
+# and will silently fail at dibt.Write() — the firmware accepts the call
+# but the target reference doesn't resolve.  Detect at queue-drain time
+# and emit a loud log so the operator doesn't troubleshoot for hours.
+_BACNET_OBJECTID_RE = re.compile(
+    r'^(AV|AI|AO|BV|BI|BO|MSV|MSI|MSO|CSV|TL|SCH|FILE|DEV|PROG|LSP|TLP|EE|NC|GRP|CAL)\d+$'
+)
+
+
+def _is_bacnet_objectid(s):
+    """True iff ``s`` looks like a valid BACnet ObjectID (e.g. 'CSV1')."""
+    return bool(s and isinstance(s, str) and _BACNET_OBJECTID_RE.match(s))
+
 
 DEFAULT_INTERVAL = 5
 HISTORY_MAX = 60  # Ring buffer size (60 readings × 5s = 5 min)
@@ -102,9 +124,23 @@ def process_write_queue(mock_mode=False):
     results = _load_json_list(WRITE_RESULTS_PATH)
     processed = 0
     for entry in queue:
-        ref      = (entry.get('csv_object') or '') + '.Present_Value'
+        csv_obj  = entry.get('csv_object') or ''
+        ref      = csv_obj + '.Present_Value'
         csv_val  = entry.get('csv_value', '')
         equip    = entry.get('equip_name', '')
+        # Defensive BACnet target validation.  Object NAMES (e.g.
+        # 'AHU01_SAT_SP', 'OAT_SENSOR_01') will silently fail at
+        # dibt.Write — the firmware accepts the call but the reference
+        # doesn't resolve and the write is dropped.  Emit a loud log
+        # entry so the operator stops chasing ghost writes; record the
+        # diagnosis on the result so /api/write-results surfaces it too.
+        target_kind = 'ID' if _is_bacnet_objectid(csv_obj) else 'NAME'
+        if target_kind == 'NAME':
+            log(('[write-queue] \u26A0 NAME-based target {!r} detected '
+                 '(equip={}). BACnet writes require an ObjectID like CSV1, '
+                 'AV23, etc. — this write will silently fail. Edit '
+                 'collector_config.json on the controller to use the '
+                 'ObjectID.').format(csv_obj, equip))
         result_record = {
             'id':         entry.get('id'),
             'ts':         entry.get('ts'),
@@ -113,6 +149,7 @@ def process_write_queue(mock_mode=False):
             'csv_value':  csv_val,
             'equip_name': equip,
             'writes':     entry.get('writes'),
+            'target_kind': target_kind,
         }
         if mock_mode or 'dibt' not in globals():
             log('[write-queue MOCK] would write {} = {}'.format(ref, csv_val))
@@ -846,4 +883,9 @@ def main():
 
         time.sleep(interval)
 
-main()
+
+# Honour RED5_DISABLE_BG_THREADS=1 so test harnesses can import this
+# module without firing up the live poll loop.  The controller never
+# sets this env var so production behaviour is unchanged.
+if os.environ.get('RED5_DISABLE_BG_THREADS') != '1':
+    main()

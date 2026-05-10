@@ -1079,22 +1079,39 @@ def repair_upload_plugin():
         name = os.path.basename(name)
 
         # Allow-list — narrow attack surface.  These map to a specific dest root.
+        # NOTE: keep in sync with the corresponding lists in repair_download_plugin()
+        # and repair_reload_module() below.
         plugin_files = {
             'upload_service.py',
             'weather_service.py',
             'band_service.py',
             'telemetry_service.py',
+            # AHU data bridges (added 2026-02-09):
+            'webhook_bridge_service.py',
+            'mqtt_bridge_service.py',
+            'modbus_bridge_service.py',
+            'ws_bridge_service.py',
+            'bridges_admin_service.py',
+            '_bridges_lib.py',          # shared helper, not a plug-in (no register())
         }
         ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
-                    'landing.html', 'psy_3d.html'}
+                    'landing.html', 'psy_3d.html',
+                    # docs + configs (added 2026-02-09):
+                    'data_bridges_guide.md', 'configs/bridges.json'}
         if name == 'app.py':
             return jsonify({'success': False, 'error': 'app.py is the bootloader — refused. Replace via enteliWEB script editor.'}), 403
         if name in plugin_files:
             dest_root = PLUGINS_ROOT
             dest_label = 'pgpy'
         elif name in ui_files:
-            dest_root = DATA_ROOT
-            dest_label = 'data'
+            # configs/bridges.json lives in DATA_ROOT/configs/ — preserve the subdir.
+            if name.startswith('configs/'):
+                dest_root  = os.path.join(DATA_ROOT, 'configs')
+                dest_label = 'data/configs'
+                name       = os.path.basename(name)
+            else:
+                dest_root = DATA_ROOT
+                dest_label = 'data'
         else:
             return jsonify({'success': False, 'error': 'Filename not in repair allow-list', 'allowed': sorted(plugin_files | ui_files)}), 403
 
@@ -1150,21 +1167,38 @@ def repair_download_plugin(plugin_name):
     plugin_files = {
         'upload_service.py', 'weather_service.py',
         'band_service.py', 'telemetry_service.py',
+        'webhook_bridge_service.py', 'mqtt_bridge_service.py',
+        'modbus_bridge_service.py', 'ws_bridge_service.py',
+        'bridges_admin_service.py', '_bridges_lib.py',
     }
     ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
-                'landing.html', 'psy_3d.html'}
-    name = os.path.basename(plugin_name or '')
+                'landing.html', 'psy_3d.html',
+                'data_bridges_guide.md', 'configs/bridges.json'}
+    name = (plugin_name or '').strip()
+    # Preserve configs/ subpath; basename-strip everything else.
+    if name not in ui_files:
+        name = os.path.basename(name)
     if name == 'app.py':
         return jsonify({'success': False, 'error': 'app.py refused (bootloader)'}), 403
     if name in plugin_files:
         path = os.path.join(PLUGINS_ROOT, name)
     elif name in ui_files:
-        path = os.path.join(DATA_ROOT, name)
+        if name.startswith('configs/'):
+            path = os.path.join(DATA_ROOT, name)
+        else:
+            path = os.path.join(DATA_ROOT, name)
     else:
         return jsonify({'success': False, 'error': 'not in repair allow-list'}), 403
     if not os.path.isfile(path):
         return jsonify({'success': False, 'error': 'file not on disk', 'path': path}), 404
-    mime = 'text/x-python' if name.endswith('.py') else 'text/html'
+    if name.endswith('.py'):
+        mime = 'text/x-python'
+    elif name.endswith('.json'):
+        mime = 'application/json'
+    elif name.endswith('.md'):
+        mime = 'text/markdown'
+    else:
+        mime = 'text/html'
     return _no_cache(send_from_directory(os.path.dirname(path),
                                          os.path.basename(path),
                                          mimetype=mime, as_attachment=False))
@@ -1197,6 +1231,9 @@ def repair_reload_module(plugin_name):
     plugin_files = {
         'upload_service.py', 'weather_service.py',
         'band_service.py', 'telemetry_service.py',
+        'webhook_bridge_service.py', 'mqtt_bridge_service.py',
+        'modbus_bridge_service.py', 'ws_bridge_service.py',
+        'bridges_admin_service.py',
     }
     name = os.path.basename(plugin_name or '').strip()
     if not name.endswith('.py'):

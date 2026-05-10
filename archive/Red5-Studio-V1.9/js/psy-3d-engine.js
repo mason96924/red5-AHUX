@@ -1139,6 +1139,20 @@ global.initPsy3D = function(container, opts){
         'padding:6px 10px;font-size:9px;color:#e2e8f0;font-family:inherit;'+
         'backdrop-filter:blur(14px);display:none;min-width:170px;'+
         'box-shadow:0 6px 18px rgba(0,0,0,.45)';
+      // Compute B1-B10's SA-enthalpy range once.  Opt-SA stays a true
+      // theoretical floor only when the envelope [optMin, optMax] FULLY
+      // ENCLOSES this range — otherwise the clamp can force Opt-SA to do
+      // more work than B1-B10 in some bands and the "floor" claim breaks.
+      var _bandHsaRange = (function(){
+        var lo = Infinity, hi = -Infinity;
+        for (var i = 0; i < BANDS.length; i++){
+          var b = BANDS[i];
+          var h = enthalpy(b.sa_t, getW(b.sa_t, b.sa_rh));
+          if (h < lo) lo = h;
+          if (h > hi) hi = h;
+        }
+        return {lo: lo, hi: hi};
+      })();
       optCfg.innerHTML =
         '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#c084fc;margin-bottom:6px">Opt-SA envelope (kJ/kg)</div>'+
         '<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
@@ -1150,22 +1164,49 @@ global.initPsy3D = function(container, opts){
           '<span style="width:28px;color:#c084fc;font-weight:700">max</span>'+
           '<input id="p3-opt-max" type="range" min="20" max="80" step="0.5" value="'+_optMaxH+'" style="flex:1;accent-color:#c084fc">'+
           '<span id="p3-opt-max-v" style="width:32px;text-align:right;font-variant-numeric:tabular-nums">'+_optMaxH.toFixed(1)+'</span>'+
-        '</label>';
+        '</label>'+
+        '<div id="p3-opt-warn" data-testid="opt-sa-floor-warn" style="display:none;margin-top:6px;padding:4px 7px;'+
+          'background:rgba(120,53,15,.55);border:1px solid #f59e0b;border-radius:4px;'+
+          'color:#fcd34d;font-size:8.5px;line-height:1.45;letter-spacing:.02em;cursor:help" '+
+          'title="Opt-SA stays a true energy floor only when [min, max] fully encloses B1-B10\u2019s SA-enthalpy range ('+
+          _bandHsaRange.lo.toFixed(1)+'\u2013'+_bandHsaRange.hi.toFixed(1)+' kJ/kg). Inside that range, the clamp can force Opt-SA to do MORE work than B1-B10 in some bands.">'+
+          '<span style="font-weight:900">\u26A0 NOT A TRUE FLOOR</span> '+
+          '<span id="p3-opt-warn-detail"></span>'+
+        '</div>';
       $('#p3-overlay2d').appendChild(optCfg);
       var minInp = optCfg.querySelector('#p3-opt-min');
       var maxInp = optCfg.querySelector('#p3-opt-max');
       var minV   = optCfg.querySelector('#p3-opt-min-v');
       var maxV   = optCfg.querySelector('#p3-opt-max-v');
+      var warnEl = optCfg.querySelector('#p3-opt-warn');
+      var warnDt = optCfg.querySelector('#p3-opt-warn-detail');
+      function _updateOptWarn(){
+        // True floor requires optMin <= bandHsaRange.lo AND optMax >= bandHsaRange.hi.
+        var minOk = _optMinH <= _bandHsaRange.lo + 0.01;
+        var maxOk = _optMaxH >= _bandHsaRange.hi - 0.01;
+        if (minOk && maxOk) {
+          warnEl.style.display = 'none';
+          return;
+        }
+        var bits = [];
+        if (!minOk) bits.push('min &gt; '+_bandHsaRange.lo.toFixed(1));
+        if (!maxOk) bits.push('max &lt; '+_bandHsaRange.hi.toFixed(1));
+        warnDt.innerHTML = '\u2014 envelope inside B1\u2013B10 range ('+bits.join(', ')+'). Opt-SA may exceed B1\u2013B10 in some bands.';
+        warnEl.style.display = 'block';
+      }
+      _updateOptWarn();
       minInp.addEventListener('input', function(){
         _optMinH = parseFloat(this.value);
         if (_optMinH > _optMaxH - 1) { _optMinH = _optMaxH - 1; this.value = _optMinH; }
         minV.textContent = _optMinH.toFixed(1);
+        _updateOptWarn();
         render2DChart();
       });
       maxInp.addEventListener('input', function(){
         _optMaxH = parseFloat(this.value);
         if (_optMaxH < _optMinH + 1) { _optMaxH = _optMinH + 1; this.value = _optMaxH; }
         maxV.textContent = _optMaxH.toFixed(1);
+        _updateOptWarn();
         render2DChart();
       });
     }

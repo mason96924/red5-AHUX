@@ -613,22 +613,50 @@ function _renderRepairList(){
     box.innerHTML = '';
     REPAIR_FILES.forEach(function(f){
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#020617;border:1px solid #1e293b;border-radius:6px';
+        row.style.cssText = 'display:flex;flex-direction:column;padding:8px 10px;background:#020617;border:1px solid #1e293b;border-radius:6px';
         var color = f.kind === 'plugin' ? '#a5b4fc' : '#86efac';
         var bg    = f.kind === 'plugin' ? '#312e81' : '#064e3b';
-        row.innerHTML = ''
+        var safeId = f.name.replace(/\W/g,'_');
+        var head = document.createElement('div');
+        head.style.cssText = 'display:flex;align-items:center;gap:8px';
+        head.innerHTML = ''
             + '<span style="display:inline-block;padding:2px 6px;border-radius:3px;background:' + bg + ';color:' + color + ';font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">' + f.kind + '</span>'
             + '<span style="flex:1"><span style="color:#e2e8f0;font-size:12px;font-weight:700">' + f.name + '</span><span style="color:#64748b;font-size:10px;display:block;margin-top:1px">' + f.desc + '</span></span>'
-            + '<input type="file" accept=".py,.html" id="rf_' + f.name.replace(/\W/g,'_') + '" style="display:none">'
+            + '<input type="file" accept=".py,.html" id="rf_' + safeId + '" style="display:none">'
             + '<button class="btn" data-act="pick" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em">Replace</button>'
             + (f.kind === 'plugin'
                 ? '<button class="btn" data-act="reload" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#312e81;color:#a5b4fc;border:1px solid #4338ca;text-transform:uppercase;letter-spacing:.05em" title="Hot-reload — re-imports the module without restarting Flask">Reload</button>'
                 : '')
             + '<a href="#" data-act="dl" data-name="' + f.name + '" class="btn" style="padding:6px 10px;font-size:10px;background:#020617;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em;text-decoration:none">View</a>';
+        row.appendChild(head);
+        // Per-row badge slot: hidden by default; populated when /api/repair/
+        // reload-module responds with fresh_import:true (i.e., a brand-new
+        // plug-in just attached its routes to the running Flask app).
+        var badge = document.createElement('div');
+        badge.id = 'rb_' + safeId;
+        badge.dataset.name = f.name;
+        badge.style.cssText = 'display:none;margin-top:8px;padding:6px 10px;background:#022c22;border:1px solid #34d399;border-radius:6px;color:#86efac;font-size:10px;line-height:1.55;font-family:Menlo,Consolas,monospace';
+        row.appendChild(badge);
         box.appendChild(row);
     });
     box.addEventListener('click', _onRepairClick);
     box.addEventListener('change', _onRepairFileChange);
+}
+
+function _showFreshBadge(name, newEndpoints){
+    var b = document.getElementById('rb_' + name.replace(/\W/g,'_'));
+    if (!b) return;
+    var eps = newEndpoints || [];
+    var epHtml = eps.length
+        ? eps.map(function(e){ return '<code style="background:#064e3b;color:#a7f3d0;padding:1px 5px;border-radius:3px;margin:0 2px">' + e + '</code>'; }).join(' ')
+        : '<span style="color:#fbbf24">(register() ran but reported no new endpoints)</span>';
+    b.innerHTML = ''
+        + '<span style="color:#34d399;font-weight:700;letter-spacing:.05em">\u2713 FRESH IMPORT</span> '
+        + '<span style="color:#86efac">'
+        + eps.length + ' new route' + (eps.length === 1 ? '' : 's')
+        + ' live (no Flask restart needed)</span><br>'
+        + epHtml;
+    b.style.display = 'block';
 }
 function _onRepairClick(e){
     var btn = e.target.closest('[data-act]'); if (!btn) return;
@@ -659,8 +687,14 @@ function _doRepairReload(name){
         .then(function(rs){
             if (rs.ok && rs.j && rs.j.success){
                 status.className = 'status-ok';
-                var n = (rs.j.swapped_endpoints || []).length;
-                status.textContent = 'OK: hot-reloaded ' + name + ' — swapped ' + n + ' endpoint(s): ' + (rs.j.swapped_endpoints || []).join(', ');
+                if (rs.j.fresh_import === true){
+                    var ne = (rs.j.new_endpoints || []);
+                    status.textContent = 'OK: fresh-imported ' + name + ' — ' + ne.length + ' new route(s) now live: ' + ne.join(', ');
+                    _showFreshBadge(name, ne);
+                } else {
+                    var n = (rs.j.swapped_endpoints || []).length;
+                    status.textContent = 'OK: hot-reloaded ' + name + ' — swapped ' + n + ' endpoint(s): ' + (rs.j.swapped_endpoints || []).join(', ');
+                }
             } else {
                 status.className = 'status-err';
                 status.textContent = 'Reload error: ' + ((rs.j && rs.j.error) || ('HTTP ' + rs.status));
@@ -714,8 +748,14 @@ function _doRepairUpload(name, file){
                         .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); })
                         .then(function(rl){
                             if (rl.ok && rl.j && rl.j.success){
-                                var n = (rl.j.swapped_endpoints || []).length;
-                                status.textContent = 'OK: replaced + hot-reloaded ' + name + ' — ' + n + ' endpoint(s) now serve the new code, no Flask restart needed.';
+                                if (rl.j.fresh_import === true){
+                                    var ne = (rl.j.new_endpoints || []);
+                                    status.textContent = 'OK: replaced + fresh-imported ' + name + ' — ' + ne.length + ' new route(s) now live, no Flask restart needed.';
+                                    _showFreshBadge(name, ne);
+                                } else {
+                                    var n = (rl.j.swapped_endpoints || []).length;
+                                    status.textContent = 'OK: replaced + hot-reloaded ' + name + ' — ' + n + ' endpoint(s) now serve the new code, no Flask restart needed.';
+                                }
                             } else {
                                 status.className = 'status-info';
                                 status.textContent = 'Replace OK, reload failed: ' + ((rl.j && rl.j.error) || ('HTTP ' + rl.status)) + '. Restart Flask manually to activate the new module.';

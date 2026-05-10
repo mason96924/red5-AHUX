@@ -942,3 +942,50 @@ End-to-end browser verification: Setup Guide link present, served directly at 7,
 - Response body now includes `fresh_import: True` and `new_endpoints: [...]` when case (b) fires, so the Repair Mode UI can show "Routes are live immediately."
 - Tests: `tests/test_reload_module.py` updated; 24/24 PASS including a new fresh-import scenario that pops `band_service` from sys.modules + strips its url_map rules + view_functions, then verifies the endpoint re-registers cleanly.
 - Unblocks deployment of the 4 AHU Data Bridges (MQTT, Modbus, Webhook, WebSocket) without requiring an enteliWEB script restart.
+
+
+## 2026-02-10 — Sealed v1.9.3 bundle
+**Bundle:** `red5_bundle.zip` · 1707.6 KB · 45 files · `python build_bundle.py` reproducible.
+
+### Bug fixes / hardening
+- **Repair Mode `data_bridges_guide.md` 404** — link now points to `/api/repair/download-plugin/...` instead of the relative path Flask wouldn't serve. Smoke-tested (4/4 pass).
+- **Headroom math tightened** in `upload_service.py`:
+  - Finalize check: was `max(5 MB, zip × 2)` → now `max(1 MB, max_zip_member + 256 KB)`.
+  - Chunk pre-flight: was `max(5 MB, total × 2)` → now `max(1 MB, total + 1 MB)`.
+  - Unblocks bundle deploys on controllers with 4–5 MB free disk. Tests: 8/8.
+- **Repair Mode filename-mismatch silent rename removed.** Used to offer "Upload anyway as X?" which let `dashboard.html` overwrite `update.html` on confirm. Now refuses with a red error and forces correct filename pick.
+
+### New features
+- **Per-row "FRESH IMPORT" badge** in `update.html` — green slab under each plug-in row lights up listing newly registered endpoints when a brand-new module was hot-deployed (`fresh_import: true` response from `/api/repair/reload-module/<name>`).
+- **Centrifugal-fan M | R/S pill ported to dashboard** (`dashboard.html` lines 3204–3215). Previously only existed in the mapper. Now driven by real telemetry (`isRunning && !isAlarm`) and click-to-toggle writes `SAFM` to BACnet (override target via schema's `a.pill_write_target`).
+- **Sensor co-location grouping** in dashboard's `groupedPoints` — points whose label matches a hardcoded SENSOR_GROUPS entry now only merge into the group if they share the anchor's x/y within ±0.5 percentage units. Lets operators break a point (e.g., SAFM) out of its hardcoded group by simply dragging it elsewhere in the mapper. Tests: 13/13.
+- **Opt-SA "NOT A TRUE FLOOR" warning chip** under the envelope sliders. Computes B1–B10 SA-enthalpy range at render time (currently 25.8 – 52.9 kJ/kg) and fires when `[optMinH, optMaxH]` doesn't fully enclose it.
+
+### Documentation
+- `opt_sa_insight.md` — 6th-grader-mode explainer for Opt-SA strategy (fence/menu mental model, backpack analogy for enthalpy, 27 kJ/kg / 162 kW scaling, when the floor-warning fires, three-rule cheat sheet). Wired into the bundle, the Repair Mode allow-list (upload + download), and a new Repair Mode UI row.
+
+### Infrastructure
+- `build_bundle.py` — deterministic, re-runnable zip builder. Skips `__pycache__`, `tests/`, `*.pyc`. Reports missing source files. Replaces ad-hoc manual zipping.
+
+### Test status
+- 24/24 reload-module tests pass.
+- 8/8 headroom-math tests pass.
+- 13/13 dashboard-grouping tests pass.
+- 47/47 bridges tests pass.
+- **Total: 92/92 ✅**
+
+### Known remaining items (deferred to v1.10)
+- P1 user-blocked: `collector_config.json` BACnet ObjectID edit on live hardware (writes silently failing).
+- P1: i18n DOM translation rollout in `dashboard.html` / `dashboard-components.js`.
+- P2: Atomic Route Rollback — inspect `app.url_map` after each `register()` to undo partial route additions on failure.
+- P2: Phase B Sun Path room-polygon drawing tool in `equipment_mapper.html`.
+- P2: `dibt.Write` error verification in `collector.py`.
+- P3: Controller redundancy architecture (1:1 hot-swap).
+- P3: Mean Radiant Temperature (MRT / t̄ᵣ) integration.
+- P4: Workspace cleanup.
+
+### Deployment posture for the sealed bundle
+- All 4 bridges (MQTT / Modbus / Webhook / WebSocket) ship **disabled** in `configs/bridges.json` — operator must explicitly enable + configure before any external traffic flows.
+- All inbound-write `write_allowlist` arrays default empty → bridges are read-only on first boot.
+- No simulator mode auto-enabled. `simulator.py` ships but only runs if explicitly imported.
+- Repair Mode allow-lists synced across `repair_upload_plugin` / `repair_download_plugin` / `update.html`'s `REPAIR_FILES`.

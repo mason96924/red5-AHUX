@@ -586,14 +586,25 @@ function downloadBundle(mode) {
 
 // ---------- Repair Mode (out-of-band single-file plug-in upload) ----------
 var REPAIR_FILES = [
-    {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status', kind: 'plugin'},
+    // -- Core plug-ins --
+    {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status + Repair Mode', kind: 'plugin'},
     {name: 'weather_service.py',   label: 'Weather Service',   desc: 'Open-Meteo + tomorrow forecast routes',           kind: 'plugin'},
     {name: 'band_service.py',      label: 'Band Service',      desc: 'B1-B10 CSV generator + guide download',           kind: 'plugin'},
     {name: 'telemetry_service.py', label: 'Telemetry Service', desc: '/api/data, /api/write-point, collector config',   kind: 'plugin'},
-    {name: 'update.html',          label: 'update.html',       desc: 'This page',                                       kind: 'ui'},
+    // -- AHU data bridges (added 2026-02-09) --
+    {name: '_bridges_lib.py',           label: '_bridges_lib.py',           desc: 'Shared helpers (telemetry tap, write-queue ACL, status registry) — replace BEFORE the bridges below', kind: 'plugin'},
+    {name: 'bridges_admin_service.py',  label: 'Bridges Admin',             desc: '/api/bridges/{config,status,test} endpoints',                  kind: 'plugin'},
+    {name: 'webhook_bridge_service.py', label: 'Webhook Bridge',            desc: 'POST telemetry to a URL (stdlib only, no extra deps)',         kind: 'plugin'},
+    {name: 'mqtt_bridge_service.py',    label: 'MQTT Bridge',               desc: 'Publish/subscribe (needs paho-mqtt — graceful no-op if missing)', kind: 'plugin'},
+    {name: 'modbus_bridge_service.py',  label: 'Modbus TCP Bridge',         desc: 'Expose telemetry as holding registers (needs pymodbus)',       kind: 'plugin'},
+    {name: 'ws_bridge_service.py',      label: 'WebSocket Bridge',          desc: 'Push telemetry to live clients (needs websockets)',            kind: 'plugin'},
+    // -- UI / static files --
+    {name: 'update.html',          label: 'update.html',       desc: 'This page (Repair Mode + Data Bridges UI)',       kind: 'ui'},
     {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
     {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
     {name: 'landing.html',         label: 'landing.html',      desc: 'Landing page',                                    kind: 'ui'},
+    {name: 'data_bridges_guide.md',label: 'data_bridges_guide.md', desc: 'Plain-language Data Bridges setup guide',     kind: 'ui'},
+    {name: 'configs/bridges.json', label: 'bridges.json',      desc: 'Bridge config (broker URLs, write_allowlist, etc.)', kind: 'ui'},
 ];
 
 function _renderRepairList(){

@@ -1110,7 +1110,8 @@ def repair_upload_plugin():
         ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                     'landing.html', 'psy_3d.html',
                     # docs + configs (added 2026-02-09):
-                    'data_bridges_guide.md', 'configs/bridges.json'}
+                    'data_bridges_guide.md', 'opt_sa_insight.md',
+                    'configs/bridges.json'}
         if name == 'app.py':
             return jsonify({'success': False, 'error': 'app.py is the bootloader — refused. Replace via enteliWEB script editor.'}), 403
         if name in plugin_files:
@@ -1186,7 +1187,8 @@ def repair_download_plugin(plugin_name):
     }
     ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                 'landing.html', 'psy_3d.html',
-                'data_bridges_guide.md', 'configs/bridges.json'}
+                'data_bridges_guide.md', 'opt_sa_insight.md',
+                'configs/bridges.json'}
     name = (plugin_name or '').strip()
     # Preserve configs/ subpath; basename-strip everything else.
     if name not in ui_files:

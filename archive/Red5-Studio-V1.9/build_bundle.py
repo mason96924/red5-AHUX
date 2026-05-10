@@ -52,6 +52,7 @@ ROOT_FILES = [
     'control_algorithms.md',
     'control_strategy_insight.md',
     'control_strategy_insight.ko.md',
+    'opt_sa_insight.md',
 ]
 
 # Subdir trees to include verbatim.

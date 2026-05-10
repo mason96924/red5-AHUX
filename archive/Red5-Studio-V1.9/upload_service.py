@@ -468,14 +468,20 @@ def _finalize_bundle_from_disk(spool_path, password):
             return {'success': False, 'error': 'File is not a valid zip archive (after decryption).'}, 400
 
         # Pre-flight: refuse the deploy if free space is dangerously low.
-        # Headroom calibrated to the actual zip size (zip is on disk here):
-        # peak disk use during _extract_zip_streaming is ~zip_size + extracted_files
-        # (~1.1× zip).  Floor at 5 MB so tiny bundles still get a sane minimum.
+        # Headroom calibrated to the ACTUAL extraction worst case rather
+        # than a blanket 2× zip-size: _extract_zip_streaming() writes
+        # entries one at a time via zf.open() so peak additional disk
+        # use is bounded by the LARGEST single member (existing files
+        # are overwritten in place; extraction does not duplicate the
+        # whole zip).  Plus a 256 KB safety margin and a 1 MB floor so
+        # tiny bundles still get a sane minimum.
         try:
-            _zip_size = os.path.getsize(zip_path)
-        except OSError:
-            _zip_size = 0
-        _min_need = max(5 * 1024 * 1024, _zip_size * 2)
+            with zipfile.ZipFile(zip_path, 'r') as _zf_probe:
+                _max_member = max((_i.file_size for _i in _zf_probe.infolist()),
+                                  default=0)
+        except (zipfile.BadZipFile, OSError):
+            _max_member = 0
+        _min_need = max(1 * 1024 * 1024, _max_member + 256 * 1024)
         ok, free_bytes, free_inodes = _check_free_space(DATA_ROOT,
                                                        min_bytes=_min_need,
                                                        min_inodes=400)
@@ -491,6 +497,7 @@ def _finalize_bundle_from_disk(spool_path, password):
                     'free_bytes': free_bytes,
                     'free_inodes': free_inodes,
                     'required_bytes': _min_need,
+                    'largest_member': _max_member,
                 }, 507
 
         extracted, skipped, errors = _extract_zip_streaming(zip_path)
@@ -556,15 +563,21 @@ def upload_bundle_chunk():
         os.makedirs(UPLOADS_SCRATCH_DIR, exist_ok=True)
         spool = _spool_path(upload_id)
 
-        # First chunk: pre-flight free space (need 3x total_size for safety
-        # — encrypted spool + plain zip + extracted files).
+        # First chunk: pre-flight free space.  We need room for the
+        # spool itself (= total_size) plus a working margin for the
+        # eventual extract step.  Using `total_size + 1 MB` is correct
+        # for plain zips — encryption is detected at finalize-time and
+        # decrypt-into-side-file happens lazily; if there's not enough
+        # room then, the finalize endpoint refuses cleanly with a 507.
+        # The old `max(5 MB, total_size * 2)` was way too pessimistic
+        # for tiny bundles on a tight controller.  Floor 1 MB.
         if chunk_index == 0:
             try:
                 if os.path.exists(spool):
                     os.unlink(spool)
             except OSError:
                 pass
-            need = max(5 * 1024 * 1024, total_size * 2)
+            need = max(1 * 1024 * 1024, total_size + 1 * 1024 * 1024)
             ok, free_bytes, free_inodes = _check_free_space(DATA_ROOT, min_bytes=need, min_inodes=400)
             if not ok:
                 _purge_uploads_scratch()

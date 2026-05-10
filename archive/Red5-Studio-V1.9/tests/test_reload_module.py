@@ -88,19 +88,19 @@ with app.test_client() as c:
     # the identity afterwards (not just left a stale ref behind).
     pre_reload_fn = app.view_functions.get('upload_bundle_chunk')
     test('4-pre. captured pre-reload fn', pre_reload_fn is not None)
-    original_floor = '5 * 1024 * 1024'   # current value in the source
+    original_marker = 'total_size + 1 * 1024 * 1024'   # current value in the source
     src_path = us.__file__   # absolute path to the live .py
     src_text = open(src_path).read()
     test('4a. live module file path resolves',
          os.path.isfile(src_path), src_path)
-    test('4b. original floor present in source',
-         original_floor in src_text)
+    test('4b. original marker present in source',
+         original_marker in src_text)
 
-    # Mutate the file: replace the floor value with a sentinel.
-    sentinel_value = '9876543'
+    # Mutate the file: replace the headroom expression with a sentinel.
+    sentinel_value = 'total_size + 9876543'
     new_text = src_text.replace(
-        'need = max(' + original_floor + ', total_size * 2)',
-        'need = max(' + sentinel_value + ', total_size * 2)',
+        original_marker,
+        sentinel_value,
         1
     )
     test('4c. mutation produced different source', new_text != src_text)

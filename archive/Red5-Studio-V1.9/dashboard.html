@@ -2928,22 +2928,48 @@
                         const groupedPoints = [];
                         {
                             const processed = new Set();
+                            // Treat a point as "co-located" with the group's
+                            // first candidate when both x and y match within
+                            // 0.5 percentage units.  This lets the operator
+                            // BREAK A POINT OUT of its hardcoded group simply
+                            // by dragging it to a different location in the
+                            // mapper — e.g., placing SAFM as a standalone
+                            // toggle near the fan instead of inside the SA
+                            // databox.  Without this guard, every label that
+                            // matches a hardcoded group would be force-merged
+                            // into that group regardless of where the operator
+                            // placed it.
+                            const POS_EPS = 0.5;
                             SENSOR_GROUPS.forEach(g => {
-                                const groupIndices = [];
+                                // Collect ALL label/regex matches first.
+                                const candidates = [];
                                 schemaPoints.forEach((p, i) => {
-                                    if (!processed.has(i) && (g.match.includes(p.label) || (g.matchRegex && g.matchRegex.test(p.label)))) {
-                                        groupIndices.push(i); processed.add(i);
+                                    if (processed.has(i)) return;
+                                    if (g.match.includes(p.label) || (g.matchRegex && g.matchRegex.test(p.label))) {
+                                        candidates.push(i);
                                     }
                                 });
-                                if (groupIndices.length > 0) {
-                                    const firstPt = schemaPoints[groupIndices[0]];
-                                    groupedPoints.push({
-                                        isGroup: true, groupId: g.id, defaultName: g.defaultName,
-                                        indices: groupIndices, points: groupIndices.map(i => schemaPoints[i]),
-                                        x: firstPt.x, y: firstPt.y, scale: firstPt.scale || 1.0,
-                                        name: (firstPt.name && firstPt.name !== firstPt.label) ? firstPt.name : g.defaultName
-                                    });
-                                }
+                                if (candidates.length === 0) return;
+                                // Only points co-located with the first
+                                // candidate join the group; the rest fall
+                                // through to PHASE 2 as standalone pills.
+                                const anchor = schemaPoints[candidates[0]];
+                                const groupIndices = candidates.filter(i => {
+                                    const p = schemaPoints[i];
+                                    return p.x != null && p.y != null
+                                        && anchor.x != null && anchor.y != null
+                                        && Math.abs(p.x - anchor.x) < POS_EPS
+                                        && Math.abs(p.y - anchor.y) < POS_EPS;
+                                });
+                                if (groupIndices.length === 0) return;
+                                groupIndices.forEach(i => processed.add(i));
+                                const firstPt = schemaPoints[groupIndices[0]];
+                                groupedPoints.push({
+                                    isGroup: true, groupId: g.id, defaultName: g.defaultName,
+                                    indices: groupIndices, points: groupIndices.map(i => schemaPoints[i]),
+                                    x: firstPt.x, y: firstPt.y, scale: firstPt.scale || 1.0,
+                                    name: (firstPt.name && firstPt.name !== firstPt.label) ? firstPt.name : g.defaultName
+                                });
                             });
                             schemaPoints.forEach((p, i) => {
                                 if (!processed.has(i)) {

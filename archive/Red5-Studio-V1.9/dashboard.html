@@ -1640,33 +1640,72 @@
                                     className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-white shadow-lg' : ui.btnToggle)}`}
                                 >{sweetSpotRange.lo}-{sweetSpotRange.hi}% RH</button>
                             </div>
-                            {showGivoni && showSweetSpot && (
-                                <div data-testid="sweet-spot-range" className={`mt-2 flex items-center gap-2 text-[9px] font-mono ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>
-                                    <span className="uppercase tracking-wider font-bold">RH band</span>
-                                    <input type="number" min="0" max="100" step="1" value={sweetSpotRange.lo}
-                                        onChange={(e) => {
-                                            const v = parseInt(e.target.value, 10);
-                                            if (Number.isFinite(v) && v >= 0 && v < sweetSpotRange.hi) setSweetSpotRange({ lo: v, hi: sweetSpotRange.hi });
-                                        }}
-                                        data-testid="sweet-spot-lo"
-                                        className={`w-12 px-1.5 py-1 rounded border text-center font-mono font-black ${theme==='dark'?'bg-slate-800 border-slate-700 text-emerald-300':'bg-white border-slate-300 text-emerald-700'}`} />
-                                    <span>%</span>
-                                    <span>—</span>
-                                    <input type="number" min="0" max="100" step="1" value={sweetSpotRange.hi}
-                                        onChange={(e) => {
-                                            const v = parseInt(e.target.value, 10);
-                                            if (Number.isFinite(v) && v <= 100 && v > sweetSpotRange.lo) setSweetSpotRange({ lo: sweetSpotRange.lo, hi: v });
-                                        }}
-                                        data-testid="sweet-spot-hi"
-                                        className={`w-12 px-1.5 py-1 rounded border text-center font-mono font-black ${theme==='dark'?'bg-slate-800 border-slate-700 text-emerald-300':'bg-white border-slate-300 text-emerald-700'}`} />
-                                    <span>%</span>
-                                    <button
-                                        data-testid="sweet-spot-reset"
-                                        onClick={() => setSweetSpotRange({ lo: 40, hi: 60 })}
-                                        title="Reset to ASHRAE 55 default (40-60%)"
-                                        className={`ml-auto px-1.5 py-0.5 rounded text-[8px] uppercase font-black tracking-wider transition-all ${theme==='dark'?'text-slate-500 hover:text-emerald-300 hover:bg-slate-800':'text-slate-500 hover:text-emerald-700 hover:bg-slate-100'}`}>Reset</button>
-                                </div>
-                            )}
+                            {showGivoni && showSweetSpot && (() => {
+                                // Dual-handle RH range slider matching the
+                                // dry-bulb axis-settings widget below.  Track
+                                // is bounded [30, 70]% so the strip can never
+                                // configure outside the operator's expected
+                                // comfort regime; min gap of 2% prevents the
+                                // handles from collapsing.
+                                const ABS_LO = 30, ABS_HI = 70, GAP = 2;
+                                const pct = (v) => ((v - ABS_LO) / (ABS_HI - ABS_LO)) * 100;
+                                const pickHandle = (clientX, trackEl) => {
+                                    const r = trackEl.getBoundingClientRect();
+                                    const v = ABS_LO + ((clientX - r.left) / r.width) * (ABS_HI - ABS_LO);
+                                    return Math.abs(v - sweetSpotRange.lo) <= Math.abs(v - sweetSpotRange.hi) ? 'lo' : 'hi';
+                                };
+                                const startDrag = (e, handle) => {
+                                    e.preventDefault();
+                                    const trackEl = e.currentTarget.closest('[data-testid="sweet-spot-range"]');
+                                    const r = trackEl.getBoundingClientRect();
+                                    const which = handle || pickHandle(e.clientX, trackEl);
+                                    const onMove = (mv) => {
+                                        const raw = ABS_LO + ((mv.clientX - r.left) / r.width) * (ABS_HI - ABS_LO);
+                                        const v = Math.round(Math.max(ABS_LO, Math.min(ABS_HI, raw)));
+                                        setSweetSpotRange(prev => {
+                                            if (which === 'lo') return { lo: Math.min(v, prev.hi - GAP), hi: prev.hi };
+                                            return { lo: prev.lo, hi: Math.max(v, prev.lo + GAP) };
+                                        });
+                                    };
+                                    const onUp = () => {
+                                        window.removeEventListener('mousemove', onMove);
+                                        window.removeEventListener('mouseup', onUp);
+                                    };
+                                    window.addEventListener('mousemove', onMove);
+                                    window.addEventListener('mouseup', onUp);
+                                };
+                                const trackBg   = theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300';
+                                const handleCls = `absolute -top-1 w-4 h-4 -ml-2 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing ${theme==='dark'?'bg-emerald-400':'bg-emerald-500'}`;
+                                const labelCls  = `absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold whitespace-nowrap pointer-events-none ${theme==='dark'?'bg-slate-900 text-emerald-300 border border-emerald-500/40':'bg-white text-emerald-700 border border-emerald-300'}`;
+                                return (
+                                    <div data-testid="sweet-spot-range" className="mt-3 px-1 pt-6 pb-1 relative">
+                                        <div className={`relative h-2 ${trackBg} rounded-full`}
+                                             onMouseDown={(e) => startDrag(e)}>
+                                            <div className="absolute h-2 bg-emerald-500 rounded-full"
+                                                 style={{left:`${pct(sweetSpotRange.lo)}%`, width:`${pct(sweetSpotRange.hi)-pct(sweetSpotRange.lo)}%`}} />
+                                            <div className={handleCls} style={{left:`${pct(sweetSpotRange.lo)}%`}}
+                                                 data-testid="sweet-spot-lo-handle"
+                                                 onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'lo'); }}>
+                                                <span className={labelCls} style={{left:'50%'}}>{sweetSpotRange.lo}%</span>
+                                            </div>
+                                            <div className={handleCls} style={{left:`${pct(sweetSpotRange.hi)}%`}}
+                                                 data-testid="sweet-spot-hi-handle"
+                                                 onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'hi'); }}>
+                                                <span className={labelCls} style={{left:'50%'}}>{sweetSpotRange.hi}%</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between text-[8px] font-mono mt-1.5 text-slate-500">
+                                            <span>30% RH</span>
+                                            <button
+                                                data-testid="sweet-spot-reset"
+                                                onClick={() => setSweetSpotRange({ lo: 40, hi: 60 })}
+                                                title="Reset to ASHRAE 55 default (40-60%)"
+                                                className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black tracking-wider transition-all ${theme==='dark'?'text-slate-500 hover:text-emerald-300 hover:bg-slate-800':'text-slate-500 hover:text-emerald-700 hover:bg-slate-100'}`}>Reset</button>
+                                            <span>70% RH</span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-10 space-y-2`}><h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] px-1 font-black shadow-black">{t('asset_search')}</h2><input type="text" placeholder="Search ID (Wildcard *, ?)..." className={`w-full ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-xl py-2 px-4 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                         {/* AXIS SETTINGS — dual-handle range slider, bounded to [-15, 50] */}

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Red5 Telemetry Collector v1.1
 Standalone background script that polls BACnet CSV objects via dibt.Read()
@@ -46,13 +47,13 @@ WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 
 # BACnet ObjectID format: 2-4 letter type prefix followed by an integer
 # instance.  Valid prefixes per ASHRAE 135 + Delta Controls extensions:
-#   AV / AI / AO  — analog value / input / output
-#   BV / BI / BO  — binary value / input / output
-#   MSV / MSI / MSO — multistate value / input / output
-#   CSV           — character-string value (used for AHU command bundles)
-#   TL / SCH / FILE / DEV / PROG / LSP / TLP / EE / NC / GRP / CAL — misc.
+#   AV / AI / AO  -- analog value / input / output
+#   BV / BI / BO  -- binary value / input / output
+#   MSV / MSI / MSO -- multistate value / input / output
+#   CSV           -- character-string value (used for AHU command bundles)
+#   TL / SCH / FILE / DEV / PROG / LSP / TLP / EE / NC / GRP / CAL -- misc.
 # Names like 'AHU01_SAT_SP' or 'OAT_SENSOR_01' are Object NAMES not IDs
-# and will silently fail at dibt.Write() — the firmware accepts the call
+# and will silently fail at dibt.Write() -- the firmware accepts the call
 # but the target reference doesn't resolve.  Detect at queue-drain time
 # and emit a loud log so the operator doesn't troubleshoot for hours.
 _BACNET_OBJECTID_RE = re.compile(
@@ -66,7 +67,7 @@ def _is_bacnet_objectid(s):
 
 
 DEFAULT_INTERVAL = 5
-HISTORY_MAX = 60  # Ring buffer size (60 readings × 5s = 5 min)
+HISTORY_MAX = 60  # Ring buffer size (60 readings x 5s = 5 min)
 VERSION = '1.2'
 
 # ---- dibt is preloaded as a global by the controller runtime, no import needed ----
@@ -115,7 +116,7 @@ def process_write_queue(mock_mode=False):
     queue file is replaced atomically; entries we've already processed
     are removed before we release the file.
 
-    Safe to call every cycle — does nothing if the queue is empty.
+    Safe to call every cycle -- does nothing if the queue is empty.
     """
     queue = _load_json_list(WRITE_QUEUE_PATH)
     if not queue:
@@ -130,7 +131,7 @@ def process_write_queue(mock_mode=False):
         equip    = entry.get('equip_name', '')
         # Defensive BACnet target validation.  Object NAMES (e.g.
         # 'AHU01_SAT_SP', 'OAT_SENSOR_01') will silently fail at
-        # dibt.Write — the firmware accepts the call but the reference
+        # dibt.Write -- the firmware accepts the call but the reference
         # doesn't resolve and the write is dropped.  Emit a loud log
         # entry so the operator stops chasing ghost writes; record the
         # diagnosis on the result so /api/write-results surfaces it too.
@@ -138,7 +139,7 @@ def process_write_queue(mock_mode=False):
         if target_kind == 'NAME':
             log(('[write-queue] \u26A0 NAME-based target {!r} detected '
                  '(equip={}). BACnet writes require an ObjectID like CSV1, '
-                 'AV23, etc. — this write will silently fail. Edit '
+                 'AV23, etc. -- this write will silently fail. Edit '
                  'collector_config.json on the controller to use the '
                  'ObjectID.').format(csv_obj, equip))
         result_record = {
@@ -250,7 +251,7 @@ def flush_log():
 
 def build_equipment_lookup(map_config):
     """
-    Walk map_config.json markers → build lookup:
+    Walk map_config.json markers -> build lookup:
       { "AHU-01-E": {"type": "ahu", "type_id": "1"}, ... }
     """
     lookup = {}
@@ -507,7 +508,7 @@ _bg_written = {}
 def write_band_guide_to_description(csv_object, band=None):
     """Write the CURRENTLY ACTIVE band to CSV_AHUnn.Description so a BACnet
     observer can see which band is active for that AHU. Single-band payload
-    (not the full 10-band lookup — that lives in band_guide.csv).
+    (not the full 10-band lookup -- that lives in band_guide.csv).
 
     Idempotent: skips write if the same band was already pushed for that
     object during the current collector run.
@@ -719,7 +720,7 @@ def collect_all(ahu_groups, mock_mode=False):
                         oa_t_val = round(random.uniform(-5, 38), 1)
                     if oa_rh_val is None:
                         oa_rh_val = round(random.uniform(20, 95), 0)
-                    log(f'[{ahu_name}] OAT/OAH missing from payload — using simulated {oa_t_val}C / {oa_rh_val}% for band classification')
+                    log(f'[{ahu_name}] OAT/OAH missing from payload -- using simulated {oa_t_val}C / {oa_rh_val}% for band classification')
 
                 try:
                     band = classify_band(float(oa_t_val), float(oa_rh_val))
@@ -760,12 +761,12 @@ def collect_all(ahu_groups, mock_mode=False):
 
 def write_telemetry(telemetry):
     """Write telemetry.json. On the PG-object runtime, the classic
-    open→json.dump streams bytes over seconds and an overlapping Flask
+    open->json.dump streams bytes over seconds and an overlapping Flask
     /api/data read can land on a half-written file, causing the dashboard
     to momentarily see empty AHU/VAV state.
 
     Fix: serialize the entire payload to a string in memory FIRST, then
-    issue a single write() — so the file is either fully old or fully
+    issue a single write() -- so the file is either fully old or fully
     new, never partial.
     """
     try:
@@ -792,7 +793,7 @@ def main():
     parser.add_argument('--mock', action='store_true', help='Force mock mode (overrides config)')
     parser.add_argument('--once', action='store_true', help='Run once then exit')
     parser.add_argument('--config', type=str, help='Path to collector_config.json')
-    # PG (Program-object) on the controller cannot pass CLI args — parse_known_args
+    # PG (Program-object) on the controller cannot pass CLI args -- parse_known_args
     # tolerates being invoked with no argv so the script still starts.
     args, _unknown = parser.parse_known_args()
 

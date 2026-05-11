@@ -1067,3 +1067,44 @@ Single-file Repair-Mode replace of `dashboard.html` (with the fresh-import hot-r
 2. Click `↗ POP OUT` in the header → new window opens with the modal full-screen. Drag to a second monitor.
 3. Click `↩ ATTACH` to bring it back, OR just close the popup window.
 
+
+## 2026-02-11 — v1.9.6 (pop-out modals expanded to VAV + Floor Plan)
+**Bundle:** `red5_bundle.zip` · 1718.5 KB · 46 files · md5 `4e1b8314b4487f6f898a60c886df8fc3`.
+
+### Why re-opened (again)
+Operator follow-up: "Can the VAV and Floor Plan modals also be poppable to a second display, same as the AHU modal you just shipped?"
+
+### Refactor + new features
+- **Pulled the popup-window logic out of the AHU modal** into a top-of-file helper `red5OpenPopupWindow(name, title, width, height)`. Single source of truth for stylesheet cloning, Tailwind re-init, body class copy, portal-host creation.
+- **Generic `openPopupFor()` callback inside the App component** wraps the helper with state-management (per-modal `win` / `host` + auto-close watcher), so adding pop-out to a new modal is now a 3-line change.
+- **VAV modal pop-out:**
+  - `↗ POP OUT` / `↩ ATTACH` button in the header.
+  - When popped, mounts via `ReactDOM.createPortal(vavModalTree, vavModalPopupHost)` into the popup window. Click → switch VAV → popup auto-updates with new VAV's telemetry.
+  - Drag handle disabled when popped; the OS handles drag/resize.
+  - Subtitle changes to "Resize the popped-out window directly".
+- **Floor Plan modal pop-out:** Same pattern; identical UX vocabulary so operators don't have to learn two flows.
+- **Lifecycle:** Each popup auto-closes when (a) the underlying modal is dismissed via X button, (b) the parent tab unloads (`beforeunload`), (c) the operator selects a different AHU/VAV/floor and the modal-host state nullifies.
+
+### State changes
+Three new pairs of `useState` slots inside `<App>`:
+- `[ahuModalPopupWin, ahuModalPopupHost]` (was already there from v1.9.5)
+- `[vavModalPopupWin, vavModalPopupHost]`
+- `[floorPlanPopupWin, floorPlanPopupHost]`
+
+Plus three `useEffect` blocks that close the corresponding popup when the underlying React state nullifies. One global `beforeunload` listener closes any orphaned popups when the parent tab dies.
+
+### Test status (unchanged)
+- 24 + 8 + 22 + 47 + 13 + 16 = **130/130 PASS**
+- Additional JSX parse check via `@babel/parser`: dashboard.html's 338,068-char inline script parses cleanly.
+
+### Deploy
+Single-file Repair-Mode replace of `dashboard.html`. Hard-refresh after.
+
+### Verify
+1. Open the VAV table → click any VAV → modal opens.
+2. Click `↗ POP OUT` in the VAV modal header → modal opens in a new browser window, full-viewport. Drag to a second monitor.
+3. Click a different VAV in the table → popup auto-updates with the new VAV's data (no flicker, no need to re-pop).
+4. Close the popup window → modal auto-re-docks in the main page.
+5. Repeat steps 2-4 with the Floor Plan modal (click any AHU's "View Floor Plan" tile).
+6. Open all three popups simultaneously and arrange them across multiple monitors.
+

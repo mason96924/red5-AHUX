@@ -107,6 +107,55 @@
     <script type="text/plain" id="main-source">
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
+        // ====================================================================
+        // Cross-modal pop-out helper.
+        // ----------------------------------------------------------------------
+        // Opens a separate browser window, clones the parent's stylesheets +
+        // Tailwind CDN, and returns { win, host } where `host` is a freshly
+        // created <div> in the new window.  Callers feed that host into
+        // ReactDOM.createPortal() to render their modal tree into the popup,
+        // preserving all React state, telemetry, click handlers etc.
+        //
+        // The popup auto-closes when the parent tab unloads (registered by
+        // the calling component) — we don't try to keep orphaned popups
+        // alive because they'd point at a dead React root.
+        // ----------------------------------------------------------------------
+        function red5OpenPopupWindow(name, title, width, height) {
+            const winName = 'red5_' + name;
+            const features = 'width=' + width + ',height=' + height +
+                ',resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no';
+            const win = window.open('', winName, features);
+            if (!win) return null;
+            win.document.open();
+            win.document.write('<!doctype html><html><head></head><body></body></html>');
+            win.document.close();
+            const titleEl = win.document.createElement('title');
+            titleEl.textContent = title;
+            win.document.head.appendChild(titleEl);
+            const baseEl = win.document.createElement('base');
+            baseEl.href = window.location.href;
+            win.document.head.appendChild(baseEl);
+            // Clone every <style> and stylesheet <link> so Tailwind class names resolve.
+            document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
+                win.document.head.appendChild(node.cloneNode(true));
+            });
+            // Re-execute the Tailwind CDN runtime so utility classes are compiled in the popup.
+            const tailwind = document.querySelector('script[src*="tailwindcss"]');
+            if (tailwind) {
+                const tw = win.document.createElement('script');
+                tw.src = tailwind.src;
+                win.document.head.appendChild(tw);
+            }
+            win.document.body.className = document.body.className;
+            win.document.body.style.margin = '0';
+            win.document.body.style.background = 'transparent';
+            const host = win.document.createElement('div');
+            host.id = 'red5-popup-' + name;
+            host.style.cssText = 'display:block;width:100vw;min-height:100vh;position:relative;';
+            win.document.body.appendChild(host);
+            return { win: win, host: host };
+        }
+
         // Components loaded from: js/psychrometric.js, js/dashboard-components.js
 
         const App = () => {
@@ -237,71 +286,72 @@
                 ro.observe(im);
                 return () => ro.disconnect();
             }, [showAhuModalFor, ahuModalSize.w, ahuModalSize.h]);
-            // Pop-out window for the AHU equipment modal — same pattern as
-            // equipment_mapper.html's "Pop Out" sidebar.  Lets the operator
-            // drag the SCADA modal onto a second monitor without losing any
-            // React state or event handlers (createPortal preserves them).
+            // Pop-out window state for AHU / VAV / Floor-Plan modals.  Each
+            // modal owns its own popup so the operator can fan them out across
+            // multiple monitors (e.g. AHU diagram on monitor 2, floor plan on
+            // monitor 3, VAV detail on the main screen).  When the active
+            // selection changes, the popup auto-updates via React's normal
+            // state flow — selecting a different AHU rerenders the AHU popup
+            // with the new AHU's telemetry instead of closing and reopening it.
             const [ahuModalPopupWin,  setAhuModalPopupWin]  = useState(null);
             const [ahuModalPopupHost, setAhuModalPopupHost] = useState(null);
-            const popOutAhuModal = useCallback(() => {
-                if (ahuModalPopupWin && !ahuModalPopupWin.closed) { ahuModalPopupWin.focus(); return; }
-                const win = window.open('', 'red5_ahu_modal',
-                    'width=1600,height=1000,resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no');
-                if (!win) {
+            const [vavModalPopupWin,  setVavModalPopupWin]  = useState(null);
+            const [vavModalPopupHost, setVavModalPopupHost] = useState(null);
+            const [floorPlanPopupWin,  setFloorPlanPopupWin]  = useState(null);
+            const [floorPlanPopupHost, setFloorPlanPopupHost] = useState(null);
+
+            // Generic open-or-focus helper.  ``setterPair`` is [setWin, setHost]
+            // for the modal whose popup we're spawning.  Returns nothing —
+            // the calling button just kicks it off.
+            const openPopupFor = useCallback((label, title, currentWin, setterPair) => {
+                if (currentWin && !currentWin.closed) { currentWin.focus(); return; }
+                const result = red5OpenPopupWindow(label, title, 1600, 1000);
+                if (!result) {
                     alert('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
                     return;
                 }
-                win.document.open();
-                win.document.write('<!doctype html><html><head></head><body></body></html>');
-                win.document.close();
-                const titleEl = win.document.createElement('title');
-                titleEl.textContent = 'Red5 AHU Equipment Diagram (popped out)';
-                win.document.head.appendChild(titleEl);
-                const baseEl = win.document.createElement('base');
-                baseEl.href = window.location.href;
-                win.document.head.appendChild(baseEl);
-                document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
-                    win.document.head.appendChild(node.cloneNode(true));
-                });
-                const tailwind = document.querySelector('script[src*="tailwindcss"]');
-                if (tailwind) {
-                    const tw = win.document.createElement('script');
-                    tw.src = tailwind.src;
-                    win.document.head.appendChild(tw);
-                }
-                win.document.body.className = document.body.className;
-                win.document.body.style.margin = '0';
-                win.document.body.style.background = 'transparent';
-                const root = win.document.createElement('div');
-                root.id = 'ahu-modal-portal-root';
-                root.style.cssText = 'display:block;width:100vw;min-height:100vh;position:relative;';
-                win.document.body.appendChild(root);
-                setAhuModalPopupWin(win);
-                setAhuModalPopupHost(root);
-                const closeWatcher = setInterval(() => {
-                    if (win.closed) {
-                        clearInterval(closeWatcher);
-                        setAhuModalPopupWin(null);
-                        setAhuModalPopupHost(null);
+                setterPair[0](result.win);
+                setterPair[1](result.host);
+                const watcher = setInterval(() => {
+                    if (result.win.closed) {
+                        clearInterval(watcher);
+                        setterPair[0](null);
+                        setterPair[1](null);
                     }
                 }, 400);
-            }, [ahuModalPopupWin]);
+            }, []);
+
+            const popOutAhuModal       = useCallback(() => openPopupFor('ahu_modal',  'Red5 AHU Equipment Diagram (popped out)',  ahuModalPopupWin,  [setAhuModalPopupWin,  setAhuModalPopupHost]),  [openPopupFor, ahuModalPopupWin]);
+            const popOutVavModal       = useCallback(() => openPopupFor('vav_modal',  'Red5 VAV Detail (popped out)',             vavModalPopupWin,  [setVavModalPopupWin,  setVavModalPopupHost]),  [openPopupFor, vavModalPopupWin]);
+            const popOutFloorPlanModal = useCallback(() => openPopupFor('floor_plan', 'Red5 Floor Plan (popped out)',             floorPlanPopupWin, [setFloorPlanPopupWin, setFloorPlanPopupHost]), [openPopupFor, floorPlanPopupWin]);
+
+            // Close every popup when the parent tab is about to unload.
             useEffect(() => {
-                const onUnload = () => { if (ahuModalPopupWin && !ahuModalPopupWin.closed) ahuModalPopupWin.close(); };
+                const onUnload = () => {
+                    [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin].forEach(w => {
+                        if (w && !w.closed) { try { w.close(); } catch (e) {} }
+                    });
+                };
                 window.addEventListener('beforeunload', onUnload);
                 return () => window.removeEventListener('beforeunload', onUnload);
-            }, [ahuModalPopupWin]);
-            // Auto-close the popup when the operator closes the modal itself.
+            }, [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin]);
+
+            // Auto-close the popup when its underlying modal toggles off.
             useEffect(() => {
-                if (!showAhuModalFor && ahuModalPopupWin && !ahuModalPopupWin.closed) {
-                    ahuModalPopupWin.close();
-                }
+                if (!showAhuModalFor && ahuModalPopupWin && !ahuModalPopupWin.closed) ahuModalPopupWin.close();
             }, [showAhuModalFor, ahuModalPopupWin]);
+            useEffect(() => {
+                if (!selectedVavForModal && vavModalPopupWin && !vavModalPopupWin.closed) vavModalPopupWin.close();
+            }, [selectedVavForModal, vavModalPopupWin]);
+            // floor-plan auto-close is wired below after showFloorPlanForAhu is declared
             const [vavImgDims, setVavImgDims] = useState({ natW: 1600, natH: 1004, dispW: 1600, dispH: 1004 });
             const vavImgRef = useRef(null);
             const [vavModalSize, setVavModalSize] = useState({ w: 1400, h: 850 });
 
             const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
+            useEffect(() => {
+                if (!showFloorPlanForAhu && floorPlanPopupWin && !floorPlanPopupWin.closed) floorPlanPopupWin.close();
+            }, [showFloorPlanForAhu, floorPlanPopupWin]);
             const [floorPlanOffset, setFloorPlanOffset] = useState({ x: 100, y: 50 });
 
             /* Sun-Path Phase A integration (Dashboard). Tracks live sun-state
@@ -2326,11 +2376,22 @@
                             }).catch(e => console.warn('VAV Write error:', e));
                         };
 
-                        return (
-                            <div className={`absolute z-[120] select-none shadow-2xl drop-shadow-2xl`} style={{ top: `${safe(vavModalOffset.y)}px`, left: `${safe(vavModalOffset.x)}px` }}>
-                                <div className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} rounded-xl shadow-2xl border-2 relative flex flex-col overflow-hidden`} style={{ width: `${vavModalSize.w}px`, height: `${vavModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' }} onMouseDown={e => e.stopPropagation()}>
+                        const vavIsPopped = !!(vavModalPopupWin && vavModalPopupHost);
+                        const vavOuterStyle = vavIsPopped
+                            ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
+                            : { top: `${safe(vavModalOffset.y)}px`, left: `${safe(vavModalOffset.x)}px` };
+                        const vavOuterCls = vavIsPopped
+                            ? 'block select-none'
+                            : 'absolute z-[120] select-none shadow-2xl drop-shadow-2xl';
+                        const vavInnerStyle = vavIsPopped
+                            ? { width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none' }
+                            : { width: `${vavModalSize.w}px`, height: `${vavModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' };
+
+                        const vavModalTree = (
+                            <div className={vavOuterCls} style={vavOuterStyle}>
+                                <div className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${vavIsPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={vavInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                     
-                                    <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
+                                    <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (vavIsPopped) return; setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
                                         <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}{modalBandTrim && (
                                             <span className={`ml-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold tracking-wider ${modalBandTrim.sun_trim_c < 0
                                                 ? (theme === 'dark' ? 'bg-amber-500/15 border-amber-500/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-amber-700')
@@ -2342,10 +2403,20 @@
                                                 <span>SA {modalBandTrim.sa_t_sp}°C</span>
                                                 {modalBandTrim.sun_trim_c !== 0 && <span className="opacity-80">({modalBandTrim.sun_trim_c > 0 ? '+' : ''}{modalBandTrim.sun_trim_c.toFixed(2)} sun)</span>}
                                             </span>
-                                        )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>Drag corner ↘ to resize</span></h3>
-                                        <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer mr-1`} onMouseDown={e => e.stopPropagation()} onClick={() => setSelectedVavForModal(null)}>
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                        </button>
+                                        )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{vavIsPopped ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>
+                                        <div className="flex items-center gap-2 mr-1" onMouseDown={e => e.stopPropagation()}>
+                                            <button
+                                                data-testid="popout-vav-modal-btn"
+                                                onClick={() => { if (vavModalPopupWin && !vavModalPopupWin.closed) { vavModalPopupWin.close(); } else { popOutVavModal(); } }}
+                                                title={vavIsPopped ? 'Re-attach VAV modal to this window' : 'Pop the VAV modal out into a draggable window'}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${vavIsPopped ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                            >
+                                                {vavIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                            </button>
+                                            <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setSelectedVavForModal(null)}>
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className={`relative w-full flex-1 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
@@ -2531,18 +2602,43 @@
                                 </div>
                             </div>
                         );
+                        return vavIsPopped
+                            ? ReactDOM.createPortal(vavModalTree, vavModalPopupHost)
+                            : vavModalTree;
                     })()}
 
                     {/* Floor Plan Mapper Modal */}
-                    {showFloorPlanForAhu && (
-                        <div className={`absolute z-[110] select-none shadow-2xl drop-shadow-2xl`} style={{ top: `${safe(floorPlanOffset.y)}px`, left: `${safe(floorPlanOffset.x)}px` }}>
-                            <div className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-white' : 'bg-white border-slate-300 text-slate-800'} rounded-2xl shadow-2xl border relative flex flex-col overflow-hidden`} style={{ maxWidth: 'calc(min(1400px, 95vw))', maxHeight: 'calc(min(900px, 95vh))', width: 'auto', height: 'auto' }} onMouseDown={e => e.stopPropagation()}>
+                    {showFloorPlanForAhu && (() => {
+                        const floorIsPopped = !!(floorPlanPopupWin && floorPlanPopupHost);
+                        const floorOuterStyle = floorIsPopped
+                            ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
+                            : { top: `${safe(floorPlanOffset.y)}px`, left: `${safe(floorPlanOffset.x)}px` };
+                        const floorOuterCls = floorIsPopped
+                            ? 'block select-none'
+                            : 'absolute z-[110] select-none shadow-2xl drop-shadow-2xl';
+                        const floorInnerStyle = floorIsPopped
+                            ? { width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none' }
+                            : { maxWidth: 'calc(min(1400px, 95vw))', maxHeight: 'calc(min(900px, 95vh))', width: 'auto', height: 'auto' };
+
+                        const floorModalTree = (
+                        <div className={floorOuterCls} style={floorOuterStyle}>
+                            <div className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-white' : 'bg-white border-slate-300 text-slate-800'} ${floorIsPopped ? '' : 'rounded-2xl border'} shadow-2xl relative flex flex-col overflow-hidden`} style={floorInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                 
-                                <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'} border-b p-4 flex justify-between items-center z-[60] relative`} onMouseDown={(e) => { setIsFloorPlanDragging(true); setDragStart({ x: e.clientX - floorPlanOffset.x, y: e.clientY - floorPlanOffset.y }); }}>
-                                    <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE</h3>
-                                    <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer mr-2`} onMouseDown={e => e.stopPropagation()} onClick={() => setShowFloorPlanForAhu(null)}>
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                    </button>
+                                <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'} border-b p-4 flex justify-between items-center z-[60] relative`} onMouseDown={(e) => { if (floorIsPopped) return; setIsFloorPlanDragging(true); setDragStart({ x: e.clientX - floorPlanOffset.x, y: e.clientY - floorPlanOffset.y }); }}>
+                                    <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE {!floorIsPopped && <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal', textTransform:'none', letterSpacing:'normal'}}>Drag corner ↘ to resize</span>}</h3>
+                                    <div className="flex items-center gap-2 mr-2" onMouseDown={e => e.stopPropagation()}>
+                                        <button
+                                            data-testid="popout-floorplan-modal-btn"
+                                            onClick={() => { if (floorPlanPopupWin && !floorPlanPopupWin.closed) { floorPlanPopupWin.close(); } else { popOutFloorPlanModal(); } }}
+                                            title={floorIsPopped ? 'Re-attach floor plan to this window' : 'Pop the floor plan out into a draggable window'}
+                                            className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${floorIsPopped ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                        >
+                                            {floorIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                        </button>
+                                        <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowFloorPlanForAhu(null)}>
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                        </button>
+                                    </div>
                                 </div>
                                 
                                 <div className={`relative ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} overflow-hidden flex items-center justify-center`}>
@@ -2838,7 +2934,11 @@
                                 </div>
                             </div>
                         </div>
-                    )}
+                        );
+                        return floorIsPopped
+                            ? ReactDOM.createPortal(floorModalTree, floorPlanPopupHost)
+                            : floorModalTree;
+                    })()}
 
                     {/* AHU SCADA Overlay Modal */}
                     {showAhuModalFor && (() => {

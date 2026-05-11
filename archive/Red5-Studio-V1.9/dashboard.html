@@ -1885,45 +1885,51 @@
                                                     // sweet" will downgrade from optimal/comfort to
                                                     // warning here too, matching the badge count.
                                                     const diag = getVavDiagnostic(v, saP, comfortZonePoly, activeSweet);
-                                                    // Tri-state zone classification driven by the
-                                                    // Givoni-overlay state:
-                                                    //   1. inside operator-defined sweet-spot strip → DARK EMERALD
-                                                    //      (matches the darker-shaded sub-band inside the CZ)
-                                                    //   2. inside CZ but outside sweet-spot          → LIGHT EMERALD
-                                                    //      (matches the CZ polygon's translucent fill)
-                                                    //   3. outside CZ                                → existing amber/red
-                                                    //      from getVavDiagnostic()'s "warning" / "outside" branches
-                                                    // Only kicks in when both the Givoni overlay AND the
-                                                    // sweet-spot strip are toggled visible; otherwise we
-                                                    // fall back to the original diagnostic palette so the
-                                                    // operator's choices in the overlay panel match what
-                                                    // they see in the table.
+                                                    // Four-state chip palette that visually samples the
+                                                    // Givoni chart's own polygon fills, so the operator's
+                                                    // eye can map "circle colour -> chart region" without
+                                                    // a legend lookup:
+                                                    //   1. Inside operator-defined sweet-spot strip
+                                                    //      -> DARK EMERALD #059669 (matches strip fill)
+                                                    //   2. Inside CZ but outside sweet-spot
+                                                    //      -> LIGHT EMERALD #10b981 (matches CZ fill)
+                                                    //   3. Outside CZ on the hot/humid side  (T >= 23.5)
+                                                    //      -> ORANGE #f97316
+                                                    //   4. Outside CZ on the cold/dry side   (T <  23.5)
+                                                    //      -> DARK BLUE #1d4ed8
+                                                    //
+                                                    // We use the geometric CZ-centroid temperature 23.5
+                                                    // as the hot/cold discriminator -- matches how an
+                                                    // operator describes the chart ("right side = warm,
+                                                    // left side = cool").
                                                     const inSweet = showGivoni && showSweetSpot
                                                         && v.t >= 20 && v.t <= 27
                                                         && v.rh >= sweetSpotRange.lo && v.rh <= sweetSpotRange.hi;
-                                                    const inCZ = (diag.status === 'optimal' || diag.status === 'comfort');
-                                                    // Inline style preferred over Tailwind classes here
-                                                    // because we want the EXACT polygon fill (#059669 dark
-                                                    // emerald or #10b981 light emerald) so the operator
-                                                    // perceives the chip as a direct sample of the chart
-                                                    // colour they're already looking at.
+                                                    // Use the original CZ-only inCZ (not the AND-narrowed
+                                                    // value returned by getVavDiagnostic) so we can fall
+                                                    // through to the CZ tier even when a sweet-spot is set.
+                                                    const inCZRaw = getZoneDemand(v.t, v.w, comfortZonePoly).inCZ;
                                                     let statusStyle = null;
-                                                    let statusColor = '';
                                                     let statusTitle = '';
                                                     if (inSweet) {
                                                         statusStyle = { backgroundColor: '#059669', boxShadow: '0 0 6px rgba(5,150,105,0.55)' };
                                                         statusTitle = 'In sweet-spot band (' + sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH)';
-                                                    } else if (inCZ && showGivoni) {
-                                                        statusStyle = { backgroundColor: '#10b981', opacity: 0.55, boxShadow: '0 0 4px rgba(16,185,129,0.35)' };
-                                                        statusTitle = 'In Givoni CZ (outside ' + sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH sweet-spot)';
+                                                    } else if (inCZRaw) {
+                                                        statusStyle = { backgroundColor: '#10b981', opacity: 0.7, boxShadow: '0 0 4px rgba(16,185,129,0.4)' };
+                                                        statusTitle = showGivoni && showSweetSpot
+                                                            ? ('In Givoni CZ (outside ' + sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH sweet-spot)')
+                                                            : 'In Givoni CZ';
+                                                    } else if (v.t >= 23.5) {
+                                                        statusStyle = { backgroundColor: '#f97316', boxShadow: '0 0 5px rgba(249,115,22,0.5)' };
+                                                        statusTitle = 'Outside CZ -- hot/humid side (' + v.t.toFixed(1) + ' deg C, ' + v.rh.toFixed(0) + '% RH)';
                                                     } else {
-                                                        statusColor = diag.status === 'optimal' ? 'bg-emerald-500' : diag.status === 'comfort' ? 'bg-emerald-400/60' : diag.status === 'warning' ? 'bg-amber-500' : 'bg-red-500';
-                                                        statusTitle = diag.status === 'optimal' ? 'In CZ, near target' : diag.status === 'comfort' ? 'In CZ' : diag.status === 'warning' ? 'Near CZ boundary' : 'Outside CZ';
+                                                        statusStyle = { backgroundColor: '#1d4ed8', boxShadow: '0 0 5px rgba(29,78,216,0.5)' };
+                                                        statusTitle = 'Outside CZ -- cold/dry side (' + v.t.toFixed(1) + ' deg C, ' + v.rh.toFixed(0) + '% RH)';
                                                     }
                                                     return (
                                                         <tr key={v.id} className={`rounded-lg transition-colors shadow-black ${lockedVavId === v.id ? 'bg-indigo-500/30' : (theme==='dark'?'bg-slate-950/40 hover:bg-indigo-500/10':'bg-slate-100 hover:bg-indigo-100')}`}>
                                                             <td className="px-1 py-2" title={statusTitle} data-testid={`vav-cz-status-${v.id}`}>
-                                                                <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${statusStyle ? '' : statusColor}`} style={statusStyle || undefined}></div>
+                                                                <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={statusStyle}></div>
                                                             </td>
                                                             <td className="px-2 py-2 text-indigo-500 font-bold cursor-pointer hover:underline transition-colors hover:text-indigo-400" onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }} title={window.t ? window.t("view_diagram") : "View Diagram"}>{v.id}</td>
                                                             <td className="font-black">{v.t.toFixed(1)}</td>

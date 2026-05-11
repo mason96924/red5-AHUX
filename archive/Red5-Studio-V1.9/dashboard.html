@@ -1840,7 +1840,13 @@
                                         const currentAhu = ahuData.find(a => a.id === selectedAhuId);
                                         const oaP = currentAhu?.points?.find(p => p.label === 'OA');
                                         const saP = currentAhu?.points?.find(p => p.label === 'SA');
-                                        const ahuDiag = getAhuDiagnostic(currentAhu, comfortZonePoly);
+                                        // Active sweet-spot filter narrows the CZ% to the
+                                        // intersection of (CZ polygon) AND (operator-defined
+                                        // RH band) when both overlay toggles are on.  Off-state
+                                        // falls back to the looser CZ-only count so the figure
+                                        // stays consistent with what the operator sees.
+                                        const activeSweet = (showGivoni && showSweetSpot) ? { lo: sweetSpotRange.lo, hi: sweetSpotRange.hi } : null;
+                                        const ahuDiag = getAhuDiagnostic(currentAhu, comfortZonePoly, activeSweet);
                                         return (
                                             <React.Fragment>
                                     <div className={`p-4 ${theme==='dark'?'bg-indigo-600/10 border-indigo-500/20':'bg-indigo-50 border-indigo-200'} border-b cursor-grab active:cursor-grabbing font-black shadow-black`} onMouseDown={(e) => { setIsVavDragging(true); setDragStart({ x: e.clientX - vavTableOffset.x, y: e.clientY - vavTableOffset.y }); }}>
@@ -1851,8 +1857,9 @@
                                                     <span className={`text-[9px] font-black uppercase tracking-wider ${ahuDiag.process === 'heating' ? 'text-orange-400' : ahuDiag.process === 'cooling' ? 'text-cyan-400' : 'text-emerald-400'}`}>
                                                         {ahuDiag.process === 'heating' ? 'HTG' : ahuDiag.process === 'cooling' ? 'CLG' : 'IDLE'}
                                                     </span>
-                                                    <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
-                                                        {ahuDiag.comfortPct}% CZ
+                                                    <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}
+                                                          title={activeSweet ? `${ahuDiag.inCZCount}/${ahuDiag.totalVavs} VAVs inside Givoni CZ AND ${activeSweet.lo}-${activeSweet.hi}% RH` : `${ahuDiag.inCZCount}/${ahuDiag.totalVavs} VAVs inside Givoni CZ`}>
+                                                        {ahuDiag.comfortPct}% {activeSweet ? 'CZ' + String.fromCharCode(0x2229) + 'SS' : 'CZ'}
                                                     </span>
                                                 </div>
                                             )}
@@ -1872,7 +1879,12 @@
                                                 {currentAhu.vavs && currentAhu.vavs.map(v => {
                                                     const saH = saP ? getH(saP.t, saP.w) : 0;
                                                     const diffH = v.h - saH;
-                                                    const diag = getVavDiagnostic(v, saP, comfortZonePoly);
+                                                    // Pass the SAME activeSweet filter as the AHU-level
+                                                    // diagnostic so the row's status and the badge's
+                                                    // CZ% stay in sync: a VAV that's "in CZ but not
+                                                    // sweet" will downgrade from optimal/comfort to
+                                                    // warning here too, matching the badge count.
+                                                    const diag = getVavDiagnostic(v, saP, comfortZonePoly, activeSweet);
                                                     // Tri-state zone classification driven by the
                                                     // Givoni-overlay state:
                                                     //   1. inside operator-defined sweet-spot strip → DARK EMERALD

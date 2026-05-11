@@ -75,44 +75,68 @@ const getZoneDemand = (t, w, comfortPoly) => {
 };
 
 // Full VAV diagnostic — demand-driven, no setpoints
-const getVavDiagnostic = (vav, saPoint, comfortPoly) => {
+// Geometric containment helper: is the (T, RH) point inside the
+// operator-defined sweet-spot strip?  The strip is bounded by:
+//   T in [20, 27] degC  (same as CZ)
+//   RH in [lo, hi]      (operator-defined; default 40-60%)
+// We additionally clip to the CZ via demand.inCZ in the callers so a
+// VAV that happens to be at 23 C / 50% RH but somehow outside the CZ
+// (impossible by geometry but a safety net) won't be counted.
+const inSweetSpot = (t, rh, sweetSpot) => {
+    if (!sweetSpot) return true;   // no filter -> always-in
+    if (t < 20 || t > 27) return false;
+    return rh >= sweetSpot.lo && rh <= sweetSpot.hi;
+};
+
+const getVavDiagnostic = (vav, saPoint, comfortPoly, sweetSpot) => {
     const demand = getZoneDemand(vav.t, vav.w, comfortPoly);
     const distSA = saPoint ? getPsyDistance(vav.t, vav.w, saPoint.t, saPoint.w) : 0;
     const deltaH = saPoint ? (vav.h - getH(saPoint.t, saPoint.w)) : 0;
-    
+
+    // When a sweet-spot filter is active, a VAV only counts as "in CZ"
+    // for downstream metrics if it's inside BOTH the Givoni CZ polygon
+    // AND the operator-defined RH strip.  The intersection is what the
+    // operator is actually targeting on the dashboard, so the comfort
+    // percentage should reflect that, not the looser CZ-only count.
+    const inCZ_and_sweet = demand.inCZ && inSweetSpot(vav.t, vav.rh, sweetSpot);
+
     let status;
-    if (demand.inCZ && distSA < 3) status = 'optimal';
-    else if (demand.inCZ) status = 'comfort';
+    if (inCZ_and_sweet && distSA < 3) status = 'optimal';
+    else if (inCZ_and_sweet) status = 'comfort';
     else if (Math.abs(vav.t - 23.5) < 5.5) status = 'warning';
     else status = 'alarm';
-    
+
     const totalDemand = demand.heatingDemand + demand.coolingDemand;
-    
-    return { ...demand, distSA, deltaH, status, totalDemand };
+
+    // We deliberately overwrite `inCZ` on the returned object so any
+    // callers downstream of this point (notably getAhuDiagnostic) see
+    // the AND-narrowed value.  If you need the wider CZ-only result,
+    // omit the sweetSpot argument.
+    return { ...demand, inCZ: inCZ_and_sweet, distSA, deltaH, status, totalDemand };
 };
 
 // AHU-level aggregate demand diagnostic
-const getAhuDiagnostic = (ahu, comfortPoly) => {
+const getAhuDiagnostic = (ahu, comfortPoly, sweetSpot) => {
     if (!ahu || !ahu.points || !ahu.vavs) return null;
     const oa = ahu.points[0], sa = ahu.points[1], ra = ahu.points[2];
     if (!oa || !sa || !ra) return null;
-    
-    const vavDiags = ahu.vavs.map(v => getVavDiagnostic(v, sa, comfortPoly));
+
+    const vavDiags = ahu.vavs.map(v => getVavDiagnostic(v, sa, comfortPoly, sweetSpot));
     const inCZCount = vavDiags.filter(d => d.inCZ).length;
     const totalVavs = ahu.vavs.length;
     const totalHeating = vavDiags.reduce((s, d) => s + d.heatingDemand, 0);
     const totalCooling = vavDiags.reduce((s, d) => s + d.coolingDemand, 0);
     const avgDistSA = vavDiags.reduce((s, d) => s + d.distSA, 0) / totalVavs;
-    
+
     let process;
     if (totalHeating === 0 && totalCooling === 0) process = 'idle';
     else if (totalHeating > totalCooling) process = 'heating';
     else process = 'cooling';
-    
+
     const recs = [];
     const oaH = getH(oa.t, oa.w);
     const raH = getH(ra.t, ra.w);
-    
+
     if (process === 'cooling' && oaH < raH) {
         recs.push('Economizer: free cooling available');
     }
@@ -121,12 +145,18 @@ const getAhuDiagnostic = (ahu, comfortPoly) => {
     }
     if (sa.rh > 75) recs.push('SA humidity high');
     if (sa.rh < 25) recs.push('SA humidity low');
-    if (inCZCount === totalVavs) recs.push('All zones in CZ');
-    
+    if (inCZCount === totalVavs) {
+        recs.push(sweetSpot ? 'All zones in sweet-spot' : 'All zones in CZ');
+    }
+
     return {
         process, inCZCount, totalVavs,
         totalHeating, totalCooling, avgDistSA,
         comfortPct: Math.round((inCZCount / totalVavs) * 100),
+        // Annotate so the dashboard's CZ% chip can show whether the
+        // figure reflects CZ-only or CZ-and-sweet-spot.
+        comfortMode: sweetSpot ? 'sweet' : 'cz',
+        sweetSpot: sweetSpot || null,
         recommendations: recs
     };
 };

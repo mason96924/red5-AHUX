@@ -1037,3 +1037,33 @@ End-to-end browser verification: Setup Guide link present, served directly at 7,
 - All tests: see Test status above; each test file is standalone & deterministic.
 
 **STATUS: SEALED.** No further edits planned for v1.9.x. Next iteration will be a separate project workstream.
+
+## 2026-02-11 — v1.9.5 (re-opened from v1.9.4 seal, AHU modal hotfix)
+**Bundle:** `red5_bundle.zip` · 1716.8 KB · 46 files · md5 `d89ec73982a80bc5b338b4ace7e84c0b` · reproducible via `python build_bundle.py`.
+
+### Why re-opened
+Operator reported the AHU equipment diagram modal lost proportional alignment when resized — the equipment chassis shrunk via CSS `max-w-full` but pill / databox / fan overlays stayed at original pixel sizes. Plus a UX ask: make the modal poppable to a separate display.
+
+### Fixes
+- **Resize alignment (P0):** Added `ResizeObserver` watching `ahuImgRef.current` so `ahuImgDims.dispW/dispH` updates on every container resize, not just on `<img onLoad>`. `imgScale = dispW / natW` now stays current, so animation pixel offsets (PreviewAirFlowSimulator, VFD chassis, DP-switch etc.) re-scale proportionally with the AHU body image. Trigger: `[showAhuModalFor, ahuModalSize.w, ahuModalSize.h]`.
+- **Pop-out modal (P1):** New `Pop Out` button in the modal header — opens a separate browser window via `window.open()`, clones parent stylesheets, mounts a portal root, and uses `ReactDOM.createPortal()` to render the modal tree into that window. All click handlers, state, and telemetry continue to flow exactly as docked. When popped:
+  - Modal fills the popup viewport (`width:100vw; height:100vh`)
+  - Resize via the OS window chrome (no inner CSS `resize: both`)
+  - Drag-handle disabled (`onMouseDown` gated by `ahuModalPopupWin`)
+  - Header shows `↩ ATTACH` (emerald) instead of `↗ POP OUT`
+  - Subtitle changes to "Resize the popped-out window directly"
+  - Closing the docked modal auto-closes the popup
+  - Refreshing/closing the parent tab also closes the popup (`beforeunload`)
+- Same pattern as `equipment_mapper.html`'s "Pop Out Sidebar" — preserves identical UX vocabulary across tools.
+
+### Test status (unchanged from v1.9.4)
+- 24 + 8 + 22 + 47 + 13 + 16 = **130/130 PASS**
+
+### Deploy
+Single-file Repair-Mode replace of `dashboard.html` (with the fresh-import hot-reload fallback already shipped, no Flask restart needed). Hard-refresh after.
+
+### Verify
+1. Open AHU-01 modal → drag corner ↘ to resize → pills, fan, databoxes should all rescale proportionally.
+2. Click `↗ POP OUT` in the header → new window opens with the modal full-screen. Drag to a second monitor.
+3. Click `↩ ATTACH` to bring it back, OR just close the popup window.
+

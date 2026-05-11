@@ -385,12 +385,36 @@ function hotReloadPlugin(){
                 var swapped = out.json.swapped_endpoints || [];
                 var added   = out.json.new_endpoints     || [];
                 var fresh   = !!out.json.fresh_import;
+                var rm      = out.json.route_map         || {};
                 var html = '<span style="color:#22c55e;font-weight:700">OK</span> &mdash; <b>' + name + '</b> ';
                 html += fresh ? 'imported & registered' : 'hot-reloaded';
                 html += '. ';
                 html += '<span style="color:#64748b">Swapped: ' + swapped.length + ' &middot; Newly attached: ' + added.length + '</span>';
+                var renderEp = function(ep, accent){
+                    var routes = rm[ep] || [];
+                    if (!routes.length){
+                        return '<span style="color:#64748b">' + ep + '</span>';
+                    }
+                    return routes.map(function(rt){
+                        var methods = (rt.methods || []).join('|') || 'ANY';
+                        return '<span style="color:' + accent + '">' + rt.rule + '</span>' +
+                               ' <span style="color:#475569">[' + methods + ']</span>' +
+                               ' <span style="color:#64748b">&rarr; ' + ep + '</span>';
+                    }).join('<br>');
+                };
                 if (added.length){
-                    html += '<div style="margin-top:6px;font-family:\'Courier New\',monospace;font-size:11px;color:#a5b4fc">+ ' + added.join(', ') + '</div>';
+                    html += '<div style="margin-top:6px;font-family:\'Courier New\',monospace;font-size:11px;color:#a5b4fc">';
+                    html += '<div style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">+ new routes</div>';
+                    html += added.map(function(ep){ return '&nbsp;&nbsp;' + renderEp(ep, '#a5b4fc'); }).join('<br>');
+                    html += '</div>';
+                }
+                if (swapped.length){
+                    html += '<details style="margin-top:4px;font-family:\'Courier New\',monospace;font-size:11px">';
+                    html += '<summary style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer">'
+                          + '&middot; ' + swapped.length + ' swapped route' + (swapped.length === 1 ? '' : 's') + ' (click to expand)</summary>';
+                    html += '<div style="margin-top:3px;color:#94a3b8">';
+                    html += swapped.map(function(ep){ return '&nbsp;&nbsp;' + renderEp(ep, '#94a3b8'); }).join('<br>');
+                    html += '</div></details>';
                 }
                 if (out.json.note){
                     html += '<div style="margin-top:4px;color:#64748b;font-style:italic">' + out.json.note + '</div>';
@@ -536,8 +560,42 @@ function _renderUploadResult(data){
                 if (!r.success && r.error){
                     html += '<div style="margin-left:14px;color:#fbbf24">' + r.error + '</div>';
                 }
+                // Self-documenting: show each endpoint's actual URL rule +
+                // HTTP methods so operators can read the deploy report and
+                // immediately tell which HTTP routes just came online.
+                var rm = r.route_map || {};
+                var renderEpRoutes = function(ep, accentColor){
+                    var routes = rm[ep] || [];
+                    if (!routes.length){
+                        return '<span style="color:#64748b">' + ep + '</span>';
+                    }
+                    return routes.map(function(rt){
+                        var methods = (rt.methods || []).join('|') || 'ANY';
+                        return '<span style="color:' + accentColor + '">' + rt.rule + '</span>' +
+                               ' <span style="color:#475569">[' + methods + ']</span>' +
+                               ' <span style="color:#64748b">&rarr; ' + ep + '</span>';
+                    }).join('<br>');
+                };
                 if (ne && r.success){
-                    html += '<div style="margin-left:14px;color:#a5b4fc">+ ' + (r.new_endpoints || []).join(', ') + '</div>';
+                    html += '<div style="margin-left:14px;margin-top:4px;color:#a5b4fc">' +
+                            '<div style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">+ new routes</div>' +
+                            (r.new_endpoints || []).map(function(ep){
+                                return '&nbsp;&nbsp;' + renderEpRoutes(ep, '#a5b4fc');
+                            }).join('<br>') +
+                            '</div>';
+                }
+                if (sw && r.success){
+                    // Collapsible by default — keep the deploy panel compact for
+                    // chatty plug-ins like upload_service (10 endpoints).
+                    var detailsId = 'sw-' + (r.module || 'x') + '-' + Math.random().toString(36).slice(2,6);
+                    html += '<details style="margin-left:14px;margin-top:4px">' +
+                            '<summary style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer">' +
+                            '&middot; ' + sw + ' swapped route' + (sw === 1 ? '' : 's') + ' (click to expand)</summary>' +
+                            '<div style="margin-top:3px;color:#94a3b8">' +
+                            (r.swapped_endpoints || []).map(function(ep){
+                                return '&nbsp;&nbsp;' + renderEpRoutes(ep, '#94a3b8');
+                            }).join('<br>') +
+                            '</div></details>';
                 }
                 var rb = r.rolled_back_endpoints || [];
                 if (rb.length){

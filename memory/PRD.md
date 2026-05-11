@@ -3,6 +3,40 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Self-Documenting Deploy Panel · route_map (2026-02-09)
+**Brief**: The auto-reload deploy panel now shows the **actual URL routes + HTTP methods** that just came online, not just raw endpoint names. Operators can read the deploy report and immediately tell which HTTP endpoints to hit.
+
+### Backend
+- New `_endpoint_routes(app, endpoints)` helper walks `app.url_map._rules_by_endpoint` and returns `{endpoint: [{rule, methods}, ...]}`. Strips noisy `HEAD`/`OPTIONS` werkzeug adds for every GET rule.
+- `_reload_module_core` now populates `route_map` in BOTH the fresh-import success return AND the in-place rebind success return. This means both the HTTP endpoint (`POST /api/repair/reload-module/<name>`) and the auto-reload-after-upload path get the same data with zero duplication.
+- `_auto_reload_extracted_services` simplified to just pass-through `route_map` from the core return — DRY.
+
+### Frontend — `update.html`
+- **Auto-reload panel inside the bundle deploy result**: each plug-in row gets a `+ NEW ROUTES` section listing every newly-attached route as `/api/url [GET|POST] → endpoint_name` in indigo, plus a collapsible `▶ N SWAPPED ROUTES` `<details>` block listing every refreshed endpoint with the same self-documenting format in grey. Collapsed by default so the deploy report stays compact for chatty plug-ins like upload_service (10 routes).
+- **Hot-Reload Plug-In card** (single-module reload): same renderer — operators clicking Reload manually get the identical self-documenting output.
+- Color scheme: rule names in indigo (`#a5b4fc`) for new, slate (`#94a3b8`) for swapped, methods in dark slate `[GET]` `[POST]` `[GET|POST]`, arrow + endpoint name in `#64748b`.
+
+### Tests
+- New tests 1l-rm-a through 1l-rm-h in `test_auto_reload_after_upload.py`:
+  - `route_map` is a dict.
+  - Contains entries for both injected new handler AND pre-existing swapped endpoints.
+  - Entry shape: `{rule: str, methods: [str]}`.
+  - `methods` is a list with `HEAD`/`OPTIONS` filtered out.
+  - Specific endpoint rules match (`get_weather_location` → `/api/weather-location`).
+  - Injected handler rule matches the URL we shipped (`/api/_autoreload_test_route`).
+- `test_auto_reload_after_upload.py`: **30/30** PASS (was 22; +8 route_map tests).
+- Full backend regression: **227/227** across 10 test files.
+
+### Live deploy
+- `upload_service.py` (72,416 bytes) + `update.html` (75,454 bytes) hot-deployed to `219.79.12.63:5001` and verified — `POST /api/repair/reload-module/weather_service` now returns `route_map` mapping all 6 weather endpoints to their `/api/weather-*` URLs and methods.
+- `red5_bundle.zip` rebuilt (1728.9 KB, MD5 `4a0040b7f56ac73959d4c54ea85b226d`) and synced to `/app/frontend/public/` + `/app/frontend/public/red5-files/`.
+
+### Files changed
+- `upload_service.py` — added `_endpoint_routes`, populated `route_map` in both success returns of `_reload_module_core`, simplified `_auto_reload_extracted_services`.
+- `update.html` — rewrote auto-reload panel + Hot-Reload card render to show URL rules + methods + collapsible swapped-routes section.
+- `tests/test_auto_reload_after_upload.py` — added 8 route_map assertions.
+
+
 ## V1.9 Auto-Reload After Bundle Upload (2026-02-09)
 **Brief**: Closes the loop on plug-in deployment. Until now, a bundle upload landed new `*_service.py` files on disk but Python's already-imported modules kept serving the OLD code — operators had to either toggle the enteliWEB `app.py` object (full Flask restart) or hit `/api/repair/reload-module/<name>` per plug-in. Now the bundle upload endpoint walks the extraction manifest and hot-reloads every plug-in that just landed, all in-process.
 

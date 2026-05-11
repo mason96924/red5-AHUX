@@ -1409,6 +1409,7 @@ def _reload_module_core(plugin_name):
                 'module': mod_name,
                 'fresh_import': True,
                 'new_endpoints': new_endpoints,
+                'route_map': _endpoint_routes(app, new_endpoints),
                 'note': 'Fresh module imported and registered. Routes are live immediately.',
             }, 200
 
@@ -1475,6 +1476,7 @@ def _reload_module_core(plugin_name):
         'swapped_endpoints': swapped,
         'missing_endpoints': missing,
         'new_endpoints': newly_added,
+        'route_map': _endpoint_routes(app, swapped + newly_added),
         'note': ('Module hot-reloaded. ' +
                  ('Newly attached: ' + ', '.join(newly_added) + '. ' if newly_added else '') +
                  'No Flask restart needed.'),
@@ -1488,6 +1490,28 @@ def repair_reload_module(plugin_name):
     return jsonify(body), code
 
 
+def _endpoint_routes(app, endpoints):
+    """Return ``{endpoint: [{rule, methods}, ...]}`` for each endpoint in
+    ``endpoints``.  ``methods`` is sorted, excludes the implicit HEAD/OPTIONS
+    werkzeug adds for every GET rule so the deploy report stays readable.
+    """
+    out = {}
+    if not endpoints:
+        return out
+    eps = set(endpoints)
+    by_ep = getattr(app.url_map, '_rules_by_endpoint', None) or {}
+    for ep in eps:
+        rules = by_ep.get(ep) or []
+        for r in rules:
+            methods = sorted(m for m in (r.methods or set())
+                             if m not in ('HEAD', 'OPTIONS'))
+            out.setdefault(ep, []).append({
+                'rule': r.rule,
+                'methods': methods,
+            })
+    return out
+
+
 def _auto_reload_extracted_services(extracted):
     """Walk the extractor's manifest, find every ``pgpy/<name>_service.py``
     entry, and hot-reload each one in-process so its routes go live
@@ -1495,12 +1519,19 @@ def _auto_reload_extracted_services(extracted):
     right after extraction succeeds.
 
     Returns a list of per-module summary dicts (one per attempted reload).
+    Each entry includes a ``route_map`` field mapping each endpoint
+    (swapped + new) to its concrete URL rule + HTTP methods, so the deploy
+    report is self-documenting: operators see ``/api/weather-location [GET]``
+    next to ``get_weather_location`` and can immediately tell which HTTP
+    routes just came online.
+
     Errors are reported per-module — a broken plug-in does not abort the
     deploy or affect the other plug-ins.
     """
     results = []
     if not extracted or _FLASK_APP_REF is None:
         return results
+    app = _FLASK_APP_REF
     seen = set()
     for entry in extracted:
         path = (entry.get('file') or '') if isinstance(entry, dict) else ''
@@ -1521,13 +1552,16 @@ def _auto_reload_extracted_services(extracted):
                             'success': False,
                             'error': 'auto-reload crashed: ' + str(ex)})
             continue
+        swapped = body.get('swapped_endpoints') or []
+        new_eps = body.get('new_endpoints')     or []
         results.append({
             'module': mod_name,
             'success': bool(body.get('success')),
             'http_status': code,
             'fresh_import': bool(body.get('fresh_import')),
-            'swapped_endpoints': body.get('swapped_endpoints') or [],
-            'new_endpoints':     body.get('new_endpoints')     or [],
+            'swapped_endpoints': swapped,
+            'new_endpoints':     new_eps,
+            'route_map':         body.get('route_map') or {},
             'error': body.get('error'),
             'rolled_back_endpoints': body.get('rolled_back_endpoints') or [],
         })

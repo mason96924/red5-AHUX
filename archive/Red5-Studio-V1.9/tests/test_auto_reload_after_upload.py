@@ -113,6 +113,37 @@ with app.test_client() as c:
       j2.get('ok') is True and j2.get('via') == 'bundle-auto-reload',
       str(j2))
 
+    # Self-documenting deploy panel: route_map maps each endpoint to its
+    # actual URL rule + HTTP methods.
+    if ws_entry:
+        rm = ws_entry.get('route_map') or {}
+        t('1l-rm-a. route_map is a dict', isinstance(rm, dict))
+        t('1l-rm-b. route_map contains entry for injected handler',
+          sentinel_ep in rm, 'keys=' + str(list(rm.keys()))[:200])
+        if sentinel_ep in rm:
+            entries = rm[sentinel_ep]
+            t('1l-rm-c. route_map entry is a list', isinstance(entries, list) and len(entries) > 0)
+            if entries:
+                rt = entries[0]
+                t('1l-rm-d. rule field matches injected route',
+                  rt.get('rule') == sentinel_route,
+                  'rule=' + str(rt.get('rule')))
+                t('1l-rm-e. methods is a list (no HEAD/OPTIONS noise)',
+                  isinstance(rt.get('methods'), list) and 'HEAD' not in rt['methods']
+                  and 'OPTIONS' not in rt['methods'],
+                  'methods=' + str(rt.get('methods')))
+                t('1l-rm-f. methods includes GET (matches injection)',
+                  'GET' in (rt.get('methods') or []))
+        # Pre-existing swapped endpoints also get their rules populated.
+        gwl = rm.get('get_weather_location') or []
+        t('1l-rm-g. pre-existing swapped endpoint has route entries',
+          len(gwl) > 0,
+          'get_weather_location=' + str(gwl))
+        if gwl:
+            t('1l-rm-h. pre-existing endpoint rule is /api/weather-location',
+              gwl[0].get('rule') == '/api/weather-location',
+              str(gwl[0]))
+
     # Reload summary counts match.
     summary = j.get('reload_summary') or {}
     t('1m. reload_summary.attempted matches list length',

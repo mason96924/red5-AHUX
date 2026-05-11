@@ -705,7 +705,10 @@ function _doRepairReload(name){
                     _showFreshBadge(name, ne);
                 } else {
                     var n = (rs.j.swapped_endpoints || []).length;
-                    status.textContent = 'OK: hot-reloaded ' + name + ' — swapped ' + n + ' endpoint(s): ' + (rs.j.swapped_endpoints || []).join(', ');
+                    var ne2 = (rs.j.new_endpoints || []);
+                    status.textContent = 'OK: hot-reloaded ' + name + ' — swapped ' + n + ' endpoint(s)' +
+                        (ne2.length ? ' + attached ' + ne2.length + ' NEW route(s): ' + ne2.join(', ') : ': ' + (rs.j.swapped_endpoints || []).join(', '));
+                    if (ne2.length) _showFreshBadge(name, ne2);
                 }
             } else {
                 status.className = 'status-err';
@@ -778,7 +781,10 @@ function _doRepairUpload(name, file){
                                     _showFreshBadge(name, ne);
                                 } else {
                                     var n = (rl.j.swapped_endpoints || []).length;
-                                    status.textContent = 'OK: replaced + hot-reloaded ' + name + ' — ' + n + ' endpoint(s) now serve the new code, no Flask restart needed.';
+                                    var ne2 = (rl.j.new_endpoints || []);
+                                    status.textContent = 'OK: replaced + hot-reloaded ' + name + ' — ' + n + ' endpoint(s) now serve the new code' +
+                                        (ne2.length ? ' + attached ' + ne2.length + ' NEW route(s): ' + ne2.join(', ') : '') + ', no Flask restart needed.';
+                                    if (ne2.length) _showFreshBadge(name, ne2);
                                 }
                             } else {
                                 status.className = 'status-info';

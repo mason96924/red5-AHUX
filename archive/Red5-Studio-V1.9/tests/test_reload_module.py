@@ -165,6 +165,49 @@ with app.test_client() as c:
     test('6b. weather_service swapped its endpoints',
          len(j.get('swapped_endpoints') or []) > 0)
 
+    # --- 7. case-A reload ATTACHES new routes added since boot ---
+    # Inject a brand-new add_url_rule call into weather_service's
+    # register() body and verify the next reload picks it up.  This is
+    # the upload_service.py "/api/zip-files" deployment scenario: an
+    # already-loaded module gains a new endpoint via a one-file replace.
+    ws_path = sys.modules['weather_service'].__file__
+    ws_src  = open(ws_path).read()
+    sentinel_route = '/api/_test_newroute_xyz'
+    sentinel_endpoint = '_test_newroute_xyz_handler'
+    # The text MUST be indented to match weather_service.register()'s
+    # body (4-space indent).  Trailing newline so it slots in cleanly.
+    injection = (
+        "    def _test_newroute_xyz_handler():\n"
+        "        from flask import jsonify\n"
+        "        return jsonify({'ok': True, 'where': 'newly-attached'})\n"
+        "    app.add_url_rule('" + sentinel_route + "', '" + sentinel_endpoint + "', _test_newroute_xyz_handler, methods=['GET'])\n"
+    )
+    # Find the end of register() by walking from the last add_url_rule's
+    # closing paren up to the next blank-or-dedented line, and insert
+    # just BEFORE that boundary so we stay inside the function body.
+    last_idx = ws_src.rfind("app.add_url_rule(")
+    close_paren = ws_src.find(')', ws_src.find('methods=', last_idx))
+    end_of_line = ws_src.find('\n', close_paren) + 1
+    new_src = ws_src[:end_of_line] + injection + ws_src[end_of_line:]
+    open(ws_path, 'w').write(new_src)
+    try:
+        r = c.post('/api/repair/reload-module/weather_service')
+        j = r.get_json() or {}
+        test('7a. reload-after-injection succeeds', bool(j.get('success')), str(j)[:200])
+        test('7b. response lists new_endpoints',
+             sentinel_endpoint in (j.get('new_endpoints') or []),
+             'new_endpoints=' + str(j.get('new_endpoints')))
+        # Hit the brand-new route to confirm it's actually serving.
+        r2 = c.get(sentinel_route)
+        test('7c. brand-new route is live (200)',
+             r2.status_code == 200, str(r2.status_code))
+        j2 = r2.get_json() or {}
+        test('7d. brand-new route returns expected body',
+             j2.get('ok') is True and j2.get('where') == 'newly-attached',
+             str(j2))
+    finally:
+        open(ws_path, 'w').write(ws_src)  # restore original
+
 print()
 print('SUMMARY:', len(PASSED), 'passed,', len(FAILED), 'failed')
 if FAILED:

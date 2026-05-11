@@ -1229,9 +1229,13 @@ def repair_reload_module(plugin_name):
     Three cases are handled:
 
       (a) Module already loaded (auto-discovered at boot) →
-          importlib.reload(mod) → rebind globals via register() with
-          add_url_rule no-op'd → swap app.view_functions[ep] for every
-          previously-registered endpoint.  Next request hits new code.
+          importlib.reload(mod) → rebind globals + ATTACH NEW routes
+          via a filtering add_url_rule wrapper (existing endpoints are
+          skipped; new endpoints are attached on the fly by toggling
+          Flask's _got_first_request flag) → swap app.view_functions[ep]
+          for every previously-registered endpoint.  Next request hits
+          new code; brand-new routes added to the module since boot
+          also go live without a Flask restart.
 
       (b) Module never loaded AND no endpoints registered yet (brand-new
           plug-in just landed via /api/repair/upload-plugin in this
@@ -1350,13 +1354,38 @@ def repair_reload_module(plugin_name):
                             'module': mod_name}), 500
 
     # 3. Re-bind module globals (DATA_ROOT, etc.) by calling register() with
-    #    add_url_rule no-op'd so it can't AssertionError on dup endpoints.
-    #    Suppress background threads — they're already running.
+    #    add_url_rule wrapped to (a) silently SKIP duplicates (so we don't
+    #    AssertionError on existing endpoints) and (b) ALLOW genuinely new
+    #    routes added in the reloaded module to be attached on the fly.
+    #    Suppress background threads -- they're already running.
     real_add_url_rule = app.add_url_rule
+    existing_endpoints = set(app.view_functions.keys())
+    newly_added = []
+    def _filtering_add_url_rule(rule, endpoint=None, view_func=None, **kw):
+        # Flask's signature: add_url_rule(rule, endpoint=None, view_func=None, **options)
+        # Derive endpoint name the same way Flask does (view_func.__name__ if not given).
+        ep = endpoint or (view_func.__name__ if view_func is not None else None)
+        if ep is None:
+            return None
+        if ep in existing_endpoints:
+            return None   # duplicate -- already bound, will be swapped in step 4
+        # NEW route: attach via the real add_url_rule.  Flask refuses
+        # add_url_rule after _got_first_request, so flip the flag for
+        # the duration of this single call (same trick as the fresh-
+        # import path).
+        was_first = getattr(app, '_got_first_request', False)
+        try:
+            try: app._got_first_request = False
+            except AttributeError: pass
+            real_add_url_rule(rule, endpoint=endpoint, view_func=view_func, **kw)
+            newly_added.append(ep)
+        finally:
+            try: app._got_first_request = was_first
+            except AttributeError: pass
     rebind_ctx = dict(ctx_snapshot)
     rebind_ctx['start_forecast_thread'] = False
     rebind_ctx['start_band_thread']     = False
-    app.add_url_rule = lambda *args, **kw: None
+    app.add_url_rule = _filtering_add_url_rule
     try:
         if hasattr(mod, 'register'):
             mod.register(app, rebind_ctx)
@@ -1383,7 +1412,10 @@ def repair_reload_module(plugin_name):
         'module': mod_name,
         'swapped_endpoints': swapped,
         'missing_endpoints': missing,
-        'note': 'Module hot-reloaded. New routes (if any) require a full Flask restart to register.',
+        'new_endpoints': newly_added,
+        'note': ('Module hot-reloaded. ' +
+                 ('Newly attached: ' + ', '.join(newly_added) + '. ' if newly_added else '') +
+                 'No Flask restart needed.'),
     })
 
 

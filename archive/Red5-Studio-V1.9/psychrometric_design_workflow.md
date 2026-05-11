@@ -145,6 +145,8 @@ Mechanical designers use the psych chart as **three tools in one**:
 
 ## Future Feature Hook: "Designer Mode"
 
+**STATUS: Shipped in V1.9 (2026-02-09)** — toggle button live at `dashboard.html → 3D Psychrometric Chart → X-Y Detail → + Designer Mode`.
+
 A proposed view that overlays the four sizing numbers (coil Δh, BF, ADP, ERV ε) directly on top of the existing 2D chart so an MEP engineer can read them straight off the screen without leaving the dashboard. Would close the loop from *"live telemetry visualization"* → *"design-phase decision support."*
 
 Implementation sketch:
@@ -154,6 +156,32 @@ Implementation sketch:
 - Compute `BF = (SA – ADP) / (MA – ADP)` and show in the bottom-right corner of the chart.
 - Compute Δh from the segment endpoints and tons assuming a user-input CFM (sidebar field, default 10,000 CFM).
 - Optional second toggle `+ ERV` shows pre/post-recovery states and live ε.
+
+### Shipped V1 implementation details
+
+- **Toggle**: amber `+ Designer Mode` button top-left of the 2D overlay (`px 280, top 46`).
+- **Inputs panel**: floating amber-bordered card with 8 inputs (CFM, OAfrac, OA T/RH, RA T/RH, SA T/RH). State persisted in `localStorage` under `red5DesignerState`.
+- **Polygon**: dashed slate OA→RA mixing line; solid 2.6-px amber MA→SA process line; dashed amber SA→ADP extension to saturation curve.
+- **Dots**: color-coded with inline labels (OA pink `#fb7185`, RA lime `#a3e635`, MA amber `#fbbf24`, SA cyan `#22d3ee`, ADP light-blue `#67e8f9`).
+- **Readout card**: bottom-left of chart, 5 rows: Coil Δh (kJ/kg), Cooling tons (RT), ADP (°C), Bypass BF (color-coded: green <0.08, yellow <0.18, red ≥0.18), Room sensible (kBTU/h).
+- **ADP solver**: walks the MA→SA direction in 0.1 °C steps from SA downward until the projected line crosses the 100% RH curve (`getW(T, 100)`).
+- **Visibility**: button + panel hidden when chart switches to T-Time, W-Time, or Monthly × Sites modes (it's a psy-chart-only tool).
+- **Decoupled from live telemetry by design** — Designer Mode is the parallel "what coil do I need?" view that complements the live dot-cloud and dynamics animation.
+
+#### Verified numbers for default Korean summer scenario (CFM 10k, OA 20%)
+
+| Reading | Value | Sanity check |
+|---|---|---|
+| Coil Δh | 19.0 kJ/kg | typical summer cooling coil |
+| Cooling tons | 30.7 RT | rule of thumb 400 CFM/ton in latent climates → 25 RT, 30 RT fits 20% OA mix at OA=35°C/50%RH |
+| ADP | 11.9 °C | 7-row coil territory |
+| Bypass BF | 0.08 | 8-row coil result (green flag) |
+| Room sensible | 213.8 kBTU/h | 10000 × 1.08 × (24-13)×1.8 = 213.8 ✓ |
+
+#### Not yet implemented (deferred)
+
+- ERV / HRV pre-post-recovery overlay + live ε readout — would add a 6th input (`+ ERV`) toggle. The geometric piece would draw OA' (post-recovery OA) on the OA→RA line at distance `ε * |OA-RA|`. Easy ~15-line extension when needed.
+- Auto-anchor OA point from latest weather data — currently user-input only. A `[USE LIVE OA]` button next to the OA T/RH fields would copy the most recent `weatherData[last]` values into the inputs.
 
 ---
 

@@ -71,6 +71,22 @@ global.initPsy3D = function(container, opts){
   var _optMinH = 25; // kJ/kg dry air
   var _optMaxH = 50; // kJ/kg dry air
 
+  /* ---------- DESIGNER MODE (MEP equipment-sizing overlay) ----------
+     Persisted-state inputs for the Designer-Mode psychrometric overlay,
+     hoisted to module scope so render2DChart can reach them without going
+     through closures.  Defaults are realistic Korean-climate summer-design
+     numbers a junior MEP engineer would pull off Ch. 14 of the ASHRAE
+     Fundamentals handbook before doing any selection work. */
+  var _designerMode    = false;
+  var _designerCFM     = 10000;   /* SA volumetric flow, ft^3/min */
+  var _designerOAFrac  = 0.20;    /* fraction of OA in mixed air (0..1) */
+  var _designerOA_T    = 35.0;    /* OA dry-bulb, degC (typical 1% summer) */
+  var _designerOA_RH   = 50.0;    /* OA relative humidity, % */
+  var _designerRA_T    = 24.0;    /* RA dry-bulb, degC (occupied setpoint) */
+  var _designerRA_RH   = 50.0;    /* RA relative humidity, % */
+  var _designerSA_T    = 13.0;    /* SA dry-bulb, degC (cooling coil leaving) */
+  var _designerSA_RH   = 95.0;    /* SA relative humidity, % (near saturation) */
+
   /* ---------- theme helpers (synced with dashboard via localStorage.red5.theme) ---------- */
   function _p3Theme(){ try { return localStorage.getItem('red5.theme') || 'dark'; } catch(e){ return 'dark'; } }
   var P3_DARK_BG = 0x0f172a, P3_LIGHT_BG = 0xc5cbd2;
@@ -284,6 +300,170 @@ global.initPsy3D = function(container, opts){
 
   /* enthalpy helper */
   function enthalpy(T,W){return 1.006*T+W*(2501+1.86*T);}
+
+  /* ---------- DESIGNER MODE drawing helper ----------
+     Draws the OA -> MA -> SA process polygon on the 2D psych chart and
+     renders the four sizing numbers an MEP engineer pulls off the chart
+     during equipment selection:
+       - Coil dh           (kJ/kg dry air)         total enthalpy delta
+       - Coil tons         (= CFM*4.5*dh_btulb/12000)
+       - Coil BF           bypass factor = (SA - ADP) / (MA - ADP) on T axis
+       - ADP               apparatus dew point - intersection of the MA->SA
+                           process line extended to the saturation curve
+       - Room sensible     (kBTU/h)  = CFM * 1.08 * (RA_T - SA_T)
+     The chart is the same Carrier / ASHRAE chart designers learned in
+     school, just plotted at 1:1 with the live psych chart so the picture
+     reads identically.  Decoupled from live telemetry -- this is a
+     design-phase schematic tool.
+
+     Args:
+       ctx   - 2D canvas context, scaled by dpr already by caller
+       tx,wy - coordinate transforms (T degC -> px, W g/kg -> px)
+       pad   - {left,right,top,bottom} chart padding in px
+       pw,ph - inner plot width, height in px
+  */
+  function _drawDesignerOverlay(ctx, tx, wy, pad, pw, ph){
+    if (!_designerMode) return;
+    /* 1. Compute the four state points.  W stored in g/kg dry air. */
+    var oa_T = _designerOA_T, oa_W = getW(_designerOA_T, _designerOA_RH) * 1000;
+    var ra_T = _designerRA_T, ra_W = getW(_designerRA_T, _designerRA_RH) * 1000;
+    var sa_T = _designerSA_T, sa_W = getW(_designerSA_T, _designerSA_RH) * 1000;
+    /* MA = OAfrac * OA + (1 - OAfrac) * RA  on dry-bulb T and W (linear
+       mixing is accurate to <0.5% over comfort range; full enthalpy
+       mixing would require iterating because W = f(T, RH) is nonlinear,
+       but that's classroom over-engineering for a screen readout). */
+    var f = _designerOAFrac;
+    var ma_T = f * oa_T + (1 - f) * ra_T;
+    var ma_W = f * oa_W + (1 - f) * ra_W;
+
+    /* 2. Find ADP: extend the MA -> SA line until it intersects the
+       saturation curve (W = W_sat(T)).  Walk T downward from SA in 0.1
+       degC steps along the (MA->SA) direction.  Stop when W_line >=
+       W_sat(T_line) or when we run off the chart. */
+    var dT = sa_T - ma_T, dW = sa_W - ma_W;   /* both negative for cooling */
+    var lineW = function(t){ if (Math.abs(dT) < 1e-6) return sa_W; return ma_W + dW * (t - ma_T) / dT; };
+    var adp_T = sa_T, adp_W = sa_W;
+    for (var step = 0; step < 200; step++){
+        var tt = sa_T - step * 0.1;
+        if (tt < T_MIN + 0.5) break;
+        var wsat = getW(tt, 100) * 1000;
+        var wline = lineW(tt);
+        if (wline >= wsat) { adp_T = tt; adp_W = wsat; break; }
+    }
+
+    /* 3. Coil sizing numbers. */
+    var h_ma = enthalpy(ma_T, ma_W / 1000);    /* kJ/kg dry air */
+    var h_sa = enthalpy(sa_T, sa_W / 1000);
+    var dh_kj = h_ma - h_sa;                   /* coil total dh (cooling) */
+    var dh_btulb = dh_kj * 0.4299;             /* kJ/kg -> Btu/lb */
+    var tons = (_designerCFM * 4.5 * dh_btulb) / 12000;
+    /* Bypass factor: BF = (SA - ADP) / (MA - ADP).  Defined on T axis
+       (most common form).  BF approaching 0 = denser coil; ~0.05 for
+       8-row, ~0.15 for 4-row.  We display whichever has non-zero
+       denominator. */
+    var bf = (Math.abs(ma_T - adp_T) > 0.01)
+              ? (sa_T - adp_T) / (ma_T - adp_T)
+              : 0.0;
+    bf = Math.max(0, Math.min(1, bf));
+    /* Room sensible: classic 1.08 multiplier for CFM-degF.  Convert
+       (RA_T - SA_T) from degC to degF: dF = dC * 1.8.  */
+    var dTF = (ra_T - sa_T) * 1.8;
+    var kbtu_sens = (_designerCFM * 1.08 * dTF) / 1000;
+
+    /* 4. Draw process polygon: OA -> MA -> SA -> ADP, with thin amber
+       lines + larger labeled dots at each anchor point. */
+    var dot = function(t, w, color, label){
+        var X = tx(t), Y = wy(w);
+        ctx.beginPath(); ctx.arc(X, Y, 5.5, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1.2; ctx.stroke();
+        if (label){
+            ctx.fillStyle = color; ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(label, X + 8, Y - 6);
+        }
+    };
+    /* OA -> RA mixing line (dashed, slate) so the OA fraction is
+       visually obvious */
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = 'rgba(148,163,184,.55)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(tx(oa_T), wy(oa_W));
+    ctx.lineTo(tx(ra_T), wy(ra_W));
+    ctx.stroke();
+    ctx.restore();
+    /* MA -> SA process line (solid amber, thicker) */
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(tx(ma_T), wy(ma_W));
+    ctx.lineTo(tx(sa_T), wy(sa_W));
+    ctx.stroke();
+    /* SA -> ADP extension (thinner amber dashed) to show where the
+       process line lands on the saturation curve */
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(245,158,11,.55)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(tx(sa_T), wy(sa_W));
+    ctx.lineTo(tx(adp_T), wy(adp_W));
+    ctx.stroke();
+    ctx.restore();
+    /* Plot dots in z-order (back to front: ADP, OA, RA, MA, SA so SA is
+       on top because it's the smallest space).  SA gets its temp inline
+       so when SA and ADP nearly overlap (typical: SA=13, ADP=12) the
+       operator can still read both.  Labels offset symmetrically to
+       avoid stacking. */
+    dot(adp_T, adp_W, '#67e8f9', 'ADP ' + adp_T.toFixed(1) + '\u00b0C');
+    dot(oa_T,  oa_W,  '#fb7185', 'OA ' + oa_T.toFixed(1) + '\u00b0C ' + Math.round(_designerOA_RH) + '%');
+    dot(ra_T,  ra_W,  '#a3e635', 'RA ' + ra_T.toFixed(1) + '\u00b0C ' + Math.round(_designerRA_RH) + '%');
+    dot(ma_T,  ma_W,  '#fbbf24', 'MA ' + ma_T.toFixed(1) + '\u00b0C');
+    /* SA label placed ABOVE the dot (negative y offset) instead of the
+       default to avoid colliding with the ADP label (which sits to the
+       right of ADP) when SA-ADP \u0394T is small. */
+    var saX = tx(sa_T), saY = wy(sa_W);
+    ctx.beginPath(); ctx.arc(saX, saY, 5.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#22d3ee'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = '#22d3ee'; ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('SA ' + sa_T.toFixed(1) + '\u00b0C ' + Math.round(_designerSA_RH) + '%', saX + 8, saY + 16);
+
+    /* 5. Read-out card: pinned bottom-left of the chart inside the clip
+       region.  Compact 5-row digital display. */
+    var cardX = pad.left + 12, cardY = pad.top + ph - 122;
+    var cardW = 220,           cardH = 110;
+    ctx.fillStyle = 'rgba(2,6,23,.92)';
+    ctx.strokeStyle = '#b45309';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(cardX, cardY, cardW, cardH);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('DESIGNER  CFM ' + _designerCFM.toLocaleString() + '   OA ' + Math.round(f * 100) + '%',
+                 cardX + 8, cardY + 14);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px monospace';
+    var row = function(y, label, value, color){
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(label, cardX + 8, cardY + y);
+        ctx.fillStyle = color || '#fbbf24';
+        ctx.textAlign = 'right';
+        ctx.fillText(value, cardX + cardW - 8, cardY + y);
+        ctx.textAlign = 'left';
+    };
+    row(32, 'Coil \u0394h',    dh_kj.toFixed(1) + ' kJ/kg', '#fb923c');
+    row(48, 'Cooling tons', tons.toFixed(1) + ' RT',     '#fb923c');
+    row(64, 'ADP',          adp_T.toFixed(1) + ' \u00b0C',     '#67e8f9');
+    row(80, 'Bypass BF',    bf.toFixed(2),                bf < 0.08 ? '#22c55e' : (bf < 0.18 ? '#fbbf24' : '#ef4444'));
+    row(96, 'Room sens.',   kbtu_sens.toFixed(1) + ' kBTU/h', '#a3e635');
+  }
 
   /* i18n shim -- safely calls window.t() if i18n.js is loaded, otherwise
      falls back to the English default passed in.  Lets every chart string
@@ -894,6 +1074,10 @@ global.initPsy3D = function(container, opts){
           var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display = (c[0]==='front') ? 'block' : 'none';
           // Monthly \u00d7 Sites multi-city comparison only in T\u00d7Time.
           var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display = (c[0]==='front') ? 'block' : 'none';
+          // Designer Mode is psychrometric-chart specific (OA->MA->SA on the
+          // T-vs-W canvas), hide it in time-series modes.
+          var dmBtnHide=$('#p3-btn-designer'); if(dmBtnHide) dmBtnHide.style.display='none';
+          var dCfgHide =$('#p3-designer-cfg'); if(dCfgHide)  dCfgHide.style.display='none';
           // Strategy-overlay toggles only valid inside Monthly \u00d7 Sites mode.
           ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
             var el=$('#'+id); if(el) el.style.display='none';
@@ -923,6 +1107,8 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
+      var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='block';
+      var dCfgSh=$('#p3-designer-cfg'); if(dCfgSh) dCfgSh.style.display = _designerMode ? 'block' : 'none';
       ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
@@ -941,6 +1127,8 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
+      var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='none';
+      var dCfgSh=$('#p3-designer-cfg'); if(dCfgSh) dCfgSh.style.display='none';
       ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
@@ -1030,6 +1218,10 @@ global.initPsy3D = function(container, opts){
       var mr = $('#p3-ms-modes');   if (mr) mr.style.display   = inMs ? 'block' : 'none';
       var cc = $('#p3-ms-costcfg'); if (cc) cc.style.display = (inMs && _msMode === '$') ? 'block' : 'none';
       var bs2=$('#p3-btn-band-strategy'); if(bs2) bs2.style.display = inMs ? 'none' : 'block';
+      // Designer Mode toggle + inputs panel only meaningful in 'psy' mode,
+      // hide them in monthly-sites or any other non-psych-chart layout.
+      var dmBtn2=$('#p3-btn-designer'); if(dmBtn2) dmBtn2.style.display = (chart2DMode==='psy') ? 'block' : 'none';
+      var dCfg2 =$('#p3-designer-cfg'); if(dCfg2)  dCfg2.style.display  = (chart2DMode==='psy' && _designerMode) ? 'block' : 'none';
       render2DChart();
     };
 
@@ -1106,6 +1298,150 @@ global.initPsy3D = function(container, opts){
     msBandDynBtn.onclick= function(){ _msShowBandDyn = !_msShowBandDyn; _refreshMsBtn(msBandDynBtn, _msShowBandDyn); render2DChart(); };
     msOptBtn.onclick    = function(){ _msShowOpt     = !_msShowOpt;     _refreshMsBtn(msOptBtn,     _msShowOpt);
                                        _refreshOptCfg();                render2DChart(); };
+
+    /* ---------- Designer Mode toggle + inputs panel ----------
+       A standalone MEP equipment-sizing overlay on the 2D psychrometric
+       chart.  When toggled on, plots the OA -> MA -> SA process line plus
+       extension to saturation curve (ADP), and renders a numeric readout
+       (coil tons, dh, BF, ADP, room sensible) so an engineer can read
+       sizing numbers straight off the chart without leaving the dashboard.
+       Decoupled from live telemetry on purpose - this is a design-phase
+       schematic tool, fed by user-input design conditions, not live BACnet
+       data.  (The live telemetry already drives the dot-cloud + dynamics
+       animation; Designer Mode is the parallel "what coil do I need?"
+       view.) */
+    var dmBtn = $('#p3-btn-designer');
+    if (!dmBtn) {
+        dmBtn = document.createElement('button');
+        dmBtn.id = 'p3-btn-designer';
+        dmBtn.type = 'button';
+        dmBtn.textContent = '+ Designer Mode';
+        $('#p3-overlay2d').appendChild(dmBtn);
+    }
+    /* Anchor on the LEFT side at x=470, ABOVE the "B1-B10 + Dyn-Reset"
+       button to avoid collisions.  Visible only when the 2D chart is in
+       'psy' mode (not T-Time, W-Time, monthly-sites). */
+    dmBtn.style.cssText = 'position:absolute;top:46px;left:280px;z-index:51;'+
+        'background:rgba(15,23,42,.92);border:1px solid #f59e0b;color:#f59e0b;'+
+        'padding:6px 14px;border-radius:6px;font-size:10px;font-weight:900;'+
+        'letter-spacing:.08em;text-transform:uppercase;cursor:pointer;'+
+        'font-family:inherit;backdrop-filter:blur(14px);display:none';
+    dmBtn.title = 'MEP equipment-sizing overlay: plots OA -> MA -> SA process line on the psych chart and shows coil tons / dh / BF / ADP / room-sensible readouts. Design-phase tool (user-input conditions), separate from live telemetry.';
+
+    var _refreshDesignerBtn = function(){
+      dmBtn.style.borderColor = _designerMode ? '#f59e0b' : '#475569';
+      dmBtn.style.color       = _designerMode ? '#f59e0b' : '#94a3b8';
+      dmBtn.textContent       = (_designerMode ? '\u2713 ' : '+ ') + 'Designer Mode';
+    };
+    _refreshDesignerBtn();
+
+    /* Inputs panel - 5 number inputs + 2 dropdowns sit in a small floating
+       card.  Hidden unless _designerMode === true.  Sliders/inputs are
+       intentionally compact (digital readout aesthetic) to match the rest
+       of the dashboard. */
+    var dCfg = $('#p3-designer-cfg');
+    if (!dCfg) {
+        dCfg = document.createElement('div');
+        dCfg.id = 'p3-designer-cfg';
+        dCfg.style.cssText = 'position:absolute;top:78px;left:280px;z-index:51;'+
+            'background:rgba(15,23,42,.95);border:1px solid #b45309;border-radius:6px;'+
+            "padding:10px 12px;font-family:'Courier New',monospace;font-size:10px;"+
+            'color:#e2e8f0;backdrop-filter:blur(14px);width:300px;display:none';
+        dCfg.innerHTML =
+            '<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#f59e0b;margin-bottom:8px;font-weight:900">Design Inputs</div>'+
+            '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center">'+
+              '<label>CFM</label>'+
+                '<input type="number" id="p3-d-cfm" min="500" max="200000" step="500" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">ft\u00b3/min</span>'+
+              '<label>OA frac</label>'+
+                '<input type="number" id="p3-d-oafrac" min="0" max="1" step="0.05" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">0\u20131</span>'+
+              '<label>OA T</label>'+
+                '<input type="number" id="p3-d-oat" min="-30" max="50" step="0.5" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">\u00b0C</span>'+
+              '<label>OA RH</label>'+
+                '<input type="number" id="p3-d-oarh" min="0" max="100" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">%</span>'+
+              '<label>RA T</label>'+
+                '<input type="number" id="p3-d-rat" min="15" max="30" step="0.5" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">\u00b0C</span>'+
+              '<label>RA RH</label>'+
+                '<input type="number" id="p3-d-rarh" min="30" max="70" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">%</span>'+
+              '<label>SA T</label>'+
+                '<input type="number" id="p3-d-sat" min="5" max="35" step="0.5" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">\u00b0C</span>'+
+              '<label>SA RH</label>'+
+                '<input type="number" id="p3-d-sarh" min="50" max="100" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">%</span>'+
+            '</div>'+
+            '<div style="margin-top:8px;font-size:9px;color:#64748b">MA = OA frac \u00d7 OA + (1 \u2013 OA frac) \u00d7 RA</div>';
+        $('#p3-overlay2d').appendChild(dCfg);
+    }
+    /* Populate inputs from persisted state (localStorage) + wire change handlers. */
+    var _LS_KEY_D = 'red5DesignerState';
+    try {
+        var saved = JSON.parse(localStorage.getItem(_LS_KEY_D) || '{}');
+        if (typeof saved.cfm    === 'number') _designerCFM    = saved.cfm;
+        if (typeof saved.oafrac === 'number') _designerOAFrac = saved.oafrac;
+        if (typeof saved.oat    === 'number') _designerOA_T   = saved.oat;
+        if (typeof saved.oarh   === 'number') _designerOA_RH  = saved.oarh;
+        if (typeof saved.rat    === 'number') _designerRA_T   = saved.rat;
+        if (typeof saved.rarh   === 'number') _designerRA_RH  = saved.rarh;
+        if (typeof saved.sat    === 'number') _designerSA_T   = saved.sat;
+        if (typeof saved.sarh   === 'number') _designerSA_RH  = saved.sarh;
+        if (typeof saved.on     === 'boolean') _designerMode  = saved.on;
+    } catch(e) { /* ignore */ }
+    var _setD = function(id, val){ var el = dCfg.querySelector('#'+id); if (el) el.value = val; };
+    _setD('p3-d-cfm',    _designerCFM);
+    _setD('p3-d-oafrac', _designerOAFrac);
+    _setD('p3-d-oat',    _designerOA_T);
+    _setD('p3-d-oarh',   _designerOA_RH);
+    _setD('p3-d-rat',    _designerRA_T);
+    _setD('p3-d-rarh',   _designerRA_RH);
+    _setD('p3-d-sat',    _designerSA_T);
+    _setD('p3-d-sarh',   _designerSA_RH);
+    _refreshDesignerBtn();
+    dCfg.style.display = _designerMode ? 'block' : 'none';
+
+    var _persistDesignerState = function(){
+        try {
+            localStorage.setItem(_LS_KEY_D, JSON.stringify({
+                cfm: _designerCFM, oafrac: _designerOAFrac,
+                oat: _designerOA_T, oarh: _designerOA_RH,
+                rat: _designerRA_T, rarh: _designerRA_RH,
+                sat: _designerSA_T, sarh: _designerSA_RH,
+                on: _designerMode,
+            }));
+        } catch(e) { /* quota / private-mode - ignore */ }
+    };
+    var _wireInput = function(id, setter, parser){
+        var el = dCfg.querySelector('#'+id);
+        if (!el) return;
+        el.oninput = function(){
+            var v = parser ? parser(el.value) : parseFloat(el.value);
+            if (!isFinite(v)) return;
+            setter(v);
+            _persistDesignerState();
+            render2DChart();
+        };
+    };
+    _wireInput('p3-d-cfm',    function(v){ _designerCFM    = Math.max(500, v); });
+    _wireInput('p3-d-oafrac', function(v){ _designerOAFrac = Math.max(0, Math.min(1, v)); });
+    _wireInput('p3-d-oat',    function(v){ _designerOA_T   = v; });
+    _wireInput('p3-d-oarh',   function(v){ _designerOA_RH  = Math.max(0, Math.min(100, v)); });
+    _wireInput('p3-d-rat',    function(v){ _designerRA_T   = v; });
+    _wireInput('p3-d-rarh',   function(v){ _designerRA_RH  = Math.max(0, Math.min(100, v)); });
+    _wireInput('p3-d-sat',    function(v){ _designerSA_T   = v; });
+    _wireInput('p3-d-sarh',   function(v){ _designerSA_RH  = Math.max(0, Math.min(100, v)); });
+
+    dmBtn.onclick = function(){
+        _designerMode = !_designerMode;
+        _refreshDesignerBtn();
+        dCfg.style.display = _designerMode ? 'block' : 'none';
+        _persistDesignerState();
+        render2DChart();
+    };
 
     /* OA-intake visualisation toggle.  Controls the OA-damper line on
        each panel + the monthly damper strip below the X axis + the
@@ -4448,6 +4784,12 @@ global.initPsy3D = function(container, opts){
     }
 
     ctx.restore();
+
+    /* Designer Mode overlay: drawn AFTER ctx.restore() so it sits above
+       the clipped chart contents but draws into the same pad/tx/wy
+       coordinate space.  Internally guarded by _designerMode -- no-op
+       when toggle is off so the regular weather-strip view is untouched. */
+    _drawDesignerOverlay(ctx, tx, wy, pad, pw, ph);
 
     /* axes */
     ctx.strokeStyle='#64748b';ctx.lineWidth=1;

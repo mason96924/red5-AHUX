@@ -3,6 +3,42 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Designer Mode (MEP equipment-sizing overlay on 2D psych chart) (2026-02-09)
+**Brief**: Adds a design-phase decision-support overlay to the 2D X-Y Detail view. Toggling `+ Designer Mode` opens a floating amber-bordered inputs card (CFM, OA fraction, OA T/RH, RA T/RH, SA T/RH) and draws the classic OA → MA → SA process polygon on top of the live psych chart, plus a 5-row readout card showing the four sizing numbers an MEP engineer pulls off the chart during equipment selection: Coil Δh, Cooling tons, ADP, Bypass BF, Room sensible.
+
+### What's new (`js/psy-3d-engine.js`)
+- 9 new module-level state vars (`_designerMode`, `_designerCFM`, `_designerOAFrac`, `_designerOA_T/RH`, `_designerRA_T/RH`, `_designerSA_T/RH`) with localStorage persistence under `red5DesignerState`.
+- New `_drawDesignerOverlay(ctx, tx, wy, pad, pw, ph)` helper (~140 lines, module-level so it sees `psat/getW/enthalpy/T_MIN/W_MAX`). Drawn in `render2DChart` right after `ctx.restore()` so it sits above the clipped chart contents but coordinates align with the rest of the chart.
+- ADP solver: walks the MA→SA direction in 0.1 °C steps from SA downward; stops when the projected line crosses the 100% RH curve. Robust against zero-ΔT and off-chart cases.
+- BF computed on T-axis (most common form): `(SA - ADP) / (MA - ADP)`, clamped [0, 1], color-coded: green <0.08 (8-row coil), yellow <0.18 (4–6 row), red ≥0.18 (under-sized).
+- Tons: `(CFM × 4.5 × Δh_btulb) / 12000`. Δh converted from kJ/kg via 0.4299 factor.
+- Room sensible: `(CFM × 1.08 × ΔT_°F) / 1000` in kBTU/h.
+- Toggle button created in `setupControls` (amber border, top:46/left:280), inputs panel right below it. Visibility wired into the `psy` / `tt` / `wt` / `monthly-sites` mode-switch handlers so the button only appears in psy mode.
+- Color palette: OA pink `#fb7185`, RA lime `#a3e635`, MA amber `#fbbf24`, SA cyan `#22d3ee`, ADP light-blue `#67e8f9`, process line solid amber `#f59e0b`, mixing line dashed slate `#94a3b8`.
+- Dot labels include T + RH inline (`OA 35.0°C 50%`) so the operator reads design conditions straight off the chart.
+
+### Verified numbers (default Korean summer scenario: CFM 10k, OA 20%, OA 35°C/50%, RA 24°C/50%, SA 13°C/95%)
+- Coil Δh: 19.0 kJ/kg ✓ (typical summer cooling)
+- Cooling tons: 30.7 RT ✓ (400 CFM/ton rule of thumb → 25 RT, +20% for latent → ~30 RT)
+- ADP: 11.9 °C ✓ (7-row coil)
+- Bypass BF: 0.08 (green/8-row)
+- Room sensible: 213.8 kBTU/h = 10000 × 1.08 × (24-13)×1.8 ✓
+
+### Test / regression
+- JS syntax verified via `node --check`.
+- Visual mock-up generated at `/tmp/designer_mockup.html` and screenshot-validated.
+- Full backend regression still **227/227** (no backend changes).
+
+### Live deploy
+- `js/psy-3d-engine.js` (286,359 bytes) hot-deployed to `219.79.12.63:5001/api/upload-file`. Hard-refresh the dashboard to pick it up (Babel-compiled main bundle uses this file directly).
+- `red5_bundle.zip` rebuilt (1734.4 KB, MD5 `b0536483b098d03bf02107ba1c069b88`) and synced to `/app/frontend/public/` + `/app/frontend/public/red5-files/`.
+- `psychrometric_design_workflow.md` updated to mark Designer Mode "Shipped" with the verified numbers and document deferred ERV / live-OA-anchor extensions.
+
+### Files changed
+- `js/psy-3d-engine.js` — state vars + helper + toggle button + inputs panel + 4 mode-switch visibility hooks.
+- `psychrometric_design_workflow.md` — marked feature shipped + appended shipped-implementation section.
+
+
 ## V1.9 Self-Documenting Deploy Panel · route_map (2026-02-09)
 **Brief**: The auto-reload deploy panel now shows the **actual URL routes + HTTP methods** that just came online, not just raw endpoint names. Operators can read the deploy report and immediately tell which HTTP endpoints to hit.
 

@@ -212,6 +212,70 @@ with app.test_client() as c:
     finally:
         open(ws_path, 'w').write(ws_src)  # restore original
 
+    # --- 8. Atomic rollback: when register() raises mid-way after
+    # attaching some new routes, the route table must end up identical
+    # to its pre-reload state.  Inject TWO new routes and then a
+    # deliberate `raise` between them.  Expected: first route is added,
+    # exception fires, BOTH routes are rolled back, pre-existing routes
+    # remain swapped to the old (still-good) function refs.
+    ws_path = sys.modules['weather_service'].__file__
+    ws_src  = open(ws_path).read()
+    rb_route_a  = '/api/_rb_test_route_a'
+    rb_route_b  = '/api/_rb_test_route_b'
+    rb_ep_a     = '_rb_test_handler_a'
+    rb_ep_b     = '_rb_test_handler_b'
+    rb_injection = (
+        "    def _rb_test_handler_a():\n"
+        "        from flask import jsonify\n"
+        "        return jsonify({'ok': 'a'})\n"
+        "    app.add_url_rule('" + rb_route_a + "', '" + rb_ep_a + "', _rb_test_handler_a, methods=['GET'])\n"
+        "    raise RuntimeError('deliberate failure between routes')\n"
+        "    def _rb_test_handler_b():\n"
+        "        from flask import jsonify\n"
+        "        return jsonify({'ok': 'b'})\n"
+        "    app.add_url_rule('" + rb_route_b + "', '" + rb_ep_b + "', _rb_test_handler_b, methods=['GET'])\n"
+    )
+    last_idx = ws_src.rfind("app.add_url_rule(")
+    close_paren = ws_src.find(')', ws_src.find('methods=', last_idx))
+    end_of_line = ws_src.find('\n', close_paren) + 1
+    new_src = ws_src[:end_of_line] + rb_injection + ws_src[end_of_line:]
+    # Snapshot route count + view_function map BEFORE the failing reload.
+    pre_rule_count = len(list(app.url_map.iter_rules()))
+    pre_view_fns   = dict(app.view_functions)
+    open(ws_path, 'w').write(new_src)
+    try:
+        r = c.post('/api/repair/reload-module/weather_service')
+        j = r.get_json() or {}
+        test('8a. failing reload returns 500', r.status_code == 500, str(r.status_code))
+        test('8b. response says success=False', j.get('success') is False)
+        test('8c. error mentions register failure',
+             'register' in (j.get('error') or '').lower())
+        test('8d. response includes rolled_back_endpoints list',
+             isinstance(j.get('rolled_back_endpoints'), list))
+        test('8e. rolled_back_endpoints contains the partial route',
+             rb_ep_a in (j.get('rolled_back_endpoints') or []),
+             'rolled_back=' + str(j.get('rolled_back_endpoints')))
+        # The partial route MUST be gone from view_functions.
+        test('8f. partial route purged from view_functions',
+             rb_ep_a not in app.view_functions)
+        # url_map rules count back to pre-state (or lower — we may have
+        # cleaned out other failed rule attempts too).
+        post_rule_count = len(list(app.url_map.iter_rules()))
+        test('8g. url_map rule count returned to pre-state',
+             post_rule_count == pre_rule_count,
+             'pre=' + str(pre_rule_count) + ' post=' + str(post_rule_count))
+        # GET on the partial route should now 404.
+        r2 = c.get(rb_route_a)
+        test('8h. partial route now serves 404 after rollback',
+             r2.status_code == 404, str(r2.status_code))
+        # Pre-existing endpoints still bound (no collateral damage).
+        all_preexisting_intact = all(ep in app.view_functions for ep in pre_view_fns)
+        test('8i. all pre-existing endpoints still bound', all_preexisting_intact)
+    finally:
+        open(ws_path, 'w').write(ws_src)  # restore original
+        # Recover live module state by re-reloading.
+        c.post('/api/repair/reload-module/weather_service')
+
 print()
 print('SUMMARY:', len(PASSED), 'passed,', len(FAILED), 'failed')
 if FAILED:

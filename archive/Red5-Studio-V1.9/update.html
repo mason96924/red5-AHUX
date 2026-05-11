@@ -67,6 +67,34 @@ h1 span{color:#ef4444;font-style:italic}
 <div id="diskStatus" style="margin-top:10px;font-size:12px"></div>
 </div>
 
+<div class="card" id="hotReloadCard">
+<h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <span>Hot-Reload Plug-In</span>
+  <span style="color:#64748b;font-size:10px;letter-spacing:.1em;text-transform:uppercase">no flask restart</span>
+</h2>
+<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">
+  <p class="note" style="margin:0 0 6px;font-style:normal">Swap a single plug-in module's code in-place after pushing a new bundle, instead of toggling the enteliWEB <code style="background:#1e293b;padding:1px 4px;border-radius:3px">app.py</code> object. Brand-new routes added since boot are attached on the fly. If <code style="background:#1e293b;padding:1px 4px;border-radius:3px">register()</code> raises, every partially-bound route is rolled back atomically.</p>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <select id="hotReloadPlugin" data-testid="hot-reload-plugin-select"
+    style="background:#020617;color:#e2e8f0;border:1px solid #334155;padding:8px 10px;font-family:'Courier New',monospace;font-size:12px;border-radius:4px;flex:1;min-width:240px">
+    <option value="upload_service">upload_service</option>
+    <option value="weather_service">weather_service</option>
+    <option value="band_service">band_service</option>
+    <option value="telemetry_service">telemetry_service</option>
+    <option value="webhook_bridge_service">webhook_bridge_service</option>
+    <option value="mqtt_bridge_service">mqtt_bridge_service</option>
+    <option value="modbus_bridge_service">modbus_bridge_service</option>
+    <option value="ws_bridge_service">ws_bridge_service</option>
+    <option value="bridges_admin_service">bridges_admin_service</option>
+  </select>
+  <button class="btn" id="hotReloadBtn" data-testid="hot-reload-btn"
+    style="padding:8px 16px;font-size:11px;background:#1e1b4b;color:#a5b4fc;border:1px solid #4f46e5;text-transform:uppercase;letter-spacing:.08em"
+    onclick="hotReloadPlugin()" title="POST /api/repair/reload-module/<name>">Reload</button>
+</div>
+<div id="hotReloadStatus" data-testid="hot-reload-status" style="margin-top:10px;font-size:12px"></div>
+</div>
+
 <style>
 .disk-meter{margin:6px 0 14px;background:#020617;border:1px solid #1e293b;border-radius:6px;padding:10px 12px}
 .disk-meter .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:11px;color:#94a3b8;letter-spacing:.05em;text-transform:uppercase}
@@ -327,6 +355,69 @@ function cleanupDisk(){
                 ? err.message
                 : 'Cleanup failed: ' + err.message;
             btn.disabled = false; rbtn.disabled = false;
+        });
+}
+
+function hotReloadPlugin(){
+    var base = getApiBase(); if (!base) return;
+    var sel = document.getElementById('hotReloadPlugin');
+    var name = sel && sel.value ? sel.value : '';
+    var btn = document.getElementById('hotReloadBtn');
+    var statusEl = document.getElementById('hotReloadStatus');
+    if (!name){ return; }
+    if (btn){ btn.disabled = true; btn.textContent = 'Reloading...'; }
+    if (statusEl){
+        statusEl.className = '';
+        statusEl.style.color = '#94a3b8';
+        statusEl.innerHTML = 'POST <code style="background:#1e293b;padding:1px 4px;border-radius:3px">/api/repair/reload-module/' + name + '</code>...';
+    }
+    fetch(base + '/api/repair/reload-module/' + encodeURIComponent(name),
+          {method:'POST', mode:'cors'})
+        .then(function(r){
+            return r.text().then(function(t){
+                var j = {};
+                try { j = JSON.parse(t); } catch(e){ /* leave empty */ }
+                return {status: r.status, json: j, raw: t};
+            });
+        })
+        .then(function(out){
+            if (out.status === 200 && out.json && out.json.success){
+                var swapped = out.json.swapped_endpoints || [];
+                var added   = out.json.new_endpoints     || [];
+                var fresh   = !!out.json.fresh_import;
+                var html = '<span style="color:#22c55e;font-weight:700">OK</span> &mdash; <b>' + name + '</b> ';
+                html += fresh ? 'imported & registered' : 'hot-reloaded';
+                html += '. ';
+                html += '<span style="color:#64748b">Swapped: ' + swapped.length + ' &middot; Newly attached: ' + added.length + '</span>';
+                if (added.length){
+                    html += '<div style="margin-top:6px;font-family:\'Courier New\',monospace;font-size:11px;color:#a5b4fc">+ ' + added.join(', ') + '</div>';
+                }
+                if (out.json.note){
+                    html += '<div style="margin-top:4px;color:#64748b;font-style:italic">' + out.json.note + '</div>';
+                }
+                statusEl.style.color = '#22c55e';
+                statusEl.innerHTML = html;
+            } else {
+                statusEl.style.color = '#ef4444';
+                var err = (out.json && out.json.error) || ('HTTP ' + out.status);
+                var html = '<b>FAILED</b> &mdash; ' + err;
+                var rb = out.json && out.json.rolled_back_endpoints;
+                if (Array.isArray(rb) && rb.length){
+                    html += '<div style="margin-top:6px;color:#fbbf24">Rolled back ' + rb.length + ' partially-bound route(s): ' +
+                            '<span style="font-family:\'Courier New\',monospace">' + rb.join(', ') + '</span></div>';
+                }
+                if (out.json && Array.isArray(out.json.allowed)){
+                    html += '<div style="margin-top:4px;color:#64748b;font-size:11px">Allowed: ' + out.json.allowed.join(', ') + '</div>';
+                }
+                statusEl.innerHTML = html;
+            }
+        })
+        .catch(function(err){
+            statusEl.style.color = '#ef4444';
+            statusEl.textContent = 'Reload request failed: ' + err.message;
+        })
+        .then(function(){
+            if (btn){ btn.disabled = false; btn.textContent = 'Reload'; }
         });
 }
 

@@ -3,6 +3,37 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Atomic Route Rollback + Hot-Reload UI (2026-02-09)
+**Brief**: Two improvements on top of the Case-A reload verification: (1) `repair_reload_module` now atomically rolls back partially-bound routes when `register()` raises mid-way, and (2) `update.html` gets a one-click hot-reload UI affordance.
+
+### P2 — Atomic route rollback in `upload_service.repair_reload_module`
+- New helper `_rollback_added_routes(app, endpoints)`:
+  - Drops the endpoints from `app.view_functions`.
+  - Removes matching `Rule` objects from `app.url_map._rules` + `_rules_by_endpoint`.
+  - **Rebuilds werkzeug's `StateMachineMatcher` from scratch** (re-adds every surviving rule into a fresh `type(matcher)(merge_slashes=...)` instance) — required because the matcher's internal state-tree retains references to deleted rules and `Map.update()` only sorts existing transitions, it doesn't remove them. Without this rebuild, the dropped route would still match on the next request and crash on `_rules_by_endpoint[rule.endpoint]` KeyError. Graceful fallback for older werkzeug versions that don't expose `StateMachineMatcher`.
+  - Forces `app.url_map._remap = True` + `update()` so build-side bookkeeping is consistent.
+- Both error paths in `repair_reload_module` (fresh-import register failure AND in-place rebind register failure) now call the rollback and return the list of rolled-back endpoints in the JSON response under `rolled_back_endpoints`.
+- Net effect: a broken plug-in (e.g., a `register()` that raises halfway through adding new routes) leaves the app in **exactly the same routing state it was in before the reload attempt**. No Frankenstein states.
+
+### Tests
+- New tests 8a-8i in `test_reload_module.py`: inject 2 brand-new routes with a deliberate `RuntimeError` between them, reload, then assert: (a) HTTP 500, (b) `success=False`, (c) error mentions register failure, (d) `rolled_back_endpoints` is a list, (e) it contains the partial route, (f) the partial route is purged from `view_functions`, (g) `url_map` rule count returned to pre-state, (h) GET on the partial route now returns 404, (i) all pre-existing endpoints are still bound (no collateral damage).
+- **37/37** PASS in `test_reload_module.py` (was 28/28 last round, +9 rollback tests).
+- Full backend suite: **197/197** across 9 test files.
+
+### UI — `/update` page Hot-Reload Plug-In card
+- New card inserted between **Disk Capacity** and **Upload Bundle** in `update.html`.
+- Plug-in selector (9-item allow-list dropdown: upload_service, weather_service, band_service, telemetry_service, webhook_bridge_service, mqtt_bridge_service, modbus_bridge_service, ws_bridge_service, bridges_admin_service) + indigo `RELOAD` button (matches Deploy button styling) + ghost-purple `NO FLASK RESTART` tagline.
+- `hotReloadPlugin()` POSTs to `/api/repair/reload-module/<name>`, then renders a color-coded status line:
+  - Success: green "OK — <name> hot-reloaded. Swapped: N · Newly attached: M" with a monospace list of any new endpoints attached on the fly + the response note.
+  - Failure: red "FAILED — <error>" + if the response includes `rolled_back_endpoints`, an amber line "Rolled back N partially-bound route(s): ..." so the operator can see the atomic-rollback safety net engaged.
+- Themed identically to the existing Disk Capacity widget (Courier New monospace, `#1e293b` track, `#020617` body, `#a5b4fc` accent for new endpoints, `#fbbf24` for rollback notice, `#22c55e/#ef4444` for status).
+- `data-testid`s: `hot-reload-plugin-select`, `hot-reload-btn`, `hot-reload-status`.
+- Screenshot-verified at 1280×900: card renders between Disk Capacity and Upload Bundle, dropdown populated with all 9 plug-ins, button styled correctly.
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1725.1 KB, MD5 `1f90273b02eb8d5fad1007f83e03b3fb`) and synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+
 ## V1.9 Hot-Reload Case-A Verification + Test Suite Repair (2026-02-09)
 **Brief**: Verified and locked in the previous session's `repair_reload_module` Case-A fix (attach brand-new routes to an already-loaded module without a Flask restart). Two test-suite bugs blocked verification — both fixed.
 

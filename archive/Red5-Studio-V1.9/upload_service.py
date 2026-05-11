@@ -1221,6 +1221,69 @@ def repair_download_plugin(plugin_name):
                                          mimetype=mime, as_attachment=False))
 
 
+def _rollback_added_routes(app, endpoints):
+    """Remove a list of endpoints from a Flask ``app`` — used to undo a
+    partial ``mod.register()`` that raised mid-way through.
+
+    Removes the matching ``Rule`` objects from ``app.url_map._rules`` (and
+    the per-endpoint index ``_rules_by_endpoint`` + werkzeug's internal
+    state-machine matcher), drops the entries from ``app.view_functions``,
+    and forces werkzeug to rebuild its matcher from the remaining rules so
+    the routing table is consistent on the next request.
+
+    Returns the list of endpoints that were actually rolled back (some may
+    have already been absent if register() failed before binding them).
+    """
+    if not endpoints:
+        return []
+    eps = set(endpoints)
+    removed = []
+    # 1. Drop view_functions entries.
+    for ep in list(eps):
+        if ep in app.view_functions:
+            try:
+                del app.view_functions[ep]
+                removed.append(ep)
+            except KeyError:
+                pass
+    # 2. Drop matching Rule objects from url_map._rules + _rules_by_endpoint.
+    #    werkzeug Rule objects are bound to their parent Map and cannot be
+    #    reassigned to a fresh Map without a RuntimeError, so we mutate the
+    #    list in place.
+    _to_remove = [r for r in list(app.url_map._rules) if r.endpoint in eps]
+    for _r in _to_remove:
+        try:
+            app.url_map._rules.remove(_r)
+        except ValueError:
+            pass
+        _by_ep = getattr(app.url_map, '_rules_by_endpoint', None)
+        if _by_ep is not None and _r.endpoint in _by_ep:
+            _by_ep[_r.endpoint] = [x for x in _by_ep[_r.endpoint] if x is not _r]
+            if not _by_ep[_r.endpoint]:
+                del _by_ep[_r.endpoint]
+    # 3. Rebuild werkzeug's StateMachineMatcher from scratch — it doesn't
+    #    expose a "remove rule" API and its internal state-tree keeps
+    #    references to deleted rules otherwise.  Re-add every surviving
+    #    rule (except build-only rules, which the matcher skips).
+    try:
+        matcher = app.url_map._matcher
+        fresh_matcher = type(matcher)(merge_slashes=app.url_map.merge_slashes)
+        for _r in app.url_map._rules:
+            if not getattr(_r, 'build_only', False):
+                fresh_matcher.add(_r)
+        app.url_map._matcher = fresh_matcher
+    except Exception:
+        # Old werkzeug versions (<2.3) don't have StateMachineMatcher; fall
+        # back to flipping _remap and hoping Map.update() handles it.
+        pass
+    try:
+        app.url_map._remap = True
+        app.url_map.update()
+    except Exception:
+        pass
+    return sorted(set(removed))
+
+
 def repair_reload_module(plugin_name):
     """Hot-reload a single plug-in module inside the running Flask process,
     so newly-uploaded plug-in code takes effect WITHOUT toggling app.py
@@ -1313,18 +1376,36 @@ def repair_reload_module(plugin_name):
             # routes to a long-running, request-serving app.  Toggle the
             # flag, run register(), restore the flag.  Same trick used by
             # Flask's own test_client when reusing an app across requests.
+            #
+            # ATOMIC: track every endpoint added by register() so we can
+            # roll the lot back if register() raises mid-way through.
+            real_add_url_rule_fresh = app.add_url_rule
+            fresh_added = []
+            def _tracking_add_url_rule(rule, endpoint=None, view_func=None, **kw):
+                ep_local = endpoint or (view_func.__name__ if view_func is not None else None)
+                real_add_url_rule_fresh(rule, endpoint=endpoint, view_func=view_func, **kw)
+                if ep_local is not None:
+                    fresh_added.append(ep_local)
             _orig_first = getattr(app, '_got_first_request', False)
             try:
                 app._got_first_request = False
             except AttributeError:
                 pass
+            app.add_url_rule = _tracking_add_url_rule
             try:
                 mod.register(app, ctx_snapshot)
             except Exception as ex:
+                # Rollback every rule + view_function added by the partial
+                # register() so a broken plug-in cannot leave Flask in a
+                # Frankenstein state (half-bound routes pointing at a
+                # module whose globals are still None).
+                _rolled_back = _rollback_added_routes(app, fresh_added)
                 return jsonify({'success': False,
                                 'error': 'fresh register() failed: ' + str(ex),
-                                'module': mod_name}), 500
+                                'module': mod_name,
+                                'rolled_back_endpoints': _rolled_back}), 500
             finally:
+                app.add_url_rule = real_add_url_rule_fresh
                 try:
                     app._got_first_request = _orig_first
                 except AttributeError:
@@ -1391,8 +1472,15 @@ def repair_reload_module(plugin_name):
             mod.register(app, rebind_ctx)
     except Exception as ex:
         app.add_url_rule = real_add_url_rule
+        # ATOMIC: roll back any NEW routes that register() managed to
+        # attach before raising.  Pre-existing endpoints are untouched
+        # (they're still bound to the OLD function refs from before the
+        # reload, which is the safest state we can offer).
+        rolled_back = _rollback_added_routes(app, newly_added)
         return jsonify({'success': False,
-                        'error': 'rebind register() failed: ' + str(ex)}), 500
+                        'error': 'rebind register() failed: ' + str(ex),
+                        'module': mod_name,
+                        'rolled_back_endpoints': rolled_back}), 500
     finally:
         app.add_url_rule = real_add_url_rule
 

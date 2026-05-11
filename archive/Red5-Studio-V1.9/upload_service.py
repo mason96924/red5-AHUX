@@ -1438,3 +1438,11 @@ def register(app, ctx):
                      repair_reload_module,   methods=['POST'])
     app.add_url_rule('/update',                     'serve_update_page',
                      serve_update_page,      methods=['GET'])
+    # Multi-file / directory zip downloads (called from equipment_mapper's
+    # "GET SELECTED" button on the Controller Assets file browser).
+    # Without these two routes the frontend's POST hits a 404 and the
+    # operator sees "GET selected failed: 404" in an alert.
+    app.add_url_rule('/api/zip-files',              'api_zip_files',
+                     api_zip_files,          methods=['POST'])
+    app.add_url_rule('/api/zip-dir',                'api_zip_dir',
+                     api_zip_dir,            methods=['POST'])

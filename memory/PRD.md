@@ -3,6 +3,39 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Designer Mode · ERV Toggle (2026-02-09)
+**Brief**: Adds the `+ ERV` (Energy Recovery Ventilator) toggle promised in the Designer Mode roadmap. When ON, the wheel pre-treats OA before it hits the mixing box: OA' sits on the OA→RA line at fractional distance ε (enthalpy effectiveness, default 0.80). The MA→SA coil-sizing math then runs from OA' instead of OA, and a 6th readout row reports tons saved vs the no-wheel baseline.
+
+### What's new (`js/psy-3d-engine.js`)
+- 2 new state vars: `_designerERVOn` (bool), `_designerERVEps` (float 0..1, default 0.80). Both persisted in `localStorage.red5DesignerState`.
+- Inputs panel extended with a dashed-rule separator + cyan checkbox `+ ERV` + ε number input.
+- `_drawDesignerOverlay`:
+  - Computes OA' via linear interpolation on OA→RA at parameter ε (geometrically equivalent to ε enthalpy effectiveness to <0.5 % over the comfort range).
+  - MA mixing now uses `mix_T/W = OA'` when ERV is on, else OA — produces a much shorter MA→SA cooling line.
+  - Draws OA in pink, **OA' in cyan**, plus a cyan dashed arrow with a tiny arrowhead from OA → OA' showing wheel-recovery direction.
+  - 6th readout row "ERV saved" = baseline tons (no-wheel) minus current tons, with the savings % in parentheses. Color-coded cyan to match the OA' dot.
+  - Card height auto-expands to 126 px when ERV is on (5 → 6 rows) so the readout never crowds.
+
+### Verified numbers (Korean summer default: CFM 10k, OA 20%, OA 35°C/50%, RA 24°C/50%, SA 13°C/95%, ε = 0.80)
+| Metric | ERV OFF | ERV ON | Delta |
+|---|---|---|---|
+| Coil Δh | 19.0 kJ/kg | **13.7** kJ/kg | −28 % |
+| Cooling tons | 30.7 RT | **22.1** RT | **−8.5 RT (−28 %)** |
+| ADP | 11.9 °C | 12.1 °C | (unchanged) |
+| Bypass BF | 0.08 | 0.07 | (better) |
+| Room sensible | 213.8 kBTU/h | 213.8 kBTU/h | (correctly unchanged — zone load is independent of intake conditioning) |
+| **ERV saved (readout row)** | — | **8.5 RT (28 %)** | ✓ matches the 30-50 % rule of thumb in ASHRAE 90.1 and Trane Engineers Newsletters |
+
+### Live deploy
+- `js/psy-3d-engine.js` (292,507 bytes) hot-deployed to `219.79.12.63:5001`.
+- `red5_bundle.zip` rebuilt (MD5 `f3d7030f0c2b7b06378de6f8cef3af65`) and synced to `/app/frontend/public/` + `/red5-files/`.
+- `psychrometric_design_workflow.md` updated to flip the ERV item from "deferred" to "shipped" with the verified savings numbers.
+
+### Files changed
+- `js/psy-3d-engine.js` — 2 state vars, panel HTML extension, localStorage hooks, ERV geometry + arrowhead + savings row in `_drawDesignerOverlay`.
+- `psychrometric_design_workflow.md` — moved ERV from deferred → shipped.
+
+
 ## V1.9 Designer Mode (MEP equipment-sizing overlay on 2D psych chart) (2026-02-09)
 **Brief**: Adds a design-phase decision-support overlay to the 2D X-Y Detail view. Toggling `+ Designer Mode` opens a floating amber-bordered inputs card (CFM, OA fraction, OA T/RH, RA T/RH, SA T/RH) and draws the classic OA → MA → SA process polygon on top of the live psych chart, plus a 5-row readout card showing the four sizing numbers an MEP engineer pulls off the chart during equipment selection: Coil Δh, Cooling tons, ADP, Bypass BF, Room sensible.
 

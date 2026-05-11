@@ -86,6 +86,14 @@ global.initPsy3D = function(container, opts){
   var _designerRA_RH   = 50.0;    /* RA relative humidity, % */
   var _designerSA_T    = 13.0;    /* SA dry-bulb, degC (cooling coil leaving) */
   var _designerSA_RH   = 95.0;    /* SA relative humidity, % (near saturation) */
+  /* ERV (Energy Recovery Ventilator) — desiccant wheel or membrane-plate
+     heat-and-moisture exchanger between OA intake and EA exhaust.  When
+     ON, draws OA' (pre-conditioned OA) on the OA->RA line at fractional
+     distance epsilon from OA toward RA, and re-runs the coil-sizing
+     numbers off the OA' -> MA' -> SA polygon instead of OA -> MA -> SA.
+     Typical good-wheel epsilon = 0.75..0.85; budget plate ERV = 0.55..0.65. */
+  var _designerERVOn   = false;
+  var _designerERVEps  = 0.80;    /* enthalpy effectiveness, 0..1 */
 
   /* ---------- theme helpers (synced with dashboard via localStorage.red5.theme) ---------- */
   function _p3Theme(){ try { return localStorage.getItem('red5.theme') || 'dark'; } catch(e){ return 'dark'; } }
@@ -328,13 +336,29 @@ global.initPsy3D = function(container, opts){
     var oa_T = _designerOA_T, oa_W = getW(_designerOA_T, _designerOA_RH) * 1000;
     var ra_T = _designerRA_T, ra_W = getW(_designerRA_T, _designerRA_RH) * 1000;
     var sa_T = _designerSA_T, sa_W = getW(_designerSA_T, _designerSA_RH) * 1000;
-    /* MA = OAfrac * OA + (1 - OAfrac) * RA  on dry-bulb T and W (linear
-       mixing is accurate to <0.5% over comfort range; full enthalpy
-       mixing would require iterating because W = f(T, RH) is nonlinear,
-       but that's classroom over-engineering for a screen readout). */
+    /* ERV pre-treatment: if the wheel is on, the air entering the mixing
+       box is no longer OA -- it's OA', which sits on the OA->RA line
+       at fractional distance epsilon from OA toward RA.  Geometrically
+       linear-interpolating T and W along OA->RA approximates moving
+       along the enthalpy axis within <0.5% across the comfort range.
+       Effective enthalpy effectiveness: (h_OA - h_OA')/(h_OA - h_RA)
+       collapses to epsilon under that linear interpolation. */
+    var oap_T = oa_T, oap_W = oa_W;
+    if (_designerERVOn) {
+        var eps = _designerERVEps;
+        oap_T = oa_T + eps * (ra_T - oa_T);
+        oap_W = oa_W + eps * (ra_W - oa_W);
+    }
+    /* MA = OAfrac * OA(or OA') + (1 - OAfrac) * RA  on dry-bulb T and W
+       (linear mixing is accurate to <0.5% over comfort range; full
+       enthalpy mixing would require iterating because W = f(T, RH) is
+       nonlinear, but that's classroom over-engineering for a screen
+       readout). */
     var f = _designerOAFrac;
-    var ma_T = f * oa_T + (1 - f) * ra_T;
-    var ma_W = f * oa_W + (1 - f) * ra_W;
+    var mix_T = _designerERVOn ? oap_T : oa_T;
+    var mix_W = _designerERVOn ? oap_W : oa_W;
+    var ma_T = f * mix_T + (1 - f) * ra_T;
+    var ma_W = f * mix_W + (1 - f) * ra_W;
 
     /* 2. Find ADP: extend the MA -> SA line until it intersects the
        saturation curve (W = W_sat(T)).  Walk T downward from SA in 0.1
@@ -352,11 +376,26 @@ global.initPsy3D = function(container, opts){
     }
 
     /* 3. Coil sizing numbers. */
+    var h_oa = enthalpy(oa_T, oa_W / 1000);
+    var h_ra = enthalpy(ra_T, ra_W / 1000);
+    var h_oap = enthalpy(oap_T, oap_W / 1000);   /* equals h_oa when ERV off */
     var h_ma = enthalpy(ma_T, ma_W / 1000);    /* kJ/kg dry air */
     var h_sa = enthalpy(sa_T, sa_W / 1000);
     var dh_kj = h_ma - h_sa;                   /* coil total dh (cooling) */
     var dh_btulb = dh_kj * 0.4299;             /* kJ/kg -> Btu/lb */
     var tons = (_designerCFM * 4.5 * dh_btulb) / 12000;
+    /* ERV savings: how many tons did the wheel shave off relative to the
+       same system without the wheel?  Compute baseline tons by re-running
+       the math with mix_T/W = OA (no wheel) and compare. */
+    var ervSavedTons = 0, ervSavedPct = 0;
+    if (_designerERVOn && Math.abs(h_oa - h_ra) > 0.01) {
+        var ma_baseT = f * oa_T + (1 - f) * ra_T;
+        var ma_baseW = f * oa_W + (1 - f) * ra_W;
+        var dh_base = enthalpy(ma_baseT, ma_baseW / 1000) - h_sa;
+        var tons_base = (_designerCFM * 4.5 * (dh_base * 0.4299)) / 12000;
+        ervSavedTons = tons_base - tons;
+        ervSavedPct  = (tons_base > 0) ? (ervSavedTons / tons_base) * 100 : 0;
+    }
     /* Bypass factor: BF = (SA - ADP) / (MA - ADP).  Defined on T axis
        (most common form).  BF approaching 0 = denser coil; ~0.05 for
        8-row, ~0.15 for 4-row.  We display whichever has non-zero
@@ -394,6 +433,31 @@ global.initPsy3D = function(container, opts){
     ctx.lineTo(tx(ra_T), wy(ra_W));
     ctx.stroke();
     ctx.restore();
+    /* ERV recovery arrow: cyan dashed OA -> OA' showing where the wheel
+       moves the entering air along the OA-RA line. */
+    if (_designerERVOn) {
+        ctx.save();
+        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 2.0;
+        ctx.beginPath();
+        ctx.moveTo(tx(oa_T), wy(oa_W));
+        ctx.lineTo(tx(oap_T), wy(oap_W));
+        ctx.stroke();
+        ctx.restore();
+        /* Tiny arrowhead on the recovery line so direction is unambiguous. */
+        var ahX = tx(oap_T), ahY = wy(oap_W);
+        var dx0 = tx(oap_T) - tx(oa_T), dy0 = wy(oap_W) - wy(oa_W);
+        var len0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1;
+        var ux = dx0 / len0, uy = dy0 / len0;
+        var perp = function(s){ return [-uy * s, ux * s]; };
+        ctx.fillStyle = '#22d3ee';
+        ctx.beginPath();
+        ctx.moveTo(ahX, ahY);
+        var p1 = perp(4); ctx.lineTo(ahX - ux * 8 + p1[0], ahY - uy * 8 + p1[1]);
+        var p2 = perp(-4); ctx.lineTo(ahX - ux * 8 + p2[0], ahY - uy * 8 + p2[1]);
+        ctx.closePath(); ctx.fill();
+    }
     /* MA -> SA process line (solid amber, thicker) */
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 2.6;
@@ -419,6 +483,10 @@ global.initPsy3D = function(container, opts){
        avoid stacking. */
     dot(adp_T, adp_W, '#67e8f9', 'ADP ' + adp_T.toFixed(1) + '\u00b0C');
     dot(oa_T,  oa_W,  '#fb7185', 'OA ' + oa_T.toFixed(1) + '\u00b0C ' + Math.round(_designerOA_RH) + '%');
+    /* OA' (post-recovery) only when ERV is on, in cyan to match the arrow. */
+    if (_designerERVOn) {
+        dot(oap_T, oap_W, '#22d3ee', "OA' " + oap_T.toFixed(1) + '\u00b0C \u03b5=' + _designerERVEps.toFixed(2));
+    }
     dot(ra_T,  ra_W,  '#a3e635', 'RA ' + ra_T.toFixed(1) + '\u00b0C ' + Math.round(_designerRA_RH) + '%');
     dot(ma_T,  ma_W,  '#fbbf24', 'MA ' + ma_T.toFixed(1) + '\u00b0C');
     /* SA label placed ABOVE the dot (negative y offset) instead of the
@@ -433,9 +501,13 @@ global.initPsy3D = function(container, opts){
     ctx.fillText('SA ' + sa_T.toFixed(1) + '\u00b0C ' + Math.round(_designerSA_RH) + '%', saX + 8, saY + 16);
 
     /* 5. Read-out card: pinned bottom-left of the chart inside the clip
-       region.  Compact 5-row digital display. */
-    var cardX = pad.left + 12, cardY = pad.top + ph - 122;
-    var cardW = 220,           cardH = 110;
+       region.  Compact digital display, 5 rows (or 6 when ERV is on so
+       the savings line fits without crowding). */
+    var hasERVRow = _designerERVOn;
+    var cardX = pad.left + 12;
+    var cardW = 220;
+    var cardH = hasERVRow ? 126 : 110;
+    var cardY = pad.top + ph - cardH - 12;
     ctx.fillStyle = 'rgba(2,6,23,.92)';
     ctx.strokeStyle = '#b45309';
     ctx.lineWidth = 1;
@@ -446,8 +518,9 @@ global.initPsy3D = function(container, opts){
     ctx.fillStyle = '#f59e0b';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('DESIGNER  CFM ' + _designerCFM.toLocaleString() + '   OA ' + Math.round(f * 100) + '%',
-                 cardX + 8, cardY + 14);
+    var hdr = 'DESIGNER  CFM ' + _designerCFM.toLocaleString() + '   OA ' + Math.round(f * 100) + '%';
+    if (_designerERVOn) hdr += '   +ERV';
+    ctx.fillText(hdr, cardX + 8, cardY + 14);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '10px monospace';
     var row = function(y, label, value, color){
@@ -463,6 +536,12 @@ global.initPsy3D = function(container, opts){
     row(64, 'ADP',          adp_T.toFixed(1) + ' \u00b0C',     '#67e8f9');
     row(80, 'Bypass BF',    bf.toFixed(2),                bf < 0.08 ? '#22c55e' : (bf < 0.18 ? '#fbbf24' : '#ef4444'));
     row(96, 'Room sens.',   kbtu_sens.toFixed(1) + ' kBTU/h', '#a3e635');
+    if (_designerERVOn) {
+        row(112,
+            'ERV saved',
+            ervSavedTons.toFixed(1) + ' RT (' + ervSavedPct.toFixed(0) + '%)',
+            '#22d3ee');
+    }
   }
 
   /* i18n shim -- safely calls window.t() if i18n.js is loaded, otherwise
@@ -1375,7 +1454,25 @@ global.initPsy3D = function(container, opts){
                 '<input type="number" id="p3-d-sarh" min="50" max="100" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
                 '<span style="color:#64748b">%</span>'+
             '</div>'+
-            '<div style="margin-top:8px;font-size:9px;color:#64748b">MA = OA frac \u00d7 OA + (1 \u2013 OA frac) \u00d7 RA</div>';
+            '<div style="margin-top:8px;font-size:9px;color:#64748b">MA = OA frac \u00d7 OA + (1 \u2013 OA frac) \u00d7 RA</div>'+
+            /* ERV toggle row -- visually distinct (separator + cyan accent)
+               so operators can see at a glance that toggling it changes
+               where the coil starts its work.  When the checkbox is on,
+               draw OA' on the OA->RA line and re-run the sizing numbers
+               from OA' instead of OA. */
+            '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #334155">'+
+              '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">'+
+                '<input type="checkbox" id="p3-d-ervon" style="accent-color:#22d3ee">'+
+                '<span style="color:#22d3ee;font-weight:900;letter-spacing:.05em">+ ERV</span>'+
+                '<span style="color:#64748b;font-size:9px">energy-recovery wheel</span>'+
+              '</label>'+
+              '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center;margin-top:6px">'+
+                '<label style="color:#94a3b8">\u03b5 (effectiveness)</label>'+
+                  '<input type="number" id="p3-d-erveps" min="0" max="1" step="0.05" style="background:#020617;color:#22d3ee;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                  '<span style="color:#64748b">0\u20131</span>'+
+              '</div>'+
+              '<div style="margin-top:4px;font-size:9px;color:#64748b">OA\' = OA + \u03b5 \u00d7 (RA \u2013 OA) along enthalpy</div>'+
+            '</div>';
         $('#p3-overlay2d').appendChild(dCfg);
     }
     /* Populate inputs from persisted state (localStorage) + wire change handlers. */
@@ -1391,6 +1488,8 @@ global.initPsy3D = function(container, opts){
         if (typeof saved.sat    === 'number') _designerSA_T   = saved.sat;
         if (typeof saved.sarh   === 'number') _designerSA_RH  = saved.sarh;
         if (typeof saved.on     === 'boolean') _designerMode  = saved.on;
+        if (typeof saved.ervon  === 'boolean') _designerERVOn = saved.ervon;
+        if (typeof saved.erveps === 'number')  _designerERVEps = saved.erveps;
     } catch(e) { /* ignore */ }
     var _setD = function(id, val){ var el = dCfg.querySelector('#'+id); if (el) el.value = val; };
     _setD('p3-d-cfm',    _designerCFM);
@@ -1401,6 +1500,10 @@ global.initPsy3D = function(container, opts){
     _setD('p3-d-rarh',   _designerRA_RH);
     _setD('p3-d-sat',    _designerSA_T);
     _setD('p3-d-sarh',   _designerSA_RH);
+    /* ERV checkbox + epsilon */
+    var _ervCheck = dCfg.querySelector('#p3-d-ervon');
+    if (_ervCheck) _ervCheck.checked = !!_designerERVOn;
+    _setD('p3-d-erveps', _designerERVEps);
     _refreshDesignerBtn();
     dCfg.style.display = _designerMode ? 'block' : 'none';
 
@@ -1412,6 +1515,8 @@ global.initPsy3D = function(container, opts){
                 rat: _designerRA_T, rarh: _designerRA_RH,
                 sat: _designerSA_T, sarh: _designerSA_RH,
                 on: _designerMode,
+                ervon: _designerERVOn,
+                erveps: _designerERVEps,
             }));
         } catch(e) { /* quota / private-mode - ignore */ }
     };
@@ -1434,6 +1539,16 @@ global.initPsy3D = function(container, opts){
     _wireInput('p3-d-rarh',   function(v){ _designerRA_RH  = Math.max(0, Math.min(100, v)); });
     _wireInput('p3-d-sat',    function(v){ _designerSA_T   = v; });
     _wireInput('p3-d-sarh',   function(v){ _designerSA_RH  = Math.max(0, Math.min(100, v)); });
+    _wireInput('p3-d-erveps', function(v){ _designerERVEps = Math.max(0, Math.min(1, v)); });
+    /* ERV on/off checkbox -- separate handler because it's a checkbox not
+       a number input. */
+    if (_ervCheck) {
+        _ervCheck.onchange = function(){
+            _designerERVOn = !!_ervCheck.checked;
+            _persistDesignerState();
+            render2DChart();
+        };
+    }
 
     dmBtn.onclick = function(){
         _designerMode = !_designerMode;

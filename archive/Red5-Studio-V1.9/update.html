@@ -510,6 +510,43 @@ function _renderUploadResult(data){
         (data.extracted || []).forEach(function(f) { html += '<div class="file ok">' + f.file + ' (' + f.size + ' B)</div>'; });
         (data.skipped || []).forEach(function(f) { html += '<div class="file skip">' + f.file + ' - ' + f.reason + '</div>'; });
         (data.errors || []).forEach(function(f) { html += '<div class="file err">' + f.file + ' - ' + f.error + '</div>'; });
+
+        // Render auto-reload summary: every *_service.py that just landed
+        // is hot-reloaded in-process so its routes go live immediately
+        // (no Flask restart / no enteliWEB app.py object toggle).
+        var rms = data.reloaded_modules || [];
+        var rsum = data.reload_summary || {};
+        if (rms.length){
+            html += '<div style="margin-top:12px;padding:10px 12px;background:#020617;border:1px solid #1e293b;border-radius:6px">';
+            html += '<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#a5b4fc;margin-bottom:6px">Auto-Reload Plug-Ins &nbsp;'
+                 + '<span style="color:#64748b">'
+                 + 'attempted: ' + (rsum.attempted || 0)
+                 + ' &middot; <span style="color:#22c55e">ok: ' + (rsum.succeeded || 0) + '</span>'
+                 + ' &middot; <span style="color:' + ((rsum.failed || 0) ? '#ef4444' : '#64748b') + '">failed: ' + (rsum.failed || 0) + '</span>'
+                 + '</span></div>';
+            rms.forEach(function(r){
+                var color = r.success ? '#22c55e' : '#ef4444';
+                var dot   = r.success ? '\u25CF' : '\u25CB';
+                html += '<div style="font-family:\'Courier New\',monospace;font-size:11px;color:' + color + ';margin:2px 0">';
+                html += dot + ' <b>' + (r.module || '?') + '</b>';
+                if (r.fresh_import) html += ' <span style="color:#fbbf24">[fresh]</span>';
+                var sw = (r.swapped_endpoints || []).length;
+                var ne = (r.new_endpoints     || []).length;
+                html += ' <span style="color:#64748b">swapped: ' + sw + ' &middot; new: ' + ne + '</span>';
+                if (!r.success && r.error){
+                    html += '<div style="margin-left:14px;color:#fbbf24">' + r.error + '</div>';
+                }
+                if (ne && r.success){
+                    html += '<div style="margin-left:14px;color:#a5b4fc">+ ' + (r.new_endpoints || []).join(', ') + '</div>';
+                }
+                var rb = r.rolled_back_endpoints || [];
+                if (rb.length){
+                    html += '<div style="margin-left:14px;color:#fbbf24">rolled back: ' + rb.join(', ') + '</div>';
+                }
+            });
+            html += '</div>';
+        }
+
         reportEl.innerHTML = html;
         reportEl.style.display = 'block';
         _setUploadProgress(100, 'Deploy complete', 'done');

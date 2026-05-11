@@ -506,6 +506,12 @@ def _finalize_bundle_from_disk(spool_path, password):
         # made stale.  Frees inodes between deploys.
         pyc_dirs, pyc_bytes = _purge_pycache()
 
+        # Auto-reload any *_service.py that just landed in PLUGINS_ROOT so
+        # the new code goes live WITHOUT toggling the enteliWEB app.py
+        # object.  Errors are reported per-module; a broken plug-in cannot
+        # take down the deploy.
+        reloaded_modules = _auto_reload_extracted_services(extracted)
+
         return {
             'success': True,
             'message': 'Bundle extracted: ' + str(len(extracted)) + ' files deployed.',
@@ -518,6 +524,12 @@ def _finalize_bundle_from_disk(spool_path, password):
             'encrypted': is_encrypted,
             'pycache_dirs_removed': pyc_dirs,
             'pycache_bytes_freed': pyc_bytes,
+            'reloaded_modules': reloaded_modules,
+            'reload_summary': {
+                'attempted': len(reloaded_modules),
+                'succeeded': sum(1 for r in reloaded_modules if r.get('success')),
+                'failed':    sum(1 for r in reloaded_modules if not r.get('success')),
+            },
         }, 200
     finally:
         # Always remove both the inbound spool and any plain copy.
@@ -1284,10 +1296,10 @@ def _rollback_added_routes(app, endpoints):
     return sorted(set(removed))
 
 
-def repair_reload_module(plugin_name):
-    """Hot-reload a single plug-in module inside the running Flask process,
-    so newly-uploaded plug-in code takes effect WITHOUT toggling app.py
-    via the enteliWEB script editor.
+def _reload_module_core(plugin_name):
+    """Core hot-reload logic. Returns ``(body_dict, http_status)`` so it can
+    be called both from the HTTP route handler (``repair_reload_module``)
+    AND from auto-reload-after-extract inside the bundle deploy flow.
 
     Three cases are handled:
 
@@ -1312,9 +1324,6 @@ def repair_reload_module(plugin_name):
           import_module() then fall through to the rebind+swap path.
 
     Caveats:
-      - For case (a), cannot ADD or REMOVE routes — only the function
-        bodies change.  For schema/route-shape changes use case (b) by
-        first uploading the new file as if it were brand new.
       - Background threads started inside register() will NOT be
         re-spawned in case (a) (we suppress them via start_*_thread=False
         during the rebind call).
@@ -1331,15 +1340,15 @@ def repair_reload_module(plugin_name):
     if not name.endswith('.py'):
         name = name + '.py'
     if name not in plugin_files:
-        return jsonify({'success': False, 'error': 'not in reload allow-list',
-                        'allowed': sorted(plugin_files)}), 403
+        return {'success': False, 'error': 'not in reload allow-list',
+                'allowed': sorted(plugin_files)}, 403
 
     mod_name = name[:-3]   # strip .py
     mod = sys.modules.get(mod_name)
 
     if _FLASK_APP_REF is None or _SERVICE_CTX_REF is None:
-        return jsonify({'success': False,
-                        'error': 'reload context not initialised'}), 500
+        return {'success': False,
+                'error': 'reload context not initialised'}, 500
     # Capture refs to LOCALS — importlib.reload() re-executes the module body
     # which resets these globals to None until the new register() runs.
     app = _FLASK_APP_REF
@@ -1351,34 +1360,19 @@ def repair_reload_module(plugin_name):
         if getattr(fn, '__module__', '') == mod_name:
             pre_endpoints.append((ep, fn.__name__))
 
-    # 2a. Fresh-import case — module never imported in this Flask session
-    #     (e.g., a brand-new plug-in just dropped into PLUGINS_ROOT via
-    #     /api/repair/upload-plugin).  importlib.reload() would KeyError
-    #     here, so do a normal import_module().  PLUGINS_ROOT is already
-    #     on sys.path (set in app.py), so the new file resolves cleanly.
+    # 2a. Fresh-import case — module never imported in this Flask session.
     if mod is None:
         try:
             mod = importlib.import_module(mod_name)
         except Exception as ex:
-            return jsonify({'success': False,
-                            'error': 'fresh import failed: ' + str(ex),
-                            'module': mod_name}), 500
-        # If no pre-existing endpoints belong to this module, register()
-        # has never run — call it now so the new routes go live.
+            return {'success': False,
+                    'error': 'fresh import failed: ' + str(ex),
+                    'module': mod_name}, 500
         if not pre_endpoints:
             if not hasattr(mod, 'register'):
-                return jsonify({'success': False,
-                                'error': 'module has no register() function',
-                                'module': mod_name}), 500
-            # Flask refuses add_url_rule() after the app has handled its
-            # first request (sets _got_first_request=True).  We MUST bypass
-            # that lock here — the whole point of this endpoint is to add
-            # routes to a long-running, request-serving app.  Toggle the
-            # flag, run register(), restore the flag.  Same trick used by
-            # Flask's own test_client when reusing an app across requests.
-            #
-            # ATOMIC: track every endpoint added by register() so we can
-            # roll the lot back if register() raises mid-way through.
+                return {'success': False,
+                        'error': 'module has no register() function',
+                        'module': mod_name}, 500
             real_add_url_rule_fresh = app.add_url_rule
             fresh_added = []
             def _tracking_add_url_rule(rule, endpoint=None, view_func=None, **kw):
@@ -1395,15 +1389,11 @@ def repair_reload_module(plugin_name):
             try:
                 mod.register(app, ctx_snapshot)
             except Exception as ex:
-                # Rollback every rule + view_function added by the partial
-                # register() so a broken plug-in cannot leave Flask in a
-                # Frankenstein state (half-bound routes pointing at a
-                # module whose globals are still None).
                 _rolled_back = _rollback_added_routes(app, fresh_added)
-                return jsonify({'success': False,
-                                'error': 'fresh register() failed: ' + str(ex),
-                                'module': mod_name,
-                                'rolled_back_endpoints': _rolled_back}), 500
+                return {'success': False,
+                        'error': 'fresh register() failed: ' + str(ex),
+                        'module': mod_name,
+                        'rolled_back_endpoints': _rolled_back}, 500
             finally:
                 app.add_url_rule = real_add_url_rule_fresh
                 try:
@@ -1414,46 +1404,34 @@ def repair_reload_module(plugin_name):
                 ep for ep, fn in app.view_functions.items()
                 if getattr(fn, '__module__', '') == mod_name
             )
-            return jsonify({
+            return {
                 'success': True,
                 'module': mod_name,
                 'fresh_import': True,
                 'new_endpoints': new_endpoints,
                 'note': 'Fresh module imported and registered. Routes are live immediately.',
-            })
-        # else: module dropped from sys.modules but its endpoints still
-        # live in app.view_functions — fall through to the rebind+swap
-        # path below using the freshly-imported `mod`.
+            }, 200
 
-    # 2b. Reload the module — new function objects are created here.
+    # 2b. Reload path — new function objects are created here.
     else:
         try:
             importlib.reload(mod)
         except Exception as ex:
-            return jsonify({'success': False,
-                            'error': 'importlib.reload failed: ' + str(ex),
-                            'module': mod_name}), 500
+            return {'success': False,
+                    'error': 'importlib.reload failed: ' + str(ex),
+                    'module': mod_name}, 500
 
-    # 3. Re-bind module globals (DATA_ROOT, etc.) by calling register() with
-    #    add_url_rule wrapped to (a) silently SKIP duplicates (so we don't
-    #    AssertionError on existing endpoints) and (b) ALLOW genuinely new
-    #    routes added in the reloaded module to be attached on the fly.
-    #    Suppress background threads -- they're already running.
+    # 3. Re-bind module globals by calling register() with filtering+tracking
+    #    add_url_rule wrapper.
     real_add_url_rule = app.add_url_rule
     existing_endpoints = set(app.view_functions.keys())
     newly_added = []
     def _filtering_add_url_rule(rule, endpoint=None, view_func=None, **kw):
-        # Flask's signature: add_url_rule(rule, endpoint=None, view_func=None, **options)
-        # Derive endpoint name the same way Flask does (view_func.__name__ if not given).
         ep = endpoint or (view_func.__name__ if view_func is not None else None)
         if ep is None:
             return None
         if ep in existing_endpoints:
-            return None   # duplicate -- already bound, will be swapped in step 4
-        # NEW route: attach via the real add_url_rule.  Flask refuses
-        # add_url_rule after _got_first_request, so flip the flag for
-        # the duration of this single call (same trick as the fresh-
-        # import path).
+            return None   # duplicate -- will be swapped in step 4
         was_first = getattr(app, '_got_first_request', False)
         try:
             try: app._got_first_request = False
@@ -1472,15 +1450,11 @@ def repair_reload_module(plugin_name):
             mod.register(app, rebind_ctx)
     except Exception as ex:
         app.add_url_rule = real_add_url_rule
-        # ATOMIC: roll back any NEW routes that register() managed to
-        # attach before raising.  Pre-existing endpoints are untouched
-        # (they're still bound to the OLD function refs from before the
-        # reload, which is the safest state we can offer).
         rolled_back = _rollback_added_routes(app, newly_added)
-        return jsonify({'success': False,
-                        'error': 'rebind register() failed: ' + str(ex),
-                        'module': mod_name,
-                        'rolled_back_endpoints': rolled_back}), 500
+        return {'success': False,
+                'error': 'rebind register() failed: ' + str(ex),
+                'module': mod_name,
+                'rolled_back_endpoints': rolled_back}, 500
     finally:
         app.add_url_rule = real_add_url_rule
 
@@ -1495,7 +1469,7 @@ def repair_reload_module(plugin_name):
         else:
             missing.append(ep + ':' + fn_name)
 
-    return jsonify({
+    return {
         'success': True,
         'module': mod_name,
         'swapped_endpoints': swapped,
@@ -1504,7 +1478,63 @@ def repair_reload_module(plugin_name):
         'note': ('Module hot-reloaded. ' +
                  ('Newly attached: ' + ', '.join(newly_added) + '. ' if newly_added else '') +
                  'No Flask restart needed.'),
-    })
+    }, 200
+
+
+def repair_reload_module(plugin_name):
+    """HTTP wrapper around ``_reload_module_core``.  See that function's
+    docstring for the full reload semantics."""
+    body, code = _reload_module_core(plugin_name)
+    return jsonify(body), code
+
+
+def _auto_reload_extracted_services(extracted):
+    """Walk the extractor's manifest, find every ``pgpy/<name>_service.py``
+    entry, and hot-reload each one in-process so its routes go live
+    WITHOUT a Flask restart.  Called from ``_finalize_bundle_from_disk``
+    right after extraction succeeds.
+
+    Returns a list of per-module summary dicts (one per attempted reload).
+    Errors are reported per-module — a broken plug-in does not abort the
+    deploy or affect the other plug-ins.
+    """
+    results = []
+    if not extracted or _FLASK_APP_REF is None:
+        return results
+    seen = set()
+    for entry in extracted:
+        path = (entry.get('file') or '') if isinstance(entry, dict) else ''
+        # Only auto-reload plug-ins that landed in PLUGINS_ROOT.
+        if not path.startswith('pgpy/'):
+            continue
+        leaf = path[len('pgpy/'):]
+        if not leaf.endswith('_service.py'):
+            continue
+        if leaf in seen:
+            continue
+        seen.add(leaf)
+        mod_name = leaf[:-3]
+        try:
+            body, code = _reload_module_core(leaf)
+        except Exception as ex:
+            results.append({'module': mod_name,
+                            'success': False,
+                            'error': 'auto-reload crashed: ' + str(ex)})
+            continue
+        results.append({
+            'module': mod_name,
+            'success': bool(body.get('success')),
+            'http_status': code,
+            'fresh_import': bool(body.get('fresh_import')),
+            'swapped_endpoints': body.get('swapped_endpoints') or [],
+            'new_endpoints':     body.get('new_endpoints')     or [],
+            'error': body.get('error'),
+            'rolled_back_endpoints': body.get('rolled_back_endpoints') or [],
+        })
+    return results
+
+
+
 
 
 def register(app, ctx):

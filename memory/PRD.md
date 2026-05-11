@@ -3,6 +3,41 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Auto-Reload After Bundle Upload (2026-02-09)
+**Brief**: Closes the loop on plug-in deployment. Until now, a bundle upload landed new `*_service.py` files on disk but Python's already-imported modules kept serving the OLD code — operators had to either toggle the enteliWEB `app.py` object (full Flask restart) or hit `/api/repair/reload-module/<name>` per plug-in. Now the bundle upload endpoint walks the extraction manifest and hot-reloads every plug-in that just landed, all in-process.
+
+### What changed
+- Refactored `repair_reload_module(plugin_name)` into a 2-line HTTP wrapper around a new `_reload_module_core(plugin_name) -> (body_dict, http_status)` callable. Net code unchanged — the wrapper just does `body, code = _reload_module_core(...); return jsonify(body), code`.
+- Added `_auto_reload_extracted_services(extracted)` which walks the extractor manifest looking for entries with `root == 'pgpy'` AND `file.endswith('_service.py')`, deduplicates, and calls `_reload_module_core(leaf)` for each. Returns a list of per-module summary dicts.
+- Hooked it into `_finalize_bundle_from_disk` right after `_extract_zip_streaming()` succeeds. The upload response now carries two new fields:
+  - `reloaded_modules: [{module, success, fresh_import, swapped_endpoints, new_endpoints, error?, rolled_back_endpoints?, http_status}, ...]`
+  - `reload_summary: {attempted, succeeded, failed}`
+- Errors are reported per-module — a broken plug-in does not abort the deploy or affect the other plug-ins (the atomic-rollback logic from the previous round still applies inside `_reload_module_core`).
+- `update.html` `_renderUploadResult()` now renders an "Auto-Reload Plug-Ins" panel under the file list: traffic-light counts in the header (attempted / ok / failed), one row per plug-in showing module name, fresh-import badge, swapped/new counts, indented error message + rolled-back endpoints on failure, indented `+ ep, ep, ep` line on success.
+
+### Why this matters
+The user reported `GET dir failed: 404` on the equipment_mapper after a successful bundle deploy. Root cause: the new `upload_service.py` (with the freshly-registered `/api/zip-dir` route) landed on disk but the live Flask process still served the old in-memory module. With auto-reload-after-upload, this gap is now closed: a single bundle deploy is sufficient to bring new routes online.
+
+### Tests
+- New `tests/test_auto_reload_after_upload.py`: **22/22 PASS** end-to-end:
+  - Build a bundle containing a `weather_service.py` with a NEW route injected into `register()`.
+  - POST `/api/upload-bundle`.
+  - Assert (a) HTTP 200, (b) `reloaded_modules` list present, (c) weather_service entry shows `success: true` with the injected handler in `new_endpoints`, (d) non-`.py` files (dashboard.html) NOT in the reload list, (e) GET on the new sentinel route returns 200 with the expected body **without any manual reload-module call**, (f) `reload_summary` counts match.
+  - Failure path: bundle with a broken `register()` returns HTTP 200 (extraction succeeded), `reloaded_modules` reports the failure per-module, `reload_summary.failed >= 1`.
+  - UI-only bundle: `reloaded_modules == []`, `reload_summary.attempted == 0`.
+- Full backend regression: **219/219 PASS** across 10 test files (was 197/219 last round; +22 new auto-reload tests).
+
+### Deployment
+- New `upload_service.py` (74 KB / 1612 lines) hot-deployed to the live controller at `219.79.12.63:5001` via `/api/repair/upload-plugin` + `/api/repair/reload-module/upload_service`. Confirmed: `swapped_endpoints` lists all 10 routes including `api_zip_dir` + `api_zip_files`. `POST /api/zip-dir {"dirname":"configs","root":"data","path":""}` → HTTP 200, 2.5 MB zip with valid `PK\003\004` header.
+- `red5_bundle.zip` rebuilt (1725.5 KB, MD5 `7c2cc3026ee7c76c429ff40f9dec1426`) and synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+
+### Files changed
+- `upload_service.py` — refactored reload core, added `_auto_reload_extracted_services`, hooked into `_finalize_bundle_from_disk`.
+- `update.html` — added Auto-Reload Plug-Ins panel rendering inside `_renderUploadResult`.
+- `tests/test_auto_reload_after_upload.py` — NEW (22 tests).
+- `memory/PRD.md` — this entry.
+
+
 ## V1.9 Atomic Route Rollback + Hot-Reload UI (2026-02-09)
 **Brief**: Two improvements on top of the Case-A reload verification: (1) `repair_reload_module` now atomically rolls back partially-bound routes when `register()` raises mid-way, and (2) `update.html` gets a one-click hot-reload UI affordance.
 

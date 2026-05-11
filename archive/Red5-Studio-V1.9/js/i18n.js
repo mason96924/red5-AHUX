@@ -61,6 +61,7 @@
     sensible:              ['Sensible','显热','顯熱','顕熱','현열'],
     natural_ventilation:   ['Natural Ventilation','自然通风','自然通風','自然換気','자연 환기'],
     evaporative:           ['Evaporative','蒸发冷却','蒸發冷卻','蒸発冷却','증발 냉각'],
+    rh_sweet_spot:         ['40-60% RH','40-60% 相对湿度','40-60% 相對濕度','40-60% 相対湿度','40-60% 상대습도'],
 
     /* ── Setpoints ── */
     t_setpoint:            ['T Setpoint','温度设定点','溫度設定點','温度設定値','온도 설정점'],

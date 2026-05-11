@@ -1053,6 +1053,32 @@
                 const rh20_CZ = []; for(let t=27; t>=20; t-=0.5) rh20_CZ.push([t, getW(t, 20)]);
 
                 const CZ = [...rh80, [27, getW(27, 50)], [27, getW(27, 20)], ...rh20_CZ];
+                // ASHRAE 55 / ISO 7730 "sweet spot" sub-strip: 40-60% RH
+                // across the same 20-27 deg C temperature range as the CZ.
+                // Operators target this range to minimise both dryness
+                // (static / mucosal complaints below 40%) and mould /
+                // dust-mite growth (above 60%).  Rendered as a darker
+                // emerald shade *inside* the CZ polygon so it reads as
+                // a refinement, not a separate zone.
+                //
+                // The CZ's upper-right boundary is a SLANTED line from
+                // (25 C, 80% RH) down to (27 C, 50% RH), so the raw 60% RH
+                // isopleth crosses ABOVE that slope around T~26 C and
+                // would protrude outside the CZ.  Clip the strip's top
+                // edge with min(getW(T,60), cz_ceiling(T)).  The bottom
+                // (40% RH) edge never crosses the CZ floor (20% RH) so
+                // it doesn't need clipping.
+                const _czCeilTop  = getW(25, 80);   // 80% RH ceiling at T <= 25 C
+                const _czCeilNose = getW(27, 50);   // CZ apex at 27 C / 50% RH
+                const _czCeilAt = (tt) => (tt <= 25)
+                    ? getW(tt, 80)
+                    : _czCeilTop + ((tt - 25) / 2) * (_czCeilNose - _czCeilTop);
+                const rh60_top = [];
+                for (let tt = 20; tt <= 27; tt += 0.5) {
+                    rh60_top.push([tt, Math.min(getW(tt, 60), _czCeilAt(tt))]);
+                }
+                const rh40_bot = []; for (let tt = 27; tt >= 20; tt -= 0.5) rh40_bot.push([tt, getW(tt, 40)]);
+                const SWEET = [...rh60_top, ...rh40_bot];
                 const NV = [...rh100, [32, 15.4/1000], [32, 6.2/1000], ...rh20Line];
                 const Mass = [...rh80, [33, 16/1000], [37, getW(37, 30)], [37, 3/1000], [20, getW(20, 20)]];
                 const MCV = [...rh80, [40, 16/1000], [44, getW(44, 20)], [44, 3/1000], [20, getW(20, 20)]];
@@ -1077,6 +1103,17 @@
                         <polygon points={safePts(EVAP)} fill="#06b6d4" fillOpacity="0.08" stroke="#06b6d4" strokeWidth="1" />
                         <polygon points={safePts(NV)} fill="#f59e0b" fillOpacity="0.05" stroke="#f59e0b" strokeWidth="1" />
                         <polygon points={safePts(CZ)} fill="#10b981" fillOpacity="0.15" stroke="#10b981" strokeWidth="1.2" />
+                        {/* 40-60% RH sweet-spot sub-strip — darker emerald
+                            inside the CZ polygon, with a tiny "40-60% RH"
+                            label centred horizontally on the strip. */}
+                        <polygon data-testid="givoni-sweet-strip" points={safePts(SWEET)} fill="#059669" fillOpacity="0.32" stroke="#047857" strokeWidth="0.8" strokeDasharray="3,2" />
+                        <text x={safe(x(23.5))} y={safe(y(getW(23.5, 50)))}
+                              fill="#022c22" fontSize="8" fontWeight="900"
+                              textAnchor="middle"
+                              className="uppercase font-black font-mono tracking-widest pointer-events-none"
+                              style={{paintOrder:'stroke', stroke:'#a7f3d0', strokeWidth:'2.5px', strokeLinejoin:'round'}}>
+                            {window.t ? window.t('rh_sweet_spot') : '40-60% RH'}
+                        </text>
                         <polygon points={safePts(WINTER)} fill="#3b82f6" fillOpacity="0.15" stroke="none" />
                         <path d={`M ${safePts(winterRH20)} L ${safePts(winterRH80)}`} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4,4" opacity="0.8" />
                         <line x1={safe(x(19))} y1={yLineTop19} x2={safe(x(19))} y2={pad.top+gridHeight} stroke="#3b82f6" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />

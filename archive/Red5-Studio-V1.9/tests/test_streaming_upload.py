@@ -250,11 +250,11 @@ with app.test_client() as c:
     # Verify the source-of-truth formula directly so a future refactor
     # raising the floor breaks the test.
     upload_service_src = open('/app/archive/Red5-Studio-V1.9/upload_service.py').read()
-    test('9c. chunked floor is 5MB / 2× total_size',
-         'need = max(5 * 1024 * 1024, total_size * 2)' in upload_service_src,
+    test('9c. chunked floor matches tightened formula (1MB / +1MB)',
+         'need = max(1 * 1024 * 1024, total_size + 1 * 1024 * 1024)' in upload_service_src,
          'expected formula not found in upload_service.py')
-    test('9d. legacy finalize floor is 5MB / 2× zip_size',
-         '_min_need = max(5 * 1024 * 1024, _zip_size * 2)' in upload_service_src,
+    test('9d. legacy finalize floor matches tightened formula (1MB / max-member+256KB)',
+         '_min_need = max(1 * 1024 * 1024, _max_member + 256 * 1024)' in upload_service_src,
          'expected formula not found in upload_service.py')
 
 print()

@@ -117,8 +117,8 @@ with app.test_client() as c:
              str(j.get('swapped_endpoints')))
         test('4g. swapped includes upload_bundle_chunk',
              'upload_bundle_chunk' in (j.get('swapped_endpoints') or []))
-        test('4h. response includes restart-for-new-routes note',
-             'full Flask restart' in (j.get('note') or ''))
+        test('4h. response includes no-restart note',
+             'No Flask restart needed' in (j.get('note') or ''))
 
         # Verify the loaded module text now contains the sentinel
         import upload_service as us2
@@ -149,9 +149,13 @@ with app.test_client() as c:
     r = c.get('/api/disk-status')
     test('5a. /api/disk-status still works after reload', r.status_code == 200)
 
+    # Upload a synthetic bridge plug-in (not weather_service!) so we don't
+    # poison the on-disk weather_service.py that test 7 reads + mutates.
+    # webhook_bridge_service is in the allow-list and not auto-loaded by
+    # the test bootstrap, so a noop body here is safe.
     r = c.post('/api/repair/upload-plugin',
-               data={'file': (io.BytesIO(b'# noop'), 'weather_service.py'),
-                     'filename': 'weather_service.py'},
+               data={'file': (io.BytesIO(b'# noop\n'), 'webhook_bridge_service.py'),
+                     'filename': 'webhook_bridge_service.py'},
                content_type='multipart/form-data')
     j = r.get_json() or {}
     test('5b. /api/repair/upload-plugin still works after reload',

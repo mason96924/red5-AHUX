@@ -3,6 +3,32 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Hot-Reload Case-A Verification + Test Suite Repair (2026-02-09)
+**Brief**: Verified and locked in the previous session's `repair_reload_module` Case-A fix (attach brand-new routes to an already-loaded module without a Flask restart). Two test-suite bugs blocked verification — both fixed.
+
+### Bugs fixed in `tests/test_reload_module.py`
+1. **Test 5b was corrupting `weather_service.py`**: it uploaded `# noop` content as `weather_service.py` into `PLUGINS_ROOT`. Because `PLUGINS_ROOT` is first on `sys.path`, the subsequent `importlib.reload(weather_service)` re-resolved the module's `__file__` to the 6-byte noop file. By test 7, `weather_service.__file__` pointed at `# noop`, so the injection logic (looking for the last `app.add_url_rule(`) returned `-1` and produced an indented `def` at column 4 of line 1 → `IndentationError: unexpected indent (weather_service.py, line 1)`. **Fix**: upload to `webhook_bridge_service.py` instead (also in the allow-list, but not auto-loaded by the test bootstrap, so a noop body is harmless).
+2. **Test 4h asserted obsolete note text** (`'full Flask restart' in note`). The repaired Case-A reload no longer requires a restart, so the note correctly says `'No Flask restart needed'`. **Fix**: updated the assertion to match.
+
+### Test 7 (new-route attachment) — now verified end-to-end
+- Injects `app.add_url_rule('/api/_test_newroute_xyz', ...)` into the live `weather_service.py` `register()` body.
+- POSTs `/api/repair/reload-module/weather_service`.
+- Confirms (a) response lists `_test_newroute_xyz_handler` in `new_endpoints`, (b) `GET /api/_test_newroute_xyz` returns HTTP 200, (c) body is `{'ok': True, 'where': 'newly-attached'}`.
+- Restores original `weather_service.py` source in `finally`.
+- **Outcome**: the `/api/zip-files` 404 class of bugs (newly-shipped routes not bound to Flask after hot-reload) is now provably fixed in CI.
+
+### Pre-existing failures also resolved (`tests/test_streaming_upload.py`)
+- Tests 9c/9d asserted the **old** zip-headroom formula (`max(5 MB, total_size * 2)`). The previous session deliberately tightened the floor to `max(1 MB, total_size + 1 MB)` to prevent false ENOSPC rejections on small bundles. Synced the assertions to the current source-of-truth formula.
+
+### Test totals
+- `test_reload_module.py`: **28/28** PASS (was 23/28).
+- `test_streaming_upload.py`: **36/36** PASS (was 34/36).
+- Full backend suite: **188/188** PASS across 9 test files (`reload`, `streaming_upload`, `weather`, `band`, `telemetry`, `core_file_routes`, `self_heal_services`, `bootloader_protection`, `plugins_root_routing`).
+
+### Bundle
+- `red5_bundle.zip` rebuilt (1722.9 KB, MD5 `ca66c8760e1b86d7f5ddb8a047e9056c`) and synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`. Bundle picks up the validated `upload_service.py` with Case-A new-route attachment + dependency-validating loader.
+
+
 ## Architecture
 
 ### Controller Environment

@@ -181,7 +181,7 @@ Implementation sketch:
 #### Not yet implemented (deferred)
 
 - ~~ERV / HRV pre-post-recovery overlay + live ε readout~~ **Shipped 2026-02-09**: `+ ERV` checkbox + ε input in the Designer Mode panel. When on, draws OA' (post-recovery OA) in cyan on the OA→RA line at fractional distance ε from OA, plus a small cyan arrowhead showing the wheel's recovery direction. Adds a 6th row to the readout card: **ERV saved RT (savings %)** computed vs the same system without the wheel. Verified against the default Korean summer scenario at ε = 0.80: 8.5 RT saved (28 % reduction), matching the 30-50 % rule of thumb published in ASHRAE 90.1 and Trane Engineers Newsletters.
-- Auto-anchor OA point from latest weather data — currently user-input only. A `[USE LIVE OA]` button next to the OA T/RH fields would copy the most recent `weatherData[last]` values into the inputs.
+- ~~Auto-anchor OA point from latest weather data~~ **Shipped 2026-02-09**: `· USE LIVE OA ·` button (pink border to match the OA dot color) sits right below the OA T/RH inputs. Clicking copies `weatherData[weatherData.length-1]` (most recent point in the current Weather Strip) into the OA inputs and triggers a brief green flash + readout (`✓ 28.4°C / 72%`). Disabled (dimmed, not-allowed cursor) when no weather data has loaded yet. Listens to a new `red5-weather-loaded` window event dispatched from the fetch handler so the button auto-enables when fresh data arrives.
 
 ---
 

@@ -1441,6 +1441,9 @@ global.initPsy3D = function(container, opts){
               '<label>OA RH</label>'+
                 '<input type="number" id="p3-d-oarh" min="0" max="100" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
                 '<span style="color:#64748b">%</span>'+
+              '<span></span>'+
+                '<button type="button" id="p3-d-uselive" title="Copy the most recent weatherData point\'s T and RH into the OA inputs above." style="background:#020617;color:#fb7185;border:1px solid #fb7185;padding:4px 8px;font-family:inherit;font-size:9px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;border-radius:3px;font-weight:900">\u00b7 use live OA \u00b7</button>'+
+                '<span></span>'+
               '<label>RA T</label>'+
                 '<input type="number" id="p3-d-rat" min="15" max="30" step="0.5" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
                 '<span style="color:#64748b">\u00b0C</span>'+
@@ -1549,6 +1552,62 @@ global.initPsy3D = function(container, opts){
             render2DChart();
         };
     }
+    /* [USE LIVE OA] button: copies the most recent weatherData point into
+       the OA T + OA RH inputs.  Disabled (grey, dimmed) when no weather
+       data has loaded yet so users don't get a silently-stuck click.
+       Toggling a fresh weather strip via the location/from/to controls
+       re-fills weatherData -- a subsequent click then picks up the new
+       last point. */
+    var _liveBtn = dCfg.querySelector('#p3-d-uselive');
+    var _refreshLiveBtn = function(){
+        if (!_liveBtn) return;
+        var has = (typeof weatherData !== 'undefined') && weatherData && weatherData.length > 0;
+        _liveBtn.disabled = !has;
+        _liveBtn.style.opacity = has ? '1' : '0.45';
+        _liveBtn.style.cursor  = has ? 'pointer' : 'not-allowed';
+        if (has) {
+            var p = weatherData[weatherData.length - 1];
+            _liveBtn.title = 'Click to copy live OA = ' + p.t.toFixed(1) + '\u00b0C / ' + p.rh.toFixed(0) +
+                             '% (latest point in current Weather Strip) into the OA inputs above.';
+        } else {
+            _liveBtn.title = 'No weather data loaded yet. Load a Weather Strip first, then click here to pull the latest OA reading.';
+        }
+    };
+    _refreshLiveBtn();
+    if (_liveBtn) {
+        _liveBtn.onclick = function(){
+            if (typeof weatherData === 'undefined' || !weatherData || !weatherData.length) {
+                /* Soft feedback rather than alert() -- flash the button red
+                   for 600ms so the operator notices but isn't interrupted. */
+                _liveBtn.style.color = '#ef4444'; _liveBtn.style.borderColor = '#ef4444';
+                _liveBtn.textContent = '\u2716 no data yet';
+                setTimeout(function(){
+                    _liveBtn.style.color = '#fb7185'; _liveBtn.style.borderColor = '#fb7185';
+                    _liveBtn.textContent = '\u00b7 use live OA \u00b7';
+                }, 800);
+                return;
+            }
+            var p = weatherData[weatherData.length - 1];
+            _designerOA_T  = p.t;
+            _designerOA_RH = p.rh;
+            _setD('p3-d-oat',  +_designerOA_T.toFixed(1));
+            _setD('p3-d-oarh', Math.round(_designerOA_RH));
+            _persistDesignerState();
+            /* Brief green confirmation pulse so the operator sees the action
+               registered. */
+            _liveBtn.style.color = '#22c55e'; _liveBtn.style.borderColor = '#22c55e';
+            _liveBtn.textContent = '\u2713 ' + p.t.toFixed(1) + '\u00b0C / ' + p.rh.toFixed(0) + '%';
+            setTimeout(function(){
+                _liveBtn.style.color = '#fb7185'; _liveBtn.style.borderColor = '#fb7185';
+                _liveBtn.textContent = '\u00b7 use live OA \u00b7';
+            }, 1100);
+            render2DChart();
+        };
+    }
+    /* Refresh the button's enabled-state whenever a Weather Strip finishes
+       loading.  weatherData mutates inside the existing fetch path; hook
+       the same DOM event the chart already listens to. */
+    window.addEventListener('red5-weather-loaded', _refreshLiveBtn);
 
     dmBtn.onclick = function(){
         _designerMode = !_designerMode;
@@ -2306,6 +2365,9 @@ global.initPsy3D = function(container, opts){
       if(weatherData.length>4000){var step=Math.ceil(weatherData.length/4000);var ds=[];for(var i=0;i<weatherData.length;i+=step)ds.push(weatherData[i]);weatherData=ds;}
       $('#p3-status').textContent=weatherData.length+' pts loaded';
       buildWeatherVis(locName,fromD,toD);
+      /* Fire a window-level event so other UI bits (Designer Mode's
+         [USE LIVE OA] button) can refresh their enabled state. */
+      try { window.dispatchEvent(new CustomEvent('red5-weather-loaded', {detail:{count:weatherData.length}})); } catch(_){}
     })
     .catch(function(e){$('#p3-status').textContent='Error: '+e.message;})
     .finally(function(){$('#p3-fetch').disabled=false;});

@@ -3,6 +3,26 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Designer Mode · USE LIVE OA button (2026-02-09)
+**Brief**: Last item from the Designer Mode roadmap. A small pink `· USE LIVE OA ·` button under the OA T/RH inputs copies the latest Weather Strip point into the OA design inputs so the engineer can run a live "what would the coil need to be for *today's* outdoor conditions?" sizing pass without typing numbers.
+
+### What's new (`js/psy-3d-engine.js`)
+- Button HTML appended to the OA-T/OA-RH input row in the Designer Mode panel (pink border `#fb7185` to match the OA dot on the chart).
+- Handler reads `weatherData[weatherData.length - 1]` (closure-scoped, populated by the existing Open-Meteo fetch path), copies `.t` and `.rh` into `_designerOA_T / _designerOA_RH`, updates the input DOM elements, persists to `localStorage`, and re-renders.
+- **Disabled state**: when `weatherData` is empty/undefined, button is dimmed (opacity 0.45, `cursor: not-allowed`) with an informative tooltip. On click while disabled it briefly flashes red (`✖ no data yet`) for 800 ms instead of producing a silent no-op or alert.
+- **Success state**: green flash for 1.1 s showing the copied values (`✓ 28.4°C / 72%`) so the operator sees the action registered.
+- **Auto-enable**: new `red5-weather-loaded` `CustomEvent` dispatched from the Weather Strip fetch `.then()` block. The button listens via `window.addEventListener` and refreshes its enabled-state + tooltip the moment fresh data lands.
+
+### Live deploy
+- `js/psy-3d-engine.js` (296,300 bytes) hot-deployed to `219.79.12.63:5001`.
+- `red5_bundle.zip` rebuilt (MD5 `506f5d89980601747de251da75f02bbc`).
+- `psychrometric_design_workflow.md` flipped "Auto-anchor OA" from deferred → shipped.
+
+### Files changed
+- `js/psy-3d-engine.js` — button HTML, `_refreshLiveBtn` + click handler, `red5-weather-loaded` event hook (listener + dispatch).
+- `psychrometric_design_workflow.md` — moved Auto-anchor OA from deferred → shipped.
+
+
 ## V1.9 Designer Mode · ERV Toggle (2026-02-09)
 **Brief**: Adds the `+ ERV` (Energy Recovery Ventilator) toggle promised in the Designer Mode roadmap. When ON, the wheel pre-treats OA before it hits the mixing box: OA' sits on the OA→RA line at fractional distance ε (enthalpy effectiveness, default 0.80). The MA→SA coil-sizing math then runs from OA' instead of OA, and a 6th readout row reports tons saved vs the no-wheel baseline.
 

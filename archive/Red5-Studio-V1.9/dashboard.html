@@ -226,6 +226,7 @@
             const [isProcessVisible, setIsProcessVisible] = useState(false);
             const [isDraggingIndicator, setIsDraggingIndicator] = useState(false);
             const [showGivoni, setShowGivoni] = useState(true);
+            const [showSweetSpot, setShowSweetSpot] = useState(true);
             const [showPath, setShowPath] = useState(true);
             const [vecVis, setVecVis] = useState({ enthalpy: true, sensible: true, latent: true, diagnostic: true });
             const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true });
@@ -1054,29 +1055,23 @@
 
                 const CZ = [...rh80, [27, getW(27, 50)], [27, getW(27, 20)], ...rh20_CZ];
                 // ASHRAE 55 / ISO 7730 "sweet spot" sub-strip: 40-60% RH
-                // across the same 20-27 deg C temperature range as the CZ.
-                // Operators target this range to minimise both dryness
-                // (static / mucosal complaints below 40%) and mould /
-                // dust-mite growth (above 60%).  Rendered as a darker
-                // emerald shade *inside* the CZ polygon so it reads as
-                // a refinement, not a separate zone.
+                // across the 20-27 deg C temperature range.  Operators
+                // target this range to minimise both dryness (static /
+                // mucosal complaints below 40%) and mould / dust-mite
+                // growth (above 60%).  Rendered as a darker emerald
+                // shade *inside* the CZ polygon so it reads as a
+                // refinement of the same zone.
                 //
-                // The CZ's upper-right boundary is a SLANTED line from
-                // (25 C, 80% RH) down to (27 C, 50% RH), so the raw 60% RH
-                // isopleth crosses ABOVE that slope around T~26 C and
-                // would protrude outside the CZ.  Clip the strip's top
-                // edge with min(getW(T,60), cz_ceiling(T)).  The bottom
-                // (40% RH) edge never crosses the CZ floor (20% RH) so
-                // it doesn't need clipping.
-                const _czCeilTop  = getW(25, 80);   // 80% RH ceiling at T <= 25 C
-                const _czCeilNose = getW(27, 50);   // CZ apex at 27 C / 50% RH
-                const _czCeilAt = (tt) => (tt <= 25)
-                    ? getW(tt, 80)
-                    : _czCeilTop + ((tt - 25) / 2) * (_czCeilNose - _czCeilTop);
-                const rh60_top = [];
-                for (let tt = 20; tt <= 27; tt += 0.5) {
-                    rh60_top.push([tt, Math.min(getW(tt, 60), _czCeilAt(tt))]);
-                }
+                // We deliberately keep the strip polygon SIMPLE here
+                // (unclipped 60% RH top, unclipped 40% RH bottom) and
+                // let SVG <clipPath id="cz-clip"> handle the geometric
+                // intersection with the CZ.  Doing the clip via SVG
+                // avoids sampling notches that a hand-rolled clamp
+                // produces near the CZ's slanted upper-right boundary
+                // (the 60% RH isopleth crosses that slope at ~T=26.3,
+                // and a discrete-step polygon would leave a visible
+                // kink wherever the sample missed the exact crossover).
+                const rh60_top = []; for (let tt = 20; tt <= 27; tt += 0.5) rh60_top.push([tt, getW(tt, 60)]);
                 const rh40_bot = []; for (let tt = 27; tt >= 20; tt -= 0.5) rh40_bot.push([tt, getW(tt, 40)]);
                 const SWEET = [...rh60_top, ...rh40_bot];
                 const NV = [...rh100, [32, 15.4/1000], [32, 6.2/1000], ...rh20Line];
@@ -1104,16 +1099,28 @@
                         <polygon points={safePts(NV)} fill="#f59e0b" fillOpacity="0.05" stroke="#f59e0b" strokeWidth="1" />
                         <polygon points={safePts(CZ)} fill="#10b981" fillOpacity="0.15" stroke="#10b981" strokeWidth="1.2" />
                         {/* 40-60% RH sweet-spot sub-strip — darker emerald
-                            inside the CZ polygon, with a tiny "40-60% RH"
-                            label centred horizontally on the strip. */}
-                        <polygon data-testid="givoni-sweet-strip" points={safePts(SWEET)} fill="#059669" fillOpacity="0.32" stroke="#047857" strokeWidth="0.8" strokeDasharray="3,2" />
-                        <text x={safe(x(23.5))} y={safe(y(getW(23.5, 50)))}
-                              fill="#022c22" fontSize="8" fontWeight="900"
-                              textAnchor="middle"
-                              className="uppercase font-black font-mono tracking-widest pointer-events-none"
-                              style={{paintOrder:'stroke', stroke:'#a7f3d0', strokeWidth:'2.5px', strokeLinejoin:'round'}}>
-                            {window.t ? window.t('rh_sweet_spot') : '40-60% RH'}
-                        </text>
+                            inside the CZ polygon.  Geometric clipping via
+                            SVG <clipPath> guarantees pixel-perfect
+                            intersection with the CZ at the slanted upper-
+                            right boundary (where the 60% RH isopleth
+                            crosses the 80%→50% CZ ceiling around T~26.3). */}
+                        {showSweetSpot && (
+                            <g>
+                                <defs>
+                                    <clipPath id="cz-clip-path" clipPathUnits="userSpaceOnUse">
+                                        <polygon points={safePts(CZ)} />
+                                    </clipPath>
+                                </defs>
+                                <polygon data-testid="givoni-sweet-strip" points={safePts(SWEET)} clipPath="url(#cz-clip-path)" fill="#059669" fillOpacity="0.32" stroke="#047857" strokeWidth="0.8" strokeDasharray="3,2" />
+                                <text x={safe(x(23.5))} y={safe(y(getW(23.5, 50)))}
+                                      fill="#022c22" fontSize="8" fontWeight="900"
+                                      textAnchor="middle"
+                                      className="uppercase font-black font-mono tracking-widest pointer-events-none"
+                                      style={{paintOrder:'stroke', stroke:'#a7f3d0', strokeWidth:'2.5px', strokeLinejoin:'round'}}>
+                                    {window.t ? window.t('rh_sweet_spot') : '40-60% RH'}
+                                </text>
+                            </g>
+                        )}
                         <polygon points={safePts(WINTER)} fill="#3b82f6" fillOpacity="0.15" stroke="none" />
                         <path d={`M ${safePts(winterRH20)} L ${safePts(winterRH80)}`} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4,4" opacity="0.8" />
                         <line x1={safe(x(19))} y1={yLineTop19} x2={safe(x(19))} y2={pad.top+gridHeight} stroke="#3b82f6" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
@@ -1609,7 +1616,18 @@
                                 );
                             })}
                         </div>
-                        <div className={`p-4 border-b ${ui.border} bg-opacity-50`}><button onClick={() => setShowGivoni(!showGivoni)} className={`w-full py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button></div>
+                        <div className={`p-4 border-b ${ui.border} bg-opacity-50 flex gap-2`}>
+                            <button onClick={() => setShowGivoni(!showGivoni)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button>
+                            <button
+                                data-testid="toggle-sweet-spot"
+                                onClick={() => setShowSweetSpot(!showSweetSpot)}
+                                disabled={!showGivoni}
+                                title={showGivoni
+                                    ? (showSweetSpot ? 'Hide 40-60% RH sweet-spot strip' : 'Show 40-60% RH sweet-spot strip')
+                                    : 'Enable Givoni first to use this overlay'}
+                                className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-white shadow-lg' : ui.btnToggle)}`}
+                            >{t('rh_sweet_spot')}</button>
+                        </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-10 space-y-2`}><h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] px-1 font-black shadow-black">{t('asset_search')}</h2><input type="text" placeholder="Search ID (Wildcard *, ?)..." className={`w-full ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-xl py-2 px-4 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                         {/* AXIS SETTINGS — dual-handle range slider, bounded to [-15, 50] */}
                         <div className={`p-4 border-b ${ui.border} bg-opacity-20 space-y-3`}>

@@ -2681,10 +2681,18 @@
                                                 <span className="text-xs">Define <code className="bg-slate-200 px-1 rounded">visual_assets.base_graphic</code> for vav_type {vavTypeId || 'N'} in the Config Tool</span>
                                             </div>
                                         ) : (
-                                        <div className="relative inline-block pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]">
-                                            <img ref={vavImgRef} src={effectiveVavImage} alt="VAV" className="block max-w-full pointer-events-none" style={{ maxHeight: 'calc(100% - 4px)' }}
+                                        <div className="relative pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]"
+                                             style={{
+                                               display: 'grid',
+                                               gridTemplateColumns: '1fr',
+                                               gridTemplateRows: '1fr',
+                                               maxWidth: '100%',
+                                               maxHeight: '100%',
+                                             }}>
+                                            <img ref={vavImgRef} src={effectiveVavImage} alt="VAV" className="block pointer-events-none"
+                                                 style={{ gridArea: '1 / 1', maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', display: 'block' }}
                                                  onLoad={(e) => { const im = e.target; setVavImgDims({ natW: im.naturalWidth || 1600, natH: im.naturalHeight || 1004, dispW: im.offsetWidth, dispH: im.offsetHeight }); }} />
-                                            <div className="absolute inset-0 pointer-events-none">
+                                            <div className="relative pointer-events-none" style={{ gridArea: '1 / 1' }}>
 
                                                 {/* === SCHEMA-DRIVEN VAV POINTS === */}
                                                 {vavSchemaPoints.map((p, pi) => {
@@ -3482,12 +3490,25 @@
                                                 <span className="text-xs">Upload: ahu_type_{ahuTypeId || 'N'}.jpg</span>
                                             </div>
                                         ) : (
-                                        <div className="relative inline-block pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]" style={{ perspective: '1500px' }}>
+                                        <div className="relative pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]"
+                                             style={{
+                                               perspective: '1500px',
+                                               display: 'grid',
+                                               gridTemplateColumns: '1fr',
+                                               gridTemplateRows: '1fr',
+                                               maxWidth: '100%',
+                                               maxHeight: '100%',
+                                               /* Image is the size-source.  Setting both maxW + maxH lets it
+                                                  scale-to-fit the body in BOTH dimensions; the grid cell
+                                                  collapses to the image's rendered size, and every overlay
+                                                  layer below shares the same cell via gridArea:'1/1' so
+                                                  percentage coords ALWAYS land on the right pixel. */
+                                             }}>
                                             <img ref={ahuImgRef} src={currentAhuImage} alt="AHU"
-                                                 className="block max-w-full pointer-events-none"
-                                                 style={{ maxHeight: 'calc(100% - 4px)' }}
+                                                 className="block pointer-events-none"
+                                                 style={{ gridArea: '1 / 1', maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', display: 'block' }}
                                                  onLoad={(e) => { const im = e.target; setAhuImgDims({ natW: im.naturalWidth || 1600, natH: im.naturalHeight || 700, dispW: im.offsetWidth, dispH: im.offsetHeight }); }} />
-                                            <div className="absolute inset-0 pointer-events-none" style={{ perspective: '1500px' }}>
+                                            <div className="relative pointer-events-none" style={{ gridArea: '1 / 1', perspective: '1500px' }}>
 
                                         {/* === SCHEMA-DRIVEN OVERLAYS (mirrors Config Tool groupedPoints renderer) === */}
                                         {groupedPoints.map((grp, gi) => {

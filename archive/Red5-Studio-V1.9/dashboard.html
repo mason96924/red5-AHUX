@@ -516,6 +516,10 @@
                 };
             }, [selectedVavForModal, vavModalPopupHost]);
 
+            const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
+            const [floorPlanModalSize, setFloorPlanModalSize] = useState(() => _loadSize(_LS_FP_SIZE, { w: 1400, h: 900 }));
+            const floorOuterRef = useRef(null);
+
             useEffect(() => {
                 if (!showFloorPlanForAhu || floorPlanPopupHost) return;
                 const el = floorOuterRef.current;
@@ -541,9 +545,6 @@
                 };
             }, [showFloorPlanForAhu, floorPlanPopupHost]);
 
-            const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
-            const [floorPlanModalSize, setFloorPlanModalSize] = useState(() => _loadSize(_LS_FP_SIZE, { w: 1400, h: 900 }));
-            const floorOuterRef = useRef(null);
             useEffect(() => {
                 if (!showFloorPlanForAhu && floorPlanPopupWin && !floorPlanPopupWin.closed) floorPlanPopupWin.close();
             }, [showFloorPlanForAhu, floorPlanPopupWin]);

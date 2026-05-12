@@ -265,6 +265,17 @@
             const [ahuModalSize, setAhuModalSize] = useState({ w: 1600, h: 900 });
             const [ahuBodySize, setAhuBodySize] = useState({ w: 1560, h: 820 });
             const ahuBodyRef = useRef(null);
+            // Pop-out window/host state hoisted UP to here so the AHU
+            // useEffects below (which depend on ahuModalPopupHost so they
+            // re-run when the modal pops in/out and re-bind ResizeObservers
+            // to the popup-document image) can reference it without a
+            // temporal-dead-zone ReferenceError at first render.
+            const [ahuModalPopupWin,  setAhuModalPopupWin]  = useState(null);
+            const [ahuModalPopupHost, setAhuModalPopupHost] = useState(null);
+            const [vavModalPopupWin,  setVavModalPopupWin]  = useState(null);
+            const [vavModalPopupHost, setVavModalPopupHost] = useState(null);
+            const [floorPlanPopupWin,  setFloorPlanPopupWin]  = useState(null);
+            const [floorPlanPopupHost, setFloorPlanPopupHost] = useState(null);
             useEffect(() => {
                 if (!showAhuModalFor || !ahuBodyRef.current) return;
                 const el = ahuBodyRef.current;
@@ -342,12 +353,8 @@
             // selection changes, the popup auto-updates via React's normal
             // state flow — selecting a different AHU rerenders the AHU popup
             // with the new AHU's telemetry instead of closing and reopening it.
-            const [ahuModalPopupWin,  setAhuModalPopupWin]  = useState(null);
-            const [ahuModalPopupHost, setAhuModalPopupHost] = useState(null);
-            const [vavModalPopupWin,  setVavModalPopupWin]  = useState(null);
-            const [vavModalPopupHost, setVavModalPopupHost] = useState(null);
-            const [floorPlanPopupWin,  setFloorPlanPopupWin]  = useState(null);
-            const [floorPlanPopupHost, setFloorPlanPopupHost] = useState(null);
+            // (state declarations hoisted ABOVE the AHU/VAV useEffects so the
+            // image-resize effects can depend on *PopupHost without TDZ.)
 
             // Generic open-or-focus helper.  ``setterPair`` is [setWin, setHost]
             // for the modal whose popup we're spawning.  Returns nothing —

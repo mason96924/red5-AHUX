@@ -501,16 +501,20 @@ global.initPsy3D = function(container, opts){
     ctx.fillText('SA ' + sa_T.toFixed(1) + '\u00b0C ' + Math.round(_designerSA_RH) + '%', saX + 8, saY + 16);
 
     /* 5. Read-out card: pinned bottom-left of the chart inside the clip
-       region.  Compact digital display, 5 rows (or 6 when ERV is on so
-       the savings line fits without crowding). */
-    var hasERVRow = _designerERVOn;
+       region.  Compact digital display, 5 rows by default; +1 row when
+       ERV is on (savings) and +1 more row when ERV is doing harm (the
+       wheel is making the coil bigger -- a real-world commissioning
+       failure mode in shoulder/winter conditions when OA is cooler or
+       drier than RA; the tool flags it with an amber pulse line). */
+    var hasERVRow  = _designerERVOn;
+    var ervIsHarmful = _designerERVOn && ervSavedTons < -0.05;
     var cardX = pad.left + 12;
     var cardW = 220;
-    var cardH = hasERVRow ? 126 : 110;
+    var cardH = 110 + (hasERVRow ? 16 : 0) + (ervIsHarmful ? 22 : 0);
     var cardY = pad.top + ph - cardH - 12;
     ctx.fillStyle = 'rgba(2,6,23,.92)';
-    ctx.strokeStyle = '#b45309';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = ervIsHarmful ? '#f59e0b' : '#b45309';
+    ctx.lineWidth = ervIsHarmful ? 1.5 : 1;
     ctx.beginPath();
     ctx.rect(cardX, cardY, cardW, cardH);
     ctx.fill();
@@ -537,10 +541,57 @@ global.initPsy3D = function(container, opts){
     row(80, 'Bypass BF',    bf.toFixed(2),                bf < 0.08 ? '#22c55e' : (bf < 0.18 ? '#fbbf24' : '#ef4444'));
     row(96, 'Room sens.',   kbtu_sens.toFixed(1) + ' kBTU/h', '#a3e635');
     if (_designerERVOn) {
+        /* ERV savings row: cyan when positive (wheel helps), amber-pulse
+           when negative (wheel hurts -- engineer should add a bypass
+           damper).  Pulse uses Date.now() so the row visibly flickers
+           every render tick, drawing the operator's eye. */
+        var ervColor;
+        if (ervIsHarmful) {
+            var pulse = 0.6 + 0.4 * Math.sin(Date.now() / 240);
+            /* lerp #f59e0b -> #fef08a using `pulse` so it breathes amber */
+            var r = Math.round(245 + (254 - 245) * pulse);
+            var g = Math.round(158 + (240 - 158) * pulse);
+            var b = Math.round( 11 + (138 -  11) * pulse);
+            ervColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+            /* Trigger a re-render every ~120ms so the pulse stays alive
+               without burning CPU when Designer Mode is off. */
+            if (!_drawDesignerOverlay._pulseTimer){
+                _drawDesignerOverlay._pulseTimer = setInterval(function(){
+                    if (_designerMode && _designerERVOn) {
+                        try { render2DChart(); } catch(_) {}
+                    } else if (_drawDesignerOverlay._pulseTimer) {
+                        clearInterval(_drawDesignerOverlay._pulseTimer);
+                        _drawDesignerOverlay._pulseTimer = null;
+                    }
+                }, 120);
+            }
+        } else {
+            ervColor = '#22d3ee';
+            if (_drawDesignerOverlay._pulseTimer){
+                clearInterval(_drawDesignerOverlay._pulseTimer);
+                _drawDesignerOverlay._pulseTimer = null;
+            }
+        }
         row(112,
             'ERV saved',
             ervSavedTons.toFixed(1) + ' RT (' + ervSavedPct.toFixed(0) + '%)',
-            '#22d3ee');
+            ervColor);
+        if (ervIsHarmful) {
+            /* Two-line caption explaining WHY savings are negative and
+               what an engineer should do.  Smaller font, centred across
+               the card width, amber to match the pulse.  Without this
+               operators unfamiliar with the OA-vs-RA enthalpy geometry
+               can mistake the negative number for a bug. */
+            ctx.save();
+            ctx.fillStyle = ervColor;
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('\u26A0 OA cooler/drier than RA',  cardX + 8, cardY + 128);
+            ctx.font = '9px monospace';
+            ctx.fillStyle = '#cbd5e1';
+            ctx.fillText('bypass ERV \u2014 free pre-cooling', cardX + 8, cardY + 140);
+            ctx.restore();
+        }
     }
   }
 

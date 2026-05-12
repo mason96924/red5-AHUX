@@ -1776,6 +1776,38 @@
                                 {i18nReady && window.LangSelector && <LangSelector />}
                                 <button onClick={openCollectorCfg} className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"}>Collector</button>
                                 <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded text-[8px] font-black uppercase tracking-wider transition-all`}>{t('config')}</button>
+                                {/* Reset Modal Sizes: clears localStorage entries
+                                    for the AHU / VAV / Floor Plan modal dimensions
+                                    so the next time an operator opens a modal it
+                                    falls back to the safe defaults.  Useful when
+                                    a modal got accidentally shrunk to an unusable
+                                    size (the resize:both handle has no minimum
+                                    limit short of 400x300).  Brief green flash
+                                    on success so the user sees the action
+                                    registered without an alert/toast. */}
+                                <button data-testid="reset-modal-sizes-btn"
+                                        onClick={(e) => {
+                                            try {
+                                                localStorage.removeItem('red5AhuModalSize');
+                                                localStorage.removeItem('red5VavModalSize');
+                                                localStorage.removeItem('red5FloorPlanModalSize');
+                                            } catch(_) {}
+                                            setAhuModalSize({ w: 1600, h: 900 });
+                                            setVavModalSize({ w: 1400, h: 850 });
+                                            setFloorPlanModalSize({ w: 1400, h: 900 });
+                                            const b = e.currentTarget;
+                                            const orig = b.textContent;
+                                            b.textContent = '\u2713 reset';
+                                            b.style.color = '#22c55e';
+                                            b.style.borderColor = '#22c55e';
+                                            setTimeout(() => {
+                                                b.textContent = orig;
+                                                b.style.color = '';
+                                                b.style.borderColor = '';
+                                            }, 1100);
+                                        }}
+                                        title="Reset AHU / VAV / Floor Plan modal sizes to their defaults. Clears the stored sizes from local storage."
+                                        className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded text-[8px] font-black uppercase tracking-wider transition-all`}>Reset Sizes</button>
                             </div>
                         </div>
                         <div className={`flex border-b ${ui.border}`} data-testid="view-tabs" style={{gap:'1px'}}>

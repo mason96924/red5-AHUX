@@ -269,6 +269,7 @@
             // back without lag.
             const _LS_AHU_SIZE = 'red5AhuModalSize';
             const _LS_VAV_SIZE = 'red5VavModalSize';
+            const _LS_FP_SIZE  = 'red5FloorPlanModalSize';
             const _loadSize = (key, fallback) => {
                 try {
                     const raw = localStorage.getItem(key);
@@ -515,7 +516,34 @@
                 };
             }, [selectedVavForModal, vavModalPopupHost]);
 
+            useEffect(() => {
+                if (!showFloorPlanForAhu || floorPlanPopupHost) return;
+                const el = floorOuterRef.current;
+                if (!el) return;
+                let debounce = null;
+                const update = () => {
+                    if (!el) return;
+                    const w = el.offsetWidth, h = el.offsetHeight;
+                    if (w < 400 || h < 300) return;
+                    if (debounce) clearTimeout(debounce);
+                    debounce = setTimeout(() => {
+                        setFloorPlanModalSize(prev => (prev.w === w && prev.h === h) ? prev : { w: w, h: h });
+                        try { localStorage.setItem(_LS_FP_SIZE, JSON.stringify({ w: w, h: h })); } catch(_) {}
+                    }, 200);
+                };
+                update();
+                const RO = (typeof ResizeObserver !== 'undefined') ? ResizeObserver : null;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(el); }
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (debounce) clearTimeout(debounce);
+                };
+            }, [showFloorPlanForAhu, floorPlanPopupHost]);
+
             const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
+            const [floorPlanModalSize, setFloorPlanModalSize] = useState(() => _loadSize(_LS_FP_SIZE, { w: 1400, h: 900 }));
+            const floorOuterRef = useRef(null);
             useEffect(() => {
                 if (!showFloorPlanForAhu && floorPlanPopupWin && !floorPlanPopupWin.closed) floorPlanPopupWin.close();
             }, [showFloorPlanForAhu, floorPlanPopupWin]);
@@ -2961,11 +2989,11 @@
                             : 'absolute z-[110] select-none shadow-2xl drop-shadow-2xl';
                         const floorInnerStyle = floorIsPopped
                             ? { width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none' }
-                            : { maxWidth: 'calc(min(1400px, 95vw))', maxHeight: 'calc(min(900px, 95vh))', width: 'auto', height: 'auto' };
+                            : { width: `${floorPlanModalSize.w}px`, height: `${floorPlanModalSize.h}px`, maxWidth: '95vw', maxHeight: '95vh', resize: 'both' };
 
                         const floorModalTree = (
                         <div className={floorOuterCls} style={floorOuterStyle}>
-                            <div className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-white' : 'bg-white border-slate-300 text-slate-800'} ${floorIsPopped ? '' : 'rounded-2xl border'} shadow-2xl relative flex flex-col overflow-hidden`} style={floorInnerStyle} onMouseDown={e => e.stopPropagation()}>
+                            <div ref={floorOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-white' : 'bg-white border-slate-300 text-slate-800'} ${floorIsPopped ? '' : 'rounded-2xl border'} shadow-2xl relative flex flex-col overflow-hidden`} style={floorInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                 
                                 <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'} border-b p-4 flex justify-between items-center z-[60] relative`} onMouseDown={(e) => { if (floorIsPopped) return; setIsFloorPlanDragging(true); setDragStart({ x: e.clientX - floorPlanOffset.x, y: e.clientY - floorPlanOffset.y }); }}>
                                     <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE {!floorIsPopped && <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal', textTransform:'none', letterSpacing:'normal'}}>Drag corner ↘ to resize</span>}</h3>

@@ -508,9 +508,15 @@ global.initPsy3D = function(container, opts){
        drier than RA; the tool flags it with an amber pulse line). */
     var hasERVRow  = _designerERVOn;
     var ervIsHarmful = _designerERVOn && ervSavedTons < -0.05;
+    /* Bypass-factor warning: BF > 0.18 means the coil is essentially
+       under-sized -- a real coil with this BF won't actually pull SA down
+       to the requested leaving temperature.  Surface a one-line caption
+       so the operator knows what the red number is telling them and what
+       to change. */
+    var bfIsHigh = (bf > 0.18);
     var cardX = pad.left + 12;
     var cardW = 220;
-    var cardH = 110 + (hasERVRow ? 16 : 0) + (ervIsHarmful ? 22 : 0);
+    var cardH = 110 + (hasERVRow ? 16 : 0) + (ervIsHarmful ? 22 : 0) + (bfIsHigh ? 14 : 0);
     var cardY = pad.top + ph - cardH - 12;
     ctx.fillStyle = 'rgba(2,6,23,.92)';
     ctx.strokeStyle = ervIsHarmful ? '#f59e0b' : '#b45309';
@@ -539,7 +545,19 @@ global.initPsy3D = function(container, opts){
     row(48, 'Cooling tons', tons.toFixed(1) + ' RT',     '#fb923c');
     row(64, 'ADP',          adp_T.toFixed(1) + ' \u00b0C',     '#67e8f9');
     row(80, 'Bypass BF',    bf.toFixed(2),                bf < 0.08 ? '#22c55e' : (bf < 0.18 ? '#fbbf24' : '#ef4444'));
-    row(96, 'Room sens.',   kbtu_sens.toFixed(1) + ' kBTU/h', '#a3e635');
+    /* Y offset for everything below the BF row -- depends on whether the
+       BF caption is being shown.  Keeps Room sens. + ERV rows aligned. */
+    var bfCaptionDY = 0;
+    if (bfIsHigh) {
+        ctx.save();
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('\u25B8 add coil rows or lower SA RH', cardX + 8, cardY + 94);
+        ctx.restore();
+        bfCaptionDY = 14;
+    }
+    row(96  + bfCaptionDY, 'Room sens.',   kbtu_sens.toFixed(1) + ' kBTU/h', '#a3e635');
     if (_designerERVOn) {
         /* ERV savings row: cyan when positive (wheel helps), amber-pulse
            when negative (wheel hurts -- engineer should add a bypass
@@ -572,7 +590,7 @@ global.initPsy3D = function(container, opts){
                 _drawDesignerOverlay._pulseTimer = null;
             }
         }
-        row(112,
+        row(112 + bfCaptionDY,
             'ERV saved',
             ervSavedTons.toFixed(1) + ' RT (' + ervSavedPct.toFixed(0) + '%)',
             ervColor);
@@ -586,10 +604,10 @@ global.initPsy3D = function(container, opts){
             ctx.fillStyle = ervColor;
             ctx.font = 'bold 9px monospace';
             ctx.textAlign = 'left';
-            ctx.fillText('\u26A0 OA cooler/drier than RA',  cardX + 8, cardY + 128);
+            ctx.fillText('\u26A0 OA cooler/drier than RA',  cardX + 8, cardY + 128 + bfCaptionDY);
             ctx.font = '9px monospace';
             ctx.fillStyle = '#cbd5e1';
-            ctx.fillText('bypass ERV \u2014 free pre-cooling', cardX + 8, cardY + 140);
+            ctx.fillText('bypass ERV \u2014 free pre-cooling', cardX + 8, cardY + 140 + bfCaptionDY);
             ctx.restore();
         }
     }

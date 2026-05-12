@@ -270,12 +270,27 @@
                 const el = ahuBodyRef.current;
                 const update = () => { setAhuBodySize({ w: el.clientWidth, h: el.clientHeight }); };
                 update();
-                if (typeof ResizeObserver !== 'undefined') {
-                    const ro = new ResizeObserver(update);
+                // CRITICAL: when the modal is popped out via createPortal,
+                // `el` lives inside the popup window's document.  The
+                // PARENT window's ResizeObserver silently ignores cross-
+                // document targets — we must grab the observer constructor
+                // from the element's own document so resize events in the
+                // popup actually fire.  Same applies to the ahuImgRef
+                // ResizeObserver below.
+                const RO = (el.ownerDocument && el.ownerDocument.defaultView && el.ownerDocument.defaultView.ResizeObserver) || (typeof ResizeObserver !== 'undefined' ? ResizeObserver : null);
+                if (RO) {
+                    const ro = new RO(update);
                     ro.observe(el);
-                    return () => ro.disconnect();
+                    // Also re-measure on window resize in case the popup is
+                    // being dragged across monitors with different DPRs.
+                    const winRef = el.ownerDocument && el.ownerDocument.defaultView;
+                    if (winRef) winRef.addEventListener('resize', update);
+                    return () => {
+                        ro.disconnect();
+                        if (winRef) winRef.removeEventListener('resize', update);
+                    };
                 }
-            }, [showAhuModalFor]);
+            }, [showAhuModalFor, ahuModalPopupHost]);
             const [ahuModalOffset, setAhuModalOffset] = useState({ x: 150, y: 50 });
             const [isAhuModalDragging, setIsAhuModalDragging] = useState(false);
             const [ahuImgDims, setAhuImgDims] = useState({ natW: 1600, natH: 700, dispW: 1600, dispH: 700 });
@@ -290,7 +305,7 @@
             useEffect(() => {
                 if (!showAhuModalFor) return;
                 const im = ahuImgRef.current;
-                if (!im || typeof ResizeObserver === 'undefined') return;
+                if (!im) return;
                 const update = () => {
                     if (!im) return;
                     const nW = im.naturalWidth || 1600, nH = im.naturalHeight || 700;
@@ -301,10 +316,25 @@
                                           : { natW: nW, natH: nH, dispW: dW, dispH: dH });
                 };
                 update();
-                const ro = new ResizeObserver(update);
-                ro.observe(im);
-                return () => ro.disconnect();
-            }, [showAhuModalFor, ahuModalSize.w, ahuModalSize.h]);
+                // CRITICAL (popout fix): see ahuBodyRef comment above.
+                // Use the image's OWN document's ResizeObserver so events
+                // in the popped-out window actually fire.  Also schedule
+                // a microtask + a 60ms delayed re-measure to absorb the
+                // layout race between createPortal mounting the React
+                // subtree and the popup's layout engine reporting its
+                // final width.
+                const RO = (im.ownerDocument && im.ownerDocument.defaultView && im.ownerDocument.defaultView.ResizeObserver) || (typeof ResizeObserver !== 'undefined' ? ResizeObserver : null);
+                const winRef = im.ownerDocument && im.ownerDocument.defaultView;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(im); }
+                if (winRef) winRef.addEventListener('resize', update);
+                const settleT = setTimeout(update, 60);
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (winRef) winRef.removeEventListener('resize', update);
+                    clearTimeout(settleT);
+                };
+            }, [showAhuModalFor, ahuModalSize.w, ahuModalSize.h, ahuModalPopupHost]);
             // Pop-out window state for AHU / VAV / Floor-Plan modals.  Each
             // modal owns its own popup so the operator can fan them out across
             // multiple monitors (e.g. AHU diagram on monitor 2, floor plan on
@@ -366,6 +396,37 @@
             const [vavImgDims, setVavImgDims] = useState({ natW: 1600, natH: 1004, dispW: 1600, dispH: 1004 });
             const vavImgRef = useRef(null);
             const [vavModalSize, setVavModalSize] = useState({ w: 1400, h: 850 });
+            // VAV modal pop-out lives in a separate window; mirror the AHU
+            // image-resize handling so the air-flow chevron overlays stay
+            // aligned to the rendered image at every popped-out width.
+            // Keyed on vavModalPopupHost so the effect re-binds when the
+            // popout opens/closes and vavImgRef.current points at the
+            // newly-mounted image in the popup document.
+            useEffect(() => {
+                const im = vavImgRef.current;
+                if (!im) return;
+                const update = () => {
+                    if (!im) return;
+                    const nW = im.naturalWidth || 1600, nH = im.naturalHeight || 1004;
+                    const dW = im.offsetWidth || nW,    dH = im.offsetHeight || nH;
+                    setVavImgDims(prev => (prev.natW === nW && prev.natH === nH
+                                           && prev.dispW === dW && prev.dispH === dH)
+                                          ? prev
+                                          : { natW: nW, natH: nH, dispW: dW, dispH: dH });
+                };
+                update();
+                const RO = (im.ownerDocument && im.ownerDocument.defaultView && im.ownerDocument.defaultView.ResizeObserver) || (typeof ResizeObserver !== 'undefined' ? ResizeObserver : null);
+                const winRef = im.ownerDocument && im.ownerDocument.defaultView;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(im); }
+                if (winRef) winRef.addEventListener('resize', update);
+                const settleT = setTimeout(update, 60);
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (winRef) winRef.removeEventListener('resize', update);
+                    clearTimeout(settleT);
+                };
+            }, [vavModalSize.w, vavModalSize.h, vavModalPopupHost]);
 
             const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
             useEffect(() => {

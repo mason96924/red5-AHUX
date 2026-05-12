@@ -3,6 +3,30 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Bugfix · AHU + VAV Popout Air-Flow Overlay Drift (2026-02-09)
+**Brief**: User reported that the air-flow chevron segments and pink hotspot markers in the AHU Equipment Diagram drift left/down when the modal is popped out into a separate window (worked fine inline). Two screenshots provided confirmed the inline modal was pixel-perfect, popped-out was misaligned by ~50-80 px. Same latent bug existed on the VAV modal.
+
+### Root cause
+The image-dimension state (`ahuImgDims.dispW/dispH`, `vavImgDims.dispW/dispH`) drives `imgScale = dispW / natW`, which scales every overlay's pixel offsets. The state was captured once at `<img onLoad>` and refreshed by a `ResizeObserver`.
+
+The `ResizeObserver` was constructed using the **parent window's** global (`new ResizeObserver(...)`). When the modal is popped out via `ReactDOM.createPortal`, the React subtree (including the `<img>`) mounts inside the popup window's document. The parent-window observer was attached to a cross-document target → browser silently ignores resize events from the popup. Result: `dispW` stayed frozen at the inline modal's measurement (e.g. 1500 px), but the popup rendered the image at a different displayed width (e.g. 1750 px), producing the visible drift.
+
+### Fix
+For both AHU (`ahuBodyRef` body-resize observer + `ahuImgRef` image-resize observer) and VAV (`vavImgRef` — previously had no `ResizeObserver` at all, only an `<img onLoad>` capture):
+
+1. **Use the element's own document's ResizeObserver**: `const RO = el.ownerDocument.defaultView.ResizeObserver || ResizeObserver;`. This grabs the popup window's RO constructor when the element lives in the popup, so resize events actually fire there.
+2. **Also listen to the popup window's `resize` event** (`winRef.addEventListener('resize', update)`). Belt-and-suspenders: if the popup is dragged across monitors with different DPRs or the user pinches/zooms, RO might not always fire but the `resize` event will.
+3. **60ms delayed re-measure after mount/popout** (`setTimeout(update, 60)`) to absorb the layout race between `createPortal` mounting the subtree and the popup's layout engine reporting its final width.
+4. **Key the effect on `ahuModalPopupHost` / `vavModalPopupHost`** so it re-runs when the popup opens/closes, rebinding observers to the freshly-mounted image element.
+
+### Live deploy
+- `dashboard.html` (366,782 bytes) hot-deployed to `219.79.12.63:5001`. User to hard-refresh + re-test the AHU popout — air-flow chevrons should now stay glued to the equipment slots at any popout window size, even when dragged to a different monitor.
+- `red5_bundle.zip` rebuilt (MD5 `b100b01f74faafdfd668f9d989385dfc`).
+
+### Files changed
+- `dashboard.html` — 3 effects updated: `ahuBodyRef` body observer, `ahuImgRef` image observer (added `ahuModalPopupHost` dep + cross-doc RO), brand-new `vavImgRef` image observer with the same pattern (was missing entirely).
+
+
 ## V1.9 Designer Mode · USE LIVE OA button (2026-02-09)
 **Brief**: Last item from the Designer Mode roadmap. A small pink `· USE LIVE OA ·` button under the OA T/RH inputs copies the latest Weather Strip point into the OA design inputs so the engineer can run a live "what would the coil need to be for *today's* outdoor conditions?" sizing pass without typing numbers.
 

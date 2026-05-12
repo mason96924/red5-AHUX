@@ -260,9 +260,31 @@
             const [isVavModalDragging, setIsVavModalDragging] = useState(false);
             const [vavCfm, setVavCfm] = useState(400);
 
+            // AHU + VAV modal dimensions persisted to localStorage so the
+            // operator's preferred diagram size restores on next open
+            // instead of always defaulting to 1600x900 / 1400x850.  Lazy
+            // initializer reads once at mount; the modal element itself
+            // is observed below (look for "modalSizePersist" effect) so
+            // user-resizes via the `resize:both` CSS handle are written
+            // back without lag.
+            const _LS_AHU_SIZE = 'red5AhuModalSize';
+            const _LS_VAV_SIZE = 'red5VavModalSize';
+            const _loadSize = (key, fallback) => {
+                try {
+                    const raw = localStorage.getItem(key);
+                    if (!raw) return fallback;
+                    const j = JSON.parse(raw);
+                    if (typeof j.w === 'number' && typeof j.h === 'number'
+                        && j.w >= 400 && j.h >= 300 && j.w <= 4000 && j.h <= 3000) {
+                        return j;
+                    }
+                } catch (e) { /* corrupt or quota - ignore */ }
+                return fallback;
+            };
             const [showAhuModalFor, setShowAhuModalFor] = useState(null);
             const [_forceApTick, _setForceApTick] = useState(0);
-            const [ahuModalSize, setAhuModalSize] = useState({ w: 1600, h: 900 });
+            const [ahuModalSize, setAhuModalSize] = useState(() => _loadSize(_LS_AHU_SIZE, { w: 1600, h: 900 }));
+            const ahuOuterRef = useRef(null);
             const [ahuBodySize, setAhuBodySize] = useState({ w: 1560, h: 820 });
             const ahuBodyRef = useRef(null);
             // Pop-out window/host state hoisted UP to here so the AHU
@@ -402,7 +424,8 @@
             // floor-plan auto-close is wired below after showFloorPlanForAhu is declared
             const [vavImgDims, setVavImgDims] = useState({ natW: 1600, natH: 1004, dispW: 1600, dispH: 1004 });
             const vavImgRef = useRef(null);
-            const [vavModalSize, setVavModalSize] = useState({ w: 1400, h: 850 });
+            const vavOuterRef = useRef(null);
+            const [vavModalSize, setVavModalSize] = useState(() => _loadSize(_LS_VAV_SIZE, { w: 1400, h: 850 }));
             // VAV modal pop-out lives in a separate window; mirror the AHU
             // image-resize handling so the air-flow chevron overlays stay
             // aligned to the rendered image at every popped-out width.
@@ -434,6 +457,63 @@
                     clearTimeout(settleT);
                 };
             }, [vavModalSize.w, vavModalSize.h, vavModalPopupHost]);
+
+            // modalSizePersist: observe the AHU + VAV modal outer div for
+            // user-driven resizes (the CSS `resize:both` handle the user
+            // drags from the bottom-right corner doesn't update React
+            // state by itself).  Debounce 200ms so we don't pound
+            // localStorage on every pixel of a drag.  Only persists when
+            // the modal is NOT popped out (popped-out windows use OS
+            // window sizing, irrelevant to the inline modal preference).
+            useEffect(() => {
+                if (!showAhuModalFor || ahuModalPopupHost) return;
+                const el = ahuOuterRef.current;
+                if (!el) return;
+                let debounce = null;
+                const update = () => {
+                    if (!el) return;
+                    const w = el.offsetWidth, h = el.offsetHeight;
+                    if (w < 400 || h < 300) return;
+                    if (debounce) clearTimeout(debounce);
+                    debounce = setTimeout(() => {
+                        setAhuModalSize(prev => (prev.w === w && prev.h === h) ? prev : { w: w, h: h });
+                        try { localStorage.setItem(_LS_AHU_SIZE, JSON.stringify({ w: w, h: h })); } catch(_) {}
+                    }, 200);
+                };
+                update();
+                const RO = (typeof ResizeObserver !== 'undefined') ? ResizeObserver : null;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(el); }
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (debounce) clearTimeout(debounce);
+                };
+            }, [showAhuModalFor, ahuModalPopupHost]);
+
+            useEffect(() => {
+                if (!selectedVavForModal || vavModalPopupHost) return;
+                const el = vavOuterRef.current;
+                if (!el) return;
+                let debounce = null;
+                const update = () => {
+                    if (!el) return;
+                    const w = el.offsetWidth, h = el.offsetHeight;
+                    if (w < 400 || h < 300) return;
+                    if (debounce) clearTimeout(debounce);
+                    debounce = setTimeout(() => {
+                        setVavModalSize(prev => (prev.w === w && prev.h === h) ? prev : { w: w, h: h });
+                        try { localStorage.setItem(_LS_VAV_SIZE, JSON.stringify({ w: w, h: h })); } catch(_) {}
+                    }, 200);
+                };
+                update();
+                const RO = (typeof ResizeObserver !== 'undefined') ? ResizeObserver : null;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(el); }
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (debounce) clearTimeout(debounce);
+                };
+            }, [selectedVavForModal, vavModalPopupHost]);
 
             const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
             useEffect(() => {
@@ -2644,7 +2724,7 @@
 
                         const vavModalTree = (
                             <div className={vavOuterCls} style={vavOuterStyle}>
-                                <div className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${vavIsPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={vavInnerStyle} onMouseDown={e => e.stopPropagation()}>
+                                <div ref={vavOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${vavIsPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={vavInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                     
                                     <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (vavIsPopped) return; setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
                                         <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}{modalBandTrim && (
@@ -3464,7 +3544,7 @@
 
                         const modalTree = (
                             <div className={outerCls} style={outerStyle}>
-                                <div className={`${dk ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${isPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={innerStyle} onMouseDown={e => e.stopPropagation()}>
+                                <div ref={ahuOuterRef} className={`${dk ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${isPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={innerStyle} onMouseDown={e => e.stopPropagation()}>
 
                                     <div className={`cursor-grab active:cursor-grabbing ${dk ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-2.5 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (ahuModalPopupWin) return; setIsAhuModalDragging(true); setDragStart({ x: e.clientX - ahuModalOffset.x, y: e.clientY - ahuModalOffset.y }); }}>
                                         <h3 className={`text-sm font-black tracking-widest ml-2 ${dk ? 'text-slate-300' : 'text-slate-700'}`}>{showAhuModalFor} EQUIPMENT DIAGRAM <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{ahuModalPopupWin ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>

@@ -5,6 +5,16 @@
 - **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — "Losing hours" semantics + capex/opex narrative.
 - **In-app access**: `📚 Docs` button in dashboard sidebar header opens a tabbed popup with all docs. Also accessible as per-context `?` buttons (cyan next to B-shift strip, amber next to + Designer Mode).
 
+## V1.9 Bugfix — Dashboard Landing-Page Crash (2026-02-13)
+**Brief**: The new `📚 Docs` button used a bare `t('docs_index')` call in its `title` attribute. When evaluated before `window.t` was reachable as a bare global in the JSX render context, this threw `ReferenceError: t is not defined` and tripped the React error boundary on the dashboard landing page.
+
+### Fix
+- Changed `title={t('docs_index') || '...'}` → `title={window.t ? (window.t('docs_index') || '...') : '...'}` in `dashboard.html`. Matches the safe pattern already used by the Collector button (`window.t ? window.t(...) : '...'`).
+- Hot-deployed updated `dashboard.html` (381,578 B). Live render verified clean: no error boundary, PSYCH chart + AHU list + docs button all render correctly, popup opens on click.
+
+### Files changed
+- `dashboard.html` — 1 line: title attribute hardened with `window.t` existence check.
+
 ## V1.9 Docs Index Popup — One-Stop Help (2026-02-13)
 **Brief**: New `📚 Docs` button in the dashboard's sidebar header opens a tabbed popup containing every insight doc. Discoverable from any tab (PSYCH/DIAG/DYNAM/3D WX), not just from inside the 3D engine. The previous per-context `?` buttons (band-shift, design-workflow) remain in place for direct deep-linking; the index gives operators a single entry point if they don't know which `?` to click.
 

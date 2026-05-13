@@ -183,6 +183,21 @@
             // against the live /api/version to detect when this browser is running a
             // stale-cached HTML while the controller has a newer build deployed.
             const [staleCache, setStaleCache] = useState(null);
+            /* ERV Rollout snapshot — written by psy-3d-engine.js whenever
+               the ERV chip is ON in the 3D WX tab. Hydrate from
+               localStorage so a fresh page-load shows the badge before
+               the 3D engine mounts; refresh on the custom event. */
+            const [ervSnap, setErvSnap] = useState(() => {
+                try {
+                    const raw = localStorage.getItem('red5ErvSnapshot');
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) { return null; }
+            });
+            useEffect(() => {
+                const onUpd = (e) => setErvSnap(e.detail || null);
+                window.addEventListener('red5-erv-rollout-update', onUpd);
+                return () => window.removeEventListener('red5-erv-rollout-update', onUpd);
+            }, []);
             // Reflect language changes in the browser tab title — the
             // <title> in <head> is outside React so we update it here
             // whenever i18n.js becomes available or the language flips.
@@ -1976,6 +1991,36 @@
                             })()}
                         </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-5`}><div className="flex justify-between items-center px-2">{['OA', 'SA', 'RA'].map(p => { const configs = { OA: { rgb: '59, 130, 246' }, SA: { rgb: '16, 185, 129' }, RA: { rgb: '244, 63, 94' } }; const labels = { OA: t('oa'), SA: t('sa'), RA: t('ra') }; const active = pointVisibility[p]; const c = configs[p]; return <button key={p} onClick={() => setPointVisibility({...pointVisibility, [p]: !pointVisibility[p]})} className="w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center font-black text-[10px] shadow-black" style={{ backgroundColor: active ? `rgb(${c.rgb})` : `rgba(${c.rgb}, 0.15)`, borderColor: active ? (theme==='dark'?'#fff':'#000') : `rgb(${c.rgb})`, color: active ? '#fff' : `rgb(${c.rgb})`, opacity: active ? 1 : 0.6 }}>{labels[p]}</button>; })}</div></div>
+                        {/* ERV ROI badge — only shown when the 3D WX tab's ERV
+                            chip is ON. Click anywhere on the badge to jump
+                            directly to the 3D WX tab + the rollout panel. */}
+                        {ervSnap && ervSnap.enabled && isFinite(ervSnap.totalUSD) && (
+                            <div onClick={() => setActiveView('weather3d')}
+                                 data-testid="erv-roi-badge"
+                                 className={`mx-2 mt-2 p-2 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity`}
+                                 style={{ borderColor: '#22d3ee', background: 'rgba(34,211,238,.08)' }}>
+                                <div className="flex items-center justify-between gap-2 font-mono text-[10px]">
+                                    <span style={{ color: '#22d3ee' }} className="font-black uppercase tracking-widest">ERV</span>
+                                    <span className={ui.text}>
+                                        <b style={{ color: '#22d3ee' }}>
+                                            {ervSnap.totalUSD >= 1e6 ? '$' + (ervSnap.totalUSD/1e6).toFixed(2) + 'M'
+                                             : ervSnap.totalUSD >= 1e3 ? '$' + (ervSnap.totalUSD/1e3).toFixed(1) + 'k'
+                                             : '$' + ervSnap.totalUSD.toFixed(0)}
+                                        </b>
+                                        <span className="opacity-70"> /yr · </span>
+                                        <b style={{ color: isFinite(ervSnap.payback) && ervSnap.payback < 5 ? '#a3e635' : '#fbbf24' }}>
+                                            {isFinite(ervSnap.payback)
+                                                ? (ervSnap.payback < 99 ? ervSnap.payback.toFixed(1) + ' yr' : '>99 yr')
+                                                : 'never'}
+                                        </b>
+                                        <span className="opacity-70"> payback</span>
+                                    </span>
+                                </div>
+                                <div className="font-mono text-[8px] opacity-60 mt-0.5">
+                                    ε={ervSnap.eps ? ervSnap.eps.toFixed(2) : '0.80'} · {ervSnap.zone || 'KR-Seoul'} · {(ervSnap.totalKWh/1000).toFixed(0)}k kWh/yr
+                                </div>
+                            </div>
+                        )}
                         <div className={`flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar bg-opacity-20`}>{filteredAhuData.map(ahu => { 
                             const isSelected = selectedAhuId === ahu.id; 
                             const m = getEnergyMetrics(ahu); 

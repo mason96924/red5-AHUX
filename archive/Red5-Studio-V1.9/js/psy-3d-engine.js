@@ -1467,7 +1467,16 @@ global.initPsy3D = function(container, opts){
         function _renderRollout(){
           var on = !!_saDropERVOn && !!(saDropGroup && saDropGroup.visible);
           rollout.style.display = on ? 'block' : 'none';
-          if (!on) return;
+          if (!on) {
+            /* Clear the dashboard badge by publishing a disabled snapshot. */
+            try {
+              var snapOff = { enabled:false, ts:Date.now() };
+              window.red5ErvSnapshot = snapOff;
+              localStorage.setItem('red5ErvSnapshot', JSON.stringify(snapOff));
+              window.dispatchEvent(new CustomEvent('red5-erv-rollout-update', {detail: snapOff}));
+            } catch(_) {}
+            return;
+          }
           if (!weatherData || !weatherData.length) {
             rollout.innerHTML = '<div style="color:#fbbf24;font-weight:900;text-transform:uppercase;letter-spacing:.08em">ERV Rollout</div>'+
               '<div style="color:#94a3b8;margin-top:6px">Fetch weather data first to see annual savings.</div>';
@@ -1476,6 +1485,28 @@ global.initPsy3D = function(container, opts){
           var series = _ervSavingsSeries(_designerERVEps);
           var agg    = _ervAggregate(series);
           var roi    = _ervROI(agg.totalUSD);
+          /* Publish snapshot for the dashboard's PSYCH-tab AHU sidebar
+             badge (and any other consumer).  Written to BOTH the global
+             window object AND localStorage so a fresh dashboard page-load
+             can hydrate the badge before the 3D engine has mounted, and a
+             CustomEvent fires for in-page listeners. */
+          try {
+            var snap = {
+              enabled: true,
+              totalUSD: agg.totalUSD,
+              totalRtH: agg.totalRtH,
+              totalKWh: agg.totalKWh,
+              payback:  roi.payback,
+              npv:      roi.npv,
+              tariffKwh: _ervTariffKwh,
+              zone:     _ervClimateZone,
+              eps:      _designerERVEps,
+              ts:       Date.now()
+            };
+            window.red5ErvSnapshot = snap;
+            localStorage.setItem('red5ErvSnapshot', JSON.stringify(snap));
+            window.dispatchEvent(new CustomEvent('red5-erv-rollout-update', {detail: snap}));
+          } catch(_) {}
           var ghostAgg = null;
           if (_ervGhostEps > 0 && Math.abs(_ervGhostEps - _designerERVEps) > 0.005) {
             var gS = _ervSavingsSeries(_ervGhostEps);

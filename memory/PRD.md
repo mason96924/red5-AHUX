@@ -3,6 +3,28 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 ERV ROI Badge on PSYCH Sidebar (2026-02-13)
+**Brief**: The 3D-WX ERV Rollout numbers ($/yr saved, payback yr) are now also visible as a small cyan-bordered badge at the top of the AHU sidebar in the PSYCH (and DIAG / DYNAM) tab — so the savings ROI is one glance away on every page-load, not behind two tab-switches + two toggles.
+
+### Wiring
+- **Snapshot publisher** (`js/psy-3d-engine.js`): every `_renderRollout()` writes `window.red5ErvSnapshot`, persists to `localStorage.red5ErvSnapshot`, and dispatches a `red5-erv-rollout-update` CustomEvent. Snapshot shape: `{enabled, totalUSD, totalRtH, totalKWh, payback, npv, tariffKwh, zone, eps, ts}`. When ERV is toggled OFF, a `{enabled:false, ts}` snapshot fires so the badge clears.
+- **Snapshot consumer** (`dashboard.html`): new `useState(() => JSON.parse(localStorage.red5ErvSnapshot))` hydrates on mount from localStorage so the badge appears immediately on fresh page-load (before the 3D engine has even mounted). A `useEffect` adds the `red5-erv-rollout-update` event listener for live updates.
+- **Badge JSX** inserted between the OA/SA/RA filter row and the AHU list. Renders only when `ervSnap?.enabled && isFinite(totalUSD)`:
+  - Top line: `ERV` label (cyan) + `$X.Xk /yr` (cyan) + `· Y.Y yr payback` (lime if <5 yr, amber otherwise).
+  - Sub-line (60% opacity, 8 px): `ε=0.80 · KR-Seoul · 1843k kWh/yr`.
+  - **Click anywhere on the badge → `setActiveView('weather3d')`** so operators can jump straight to the full rollout panel from the badge.
+  - `data-testid="erv-roi-badge"` for E2E hooks.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. `red5_bundle.zip` rebuilt 1752.3 KB (MD5 `e57f4afe657c1423d6c4f2e0ccbf4376`).
+- Hot-deployed `js/psy-3d-engine.js` (336,263 B) + `dashboard.html` (380,759 B) to controller. Live MD5 matches source on both files. Served `/dashboard` contains 13 references to the new `red5-erv-rollout-update` / `ervSnap` / `erv-roi-badge` strings.
+- Playwright test at 1920×900: navigated to 3D WX → enabled Drops + ERV-ON → snapshot published correctly (`totalUSD=$173,237, payback=0.07 yr, npv=$1.32M, zone=KR-Seoul`). Switched back to PSYCH tab → cyan badge visible at the top of the AHU sidebar, click-handler wired.
+
+### Files changed
+- `js/psy-3d-engine.js` — 25 lines added: snapshot publish in `_renderRollout` (both enabled + disabled paths).
+- `dashboard.html` — 18 lines: `useState(() => ...)` hydrator + `useEffect` listener + badge JSX block above the AHU list.
+
+
 ## V1.9 ERV Rollout Panel — 9-in-1 Annual Savings + ROI + A/B + CSV (2026-02-13)
 **Brief**: Built a self-contained `#p3-erv-rollout` floating card at the bottom-left of the 3D scene that auto-shows whenever the OA→SA Drops layer is ON AND the ERV chip is ON. Single panel ships nine related enhancements requested in one batch.
 

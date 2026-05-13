@@ -2259,7 +2259,17 @@ global.initPsy3D = function(container, opts){
       'box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);'+
       'font-family:\'Courier New\',monospace;color:#cbd5e1;overflow:hidden;'+
       'flex-direction:column';
-    var _insightLoaded = null; /* cache: fetched markdown text or null */
+    var _insightLoaded = {};  /* cache keyed by lang: en, ko */
+    var _insightLang   = (function(){
+      try { var l = window.getLang ? window.getLang() : 'en'; return l === 'ko' ? 'ko' : 'en'; } catch(_) { return 'en'; }
+    })();
+    /* Persist explicit user choice so it survives reloads even when the
+       global app language differs.  Falls back to current app lang on
+       first open. */
+    try {
+      var _il = localStorage.getItem('red5BandInsightLang');
+      if (_il === 'ko' || _il === 'en') _insightLang = _il;
+    } catch(_) {}
 
     /* Minimal markdown -> HTML renderer.  Supports the subset our doc
        actually uses: H1/H2/H3, blockquote, ordered/unordered lists,
@@ -2332,17 +2342,34 @@ global.initPsy3D = function(container, opts){
       insightPopup.style.display = 'flex';
       if (_insightPos) { insightPopup.style.left = _insightPos.x+'px'; insightPopup.style.top = _insightPos.y+'px'; }
       function _paint(){
-        var body = _insightLoaded ? _renderMd(_insightLoaded) :
-          '<div style="color:#94a3b8;padding:14px;font-size:10px">Loading insight\u2026</div>';
+        var md = _insightLoaded[_insightLang];
+        var loadingLabel = _insightLang === 'ko' ? '통찰 문서 로드 중\u2026' : 'Loading insight\u2026';
+        var titleLabel   = _insightLang === 'ko' ? 'B-시프트 통찰' : 'B-Shift Insight';
+        var body = md ? _renderMd(md) :
+          '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
+        /* Language toggle: two-half pill chip in the header, beside the title.
+           Highlighted half = active language; click the other half to switch. */
+        var langChip =
+          '<div data-lang-toggle="1" style="display:inline-flex;border:1px solid #475569;border-radius:3px;overflow:hidden;font-size:8px;font-weight:900;letter-spacing:.05em;user-select:none">'+
+            '<span data-set-lang="en" style="padding:1px 6px;cursor:pointer;background:'+(_insightLang==='en'?'#60a5fa':'transparent')+';color:'+(_insightLang==='en'?'#0f172a':'#94a3b8')+'">EN</span>'+
+            '<span data-set-lang="ko" style="padding:1px 6px;cursor:pointer;background:'+(_insightLang==='ko'?'#60a5fa':'transparent')+';color:'+(_insightLang==='ko'?'#0f172a':'#94a3b8')+'">\ud55c\uad6d\uc5b4</span>'+
+          '</div>';
         insightPopup.innerHTML =
-          '<div id="p3-bhelp-hdr" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
-            '<div style="color:#60a5fa;font-weight:900;font-size:10px;letter-spacing:.08em;text-transform:uppercase">B-Shift Insight</div>'+
+          '<div id="p3-bhelp-hdr" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<div style="color:#60a5fa;font-weight:900;font-size:10px;letter-spacing:.08em;text-transform:uppercase">'+titleLabel+'</div>'+
+              langChip+
+            '</div>'+
             '<button id="p3-bhelp-close" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 6px;font:900 11px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
           '</div>'+
           '<div id="p3-bhelp-body" style="flex:1;overflow-y:auto;padding:8px 14px;color:#cbd5e1">'+body+'</div>';
         var hdr = insightPopup.querySelector('#p3-bhelp-hdr');
         if (hdr) hdr.addEventListener('mousedown', function(e){
-          if (e.target.closest('button')) return;
+          /* Exclude the language toggle from drag-initiation so clicks
+             on EN/한국어 are handled by their own listeners, not eaten
+             by the drag handler.  All other header clicks (title text,
+             close button) continue to drag/close as expected. */
+          if (e.target.closest('button, [data-lang-toggle], [data-set-lang]')) return;
           e.preventDefault();
           var startX = e.clientX, startY = e.clientY;
           var rect = insightPopup.getBoundingClientRect();
@@ -2370,19 +2397,47 @@ global.initPsy3D = function(container, opts){
           insightPopup.style.display = 'none';
           try { localStorage.setItem('red5BandInsightState', JSON.stringify({pos:_insightPos, closed:true})); } catch(_) {}
         });
+        /* Wire language toggle clicks. */
+        insightPopup.querySelectorAll('[data-set-lang]').forEach(function(el){
+          el.addEventListener('click', function(){
+            var lang = el.getAttribute('data-set-lang');
+            if (lang === _insightLang) return;
+            _insightLang = lang;
+            try { localStorage.setItem('red5BandInsightLang', lang); } catch(_) {}
+            _fetchInsight();
+          });
+        });
       }
-      _paint();
-      if (!_insightLoaded) {
-        fetch('/assets/erv_band_shift_insight.md', {cache:'no-store'})
+      function _fetchInsight(){
+        if (_insightLoaded[_insightLang]) { _paint(); return; }
+        _paint(); /* show loading state */
+        var url = _insightLang === 'ko' ? '/assets/erv_band_shift_insight.ko.md'
+                                        : '/assets/erv_band_shift_insight.md';
+        fetch(url, {cache:'no-store'})
           .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
-          .then(function(txt){ _insightLoaded = txt; _paint(); })
+          .then(function(txt){ _insightLoaded[_insightLang] = txt; _paint(); })
           .catch(function(){
-            _insightLoaded = '# Unable to load insight doc\n\nFile `erv_band_shift_insight.md` was not found on the controller.';
+            _insightLoaded[_insightLang] = '# Unable to load insight doc\n\nFile not found on the controller.';
             _paint();
           });
       }
+      _fetchInsight();
     }
     insightBtn.addEventListener('click', _showInsightPopup);
+    /* Track app-wide language changes: if the user flips the global
+       LangSelector to ko, refresh our chip+content too -- but only when
+       the popup is open, so we don't surprise-fetch in the background. */
+    window.addEventListener('langchange', function(){
+      try {
+        var newLang = window.getLang ? window.getLang() : 'en';
+        newLang = (newLang === 'ko') ? 'ko' : 'en';
+        var explicit = localStorage.getItem('red5BandInsightLang');
+        if (explicit) return;  /* user has an explicit choice; honor it */
+        if (newLang === _insightLang) return;
+        _insightLang = newLang;
+        if (insightPopup.style.display !== 'none') _showInsightPopup();
+      } catch(_) {}
+    });
     if (overlayEl) { overlayEl.appendChild(insightBtn); overlayEl.appendChild(insightPopup); }
 
     /* B1-B10 strategy toggle — only meaningful in T×Time mode.  Hidden when

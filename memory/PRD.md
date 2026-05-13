@@ -2,7 +2,28 @@
 
 ## Documentation Index
 - **`psychrometric_design_workflow.md`** — Designer Mode workflow + ERV math walkthrough
-- **`erv_band_shift_insight.md`** — Explains the "losing hours" semantics on the B-shift strip + capex/opex narrative for owner walkthroughs (`why -49h on B1 is not a loss but an escape route to B5`). **Accessible in-app**: click the cyan `?` button at the top-right of the 2D X-Y overlay (above the B-shift strip) to open the walkthrough in a draggable popup.
+- **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — Explains the "losing hours" semantics on the B-shift strip + capex/opex narrative for owner walkthroughs (English & 한국어). **Accessible in-app**: click the cyan `?` button at the top-right of the 2D X-Y overlay → draggable popup with EN/한국어 toggle in the header.
+
+## V1.9 한국어 Translation + In-Popup Lang Toggle (2026-02-13)
+**Brief**: Korean version of the band-shift insight doc + a two-half pill toggle in the popup header to switch between EN and 한국어 without leaving the app. Korean operators can now read the capex/opex narrative in their native language during owner walkthroughs.
+
+### Implementation
+- **New file**: `erv_band_shift_insight.ko.md` (7.7 KB) — full Korean translation. All 4 conclusions, the Seoul example table, capex/opex talking-points per audience, common-confusions Q&A — translated and culturally tuned (e.g., 자본 지출 주기 instead of literal "capex cycle"). Topology preserved so the same markdown renderer works.
+- **In-popup lang toggle** (`js/psy-3d-engine.js`): `<div data-lang-toggle>` two-half pill chip in the header beside the title. Active half = cyan background `#60a5fa` + slate-900 text; inactive half = transparent + slate-400 text. Click switches.
+- **Cache + fetch logic**: `_insightLoaded` is now `{en, ko}` keyed; each language fetched once on first switch, instant on subsequent toggles.
+- **Initial language detection**: priority `localStorage.red5BandInsightLang > window.getLang() > 'en'`. Persisted explicit choice survives reloads + diverges from app-wide language if user has chosen.
+- **App-wide langchange follower**: listens for the existing `langchange` event. If user has no explicit popup-language choice (`localStorage` empty), the popup automatically follows app language. If user has explicit choice, it is honored.
+- **Drag-handler exclusion**: header drag listener now excludes `[data-lang-toggle], [data-set-lang]` from `e.target.closest()` so clicks on the lang chip aren't eaten by the drag.
+- **Title also localized**: `B-Shift Insight` (en) / `B-시프트 통찰` (ko). Loading state localized: `Loading insight…` / `통찰 문서 로드 중…`.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. `js/psy-3d-engine.js` (376,426 B) hot-deployed; `/assets/erv_band_shift_insight.ko.md` (7,673 B) reachable via existing whitelisted asset route.
+- Playwright at 1920×900 verified all 3 transitions: open popup with `EN` highlighted (cyan), English body renders; click `한국어` → title flips to `B-시프트 통찰`, `한국어` chip turns cyan, Korean body renders (table headers `밴드 / 라벨 / 평이한 설명`); click `EN` back → title and body restore. Both choices persist to `localStorage.red5BandInsightLang`.
+
+### Files changed
+- `erv_band_shift_insight.ko.md` — new (264 lines, 7.7 KB).
+- `js/psy-3d-engine.js` — ~30 lines: lang cache + toggle chip + fetch routing + langchange follower + drag-handler exclusion.
+
 
 ## V1.9 In-App B-Shift Insight Popup (2026-02-13)
 **Brief**: New `?` button next to the B-shift strip opens a 560×480 draggable popup that fetches `erv_band_shift_insight.md` and renders it inline with a tiny markdown→HTML renderer. Operators no longer need filesystem access to read the walkthrough during owner meetings.

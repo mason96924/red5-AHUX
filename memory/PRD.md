@@ -1,5 +1,11 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Active Backlog (priority-ordered)
+- **P3** — Controller Redundancy Architecture (deferred to separate project)
+- **P3** — Phase B Sun Path (deferred until live raycasting/Three.js is in scope)
+- **P4** — Workspace cleanup (`/app/archive/Red5-Studio-V1.9/` dedupe + restructure)
+- **P5** — **Climate-drift headline**: single-line auto-generated callout above the band-shift strip (e.g., `Climate drift since 2020-2024 avg: +127 hours in B6+B7 (warmer summers)`). Auto-highlights whichever band gained the most hours year-over-year so operators don't have to mentally diff the dashed-vs-solid bars. Depends on the existing `_bandHistoryHist` + `_bandHourDelta()` outputs — pure render addition above `#p3-band-delta`, no new fetches needed.
+
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 

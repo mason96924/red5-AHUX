@@ -208,13 +208,25 @@
     cache[active.id] = cache[active.id] || {};
     if (cache[active.id][_state.lang]) { _paint(); return; }
     _paint();  /* loading state */
-    var url = _state.lang === 'ko' ? active.doc_ko : active.doc_en;
+    /* Cache-bust with timestamp so stale browser caches / proxy caches
+       (the controller sets Cache-Control: public,max-age=3600 on .md)
+       don't serve old 404s.  Trying again with a fresh URL guarantees a
+       network hit. */
+    var base = _state.lang === 'ko' ? active.doc_ko : active.doc_en;
+    var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
     fetch(url, {cache:'no-store'})
       .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
       .then(function(txt){ cache[active.id][_state.lang] = txt; _paint(); })
-      .catch(function(){
-        cache[active.id][_state.lang] = '# Unable to load doc\n\nFile not found on the controller.';
-        _paint();
+      .catch(function(err){
+        /* Show a retry-able error.  Do NOT cache the failure -- next
+           tab click or popup re-open should try the fetch again. */
+        var p = _build();
+        var msg_en = '# Unable to load doc\n\nFile fetch failed (' + err + ').\n\n*Click the tab again to retry, or hard-refresh the page (Ctrl+Shift+R) to clear any stale browser cache.*';
+        var msg_ko = '# \ubb38\uc11c \ub85c\ub4dc \uc2e4\ud328\n\n\ud30c\uc77c \uac00\uc838\uc624\uae30 \uc2e4\ud328 (' + err + ').\n\n*\ud0ed\uc744 \ub2e4\uc2dc \ud074\ub9ad\ud558\uac70\ub098 \ud558\ub4dc \uc0c8\ub85c\uace0\uce68 (Ctrl+Shift+R) \ud574\uc8fc\uc138\uc694.*';
+        var body = _renderMd(_state.lang === 'ko' ? msg_ko : msg_en);
+        /* Skip the cache so retry works; just paint the error transient. */
+        var bodyEl = p.querySelector('div[style*="overflow-y:auto"]');
+        if (bodyEl) bodyEl.innerHTML = body;
       });
   }
 

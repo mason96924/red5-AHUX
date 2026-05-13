@@ -5,6 +5,25 @@
 - **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — "Losing hours" semantics + capex/opex narrative.
 - **In-app access**: `📚 Docs` button in dashboard sidebar header opens a tabbed popup with all docs. Also accessible as per-context `?` buttons (cyan next to B-shift strip, amber next to + Designer Mode).
 
+## V1.9 Bugfix — Korean Docs "Unable to load" (2026-02-13)
+**Brief**: User reported the Korean tabs in the Docs Index popup showed `Unable to load doc / File not found on the controller`, even though the `.ko.md` files were live on the controller (`curl` and Playwright fetch both returned 200 OK). Root cause: the browser had cached a 404 from an earlier upload-race attempt, and the fetch error was being **cached in the module's success cache** so re-clicks did not retry.
+
+### Fix (3 hardening changes)
+1. **Cache-buster on every fetch**: appended `?ts=Date.now()` to all `/assets/*.md` URLs so the browser never serves a stale 404 or stale body. Applied to both the standalone `js/docs_index.js` factory and the in-engine `_createInsightPopup` factory.
+2. **Don't cache failures**: removed the line that stuffed the `Unable to load doc` placeholder into the success cache. Errors are now painted as transient inline content — next tab click or popup re-open triggers a fresh fetch attempt.
+3. **Localized retry hint**: error message is now bilingual (`*Click the tab again to retry, or hard-refresh (Ctrl+Shift+R)*` / `*탭을 다시 클릭하거나 하드 새로고침 (Ctrl+Shift+R) 해주세요.*`) so the user knows what to do.
+4. **Server-side**: `/assets/<filename>` route now sets `Cache-Control: no-store` on `.md` files (was: `public, max-age=3600`). Future doc updates take effect on the next page load instead of waiting an hour. (Requires backend restart to take effect; uploaded but not auto-applied.)
+
+### Verification (live on `219.79.12.63:5001`)
+- Playwright at 1920×900 with `localStorage` cleared:
+  - Open docs → click 한국어 → band-shift body renders 3,514 chars of Korean (`시간 손실/운영자/밴드` regex matches, no `Unable to load` substring).
+  - Tab → psych-design → body renders 5,812 chars of Korean (`기계설비/코일/습공기` regex matches).
+
+### Files changed
+- `js/docs_index.js` — fetch URL cache-busted, error path no longer caches.
+- `js/psy-3d-engine.js` — `_createInsightPopup._fetch` cache-busted, same hardening.
+- `app.py` — `/assets/` route adds `.md` to the no-cache extension list. Backend restart required.
+
 ## V1.9 Bugfix — Dashboard Landing-Page Crash (2026-02-13)
 **Brief**: The new `📚 Docs` button used a bare `t('docs_index')` call in its `title` attribute. When evaluated before `window.t` was reachable as a bare global in the JSX render context, this threw `ReferenceError: t is not defined` and tripped the React error boundary on the dashboard landing page.
 

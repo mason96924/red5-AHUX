@@ -2350,13 +2350,19 @@ global.initPsy3D = function(container, opts){
       function _fetch(){
         if (_loaded[_lang]) { paint(); return; }
         paint(); /* loading state */
-        var url = _lang === 'ko' ? opts.docKO : opts.docEN;
+        /* Cache-bust to bypass any stale 404 the browser may have
+           cached from an upload race.  Same hardening as docs_index.js. */
+        var base = _lang === 'ko' ? opts.docKO : opts.docEN;
+        var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
         fetch(url, {cache:'no-store'})
           .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
           .then(function(txt){ _loaded[_lang] = txt; paint(); })
-          .catch(function(){
-            _loaded[_lang] = '# Unable to load doc\n\nFile not found on the controller.';
-            paint();
+          .catch(function(err){
+            /* Don't cache the error; show inline retry hint instead. */
+            var msg_en = '# Unable to load doc\n\nFile fetch failed (' + err + ').\n\n*Reopen the popup or hard-refresh the page (Ctrl+Shift+R) to retry.*';
+            var msg_ko = '# \ubb38\uc11c \ub85c\ub4dc \uc2e4\ud328\n\n\ud30c\uc77c \uac00\uc838\uc624\uae30 \uc2e4\ud328 (' + err + ').\n\n*\ud31d\uc5c5\uc744 \ub2e4\uc2dc \uc5f4\uac70\ub098 \ud558\ub4dc \uc0c8\ub85c\uace0\uce68 (Ctrl+Shift+R) \ud574\uc8fc\uc138\uc694.*';
+            var bodyEl = popup.querySelector('div[style*="overflow-y:auto"]');
+            if (bodyEl) bodyEl.innerHTML = _renderMd(_lang === 'ko' ? msg_ko : msg_en);
           });
       }
       btn.addEventListener('click', show);

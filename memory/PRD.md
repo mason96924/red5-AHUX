@@ -3,6 +3,33 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 ERV-Aware B1-B10 Band Source Toggle (2026-02-13)
+**Brief**: When the ERV wheel is on, the B1-B10 control strategy can now bucket each hour either by **raw OA** (default — same as a vanilla controller that senses ambient before the wheel) OR by **OA' / post-wheel state** (a wheel-aware controller that intentionally picks less-aggressive SA targets the wheel has made possible). New `Band src:` chip in the 2D overlay toggles between the two views.
+
+### What's new (`js/psy-3d-engine.js`)
+- 1 new module-scope state `_bandSourceOaP` (bool, persisted at `localStorage.red5BandSourceOaP`).
+- `_bandInputFor(p)` helper returns `{T, RH, W}` — raw OA when toggle OFF or ERV OFF, post-wheel OA' otherwise. Single source of truth across 2D + 3D band consumers. RH is recovered from `(T, W)` via the existing `psat()` function so band lookup (which keys on T+RH) sees a coherent state.
+- **Chip wired** at top of 2D overlay (`#p3-btn-band-src`, between `Mode:` and `BACK TO 3D`):
+  - Disabled (grey, `not-allowed`, 45% opacity) when ERV is OFF — tooltip explains how to enable.
+  - Enabled (cyan when `OA'`, slate when `OA`) when ERV is ON. Click toggles.
+  - Auto-refreshes via `red5-erv-rollout-update` window event so ERV chip toggles flow into the chip in real-time.
+- **Call sites switched** to use `_bandInputFor(p)`:
+  - 3D Drops (`_buildSaDropGeometry`): both `_saReset` (SA target) AND `_bandRGB` (color) honor the toggle so the band palette + landing positions shift together.
+  - 2D `render2DChart`: all three projection modes (`lines`, `dots`, `vav`) updated — `computeSA`, `bandLabel`, `bandCol` calls all use the effective input.
+
+### Visual story (verified live)
+- **OA mode**: rainbow OA→SA Lines spread out, hot summer hours route to high-temp bands (B7/B8 orange/red lines). Same as a vanilla controller.
+- **OA' mode**: cloud visibly collapses toward the comfort zone (mostly green/cyan B4–B5 lines) because OA' rebucketing puts harsh hours into milder bands with less-aggressive SA targets. Tells the story "a wheel-aware controller saves even more than a vanilla one."
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. `red5_bundle.zip` rebuilt 1755.8 KB (MD5 `fe9d7db0c87ebc8c059070f2f8bfbcca`).
+- `js/psy-3d-engine.js` (347,965 B) hot-deployed; live MD5 matches.
+- Playwright at 1920×900 verified all 4 states: ERV-OFF chip grey/disabled, ERV-ON chip slate/`OA`, click toggles → cyan/`OA'` and persists `red5BandSourceOaP=1`, click again → back to `OA`. Both projection-mode lines (2D) and drop palette (3D) re-render on toggle.
+
+### Files changed
+- `js/psy-3d-engine.js` — ~50 lines added: `_bandSourceOaP` state + load, `_bandInputFor` helper, chip element + handlers, swap to `bi.T/bi.RH/bi.W` in 6 call sites (3D drops × 2, 2D lines, 2D dots, 2D vav × 3).
+
+
 ## V1.9 ERV Rollout Panel — Draggable + Resizable + Closable (2026-02-13)
 **Brief**: The bottom-left rollout panel was previously anchored. User wanted it as a movable popout with a close affordance. Added drag handle (header), close ✕ → revive chip pattern, and bottom-right resize grip — all with persisted position/size.
 

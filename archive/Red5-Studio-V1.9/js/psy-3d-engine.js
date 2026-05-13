@@ -127,6 +127,32 @@ global.initPsy3D = function(container, opts){
   var _ervRolloutClosed   = false;       /* user clicked ✕ — keep hidden until revive */
   var _ervRolloutPos      = null;        /* {x, y} bottom-left offset; null = default */
   var _ervRolloutSize     = null;        /* {w, h}; null = auto/min */
+  /* Band-source toggle: when true AND ERV is on, B1-B10 band lookups
+     (color + SA target) bucket the hour by OA' (post-wheel) instead of
+     raw OA.  Models a wheel-aware controller that intentionally picks
+     less-aggressive SA targets when the wheel has already softened the
+     incoming air.  Persisted under red5BandSourceOaP. */
+  var _bandSourceOaP      = false;       /* false = OA (default), true = OA' */
+  try {
+    var _bs = localStorage.getItem('red5BandSourceOaP');
+    if (_bs === '1' || _bs === 'true') _bandSourceOaP = true;
+  } catch(_) {}
+  /* Effective band-input helper: returns {T, RH, W} -- raw OA when the
+     toggle is OFF or when ERV is off, post-wheel OA' otherwise.  Used by
+     _bandRGB / _saReset call sites so the band selection follows the
+     toggle without leaking the conditional into every call site. */
+  function _bandInputFor(p){
+    if (!_saDropERVOn || !_bandSourceOaP) return { T: p.t, RH: p.rh, W: p.w };
+    var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
+    var T = p.t + eps * (raT - p.t);
+    var W = p.w + eps * (raW - p.w);
+    /* Recover RH from (T, W) for band lookup (bands key on T and RH). */
+    var ps = psat(T);
+    var pw = W * (101.325) / (0.621945 + W);  /* invert getW: pw = w*Pa / (0.622+w) */
+    var RH = Math.max(0, Math.min(100, (pw / ps) * 100));
+    return { T: T, RH: RH, W: W };
+  }
   function _ervRolloutLoad(){
     try {
       var s = JSON.parse(localStorage.getItem('red5ErvRolloutState') || '{}');
@@ -1899,6 +1925,43 @@ global.initPsy3D = function(container, opts){
       render2DChart();
     };
 
+    /* Band-source toggle chip — sits next to the Mode button.  Toggles
+       whether B1-B10 bucketing uses raw OA (default) or post-wheel OA'
+       (wheel-aware controller).  Only visible/clickable when ERV is on,
+       otherwise the toggle is a no-op (greyed). */
+    var bsBtn = document.createElement('button');
+    bsBtn.id = 'p3-btn-band-src';
+    function _refreshBandSrcBtn(){
+      var ervOn = !!_saDropERVOn;
+      var oap = !!_bandSourceOaP;
+      bsBtn.textContent = 'Band src: ' + (ervOn && oap ? "OA'" : 'OA');
+      var col = !ervOn ? '#475569' : (oap ? '#22d3ee' : '#94a3b8');
+      bsBtn.style.cssText =
+        'position:absolute;top:12px;right:300px;z-index:51;background:rgba(15,23,42,.92);'+
+        'border:1px solid '+col+';color:'+col+';padding:6px 14px;border-radius:6px;'+
+        'font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;'+
+        'cursor:'+(ervOn?'pointer':'not-allowed')+';font-family:inherit;backdrop-filter:blur(14px);'+
+        'opacity:'+(ervOn?'1':'.45');
+      bsBtn.title = ervOn
+        ? "Bucket each hour into a B1-B10 band by RAW outdoor air (OA, default) OR by post-wheel OA' (wheel-aware controller picks less-aggressive SA targets that the wheel makes possible)."
+        : 'Enable ERV in the 3D Drops layer to compare OA vs OA\u2032 band bucketing.';
+    }
+    _refreshBandSrcBtn();
+    bsBtn.onclick = function(){
+      if (!_saDropERVOn) return;
+      _bandSourceOaP = !_bandSourceOaP;
+      try { localStorage.setItem('red5BandSourceOaP', _bandSourceOaP ? '1' : '0'); } catch(_) {}
+      _refreshBandSrcBtn();
+      render2DChart();
+      _buildSaDropGeometry();   /* reflect band-source change in 3D drops too */
+    };
+    /* Track ERV state changes so the chip enables/disables itself in
+       real time -- piggy-back on the existing red5-erv-rollout-update
+       event the rollout panel already dispatches. */
+    window.addEventListener('red5-erv-rollout-update', _refreshBandSrcBtn);
+    var overlayEl = $('#p3-overlay2d');
+    if (overlayEl) overlayEl.appendChild(bsBtn);
+
     /* B1-B10 strategy toggle — only meaningful in T×Time mode.  Hidden when
        in W×Time / X-Y Detail / 3D.  Drives whether the green B1-B10 cumulative
        curve, its transition markers, the endpoint label, and the band-ramp
@@ -3117,7 +3180,12 @@ global.initPsy3D = function(container, opts){
           if (dh_abs < _ervMinKJkg) return;
         }
       }
-      var sa = _saReset(p.t, p.rh, p.w);
+      /* SA target via _saReset.  When the band-source toggle is on AND
+         ERV is on, _bandInputFor returns OA' so the band picker sees
+         post-wheel conditions and may pick a less-aggressive SA setpoint
+         (wheel-aware controller).  Otherwise this is the raw-OA baseline. */
+      var bi = _bandInputFor(p);
+      var sa = _saReset(bi.T, bi.RH, bi.W);
       // Cull no-action samples (zero-length drops would clutter the floor).
       // After ERV pre-treatment, "no action" is computed against the
       // entering-air state (inT/inW), not raw OA, so already-tempered
@@ -3125,11 +3193,10 @@ global.initPsy3D = function(container, opts){
       if (Math.abs(sa.t-inT)<0.5 && Math.abs(sa.w-inW)<0.0003) return;
       var oaX = t2sx(inT), oaY = frac2sy(p.frac), oaZ = w2sz(inW);
       var saX = t2sx(sa.t),                      saZ = w2sz(sa.w);
-      // Color: temperature-spectrum OR band palette.  Use the entering-air
-      // temperature so the cloud's colors visually shift cooler when ERV
-      // is on for hot hours, warmer for cold hours -- the wheel's net
-      // effect is obvious from the color shift alone.
-      var c = bandMode ? _bandRGB(p.t, p.rh) : t2rgb(ervOn ? inT : p.t);
+      // Color: temperature-spectrum OR band palette.  Band palette uses
+      // the same effective input (raw OA or OA') as the SA picker so
+      // colors stay coherent with the SA target choice.
+      var c = bandMode ? _bandRGB(bi.T, bi.RH) : t2rgb(ervOn ? inT : p.t);
       // SA dot on floor (full color).
       saV.push(saX, 0.3, saZ);
       saC.push(c[0], c[1], c[2]);
@@ -5691,10 +5758,11 @@ global.initPsy3D = function(container, opts){
         var vavClusters={};var czIn=0,czOut=0;
         weatherData.forEach(function(p){
           var wg=p.w*1000;if(wg>W_MAX)return;
-          var sa=computeSA(p.t,p.rh,p.w);
+          var bi=_bandInputFor(p);
+          var sa=computeSA(bi.T,bi.RH,bi.W);
           if(Math.abs(sa.t-p.t)<0.5&&Math.abs(sa.w-p.w)<0.0003)return;
-          var bl=bandLabel(p.t,p.rh);
-          if(!vavClusters[bl])vavClusters[bl]={pts:[],col:bandCol(p.t,p.rh,.6),colSolid:bandCol(p.t,p.rh,.9),inCZ:0,outCZ:0};
+          var bl=bandLabel(bi.T,bi.RH);
+          if(!vavClusters[bl])vavClusters[bl]={pts:[],col:bandCol(bi.T,bi.RH,.6),colSolid:bandCol(bi.T,bi.RH,.9),inCZ:0,outCZ:0};
           for(var vi=0;vi<NUM_VAV;vi++){
             var zt=sa.t+vavHG[vi], zw=sa.w+vavMG[vi];
             var zwg=zw*1000;if(zwg>W_MAX)zwg=W_MAX;
@@ -5743,10 +5811,11 @@ global.initPsy3D = function(container, opts){
         var saClusters={};
         weatherData.forEach(function(p){
           var wg=p.w*1000;if(wg>W_MAX)return;
-          var sa=computeSA(p.t,p.rh,p.w);var swg=Math.min(sa.w*1000,W_MAX);
+          var bi=_bandInputFor(p);
+          var sa=computeSA(bi.T,bi.RH,bi.W);var swg=Math.min(sa.w*1000,W_MAX);
           if(Math.abs(sa.t-p.t)<0.5&&Math.abs(swg-wg)<0.3)return;
-          var bl=bandLabel(p.t,p.rh);
-          if(!saClusters[bl])saClusters[bl]={pts:[],col:bandCol(p.t,p.rh,.7),colSolid:bandCol(p.t,p.rh,.95)};
+          var bl=bandLabel(bi.T,bi.RH);
+          if(!saClusters[bl])saClusters[bl]={pts:[],col:bandCol(bi.T,bi.RH,.7),colSolid:bandCol(bi.T,bi.RH,.95)};
           saClusters[bl].pts.push({t:sa.t,w:swg});
         });
         Object.keys(saClusters).forEach(function(bl){
@@ -5769,9 +5838,10 @@ global.initPsy3D = function(container, opts){
         ctx.lineWidth=0.6;
         weatherData.forEach(function(p){
           var wg=p.w*1000;if(wg>W_MAX)return;
-          var sa=computeSA(p.t,p.rh,p.w);var swg=Math.min(sa.w*1000,W_MAX);
+          var bi=_bandInputFor(p);
+          var sa=computeSA(bi.T,bi.RH,bi.W);var swg=Math.min(sa.w*1000,W_MAX);
           if(Math.abs(sa.t-p.t)<0.5&&Math.abs(swg-wg)<0.3)return;
-          ctx.strokeStyle=bandCol(p.t,p.rh);
+          ctx.strokeStyle=bandCol(bi.T,bi.RH);
           ctx.beginPath();ctx.moveTo(tx(p.t),wy(wg));ctx.lineTo(tx(sa.t),wy(swg));ctx.stroke();
         });
       }

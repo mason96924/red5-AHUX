@@ -883,6 +883,20 @@ global.initPsy3D = function(container, opts){
      2D layer, so a B7 hot-humid hour is the same orange in both views).
      Toggled via the chip next to the OA→SA Drops layer toggle. */
   var _saDropColorMode = 't';
+  /* Whether the OA→SA Drops layer should pre-treat each OA point through an
+     ERV wheel before drawing the drop.  When ON, every OA point is shifted
+     toward the user's RA design state by the Designer-Mode epsilon
+     (_designerERVEps), so the drop lines start at OA' instead of OA -- the
+     same geometric trick the Designer-Mode panel uses.  Visualises the
+     entire year of OA hours AFTER ERV pre-treatment so engineers can see
+     how much the wheel "moves" the cloud toward the comfort zone before the
+     coil ever fires.  Persisted to localStorage so the toggle survives a
+     page reload. */
+  var _saDropERVOn = false;
+  try {
+    var _sd = localStorage.getItem('red5SaDropERV');
+    if (_sd === '1' || _sd === 'true') _saDropERVOn = true;
+  } catch (e) { /* private-mode / quota - ignore */ }
   /* Cached during T×Time render so the mousemove handler can build per-point
      tooltips that include the active control band, its SA setpoint and the
      OA damper % without re-running classifyBand on every mouse event. */
@@ -1158,6 +1172,8 @@ global.initPsy3D = function(container, opts){
         if (t[0]==='saDrop') {
           var chip=document.getElementById('p3-saDrop-color');
           if (chip) chip.style.display = o.visible ? 'inline-flex' : 'none';
+          var ervChip=document.getElementById('p3-saDrop-erv');
+          if (ervChip) ervChip.style.display = o.visible ? 'inline-flex' : 'none';
         }
       };
       tgEl.appendChild(div);
@@ -1192,6 +1208,38 @@ global.initPsy3D = function(container, opts){
         // Initial visibility tracks the layer (default: hidden until user enables it).
         if (saDropGroup && saDropGroup.visible) chip.style.display = 'inline-flex';
         tgEl.appendChild(chip);
+
+        /* ERV pre-treatment chip -- second toggle next to the T|B chip.
+           Off by default; when ON, the Drops layer re-routes every OA
+           point through OA' (using Designer Mode's epsilon + RA inputs)
+           so the post-wheel cloud is what you see drop to the SA floor.
+           Pulses with a cyan highlight when active so the modal nature
+           of the layer is unmistakable. */
+        var ervChip=document.createElement('div');
+        ervChip.id='p3-saDrop-erv';
+        ervChip.style.cssText='display:none;align-items:center;gap:0;background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:4px;padding:0 0;cursor:pointer;font-size:7px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;user-select:none;backdrop-filter:blur(14px);overflow:hidden';
+        ervChip.title='Pre-treat OA through an ERV wheel before drawing the drop. Uses Designer Mode\'s epsilon + RA inputs. When ON, the cloud shows POST-wheel conditions -- the actual air the coil sees.';
+        function _renderErvChip(){
+          var on = !!_saDropERVOn;
+          ervChip.innerHTML =
+            '<span data-erv="off" style="padding:3px 7px;color:'+(!on?'#22d3ee':'#94a3b8')+';background:'+(!on?'rgba(34,211,238,.15)':'transparent')+'">ERV</span>'+
+            '<span style="color:#475569">|</span>'+
+            '<span data-erv="on"  style="padding:3px 7px;color:'+( on?'#22d3ee':'#94a3b8')+';background:'+( on?'rgba(34,211,238,.15)':'transparent')+'">\u00B7</span>';
+          ervChip.style.borderColor = on ? '#22d3ee' : '#334155';
+        }
+        _renderErvChip();
+        ervChip.addEventListener('click', function(e){
+          var s = e.target.closest('[data-erv]');
+          if (!s) return;
+          var want = (s.getAttribute('data-erv') === 'on');
+          if (want === _saDropERVOn) return;
+          _saDropERVOn = want;
+          try { localStorage.setItem('red5SaDropERV', want ? '1' : '0'); } catch(_) {}
+          _renderErvChip();
+          _buildSaDropGeometry();
+        });
+        if (saDropGroup && saDropGroup.visible) ervChip.style.display = 'inline-flex';
+        tgEl.appendChild(ervChip);
       }
     });
 
@@ -1607,11 +1655,11 @@ global.initPsy3D = function(container, opts){
     _wireInput('p3-d-oafrac', function(v){ _designerOAFrac = Math.max(0, Math.min(1, v)); });
     _wireInput('p3-d-oat',    function(v){ _designerOA_T   = v; });
     _wireInput('p3-d-oarh',   function(v){ _designerOA_RH  = Math.max(0, Math.min(100, v)); });
-    _wireInput('p3-d-rat',    function(v){ _designerRA_T   = v; });
-    _wireInput('p3-d-rarh',   function(v){ _designerRA_RH  = Math.max(0, Math.min(100, v)); });
+    _wireInput('p3-d-rat',    function(v){ _designerRA_T   = v; _saDropMaybeRefresh(); });
+    _wireInput('p3-d-rarh',   function(v){ _designerRA_RH  = Math.max(0, Math.min(100, v)); _saDropMaybeRefresh(); });
     _wireInput('p3-d-sat',    function(v){ _designerSA_T   = v; });
     _wireInput('p3-d-sarh',   function(v){ _designerSA_RH  = Math.max(0, Math.min(100, v)); });
-    _wireInput('p3-d-erveps', function(v){ _designerERVEps = Math.max(0, Math.min(1, v)); });
+    _wireInput('p3-d-erveps', function(v){ _designerERVEps = Math.max(0, Math.min(1, v)); _saDropMaybeRefresh(); });
     /* ERV on/off checkbox -- separate handler because it's a checkbox not
        a number input. */
     if (_ervCheck) {
@@ -2453,18 +2501,45 @@ global.initPsy3D = function(container, opts){
     while (saDropGroup.children.length) saDropGroup.remove(saDropGroup.children[0]);
     var saV=[], saC=[], dV=[], dC=[];
     var bandMode = (_saDropColorMode === 'band');
+    /* If ERV pre-treatment is active, pre-compute the RA reference point
+       once (don't recalc psat() inside the per-point loop).  RA conditions
+       come from the Designer Mode panel so a user dialling RA from 24
+       to 22 propagates through to the Drops cloud without leaving the
+       psych chart.  Epsilon clamped to [0,1] defensively. */
+    var ervOn = _saDropERVOn;
+    var rawW2gkg = 1000; /* getW returns kg/kg, multiply to g/kg */
+    var ra_T = _designerRA_T;
+    var ra_W = getW(_designerRA_T, _designerRA_RH);  /* kg/kg (same units as p.w) */
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
     weatherData.forEach(function(p){
+      /* Compute the entering-air state the coil ACTUALLY sees -- OA when
+         the wheel is bypassed, OA' (linearly interpolated OA->RA at eps)
+         when the wheel is on.  The SA-reset target is left untouched
+         because the control strategy decides on raw OA, not post-wheel
+         OA -- the wheel is a thermodynamic upstream pre-treatment, not a
+         control input.  This matches the Designer Mode geometry. */
+      var inT = p.t, inW = p.w;
+      if (ervOn) {
+        inT = p.t + eps * (ra_T - p.t);
+        inW = p.w + eps * (ra_W - p.w);
+      }
       var sa = _saReset(p.t, p.rh, p.w);
       // Cull no-action samples (zero-length drops would clutter the floor).
-      if (Math.abs(sa.t-p.t)<0.5 && Math.abs(sa.w-p.w)<0.0003) return;
-      var oaX = t2sx(p.t), oaY = frac2sy(p.frac), oaZ = w2sz(p.w);
+      // After ERV pre-treatment, "no action" is computed against the
+      // entering-air state (inT/inW), not raw OA, so already-tempered
+      // hours where the coil barely works are correctly hidden.
+      if (Math.abs(sa.t-inT)<0.5 && Math.abs(sa.w-inW)<0.0003) return;
+      var oaX = t2sx(inT), oaY = frac2sy(p.frac), oaZ = w2sz(inW);
       var saX = t2sx(sa.t),                      saZ = w2sz(sa.w);
-      // Color: temperature-spectrum OR band palette.
-      var c = bandMode ? _bandRGB(p.t, p.rh) : t2rgb(p.t);
+      // Color: temperature-spectrum OR band palette.  Use the entering-air
+      // temperature so the cloud's colors visually shift cooler when ERV
+      // is on for hot hours, warmer for cold hours -- the wheel's net
+      // effect is obvious from the color shift alone.
+      var c = bandMode ? _bandRGB(p.t, p.rh) : t2rgb(ervOn ? inT : p.t);
       // SA dot on floor (full color).
       saV.push(saX, 0.3, saZ);
       saC.push(c[0], c[1], c[2]);
-      // Drop line: top vertex = full OA color; bottom vertex = 35% color so
+      // Drop line: top vertex = full color; bottom vertex = 35% color so
       // the line visually fades as it descends to the floor.
       dV.push(oaX, oaY, oaZ,  saX, 0, saZ);
       dC.push(c[0], c[1], c[2],  c[0]*0.35, c[1]*0.35, c[2]*0.35);
@@ -2483,6 +2558,17 @@ global.initPsy3D = function(container, opts){
     saDropGroup.add(new THREE.LineSegments(dropGeo, new THREE.LineBasicMaterial({
       vertexColors:true, transparent:true, opacity:.45, depthWrite:false
     })));
+  }
+
+  /* Tiny adapter called whenever a Designer-Mode input that the Drops
+     layer depends on (RA T/RH, ERV epsilon) changes.  Rebuilds the Drops
+     geometry ONLY if both the layer is enabled AND ERV pre-treatment is
+     on -- otherwise it's a pointless no-op.  Keeps the live-edit feel
+     of the Designer panel without forcing a full weather refetch. */
+  function _saDropMaybeRefresh(){
+    if (!saDropGroup || !saDropGroup.visible) return;
+    if (!_saDropERVOn) return;
+    _buildSaDropGeometry();
   }
 
   function buildWeatherVis(locName,fromD,toD){

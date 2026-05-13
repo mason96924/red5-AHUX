@@ -153,6 +153,49 @@ global.initPsy3D = function(container, opts){
     var RH = Math.max(0, Math.min(100, (pw / ps) * 100));
     return { T: T, RH: RH, W: W };
   }
+  /* Module-scoped mirror of the render2DChart-local bandLabel.  Used by
+     the per-band hour-count delta strip so we can compute the histogram
+     without duplicating the rules inside a render path. */
+  function _bandLabelOf(t, rh){
+    if(t<5&&rh<30)                       return 'B1';
+    if(t>=5&&t<15&&rh>=30&&rh<=60)       return 'B2';
+    if(t>=15&&t<20&&rh<30)               return 'B3';
+    if(t>=18&&t<22&&rh>=30&&rh<=50)      return 'B4';
+    if(t>=22&&t<=25&&rh>=40&&rh<=60)     return 'B5';
+    if(t>25&&t<=27&&rh>=50&&rh<=70)      return 'B6';
+    if(t>27&&t<=32&&rh>60&&rh<=80)       return 'B7';
+    if(t>32&&t<=38&&rh>70)               return 'B8';
+    if(t>35&&rh<30)                      return 'B9';
+    if(t>30&&rh>85)                      return 'B10';
+    return '?';
+  }
+  /* Walk weatherData twice -- once with raw OA, once with OA' -- to build
+     a {Bn: {oa, oap}} map of hour-counts per band.  Cheap (O(N) twice,
+     N ~ 2900 for a full year) and not memoized because epsilon + RA can
+     live-edit and we always want WYSIWYG.  Returns null if ERV is off
+     (caller renders nothing). */
+  function _bandHourDelta(){
+    if (!_saDropERVOn || !weatherData || !weatherData.length) return null;
+    var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
+    var out = {}; var labels = ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','?'];
+    labels.forEach(function(b){ out[b] = {oa:0, oap:0}; });
+    var total = 0;
+    weatherData.forEach(function(p){
+      total++;
+      var bOa = _bandLabelOf(p.t, p.rh);
+      out[bOa].oa++;
+      var T = p.t + eps * (raT - p.t);
+      var W = p.w + eps * (raW - p.w);
+      var ps = psat(T);
+      var pw = W * 101.325 / (0.621945 + W);
+      var RH = Math.max(0, Math.min(100, (pw / ps) * 100));
+      var bOap = _bandLabelOf(T, RH);
+      out[bOap].oap++;
+    });
+    out._total = total;
+    return out;
+  }
   function _ervRolloutLoad(){
     try {
       var s = JSON.parse(localStorage.getItem('red5ErvRolloutState') || '{}');
@@ -1952,15 +1995,83 @@ global.initPsy3D = function(container, opts){
       _bandSourceOaP = !_bandSourceOaP;
       try { localStorage.setItem('red5BandSourceOaP', _bandSourceOaP ? '1' : '0'); } catch(_) {}
       _refreshBandSrcBtn();
+      _refreshBandDelta();
       render2DChart();
       _buildSaDropGeometry();   /* reflect band-source change in 3D drops too */
     };
     /* Track ERV state changes so the chip enables/disables itself in
        real time -- piggy-back on the existing red5-erv-rollout-update
        event the rollout panel already dispatches. */
-    window.addEventListener('red5-erv-rollout-update', _refreshBandSrcBtn);
+    window.addEventListener('red5-erv-rollout-update', function(){ _refreshBandSrcBtn(); _refreshBandDelta(); });
     var overlayEl = $('#p3-overlay2d');
     if (overlayEl) overlayEl.appendChild(bsBtn);
+
+    /* Per-band hour-count delta strip.  10 cells laid out horizontally
+       below the Mode/Band-src chip row, one per band.  Each cell shows:
+         - Band id label (color-coded)
+         - Two side-by-side bars: OA hours (faded) vs OA' hours (full color)
+         - Δ count below the bars (green if gained hours, amber if lost)
+       Visible only when ERV is on -- without the wheel there is no Δ. */
+    var deltaStrip = document.createElement('div');
+    deltaStrip.id = 'p3-band-delta';
+    deltaStrip.style.cssText =
+      'position:absolute;top:48px;right:8px;z-index:51;display:none;'+
+      'background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:6px;'+
+      'padding:6px 8px;font-family:\'Courier New\',monospace;color:#cbd5e1;'+
+      'backdrop-filter:blur(14px);user-select:none';
+    deltaStrip.title = 'B1-B10 hour-count: raw OA bucketing vs OA\u2032 (post-wheel) bucketing. Δ = how many hours move into/out of each band when the wheel is on.';
+    function _refreshBandDelta(){
+      var on = !!_saDropERVOn;
+      deltaStrip.style.display = on ? 'flex' : 'none';
+      if (!on) return;
+      var hist = _bandHourDelta();
+      if (!hist) { deltaStrip.innerHTML = '<span style="color:#94a3b8;font-size:8px">Fetch weather to see band shifts.</span>'; return; }
+      var BANDS = ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10'];
+      var COLOR = {B1:'#1e40af',B2:'#2563eb',B3:'#0ea5e9',B4:'#06b6d4',B5:'#10b981',
+                   B6:'#84cc16',B7:'#facc15',B8:'#fb923c',B9:'#f97316',B10:'#ea580c'};
+      /* Find max count across both columns to scale the bar heights. */
+      var maxH = 1;
+      BANDS.forEach(function(b){ maxH = Math.max(maxH, hist[b].oa, hist[b].oap); });
+      deltaStrip.style.display = 'flex';
+      deltaStrip.style.gap = '4px';
+      deltaStrip.style.alignItems = 'flex-end';
+      var html = '<div style="font-size:7px;color:#64748b;align-self:center;writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.1em;text-transform:uppercase;font-weight:900">B-shift</div>';
+      BANDS.forEach(function(b){
+        var oa  = hist[b].oa;
+        var oap = hist[b].oap;
+        var dH  = oap - oa;
+        var hOa  = oa  > 0 ? Math.max(2, Math.round(34 * oa  / maxH)) : 1;
+        var hOap = oap > 0 ? Math.max(2, Math.round(34 * oap / maxH)) : 1;
+        var col = COLOR[b];
+        var dCol = dH > 0 ? '#a3e635' : (dH < 0 ? '#fb7185' : '#64748b');
+        var dSign = dH > 0 ? '+' : '';
+        var ttl = b + ': OA ' + oa + 'h \u2192 OA\u2032 ' + oap + 'h  (\u0394 ' + dSign + dH + 'h)';
+        html += '<div title="'+ttl+'" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:34px">'+
+          '<div style="display:flex;gap:1px;align-items:flex-end;height:36px">'+
+            '<div style="width:6px;height:'+hOa +'px;background:'+col+';opacity:.35;border-radius:1px 0 0 0"></div>'+
+            '<div style="width:8px;height:'+hOap+'px;background:'+col+';opacity:.95;border-radius:0 1px 0 0"></div>'+
+          '</div>'+
+          '<div style="font-size:7px;font-weight:900;color:'+col+';letter-spacing:.02em">'+b+'</div>'+
+          '<div style="font-size:7px;color:'+dCol+';font-weight:900;line-height:1">'+dSign+dH+'</div>'+
+        '</div>';
+      });
+      /* Show '?' bucket if any hours fell out of all bands. */
+      if (hist['?'].oa || hist['?'].oap) {
+        html += '<div title="Hours not classified by any band (rare edges)" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:30px">'+
+          '<div style="display:flex;gap:1px;align-items:flex-end;height:36px">'+
+            '<div style="width:6px;height:'+(hist['?'].oa  > 0 ? Math.max(2, Math.round(34*hist['?'].oa /maxH)) : 1)+'px;background:#475569;opacity:.35"></div>'+
+            '<div style="width:8px;height:'+(hist['?'].oap > 0 ? Math.max(2, Math.round(34*hist['?'].oap/maxH)) : 1)+'px;background:#475569;opacity:.95"></div>'+
+          '</div>'+
+          '<div style="font-size:7px;font-weight:900;color:#64748b">?</div>'+
+          '<div style="font-size:7px;color:#64748b;line-height:1">'+(hist['?'].oap-hist['?'].oa)+'</div>'+
+        '</div>';
+      }
+      deltaStrip.innerHTML = html;
+    }
+    _refreshBandDelta();
+    if (overlayEl) overlayEl.appendChild(deltaStrip);
+    /* Refresh on weather load (more hours = new histogram). */
+    window.addEventListener('red5-weather-loaded', _refreshBandDelta);
 
     /* B1-B10 strategy toggle — only meaningful in T×Time mode.  Hidden when
        in W×Time / X-Y Detail / 3D.  Drives whether the green B1-B10 cumulative

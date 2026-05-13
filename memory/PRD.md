@@ -3,6 +3,34 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Per-Band Hour-Count Delta Strip (2026-02-13)
+**Brief**: New `#p3-band-delta` strip in the top-right of the 2D overlay shows how many annual hours move INTO or OUT OF each B1-B10 band when the ERV wheel is on. Hard scheduling number that complements the visual "cloud collapse" the OA/OA' toggle produces.
+
+### Implementation (`js/psy-3d-engine.js`)
+- New `_bandLabelOf(t, rh)` module-scope mirror of the render-local `bandLabel()` so we can compute the histogram outside any render path.
+- New `_bandHourDelta()` walks `weatherData` once and returns `{Bn: {oa, oap}, _total}` per band. Uses Designer-Mode `_designerRA_T/RH/Eps` as the single source of truth for OA'.
+- New `#p3-band-delta` floating element top-right of 2D overlay. For each of 10 bands renders a stacked 2-column mini-bar (OA in 35% opacity, OA' in 95%) + band id label + signed Δ count (lime if gained, rose if lost, slate if zero). Native `title=` per cell shows `B5: OA 43h → OA' 1206h (Δ +1163h)`.
+- Re-renders via 4 event paths so it always stays in sync:
+  1. `red5-erv-rollout-update` window event (ERV chip + Designer Mode edits)
+  2. `red5-weather-loaded` window event (new weather year)
+  3. Band-source chip click (immediate refresh)
+  4. Initial paint at engine init
+
+### Verified live story (Seoul 2920 hr)
+- B1–B4 (cold): `−49h, −171h, −6h, −20h` — wheel pre-heats cold hours out of these bands.
+- **B5 (Comfort): +1163h** — wheel "creates" a year-round B5 climate.
+- B6: +105h.
+- B7 (warm-hum), B9 (hot-dry): `−140h, −4h` — wheel pre-cools hot hours out of these bands.
+- Operator takeaway: tune PI loops for B5 since it now dominates the operating profile.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. `red5_bundle.zip` rebuilt; `js/psy-3d-engine.js` (354,413 B) hot-deployed; live MD5 `388439a1d0879d49a40459b30c22843e` matches source.
+- Playwright at 1920×900 verified: strip auto-shows on ERV-on (11 cells: 10 bands + `?`), auto-hides on ERV-off; all 10 band counts + signed Δ values render correctly; Seoul climate produced expected pattern (cold + hot bands lose hours, B5 gains).
+
+### Files changed
+- `js/psy-3d-engine.js` — ~70 lines: `_bandLabelOf` + `_bandHourDelta` helpers + `#p3-band-delta` element + `_refreshBandDelta()` + 4 event hookups.
+
+
 ## V1.9 ERV-Aware B1-B10 Band Source Toggle (2026-02-13)
 **Brief**: When the ERV wheel is on, the B1-B10 control strategy can now bucket each hour either by **raw OA** (default — same as a vanilla controller that senses ambient before the wheel) OR by **OA' / post-wheel state** (a wheel-aware controller that intentionally picks less-aggressive SA targets the wheel has made possible). New `Band src:` chip in the 2D overlay toggles between the two views.
 

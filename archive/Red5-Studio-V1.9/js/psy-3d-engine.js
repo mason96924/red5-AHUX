@@ -196,6 +196,118 @@ global.initPsy3D = function(container, opts){
     out._total = total;
     return out;
   }
+
+  /* HISTORICAL COMPARISON (year-over-year climate drift).
+     _bandHistoryMode: 'off' | '1y' | '5y'  -- cycle via the strip button.
+     _bandHistoryHist: cached {Bn:{oa,oap}} averaged across the historical
+                       window(s), or null if not loaded / loading.
+     _bandHistoryKey:  memo key combining location + date span + mode so
+                       we don't re-fetch when the user toggles back and
+                       forth.  Also persisted to localStorage so the
+                       comparison survives a page reload. */
+  var _bandHistoryMode = 'off';
+  var _bandHistoryHist = null;
+  var _bandHistoryKey  = null;
+  var _bandHistoryLoading = false;
+  try {
+    var _hm = localStorage.getItem('red5BandHistoryMode');
+    if (_hm === '1y' || _hm === '5y' || _hm === 'off') _bandHistoryMode = _hm;
+  } catch(_) {}
+
+  /* Compute histogram from a raw weather-data array (same point shape
+     as weatherData: {t, rh, w}).  Same RA + eps as the live histogram. */
+  function _histogramFromPts(pts){
+    var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
+    var out = {}; ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','?'].forEach(function(b){ out[b]={oa:0,oap:0}; });
+    pts.forEach(function(p){
+      out[_bandLabelOf(p.t, p.rh)].oa++;
+      var T = p.t + eps * (raT - p.t);
+      var W = p.w + eps * (raW - p.w);
+      var ps = psat(T);
+      var pw = W * 101.325 / (0.621945 + W);
+      var RH = Math.max(0, Math.min(100, (pw / ps) * 100));
+      out[_bandLabelOf(T, RH)].oap++;
+    });
+    return out;
+  }
+
+  /* Shift an ISO 'YYYY-MM-DD' date back N years, preserving M-D.  Handles
+     Feb 29 by clamping to Feb 28 in non-leap years. */
+  function _shiftYearISO(iso, yearsBack){
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var y = d.getUTCFullYear() - yearsBack;
+    var m = d.getUTCMonth();
+    var dd = d.getUTCDate();
+    if (m === 1 && dd === 29) {
+      var ly = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+      if (!ly) dd = 28;
+    }
+    return y + '-' + String(m+1).padStart(2,'0') + '-' + String(dd).padStart(2,'0');
+  }
+
+  function _loadBandHistory(mode, cb){
+    /* Fetches archive-api hourly data for the same M-D range as the
+       currently loaded weatherData, but yearsBack=1 (mode '1y') or
+       averaged across yearsBack=1..5 (mode '5y').  cb() is invoked
+       after _bandHistoryHist is populated (or set to null on error). */
+    if (mode === 'off' || !weatherData.length) {
+      _bandHistoryHist = null;
+      _bandHistoryKey  = null;
+      return cb && cb();
+    }
+    var lat = parseFloat($('#p3-lat').value);
+    var lon = parseFloat($('#p3-lon').value);
+    var fromD = $('#p3-from').value, toD = $('#p3-to').value;
+    if (isNaN(lat) || isNaN(lon) || !fromD || !toD) return cb && cb();
+    var key = lat.toFixed(3) + ',' + lon.toFixed(3) + ',' + fromD + '..' + toD + ',' + mode;
+    if (_bandHistoryKey === key && _bandHistoryHist) return cb && cb();  /* memo hit */
+    if (_bandHistoryLoading) return;
+    _bandHistoryLoading = true;
+    _refreshBandDelta();  /* show "loading..." state */
+    var years = (mode === '5y') ? [1,2,3,4,5] : [1];
+    Promise.all(years.map(function(yb){
+      var f = _shiftYearISO(fromD, yb);
+      var t = _shiftYearISO(toD,   yb);
+      return fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+
+                   '&start_date='+f+'&end_date='+t+'&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+        .then(function(r){return r.ok ? r.json() : Promise.reject(r.status);})
+        .then(function(j){
+          if (j.error) throw new Error(j.reason||j.error);
+          var times=j.hourly.time, temps=j.hourly.temperature_2m;
+          var rhs=j.hourly.relative_humidity_2m||j.hourly.relativehumidity_2m;
+          if (!times||!temps||!rhs) throw new Error('Missing data');
+          var pts=[];
+          for(var i=0;i<times.length;i++){
+            if (temps[i]==null || rhs[i]==null) continue;
+            pts.push({t:temps[i], rh:rhs[i], w:getW(temps[i],rhs[i])});
+          }
+          return _histogramFromPts(pts);
+        });
+    })).then(function(hs){
+      /* Average the per-year histograms.  Same band keys exist in each. */
+      var avg = {}; ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','?'].forEach(function(b){ avg[b]={oa:0,oap:0}; });
+      hs.forEach(function(h){ Object.keys(avg).forEach(function(b){ avg[b].oa += h[b].oa; avg[b].oap += h[b].oap; }); });
+      var n = hs.length || 1;
+      Object.keys(avg).forEach(function(b){ avg[b].oa = Math.round(avg[b].oa / n); avg[b].oap = Math.round(avg[b].oap / n); });
+      _bandHistoryHist = avg;
+      _bandHistoryKey  = key;
+      _bandHistoryLoading = false;
+      _refreshBandDelta();
+      if (cb) cb();
+    }).catch(function(){
+      _bandHistoryHist = null;
+      _bandHistoryLoading = false;
+      _refreshBandDelta();
+      if (cb) cb();
+    });
+  }
+  /* Module-scoped placeholder so _loadBandHistory (above) can call the
+     real implementation that gets assigned inside setupControls.  Using
+     a var assignment (not a function declaration) avoids hoisting
+     shadowing the inner version. */
+  var _refreshBandDelta = function(){};
   function _ervRolloutLoad(){
     try {
       var s = JSON.parse(localStorage.getItem('red5ErvRolloutState') || '{}');
@@ -2020,7 +2132,7 @@ global.initPsy3D = function(container, opts){
       'padding:6px 8px;font-family:\'Courier New\',monospace;color:#cbd5e1;'+
       'backdrop-filter:blur(14px);user-select:none';
     deltaStrip.title = 'B1-B10 hour-count: raw OA bucketing vs OA\u2032 (post-wheel) bucketing. Δ = how many hours move into/out of each band when the wheel is on.';
-    function _refreshBandDelta(){
+    _refreshBandDelta = function(){
       var on = !!_saDropERVOn;
       deltaStrip.style.display = on ? 'flex' : 'none';
       if (!on) return;
@@ -2032,10 +2144,23 @@ global.initPsy3D = function(container, opts){
       /* Find max count across both columns to scale the bar heights. */
       var maxH = 1;
       BANDS.forEach(function(b){ maxH = Math.max(maxH, hist[b].oa, hist[b].oap); });
+      /* Include history extremes in maxH so ghost outlines aren't clipped. */
+      if (_bandHistoryHist) BANDS.forEach(function(b){ maxH = Math.max(maxH, _bandHistoryHist[b].oa, _bandHistoryHist[b].oap); });
       deltaStrip.style.display = 'flex';
       deltaStrip.style.gap = '4px';
       deltaStrip.style.alignItems = 'flex-end';
-      var html = '<div style="font-size:7px;color:#64748b;align-self:center;writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.1em;text-transform:uppercase;font-weight:900">B-shift</div>';
+      /* Comparison-mode toggle button: cycles off -> 1y -> 5y -> off. */
+      var histLabel = (_bandHistoryMode === 'off')
+        ? 'vs prior'
+        : (_bandHistoryMode === '1y' ? 'vs 1y' : 'vs 5y\u2009avg');
+      var histBorder = (_bandHistoryMode === 'off') ? '#475569' : '#a855f7';
+      var histColor  = (_bandHistoryMode === 'off') ? '#94a3b8' : '#c084fc';
+      if (_bandHistoryLoading) { histLabel = 'loading\u2026'; histColor = '#fbbf24'; histBorder = '#fbbf24'; }
+      var html =
+        '<div style="display:flex;flex-direction:column;align-items:stretch;gap:3px;align-self:stretch;justify-content:space-between">'+
+          '<div style="font-size:7px;color:#64748b;letter-spacing:.1em;text-transform:uppercase;font-weight:900;text-align:center">B-shift</div>'+
+          '<button data-erv-btn="band-history" title="Cycle: off \u2192 vs prior year \u2192 vs 5-year average. Compares this year\u2019s wheel impact to historical climate." style="background:transparent;border:1px solid '+histBorder+';color:'+histColor+';padding:1px 4px;font:inherit;font-size:7px;font-weight:900;cursor:pointer;border-radius:2px;letter-spacing:.03em">'+histLabel+'</button>'+
+        '</div>';
       BANDS.forEach(function(b){
         var oa  = hist[b].oa;
         var oap = hist[b].oap;
@@ -2046,8 +2171,26 @@ global.initPsy3D = function(container, opts){
         var dCol = dH > 0 ? '#a3e635' : (dH < 0 ? '#fb7185' : '#64748b');
         var dSign = dH > 0 ? '+' : '';
         var ttl = b + ': OA ' + oa + 'h \u2192 OA\u2032 ' + oap + 'h  (\u0394 ' + dSign + dH + 'h)';
+        /* If history loaded, overlay ghost outline bars showing the
+           historical OA count.  Single thin purple-bordered outline
+           anchored at the same baseline so the operator sees how many
+           hours used to fall in this band historically vs this year. */
+        var ghost = '';
+        if (_bandHistoryHist && _bandHistoryMode !== 'off') {
+          var hh = _bandHistoryHist[b];
+          var ghOa  = hh.oa  > 0 ? Math.max(2, Math.round(34 * hh.oa  / maxH)) : 1;
+          var ghOap = hh.oap > 0 ? Math.max(2, Math.round(34 * hh.oap / maxH)) : 1;
+          ghost = '<div style="position:absolute;left:0;bottom:0;display:flex;gap:1px;align-items:flex-end;height:36px;pointer-events:none">'+
+            '<div style="width:6px;height:'+ghOa +'px;border:1px dashed #a855f7;border-bottom:none;box-sizing:border-box;opacity:.85"></div>'+
+            '<div style="width:8px;height:'+ghOap+'px;border:1px dashed #a855f7;border-bottom:none;box-sizing:border-box;opacity:.85"></div>'+
+          '</div>';
+          var driftOa = hh.oa  - oa;
+          var driftSign = driftOa > 0 ? '+' : '';
+          ttl += '  | historical OA '+hh.oa+'h (drift '+driftSign+driftOa+'h)';
+        }
         html += '<div title="'+ttl+'" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:34px">'+
-          '<div style="display:flex;gap:1px;align-items:flex-end;height:36px">'+
+          '<div style="position:relative;display:flex;gap:1px;align-items:flex-end;height:36px">'+
+            ghost+
             '<div style="width:6px;height:'+hOa +'px;background:'+col+';opacity:.35;border-radius:1px 0 0 0"></div>'+
             '<div style="width:8px;height:'+hOap+'px;background:'+col+';opacity:.95;border-radius:0 1px 0 0"></div>'+
           '</div>'+
@@ -2067,6 +2210,21 @@ global.initPsy3D = function(container, opts){
         '</div>';
       }
       deltaStrip.innerHTML = html;
+      /* Wire the history toggle button. */
+      var hBtn = deltaStrip.querySelector('[data-erv-btn=band-history]');
+      if (hBtn) hBtn.addEventListener('click', function(){
+        var order = ['off','1y','5y'];
+        _bandHistoryMode = order[(order.indexOf(_bandHistoryMode)+1) % order.length];
+        try { localStorage.setItem('red5BandHistoryMode', _bandHistoryMode); } catch(_) {}
+        _loadBandHistory(_bandHistoryMode, function(){ _refreshBandDelta(); });
+      });
+    };
+    /* If a non-default history mode was persisted, kick off the fetch
+       on init so the ghost bars appear after first weather load. */
+    if (_bandHistoryMode !== 'off') {
+      window.addEventListener('red5-weather-loaded', function(){
+        _loadBandHistory(_bandHistoryMode, function(){ _refreshBandDelta(); });
+      });
     }
     _refreshBandDelta();
     if (overlayEl) overlayEl.appendChild(deltaStrip);

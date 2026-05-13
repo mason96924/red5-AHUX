@@ -3,6 +3,30 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Year-over-Year Climate Drift Comparison (2026-02-13)
+**Brief**: New 3-state toggle button on the band-shift strip cycles `off → vs 1y → vs 5y avg → off`. When enabled, fetches historical Open-Meteo archive data for the same M-D window and overlays the historical band distribution as dashed purple ghost-outline bars on each cell. Lets owners see whether the building's climate exposure is drifting warmer/wetter over time × the wheel's impact.
+
+### Implementation (`js/psy-3d-engine.js`)
+- 4 new module-scope state vars: `_bandHistoryMode` (`'off'|'1y'|'5y'`, persisted), `_bandHistoryHist` (cached averaged histogram), `_bandHistoryKey` (memo key = lat,lon,fromD,toD,mode), `_bandHistoryLoading` (bool).
+- `_histogramFromPts(pts)` returns `{Bn:{oa,oap}}` from a raw weather array using current Designer-Mode RA/eps (same single source of truth as the live histogram).
+- `_shiftYearISO(iso, yearsBack)` clamps Feb-29 → Feb-28 in non-leap target years.
+- `_loadBandHistory(mode, cb)` does `Promise.all` over 1 or 5 archive-API fetches, averages the resulting histograms, stores in `_bandHistoryHist`, memo-keyed so flip-flop toggling is free.
+- Module-scoped `_refreshBandDelta` placeholder (not function declaration to avoid hoisting shadowing) — assigned inside `setupControls` to the real implementation.
+- Strip now starts with a stacked cell (`B-shift` label + cycle button) before the 10 band cells. Button color: slate when off, purple `#a855f7` when 1y/5y, amber while loading.
+- Each band cell gains a `position:relative` wrapper so the ghost outlines (`border:1px dashed #a855f7`) absolute-position behind the solid bars.
+- `maxH` scaling now includes historical extremes so ghost outlines never clip the cell height.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. Bundle rebuilt; `js/psy-3d-engine.js` (362,955 B) hot-deployed; live MD5 `87af51d6ef90359ad6b71d4d18241bb9` matches source.
+- Playwright at 1920×900 verified all 3 states:
+  - Click 1 → fetches 2024 archive, button text `vs 1y`, persisted as `1y`, 21 dashed ghost outlines rendered (10 bands × 2 bars + the `?` cell).
+  - Click 2 → fetches 5 prior years and averages, button text `vs 5y\u2009avg`, persisted as `5y`.
+  - Click 3 → ghosts cleared, button text `vs prior`, persisted as `off`.
+
+### Files changed
+- `js/psy-3d-engine.js` — ~120 lines: history state + 3 helpers + cycle button + ghost-outline rendering + on-init weather-load hook for persisted mode.
+
+
 ## V1.9 Per-Band Hour-Count Delta Strip (2026-02-13)
 **Brief**: New `#p3-band-delta` strip in the top-right of the 2D overlay shows how many annual hours move INTO or OUT OF each B1-B10 band when the ERV wheel is on. Hard scheduling number that complements the visual "cloud collapse" the OA/OA' toggle produces.
 

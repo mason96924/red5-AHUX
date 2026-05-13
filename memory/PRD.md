@@ -1,9 +1,35 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
 ## Documentation Index
-- **`psychrometric_design_workflow.md`** / **`psychrometric_design_workflow.ko.md`** — Designer Mode workflow + ERV math walkthrough. **In-app**: amber `?` button next to `+ Designer Mode` (X-Y Detail).
-- **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — "Losing hours" semantics + capex/opex narrative for owner walkthroughs. **In-app**: cyan `?` button at top-right of 2D X-Y overlay (above B-shift strip).
-Both popups: draggable, EN/한국어 toggle in header, position+language persisted to localStorage.
+- **`psychrometric_design_workflow.md`** / **`psychrometric_design_workflow.ko.md`** — Designer Mode workflow + ERV math walkthrough.
+- **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — "Losing hours" semantics + capex/opex narrative.
+- **In-app access**: `📚 Docs` button in dashboard sidebar header opens a tabbed popup with all docs. Also accessible as per-context `?` buttons (cyan next to B-shift strip, amber next to + Designer Mode).
+
+## V1.9 Docs Index Popup — One-Stop Help (2026-02-13)
+**Brief**: New `📚 Docs` button in the dashboard's sidebar header opens a tabbed popup containing every insight doc. Discoverable from any tab (PSYCH/DIAG/DYNAM/3D WX), not just from inside the 3D engine. The previous per-context `?` buttons (band-shift, design-workflow) remain in place for direct deep-linking; the index gives operators a single entry point if they don't know which `?` to click.
+
+### Implementation
+- **New file**: `js/docs_index.js` (13.2 KB) — fully self-contained module. Loaded via `<script>` in `dashboard.html` (also loadable from any other page that needs it). Exposes:
+  - `window.red5DocsIndex.open()` — opens/focuses the popup
+  - `window.red5DocsIndex.close()` — hides
+  - `window.red5DocsIndex.register({id, title_en, title_ko, doc_en, doc_ko, color})` — register a third doc dynamically
+- **Default registry** ships with 2 docs (band-shift + psych-design). Easy to extend without touching the module — call `register()` from any consumer.
+- **Architecture**:
+  - Tabbed popup mounted to `document.body` so it survives React tab changes in the parent app.
+  - Per-tab + per-language fetch cache `{docId: {en, ko}}` — no refetch on tab switch.
+  - Inline minimal markdown renderer (60 lines, no external deps). Same subset as the per-context popup.
+  - Drag handle on header, ✕ close, EN/한국어 toggle next to title.
+  - State persisted to `localStorage.red5DocsIndexState` (`{pos, activeId, lang}`). Auto-inherits app language on first open.
+- **Dashboard integration**: `dashboard.html` gains `<script src="js/docs_index.js">` + a `📚 Docs` button next to the LangSelector in the sidebar header. Click handler: `window.red5DocsIndex.open()`. `data-testid="docs-index-btn"` for E2E.
+
+### Verification (live on `219.79.12.63:5001`)
+- `js/docs_index.js` (13,151 B) + `dashboard.html` (381,538 B) hot-deployed. `red5_bundle.zip` rebuilt.
+- Playwright at 1920×900 verified end-to-end: button visible in sidebar at `(69, 74)`, `window.red5DocsIndex` global registered, popup centers at `(640, 280, 640×520)` with both tabs labeled correctly, tab switch persists `activeId=psych-design`, language toggle persists `lang=ko`, title localizes (`📚 Docs Index` → `📚 문서 색인`), Korean body regex `기계설비/코일/습공기` matches.
+
+### Files changed
+- `js/docs_index.js` — new (304 lines, 13.2 KB).
+- `dashboard.html` — 2 line additions: `<script src="js/docs_index.js">` + `📚 Docs` button JSX in header.
+
 
 ## V1.9 Generic Insight Popup Factory + Psych Workflow EN/KO (2026-02-13)
 **Brief**: Refactored the band-shift popup logic into a generic `_createInsightPopup(opts)` factory and used it to add a second `?` button next to `+ Designer Mode`. The full psychrometric-design workflow doc is now one click away from the Designer Mode panel, in either English or Korean.

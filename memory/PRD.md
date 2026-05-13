@@ -1,8 +1,33 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
 ## Documentation Index
-- **`psychrometric_design_workflow.md`** — Designer Mode workflow + ERV math walkthrough
-- **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — Explains the "losing hours" semantics on the B-shift strip + capex/opex narrative for owner walkthroughs (English & 한국어). **Accessible in-app**: click the cyan `?` button at the top-right of the 2D X-Y overlay → draggable popup with EN/한국어 toggle in the header.
+- **`psychrometric_design_workflow.md`** / **`psychrometric_design_workflow.ko.md`** — Designer Mode workflow + ERV math walkthrough. **In-app**: amber `?` button next to `+ Designer Mode` (X-Y Detail).
+- **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — "Losing hours" semantics + capex/opex narrative for owner walkthroughs. **In-app**: cyan `?` button at top-right of 2D X-Y overlay (above B-shift strip).
+Both popups: draggable, EN/한국어 toggle in header, position+language persisted to localStorage.
+
+## V1.9 Generic Insight Popup Factory + Psych Workflow EN/KO (2026-02-13)
+**Brief**: Refactored the band-shift popup logic into a generic `_createInsightPopup(opts)` factory and used it to add a second `?` button next to `+ Designer Mode`. The full psychrometric-design workflow doc is now one click away from the Designer Mode panel, in either English or Korean.
+
+### Implementation
+- **New file**: `psychrometric_design_workflow.ko.md` (12.6 KB, 189 lines) — full Korean translation of the design workflow, including the 7 sizing-formula sections, Red5 ↔ designer mapping table, the 4-phase usage guide, and the V1.9 Designer Mode shipped-implementation table.
+- **Refactor**: extracted 150 lines of popup logic into `_createInsightPopup(opts)`. Accepts `{btnId, btnTitle, btnStyle, popupId, docEN, docKO, titleEN, titleKO, storageKey, storageLang, anchorEl}` and returns `{button, popup, show}`. State (`_pos`, `_loaded`, `_lang`, `_closed`) is closure-scoped per instance so two popups never share state.
+- **Two instances now wired**:
+  1. `p3-band-help` — cyan, top-right of overlay, band-shift insight doc (no behavior change vs prior).
+  2. `p3-design-help` — amber, next to `+ Designer Mode` button (`top:46 left:435`), design-workflow doc.
+- **Visibility lockstep**: tiny 250 ms interval watcher mirrors `#p3-btn-designer.style.display` onto `#p3-design-help.style.display` so the `?` button is paired with the Designer Mode button (hidden in T-Time/W-Time/Monthly-Sites chart modes, visible in psy mode). Interval cleaned up via `_cleanupTasks.push(clearInterval)`.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. `js/psy-3d-engine.js` (378,128 B) hot-deployed; `/assets/psychrometric_design_workflow.ko.md` (12,625 B) reachable.
+- Playwright at 1920×900 verified end-to-end:
+  - Both `?` buttons visible in X-Y mode (band-help cyan circle, design-help amber circle).
+  - Click design-help → popup opens with title `Psych Design Workflow`, body 9,606 chars, regex match `Mechanical Equipment | Coil tons | Apparatus` → true.
+  - Click 한국어 → title flips to `습공기선도 설계 워크플로`, body regex match `기계설비 | 코일 | 습공기 | ASHRAE` → true, `localStorage.red5DesignInsightLang=ko`.
+  - Independent storage keys: band-help language and design-help language can differ.
+
+### Files changed
+- `psychrometric_design_workflow.ko.md` — new (189 lines, 12.6 KB).
+- `js/psy-3d-engine.js` — refactored ~150 lines into factory; added 2 factory invocations + visibility-pair interval.
+
 
 ## V1.9 한국어 Translation + In-Popup Lang Toggle (2026-02-13)
 **Brief**: Korean version of the band-shift insight doc + a two-half pill toggle in the popup header to switch between EN and 한국어 without leaving the app. Korean operators can now read the capex/opex narrative in their native language during owner walkthroughs.

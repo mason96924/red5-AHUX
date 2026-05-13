@@ -2236,40 +2236,188 @@ global.initPsy3D = function(container, opts){
        overlay with the full erv_band_shift_insight.md walkthrough so the
        explanation is one click away during owner walkthroughs instead
        of buried in the archive folder.  Position + closed state
-       persisted under red5BandInsightState. */
-    var _insightPos = null, _insightClosed = true;
-    try {
-      var _is = JSON.parse(localStorage.getItem('red5BandInsightState') || '{}');
-      if (_is && _is.pos && typeof _is.pos.x === 'number') _insightPos = _is.pos;
-    } catch(_) {}
-    var insightBtn = document.createElement('button');
-    insightBtn.id = 'p3-band-help';
-    insightBtn.textContent = '?';
-    insightBtn.title = 'Open the B-shift insight walkthrough (explains what "losing hours" means).';
-    insightBtn.style.cssText =
-      'position:absolute;top:22px;right:8px;z-index:53;'+
-      'background:rgba(15,23,42,.92);border:1px solid #60a5fa;color:#60a5fa;'+
-      'width:22px;height:22px;border-radius:50%;font:900 12px Courier New;'+
-      'cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px';
-    var insightPopup = document.createElement('div');
-    insightPopup.id = 'p3-band-help-popup';
-    insightPopup.style.cssText =
-      'position:absolute;left:80px;top:60px;width:560px;height:480px;z-index:80;display:none;'+
-      'background:rgba(15,23,42,.96);border:1px solid #60a5fa;border-radius:8px;'+
-      'box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);'+
-      'font-family:\'Courier New\',monospace;color:#cbd5e1;overflow:hidden;'+
-      'flex-direction:column';
-    var _insightLoaded = {};  /* cache keyed by lang: en, ko */
-    var _insightLang   = (function(){
-      try { var l = window.getLang ? window.getLang() : 'en'; return l === 'ko' ? 'ko' : 'en'; } catch(_) { return 'en'; }
-    })();
-    /* Persist explicit user choice so it survives reloads even when the
-       global app language differs.  Falls back to current app lang on
-       first open. */
-    try {
-      var _il = localStorage.getItem('red5BandInsightLang');
-      if (_il === 'ko' || _il === 'en') _insightLang = _il;
-    } catch(_) {}
+       persisted under red5BandInsightState.
+
+       Implemented as a generic factory _createInsightPopup(opts) so the
+       same draggable + EN/한국어 toggle + markdown renderer can host
+       multiple in-app docs (band-shift insight, psych-design workflow,
+       future additions) without code duplication. */
+    function _createInsightPopup(opts){
+      /* opts: {
+           btnId, btnTitle, btnStyle, popupId,
+           docEN, docKO,
+           titleEN, titleKO,
+           storageKey  (for pos+closed),
+           storageLang (for explicit language),
+           anchorEl    (where to attach the ? button; defaults to overlayEl)
+         } */
+      var anchor = opts.anchorEl || overlayEl;
+      if (!anchor) return { button: null, popup: null, show: function(){} };
+      var _pos = null, _closed = true;
+      try {
+        var _s = JSON.parse(localStorage.getItem(opts.storageKey) || '{}');
+        if (_s && _s.pos && typeof _s.pos.x === 'number') _pos = _s.pos;
+      } catch(_) {}
+      var _loaded = {};   /* {en, ko} markdown text cache */
+      var _lang = (function(){
+        try { var l = window.getLang ? window.getLang() : 'en'; return l === 'ko' ? 'ko' : 'en'; } catch(_) { return 'en'; }
+      })();
+      try {
+        var _il = localStorage.getItem(opts.storageLang);
+        if (_il === 'ko' || _il === 'en') _lang = _il;
+      } catch(_) {}
+
+      var btn = document.createElement('button');
+      btn.id = opts.btnId;
+      btn.textContent = '?';
+      btn.title = opts.btnTitle;
+      btn.style.cssText = opts.btnStyle;
+
+      var popup = document.createElement('div');
+      popup.id = opts.popupId;
+      popup.style.cssText =
+        'position:absolute;left:80px;top:60px;width:560px;height:480px;z-index:80;display:none;'+
+        'background:rgba(15,23,42,.96);border:1px solid #60a5fa;border-radius:8px;'+
+        'box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);'+
+        'font-family:\'Courier New\',monospace;color:#cbd5e1;overflow:hidden;'+
+        'flex-direction:column';
+
+      function show(){
+        popup.style.display = 'flex';
+        if (_pos) { popup.style.left = _pos.x+'px'; popup.style.top = _pos.y+'px'; }
+        try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:false})); } catch(_) {}
+        _fetch();
+      }
+      function paint(){
+        var md = _loaded[_lang];
+        var loadingLabel = _lang === 'ko' ? '\ub85c\ub529 \uc911\u2026' : 'Loading\u2026';
+        var titleLabel   = _lang === 'ko' ? opts.titleKO : opts.titleEN;
+        var body = md ? _renderMd(md) :
+          '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
+        var langChip =
+          '<div data-lang-toggle="1" style="display:inline-flex;border:1px solid #475569;border-radius:3px;overflow:hidden;font-size:8px;font-weight:900;letter-spacing:.05em;user-select:none">'+
+            '<span data-set-lang="en" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='en'?'#60a5fa':'transparent')+';color:'+(_lang==='en'?'#0f172a':'#94a3b8')+'">EN</span>'+
+            '<span data-set-lang="ko" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='ko'?'#60a5fa':'transparent')+';color:'+(_lang==='ko'?'#0f172a':'#94a3b8')+'">\ud55c\uad6d\uc5b4</span>'+
+          '</div>';
+        popup.innerHTML =
+          '<div data-hdr="1" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<div style="color:#60a5fa;font-weight:900;font-size:10px;letter-spacing:.08em;text-transform:uppercase">'+titleLabel+'</div>'+
+              langChip+
+            '</div>'+
+            '<button data-close="1" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 6px;font:900 11px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
+          '</div>'+
+          '<div style="flex:1;overflow-y:auto;padding:8px 14px;color:#cbd5e1">'+body+'</div>';
+        var hdr = popup.querySelector('[data-hdr]');
+        if (hdr) hdr.addEventListener('mousedown', function(e){
+          if (e.target.closest('button, [data-lang-toggle], [data-set-lang]')) return;
+          e.preventDefault();
+          var startX = e.clientX, startY = e.clientY;
+          var rect = popup.getBoundingClientRect();
+          var rootRect = root.getBoundingClientRect();
+          var origX = rect.left - rootRect.left;
+          var origY = rect.top  - rootRect.top;
+          function onMove(ev){
+            var nx = Math.max(0, Math.min(rootRect.width - 80, origX + (ev.clientX - startX)));
+            var ny = Math.max(0, Math.min(rootRect.height - 40, origY + (ev.clientY - startY)));
+            _pos = {x:nx, y:ny};
+            popup.style.left = nx+'px';
+            popup.style.top  = ny+'px';
+          }
+          function onUp(){
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup',   onUp);
+            try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:false})); } catch(_) {}
+          }
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup',   onUp);
+        });
+        var closeBtn = popup.querySelector('[data-close]');
+        if (closeBtn) closeBtn.addEventListener('click', function(){
+          popup.style.display = 'none';
+          try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:true})); } catch(_) {}
+        });
+        popup.querySelectorAll('[data-set-lang]').forEach(function(el){
+          el.addEventListener('click', function(){
+            var lang = el.getAttribute('data-set-lang');
+            if (lang === _lang) return;
+            _lang = lang;
+            try { localStorage.setItem(opts.storageLang, lang); } catch(_) {}
+            _fetch();
+          });
+        });
+      }
+      function _fetch(){
+        if (_loaded[_lang]) { paint(); return; }
+        paint(); /* loading state */
+        var url = _lang === 'ko' ? opts.docKO : opts.docEN;
+        fetch(url, {cache:'no-store'})
+          .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
+          .then(function(txt){ _loaded[_lang] = txt; paint(); })
+          .catch(function(){
+            _loaded[_lang] = '# Unable to load doc\n\nFile not found on the controller.';
+            paint();
+          });
+      }
+      btn.addEventListener('click', show);
+      window.addEventListener('langchange', function(){
+        try {
+          var newLang = window.getLang ? window.getLang() : 'en';
+          newLang = (newLang === 'ko') ? 'ko' : 'en';
+          var explicit = localStorage.getItem(opts.storageLang);
+          if (explicit) return;
+          if (newLang === _lang) return;
+          _lang = newLang;
+          if (popup.style.display !== 'none') show();
+        } catch(_) {}
+      });
+      anchor.appendChild(btn);
+      anchor.appendChild(popup);
+      return { button: btn, popup: popup, show: show };
+    }
+
+    /* Band-shift insight `?` button (top-right of overlay, near B-shift strip). */
+    _createInsightPopup({
+      btnId:       'p3-band-help',
+      btnTitle:    'Open the B-shift insight walkthrough (explains what "losing hours" means).',
+      btnStyle:    'position:absolute;top:22px;right:8px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #60a5fa;color:#60a5fa;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px',
+      popupId:     'p3-band-help-popup',
+      docEN:       '/assets/erv_band_shift_insight.md',
+      docKO:       '/assets/erv_band_shift_insight.ko.md',
+      titleEN:     'B-Shift Insight',
+      titleKO:     'B-\uc2dc\ud504\ud2b8 \ud1b5\ucc30',
+      storageKey:  'red5BandInsightState',
+      storageLang: 'red5BandInsightLang'
+    });
+    /* Psych-design-workflow `?` button (next to + Designer Mode button).
+       Same factory + same EN/한국어 toggle + markdown renderer.  Visible
+       only when the 2D chart is in 'psy' mode (driven by the Designer
+       Mode button's visibility, which we mirror in _refreshDesignerBtn
+       below; this lives on its own little watchdog below).  Anchored at
+       top:46 left:435 -- ~145px right of the Designer Mode button. */
+    var designHelp = _createInsightPopup({
+      btnId:       'p3-design-help',
+      btnTitle:    'Open the psychrometric-design workflow walkthrough.',
+      btnStyle:    'position:absolute;top:46px;left:435px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #f59e0b;color:#f59e0b;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px;display:none',
+      popupId:     'p3-design-help-popup',
+      docEN:       '/assets/psychrometric_design_workflow.md',
+      docKO:       '/assets/psychrometric_design_workflow.ko.md',
+      titleEN:     'Psych Design Workflow',
+      titleKO:     '\uc2b5\uacf5\uae30\uc120\ub3c4 \uc124\uacc4 \uc6cc\ud06c\ud50c\ub85c',
+      storageKey:  'red5DesignInsightState',
+      storageLang: 'red5DesignInsightLang'
+    });
+    /* The Designer Mode button itself is toggled by _refreshDesignerBtn
+       (set up much later, inside setupControls's Designer Mode block).
+       Mirror its visibility on a tiny interval so this `?` button stays
+       lockstep with the Designer Mode button.  Cheap (one display-string
+       read every 250ms) and keeps the two buttons visually paired. */
+    var _designHelpPair = setInterval(function(){
+      var dm = document.getElementById('p3-btn-designer');
+      if (!dm || !designHelp.button) return;
+      designHelp.button.style.display = dm.style.display === 'none' ? 'none' : 'block';
+    }, 250);
+    _cleanupTasks.push(function(){ clearInterval(_designHelpPair); });
 
     /* Minimal markdown -> HTML renderer.  Supports the subset our doc
        actually uses: H1/H2/H3, blockquote, ordered/unordered lists,
@@ -2335,110 +2483,6 @@ global.initPsy3D = function(container, opts){
       }
       return out.join('\n');
     }
-
-    function _showInsightPopup(){
-      _insightClosed = false;
-      try { localStorage.setItem('red5BandInsightState', JSON.stringify({pos:_insightPos, closed:false})); } catch(_) {}
-      insightPopup.style.display = 'flex';
-      if (_insightPos) { insightPopup.style.left = _insightPos.x+'px'; insightPopup.style.top = _insightPos.y+'px'; }
-      function _paint(){
-        var md = _insightLoaded[_insightLang];
-        var loadingLabel = _insightLang === 'ko' ? '통찰 문서 로드 중\u2026' : 'Loading insight\u2026';
-        var titleLabel   = _insightLang === 'ko' ? 'B-시프트 통찰' : 'B-Shift Insight';
-        var body = md ? _renderMd(md) :
-          '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
-        /* Language toggle: two-half pill chip in the header, beside the title.
-           Highlighted half = active language; click the other half to switch. */
-        var langChip =
-          '<div data-lang-toggle="1" style="display:inline-flex;border:1px solid #475569;border-radius:3px;overflow:hidden;font-size:8px;font-weight:900;letter-spacing:.05em;user-select:none">'+
-            '<span data-set-lang="en" style="padding:1px 6px;cursor:pointer;background:'+(_insightLang==='en'?'#60a5fa':'transparent')+';color:'+(_insightLang==='en'?'#0f172a':'#94a3b8')+'">EN</span>'+
-            '<span data-set-lang="ko" style="padding:1px 6px;cursor:pointer;background:'+(_insightLang==='ko'?'#60a5fa':'transparent')+';color:'+(_insightLang==='ko'?'#0f172a':'#94a3b8')+'">\ud55c\uad6d\uc5b4</span>'+
-          '</div>';
-        insightPopup.innerHTML =
-          '<div id="p3-bhelp-hdr" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
-            '<div style="display:flex;align-items:center;gap:10px">'+
-              '<div style="color:#60a5fa;font-weight:900;font-size:10px;letter-spacing:.08em;text-transform:uppercase">'+titleLabel+'</div>'+
-              langChip+
-            '</div>'+
-            '<button id="p3-bhelp-close" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 6px;font:900 11px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
-          '</div>'+
-          '<div id="p3-bhelp-body" style="flex:1;overflow-y:auto;padding:8px 14px;color:#cbd5e1">'+body+'</div>';
-        var hdr = insightPopup.querySelector('#p3-bhelp-hdr');
-        if (hdr) hdr.addEventListener('mousedown', function(e){
-          /* Exclude the language toggle from drag-initiation so clicks
-             on EN/한국어 are handled by their own listeners, not eaten
-             by the drag handler.  All other header clicks (title text,
-             close button) continue to drag/close as expected. */
-          if (e.target.closest('button, [data-lang-toggle], [data-set-lang]')) return;
-          e.preventDefault();
-          var startX = e.clientX, startY = e.clientY;
-          var rect = insightPopup.getBoundingClientRect();
-          var rootRect = root.getBoundingClientRect();
-          var origX = rect.left - rootRect.left;
-          var origY = rect.top  - rootRect.top;
-          function onMove(ev){
-            var nx = Math.max(0, Math.min(rootRect.width - 80, origX + (ev.clientX - startX)));
-            var ny = Math.max(0, Math.min(rootRect.height - 40, origY + (ev.clientY - startY)));
-            _insightPos = {x:nx, y:ny};
-            insightPopup.style.left = nx+'px';
-            insightPopup.style.top  = ny+'px';
-          }
-          function onUp(){
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup',   onUp);
-            try { localStorage.setItem('red5BandInsightState', JSON.stringify({pos:_insightPos, closed:false})); } catch(_) {}
-          }
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup',   onUp);
-        });
-        var closeBtn = insightPopup.querySelector('#p3-bhelp-close');
-        if (closeBtn) closeBtn.addEventListener('click', function(){
-          _insightClosed = true;
-          insightPopup.style.display = 'none';
-          try { localStorage.setItem('red5BandInsightState', JSON.stringify({pos:_insightPos, closed:true})); } catch(_) {}
-        });
-        /* Wire language toggle clicks. */
-        insightPopup.querySelectorAll('[data-set-lang]').forEach(function(el){
-          el.addEventListener('click', function(){
-            var lang = el.getAttribute('data-set-lang');
-            if (lang === _insightLang) return;
-            _insightLang = lang;
-            try { localStorage.setItem('red5BandInsightLang', lang); } catch(_) {}
-            _fetchInsight();
-          });
-        });
-      }
-      function _fetchInsight(){
-        if (_insightLoaded[_insightLang]) { _paint(); return; }
-        _paint(); /* show loading state */
-        var url = _insightLang === 'ko' ? '/assets/erv_band_shift_insight.ko.md'
-                                        : '/assets/erv_band_shift_insight.md';
-        fetch(url, {cache:'no-store'})
-          .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
-          .then(function(txt){ _insightLoaded[_insightLang] = txt; _paint(); })
-          .catch(function(){
-            _insightLoaded[_insightLang] = '# Unable to load insight doc\n\nFile not found on the controller.';
-            _paint();
-          });
-      }
-      _fetchInsight();
-    }
-    insightBtn.addEventListener('click', _showInsightPopup);
-    /* Track app-wide language changes: if the user flips the global
-       LangSelector to ko, refresh our chip+content too -- but only when
-       the popup is open, so we don't surprise-fetch in the background. */
-    window.addEventListener('langchange', function(){
-      try {
-        var newLang = window.getLang ? window.getLang() : 'en';
-        newLang = (newLang === 'ko') ? 'ko' : 'en';
-        var explicit = localStorage.getItem('red5BandInsightLang');
-        if (explicit) return;  /* user has an explicit choice; honor it */
-        if (newLang === _insightLang) return;
-        _insightLang = newLang;
-        if (insightPopup.style.display !== 'none') _showInsightPopup();
-      } catch(_) {}
-    });
-    if (overlayEl) { overlayEl.appendChild(insightBtn); overlayEl.appendChild(insightPopup); }
 
     /* B1-B10 strategy toggle — only meaningful in T×Time mode.  Hidden when
        in W×Time / X-Y Detail / 3D.  Drives whether the green B1-B10 cumulative

@@ -1240,6 +1240,42 @@ global.initPsy3D = function(container, opts){
         });
         if (saDropGroup && saDropGroup.visible) ervChip.style.display = 'inline-flex';
         tgEl.appendChild(ervChip);
+
+        /* ERV legend chip -- two-swatch readout that auto-appears whenever
+           BOTH the Drops layer is visible AND the ERV toggle is ON. Tells
+           new operators what the two colors in the cloud mean without
+           making them hunt through tooltips:
+             [cyan bar]  ERV SAVED   -- horizontal ribbons at cloud top
+             [T-spec  ]  COIL WORK   -- vertical drops to the SA floor
+           Background and border match the chips above for visual unity. */
+        var ervLegend=document.createElement('div');
+        ervLegend.id='p3-saDrop-erv-legend';
+        ervLegend.style.cssText='display:none;align-items:center;gap:6px;background:rgba(15,23,42,.92);border:1px solid #22d3ee;border-radius:4px;padding:3px 7px;font-size:7px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;user-select:none;backdrop-filter:blur(14px)';
+        ervLegend.title='Color legend: cyan = energy the ERV wheel saved per hour; temperature-spectrum drop = the remaining coil work after pre-treatment.';
+        // Temperature-spectrum gradient swatch (blue → cyan → green → yellow → red)
+        // mirrors what t2rgb() produces across the OA temperature range.
+        ervLegend.innerHTML =
+          '<span style="display:inline-block;width:14px;height:5px;background:#22d3ee;border-radius:1px"></span>'+
+          '<span style="color:#22d3ee">ERV saved</span>'+
+          '<span style="color:#475569;padding:0 2px">|</span>'+
+          '<span style="display:inline-block;width:18px;height:5px;background:linear-gradient(to right,#2563eb,#22d3ee,#84cc16,#fbbf24,#ef4444);border-radius:1px"></span>'+
+          '<span style="color:#94a3b8">coil work</span>';
+        function _refreshErvLegend(){
+          var on = !!_saDropERVOn && !!(saDropGroup && saDropGroup.visible);
+          ervLegend.style.display = on ? 'inline-flex' : 'none';
+        }
+        // Hook into existing event surfaces:
+        //   1. ERV chip click already calls _renderErvChip + _buildSaDropGeometry;
+        //      wrap its listener to also refresh us.
+        //   2. Drops layer toggle click already adjusts the chip displays;
+        //      we ride along by patching the same path.
+        // Cheapest: poll-on-event style via a microtask after each click.
+        ervChip.addEventListener('click', function(){ setTimeout(_refreshErvLegend, 0); });
+        // tgEl click bubbles up from the Drops row too; refresh after any
+        // toggle inside the panel to catch the parent-layer hide path.
+        tgEl.addEventListener('click', function(){ setTimeout(_refreshErvLegend, 0); });
+        _refreshErvLegend();
+        tgEl.appendChild(ervLegend);
       }
     });
 

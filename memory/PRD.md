@@ -3,6 +3,32 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 ERV Legend Chip — Auto-Showing Two-Swatch Readout (2026-02-13)
+**Brief**: Added a small legend swatch that auto-appears at the bottom of the layer-toggle panel **only** when both the OA→SA Drops layer is visible AND the ERV chip is ON, so new operators can read the dual-color cloud at a glance without hunting through tooltips.
+
+### What's new (`js/psy-3d-engine.js`)
+- New DOM element `#p3-saDrop-erv-legend` appended after the ERV chip inside the layer-toggle panel.
+- Two inline swatches:
+  - 14×5 px solid cyan `#22d3ee` bar + `ERV saved` label.
+  - 18×5 px CSS gradient (blue → cyan → green → yellow → red, mirroring `t2rgb()` across the OA temperature range) + `coil work` label.
+- Background, border-radius, font and `text-transform` mirror the existing T|B / ERV|· chips for visual unity.
+- Visibility refreshed via `_refreshErvLegend()`, hooked onto both the ERV-chip click and the parent toggle panel click (via micro-task `setTimeout(..., 0)` after each click). Net effect: legend display tracks `_saDropERVOn && saDropGroup.visible` across all 4 state transitions (Drops on/off × ERV on/off) — verified live.
+- Native `title` tooltip on the legend element documents the encoding (`cyan = energy the ERV wheel saved per hour; temperature-spectrum drop = the remaining coil work after pre-treatment`).
+
+### Verification
+- `node --check js/psy-3d-engine.js` → syntax clean.
+- `red5_bundle.zip` rebuilt (1743.9 KB, MD5 `91916cf41f431f847dc778cd1c1717df`), synced to `/app/frontend/public/` and `/app/frontend/public/red5-files/`.
+- `js/psy-3d-engine.js` (308,784 B) hot-deployed via `POST /api/upload-file` to live controller; live MD5 matches source byte-for-byte.
+- Playwright DOM probe at 1920×900:
+  - Drops ON, ERV OFF → legend `display: none` ✓
+  - Drops ON, ERV ON  → legend `display: inline-flex`, text `ERV saved | coil work`, rect at x=328 y=1019 w=149 h=18 ✓
+  - Drops ON, ERV toggled back OFF → legend `display: none` ✓
+  - ERV ON, Drops layer hidden → legend `display: none` ✓ (correctly hides when its parent context disappears)
+
+### Files changed
+- `js/psy-3d-engine.js` — ~40 net new lines (between the ERV chip creation and the closing `}` of the `if (t[0]==='saDrop')` branch).
+
+
 ## V1.9 Dual-Color ERV Savings Ribbon on 3D OA→SA Drops (2026-02-13)
 **Brief**: When the `ERV |·` chip on the 3D Drops layer is ON, every weather sample now renders as **two** color-coded segments instead of one, giving operators an at-a-glance heatmap of how much annual coil energy the wheel saved.
 

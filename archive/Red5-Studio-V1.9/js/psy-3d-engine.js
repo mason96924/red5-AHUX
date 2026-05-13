@@ -2231,6 +2231,160 @@ global.initPsy3D = function(container, opts){
     /* Refresh on weather load (more hours = new histogram). */
     window.addEventListener('red5-weather-loaded', _refreshBandDelta);
 
+    /* ----------------------------------------------------------------
+       B-SHIFT INSIGHT POPUP — `?` button on the strip opens a draggable
+       overlay with the full erv_band_shift_insight.md walkthrough so the
+       explanation is one click away during owner walkthroughs instead
+       of buried in the archive folder.  Position + closed state
+       persisted under red5BandInsightState. */
+    var _insightPos = null, _insightClosed = true;
+    try {
+      var _is = JSON.parse(localStorage.getItem('red5BandInsightState') || '{}');
+      if (_is && _is.pos && typeof _is.pos.x === 'number') _insightPos = _is.pos;
+    } catch(_) {}
+    var insightBtn = document.createElement('button');
+    insightBtn.id = 'p3-band-help';
+    insightBtn.textContent = '?';
+    insightBtn.title = 'Open the B-shift insight walkthrough (explains what "losing hours" means).';
+    insightBtn.style.cssText =
+      'position:absolute;top:22px;right:8px;z-index:53;'+
+      'background:rgba(15,23,42,.92);border:1px solid #60a5fa;color:#60a5fa;'+
+      'width:22px;height:22px;border-radius:50%;font:900 12px Courier New;'+
+      'cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px';
+    var insightPopup = document.createElement('div');
+    insightPopup.id = 'p3-band-help-popup';
+    insightPopup.style.cssText =
+      'position:absolute;left:80px;top:60px;width:560px;height:480px;z-index:80;display:none;'+
+      'background:rgba(15,23,42,.96);border:1px solid #60a5fa;border-radius:8px;'+
+      'box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);'+
+      'font-family:\'Courier New\',monospace;color:#cbd5e1;overflow:hidden;'+
+      'flex-direction:column';
+    var _insightLoaded = null; /* cache: fetched markdown text or null */
+
+    /* Minimal markdown -> HTML renderer.  Supports the subset our doc
+       actually uses: H1/H2/H3, blockquote, ordered/unordered lists,
+       tables, **bold**, *italic*, `code`, fenced ``` blocks.  Avoids
+       pulling in a full md library to keep the controller lean. */
+    function _renderMd(md){
+      function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+      var lines = md.split('\n');
+      var out = [];
+      var i = 0;
+      while (i < lines.length) {
+        var L = lines[i];
+        if (/^```/.test(L)) {
+          var code = [];
+          i++;
+          while (i < lines.length && !/^```/.test(lines[i])) { code.push(esc(lines[i])); i++; }
+          out.push('<pre style="background:#020617;border:1px solid #334155;border-radius:4px;padding:8px;overflow-x:auto;font-size:9px;line-height:1.5;color:#94a3b8">'+code.join('\n')+'</pre>');
+          i++; continue;
+        }
+        /* Tables: detect a header row followed by a separator like |---|---| */
+        if (/^\s*\|.*\|\s*$/.test(L) && i+1<lines.length && /^\s*\|[\s\-:|]+\|\s*$/.test(lines[i+1])) {
+          var rows = [L];
+          i += 2;
+          while (i<lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(lines[i]); i++; }
+          var parsed = rows.map(function(r){
+            return r.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split('|').map(function(c){return c.trim();});
+          });
+          var head = parsed.shift();
+          out.push('<table style="border-collapse:collapse;width:100%;font-size:9px;margin:6px 0"><thead><tr>'+
+            head.map(function(h){return '<th style="border:1px solid #334155;padding:4px 6px;text-align:left;background:#1e293b;color:#e2e8f0">'+_inline(h)+'</th>';}).join('')+
+            '</tr></thead><tbody>'+
+            parsed.map(function(r){return '<tr>'+r.map(function(c){return '<td style="border:1px solid #334155;padding:4px 6px">'+_inline(c)+'</td>';}).join('')+'</tr>';}).join('')+
+            '</tbody></table>');
+          continue;
+        }
+        if (/^# /.test(L))      { out.push('<h2 style="color:#60a5fa;font-size:13px;font-weight:900;margin:8px 0 4px;border-bottom:1px solid #1e293b;padding-bottom:3px">'+_inline(L.slice(2))+'</h2>'); i++; continue; }
+        if (/^## /.test(L))     { out.push('<h3 style="color:#22d3ee;font-size:11px;font-weight:900;margin:8px 0 3px;letter-spacing:.05em;text-transform:uppercase">'+_inline(L.slice(3))+'</h3>'); i++; continue; }
+        if (/^### /.test(L))    { out.push('<h4 style="color:#fbbf24;font-size:10px;font-weight:900;margin:6px 0 2px">'+_inline(L.slice(4))+'</h4>'); i++; continue; }
+        if (/^> /.test(L))      { out.push('<blockquote style="border-left:3px solid #60a5fa;padding:2px 8px;margin:4px 0;background:rgba(96,165,250,.05);color:#cbd5e1;font-style:italic;font-size:10px">'+_inline(L.slice(2))+'</blockquote>'); i++; continue; }
+        if (/^---+$/.test(L))   { out.push('<hr style="border:none;border-top:1px dashed #334155;margin:8px 0"/>'); i++; continue; }
+        if (/^\s*-\s+/.test(L)) {
+          var items = [];
+          while (i<lines.length && /^\s*-\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*-\s+/,'')); i++; }
+          out.push('<ul style="margin:4px 0 4px 14px;padding:0;font-size:10px;line-height:1.55">'+items.map(function(it){return '<li style="margin:2px 0">'+_inline(it)+'</li>';}).join('')+'</ul>');
+          continue;
+        }
+        if (/^\s*\d+\.\s+/.test(L)) {
+          var items2 = [];
+          while (i<lines.length && /^\s*\d+\.\s+/.test(lines[i])) { items2.push(lines[i].replace(/^\s*\d+\.\s+/,'')); i++; }
+          out.push('<ol style="margin:4px 0 4px 16px;padding:0;font-size:10px;line-height:1.55">'+items2.map(function(it){return '<li style="margin:2px 0">'+_inline(it)+'</li>';}).join('')+'</ol>');
+          continue;
+        }
+        if (/^\s*$/.test(L)) { out.push(''); i++; continue; }
+        out.push('<p style="margin:3px 0;font-size:10px;line-height:1.55">'+_inline(L)+'</p>');
+        i++;
+      }
+      function _inline(s){
+        s = esc(s);
+        s = s.replace(/`([^`]+)`/g, '<code style="background:#020617;border:1px solid #334155;border-radius:2px;padding:0 3px;font-size:9px;color:#fbbf24">$1</code>');
+        s = s.replace(/\*\*([^*]+)\*\*/g, '<b style="color:#e2e8f0">$1</b>');
+        s = s.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+        return s;
+      }
+      return out.join('\n');
+    }
+
+    function _showInsightPopup(){
+      _insightClosed = false;
+      try { localStorage.setItem('red5BandInsightState', JSON.stringify({pos:_insightPos, closed:false})); } catch(_) {}
+      insightPopup.style.display = 'flex';
+      if (_insightPos) { insightPopup.style.left = _insightPos.x+'px'; insightPopup.style.top = _insightPos.y+'px'; }
+      function _paint(){
+        var body = _insightLoaded ? _renderMd(_insightLoaded) :
+          '<div style="color:#94a3b8;padding:14px;font-size:10px">Loading insight\u2026</div>';
+        insightPopup.innerHTML =
+          '<div id="p3-bhelp-hdr" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
+            '<div style="color:#60a5fa;font-weight:900;font-size:10px;letter-spacing:.08em;text-transform:uppercase">B-Shift Insight</div>'+
+            '<button id="p3-bhelp-close" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 6px;font:900 11px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
+          '</div>'+
+          '<div id="p3-bhelp-body" style="flex:1;overflow-y:auto;padding:8px 14px;color:#cbd5e1">'+body+'</div>';
+        var hdr = insightPopup.querySelector('#p3-bhelp-hdr');
+        if (hdr) hdr.addEventListener('mousedown', function(e){
+          if (e.target.closest('button')) return;
+          e.preventDefault();
+          var startX = e.clientX, startY = e.clientY;
+          var rect = insightPopup.getBoundingClientRect();
+          var rootRect = root.getBoundingClientRect();
+          var origX = rect.left - rootRect.left;
+          var origY = rect.top  - rootRect.top;
+          function onMove(ev){
+            var nx = Math.max(0, Math.min(rootRect.width - 80, origX + (ev.clientX - startX)));
+            var ny = Math.max(0, Math.min(rootRect.height - 40, origY + (ev.clientY - startY)));
+            _insightPos = {x:nx, y:ny};
+            insightPopup.style.left = nx+'px';
+            insightPopup.style.top  = ny+'px';
+          }
+          function onUp(){
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup',   onUp);
+            try { localStorage.setItem('red5BandInsightState', JSON.stringify({pos:_insightPos, closed:false})); } catch(_) {}
+          }
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup',   onUp);
+        });
+        var closeBtn = insightPopup.querySelector('#p3-bhelp-close');
+        if (closeBtn) closeBtn.addEventListener('click', function(){
+          _insightClosed = true;
+          insightPopup.style.display = 'none';
+          try { localStorage.setItem('red5BandInsightState', JSON.stringify({pos:_insightPos, closed:true})); } catch(_) {}
+        });
+      }
+      _paint();
+      if (!_insightLoaded) {
+        fetch('/assets/erv_band_shift_insight.md', {cache:'no-store'})
+          .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
+          .then(function(txt){ _insightLoaded = txt; _paint(); })
+          .catch(function(){
+            _insightLoaded = '# Unable to load insight doc\n\nFile `erv_band_shift_insight.md` was not found on the controller.';
+            _paint();
+          });
+      }
+    }
+    insightBtn.addEventListener('click', _showInsightPopup);
+    if (overlayEl) { overlayEl.appendChild(insightBtn); overlayEl.appendChild(insightPopup); }
+
     /* B1-B10 strategy toggle — only meaningful in T×Time mode.  Hidden when
        in W×Time / X-Y Detail / 3D.  Drives whether the green B1-B10 cumulative
        curve, its transition markers, the endpoint label, and the band-ramp

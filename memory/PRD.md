@@ -2,7 +2,26 @@
 
 ## Documentation Index
 - **`psychrometric_design_workflow.md`** — Designer Mode workflow + ERV math walkthrough
-- **`erv_band_shift_insight.md`** — Explains the "losing hours" semantics on the B-shift strip + capex/opex narrative for owner walkthroughs (`why -49h on B1 is not a loss but an escape route to B5`)
+- **`erv_band_shift_insight.md`** — Explains the "losing hours" semantics on the B-shift strip + capex/opex narrative for owner walkthroughs (`why -49h on B1 is not a loss but an escape route to B5`). **Accessible in-app**: click the cyan `?` button at the top-right of the 2D X-Y overlay (above the B-shift strip) to open the walkthrough in a draggable popup.
+
+## V1.9 In-App B-Shift Insight Popup (2026-02-13)
+**Brief**: New `?` button next to the B-shift strip opens a 560×480 draggable popup that fetches `erv_band_shift_insight.md` and renders it inline with a tiny markdown→HTML renderer. Operators no longer need filesystem access to read the walkthrough during owner meetings.
+
+### Implementation (`js/psy-3d-engine.js`)
+- New `#p3-band-help` cyan circular button (22 px) at `top:22px right:8px` of the 2D overlay.
+- New `#p3-band-help-popup` flex-column overlay with header (`B-Shift Insight` + ✕) + scrollable markdown body.
+- **Mini markdown renderer** `_renderMd(md)` (~60 lines) supporting H1/H2/H3, blockquote, ordered/unordered lists, GFM tables, `**bold**`, `*italic*`, `` `code` ``, fenced ``` blocks, and `---` hr. No external library — keeps the controller lean.
+- **Single fetch with cache**: `/assets/erv_band_shift_insight.md` (existing whitelisted route) loaded on first open, cached in `_insightLoaded` so repeat opens are instant.
+- **Drag handle**: header is `cursor:move`; full drag implementation mirroring the ERV rollout pattern (mousedown excludes buttons, position clamped to `[0, rootW-80] × [0, rootH-40]`).
+- **Persistence**: `localStorage.red5BandInsightState = {pos, closed}` so popup position survives page-reloads. `closed` is persisted but not auto-shown — operator must click `?` to open each session.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. Bundle rebuilt; `js/psy-3d-engine.js` (373,052 B) hot-deployed, live MD5 `d2916984b5edad3c2254df91ebf4b454` matches.
+- Playwright at 1920×900 verified all 5 transitions: `?` button visible at `(1890, 22)`, popup hidden initially → click ? opens at `(400, 60)` with rendered table + blockquote + inline code → drag header moved to `(600, 160)`, persisted `pos={x:280,y:160}` → ✕ hides + persists `closed:true` → re-click `?` restores position to `(280px, 160px)`.
+
+### Files changed
+- `js/psy-3d-engine.js` — ~140 lines: state + button + popup + `_renderMd` + drag handler + close handler.
+
 
 ## Active Backlog (priority-ordered)
 - **P3** — Controller Redundancy Architecture (deferred to separate project)

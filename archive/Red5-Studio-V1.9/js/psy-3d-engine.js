@@ -2539,8 +2539,22 @@ global.initPsy3D = function(container, opts){
       // SA dot on floor (full color).
       saV.push(saX, 0.3, saZ);
       saC.push(c[0], c[1], c[2]);
-      // Drop line: top vertex = full color; bottom vertex = 35% color so
-      // the line visually fades as it descends to the floor.
+      /* ERV "savings ribbon" -- a cyan segment from the RAW OA point
+         (where the air would have been with no wheel) to OA' (where the
+         wheel ACTUALLY delivered it).  Drawn at the same time-Y so it
+         shows up as a near-horizontal cyan trail at the cloud's top.
+         Communicates per-hour wheel work alongside the per-hour coil
+         work (the existing OA'->SA drop below).  Colour faded at the
+         "raw OA" end (low opacity) and brightens toward OA' so the
+         direction of energy recovery is unambiguous. */
+      if (ervOn) {
+        var rawOaX = t2sx(p.t), rawOaZ = w2sz(p.w);
+        // Cyan #22d3ee = rgb(34, 211, 238) -> /255 = (.133, .827, .933)
+        dV.push(rawOaX, oaY, rawOaZ,  oaX, oaY, oaZ);
+        dC.push(.07, .42, .47,        .13, .83, .93);
+      }
+      // Coil drop line: top vertex (OA or OA') = full color; bottom vertex
+      // (SA on floor) = 35% color so the line fades as it descends.
       dV.push(oaX, oaY, oaZ,  saX, 0, saZ);
       dC.push(c[0], c[1], c[2],  c[0]*0.35, c[1]*0.35, c[2]*0.35);
     });

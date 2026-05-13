@@ -2131,7 +2131,7 @@ global.initPsy3D = function(container, opts){
       'background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:6px;'+
       'padding:6px 8px;font-family:\'Courier New\',monospace;color:#cbd5e1;'+
       'backdrop-filter:blur(14px);user-select:none';
-    deltaStrip.title = 'B1-B10 hour-count: raw OA bucketing vs OA\u2032 (post-wheel) bucketing. Δ = how many hours move into/out of each band when the wheel is on.';
+    deltaStrip.title = 'B1-B10 hour-count: raw OA bucketing vs OA\u2032 (post-wheel) bucketing.\n\u0394 = how many hours move into/out of each band when the wheel is on.\n\nNote: negative \u0394 is not a loss -- hours are re-routed, not subtracted.\nB1-B4 losses = winter hours pre-heated into B5 (right-size your boiler).\nB7-B10 losses = summer hours pre-cooled into B5 (right-size your chiller).\nB5 gain = your building now operates in "comfort" most of the year (tune PI loops for B5).\n\nSee erv_band_shift_insight.md for the full walkthrough.';
     _refreshBandDelta = function(){
       var on = !!_saDropERVOn;
       deltaStrip.style.display = on ? 'flex' : 'none';

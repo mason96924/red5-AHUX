@@ -1,5 +1,9 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Documentation Index
+- **`psychrometric_design_workflow.md`** — Designer Mode workflow + ERV math walkthrough
+- **`erv_band_shift_insight.md`** — Explains the "losing hours" semantics on the B-shift strip + capex/opex narrative for owner walkthroughs (`why -49h on B1 is not a loss but an escape route to B5`)
+
 ## Active Backlog (priority-ordered)
 - **P3** — Controller Redundancy Architecture (deferred to separate project)
 - **P3** — Phase B Sun Path (deferred until live raycasting/Three.js is in scope)

@@ -95,6 +95,152 @@ global.initPsy3D = function(container, opts){
   var _designerERVOn   = false;
   var _designerERVEps  = 0.80;    /* enthalpy effectiveness, 0..1 */
 
+  /* ----------------------------------------------------------------------
+     ERV ROLLOUT — annual rollup, monthly sparkline, ROI calculator,
+     climate-zone tariff presets, savings-threshold slider, A/B ghost
+     cloud, peak-hour annotations, CSV export.
+     All state persisted under localStorage.red5ErvRolloutState.
+     Computations are derived on-demand from the same weatherData +
+     _designerCFM + _designerRA_T/RH + _designerERVEps used by the
+     Drops cloud, so there is exactly ONE source of truth. */
+  var _ervClimateZones = [
+    /* $/kWh retail commercial tariff (rough public-data 2024-2025 averages). */
+    {id:'KR-Seoul', name:'Korea (Seoul)',     kwh:0.094, currency:'$'},
+    {id:'US-NY',    name:'US Northeast',      kwh:0.21,  currency:'$'},
+    {id:'US-CA',    name:'US California',     kwh:0.28,  currency:'$'},
+    {id:'SG',       name:'Singapore',         kwh:0.20,  currency:'$'},
+    {id:'JP-TOK',   name:'Japan (Tokyo)',     kwh:0.24,  currency:'$'},
+    {id:'EU-DE',    name:'EU (Germany)',      kwh:0.40,  currency:'$'},
+    {id:'CN-SH',    name:'China (Shanghai)',  kwh:0.092, currency:'$'},
+    {id:'AE-DXB',   name:'UAE (Dubai)',       kwh:0.083, currency:'$'},
+    {id:'AU-SYD',   name:'Australia (SYD)',   kwh:0.27,  currency:'$'},
+    {id:'CUSTOM',   name:'Custom rate',       kwh:null,  currency:'$'}
+  ];
+  var _ervClimateZone     = 'KR-Seoul';
+  var _ervTariffKwh       = 0.094;       /* $/kWh */
+  var _ervInstallCost     = 12000;       /* $ install + commissioning */
+  var _ervMaintAnnual     = 200;         /* $/yr maintenance (filters, belts) */
+  var _ervRoiOpen         = false;       /* ROI drawer expanded */
+  var _ervMinKJkg         = 0;           /* hide hours where |dh_saved| < this */
+  var _ervGhostEps        = 0;           /* 0 = off; >0 = second ε for A/B */
+  var _ervShowPeaks       = true;        /* annotate top-3 peak-savings hours */
+  function _ervRolloutLoad(){
+    try {
+      var s = JSON.parse(localStorage.getItem('red5ErvRolloutState') || '{}');
+      if (typeof s.zone     === 'string')  _ervClimateZone = s.zone;
+      if (typeof s.tariff   === 'number')  _ervTariffKwh   = s.tariff;
+      if (typeof s.install  === 'number')  _ervInstallCost = s.install;
+      if (typeof s.maint    === 'number')  _ervMaintAnnual = s.maint;
+      if (typeof s.roiOpen  === 'boolean') _ervRoiOpen     = s.roiOpen;
+      if (typeof s.minKJ    === 'number')  _ervMinKJkg     = s.minKJ;
+      if (typeof s.ghostEps === 'number')  _ervGhostEps    = s.ghostEps;
+      if (typeof s.showPeaks=== 'boolean') _ervShowPeaks   = s.showPeaks;
+    } catch(_) {}
+  }
+  function _ervRolloutSave(){
+    try {
+      localStorage.setItem('red5ErvRolloutState', JSON.stringify({
+        zone:_ervClimateZone, tariff:_ervTariffKwh,
+        install:_ervInstallCost, maint:_ervMaintAnnual,
+        roiOpen:_ervRoiOpen, minKJ:_ervMinKJkg,
+        ghostEps:_ervGhostEps, showPeaks:_ervShowPeaks
+      }));
+    } catch(_) {}
+  }
+  _ervRolloutLoad();
+
+  /* Compute the per-hour savings series given an epsilon.  Returns an
+     array of {idx, ts, dh_kJkg (signed, +cooling/-heating), abs_dh,
+     rtH (RT*h per hour at current Designer CFM), kWh}.  Uses Designer
+     Mode's RA state as the wheel's other inlet — single source of
+     truth across the 2D overlay, the 3D cloud, and this rollout. */
+  function _ervSavingsSeries(eps){
+    var out = [];
+    if (!weatherData || !weatherData.length) return out;
+    var raT = _designerRA_T;
+    var raW = getW(_designerRA_T, _designerRA_RH); /* kg/kg, same units as p.w */
+    var cfm = _designerCFM;
+    /* RT*h conversion per kJ/kg at given CFM (from the existing Designer
+       Mode formula): (CFM * 4.5 * (dh_kJkg / 0.4299)) / 12000 RT for one
+       hour duration = RT*h.  1 RT = 3.517 kW so kWh = RT*h * 3.517. */
+    var rt_per_kJkg = (cfm * 4.5 / 0.4299) / 12000;
+    for (var i = 0; i < weatherData.length; i++) {
+      var p   = weatherData[i];
+      var inT = p.t + eps * (raT - p.t);
+      var inW = p.w + eps * (raW - p.w);
+      var h_oa  = enthalpy(p.t, p.w);
+      var h_oap = enthalpy(inT, inW);
+      var dh    = h_oa - h_oap; /* +ve: wheel pre-cooled OA (summer); -ve: pre-warmed (winter) */
+      var abs_dh = Math.abs(dh);
+      var rtH   = abs_dh * rt_per_kJkg;
+      out.push({ idx:i, ts:p.ts, dh_kJkg:dh, abs_dh:abs_dh, rtH:rtH, kWh:rtH * 3.517 });
+    }
+    return out;
+  }
+
+  /* Aggregate a per-hour series into the rollup totals + per-month
+     buckets used by the panel renderer.  Returns:
+       { totalRtH, totalKWh, totalUSD, peaks:[3 top entries by abs_dh],
+         monthly:[12 entries with {kJkg_sum, kWh, usd}] }
+     Computed lazily on render; not memoized because Designer CFM / RA /
+     epsilon all live-edit and we want WYSIWYG. */
+  function _ervAggregate(series){
+    var monthly = [];
+    for (var m = 0; m < 12; m++) monthly.push({kJkg:0, kWh:0, usd:0, hours:0});
+    var totRt = 0, totKWh = 0;
+    var topN = [];
+    for (var i = 0; i < series.length; i++) {
+      var s = series[i];
+      if (s.abs_dh < _ervMinKJkg) continue;
+      totRt  += s.rtH;
+      totKWh += s.kWh;
+      var d = new Date(s.ts);
+      var m = d.getMonth();
+      monthly[m].kJkg  += s.abs_dh;
+      monthly[m].kWh   += s.kWh;
+      monthly[m].usd   += s.kWh * _ervTariffKwh;
+      monthly[m].hours += 1;
+      /* maintain top-3 by abs_dh */
+      if (topN.length < 3) { topN.push(s); topN.sort(function(a,b){return b.abs_dh - a.abs_dh;}); }
+      else if (s.abs_dh > topN[2].abs_dh) {
+        topN[2] = s;
+        topN.sort(function(a,b){return b.abs_dh - a.abs_dh;});
+      }
+    }
+    return {
+      totalRtH: totRt,
+      totalKWh: totKWh,
+      totalUSD: totKWh * _ervTariffKwh,
+      peaks: topN,
+      monthly: monthly
+    };
+  }
+
+  /* Compute simple-payback + 10-yr NPV at 5% discount.
+     payback = install / (annualSavingsUSD - maintenance).
+     NPV uses constant annual cash-flow over 10 years. */
+  function _ervROI(annualUSD){
+    var net = annualUSD - _ervMaintAnnual;
+    var payback = (net > 0.0001) ? (_ervInstallCost / net) : Infinity;
+    var r = 0.05, npv = -_ervInstallCost;
+    for (var y = 1; y <= 10; y++) npv += net / Math.pow(1 + r, y);
+    return { payback:payback, npv:npv, net:net };
+  }
+  function _ervFmtMoney(v){
+    if (!isFinite(v))            return '\u2014';
+    var abs = Math.abs(v);
+    var sign = v < 0 ? '\u2212' : '';
+    if (abs >= 1e6) return sign + '$' + (abs/1e6).toFixed(2) + 'M';
+    if (abs >= 1e3) return sign + '$' + (abs/1e3).toFixed(1) + 'k';
+    return sign + '$' + abs.toFixed(0);
+  }
+  function _ervFmtRtH(v){
+    if (!isFinite(v)) return '\u2014';
+    if (v >= 1e6) return (v/1e6).toFixed(2) + 'M RT\u00b7h';
+    if (v >= 1e3) return (v/1e3).toFixed(1) + 'k RT\u00b7h';
+    return v.toFixed(0) + ' RT\u00b7h';
+  }
+
   /* ---------- theme helpers (synced with dashboard via localStorage.red5.theme) ---------- */
   function _p3Theme(){ try { return localStorage.getItem('red5.theme') || 'dark'; } catch(e){ return 'dark'; } }
   var P3_DARK_BG = 0x0f172a, P3_LIGHT_BG = 0xc5cbd2;
@@ -1276,6 +1422,217 @@ global.initPsy3D = function(container, opts){
         tgEl.addEventListener('click', function(){ setTimeout(_refreshErvLegend, 0); });
         _refreshErvLegend();
         tgEl.appendChild(ervLegend);
+
+        /* ----------------------------------------------------------------
+           ERV ROLLOUT PANEL — appended at the document level (not inside
+           tgEl) and absolutely positioned at the bottom-left corner of
+           the 3D root so it never crowds the toggle list.  Auto-shows
+           only when BOTH the Drops layer is visible AND ERV is ON, same
+           gate as the legend.  Renders annual rollup + sparkline + ROI
+           drawer + climate-zone preset + threshold + ghost ε + CSV. */
+        var rollout = document.createElement('div');
+        rollout.id = 'p3-erv-rollout';
+        rollout.style.cssText =
+          'position:absolute;left:14px;bottom:14px;z-index:18;display:none;'+
+          'min-width:320px;max-width:380px;background:rgba(15,23,42,.92);'+
+          'border:1px solid #22d3ee;border-radius:6px;padding:9px 11px 10px;'+
+          'font-family:\'Courier New\',monospace;font-size:9px;line-height:1.6;'+
+          'color:#cbd5e1;backdrop-filter:blur(14px);user-select:none';
+        function _ervCurrencyOpt(){
+          var z = _ervClimateZones.find(function(c){return c.id===_ervClimateZone;}) || _ervClimateZones[0];
+          return z.currency || '$';
+        }
+        function _ervPresetOptions(){
+          return _ervClimateZones.map(function(c){
+            var rate = (c.kwh==null) ? '' : (' \u2014 ' + (c.currency||'$') + c.kwh.toFixed(3) + '/kWh');
+            return '<option value="'+c.id+'"'+(c.id===_ervClimateZone?' selected':'')+'>'+c.name+rate+'</option>';
+          }).join('');
+        }
+        function _ervMonthlySpark(monthly, maxKWh){
+          /* Bars are pure CSS divs; cyan height-mapped.  No SVG needed. */
+          var names = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+          var max = maxKWh > 0.001 ? maxKWh : 1;
+          var bars = '';
+          for (var m=0;m<12;m++){
+            var h = monthly[m].kWh > 0 ? Math.max(2, Math.round(28 * monthly[m].kWh / max)) : 1;
+            var col = monthly[m].kWh > 0 ? '#22d3ee' : '#1e293b';
+            var ttl = names[m]+': '+monthly[m].kWh.toFixed(0)+' kWh, '+monthly[m].hours+' h';
+            bars += '<div title="'+ttl+'" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">'+
+              '<div style="width:100%;height:'+h+'px;background:'+col+';opacity:.9;border-radius:1px 1px 0 0"></div>'+
+              '<div style="font-size:7px;color:#64748b">'+names[m]+'</div>'+
+              '</div>';
+          }
+          return '<div style="display:flex;align-items:flex-end;gap:2px;height:34px;margin:4px 0 2px">'+bars+'</div>';
+        }
+        function _renderRollout(){
+          var on = !!_saDropERVOn && !!(saDropGroup && saDropGroup.visible);
+          rollout.style.display = on ? 'block' : 'none';
+          if (!on) return;
+          if (!weatherData || !weatherData.length) {
+            rollout.innerHTML = '<div style="color:#fbbf24;font-weight:900;text-transform:uppercase;letter-spacing:.08em">ERV Rollout</div>'+
+              '<div style="color:#94a3b8;margin-top:6px">Fetch weather data first to see annual savings.</div>';
+            return;
+          }
+          var series = _ervSavingsSeries(_designerERVEps);
+          var agg    = _ervAggregate(series);
+          var roi    = _ervROI(agg.totalUSD);
+          var ghostAgg = null;
+          if (_ervGhostEps > 0 && Math.abs(_ervGhostEps - _designerERVEps) > 0.005) {
+            var gS = _ervSavingsSeries(_ervGhostEps);
+            ghostAgg = _ervAggregate(gS);
+          }
+          var maxMonth = 0;
+          for (var m=0;m<12;m++) if (agg.monthly[m].kWh > maxMonth) maxMonth = agg.monthly[m].kWh;
+          var cur = _ervCurrencyOpt();
+
+          var paybackStr = isFinite(roi.payback)
+            ? (roi.payback < 99 ? roi.payback.toFixed(1)+' yr' : '\u003e 99 yr')
+            : 'never';
+          var npvStr = _ervFmtMoney(roi.npv);
+          var npvCol = roi.npv > 0 ? '#22d3ee' : '#fb7185';
+
+          var ghostHtml = '';
+          if (ghostAgg) {
+            var delta = ghostAgg.totalUSD - agg.totalUSD;
+            ghostHtml = '<div style="margin-top:5px;padding:4px 6px;background:rgba(168,85,247,.10);border-left:2px solid #a855f7;border-radius:2px;font-size:8px">'+
+              '<b style="color:#c084fc;letter-spacing:.05em">A/B \u03b5='+_ervGhostEps.toFixed(2)+':</b> '+
+              _ervFmtMoney(ghostAgg.totalUSD)+'/yr '+
+              '<span style="color:'+(delta>=0?'#22d3ee':'#fb7185')+'">('+(delta>=0?'+':'')+_ervFmtMoney(delta)+' vs \u03b5='+_designerERVEps.toFixed(2)+')</span>'+
+              '</div>';
+          }
+
+          var roiBody = '';
+          if (_ervRoiOpen) {
+            roiBody =
+              '<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #334155">'+
+                '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">'+
+                  '<label style="flex:1;color:#94a3b8">Install '+cur+'</label>'+
+                  '<input data-erv-input="install" type="number" value="'+_ervInstallCost+'" style="width:80px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+                '</div>'+
+                '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">'+
+                  '<label style="flex:1;color:#94a3b8">Maint/yr '+cur+'</label>'+
+                  '<input data-erv-input="maint" type="number" value="'+_ervMaintAnnual+'" style="width:80px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+                '</div>'+
+                '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">'+
+                  '<label style="flex:1;color:#94a3b8">Tariff '+cur+'/kWh</label>'+
+                  '<input data-erv-input="tariff" type="number" step="0.001" value="'+_ervTariffKwh.toFixed(3)+'" style="width:80px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+                '</div>'+
+                '<div style="display:flex;gap:10px;margin-top:5px;font-size:9px">'+
+                  '<div>Payback <b style="color:#fbbf24">'+paybackStr+'</b></div>'+
+                  '<div>10-yr NPV <b style="color:'+npvCol+'">'+npvStr+'</b></div>'+
+                '</div>'+
+              '</div>';
+          }
+
+          rollout.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+              '<div style="color:#22d3ee;font-weight:900;text-transform:uppercase;letter-spacing:.10em;font-size:9px">ERV Rollout</div>'+
+              '<div style="display:flex;gap:4px">'+
+                '<button data-erv-btn="csv"     style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="Download hourly CSV">CSV</button>'+
+                '<button data-erv-btn="roi"     style="background:transparent;border:1px solid '+(_ervRoiOpen?'#fbbf24':'#475569')+';color:'+(_ervRoiOpen?'#fbbf24':'#94a3b8')+';padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="ROI inputs">ROI '+(_ervRoiOpen?'\u25BC':'\u25B6')+'</button>'+
+                '<button data-erv-btn="peaks"   style="background:transparent;border:1px solid '+(_ervShowPeaks?'#22d3ee':'#475569')+';color:'+(_ervShowPeaks?'#22d3ee':'#94a3b8')+';padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="Highlight top-3 peak hours">PEAKS</button>'+
+              '</div>'+
+            '</div>'+
+            /* Climate-zone preset */
+            '<div style="display:flex;gap:5px;align-items:center;font-size:8px;margin-bottom:3px">'+
+              '<span style="color:#64748b">Region</span>'+
+              '<select data-erv-input="zone" style="flex:1;background:#020617;border:1px solid #334155;color:#cbd5e1;font:inherit;padding:1px 3px;border-radius:2px">'+
+                _ervPresetOptions()+
+              '</select>'+
+            '</div>'+
+            /* Main rollup */
+            '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px">'+
+              '<div><b style="color:#22d3ee;font-size:13px">'+_ervFmtMoney(agg.totalUSD)+'</b><span style="color:#94a3b8"> /yr saved</span></div>'+
+              '<div style="color:#94a3b8;font-size:8px">'+_ervFmtRtH(agg.totalRtH)+' &middot; '+agg.totalKWh.toFixed(0)+' kWh</div>'+
+            '</div>'+
+            ghostHtml+
+            /* Monthly sparkline */
+            _ervMonthlySpark(agg.monthly, maxMonth)+
+            /* Threshold + ghost epsilon */
+            '<div style="display:flex;gap:8px;align-items:center;margin-top:3px;font-size:8px">'+
+              '<span style="color:#64748b">Min kJ/kg</span>'+
+              '<input data-erv-input="minKJ" type="range" min="0" max="20" step="0.5" value="'+_ervMinKJkg+'" style="flex:1;accent-color:#22d3ee"/>'+
+              '<span style="color:#cbd5e1;min-width:24px;text-align:right" data-erv-display="minKJ">'+_ervMinKJkg.toFixed(1)+'</span>'+
+            '</div>'+
+            '<div style="display:flex;gap:8px;align-items:center;font-size:8px">'+
+              '<span style="color:#64748b">A/B ghost \u03b5</span>'+
+              '<input data-erv-input="ghostEps" type="number" min="0" max="0.95" step="0.05" value="'+_ervGhostEps.toFixed(2)+'" style="width:50px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+              '<span style="color:#64748b;font-size:7px">(0 = off)</span>'+
+            '</div>'+
+            roiBody;
+
+          /* Wire input handlers */
+          rollout.querySelectorAll('[data-erv-input]').forEach(function(el){
+            var key = el.getAttribute('data-erv-input');
+            var handler = function(){
+              var v = el.value;
+              if (key === 'zone') {
+                _ervClimateZone = v;
+                var z = _ervClimateZones.find(function(c){return c.id===v;});
+                if (z && z.kwh != null) _ervTariffKwh = z.kwh;
+              } else if (key === 'tariff') {
+                _ervTariffKwh = parseFloat(v) || 0;
+                _ervClimateZone = 'CUSTOM';
+              } else if (key === 'install')  _ervInstallCost = parseFloat(v) || 0;
+              else if (key === 'maint')      _ervMaintAnnual = parseFloat(v) || 0;
+              else if (key === 'minKJ')      { _ervMinKJkg = parseFloat(v) || 0;
+                                                var disp = rollout.querySelector('[data-erv-display=minKJ]');
+                                                if (disp) disp.textContent = _ervMinKJkg.toFixed(1);
+                                                _buildSaDropGeometry(); }
+              else if (key === 'ghostEps')   { _ervGhostEps = Math.max(0, Math.min(0.95, parseFloat(v) || 0));
+                                                _buildSaDropGeometry(); }
+              _ervRolloutSave();
+              if (key === 'minKJ') return; /* avoid full re-render on drag */
+              _renderRollout();
+            };
+            el.addEventListener('change', handler);
+            if (el.tagName === 'INPUT' && el.type === 'range') el.addEventListener('input', handler);
+          });
+          /* Wire buttons */
+          rollout.querySelectorAll('[data-erv-btn]').forEach(function(b){
+            var k = b.getAttribute('data-erv-btn');
+            b.addEventListener('click', function(){
+              if (k === 'roi')   { _ervRoiOpen = !_ervRoiOpen; _ervRolloutSave(); _renderRollout(); }
+              else if (k === 'peaks') { _ervShowPeaks = !_ervShowPeaks; _ervRolloutSave(); _buildSaDropGeometry(); _renderRollout(); }
+              else if (k === 'csv')   { _ervExportCsv(); }
+            });
+          });
+        }
+        /* CSV export: hourly rows for the current epsilon. */
+        function _ervExportCsv(){
+          var series = _ervSavingsSeries(_designerERVEps);
+          if (!series.length) return;
+          var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+          var rows = ['date_iso,OA_T_C,OA_RH_pct,OA_W_gkg,OA_prime_T_C,OA_prime_W_gkg,h_OA_kJkg,h_OAprime_kJkg,dh_saved_kJkg,RTh_saved,kWh_saved,USD_saved'];
+          var eps = _designerERVEps;
+          for (var i=0;i<series.length;i++){
+            var s = series[i], p = weatherData[s.idx];
+            var inT = p.t + eps * (raT - p.t);
+            var inW = p.w + eps * (raW - p.w);
+            var h_oa  = enthalpy(p.t, p.w);
+            var h_oap = enthalpy(inT, inW);
+            rows.push([
+              p.ts, p.t.toFixed(2), p.rh.toFixed(1), (p.w*1000).toFixed(3),
+              inT.toFixed(2), (inW*1000).toFixed(3),
+              h_oa.toFixed(2), h_oap.toFixed(2), s.dh_kJkg.toFixed(3),
+              s.rtH.toFixed(3), s.kWh.toFixed(3), (s.kWh*_ervTariffKwh).toFixed(3)
+            ].join(','));
+          }
+          var blob = new Blob([rows.join('\n')], {type:'text/csv'});
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'erv_savings_eps' + _designerERVEps.toFixed(2) + '.csv';
+          document.body.appendChild(a); a.click();
+          setTimeout(function(){ try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch(_){} }, 200);
+        }
+        /* Re-render the rollout whenever the legend would refresh. */
+        var _origRefreshLegend = _refreshErvLegend;
+        _refreshErvLegend = function(){ _origRefreshLegend(); _renderRollout(); };
+        root.appendChild(rollout);
+        /* Hook re-render to weather refresh + designer-mode edits.  Both
+           events already exist for the [USE LIVE OA] button. */
+        window.addEventListener('red5-weather-loaded', function(){ if (rollout.style.display !== 'none') _renderRollout(); });
+        _renderRollout();
       }
     });
 
@@ -2458,6 +2815,22 @@ global.initPsy3D = function(container, opts){
         }else if(hitObj===pts&&idx<weatherData.length){
           var p=weatherData[idx];var d=new Date(p.ts);
           html='<div style="color:#f472b6;margin-bottom:1px"><b>'+d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})+'</b></div><div>T = <b style="color:#60a5fa">'+p.t.toFixed(1)+' \u00b0C</b></div><div>RH = <b style="color:#34d399">'+p.rh.toFixed(0)+'%</b></div><div>W = <b style="color:#fbbf24">'+(p.w*1000).toFixed(1)+' g/kg</b></div>';
+          /* When ERV is ON, append a savings block: OA' state + per-hour
+             enthalpy delta in kJ/kg + dollar value at current tariff. */
+          if (_saDropERVOn && saDropGroup && saDropGroup.visible) {
+            var hEps = Math.max(0, Math.min(1, _designerERVEps));
+            var hRaT = _designerRA_T, hRaW = getW(_designerRA_T, _designerRA_RH);
+            var hOaT = p.t + hEps * (hRaT - p.t);
+            var hOaW = p.w + hEps * (hRaW - p.w);
+            var hDh  = enthalpy(p.t, p.w) - enthalpy(hOaT, hOaW);
+            var hRtH = Math.abs(hDh) * (_designerCFM * 4.5 / 0.4299) / 12000;
+            var hKWh = hRtH * 3.517;
+            var hUSD = hKWh * _ervTariffKwh;
+            html += '<div style="margin-top:3px;padding-top:3px;border-top:1px dashed #475569"></div>'+
+              '<div style="color:#22d3ee">OA\u2032 = <b>'+hOaT.toFixed(1)+' \u00b0C / '+(hOaW*1000).toFixed(1)+' g/kg</b></div>'+
+              '<div style="color:#22d3ee">\u0394h<sub>saved</sub> = <b>'+hDh.toFixed(1)+' kJ/kg</b></div>'+
+              '<div style="color:#22d3ee">'+hRtH.toFixed(2)+' RT\u00b7h \u00b7 '+_ervFmtMoney(hUSD)+' saved</div>';
+          }
         }
         if(html){tipEl.innerHTML=html;tipEl.style.display='block';tipEl.style.left=(e.clientX-root.getBoundingClientRect().left+14)+'px';tipEl.style.top=(e.clientY-root.getBoundingClientRect().top-16)+'px';}
         else{tipEl.style.display='none';}
@@ -2547,7 +2920,23 @@ global.initPsy3D = function(container, opts){
     var ra_T = _designerRA_T;
     var ra_W = getW(_designerRA_T, _designerRA_RH);  /* kg/kg (same units as p.w) */
     var eps = Math.max(0, Math.min(1, _designerERVEps));
-    weatherData.forEach(function(p){
+    /* For the savings-threshold filter + peak-hour annotations: walk the
+       series once to find the top-3 hours by |dh_saved|.  Skipped when
+       ERV is off (no savings to rank). */
+    var peakIdxs = [];
+    if (ervOn && _ervShowPeaks) {
+      var rank = [];
+      for (var pi = 0; pi < weatherData.length; pi++) {
+        var pp = weatherData[pi];
+        var ppT = pp.t + eps * (ra_T - pp.t);
+        var ppW = pp.w + eps * (ra_W - pp.w);
+        var dh = Math.abs(enthalpy(pp.t, pp.w) - enthalpy(ppT, ppW));
+        rank.push({i:pi, dh:dh});
+      }
+      rank.sort(function(a,b){return b.dh - a.dh;});
+      for (var rk = 0; rk < Math.min(3, rank.length); rk++) peakIdxs.push(rank[rk].i);
+    }
+    weatherData.forEach(function(p, _i){
       /* Compute the entering-air state the coil ACTUALLY sees -- OA when
          the wheel is bypassed, OA' (linearly interpolated OA->RA at eps)
          when the wheel is on.  The SA-reset target is left untouched
@@ -2558,6 +2947,12 @@ global.initPsy3D = function(container, opts){
       if (ervOn) {
         inT = p.t + eps * (ra_T - p.t);
         inW = p.w + eps * (ra_W - p.w);
+        /* Savings-threshold filter (g): drop hours where the wheel barely
+           did anything so the cloud focuses on the heavy-lifting season. */
+        if (_ervMinKJkg > 0) {
+          var dh_abs = Math.abs(enthalpy(p.t, p.w) - enthalpy(inT, inW));
+          if (dh_abs < _ervMinKJkg) return;
+        }
       }
       var sa = _saReset(p.t, p.rh, p.w);
       // Cull no-action samples (zero-length drops would clutter the floor).
@@ -2594,6 +2989,33 @@ global.initPsy3D = function(container, opts){
       dV.push(oaX, oaY, oaZ,  saX, 0, saZ);
       dC.push(c[0], c[1], c[2],  c[0]*0.35, c[1]*0.35, c[2]*0.35);
     });
+
+    /* A/B GHOST CLOUD (h): if _ervGhostEps is set and different from the
+       active epsilon, render a translucent second cloud using the same
+       drop layout but in purple so the comparison is visually distinct
+       from the active cyan/spectrum cloud.  No SA-floor dots for the
+       ghost — only the OA'->SA drop lines — to keep the floor uncluttered. */
+    var ghostV = null, ghostC = null;
+    if (ervOn && _ervGhostEps > 0 && Math.abs(_ervGhostEps - eps) > 0.005) {
+      ghostV = [];
+      ghostC = [];
+      var gEps = Math.max(0, Math.min(0.95, _ervGhostEps));
+      weatherData.forEach(function(p){
+        var gT = p.t + gEps * (ra_T - p.t);
+        var gW = p.w + gEps * (ra_W - p.w);
+        if (_ervMinKJkg > 0) {
+          var dh = Math.abs(enthalpy(p.t, p.w) - enthalpy(gT, gW));
+          if (dh < _ervMinKJkg) return;
+        }
+        var sa = _saReset(p.t, p.rh, p.w);
+        if (Math.abs(sa.t-gT)<0.5 && Math.abs(sa.w-gW)<0.0003) return;
+        var oaX = t2sx(gT), oaY = frac2sy(p.frac), oaZ = w2sz(gW);
+        var saX = t2sx(sa.t),                      saZ = w2sz(sa.w);
+        /* Purple #a855f7 for ghost -- contrasts with cyan/spectrum live cloud. */
+        ghostV.push(oaX, oaY, oaZ, saX, 0, saZ);
+        ghostC.push(.66, .33, .97,  .23, .12, .34);
+      });
+    }
     if (!saV.length) return;
     var saGeo = new THREE.BufferGeometry();
     saGeo.setAttribute('position', new THREE.Float32BufferAttribute(saV, 3));
@@ -2608,6 +3030,45 @@ global.initPsy3D = function(container, opts){
     saDropGroup.add(new THREE.LineSegments(dropGeo, new THREE.LineBasicMaterial({
       vertexColors:true, transparent:true, opacity:.45, depthWrite:false
     })));
+    if (ghostV && ghostV.length) {
+      var gGeo = new THREE.BufferGeometry();
+      gGeo.setAttribute('position', new THREE.Float32BufferAttribute(ghostV, 3));
+      gGeo.setAttribute('color',    new THREE.Float32BufferAttribute(ghostC, 3));
+      saDropGroup.add(new THREE.LineSegments(gGeo, new THREE.LineBasicMaterial({
+        vertexColors:true, transparent:true, opacity:.32, depthWrite:false
+      })));
+    }
+
+    /* PEAK-HOUR ANNOTATIONS (f): render small floating sprite labels at
+       the OA'-side of the top-3 cyan ribbons.  Sprite size in world units
+       picked so the label is legible at the default camera distance. */
+    if (peakIdxs.length) {
+      peakIdxs.forEach(function(pIdx, rank){
+        var p = weatherData[pIdx];
+        var pT = p.t + eps * (ra_T - p.t);
+        var pW = p.w + eps * (ra_W - p.w);
+        var dhP = Math.abs(enthalpy(p.t, p.w) - enthalpy(pT, pW));
+        var d = new Date(p.ts);
+        var stamp = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + 'h';
+        var txt = '#' + (rank+1) + '  ' + stamp + '  ' + dhP.toFixed(1) + ' kJ/kg';
+        var cv = document.createElement('canvas');
+        cv.width = 256; cv.height = 48;
+        var ctx2 = cv.getContext('2d');
+        ctx2.fillStyle = 'rgba(15,23,42,.92)';
+        ctx2.fillRect(0,0,cv.width,cv.height);
+        ctx2.strokeStyle = '#fbbf24';
+        ctx2.lineWidth = 3;
+        ctx2.strokeRect(0,0,cv.width,cv.height);
+        ctx2.fillStyle = '#fbbf24';
+        ctx2.font = '900 22px Courier New';
+        ctx2.fillText(txt, 10, 32);
+        var tex = new THREE.CanvasTexture(cv);
+        var spr = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false}));
+        spr.position.set(t2sx(pT), frac2sy(p.frac) + 2.5, w2sz(pW));
+        spr.scale.set(10, 1.9, 1);
+        saDropGroup.add(spr);
+      });
+    }
   }
 
   /* Tiny adapter called whenever a Designer-Mode input that the Drops

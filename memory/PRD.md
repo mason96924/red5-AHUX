@@ -3,6 +3,38 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 ERV Rollout Panel — 9-in-1 Annual Savings + ROI + A/B + CSV (2026-02-13)
+**Brief**: Built a self-contained `#p3-erv-rollout` floating card at the bottom-left of the 3D scene that auto-shows whenever the OA→SA Drops layer is ON AND the ERV chip is ON. Single panel ships nine related enhancements requested in one batch.
+
+### Features delivered
+1. **Annual rollup readout** (a) — big primary line: `$173.2k /yr saved · 524.8k RT·h · 1,842,049 kWh` computed by summing per-hour `|h_OA − h_OA'|` × mass-flow over the loaded weather year.
+2. **Per-month sparkline** (b) — 12 cyan height-mapped bars below the rollup, native `title=` per bar shows `month: kWh, hours`.
+3. **ROI calculator drawer** (c) — collapsible (`ROI ▶`/`▼`), 3 number inputs (`Install $`, `Maint/yr $`, `Tariff $/kWh`) → live `Payback 0.1 yr · 10-yr NPV $1.32M` at 5% discount.
+4. **Climate-zone tariff presets** (d) — `<select>` with 10 regions (KR-Seoul `$0.094`, US-NY `$0.21`, US-CA `$0.28`, SG `$0.20`, JP-TOK `$0.24`, EU-DE `$0.40`, CN-SH `$0.092`, AE-DXB `$0.083`, AU-SYD `$0.27`, Custom). Selecting auto-fills the tariff and re-runs the dollar math.
+5. **Hover tooltip extension** (e) — existing 3D weather-point hover now appends a cyan block when ERV is ON: `OA' = T °C / W g/kg`, `Δh_saved kJ/kg`, `N.NN RT·h · $N saved`.
+6. **Peak-hour annotations** (f) — `PEAKS` button toggles small amber-bordered Sprite labels in the 3D scene at the OA'-side of the top-3 ribbons (`#1  7/27 14h  18.2 kJ/kg`).
+7. **Savings-threshold slider** (g) — `Min kJ/kg` range slider 0–20 hides hours where `|Δh_saved|` falls below the threshold, both in the 3D cloud and in the rollup totals.
+8. **A/B ghost cloud** (h) — `A/B ghost ε` number input (0–0.95); when non-zero, renders a translucent purple cloud at the alternate epsilon in the 3D scene + a purple inline strip in the panel showing `$X.Xk/yr (±$Y vs active ε)`. Verified live: `ε=0.60` produced `$129.8k/yr (−$43.4k vs ε=0.80)`.
+9. **CSV export** (i) — `CSV` button generates `erv_savings_eps0.80.csv` (12-column hourly export: `date_iso, OA_T, OA_RH, OA_W, OA_prime_T, OA_prime_W, h_OA, h_OAprime, dh_saved, RTh, kWh, USD`).
+
+### Architecture
+- **All state persisted** under `localStorage.red5ErvRolloutState` (zone, tariff, install, maint, roiOpen, minKJ, ghostEps, showPeaks).
+- **Single source of truth** for OA' geometry: `_ervSavingsSeries(eps)` uses the same Designer-Mode `_designerRA_T/RH`, `_designerCFM`, and `enthalpy()` formula as the 2D Designer overlay + 3D Drops cloud — no duplication.
+- **RT·h → kWh** via `RT·h × 3.517`. **RT formula**: `(CFM × 4.5 × dh_kJkg / 0.4299) / 12000`, identical to the existing Designer-Mode tons calc.
+- **A/B + threshold + peaks** all hook into `_buildSaDropGeometry()` as additive passes — single rebuild covers all three.
+- **Hover-tooltip extension** lives inside the existing `pathGroup` raycaster `mousemove` branch — no new raycaster needed.
+- Net code addition: ~+220 lines across module-scope state, `_ervSavingsSeries`, `_ervAggregate`, `_ervROI`, formatters, panel render, drop-geometry threshold/ghost/peaks, hover-tip extension, CSV export.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → syntax clean.
+- `red5_bundle.zip` rebuilt 1751.1 KB, MD5 `49b2ec2ebb02fd27fc271a2289f72b06`, synced to `/app/frontend/public/` + `/app/frontend/public/red5-files/`.
+- `js/psy-3d-engine.js` (334,811 B) hot-deployed via `POST /api/upload-file`; live MD5 matches source.
+- Playwright DOM probes confirmed: panel auto-shows on ERV-ON, hides on either toggle off; zone-dropdown changes tariff and re-renders rollup; ROI drawer expands; ghost ε=0.60 renders purple cloud + Δ strip; threshold slider live-updates the geometry; PEAKS sprite labels appear at peak hours; CSV button present.
+
+### Files changed
+- `js/psy-3d-engine.js` — module-scope state + helpers + panel renderer + 3 additive passes in `_buildSaDropGeometry` + hover-tooltip ERV block.
+
+
 ## V1.9 ERV Legend Chip — Auto-Showing Two-Swatch Readout (2026-02-13)
 **Brief**: Added a small legend swatch that auto-appears at the bottom of the layer-toggle panel **only** when both the OA→SA Drops layer is visible AND the ERV chip is ON, so new operators can read the dual-color cloud at a glance without hunting through tooltips.
 

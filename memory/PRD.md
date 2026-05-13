@@ -3,6 +3,32 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 ERV Rollout Panel — Draggable + Resizable + Closable (2026-02-13)
+**Brief**: The bottom-left rollout panel was previously anchored. User wanted it as a movable popout with a close affordance. Added drag handle (header), close ✕ → revive chip pattern, and bottom-right resize grip — all with persisted position/size.
+
+### What's new (`js/psy-3d-engine.js`)
+- 3 new module-scope state vars persisted under `red5ErvRolloutState`: `closed` (bool), `pos:{x,y}` (top-left in `p3-root` coords), `size:{w,h}`.
+- **Drag handle**: `#p3-erv-header` row has `cursor:move`; `mousedown` (excluding buttons/inputs) starts a `window`-attached `mousemove`/`mouseup` drag. Position clamped to `[0, rootW-50] × [0, rootH-30]`, persisted on mouseup. `_applyRolloutGeometry()` switches from `bottom/left` anchoring to absolute `top/left` once dragged.
+- **Resize grip**: 12 px `nwse-resize` corner element with a 3-stripe gradient, bottom-right of the panel. `mousedown` starts a drag-resize sized in the range `[260..800] × [120..700]`. Persisted on mouseup. Re-appended after each `innerHTML` rewrite (grip is a separate DOM node).
+- **Close ✕**: red-tinted `\u2715` button added to the header row. Click sets `closed=true`, hides the panel, shows `#p3-erv-revive` chip.
+- **Revive chip**: cyan-bordered compact `\u21BB ERV $173.2k/yr` chip. Same anchor (drag-persisted position so it pops up wherever the panel was). Click clears `closed` and re-shows the full panel. Text live-refreshes with the latest aggregate on every `_renderRollout()`.
+- **Session-scoped close**: when ERV is toggled OFF, `closed` is auto-cleared so the next ERV-on session opens the full panel by default rather than starting on the chip. Predictable UX with no "stuck on chip" surprise.
+
+### Verification (live on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → clean. `red5_bundle.zip` rebuilt 1754.2 KB (MD5 `4456123bdb19dad5f6158f826c4cfdbe`).
+- `js/psy-3d-engine.js` (344,067 B) hot-deployed; live MD5 matches.
+- Playwright at 1920×900 verified all 5 transitions end-to-end:
+  - Header cursor `move`, grip present, ✕ present.
+  - Drag moved panel `(334, 907) → (534, 1007)` (Δ +200, +100); persisted `pos:{x:214, y:1007}`.
+  - Resize grew panel `320×159 → 420×249`; persisted `size:{w:420, h:249}`.
+  - Close ✕ → revive chip `↻ ERV $ 173.2k/yr` appears at same anchor; `closed:true` persisted.
+  - Revive chip click reopens full panel.
+  - Toggling ERV off auto-clears `closed`; re-enabling ERV opens full panel directly (not chip).
+
+### Files changed
+- `js/psy-3d-engine.js` — ~120 lines added: state vars + load/save, `_applyRolloutGeometry`, `_wireDragHandle`, `#p3-erv-grip` element, ✕ button in both empty-state and populated-state headers, `#p3-erv-revive` chip element + click handler, session-scoped reset in `_renderRollout`.
+
+
 ## V1.9 ERV ROI Badge on PSYCH Sidebar (2026-02-13)
 **Brief**: The 3D-WX ERV Rollout numbers ($/yr saved, payback yr) are now also visible as a small cyan-bordered badge at the top of the AHU sidebar in the PSYCH (and DIAG / DYNAM) tab — so the savings ROI is one glance away on every page-load, not behind two tab-switches + two toggles.
 

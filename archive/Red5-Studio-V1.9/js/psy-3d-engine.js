@@ -124,6 +124,9 @@ global.initPsy3D = function(container, opts){
   var _ervMinKJkg         = 0;           /* hide hours where |dh_saved| < this */
   var _ervGhostEps        = 0;           /* 0 = off; >0 = second ε for A/B */
   var _ervShowPeaks       = true;        /* annotate top-3 peak-savings hours */
+  var _ervRolloutClosed   = false;       /* user clicked ✕ — keep hidden until revive */
+  var _ervRolloutPos      = null;        /* {x, y} bottom-left offset; null = default */
+  var _ervRolloutSize     = null;        /* {w, h}; null = auto/min */
   function _ervRolloutLoad(){
     try {
       var s = JSON.parse(localStorage.getItem('red5ErvRolloutState') || '{}');
@@ -135,6 +138,9 @@ global.initPsy3D = function(container, opts){
       if (typeof s.minKJ    === 'number')  _ervMinKJkg     = s.minKJ;
       if (typeof s.ghostEps === 'number')  _ervGhostEps    = s.ghostEps;
       if (typeof s.showPeaks=== 'boolean') _ervShowPeaks   = s.showPeaks;
+      if (typeof s.closed   === 'boolean') _ervRolloutClosed = s.closed;
+      if (s.pos && typeof s.pos.x === 'number') _ervRolloutPos = s.pos;
+      if (s.size && typeof s.size.w === 'number') _ervRolloutSize = s.size;
     } catch(_) {}
   }
   function _ervRolloutSave(){
@@ -143,7 +149,8 @@ global.initPsy3D = function(container, opts){
         zone:_ervClimateZone, tariff:_ervTariffKwh,
         install:_ervInstallCost, maint:_ervMaintAnnual,
         roiOpen:_ervRoiOpen, minKJ:_ervMinKJkg,
-        ghostEps:_ervGhostEps, showPeaks:_ervShowPeaks
+        ghostEps:_ervGhostEps, showPeaks:_ervShowPeaks,
+        closed:_ervRolloutClosed, pos:_ervRolloutPos, size:_ervRolloutSize
       }));
     } catch(_) {}
   }
@@ -1434,10 +1441,105 @@ global.initPsy3D = function(container, opts){
         rollout.id = 'p3-erv-rollout';
         rollout.style.cssText =
           'position:absolute;left:14px;bottom:14px;z-index:18;display:none;'+
-          'min-width:320px;max-width:380px;background:rgba(15,23,42,.92);'+
-          'border:1px solid #22d3ee;border-radius:6px;padding:9px 11px 10px;'+
+          'min-width:320px;max-width:480px;background:rgba(15,23,42,.92);'+
+          'border:1px solid #22d3ee;border-radius:6px;padding:9px 11px 14px;'+
           'font-family:\'Courier New\',monospace;font-size:9px;line-height:1.6;'+
           'color:#cbd5e1;backdrop-filter:blur(14px);user-select:none';
+        /* Revival chip — shown only when the user has explicitly closed the
+           full panel via the ✕ button.  Reads the latest aggregate snapshot
+           so the dollar number stays current even while collapsed. */
+        var revive = document.createElement('div');
+        revive.id = 'p3-erv-revive';
+        revive.style.cssText =
+          'position:absolute;left:14px;bottom:14px;z-index:18;display:none;'+
+          'background:rgba(15,23,42,.92);border:1px solid #22d3ee;border-radius:4px;'+
+          'padding:5px 9px;cursor:pointer;font-family:\'Courier New\',monospace;'+
+          'font-size:9px;font-weight:900;color:#22d3ee;letter-spacing:.05em;'+
+          'text-transform:uppercase;backdrop-filter:blur(14px);user-select:none';
+        revive.title = 'Reopen ERV Rollout panel';
+        revive.addEventListener('click', function(){
+          _ervRolloutClosed = false;
+          _ervRolloutSave();
+          _renderRollout();
+        });
+        function _applyRolloutGeometry(){
+          /* If user has dragged the panel, switch from bottom/left anchoring
+             to top/left coordinates so the drag math stays in one frame.
+             Same coordinate flip is applied to the revival chip. */
+          var els = [rollout, revive];
+          els.forEach(function(el){
+            if (_ervRolloutPos && typeof _ervRolloutPos.x === 'number'){
+              el.style.left   = _ervRolloutPos.x + 'px';
+              el.style.top    = _ervRolloutPos.y + 'px';
+              el.style.right  = 'auto';
+              el.style.bottom = 'auto';
+            } else {
+              el.style.left   = '14px';
+              el.style.bottom = '14px';
+              el.style.top    = 'auto';
+              el.style.right  = 'auto';
+            }
+          });
+          if (_ervRolloutSize) {
+            if (typeof _ervRolloutSize.w === 'number') rollout.style.width  = _ervRolloutSize.w + 'px';
+            if (typeof _ervRolloutSize.h === 'number') rollout.style.height = _ervRolloutSize.h + 'px';
+          }
+        }
+        function _wireDragHandle(handle){
+          handle.style.cursor = 'move';
+          handle.addEventListener('mousedown', function(e){
+            /* Ignore drags that started on buttons/inputs inside the header
+               (e.g., the ✕ button or the CSV/ROI/PEAKS toggle row). */
+            if (e.target.closest('button, input, select, [data-erv-input], [data-erv-btn]')) return;
+            e.preventDefault();
+            var startX = e.clientX, startY = e.clientY;
+            var rect = rollout.getBoundingClientRect();
+            var rootRect = root.getBoundingClientRect();
+            var origX = rect.left - rootRect.left;
+            var origY = rect.top  - rootRect.top;
+            function onMove(ev){
+              var nx = Math.max(0, Math.min(rootRect.width  - 50, origX + (ev.clientX - startX)));
+              var ny = Math.max(0, Math.min(rootRect.height - 30, origY + (ev.clientY - startY)));
+              _ervRolloutPos = { x: nx, y: ny };
+              _applyRolloutGeometry();
+            }
+            function onUp(){
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup',   onUp);
+              _ervRolloutSave();
+            }
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup',   onUp);
+          });
+        }
+        /* Resize grip — bottom-right corner handle */
+        var grip = document.createElement('div');
+        grip.id = 'p3-erv-grip';
+        grip.style.cssText =
+          'position:absolute;right:2px;bottom:2px;width:12px;height:12px;'+
+          'cursor:nwse-resize;opacity:.6;z-index:1;'+
+          'background:linear-gradient(135deg,transparent 0%,transparent 40%,#22d3ee 40%,#22d3ee 45%,transparent 45%,transparent 55%,#22d3ee 55%,#22d3ee 60%,transparent 60%)';
+        grip.title = 'Drag to resize';
+        grip.addEventListener('mousedown', function(e){
+          e.preventDefault(); e.stopPropagation();
+          var startX = e.clientX, startY = e.clientY;
+          var rect = rollout.getBoundingClientRect();
+          var startW = rect.width, startH = rect.height;
+          function onMove(ev){
+            var nw = Math.max(260, Math.min(800, startW + (ev.clientX - startX)));
+            var nh = Math.max(120, Math.min(700, startH + (ev.clientY - startY)));
+            _ervRolloutSize = { w: nw, h: nh };
+            rollout.style.width  = nw + 'px';
+            rollout.style.height = nh + 'px';
+          }
+          function onUp(){
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup',   onUp);
+            _ervRolloutSave();
+          }
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup',   onUp);
+        });
         function _ervCurrencyOpt(){
           var z = _ervClimateZones.find(function(c){return c.id===_ervClimateZone;}) || _ervClimateZones[0];
           return z.currency || '$';
@@ -1466,7 +1568,17 @@ global.initPsy3D = function(container, opts){
         }
         function _renderRollout(){
           var on = !!_saDropERVOn && !!(saDropGroup && saDropGroup.visible);
-          rollout.style.display = on ? 'block' : 'none';
+          /* When ERV gets toggled OFF, automatically clear the closed
+             flag so the next time the user enables ERV the full panel
+             pops back open instead of just the chip.  This means the
+             close button is "session-scoped" within a single ERV-on
+             session — predictable behaviour without surprise. */
+          if (!on && _ervRolloutClosed) {
+            _ervRolloutClosed = false;
+            _ervRolloutSave();
+          }
+          rollout.style.display = (on && !_ervRolloutClosed) ? 'block' : 'none';
+          revive.style.display  = (on &&  _ervRolloutClosed) ? 'inline-block' : 'none';
           if (!on) {
             /* Clear the dashboard badge by publishing a disabled snapshot. */
             try {
@@ -1478,8 +1590,14 @@ global.initPsy3D = function(container, opts){
             return;
           }
           if (!weatherData || !weatherData.length) {
-            rollout.innerHTML = '<div style="color:#fbbf24;font-weight:900;text-transform:uppercase;letter-spacing:.08em">ERV Rollout</div>'+
+            rollout.innerHTML = '<div id="p3-erv-header" style="display:flex;justify-content:space-between;align-items:center;cursor:move">'+
+              '<div style="color:#fbbf24;font-weight:900;text-transform:uppercase;letter-spacing:.08em">ERV Rollout</div>'+
+              '<button data-erv-btn="close" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 5px;font:inherit;font-size:9px;cursor:pointer;border-radius:2px">\u2715</button>'+
+              '</div>'+
               '<div style="color:#94a3b8;margin-top:6px">Fetch weather data first to see annual savings.</div>';
+            rollout.querySelector('[data-erv-btn=close]').addEventListener('click', function(){ _ervRolloutClosed = true; _ervRolloutSave(); _renderRollout(); });
+            _wireDragHandle(rollout.querySelector('#p3-erv-header'));
+            _applyRolloutGeometry();
             return;
           }
           var series = _ervSavingsSeries(_designerERVEps);
@@ -1556,12 +1674,13 @@ global.initPsy3D = function(container, opts){
           }
 
           rollout.innerHTML =
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+            '<div id="p3-erv-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;cursor:move">'+
               '<div style="color:#22d3ee;font-weight:900;text-transform:uppercase;letter-spacing:.10em;font-size:9px">ERV Rollout</div>'+
               '<div style="display:flex;gap:4px">'+
                 '<button data-erv-btn="csv"     style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="Download hourly CSV">CSV</button>'+
                 '<button data-erv-btn="roi"     style="background:transparent;border:1px solid '+(_ervRoiOpen?'#fbbf24':'#475569')+';color:'+(_ervRoiOpen?'#fbbf24':'#94a3b8')+';padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="ROI inputs">ROI '+(_ervRoiOpen?'\u25BC':'\u25B6')+'</button>'+
                 '<button data-erv-btn="peaks"   style="background:transparent;border:1px solid '+(_ervShowPeaks?'#22d3ee':'#475569')+';color:'+(_ervShowPeaks?'#22d3ee':'#94a3b8')+';padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="Highlight top-3 peak hours">PEAKS</button>'+
+                '<button data-erv-btn="close"   style="background:transparent;border:1px solid #475569;color:#fb7185;padding:1px 5px;font:inherit;font-size:9px;cursor:pointer;border-radius:2px" title="Close panel (toggle ERV off-then-on to reopen)">\u2715</button>'+
               '</div>'+
             '</div>'+
             /* Climate-zone preset */
@@ -1626,8 +1745,20 @@ global.initPsy3D = function(container, opts){
               if (k === 'roi')   { _ervRoiOpen = !_ervRoiOpen; _ervRolloutSave(); _renderRollout(); }
               else if (k === 'peaks') { _ervShowPeaks = !_ervShowPeaks; _ervRolloutSave(); _buildSaDropGeometry(); _renderRollout(); }
               else if (k === 'csv')   { _ervExportCsv(); }
+              else if (k === 'close') { _ervRolloutClosed = true; _ervRolloutSave(); _renderRollout(); }
             });
           });
+          /* Drag + resize.  Attach AFTER innerHTML rewrite (handle nodes
+             are freshly created on each render).  Position/size persist
+             across renders + page-loads via _ervRolloutSave. */
+          var hdr = rollout.querySelector('#p3-erv-header');
+          if (hdr) _wireDragHandle(hdr);
+          /* Re-append the grip after every innerHTML refresh wipes it. */
+          if (!rollout.querySelector('#p3-erv-grip')) rollout.appendChild(grip);
+          _applyRolloutGeometry();
+          /* Update revive chip text with the current savings number. */
+          revive.innerHTML = '<span style="opacity:.6;margin-right:5px">\u21BB</span>ERV '+
+            _ervFmtMoney(agg.totalUSD).replace('$','$ ') + '/yr';
         }
         /* CSV export: hourly rows for the current epsilon. */
         function _ervExportCsv(){
@@ -1660,6 +1791,7 @@ global.initPsy3D = function(container, opts){
         var _origRefreshLegend = _refreshErvLegend;
         _refreshErvLegend = function(){ _origRefreshLegend(); _renderRollout(); };
         root.appendChild(rollout);
+        root.appendChild(revive);
         /* Hook re-render to weather refresh + designer-mode edits.  Both
            events already exist for the [USE LIVE OA] button. */
         window.addEventListener('red5-weather-loaded', function(){ if (rollout.style.display !== 'none') _renderRollout(); });

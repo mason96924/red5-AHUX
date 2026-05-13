@@ -2011,6 +2011,13 @@ global.initPsy3D = function(container, opts){
           // T-vs-W canvas), hide it in time-series modes.
           var dmBtnHide=$('#p3-btn-designer'); if(dmBtnHide) dmBtnHide.style.display='none';
           var dCfgHide =$('#p3-designer-cfg'); if(dCfgHide)  dCfgHide.style.display='none';
+          /* X-Y-only buttons: band-source toggle + band-shift strip +
+             both insight popups.  Hide them in time-series modes since
+             they overlap with the BACK TO 3D button at the right side
+             of the header.  Re-shown in the X-Y Detail handler. */
+          ['p3-btn-band-src','p3-band-help','p3-design-help','p3-band-delta'].forEach(function(id){
+            var el=$('#'+id); if(el) el.style.display='none';
+          });
           // Strategy-overlay toggles only valid inside Monthly \u00d7 Sites mode.
           ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
             var el=$('#'+id); if(el) el.style.display='none';
@@ -2042,6 +2049,13 @@ global.initPsy3D = function(container, opts){
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
       var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='block';
       var dCfgSh=$('#p3-designer-cfg'); if(dCfgSh) dCfgSh.style.display = _designerMode ? 'block' : 'none';
+      /* Re-show X-Y-only buttons; band-src + band-delta only visible when
+         ERV is on (their own toggles handle that), so we set display:'block'
+         and let their internal refresh handlers gate visibility. */
+      var bsSrcSh = $('#p3-btn-band-src'); if (bsSrcSh) bsSrcSh.style.display = 'block';
+      var bhSh    = $('#p3-band-help');    if (bhSh)    bhSh.style.display    = 'block';
+      var dhSh    = $('#p3-design-help');  if (dhSh)    dhSh.style.display    = 'block';
+      var bdSh    = $('#p3-band-delta');   if (bdSh)    bdSh.style.display    = _saDropERVOn ? 'flex' : 'none';
       ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
@@ -2062,6 +2076,10 @@ global.initPsy3D = function(container, opts){
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
       var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='none';
       var dCfgSh=$('#p3-designer-cfg'); if(dCfgSh) dCfgSh.style.display='none';
+      /* Also hide X-Y-only auxiliary buttons in 3D view. */
+      ['p3-btn-band-src','p3-band-help','p3-design-help','p3-band-delta'].forEach(function(id){
+        var el=$('#'+id); if(el) el.style.display='none';
+      });
       ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
@@ -2395,12 +2413,10 @@ global.initPsy3D = function(container, opts){
       storageKey:  'red5BandInsightState',
       storageLang: 'red5BandInsightLang'
     });
-    /* Psych-design-workflow `?` button (next to + Designer Mode button).
-       Same factory + same EN/한국어 toggle + markdown renderer.  Visible
-       only when the 2D chart is in 'psy' mode (driven by the Designer
-       Mode button's visibility, which we mirror in _refreshDesignerBtn
-       below; this lives on its own little watchdog below).  Anchored at
-       top:46 left:435 -- ~145px right of the Designer Mode button. */
+    /* Psych-design-workflow `?` button — anchored next to the
+       `+ Designer Mode` button (top:46 left:435).  Visibility is driven
+       by the front/side/X-Y/Back-to-3D handlers higher in setupControls,
+       not by a polling interval (cheaper + race-free). */
     var designHelp = _createInsightPopup({
       btnId:       'p3-design-help',
       btnTitle:    'Open the psychrometric-design workflow walkthrough.',
@@ -2413,17 +2429,6 @@ global.initPsy3D = function(container, opts){
       storageKey:  'red5DesignInsightState',
       storageLang: 'red5DesignInsightLang'
     });
-    /* The Designer Mode button itself is toggled by _refreshDesignerBtn
-       (set up much later, inside setupControls's Designer Mode block).
-       Mirror its visibility on a tiny interval so this `?` button stays
-       lockstep with the Designer Mode button.  Cheap (one display-string
-       read every 250ms) and keeps the two buttons visually paired. */
-    var _designHelpPair = setInterval(function(){
-      var dm = document.getElementById('p3-btn-designer');
-      if (!dm || !designHelp.button) return;
-      designHelp.button.style.display = dm.style.display === 'none' ? 'none' : 'block';
-    }, 250);
-    _cleanupTasks.push(function(){ clearInterval(_designHelpPair); });
 
     /* Minimal markdown -> HTML renderer.  Supports the subset our doc
        actually uses: H1/H2/H3, blockquote, ordered/unordered lists,

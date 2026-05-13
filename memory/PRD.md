@@ -5,6 +5,27 @@
 - **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — "Losing hours" semantics + capex/opex narrative.
 - **In-app access**: `📚 Docs` button in dashboard sidebar header opens a tabbed popup with all docs. Also accessible as per-context `?` buttons (cyan next to B-shift strip, amber next to + Designer Mode).
 
+## V1.9 Bugfix — Overlapping Buttons in T-Time / W-Time / 3D Modes (2026-02-13)
+**Brief**: User reported the new aux buttons (`Band src: OA`, `?` design-help, `?` band-help, B-shift delta strip) stayed visible after switching from X-Y Detail to T-Time or W-Time, where they overlapped the `BACK TO 3D` and `MONTHLY × SITES` buttons at the top-right of the chart header, making those buttons unclickable.
+
+### Fix
+- Added the 4 new aux button IDs (`p3-btn-band-src`, `p3-band-help`, `p3-design-help`, `p3-band-delta`) to the existing show/hide logic in `setupControls`:
+  - **front/side (T-Time, W-Time) handler**: hides all 4 via `style.display='none'`.
+  - **X-Y Detail handler**: restores all 4 (`block` for buttons, `flex` for the delta strip — only if ERV is on).
+  - **Back-to-3D handler**: hides all 4 since they're 2D-only.
+- Removed the previously-added 250 ms `setInterval` watchdog that mirrored Designer Mode visibility onto the design-help `?` button — now driven by the same event-based handlers as every other 2D-only button (cheaper, race-free).
+
+### Verification (live on `219.79.12.63:5001`)
+- Playwright at 1920×900 verified state transitions:
+  - **X-Y Detail**: `bandSrc:block, bandHelp:block, designHelp:block, bandDelta:flex, designer:block`.
+  - **T-Time**: ALL 5 = `none`. Top-right shows only `MONTHLY × SITES`, `SRC: OA`, `BACK TO 3D` — no overlap.
+  - **Back to X-Y**: all 4 aux buttons restored.
+  - **Back to 3D**: all 4 aux buttons hidden.
+- Hot-deployed `js/psy-3d-engine.js` (379,346 B).
+
+### Files changed
+- `js/psy-3d-engine.js` — 3 lines added per handler (× 3 handlers) + removed the 7-line setInterval watchdog. Net: cleaner, fewer LOC.
+
 ## V1.9 Bugfix — Korean Docs "Unable to load" (2026-02-13)
 **Brief**: User reported the Korean tabs in the Docs Index popup showed `Unable to load doc / File not found on the controller`, even though the `.ko.md` files were live on the controller (`curl` and Playwright fetch both returned 200 OK). Root cause: the browser had cached a 404 from an earlier upload-race attempt, and the fetch error was being **cached in the module's success cache** so re-clicks did not retry.
 

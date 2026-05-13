@@ -3,6 +3,28 @@
 ## Original Problem Statement
 Building Diagnostic Command Center: separate a monolithic Flask application into a dedicated backend API (`app.py`) and standalone React SPA frontends. System runs on a constrained embedded controller, loaded via iframe from cloud software.
 
+## V1.9 Dual-Color ERV Savings Ribbon on 3D OA→SA Drops (2026-02-13)
+**Brief**: When the `ERV |·` chip on the 3D Drops layer is ON, every weather sample now renders as **two** color-coded segments instead of one, giving operators an at-a-glance heatmap of how much annual coil energy the wheel saved.
+
+### What's new (`js/psy-3d-engine.js` → `_buildSaDropGeometry`)
+- **Cyan ERV-savings ribbon**: a horizontal segment from `(rawOA.T, time-Y, rawOA.W)` → `(OA'.T, time-Y, OA'.W)` drawn at the cloud's top. Vertex colors fade from a dim teal `(.07,.42,.47)` at the raw-OA end to bright cyan `(.13,.83,.93)` at OA' so the **direction of energy recovery is unambiguous**. Each cyan trail's length is proportional to per-hour wheel work.
+- **Temperature-spectrum coil drop**: the existing OA'→SA drop now starts at OA' (post-wheel state — the air the coil actually sees) instead of raw OA, so its length visualizes the **remaining coil work**. Top vertex = full color (entering-air-temp spectrum), bottom = 35% color as the drop hits the SA floor.
+- **No new state**: re-uses the existing `_saDropERVOn` boolean (persisted in `localStorage.red5SaDropERV`), `_designerERVEps` (epsilon), and `_designerRA_T/RH` from Designer Mode — single source of truth across the 2D Designer overlay and the 3D Drops cloud.
+- **No-action cull adjusted**: hours where the coil barely works (Δ vs entering-air-state <0.5 °C and <0.0003 kg/kg) are still culled, but now against `inT/inW` (post-wheel) instead of raw OA, so already-tempered hours where the wheel does the heavy lifting are correctly hidden from the coil-drop layer (still appear as cyan savings ribbons).
+
+### Verification (live deploy on `219.79.12.63:5001`)
+- `node --check js/psy-3d-engine.js` → syntax clean.
+- `python3 build_bundle.py` → `red5_bundle.zip` rebuilt, 1743.2 KB, MD5 `bc8136894aaba28a7ced7c76bc7ff116`, synced to both `/app/frontend/public/red5_bundle.zip` and `/app/frontend/public/red5-files/red5_bundle.zip`.
+- Hot-deployed `js/psy-3d-engine.js` (306,115 bytes) via `POST /api/upload-file` (JSON+base64). Live MD5 matches source byte-for-byte.
+- Playwright verification at 1920×900: loaded Dashboard → 3D WX tab, fetched a year of weather for the saved location (한양대학병원, 2928 pts), enabled OA→SA Drops layer, clicked the inner `data-erv=on` span of the `p3-saDrop-erv` chip. Chip border transitions from grey `#334155` → cyan `#22d3ee`; rendered cloud visibly densifies as the cyan savings ribbons join the existing coil-drop lines.
+
+### Why this matters
+The operator can now read **annual ERV economy** straight off the 3D cloud — long bright-cyan trails at the cloud's top = many high-Δh hours where the wheel was doing significant work; short or absent ribbons = low-load shoulder-season hours. Hand-in-hand with Designer Mode's per-design-point "ERV saved 8.5 RT (28 %)" readout, this gives ROI conversations a **visual heatmap to point at** during owner walkthroughs, not just a number.
+
+### Files changed
+- `js/psy-3d-engine.js` — `_buildSaDropGeometry` extended with the cyan-ribbon segment + entering-air-state recompute. ~20 net new lines (lines 2509-2555).
+
+
 ## V1.9 Bugfix · AHU + VAV Popout Air-Flow Overlay Drift (2026-02-09)
 **Brief**: User reported that the air-flow chevron segments and pink hotspot markers in the AHU Equipment Diagram drift left/down when the modal is popped out into a separate window (worked fine inline). Two screenshots provided confirmed the inline modal was pixel-perfect, popped-out was misaligned by ~50-80 px. Same latent bug existed on the VAV modal.
 

@@ -1,5 +1,9 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## 🌿 Codebase Fork (2026-02-13)
+- **`/app/archive/Red5-Studio-V1.9/`** — **Controller Edition** (production at `219.79.12.63:5001`). Frozen baseline; bug-fix only. All work in this PRD before 2026-02-13 refers to this version.
+- **`/app/archive/Red5-Studio-V2.0/`** — **Web Hosted Edition** (greenfield, just forked). Multi-tenant SaaS target. Migration plan: `Red5-Studio-V2.0/WEB_HOSTING_GUIDE.md`. Version-split rationale: `Red5-Studio-V2.0/VERSION.md`. Phase 1 = Demo Mode on Emergent (1-2 days).
+
 ## Documentation Index
 - **`psychrometric_design_workflow.md`** / **`psychrometric_design_workflow.ko.md`** — Designer Mode workflow + ERV math walkthrough.
 - **`erv_band_shift_insight.md`** / **`erv_band_shift_insight.ko.md`** — "Losing hours" semantics + capex/opex narrative.

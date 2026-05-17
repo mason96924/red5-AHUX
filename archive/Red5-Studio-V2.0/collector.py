@@ -56,9 +56,11 @@ WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 # and will silently fail at dibt.Write() -- the firmware accepts the call
 # but the target reference doesn't resolve.  Detect at queue-drain time
 # and emit a loud log so the operator doesn't troubleshoot for hours.
-_BACNET_OBJECTID_RE = re.compile(
-    r'^(AV|AI|AO|BV|BI|BO|MSV|MSI|MSO|CSV|TL|SCH|FILE|DEV|PROG|LSP|TLP|EE|NC|GRP|CAL)\d+$'
-)
+# NOTE: regex is built as a single-line non-raw string (with escaped \\d)
+# because the embedded enteliWEB Python tokenizer chokes on multi-line
+# re.compile(... r'...' ...) raw-string constructs (reports
+# 'unterminated string literal' at the line containing the regex body).
+_BACNET_OBJECTID_RE = re.compile('^(AV|AI|AO|BV|BI|BO|MSV|MSI|MSO|CSV|TL|SCH|FILE|DEV|PROG|LSP|TLP|EE|NC|GRP|CAL)\\d+$')
 
 
 def _is_bacnet_objectid(s):

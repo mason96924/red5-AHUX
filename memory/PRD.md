@@ -1709,3 +1709,56 @@ Single-file Repair-Mode replace of `dashboard.html`. Hard-refresh after.
 5. Repeat steps 2-4 with the Floor Plan modal (click any AHU's "View Floor Plan" tile).
 6. Open all three popups simultaneously and arrange them across multiple monitors.
 
+
+## 2026-02-11 — collector.py P0 hotfix (apostrophes-in-comments parser crash)
+**File:** `/app/archive/Red5-Studio-V1.9/collector.py` (912 lines, unchanged length).
+
+### Symptom
+On the live Delta Controls enteliWEB controller, `collector.py` crashed at import with
+`SyntaxError: unterminated string literal (detected at line 59/60)`. CPython parsed the
+file fine — the embedded enteliWEB tokenizer is the culprit.
+
+### Root cause
+The controller's embedded Python tokenizer treats apostrophes (`'`) inside `#` comments
+as string-literal delimiters. Any odd run of apostrophes across consecutive comment lines
+(or a single contraction like `doesn't`) causes the parser to think a string was opened
+and never closed → `unterminated string literal`.
+
+### Fix
+Stripped/reworded all 10 apostrophe occurrences inside `#` comments:
+
+| Line | Before | After |
+|---|---|---|
+| 55  | `'AHU01_SAT_SP' or 'OAT_SENSOR_01'` | `AHU01_SAT_SP or OAT_SENSOR_01` |
+| 57  | `doesn't resolve` | `does not resolve` |
+| 58  | `operator doesn't troubleshoot` | `operator does not troubleshoot` |
+| 62  | `'unterminated string literal'` | `unterminated string literal` |
+| 100 | `controller's runtime-injected` | `controller runtime-injected` |
+| 153 | `'AHU01_SAT_SP', 'OAT_SENSOR_01'` | `AHU01_SAT_SP, OAT_SENSOR_01` |
+| 155 | `doesn't resolve` | `does not resolve` |
+| 732 | `OAT/OAH aren't in` | `OAT/OAH are not in` |
+| 758 | `don't override` | `do not override` |
+| 761 | `band's description` | `band description` |
+
+### Verification
+- Programmatic tokenizer scan: `0` apostrophes remain inside any `tokenize.COMMENT` token.
+- `python3 -m py_compile collector.py` → OK.
+
+### Hardening rule (RECURRING — 3rd occurrence)
+**ALL** Python files targeting the enteliWEB controller MUST be pure ASCII AND contain
+ZERO apostrophes/single-quotes inside `#` comments. Run this guard before every deploy:
+
+```bash
+python3 -c "
+import tokenize, io, sys
+with open(sys.argv[1],'rb') as f: data=f.read()
+bad=[(t.start,t.string) for t in tokenize.tokenize(io.BytesIO(data).readline)
+     if t.type==tokenize.COMMENT and \"'\" in t.string]
+print('BAD' if bad else 'OK', bad)
+" collector.py
+```
+
+### Deploy steps for user
+1. Upload the fixed `collector.py` via Repair Mode `/api/repair/upload-file`.
+2. Restart the collector service on the controller.
+3. Tail logs — `unterminated string literal` should be gone; BACnet telemetry should resume.

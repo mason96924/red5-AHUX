@@ -52,14 +52,14 @@ WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 #   MSV / MSI / MSO -- multistate value / input / output
 #   CSV           -- character-string value (used for AHU command bundles)
 #   TL / SCH / FILE / DEV / PROG / LSP / TLP / EE / NC / GRP / CAL -- misc.
-# Names like 'AHU01_SAT_SP' or 'OAT_SENSOR_01' are Object NAMES not IDs
+# Names like AHU01_SAT_SP or OAT_SENSOR_01 are Object NAMES not IDs
 # and will silently fail at dibt.Write() -- the firmware accepts the call
-# but the target reference doesn't resolve.  Detect at queue-drain time
-# and emit a loud log so the operator doesn't troubleshoot for hours.
+# but the target reference does not resolve.  Detect at queue-drain time
+# and emit a loud log so the operator does not troubleshoot for hours.
 # NOTE: implemented as a plain prefix lookup (NOT re.compile) because
 # the embedded enteliWEB Python tokenizer chokes on long regex string
 # literals and on multi-line re.compile() constructs (reports
-# 'unterminated string literal').  Pure-Python check is robust + fast.
+# unterminated string literal).  Pure-Python check is robust + fast.
 _BACNET_OBJECTID_PREFIXES = (
     'AV', 'AI', 'AO', 'BV', 'BI', 'BO',
     'MSV', 'MSI', 'MSO', 'CSV',
@@ -97,7 +97,7 @@ VERSION = '1.2'
 # ===== Write Queue =====
 # /api/write-point in telemetry_service.py runs in the Flask process,
 # which does NOT have dibt available (the auto-loaded plug-in cannot
-# import the controller's runtime-injected dibt global).  Instead the
+# import the controller runtime-injected dibt global).  Instead the
 # Flask side appends each write request to write_queue.json; collector
 # (which IS an enteliWEB object with dibt available) drains the queue
 # on every poll cycle.  Audit log lands in write_results.json.
@@ -150,9 +150,9 @@ def process_write_queue(mock_mode=False):
         csv_val  = entry.get('csv_value', '')
         equip    = entry.get('equip_name', '')
         # Defensive BACnet target validation.  Object NAMES (e.g.
-        # 'AHU01_SAT_SP', 'OAT_SENSOR_01') will silently fail at
+        # AHU01_SAT_SP, OAT_SENSOR_01) will silently fail at
         # dibt.Write -- the firmware accepts the call but the reference
-        # doesn't resolve and the write is dropped.  Emit a loud log
+        # does not resolve and the write is dropped.  Emit a loud log
         # entry so the operator stops chasing ghost writes; record the
         # diagnosis on the result so /api/write-results surfaces it too.
         target_kind = 'ID' if _is_bacnet_objectid(csv_obj) else 'NAME'
@@ -729,7 +729,7 @@ def collect_all(ahu_groups, mock_mode=False):
                 oa_t_val = entry['points'].get('OAT')
                 oa_rh_val = entry['points'].get('OAH')
 
-                # Fallback: if live OAT/OAH aren't in the parsed payload (shell data or
+                # Fallback: if live OAT/OAH are not in the parsed payload (shell data or
                 # differently-labelled points), synthesize them via the simulator so that
                 # a band can still be classified and pushed to CSV_AHUnn.Description.
                 _oa_source = 'live'
@@ -755,10 +755,10 @@ def collect_all(ahu_groups, mock_mode=False):
                         'hum_mode': band['hum'],
                         'oa_source': _oa_source,
                     }
-                    # Only push setpoints when OA is real (don't override live control with simulated OA)
+                    # Only push setpoints when OA is real (do not override live control with simulated OA)
                     if _oa_source == 'live':
                         write_band_setpoints(csv_obj, band, ahu_point_defs, vav_entries)
-                    # Always push the active band's description so operators see it
+                    # Always push the active band description so operators see it
                     write_band_guide_to_description(csv_obj, band)
                 except Exception as _be:
                     log(f'[{ahu_name}] band classification/write failed: {_be}')

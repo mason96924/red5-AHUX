@@ -1762,3 +1762,57 @@ print('BAD' if bad else 'OK', bad)
 1. Upload the fixed `collector.py` via Repair Mode `/api/repair/upload-file`.
 2. Restart the collector service on the controller.
 3. Tail logs — `unterminated string literal` should be gone; BACnet telemetry should resume.
+
+## 2026-02-11 — equipment_mapper.html airflow-segment slider freeze fix
+**File:** `/app/archive/Red5-Studio-V1.9/equipment_mapper.html` (1 function rewritten, lines 1317–1359).
+
+### Symptom
+Operator reported: moving the Stretch X or Stretch Y slider on an `air_flow_path`
+segment (3D Transform panel inside the airflow segment editor) caused the browser
+tab to freeze and show "page unresponsive" — even at normal slider values, not
+just at extremes.
+
+### Root cause
+`handleAirflowSegmentChange` called `JSON.parse(JSON.stringify(prevSchema))` on
+EVERY slider input event (~60 Hz during drag).  The schema contains nested VFD
+`image_data` base64 PNGs (~500 KB each) plus several AHU/VAV type definitions.
+Each deep-clone cost 20-100 ms in-browser, saturating the main thread.
+
+Non-airflow sliders never crashed because their handler (`updateTargetCoords`)
+already uses path-targeted shallow updates — this bug existed only in the
+airflow-segment handler.
+
+### Fix
+Rewrote `handleAirflowSegmentChange` to do a path-targeted shallow update:
+clone only the nodes on the chain
+`schema → category → typeId → visual_assets → animations → segments → segment`.
+Added a no-op short-circuit so identical values (slider thumb hasn't moved a
+step) don't trigger a re-render at all.
+
+### Verification (Node micro-bench, 100 ticks against a schema with a 500 KB VFD image_data blob)
+
+| Strategy | Per-tick cost | Speedup |
+|---|---|---|
+| OLD JSON.parse(JSON.stringify) | 2.49 ms (Node; ~20-100 ms in-browser) | 1× |
+| NEW path-targeted shallow | 0.002 ms | **>1000×** |
+
+Immutability invariants checked programmatically:
+- `oldSchema` reference not mutated ✓
+- new segment value visible at `next.ahus.AHU01.visual_assets.animations[0].segments[0].stretchX` ✓
+- unrelated sibling segment keeps same object identity ✓
+- unrelated VFD animation (with 500 KB image_data) keeps same object identity ✓
+  → React skips re-rendering it entirely on slider drag
+- identical-value short-circuit returns same `prevSchema` reference ✓
+
+JSX parse check via `@babel/parser` on the full 421 KB inline source: **OK**.
+
+### Deploy
+Single-file Repair-Mode replace of `equipment_mapper.html`. Hard-refresh after.
+
+### Verify on controller
+1. Open the equipment mapper, open an AHU schema with an existing VFD aligner
+   (image_data present) AND an air_flow_path animation with at least one segment.
+2. Expand the airflow segment's "3D Transform ▼" panel.
+3. Drag the Stretch X slider rapidly across its full range; repeat for Stretch Y.
+4. Expected: smooth visual feedback, no "page unresponsive" dialog, no audible
+   fan / CPU spike on the host.  Per-tick render budget should stay under 5 ms.

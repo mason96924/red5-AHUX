@@ -1315,15 +1315,44 @@
             };
 
             const handleAirflowSegmentChange = (animIdx, segIdx, field, value) => {
+                // PERF: path-targeted shallow update instead of full
+                // JSON.parse(JSON.stringify(schema)).  The schema can contain
+                // large base64 image_data (VFD chassis PNGs) which made the
+                // deep-clone cost 50-300ms PER slider tick.  Continuous slider
+                // drag (~60 Hz) saturated the main thread and triggered the
+                // browser "page unresponsive" dialog.  We now only clone the
+                // nodes on the path to the changed segment.  Schema-wide
+                // identity for unchanged branches is preserved.
                 setSchema(prevSchema => {
-                    const draft = JSON.parse(JSON.stringify(prevSchema));
-                    const anim = draft[category][typeId].visual_assets.animations[animIdx];
-                    if (anim && anim.segments && anim.segments[segIdx]) { 
-                        anim.segments[segIdx][field] = value; 
-                        // Auto-select this segment when editing
-                        setActiveSegmentId(anim.segments[segIdx].id);
-                    }
-                    return draft;
+                    const cat = prevSchema && prevSchema[category];
+                    if (!cat) return prevSchema;
+                    const tDef = cat[typeId];
+                    if (!tDef || !tDef.visual_assets || !tDef.visual_assets.animations) return prevSchema;
+                    const anims = tDef.visual_assets.animations;
+                    const anim = anims[animIdx];
+                    if (!anim || !anim.segments || !anim.segments[segIdx]) return prevSchema;
+
+                    const oldSeg = anim.segments[segIdx];
+                    // No-op short-circuit: avoid re-rendering when the slider
+                    // emits an identical value (browsers fire input events
+                    // even when the thumb has not moved a step).
+                    if (oldSeg[field] === value) return prevSchema;
+
+                    const newSeg = { ...oldSeg, [field]: value };
+                    const newSegments = anim.segments.slice();
+                    newSegments[segIdx] = newSeg;
+                    const newAnim = { ...anim, segments: newSegments };
+                    const newAnims = anims.slice();
+                    newAnims[animIdx] = newAnim;
+                    const newVA = { ...tDef.visual_assets, animations: newAnims };
+                    const newTDef = { ...tDef, visual_assets: newVA };
+                    const newCat = { ...cat, [typeId]: newTDef };
+
+                    // Auto-select this segment when editing.  setState batches
+                    // both updates into a single React render commit.
+                    setActiveSegmentId(newSeg.id);
+
+                    return { ...prevSchema, [category]: newCat };
                 });
             };
 

@@ -56,16 +56,34 @@ WRITE_RESULTS_MAX   = 200  # ring buffer of recent write attempts
 # and will silently fail at dibt.Write() -- the firmware accepts the call
 # but the target reference doesn't resolve.  Detect at queue-drain time
 # and emit a loud log so the operator doesn't troubleshoot for hours.
-# NOTE: regex is built as a single-line non-raw string (with escaped \\d)
-# because the embedded enteliWEB Python tokenizer chokes on multi-line
-# re.compile(... r'...' ...) raw-string constructs (reports
-# 'unterminated string literal' at the line containing the regex body).
-_BACNET_OBJECTID_RE = re.compile('^(AV|AI|AO|BV|BI|BO|MSV|MSI|MSO|CSV|TL|SCH|FILE|DEV|PROG|LSP|TLP|EE|NC|GRP|CAL)\\d+$')
+# NOTE: implemented as a plain prefix lookup (NOT re.compile) because
+# the embedded enteliWEB Python tokenizer chokes on long regex string
+# literals and on multi-line re.compile() constructs (reports
+# 'unterminated string literal').  Pure-Python check is robust + fast.
+_BACNET_OBJECTID_PREFIXES = (
+    'AV', 'AI', 'AO', 'BV', 'BI', 'BO',
+    'MSV', 'MSI', 'MSO', 'CSV',
+    'TL', 'SCH', 'FILE', 'DEV', 'PROG',
+    'LSP', 'TLP', 'EE', 'NC', 'GRP', 'CAL',
+)
 
 
 def _is_bacnet_objectid(s):
     """True iff ``s`` looks like a valid BACnet ObjectID (e.g. 'CSV1')."""
-    return bool(s and isinstance(s, str) and _BACNET_OBJECTID_RE.match(s))
+    if not s or not isinstance(s, str):
+        return False
+    # Find the boundary where letters end and digits begin.
+    n = len(s)
+    i = 0
+    while i < n and s[i].isalpha():
+        i += 1
+    if i == 0 or i == n:
+        return False
+    # Tail must be all digits.
+    if not s[i:].isdigit():
+        return False
+    # Head must be one of the known BACnet object-type prefixes.
+    return s[:i] in _BACNET_OBJECTID_PREFIXES
 
 
 DEFAULT_INTERVAL = 5

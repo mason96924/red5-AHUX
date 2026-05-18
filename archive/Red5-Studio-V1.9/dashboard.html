@@ -338,6 +338,44 @@
                 try { localStorage.setItem('red5_sweet_spot_range', JSON.stringify(sweetSpotRange)); } catch (e) {}
             }, [sweetSpotRange]);
 
+            // Robust JSON fetch that catches the common controller-side
+            // failure mode where an unregistered route gets handled by the
+            // SPA fallback and returns HTML instead of JSON.  Without this
+            // helper the caller sees a cryptic "Unexpected token '<'" from
+            // r.json() and assumes the controller is offline -- when in
+            // reality band_overrides_service.py just was not uploaded to
+            // /root/data/pgpy/ yet, or Flask was not restarted after the
+            // upload.  We detect HTML in the response and surface a
+            // controller-side deploy hint that the operator can act on.
+            const fetchJSON = async (url, options) => {
+                let r;
+                try {
+                    r = await fetch(url, options);
+                } catch (netErr) {
+                    const err = new Error('Controller unreachable: ' + netErr.message);
+                    err.code = 'NETWORK';
+                    throw err;
+                }
+                const ct = (r.headers.get('content-type') || '').toLowerCase();
+                if (!ct.includes('application/json')) {
+                    const head = (await r.text()).slice(0, 60).replace(/\s+/g, ' ').trim();
+                    if (r.status === 404 || /<!doctype/i.test(head) || /<html/i.test(head)) {
+                        const err = new Error(
+                            'Band-overrides service not found on the controller. '
+                          + 'Upload band_overrides_service.py to /root/data/pgpy/ '
+                          + 'and restart Flask, then try again.\n\n'
+                          + '(HTTP ' + r.status + ', response began with: ' + head + ')'
+                        );
+                        err.code = 'PLUGIN_MISSING';
+                        throw err;
+                    }
+                    const err = new Error('Unexpected non-JSON response (HTTP ' + r.status + '): ' + head);
+                    err.code = 'BAD_RESPONSE';
+                    throw err;
+                }
+                return r.json();
+            };
+
             // Operator SA-RH clamp - the SLIDER (sweetSpotRange) is hypothetical
             // until the operator presses "Apply to Controller", at which point
             // we POST to /api/band-overrides/sa-rh-clamp and the value here
@@ -352,14 +390,18 @@
                 let cancelled = false;
                 (async () => {
                     try {
-                        const r = await fetch('/api/band-overrides/sa-rh-clamp');
-                        if (!r.ok) return;
-                        const j = await r.json();
+                        const j = await fetchJSON('/api/band-overrides/sa-rh-clamp');
                         if (cancelled) return;
                         if (j.status === 'ok' && j.sa_rh_clamp && j.sa_rh_clamp.enabled) {
                             setBandClampApplied({ lo: j.sa_rh_clamp.lo, hi: j.sa_rh_clamp.hi });
                         }
-                    } catch (e) { /* offline / no service */ }
+                    } catch (e) {
+                        // Silent on initial mount -- the operator gets a
+                        // clear error message later when they actually
+                        // click Apply / Reset.  fetchJSON already classified
+                        // the failure (PLUGIN_MISSING, NETWORK, etc.).
+                        if (typeof console !== 'undefined') console.warn('[band-overrides initial GET]', e.message);
+                    }
                 })();
                 return () => { cancelled = true; };
             }, []);
@@ -2140,15 +2182,14 @@
                                                 : 'Live: factory bands';
                                             const onApply = async () => {
                                                 try {
-                                                    const r = await fetch('/api/band-overrides/preview?lo=' + sweetSpotRange.lo + '&hi=' + sweetSpotRange.hi);
-                                                    const j = await r.json();
+                                                    const j = await fetchJSON('/api/band-overrides/preview?lo=' + sweetSpotRange.lo + '&hi=' + sweetSpotRange.hi);
                                                     if (j.status === 'ok') {
                                                         setBandClampModal({ lo: sweetSpotRange.lo, hi: sweetSpotRange.hi, preview: j.preview });
                                                     } else {
                                                         alert('Preview failed: ' + (j.message || 'unknown'));
                                                     }
                                                 } catch (e) {
-                                                    alert('Preview failed (controller offline?): ' + e.message);
+                                                    alert(e.message);
                                                 }
                                             };
                                             const onReset = async () => {
@@ -2156,15 +2197,14 @@
                                                 if (!window.confirm('Reset to factory bands?  This removes the SA-RH clamp from the controller.')) return;
                                                 setBandClampBusy(true);
                                                 try {
-                                                    const r = await fetch('/api/band-overrides/sa-rh-clamp', { method: 'DELETE' });
-                                                    const j = await r.json();
+                                                    const j = await fetchJSON('/api/band-overrides/sa-rh-clamp', { method: 'DELETE' });
                                                     if (j.status === 'ok') {
                                                         setBandClampApplied(null);
                                                     } else {
                                                         alert('Reset failed: ' + (j.message || 'unknown'));
                                                     }
                                                 } catch (e) {
-                                                    alert('Reset failed (controller offline?): ' + e.message);
+                                                    alert(e.message);
                                                 } finally {
                                                     setBandClampBusy(false);
                                                 }
@@ -2907,12 +2947,11 @@
                         const onConfirm = async () => {
                             setBandClampBusy(true);
                             try {
-                                const r = await fetch('/api/band-overrides/sa-rh-clamp', {
+                                const j = await fetchJSON('/api/band-overrides/sa-rh-clamp', {
                                     method: 'POST',
                                     headers: {'Content-Type':'application/json'},
                                     body: JSON.stringify({ lo, hi, enabled: true, applied_by: 'dashboard' })
                                 });
-                                const j = await r.json();
                                 if (j.status === 'ok') {
                                     setBandClampApplied({ lo, hi });
                                     setBandClampModal(null);
@@ -2920,7 +2959,7 @@
                                     alert('Apply failed: ' + (j.message || 'unknown'));
                                 }
                             } catch (e) {
-                                alert('Apply failed (controller offline?): ' + e.message);
+                                alert(e.message);
                             } finally {
                                 setBandClampBusy(false);
                             }

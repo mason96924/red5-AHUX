@@ -2319,3 +2319,58 @@ the floating mode: `onClick={() => setSidebarFloating(true)}`.
 
 ### Deploy
 Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
+
+## 2026-02-11 — Apply-to-Controller "Unexpected token <" UX fix
+**Files:**
+- `dashboard.html` (new `fetchJSON` helper + all 4 band-overrides fetches migrated)
+- `tests/test_fetch_json_helper.js` (NEW, 19 assertions)
+
+### Operator-reported bug
+> apply to controller button reports an error as shown in the attached.
+> Preview failed (controller offline?): Unexpected token '<', "<!doctype "... is not valid JSON
+
+### Root cause
+The controller's Flask app has no catch-all 404 -- when a route is not
+registered, the SPA dashboard HTML is returned for unknown paths.  Caller
+did `r.json()` blindly, which threw on the HTML body.  The catch arm then
+said "controller offline?" -- factually wrong (the controller was answering
+fine, it just did not have the band-overrides route).
+
+Actual cause: `band_overrides_service.py` was not uploaded to
+`/root/data/pgpy/` on the controller.  Auto-discovery globs `*_service.py`
+from that directory at boot.
+
+### Fix
+1. Added `fetchJSON(url, options)` helper that:
+   - Catches network errors -> `err.code = 'NETWORK'`.
+   - Inspects the response `Content-Type`.  If not JSON AND the body
+     starts with `<!doctype` / `<html` OR HTTP status is 404 ->
+     `err.code = 'PLUGIN_MISSING'` with an actionable message:
+     "Upload band_overrides_service.py to /root/data/pgpy/ and restart Flask".
+   - Non-JSON / non-HTML -> `err.code = 'BAD_RESPONSE'` with the
+     first 60 chars of the body for diagnosis.
+2. Migrated all 4 band-overrides fetches to use it (initial-mount GET,
+   preview GET, Apply POST, Reset DELETE).
+3. Removed the misleading "(controller offline?)" wording.
+
+### Verification (`tests/test_fetch_json_helper.js` -- 19/19 PASS)
+- Source checks: helper declared, content-type guard, doctype detection,
+  pgpy deploy hint, restart-Flask hint, NETWORK code, JSON return.
+- Caller migration: 4 + use sites, each of the 4 endpoints uses fetchJSON.
+- Regression: no "controller offline?" wording remains.
+- Functional simulations (in-test mock fetch):
+  - HTML response (operator-reported case) -> PLUGIN_MISSING + deploy hint
+  - HTTP 404 -> PLUGIN_MISSING
+  - Network error -> NETWORK
+  - Happy path -> parsed JSON returned
+  - Non-JSON non-HTML -> BAD_RESPONSE
+
+All sibling regression suites still green.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
+
+### What the operator must STILL do for the feature to actually work
+Upload `band_overrides_service.py` to `/root/data/pgpy/` on the controller
+and restart Flask.  Until that happens, clicking Apply now shows a clear
+error pointing to exactly that step, instead of "Unexpected token '<'".

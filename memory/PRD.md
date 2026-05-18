@@ -1890,3 +1890,105 @@ Hard-refresh after.
    third line "<tier> · <label>" + sub-label "humidify (RH-only)" or similar.
 5. Tighten the RH slider to 46-54: VAVs at 45 or 55% RH should immediately
    re-classify from A to B with their dot colour updating live.
+
+## 2026-02-11 — Operator SA-RH clamp (Phase 1: targets + documentation)
+**Files (5 modified / created):**
+- `band_csv_generator.py` (+ `apply_sa_rh_clamp`, `load_sa_rh_clamp`, `_effective_bands`)
+- `collector.py` (+ inline `_apply_sa_rh_clamp`, `_load_sa_rh_clamp`, hot-reload via mtime cache; classify_band now returns clamped band)
+- `band_overrides_service.py` (NEW Flask plugin, 4 routes)
+- `dashboard.html` (+ Apply-to-Controller button, dirty-state chip, Reset button, full confirm modal with per-band diff table)
+- `tests/test_band_sa_rh_clamp.py` (NEW, 15 assertions)
+- `tests/test_band_overrides_service.py` (NEW, 8 assertions)
+- `tests/test_band_service.py` (minor route-filter fix for plugin coexistence)
+
+### Operator ask
+"Slider should drive every band sa_rh SA target.  When operator tightens to 45-55%,
+every band sa_rh gets clamped into that window so the supply air itself stays in
+the operator's comfort RH band."  Plus: include an equipment-warning confirm
+modal that lists every affected band before the first Apply.
+
+### Architecture — split into 2 phases
+
+**Phase 1 (shipped today, NO new BACnet writes, NO mechanical risk):**
+- Slider value is stored hypothetical in localStorage as today.
+- "Apply to Controller" button opens a confirm modal that lists every band the
+  clamp will change.  On confirm, POSTs to `/api/band-overrides/sa-rh-clamp`.
+- The plugin persists the clamp to `/root/data/configs/band_overrides.json` and
+  triggers band CSV regeneration.
+- `band_csv_generator._effective_bands()` wraps every CSV write through
+  `apply_sa_rh_clamp(band, lo, hi)`, so `band_guide.csv` and per-AHU
+  `*_vav_proj.csv` files reflect the clamped targets.
+- `collector.classify_band()` reads `band_overrides.json` on each cycle
+  (mtime-cached: zero disk hits when no slider changes have happened) and
+  returns the clamped band.  Downstream `write_band_guide_to_description()`
+  therefore writes the clamped `sa_rh` + flipped `hum` to every AHU
+  `CSV.Description` BACnet point.
+
+**Phase 2 (TODO, needs operator info):**
+- Today `write_band_setpoints()` writes only `SATSP`/`OAD`/`HSP`. No humidity
+  setpoint is written, so the humidifier coil never sees the new target
+  mechanically -- the clamp is documentation-only.
+- For full actuation, the operator must identify the AHU humidity-SP BACnet
+  point name (e.g. `SAHSP`, `HumSP`, `SUP_HUM_SP`) so `write_band_setpoints()`
+  can include `humSP = clamped.sa_rh` in the write_dict.  Until that arrives,
+  the dashboard confirm modal explicitly tells the operator the clamp is
+  "targets and documentation only".
+
+### Clamp logic (`apply_sa_rh_clamp`)
+- `sa_rh_clamped = max(lo, min(hi, band.sa_rh))`
+- If clamp moved value DOWN  -> `hum` forced to `DEHUMIDIFY`
+- If clamp moved value UP    -> `hum` forced to `HUMIDIFY`
+- Unchanged                  -> `hum` left as-is
+- Inverted bounds (lo > hi) are silently swapped.
+- Returns a new dict (input not mutated).
+
+### Why an inline copy of the helper in `collector.py`?
+The embedded controller cannot safely `import band_csv_generator` from inside
+collector.py (deployment / sys.path quirks).  Tests include
+`TestCollectorParity` which iterates every band x every clamp combo and
+asserts the inline collector helper returns byte-identical output to the
+canonical `band_csv_generator.apply_sa_rh_clamp` helper, so the two will
+not drift.
+
+### Verification
+- **`tests/test_band_sa_rh_clamp.py`** — 15/15 PASS.  Covers clamp-down /
+  clamp-up / unchanged / inverted-bounds / input-immutability / load-config /
+  effective-bands / and the controller-parity check.
+- **`tests/test_band_overrides_service.py`** — 8/8 PASS.  Covers GET / POST /
+  DELETE / preview / idempotency / validation rejects / on-disk persistence /
+  history capture.
+- **Auto-discovery** — boot script with the V1.9 app.py picks up the new
+  `band_overrides_service.py` and registers `/api/band-overrides/{sa-rh-clamp,preview}`.
+- **JSX parse** — full 387 KB inline dashboard source parses cleanly via
+  `@babel/parser` post-edit (slider row + confirm modal).
+- **Controller-tokenizer safety** — `collector.py`, `band_csv_generator.py`,
+  `band_overrides_service.py` all confirmed to have ZERO apostrophes inside
+  any `#` comment (the recurring enteliWEB tokenizer bug).
+- **Sibling suites** — `band_service.py` minor test was tightened to filter
+  to band-csv routes only (my plugin coexists at `/api/band-overrides/*`);
+  all 11 band-service assertions PASS.  No other test regressed.
+
+### Deploy
+4-file Repair-Mode upload of:
+- `collector.py`
+- `band_csv_generator.py`
+- `band_overrides_service.py` (NEW; auto-discovered, restart Flask)
+- `dashboard.html`
+Plus restart of the collector service so the new mtime watcher kicks in.
+
+### Verify on controller
+1. Open the dashboard, enable Givoni + 40-60% RH toggles.  The new "Live: 40-60% RH"
+   chip should appear next to a greyed-out "Applied" button (slider matches controller).
+2. Drag the slider to 45-55%.  The "Applied" button should turn amber and read
+   "Apply to Controller".
+3. Press it.  A modal appears listing every band the clamp will change.  Spot
+   check: B7 row should show "95% -> 55% / SUBCOOL_REHEAT -> DEHUMIDIFY", B2
+   should show "35% -> 45% / COND_HUM -> HUMIDIFY", B5 unchanged.
+4. Press "Confirm & Apply".  Modal closes; chip updates to "Live: 45-55% RH".
+5. SSH to the controller and `cat /root/data/configs/band_overrides.json` --
+   should see the persisted clamp + history.
+6. Watch `collector.log` for the next cycle -- `write_band_guide_to_description`
+   should now write the clamped `sa_rh` + flipped `hum` into every AHU
+   `CSV.Description` string.  External BACnet observers see the new targets.
+7. Press "Reset" to remove the clamp and verify the chip flips back to
+   "Live: factory bands" and `band_overrides.json` shows `sa_rh_clamp: null`.

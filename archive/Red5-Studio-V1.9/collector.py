@@ -455,6 +455,71 @@ def generate_mock_csv_for_group(ahu_name, ahu_point_defs, vav_entries):
 
 # ===== Band Classification =====
 
+# Operator SA-RH clamp loaded from band_overrides.json on each cycle.  The
+# clamp narrows every band sa_rh into the operator-defined window and flips
+# hum mode to drive SA toward that window (Phase 1: targets + Description
+# string only; mechanical actuation is Phase 2 and needs the AHU humidity
+# SP BACnet point name).  Pure ASCII, no apostrophes in this comment block
+# (embedded tokenizer rule).
+BAND_OVERRIDES_PATH = os.path.join(CONFIG_DIR, 'band_overrides.json')
+
+_sa_rh_clamp_cache = {'mtime': 0, 'value': None}
+
+
+def _load_sa_rh_clamp():
+    """Return (lo, hi) tuple if a clamp is enabled in band_overrides.json,
+    else None.  Cached by file mtime so the disk hit is amortized across
+    every collector cycle (typical poll interval is 5-60 seconds).
+    """
+    try:
+        if not os.path.exists(BAND_OVERRIDES_PATH):
+            _sa_rh_clamp_cache['value'] = None
+            _sa_rh_clamp_cache['mtime'] = 0
+            return None
+        mt = os.path.getmtime(BAND_OVERRIDES_PATH)
+        if mt == _sa_rh_clamp_cache['mtime']:
+            return _sa_rh_clamp_cache['value']
+        with open(BAND_OVERRIDES_PATH, 'r') as f:
+            data = json.load(f)
+        c = data.get('sa_rh_clamp') or {}
+        if not c.get('enabled'):
+            _sa_rh_clamp_cache['value'] = None
+        else:
+            lo = c.get('lo'); hi = c.get('hi')
+            if lo is None or hi is None:
+                _sa_rh_clamp_cache['value'] = None
+            else:
+                _sa_rh_clamp_cache['value'] = (int(lo), int(hi))
+        _sa_rh_clamp_cache['mtime'] = mt
+        return _sa_rh_clamp_cache['value']
+    except Exception:
+        return None
+
+
+def _apply_sa_rh_clamp(band, lo, hi):
+    """Return a NEW band dict with sa_rh clamped to [lo, hi] and hum mode
+    flipped to drive SA toward the window.  Pure function: input band is
+    not mutated.  Returns a shallow copy unchanged if lo or hi is None.
+    Mirror of band_csv_generator.apply_sa_rh_clamp so collector stays
+    importless on the embedded controller.
+    """
+    if lo is None or hi is None:
+        return dict(band)
+    if lo > hi:
+        lo, hi = hi, lo
+    orig_rh = band.get('sa_rh', 0)
+    clamped_rh = max(lo, min(hi, orig_rh))
+    out = dict(band)
+    out['sa_rh'] = clamped_rh
+    if clamped_rh < orig_rh:
+        out['hum'] = 'DEHUMIDIFY'
+        out['_clamp'] = 'down'
+    elif clamped_rh > orig_rh:
+        out['hum'] = 'HUMIDIFY'
+        out['_clamp'] = 'up'
+    return out
+
+
 BANDS = [
     {'id': 'B1',  'oa_t': (-50, 5),  'oa_rh': (0, 30),   'sa_t': 21.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'AGGRESSIVE', 'hum': 'HUMIDIFY'},
     {'id': 'B2',  'oa_t': (5, 15),   'oa_rh': (30, 60),   'sa_t': 19.5, 'sa_rh': 35, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'MODERATE',   'hum': 'COND_HUM'},
@@ -472,23 +537,34 @@ BANDS = [
 def classify_band(oa_t, oa_rh):
     """Classify current OA conditions into B1-B10.
     Exact boundary match first, then nearest band center as fallback.
+    Applies the operator sa_rh clamp (if any) before returning so every
+    downstream caller (write_band_guide_to_description, telemetry payload,
+    classify_band logs) sees a single consistent view of the band.
     """
+    matched = None
     for band in BANDS:
         t_lo, t_hi = band['oa_t']
         rh_lo, rh_hi = band['oa_rh']
         if t_lo <= oa_t <= t_hi and rh_lo <= oa_rh <= rh_hi:
-            return band
+            matched = band
+            break
 
-    best = BANDS[4]
-    best_dist = float('inf')
-    for band in BANDS:
-        t_mid = (band['oa_t'][0] + band['oa_t'][1]) / 2.0
-        rh_mid = (band['oa_rh'][0] + band['oa_rh'][1]) / 2.0
-        dist = ((oa_t - t_mid) ** 2 + (oa_rh - rh_mid) ** 2) ** 0.5
-        if dist < best_dist:
-            best_dist = dist
-            best = band
-    return best
+    if matched is None:
+        best = BANDS[4]
+        best_dist = float('inf')
+        for band in BANDS:
+            t_mid = (band['oa_t'][0] + band['oa_t'][1]) / 2.0
+            rh_mid = (band['oa_rh'][0] + band['oa_rh'][1]) / 2.0
+            dist = ((oa_t - t_mid) ** 2 + (oa_rh - rh_mid) ** 2) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best = band
+        matched = best
+
+    clamp = _load_sa_rh_clamp()
+    if clamp is None:
+        return matched
+    return _apply_sa_rh_clamp(matched, clamp[0], clamp[1])
 
 
 def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):

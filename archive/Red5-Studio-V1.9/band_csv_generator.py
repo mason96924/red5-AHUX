@@ -148,6 +148,81 @@ def compute_sa(band):
     return sa_t, sa_w, sa_rh, sa_t_delivery, sa_rh_delivery
 
 
+# ---------------------------------------------------------------------------
+# Operator SA-RH clamp (Phase 1: documentation + targets layer)
+# ---------------------------------------------------------------------------
+# When the operator narrows the dashboard 40-60% RH slider to e.g. 45-55%,
+# every band gets its sa_rh clamped into the operator window and the hum
+# mode is flipped to drive the SA toward that window:
+#   - clamp moves sa_rh DOWN  -> hum forced to DEHUMIDIFY
+#   - clamp moves sa_rh UP    -> hum forced to HUMIDIFY
+#   - sa_rh unchanged         -> hum left as-is
+# The clamped band data is written to band_guide.csv (universal lookup) and
+# to each AHU CSV.Description so external BACnet observers see the operator
+# target.  Mechanical actuation of the humidifier coil is Phase 2 and needs
+# the operator to identify the AHU humidity SP BACnet point name.
+
+def apply_sa_rh_clamp(band, lo, hi):
+    """Return a NEW band dict with sa_rh clamped to [lo, hi] and hum mode
+    adjusted to drive SA toward the clamp window.  Pure function: input
+    band is not mutated.  Returns a shallow copy unchanged if lo or hi
+    is None.
+    """
+    if lo is None or hi is None:
+        return dict(band)
+    if lo > hi:
+        lo, hi = hi, lo
+    orig_rh = band.get('sa_rh', 0)
+    clamped_rh = max(lo, min(hi, orig_rh))
+    out = dict(band)
+    out['sa_rh'] = clamped_rh
+    if clamped_rh < orig_rh:
+        out['hum'] = 'DEHUMIDIFY'
+        out['_clamp'] = 'down'
+    elif clamped_rh > orig_rh:
+        out['hum'] = 'HUMIDIFY'
+        out['_clamp'] = 'up'
+    return out
+
+
+def load_sa_rh_clamp(config_dir=None):
+    """Load the operator-defined sa_rh clamp from band_overrides.json.
+    Returns (lo, hi) tuple if enabled, else None.  Safe: returns None on
+    any I/O or parse error (so a missing or malformed file falls back to
+    factory bands without crashing the generator).
+    """
+    if config_dir is None:
+        config_dir = '/root/data/configs'
+    path = os.path.join(config_dir, 'band_overrides.json')
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path, 'r') as f:
+            data = json.load(f)
+        c = data.get('sa_rh_clamp')
+        if not c or not c.get('enabled'):
+            return None
+        lo = c.get('lo')
+        hi = c.get('hi')
+        if lo is None or hi is None:
+            return None
+        return (int(lo), int(hi))
+    except Exception:
+        return None
+
+
+def _effective_bands(config_dir=None):
+    """Return BANDS with the operator sa_rh clamp applied (if any).
+    Single source of truth for every CSV / description writer in this
+    module so the clamp is consistent across band_guide.csv, per-AHU
+    projection CSVs, and format_band_description().
+    """
+    clamp = load_sa_rh_clamp(config_dir)
+    if not clamp:
+        return BANDS
+    return [apply_sa_rh_clamp(b, clamp[0], clamp[1]) for b in BANDS]
+
+
 def compute_vav_zone(sa_t, sa_w, vav_index, num_vavs):
     """Compute expected VAV zone delivery for a given VAV."""
     mid = (num_vavs - 1) / 2.0
@@ -162,7 +237,10 @@ def compute_vav_zone(sa_t, sa_w, vav_index, num_vavs):
 # ---------------------------------------------------------------------------
 
 def generate_universal_csv(output_dir):
-    """Generate the universal band_guide.csv (no per-AHU or per-VAV columns)."""
+    """Generate the universal band_guide.csv (no per-AHU or per-VAV columns).
+    Applies the operator sa_rh clamp (if any) so the CSV reflects what is
+    actually being targeted, not the factory bands.
+    """
     filepath = os.path.join(output_dir, 'band_guide.csv')
 
     header = [
@@ -174,7 +252,7 @@ def generate_universal_csv(output_dir):
     ]
 
     rows = []
-    for band in BANDS:
+    for band in _effective_bands(output_dir):
         sa_t_cc, sa_w, sa_rh_cc, sa_t_del, sa_rh_del = compute_sa(band)
         reheat_t = band.get('reheat_t')
         row = [
@@ -211,7 +289,7 @@ def generate_vav_projection_csv(ahu_id, vav_ids, output_dir):
         header.extend([vid + '_Zone_T', vid + '_Zone_W_gkg', vid + '_CZ'])
 
     rows = []
-    for band in BANDS:
+    for band in _effective_bands(output_dir):
         sa_t_cc, sa_w, sa_rh_cc, sa_t_del, sa_rh_del = compute_sa(band)
         row = [
             band['id'], band['name'],

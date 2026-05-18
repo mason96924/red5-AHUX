@@ -60,8 +60,10 @@ with app.test_client() as c:
     test('5a. regenerate ok=200 even without generator',
          r.status_code == 200, str(r.status_code))
 
-    # 6. Routes registered
-    rules = sorted({r.rule for r in app.url_map.iter_rules() if 'band' in r.rule})
+    # 6. Routes registered.  Filter to band-csv only (the band-overrides
+    # plugin also has 'band' in its route name but is a separate service).
+    rules = sorted({r.rule for r in app.url_map.iter_rules()
+                    if r.rule == '/band_guide.md' or r.rule.startswith('/api/band-csv')})
     test('6a. all 4 band routes attached',
          set(rules) == {
              '/band_guide.md',

@@ -2126,3 +2126,84 @@ Hard-refresh after.  No collector restart needed.
    the top 3 movers with up/down arrows.
 5. Hover the headline -- tooltip should list all bands with drift >= 2h,
    not just the top 3.
+
+## 2026-02-11 — Dashboard left sidebar pop-out
+**Files modified:**
+- `dashboard.html` (sidebar wrapped in IIFE with ReactDOM.createPortal; pop-out button added next to theme toggle)
+- `tests/test_dashboard_sidebar_popout.js` (NEW, 22 assertions)
+
+### Operator ask
+"Just an in mapper-page's left side bar pop out, please make left sidebar
+poppable for dashboard. I feel the real estate in the left sidebar is
+getting crammed."
+
+### Approach -- mirror the equipment_mapper.html pattern verbatim
+The mapper already has a battle-tested sidebar pop-out implementation
+using `window.open` + `ReactDOM.createPortal`.  Same pattern lifted into
+the dashboard, with three guarantees:
+
+1. **State preservation** -- the same React component instance owns the
+   sidebar's state; portal just changes where it renders.  No serializing
+   selectedAhuId, sweetSpotRange, lockedVavId, etc. across windows.
+2. **Theme parity** -- popup clones parent `<style>`, `<link rel="stylesheet">`,
+   and the Tailwind `<script>` tag at popup-creation time so dark/light/Korean
+   all come through unchanged.
+3. **Auto-recovery** -- a 400ms `setInterval` watches `win.closed`; when the
+   operator closes the popup the sidebar snaps back into the docked spot
+   without any manual reattach action.
+
+### Surgical edits
+1. New state (~70 lines): `sidebarPopupWin`, `sidebarPopupHost`, `popOutSidebar`
+   callback, plus `beforeunload` handler that kills the orphan popup.
+2. Sidebar JSX wrapped in `{(() => { const sidebarTree = (...); return ... })()}`
+   -- single IIFE, conditional `ReactDOM.createPortal` at the bottom.
+3. Sidebar `<div>` style gated: `isPopped ? {width:'100%',minHeight:'100vh'}`
+   when popped, original `{width: sidebarWidth+'px'}` when docked.
+4. Resize handle gated behind `{!isPopped && (...)}` -- popup window has
+   its own OS-level resize, no need for the internal handle.
+5. Pop-out button added next to the theme toggle: `\u2197 POP` when docked,
+   `\u21A9 ATTACH` (emerald background) when popped.  `data-testid="popout-sidebar-btn"`.
+6. `data-testid` swap: `left-sidebar` -> `left-sidebar-popped` so the
+   existing test_credentials.md and any future automation can distinguish.
+
+### Verification (`tests/test_dashboard_sidebar_popout.js` -- 22/22 PASS)
+- State + callback declarations present (`sidebarPopupWin`, `sidebarPopupHost`,
+  `popOutSidebar = useCallback`).
+- `window.open` uses the expected name (`red5_dashboard_sidebar`) + size (420x950).
+- Idempotent click guard: re-clicks just `focus()` the existing popup.
+- Stylesheets + Tailwind cloned into popup head (theme parity).
+- `closeWatcher` snaps back when popup closes.
+- `beforeunload` handler closes orphan popup if parent navigates away.
+- IIFE structure correct: `sidebarTree` declared, conditional
+  `ReactDOM.createPortal(sidebarTree, sidebarPopupHost)` at the end.
+- Pop-out button: correct testid, toggles ATTACH/POP label, emerald-700
+  active style, click handler closes-if-open-else-opens.
+- Resize handle gated behind `!isPopped`.
+- Sidebar width gated: 100% when popped, sidebarWidth px when docked.
+- data-testid swap (`left-sidebar` -> `left-sidebar-popped`).
+- Full 396 KB main-source JSX parses cleanly via `@babel/parser`.
+
+Full regression sweep -- all sibling suites still green (i18n/oa-sa/sa-drop
+pre-existing baseline fails unchanged).
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
+
+### Verify on controller
+1. Open the dashboard.  Look in the top-right header next to the theme
+   toggle -- there should now be a small `\u2197 POP` button.
+2. Click it.  A new browser window (~420x950) should open with the entire
+   sidebar (AHU title, Givoni controls, RH slider, asset search, AHU list,
+   VAV tables, Apply button, etc.) -- look and feel identical to docked.
+3. Move the popup to another monitor.  Click an AHU in the list -- the
+   chart in the main window should update.  This proves state is shared
+   (same React component instance).
+4. Resize the popup.  Sidebar content reflows.
+5. Close the popup.  Sidebar snaps back into the main window automatically;
+   button reverts to `\u2197 POP`.
+6. Re-open, then click `\u21A9 ATTACH` -- popup closes, same snap-back.
+
+### Known limitation
+First open of the popup may show a brief unstyled flash (~100ms) while the
+cloned Tailwind script re-applies.  Cosmetic only -- same behaviour as the
+mapper page's existing implementation.

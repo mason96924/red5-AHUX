@@ -179,6 +179,66 @@
             });
             const API_URL = window.API_BASE_URL || window.location.origin;
 
+            // ---- Left sidebar pop-out (extra-monitor / declutter support) ----
+            // Mirrors the equipment_mapper.html pattern: portal the entire
+            // sidebar JSX into a freshly-opened browser window so the operator
+            // can drag it to another monitor (or just free up the main page
+            // for the chart).  ReactDOM.createPortal keeps every state +
+            // click handler wired to the original component instance, so
+            // re-attaching is just close-the-window.
+            const [sidebarPopupWin,  setSidebarPopupWin]  = useState(null);
+            const [sidebarPopupHost, setSidebarPopupHost] = useState(null);
+
+            const popOutSidebar = useCallback(() => {
+                if (sidebarPopupWin && !sidebarPopupWin.closed) { sidebarPopupWin.focus(); return; }
+                const win = window.open('', 'red5_dashboard_sidebar',
+                    'width=420,height=950,resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no');
+                if (!win) {
+                    alert('Popup window blocked. Please allow popups for this site, then click "Pop Out" again.');
+                    return;
+                }
+                win.document.open();
+                win.document.write('<!doctype html><html><head></head><body></body></html>');
+                win.document.close();
+                const titleEl = win.document.createElement('title');
+                titleEl.textContent = 'Red5 Dashboard Sidebar';
+                win.document.head.appendChild(titleEl);
+                const baseEl = win.document.createElement('base');
+                baseEl.href = window.location.href;
+                win.document.head.appendChild(baseEl);
+                document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
+                    win.document.head.appendChild(node.cloneNode(true));
+                });
+                const tailwind = document.querySelector('script[src*="tailwindcss"]');
+                if (tailwind) {
+                    const tw = win.document.createElement('script');
+                    tw.src = tailwind.src;
+                    win.document.head.appendChild(tw);
+                }
+                win.document.body.className = document.body.className;
+                win.document.body.style.margin = '0';
+                win.document.body.style.background = 'transparent';
+                const root = win.document.createElement('div');
+                root.id = 'sidebar-portal-root';
+                root.style.cssText = 'display:flex;flex-direction:column;width:100vw;min-height:100vh;';
+                win.document.body.appendChild(root);
+                setSidebarPopupWin(win);
+                setSidebarPopupHost(root);
+                const closeWatcher = setInterval(() => {
+                    if (win.closed) {
+                        clearInterval(closeWatcher);
+                        setSidebarPopupWin(null);
+                        setSidebarPopupHost(null);
+                    }
+                }, 400);
+            }, [sidebarPopupWin]);
+
+            useEffect(() => {
+                const onUnload = () => { if (sidebarPopupWin && !sidebarPopupWin.closed) sidebarPopupWin.close(); };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, [sidebarPopupWin]);
+
             // === Stale-cache detector ===
             // Flask injects window.__BUILD_MTIME__ at HTTP response time. We compare it
             // against the live /api/version to detect when this browser is running a
@@ -1783,15 +1843,24 @@
                     }
                 }} onMouseUp={() => {setIsDraggingIndicator(false); setIsCardDragging(false); setIsVavDragging(false); setIsVavModalDragging(false); setIsAhuModalDragging(false); setIsFloorPlanDragging(false);}}>
                     
-                    {/* LEFT SIDEBAR — resizable */}
+                    {/* LEFT SIDEBAR — resizable + poppable.  When popped, the
+                        entire content is portaled into a separate window via
+                        ReactDOM.createPortal (mirrors the mapper page pattern).
+                        State + click handlers stay wired to the same component
+                        instance, so re-attach is just close-the-window. */}
+                    {(() => {
+                        const isPopped = !!sidebarPopupWin;
+                        const sidebarTree = (
                     <div
-                        className={`${ui.sidebar} border-r ${ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
-                        style={{ width: `${sidebarWidth}px` }}
-                        data-testid="left-sidebar"
+                        className={`${ui.sidebar} ${isPopped ? '' : 'border-r ' + ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
+                        style={isPopped ? {width:'100%',minHeight:'100vh'} : { width: `${sidebarWidth}px` }}
+                        data-testid={isPopped ? "left-sidebar-popped" : "left-sidebar"}
                     >
                         {/* Drag handle on the right edge to resize the sidebar.
                             Min width = 250px (tested: AHU title + theme toggle keep
-                            a small gap). Max width = 320px (original baseline). */}
+                            a small gap). Max width = 320px (original baseline).
+                            Hidden when popped out -- the popup window has its own OS-level resize. */}
+                        {!isPopped && (
                         <div
                             data-testid="sidebar-resize-handle"
                             onMouseDown={(e) => {
@@ -1813,6 +1882,7 @@
                             className="absolute top-0 right-0 h-full w-1 cursor-col-resize z-30 hover:bg-indigo-500/40"
                             title={window.t ? window.t("drag_to_resize") : "Drag to resize"}
                         />
+                        )}
                         <div className="p-4 pb-3 border-b border-slate-800 font-black" style={{overflow:'visible'}}>
                             <div className="flex justify-between items-start">
                                 <div>
@@ -1841,6 +1911,22 @@
                                     </div>
                                 </div>
                                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
+                                {/* Pop-out / re-attach toggle - mirrors the mapper page.
+                                    Frees the main page real estate for the chart by
+                                    moving the entire sidebar (Givoni controls, RH slider,
+                                    asset search, AHU list) into a separate browser
+                                    window the operator can drag to another monitor. */}
+                                <button
+                                    onClick={() => {
+                                        if (sidebarPopupWin && !sidebarPopupWin.closed) { sidebarPopupWin.close(); }
+                                        else { popOutSidebar(); }
+                                    }}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${sidebarPopupWin ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700')}`}
+                                    title={sidebarPopupWin ? 'Re-attach sidebar to this window' : 'Pop sidebar out into a separate window (move it to another monitor or free up space for the chart)'}
+                                    data-testid="popout-sidebar-btn"
+                                >
+                                    {sidebarPopupWin ? '\u21A9 ATTACH' : '\u2197 POP'}
+                                </button>
                             </div>
                             <div className="flex items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}
@@ -2192,6 +2278,12 @@
                             ); 
                         })}</div>
                     </div>
+                        );
+                        if (isPopped && sidebarPopupHost) {
+                            return ReactDOM.createPortal(sidebarTree, sidebarPopupHost);
+                        }
+                        return sidebarTree;
+                    })()}
 
                     {activeView === 'diagnostics' && React.createElement(DiagnosticsConsole)}
                     {activeView === 'dynamics' && (

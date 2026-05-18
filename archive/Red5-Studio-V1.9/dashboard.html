@@ -179,65 +179,81 @@
             });
             const API_URL = window.API_BASE_URL || window.location.origin;
 
-            // ---- Left sidebar pop-out (extra-monitor / declutter support) ----
-            // Mirrors the equipment_mapper.html pattern: portal the entire
-            // sidebar JSX into a freshly-opened browser window so the operator
-            // can drag it to another monitor (or just free up the main page
-            // for the chart).  ReactDOM.createPortal keeps every state +
-            // click handler wired to the original component instance, so
-            // re-attaching is just close-the-window.
-            const [sidebarPopupWin,  setSidebarPopupWin]  = useState(null);
-            const [sidebarPopupHost, setSidebarPopupHost] = useState(null);
+            // ---- Left sidebar in-page floating mode ----
+            // Previously this was a cross-window window.open + ReactDOM.createPortal
+            // popup.  That had two latent bugs:
+            //   1) Range-slider drags inside the popup did not work because their
+            //      onMouseDown attached mousemove/mouseup to `window` (the parent),
+            //      not the popup window -- events fired in the popup never reached
+            //      the listener.
+            //   2) On re-attach, queued slider mousemove events fired in a rush
+            //      because the portal teardown moved the slider DOM node back
+            //      under the parent window's listener mid-drag.
+            // Switching to an in-page absolutely-positioned floating panel keeps
+            // every DOM event inside a single document, so window-level mousemove
+            // listeners (used by the temp slider, the resize handle, etc.) work
+            // unchanged.  Position + size persist to localStorage so the operator
+            // does not have to re-position the panel after each refresh.
+            const [sidebarFloating, setSidebarFloating] = useState(false);
+            const [sidebarFloatPos, setSidebarFloatPos] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.sidebarFloatPos')); if (v && typeof v.x === 'number') return v; } catch (e) {}
+                return { x: 24, y: 24 };
+            });
+            const [sidebarFloatSize, setSidebarFloatSize] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.sidebarFloatSize')); if (v && typeof v.w === 'number') return v; } catch (e) {}
+                return { w: 380, h: 800 };
+            });
+            const sidebarDragRef = useRef({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 });
+            const sidebarResizeRef = useRef({ active: false, startX: 0, startY: 0, baseW: 0, baseH: 0 });
 
-            const popOutSidebar = useCallback(() => {
-                if (sidebarPopupWin && !sidebarPopupWin.closed) { sidebarPopupWin.focus(); return; }
-                const win = window.open('', 'red5_dashboard_sidebar',
-                    'width=420,height=950,resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no');
-                if (!win) {
-                    alert('Popup window blocked. Please allow popups for this site, then click "Pop Out" again.');
-                    return;
-                }
-                win.document.open();
-                win.document.write('<!doctype html><html><head></head><body></body></html>');
-                win.document.close();
-                const titleEl = win.document.createElement('title');
-                titleEl.textContent = 'Red5 Dashboard Sidebar';
-                win.document.head.appendChild(titleEl);
-                const baseEl = win.document.createElement('base');
-                baseEl.href = window.location.href;
-                win.document.head.appendChild(baseEl);
-                document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
-                    win.document.head.appendChild(node.cloneNode(true));
-                });
-                const tailwind = document.querySelector('script[src*="tailwindcss"]');
-                if (tailwind) {
-                    const tw = win.document.createElement('script');
-                    tw.src = tailwind.src;
-                    win.document.head.appendChild(tw);
-                }
-                win.document.body.className = document.body.className;
-                win.document.body.style.margin = '0';
-                win.document.body.style.background = 'transparent';
-                const root = win.document.createElement('div');
-                root.id = 'sidebar-portal-root';
-                root.style.cssText = 'display:flex;flex-direction:column;width:100vw;min-height:100vh;';
-                win.document.body.appendChild(root);
-                setSidebarPopupWin(win);
-                setSidebarPopupHost(root);
-                const closeWatcher = setInterval(() => {
-                    if (win.closed) {
-                        clearInterval(closeWatcher);
-                        setSidebarPopupWin(null);
-                        setSidebarPopupHost(null);
-                    }
-                }, 400);
-            }, [sidebarPopupWin]);
+            // Drag handle mousedown -> follow mousemove via window listener so
+            // dragging stays smooth even if the cursor leaves the title bar
+            // (same pattern used by VAV / Floor Plan modals in this file).
+            const onSidebarTitleMouseDown = useCallback((e) => {
+                // Ignore clicks on the title bar's buttons (pop-out/attach, close).
+                if (e.target.closest('[data-no-drag]')) return;
+                e.preventDefault();
+                sidebarDragRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseX: sidebarFloatPos.x, baseY: sidebarFloatPos.y };
+                const onMove = (mv) => {
+                    if (!sidebarDragRef.current.active) return;
+                    const nx = Math.max(0, Math.min(window.innerWidth - 80,
+                        sidebarDragRef.current.baseX + (mv.clientX - sidebarDragRef.current.startX)));
+                    const ny = Math.max(0, Math.min(window.innerHeight - 40,
+                        sidebarDragRef.current.baseY + (mv.clientY - sidebarDragRef.current.startY)));
+                    setSidebarFloatPos({ x: nx, y: ny });
+                };
+                const onUp = () => {
+                    sidebarDragRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setSidebarFloatPos(p => { try { localStorage.setItem('red5.sidebarFloatPos', JSON.stringify(p)); } catch (e) {} return p; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [sidebarFloatPos]);
 
-            useEffect(() => {
-                const onUnload = () => { if (sidebarPopupWin && !sidebarPopupWin.closed) sidebarPopupWin.close(); };
-                window.addEventListener('beforeunload', onUnload);
-                return () => window.removeEventListener('beforeunload', onUnload);
-            }, [sidebarPopupWin]);
+            // Resize handle (bottom-right corner) mousedown.
+            const onSidebarResizeMouseDown = useCallback((e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                sidebarResizeRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseW: sidebarFloatSize.w, baseH: sidebarFloatSize.h };
+                const onMove = (mv) => {
+                    if (!sidebarResizeRef.current.active) return;
+                    const nw = Math.max(280, Math.min(window.innerWidth - 40,
+                        sidebarResizeRef.current.baseW + (mv.clientX - sidebarResizeRef.current.startX)));
+                    const nh = Math.max(360, Math.min(window.innerHeight - 40,
+                        sidebarResizeRef.current.baseH + (mv.clientY - sidebarResizeRef.current.startY)));
+                    setSidebarFloatSize({ w: nw, h: nh });
+                };
+                const onUp = () => {
+                    sidebarResizeRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setSidebarFloatSize(s => { try { localStorage.setItem('red5.sidebarFloatSize', JSON.stringify(s)); } catch (e) {} return s; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [sidebarFloatSize]);
 
             // === Stale-cache detector ===
             // Flask injects window.__BUILD_MTIME__ at HTTP response time. We compare it
@@ -1843,23 +1859,28 @@
                     }
                 }} onMouseUp={() => {setIsDraggingIndicator(false); setIsCardDragging(false); setIsVavDragging(false); setIsVavModalDragging(false); setIsAhuModalDragging(false); setIsFloorPlanDragging(false);}}>
                     
-                    {/* LEFT SIDEBAR — resizable + poppable.  When popped, the
-                        entire content is portaled into a separate window via
-                        ReactDOM.createPortal (mirrors the mapper page pattern).
-                        State + click handlers stay wired to the same component
-                        instance, so re-attach is just close-the-window. */}
+                    {/* LEFT SIDEBAR — resizable + floating-mode toggle.
+                        When `sidebarFloating` is true the same sidebar JSX is
+                        rendered as an absolutely-positioned, draggable + resizable
+                        panel inside the same document (NOT a separate window).
+                        This keeps all mouse events in one document so the
+                        psychart temperature slider continues to work while the
+                        sidebar is floated (window-level mousemove listeners
+                        used by the slider's drag-handler need the same window
+                        that fired the mousedown). */}
                     {(() => {
-                        const isPopped = !!sidebarPopupWin;
+                        const isPopped = sidebarFloating;
                         const sidebarTree = (
                     <div
                         className={`${ui.sidebar} ${isPopped ? '' : 'border-r ' + ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
-                        style={isPopped ? {width:'100%',minHeight:'100vh'} : { width: `${sidebarWidth}px` }}
+                        style={isPopped ? {width:'100%',height:'100%',minHeight:0} : { width: `${sidebarWidth}px` }}
                         data-testid={isPopped ? "left-sidebar-popped" : "left-sidebar"}
                     >
                         {/* Drag handle on the right edge to resize the sidebar.
                             Min width = 250px (tested: AHU title + theme toggle keep
                             a small gap). Max width = 320px (original baseline).
-                            Hidden when popped out -- the popup window has its own OS-level resize. */}
+                            Hidden when floating -- the floating shell has its
+                            own corner resize handle. */}
                         {!isPopped && (
                         <div
                             data-testid="sidebar-resize-handle"
@@ -1911,21 +1932,19 @@
                                     </div>
                                 </div>
                                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
-                                {/* Pop-out / re-attach toggle - mirrors the mapper page.
-                                    Frees the main page real estate for the chart by
-                                    moving the entire sidebar (Givoni controls, RH slider,
-                                    asset search, AHU list) into a separate browser
-                                    window the operator can drag to another monitor. */}
+                                {/* Pop-out toggle - turns the docked sidebar into
+                                    a floating, draggable in-page panel.  In-page
+                                    (NOT a separate window) so all mouse events
+                                    stay in one document, which keeps window-level
+                                    drag listeners (psychart temp slider, etc.)
+                                    working unchanged. */}
                                 <button
-                                    onClick={() => {
-                                        if (sidebarPopupWin && !sidebarPopupWin.closed) { sidebarPopupWin.close(); }
-                                        else { popOutSidebar(); }
-                                    }}
-                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${sidebarPopupWin ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700')}`}
-                                    title={sidebarPopupWin ? 'Re-attach sidebar to this window' : 'Pop sidebar out into a separate window (move it to another monitor or free up space for the chart)'}
+                                    onClick={() => setSidebarFloating(v => !v)}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${sidebarFloating ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700')}`}
+                                    title={sidebarFloating ? 'Re-attach sidebar to the docked position' : 'Float the sidebar into a draggable, resizable in-page panel'}
                                     data-testid="popout-sidebar-btn"
                                 >
-                                    {sidebarPopupWin ? '\u21A9 ATTACH' : '\u2197 POP'}
+                                    {sidebarFloating ? '\u21A9 ATTACH' : '\u2197 POP'}
                                 </button>
                             </div>
                             <div className="flex items-center gap-1.5 mt-2">
@@ -2279,8 +2298,53 @@
                         })}</div>
                     </div>
                         );
-                        if (isPopped && sidebarPopupHost) {
-                            return ReactDOM.createPortal(sidebarTree, sidebarPopupHost);
+                        if (isPopped) {
+                            // Floating in-page shell: fixed position, drag handle
+                            // at top, corner resize handle at bottom-right.  The
+                            // sidebar content is rendered AS-IS inside it so the
+                            // same React component instance owns all state.
+                            return (
+                                <div
+                                    className={`fixed z-[80] rounded-xl shadow-2xl overflow-hidden ${theme==='dark' ? 'border border-indigo-500/40 bg-slate-900' : 'border border-slate-300 bg-white'}`}
+                                    style={{
+                                        left: sidebarFloatPos.x + 'px',
+                                        top:  sidebarFloatPos.y + 'px',
+                                        width:  sidebarFloatSize.w + 'px',
+                                        height: sidebarFloatSize.h + 'px',
+                                    }}
+                                    data-testid="sidebar-floating-shell"
+                                >
+                                    {/* Title bar: drag-to-move + Attach button. */}
+                                    <div
+                                        onMouseDown={onSidebarTitleMouseDown}
+                                        className={`cursor-grab active:cursor-grabbing flex items-center justify-between px-3 py-1.5 border-b ${theme==='dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}
+                                        data-testid="sidebar-floating-titlebar"
+                                    >
+                                        <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                                            {'\u2725 Sidebar \u2014 drag to move'}
+                                        </span>
+                                        <button
+                                            data-no-drag
+                                            data-testid="sidebar-floating-attach"
+                                            onClick={() => setSidebarFloating(false)}
+                                            className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600 transition-all"
+                                            title="Re-attach sidebar to the docked position"
+                                        >{'\u21A9 Attach'}</button>
+                                    </div>
+                                    {/* Scrollable body that holds the original sidebar JSX. */}
+                                    <div className="flex flex-col" style={{ height: 'calc(100% - 30px)' }}>
+                                        {sidebarTree}
+                                    </div>
+                                    {/* Bottom-right corner resize grip. */}
+                                    <div
+                                        onMouseDown={onSidebarResizeMouseDown}
+                                        title="Drag to resize"
+                                        data-testid="sidebar-floating-resize"
+                                        className={`absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-[81] ${theme==='dark' ? 'bg-indigo-500/40 hover:bg-indigo-500/80' : 'bg-indigo-300 hover:bg-indigo-500'}`}
+                                        style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
+                                    />
+                                </div>
+                            );
                         }
                         return sidebarTree;
                     })()}

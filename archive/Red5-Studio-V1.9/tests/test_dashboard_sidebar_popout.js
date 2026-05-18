@@ -1,16 +1,19 @@
-/* Regression test for the dashboard left-sidebar pop-out wiring.
+/* Regression test for the dashboard left-sidebar in-page floating mode.
  *
- * Validates:
- *   1) Pop-out state variables wired (sidebarPopupWin, sidebarPopupHost)
- *   2) popOutSidebar callback uses window.open with the expected window-features
- *   3) beforeunload handler closes the orphan popup
- *   4) Sidebar JSX is wrapped in an IIFE that conditionally portals
- *   5) Pop-out button is wired with the right test-id and toggles ATTACH/POP
- *   6) Resize handle is gated behind !isPopped
- *   7) Width style is gated: 100% when popped, sidebarWidth when docked
- *   8) Same data-testid swap (left-sidebar -> left-sidebar-popped) so
- *      automation knows whether the sidebar is in the main page or portaled
- *   9) JSX still parses cleanly via @babel/parser
+ * History: previously this was a cross-window window.open + createPortal popup.
+ * That had two latent bugs:
+ *   1) Range-slider drags inside the popup did not work because their
+ *      onMouseDown attached mousemove/mouseup to `window` (the PARENT),
+ *      not the popup window -- events fired in the popup never reached
+ *      the listener (psychart temp slider was the visible symptom).
+ *   2) On re-attach, queued slider mousemove events fired in a rush because
+ *      portal teardown moved the slider DOM node back under the parent
+ *      window's listener mid-drag.
+ *
+ * Both bugs are eliminated by switching to an in-page absolutely-positioned
+ * floating panel inside the same document.  These assertions guard that
+ * regression: no window.open, no cross-window createPortal, every drag
+ * listener stays inside one document.
  *
  * Run from /app/archive/Red5-Studio-V1.9:
  *   node tests/test_dashboard_sidebar_popout.js
@@ -28,69 +31,79 @@ function check(name, ok, info) {
     else    { fail++; fails.push(name + (info ? '  ' + info : '')); }
 }
 
-// 1) State + callback declarations
-check('state: sidebarPopupWin declared',
-      /const\s*\[\s*sidebarPopupWin\s*,\s*setSidebarPopupWin\s*\]\s*=\s*useState\(null\)/.test(dash));
-check('state: sidebarPopupHost declared',
-      /const\s*\[\s*sidebarPopupHost\s*,\s*setSidebarPopupHost\s*\]\s*=\s*useState\(null\)/.test(dash));
-check('callback: popOutSidebar is a useCallback',
-      /const\s+popOutSidebar\s*=\s*useCallback\(/.test(dash));
+// ---------- 1. State + persistence ----------
+check('state: sidebarFloating bool declared',
+      /const\s*\[\s*sidebarFloating\s*,\s*setSidebarFloating\s*\]\s*=\s*useState\(false\)/.test(dash));
+check('state: sidebarFloatPos hydrated from localStorage',
+      /const\s*\[\s*sidebarFloatPos\s*,\s*setSidebarFloatPos\s*\]\s*=\s*useState\([\s\S]{0,200}red5\.sidebarFloatPos/.test(dash));
+check('state: sidebarFloatSize hydrated from localStorage',
+      /const\s*\[\s*sidebarFloatSize\s*,\s*setSidebarFloatSize\s*\]\s*=\s*useState\([\s\S]{0,200}red5\.sidebarFloatSize/.test(dash));
 
-// 2) window.open with the expected window-features (popup window name + size)
-check('popOutSidebar: window.open with red5_dashboard_sidebar name',
-      /window\.open\([^)]*['"]red5_dashboard_sidebar['"]/.test(dash));
-check('popOutSidebar: opens at 420x950 (matches operator-side density)',
-      /width=420,height=950/.test(dash));
-check('popOutSidebar: idempotent on repeated clicks (focus + return)',
-      /sidebarPopupWin\s*&&\s*!sidebarPopupWin\.closed[\s\S]{0,80}sidebarPopupWin\.focus/.test(dash));
-check('popOutSidebar: clones parent stylesheets so theme + Tailwind survive',
-      /document\.head\.querySelectorAll\(['"]style,\s*link\[rel="stylesheet"\]['"]\)/.test(dash));
-check('popOutSidebar: clones Tailwind <script>',
-      /document\.querySelector\(['"]script\[src\*="tailwindcss"\]['"]\)/.test(dash));
-check('popOutSidebar: closeWatcher snaps back when popup closes',
-      /setInterval\([\s\S]{0,200}win\.closed[\s\S]{0,200}setSidebarPopupWin\(null\)/.test(dash));
+// ---------- 2. NO cross-window window.open anywhere on the sidebar path ----------
+check('regression: no window.open for the sidebar',
+      dash.indexOf("'red5_dashboard_sidebar'") === -1 && dash.indexOf('"red5_dashboard_sidebar"') === -1);
+check('regression: no sidebarPopupWin state remains',
+      dash.indexOf('sidebarPopupWin')  === -1);
+check('regression: no sidebarPopupHost state remains',
+      dash.indexOf('sidebarPopupHost') === -1);
+check('regression: no popOutSidebar useCallback remains',
+      !/const\s+popOutSidebar\s*=\s*useCallback/.test(dash));
+check('regression: no ReactDOM.createPortal for the sidebar tree remains',
+      dash.indexOf('createPortal(sidebarTree') === -1);
 
-// 3) beforeunload handler kills orphan popup
-check('beforeunload: addEventListener wired',
-      /addEventListener\(['"]beforeunload['"]/.test(dash));
-check('beforeunload: handler calls sidebarPopupWin.close()',
-      /sidebarPopupWin\.closed[\s\S]{0,30}sidebarPopupWin\.close\(\)/.test(dash));
+// ---------- 3. Drag handlers use window-level listeners (same-document) ----------
+check('drag: onSidebarTitleMouseDown declared',
+      /const\s+onSidebarTitleMouseDown\s*=\s*useCallback\(/.test(dash));
+check('drag: title mousedown attaches mousemove to window',
+      /onSidebarTitleMouseDown[\s\S]{0,1500}window\.addEventListener\(['"]mousemove['"]/.test(dash));
+check('drag: title mouseup removes both listeners',
+      /onSidebarTitleMouseDown[\s\S]{0,1500}removeEventListener\(['"]mousemove['"][\s\S]{0,200}removeEventListener\(['"]mouseup['"]/.test(dash));
+check('drag: position persisted to localStorage on mouseup',
+      /onSidebarTitleMouseDown[\s\S]{0,1700}localStorage\.setItem\(['"]red5\.sidebarFloatPos['"]/.test(dash));
 
-// 4) IIFE wrapping the sidebar tree
-check('IIFE: sidebarTree declared inside the (() => { ... })() wrapper',
-      /const\s+sidebarTree\s*=\s*\(/.test(dash));
-check('IIFE: ReactDOM.createPortal called with sidebarTree + sidebarPopupHost',
-      /ReactDOM\.createPortal\(sidebarTree,\s*sidebarPopupHost\)/.test(dash));
-check('IIFE: returns sidebarTree directly when not popped',
-      /if\s*\(\s*isPopped\s*&&\s*sidebarPopupHost\s*\)\s*\{[\s\S]{0,80}return ReactDOM\.createPortal[\s\S]{0,80}\}\s*return\s+sidebarTree/.test(dash));
+// ---------- 4. Resize handlers ----------
+check('resize: onSidebarResizeMouseDown declared',
+      /const\s+onSidebarResizeMouseDown\s*=\s*useCallback\(/.test(dash));
+check('resize: minimum size enforced (280 wide, 360 tall)',
+      /onSidebarResizeMouseDown[\s\S]{0,800}Math\.max\(280[\s\S]{0,400}Math\.max\(360/.test(dash));
+check('resize: size persisted to localStorage on mouseup',
+      /onSidebarResizeMouseDown[\s\S]{0,1500}localStorage\.setItem\(['"]red5\.sidebarFloatSize['"]/.test(dash));
 
-// 5) Pop-out button
+// ---------- 5. Floating shell rendering ----------
+check('shell: data-testid sidebar-floating-shell',
+      /data-testid="sidebar-floating-shell"/.test(dash));
+check('shell: fixed positioning with operator-controlled left/top/w/h',
+      /className=\{`fixed z-\[80\][\s\S]{0,400}left:\s*sidebarFloatPos\.x[\s\S]{0,200}top:\s*sidebarFloatPos\.y[\s\S]{0,200}width:\s*sidebarFloatSize\.w[\s\S]{0,200}height:\s*sidebarFloatSize\.h/.test(dash));
+check('shell: titlebar testid + attach button testid',
+      /data-testid="sidebar-floating-titlebar"/.test(dash) && /data-testid="sidebar-floating-attach"/.test(dash));
+check('shell: resize grip testid',
+      /data-testid="sidebar-floating-resize"/.test(dash));
+check('shell: data-no-drag on the attach button to prevent drag-jacking',
+      /data-no-drag[\s\S]{0,400}sidebar-floating-attach/.test(dash));
+check('shell: attach button flips state to false',
+      /sidebar-floating-attach[\s\S]{0,400}setSidebarFloating\(false\)/.test(dash));
+
+// ---------- 6. Pop-out button wiring ----------
 check('button: data-testid popout-sidebar-btn present',
       /data-testid="popout-sidebar-btn"/.test(dash));
-check('button: toggles between ATTACH and POP label',
-      /sidebarPopupWin\s*\?\s*'\\u21A9 ATTACH'\s*:\s*'\\u2197 POP'/.test(dash));
-check('button: emerald-700 active style when popped (visual feedback)',
-      /sidebarPopupWin\s*\?\s*'bg-emerald-700/.test(dash));
-check('button: click handler closes if open else opens',
-      /sidebarPopupWin\s*&&\s*!sidebarPopupWin\.closed[\s\S]{0,80}sidebarPopupWin\.close\(\)[\s\S]{0,120}popOutSidebar\(\)/.test(dash));
+check('button: toggles sidebarFloating',
+      /onClick=\{\(\)\s*=>\s*setSidebarFloating\(v\s*=>\s*!v\)/.test(dash));
+check('button: ATTACH vs POP label',
+      /sidebarFloating\s*\?\s*'\\u21A9 ATTACH'\s*:\s*'\\u2197 POP'/.test(dash));
 
-// 6) Resize handle gated behind !isPopped
-check('resize handle: gated by {!isPopped && (...)}',
+// ---------- 7. Docked sidebar IIFE still works (no isPopped branch deletion) ----------
+check('iife: const isPopped = sidebarFloating',
+      /const\s+isPopped\s*=\s*sidebarFloating/.test(dash));
+check('iife: returns sidebarTree when not popped',
+      /\}\s*return\s+sidebarTree;\s*\}\)\(\)\}/.test(dash));
+check('iife: resize handle gated behind !isPopped',
       /\{\s*!isPopped\s*&&\s*\([\s\S]{0,400}data-testid="sidebar-resize-handle"/.test(dash));
 
-// 7) Sidebar width gated
-check('sidebar width: isPopped -> 100%, docked -> sidebarWidth px',
-      /style=\{\s*isPopped\s*\?\s*\{[^}]*width:\s*['"]100%['"][\s\S]{0,80}\$\{sidebarWidth\}px/.test(dash));
-
-// 8) testid swap so automation can distinguish docked vs popped
-check('data-testid: swaps left-sidebar -> left-sidebar-popped when popped',
-      /data-testid=\{\s*isPopped\s*\?\s*"left-sidebar-popped"\s*:\s*"left-sidebar"\s*\}/.test(dash));
-
-// 9) JSX parses cleanly
+// ---------- 8. JSX parses cleanly ----------
 let babelParser;
 try { babelParser = require('/tmp/node_modules/@babel/parser'); }
 catch (e) {
-    console.log('NOTE: @babel/parser not installed at /tmp/node_modules; run `npm i @babel/parser --prefix /tmp` to enable strict parse-check.');
+    console.log('NOTE: @babel/parser not installed at /tmp/node_modules; strict parse-check skipped.');
 }
 if (babelParser) {
     const m = dash.match(/<script type="text\/plain" id="main-source">([\s\S]*?)<\/script>/);
@@ -105,7 +118,7 @@ if (babelParser) {
 }
 
 // ---- Summary ----
-console.log('Dashboard left-sidebar pop-out: ' + pass + ' pass, ' + fail + ' fail.');
+console.log('Dashboard left-sidebar in-page floating mode: ' + pass + ' pass, ' + fail + ' fail.');
 if (fail > 0) {
     console.log('FAILURES:');
     fails.forEach(f => console.log('  - ' + f));

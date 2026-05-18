@@ -2207,3 +2207,82 @@ Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
 First open of the popup may show a brief unstyled flash (~100ms) while the
 cloned Tailwind script re-applies.  Cosmetic only -- same behaviour as the
 mapper page's existing implementation.
+
+## 2026-02-11 — Dashboard sidebar: switch to in-page draggable modal
+**Files modified:**
+- `dashboard.html` (replaced window.open + createPortal with absolutely-positioned
+  draggable + resizable in-page floating panel)
+- `tests/test_dashboard_sidebar_popout.js` (rewritten to guard new pattern + regress
+  the cross-window pattern that caused the slider bug)
+
+### Operator ask
+> dashboard left side-bar, make it draggable pop out like model rather than page pop out.
+> Also, when it is popped out, the psychart temperature selection slide bar does not
+> work. when it is reattached, the delayed effect of the slide-bar movement happens in a rush.
+
+### Root cause of the slider bug
+The previous pop-out used `window.open(...)` + `ReactDOM.createPortal(sidebarTree, popupWindow.body)`.
+Drag handlers throughout the codebase (psychart temp slider, sidebar resize handle,
+band-clamp slider, etc.) bind `mousemove`/`mouseup` to `window.addEventListener(...)`.
+When the sidebar DOM lives inside a popup window, the popup raises events on ITS
+window object, but the handler was bound to the PARENT window -- so drag events
+never reached the listener.  On reattach, queued events from the
+popup-window's still-attached listeners fired in a rush against the now-docked
+DOM nodes, producing the "delayed effect happens in a rush" symptom.
+
+### Fix (eliminates both symptoms at the root)
+Single document, single window.  The sidebar now floats as an
+absolutely-positioned (`position: fixed`) `<div>` inside the main document
+when popped.  Drag handlers fire through the same `window` they always
+have, so every existing slider keeps working unchanged.
+
+### What ships
+- `sidebarFloating` bool state, defaulted false.
+- `sidebarFloatPos` + `sidebarFloatSize` -- both hydrated from / persisted to
+  localStorage (keys: `red5.sidebarFloatPos`, `red5.sidebarFloatSize`).  Operator
+  picks up where they left off after refresh.
+- `onSidebarTitleMouseDown` -- drag-to-move handler (clamps to viewport bounds:
+  `[0, innerWidth-80]` x `[0, innerHeight-40]`).
+- `onSidebarResizeMouseDown` -- bottom-right corner resize handle.  Min size
+  280x360, max size viewport-minus-40.
+- Floating shell with:
+  - Title bar: drag handle + `✥ Sidebar — drag to move` label + green `↩ Attach` button.
+  - Body: the entire existing sidebar tree rendered as-is (same JSX, same React
+    component instance -- state preserved when toggling).
+  - Bottom-right diagonal triangle resize grip.
+- POP button in header: now toggles `sidebarFloating` instead of opening a window.
+
+### Regression guards (`tests/test_dashboard_sidebar_popout.js` -- 28/28 PASS)
+- NO `window.open('red5_dashboard_sidebar', ...)` anywhere in dashboard.html.
+- NO `sidebarPopupWin` / `sidebarPopupHost` state.
+- NO `popOutSidebar` useCallback.
+- NO `ReactDOM.createPortal(sidebarTree, ...)`.
+- Drag/resize handlers use `window.addEventListener('mousemove', ...)` (same-document only).
+- Position + size persistence keys correct.
+- Title bar testid, attach button testid, resize grip testid all present.
+- `data-no-drag` attribute on attach button so titlebar drag is not hijacked.
+- Pop-out button toggles via functional state update.
+- Full JSX parse via `@babel/parser`.
+
+### Visual smoke test (Playwright)
+Confirmed end-to-end via the screenshot tool: click POP -> floating shell appears
+docked at default position; drag titlebar -> shell follows cursor; chart reflows
+to fill freed width; click ATTACH -> shell disappears and sidebar restores to
+its docked slot.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
+
+### Verify on controller
+1. Open the dashboard.  Side panel is docked as before with a small `↗ POP`
+   button in the header.
+2. Click POP.  The whole sidebar floats away from the left edge into a
+   rounded panel with a draggable title bar reading `✥ SIDEBAR — DRAG TO MOVE`.
+3. Drag the title bar.  The panel follows smoothly with no jank.
+4. Drag the chart's temperature slider -- it now works smoothly even while
+   the sidebar is floating (root-cause of the original bug fixed).
+5. Drag the bottom-right corner of the floating shell -- the panel resizes.
+6. Click `↩ ATTACH`.  Sidebar snaps back to the docked position immediately
+   with NO delayed-rush slider events.
+7. Refresh the page after dragging -- the next POP opens at the
+   last-used position and size (localStorage-persisted).

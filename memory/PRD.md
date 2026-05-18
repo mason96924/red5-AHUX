@@ -1992,3 +1992,70 @@ Plus restart of the collector service so the new mtime watcher kicks in.
    `CSV.Description` string.  External BACnet observers see the new targets.
 7. Press "Reset" to remove the clamp and verify the chip flips back to
    "Live: factory bands" and `band_overrides.json` shows `sa_rh_clamp: null`.
+
+## 2026-02-11 — Operator SA-RH clamp Phase 2 (mechanical actuation)
+**Files modified:**
+- `collector.py` (+ `_resolve_humidity_sp`, `write_humidity_setpoint`; `write_band_setpoints` signature extended with `humidity_sp=None`; `discover_ahu_groups` propagates `humidity_sp` per group; call-site at the polling loop passes it through)
+- `dashboard.html` (confirm-modal warning updated: Phase 2 now active, mechanically actuates humidifier)
+- `tests/test_humidity_sp_write.py` (NEW, 21 assertions)
+- `tests/test_dibt_compat.py` (relaxed `n_isinstance == 4` -> `>= 4` since the new write helper added a 5th call site)
+
+### Operator-provided spec
+> AHUn_RH where n = 1,2,3,4,5...  However, for now, we can use AV1, AV2... for AHUn_RH.
+> AVn is the object ID of the BACnet.  This is for Phase 2.
+
+### Resolution rules (`_resolve_humidity_sp(ahu_name, override=None)`)
+1. If `override` is a non-empty string, return it stripped of whitespace.
+2. Else parse the first run of digits from `ahu_name`, strip leading zeros, return `AV<n>`.
+   - `AHU01` -> `AV1`, `AHU-01-E` -> `AV1`, `AHU-02-S` -> `AV2`, `AHU-12` -> `AV12`, `AHU100` -> `AV100`.
+3. If no digits in name, return `None` (write skipped silently for that AHU).
+
+### Per-AHU override (future migration to named points)
+`collector_config.json` may now specify `humidity_sp` per AHU:
+```
+"ahu_groups": {
+  "AHU-01-E": {"csv_object": "CSV1", "humidity_sp": "AHU01_RH", "vavs": [...] }
+}
+```
+When migrating from `AV<n>` to named `AHUn_RH` points, add this single field
+per AHU.  No collector restart needed -- discovery rebuilds on next poll.
+
+### Write path (`write_band_setpoints`)
+Now performs **2 BACnet writes** when humidity_sp is resolved:
+1. `<csv_object>.Present_Value` -- existing AHU CSV bundle (SATSP / OAD / HSP)
+2. `<humidity_sp>.Present_Value` -- NEW: clamped band `sa_rh` as a `float`
+
+Both wrapped in `try/except` so a transient BACnet error on one does not
+break the other.  Both use the same `isinstance(_, dibt.Error)` + AttributeError
+pattern as the rest of the collector (legacy + new firmware compatible).
+
+### Verification (`tests/test_humidity_sp_write.py` -- 21/21 PASS)
+- 8 resolver cases: explicit override, override-whitespace, override-empty,
+  override-None, single-digit, double-digit, first-digit-run, no-digits.
+- 8 write-helper cases: None / empty / no-sa_rh / happy path / clamped value /
+  named override / dibt.Error path / dibt-raises path.
+- 2 integration cases: humidity write happens AFTER CSV bundle write;
+  no humidity write when `humidity_sp=None`.
+- 3 discovery cases: default resolution, explicit override, no-digits.
+
+Full sibling suite re-run: ALL Python + JS tests green (the 4 pre-existing
+i18n / oa-sa / sa-drop fails are unchanged from baseline).
+
+### Deploy
+2-file Repair-Mode upload + collector restart:
+- `collector.py` (now with Phase 2 humidity write path)
+- `dashboard.html` (updated modal warning text)
+
+No new config files required; `band_overrides.json` from Phase 1 is reused.
+External humidity loops on the controller side will start seeing the new
+SP values on the next collector poll cycle after upload.
+
+### Verify on controller
+1. Confirm at least one AHU number in `collector_config.json` ahu_groups -- e.g. `AHU-01-E`.
+2. Apply a 45-55 clamp via the dashboard.
+3. On the next poll cycle, the collector log should show two lines per AHU:
+   - `Band B7 setpoints written to CSV1`
+   - `Humidity SP AV1 = 55% RH (band B7)`
+4. From the BACnet workstation, read `AV1.Present_Value` -- it should match
+   the clamped sa_rh.  Reset the clamp and confirm the value reverts to the
+   factory band sa_rh on the next cycle.

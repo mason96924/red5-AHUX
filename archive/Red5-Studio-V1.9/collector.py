@@ -567,9 +567,15 @@ def classify_band(oa_t, oa_rh):
     return _apply_sa_rh_clamp(matched, clamp[0], clamp[1])
 
 
-def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
-    """Write the active band's control setpoints back to the AHU's CSV object.
+def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries, humidity_sp=None):
+    """Write the active band setpoints back to the AHU CSV object.
     Only writes to RW positions - read-only positions are left empty.
+
+    Phase 2: when humidity_sp is provided, the clamped band sa_rh is
+    written to that BACnet object as a separate Present_Value write.
+    This is what mechanically drives the humidifier coil toward the
+    operator-defined window (the CSV bundle write above does NOT
+    include humidity).  Skipped silently when humidity_sp is None.
     """
     write_dict = {
         'SATSP': band['sa_t'],
@@ -596,6 +602,36 @@ def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
             log('Band {} setpoints written to {}'.format(band['id'], csv_object))
     except Exception as e:
         log('Exception writing {}: {}'.format(ref, e))
+
+    # Phase 2 humidity setpoint write -- separate Present_Value write to
+    # the per-AHU SA-RH point (AVn or operator-named AHUn_RH).  Idempotent
+    # by ObjectID; the controller humidity loop reads this as the target.
+    write_humidity_setpoint(humidity_sp, band)
+
+
+def write_humidity_setpoint(humidity_sp, band):
+    """Write the band clamped sa_rh value to the AHU humidity SP BACnet
+    point.  No-op when humidity_sp is None (collector_config without an
+    override and AHU name has no digits to derive AV<n>).
+    """
+    if not humidity_sp:
+        return
+    sa_rh = band.get('sa_rh')
+    if sa_rh is None:
+        return
+    ref = humidity_sp + '.Present_Value'
+    try:
+        result = dibt.Write(ref, Value=float(sa_rh))
+        try:
+            _is_err = isinstance(result, dibt.Error)
+        except AttributeError:
+            _is_err = False
+        if _is_err:
+            log('dibt.Write ERROR for {}: {} (value was: {})'.format(ref, result, sa_rh))
+        else:
+            log('Humidity SP {} = {}% RH (band {})'.format(humidity_sp, sa_rh, band.get('id', '?')))
+    except Exception as e:
+        log('Exception writing {}: {} (value was: {})'.format(ref, e, sa_rh))
 
 
 # Cache of active-band-id per AHU (avoid re-writing when band is unchanged)
@@ -641,6 +677,35 @@ def write_band_guide_to_description(csv_object, band=None):
 
 # ===== Equipment Discovery =====
 
+def _resolve_humidity_sp(ahu_name, override=None):
+    """Resolve the BACnet point name for an AHU SA humidity setpoint.
+
+    Resolution order:
+      1. explicit override from collector_config.json
+         (e.g. "humidity_sp": "AHU01_RH" -> use that literal name)
+      2. parse the first run of digits from the AHU name and return
+         "AV<n>" with leading zeros stripped
+         (e.g. AHU01 -> AV1, AHU-02-E -> AV2, AHU-12 -> AV12)
+      3. return None (skip the write entirely)
+
+    Pure function: safe to call from tests without dibt available.
+    """
+    if override and isinstance(override, str) and override.strip():
+        return override.strip()
+    digits = ''
+    for ch in ahu_name:
+        if ch.isdigit():
+            digits += ch
+        elif digits:
+            break
+    if not digits:
+        return None
+    try:
+        return 'AV' + str(int(digits))
+    except ValueError:
+        return None
+
+
 def discover_ahu_groups(collector_config, equipment_lookup, equipment_types):
     """
     Build list of AHU groups to poll. Each group:
@@ -676,13 +741,24 @@ def discover_ahu_groups(collector_config, equipment_lookup, equipment_types):
 
         total_points = len(ahu_point_defs) + sum(len(vd) for _, _, vd in vav_entries)
 
+        # Phase 2: SA humidity setpoint BACnet point.  Operator may override
+        # per-AHU in collector_config.json:
+        #   "ahu_groups": {
+        #     "AHU-01-E": { "csv_object": "CSV1", "humidity_sp": "AHU01_RH" }
+        #   }
+        # Default resolution returns "AV<n>" parsed from the AHU number, so
+        # AHU-01-E -> AV1, AHU-02-S -> AV2.  Returns None when the name has
+        # no digits (clamp write is then skipped for that AHU).
+        humidity_sp = _resolve_humidity_sp(ahu_name, group_cfg.get('humidity_sp'))
+
         groups.append({
             'ahu_name': ahu_name,
             'csv_object': csv_object,
             'ahu_type_id': ahu_type_id,
             'ahu_point_defs': ahu_point_defs,
             'vav_entries': vav_entries,
-            'total_points': total_points
+            'total_points': total_points,
+            'humidity_sp': humidity_sp,
         })
 
     return groups
@@ -833,7 +909,7 @@ def collect_all(ahu_groups, mock_mode=False):
                     }
                     # Only push setpoints when OA is real (do not override live control with simulated OA)
                     if _oa_source == 'live':
-                        write_band_setpoints(csv_obj, band, ahu_point_defs, vav_entries)
+                        write_band_setpoints(csv_obj, band, ahu_point_defs, vav_entries, humidity_sp=group.get('humidity_sp'))
                     # Always push the active band description so operators see it
                     write_band_guide_to_description(csv_obj, band)
                 except Exception as _be:

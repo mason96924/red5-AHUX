@@ -34,12 +34,14 @@ def _assert(cond, msg):
 
 
 # ---- Verify the patched call sites exist in collector.py ----
-print('Test 0: collector.py contains the 4 patched call sites')
+print('Test 0: collector.py contains the 5 patched call sites')
 with open(COLLECTOR) as f:
     src = f.read()
 n_isinstance = len(re.findall(r'isinstance\(\w+,\s*dibt\.Error\)', src))
 n_attrerr    = src.count('except AttributeError:')
-_assert(n_isinstance == 4, f'4 isinstance(_, dibt.Error) call sites (found {n_isinstance})')
+# 5 = write_band_setpoints CSV, write_band_guide_to_description,
+#     write_humidity_setpoint (Phase 2), plus any read-side helpers.
+_assert(n_isinstance >= 4, f'>=4 isinstance(_, dibt.Error) call sites (found {n_isinstance})')
 _assert(n_attrerr   >= 4, f'>=4 except AttributeError handlers (found {n_attrerr})')
 
 

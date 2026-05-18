@@ -2164,9 +2164,58 @@ global.initPsy3D = function(container, opts){
       BANDS.forEach(function(b){ maxH = Math.max(maxH, hist[b].oa, hist[b].oap); });
       /* Include history extremes in maxH so ghost outlines aren't clipped. */
       if (_bandHistoryHist) BANDS.forEach(function(b){ maxH = Math.max(maxH, _bandHistoryHist[b].oa, _bandHistoryHist[b].oap); });
-      deltaStrip.style.display = 'flex';
-      deltaStrip.style.gap = '4px';
-      deltaStrip.style.alignItems = 'flex-end';
+      /* Climate-drift headline: when comparison mode is on, compute the
+         top movers (current year minus historical baseline, by raw OA
+         hour-count) and surface the 3 biggest absolute changes in a
+         single tooltip-able line above the per-band cells.  Lets the
+         operator answer "did my climate actually change?" without
+         eyeballing 10 ghost-outline bars.  Sign convention:
+           delta > 0  -> current year has MORE hours in this band
+                         (climate moving INTO the band) -> up arrow + green
+           delta < 0  -> current year has FEWER hours
+                         (climate moving OUT of the band) -> down arrow + amber
+      */
+      var headlineHtml = '';
+      if (_bandHistoryHist && _bandHistoryMode !== 'off' && !_bandHistoryLoading) {
+        var drifts = BANDS.map(function(b){
+          var d = (hist[b].oa || 0) - (_bandHistoryHist[b].oa || 0);
+          return { band: b, drift: d, abs: Math.abs(d) };
+        }).filter(function(x){ return x.abs >= 2; });
+        drifts.sort(function(a,b){ return b.abs - a.abs; });
+        var top = drifts.slice(0, 3);
+        if (top.length) {
+          var basisLabel = _bandHistoryMode === '1y' ? 'vs prior year' : 'vs 5\u2011year avg';
+          var fullTooltip = 'Climate drift ' + basisLabel + ': '
+            + drifts.map(function(t){
+                var sign = t.drift > 0 ? '+' : '';
+                return t.band + ' ' + sign + t.drift + 'h';
+              }).join(', ')
+            + '. Positive = current year has more hours in that band than the historical baseline.';
+          var pillsHtml = top.map(function(t){
+            var up = t.drift > 0;
+            var arrow = up ? '\u2191' : '\u2193';
+            var dCol  = up ? '#a3e635' : '#fb7185';
+            var sign  = up ? '+' : '';
+            return '<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 4px;border-radius:3px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25)">'
+              + '<span style="color:'+COLOR[t.band]+';font-weight:900">'+t.band+'</span>'
+              + '<span style="color:'+dCol+';font-weight:900">'+arrow+sign+t.drift+'h</span>'
+              + '</span>';
+          }).join(' ');
+          headlineHtml =
+            '<div data-erv-headline="climate-drift" title="' + fullTooltip.replace(/"/g, '&quot;') + '" '
+              + 'style="display:flex;align-items:center;gap:6px;padding:3px 4px 4px 4px;margin:-2px -4px 2px -4px;'
+              + 'border-bottom:1px dashed rgba(168,85,247,0.35);font-size:8px;line-height:1.1">'
+              + '<span style="color:#a855f7;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;font-size:7px;white-space:nowrap">Climate drift</span>'
+              + '<span style="display:flex;gap:3px;flex-wrap:wrap">' + pillsHtml + '</span>'
+              + '<span style="color:#64748b;font-size:7px;margin-left:auto;white-space:nowrap;font-style:italic">' + basisLabel + '</span>'
+            + '</div>';
+        }
+      }
+      /* Switch the strip to a column layout so the headline can sit on
+         top and the existing bands row stays as a flex row underneath. */
+      deltaStrip.style.flexDirection = 'column';
+      deltaStrip.style.gap = '0';
+      deltaStrip.style.alignItems = 'stretch';
       /* Comparison-mode toggle button: cycles off -> 1y -> 5y -> off. */
       var histLabel = (_bandHistoryMode === 'off')
         ? 'vs prior'
@@ -2227,7 +2276,9 @@ global.initPsy3D = function(container, opts){
           '<div style="font-size:7px;color:#64748b;line-height:1">'+(hist['?'].oap-hist['?'].oa)+'</div>'+
         '</div>';
       }
-      deltaStrip.innerHTML = html;
+      deltaStrip.innerHTML =
+        headlineHtml +
+        '<div data-erv-row="bands" style="display:flex;gap:4px;align-items:flex-end">' + html + '</div>';
       /* Wire the history toggle button. */
       var hBtn = deltaStrip.querySelector('[data-erv-btn=band-history]');
       if (hBtn) hBtn.addEventListener('click', function(){

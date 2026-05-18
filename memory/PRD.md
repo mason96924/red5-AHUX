@@ -2059,3 +2059,70 @@ SP values on the next collector poll cycle after upload.
 4. From the BACnet workstation, read `AV1.Present_Value` -- it should match
    the clamped sa_rh.  Reset the clamp and confirm the value reverts to the
    factory band sa_rh on the next cycle.
+
+## 2026-02-11 — P5 Climate-drift headline + Givoni Tier legend chip
+**Files modified:**
+- `js/psy-3d-engine.js` (climate-drift headline computation + render inside `_refreshBandDelta`)
+- `dashboard.html` (Givoni tier legend chip below the Givoni controls)
+- `tests/test_climate_drift_headline.js` (NEW, 29 assertions)
+
+### Feature 1 - Climate-drift headline (P5)
+Single-line callout above the band-shift strip that surfaces the 3 biggest
+band-hour drifts vs the historical baseline (prior year OR 5-year average,
+depending on the operator's history toggle).
+
+Sign convention:
+- `current_year_oa > historical_oa` -> up arrow + green (climate moving INTO this band)
+- `current_year_oa < historical_oa` -> down arrow + amber (climate moving OUT)
+
+Layout:
+```
+[Climate drift]  [B7 +142h] [B2 -89h] [B5 +34h]   vs 5-year avg
+[B-shift] [vs 5y avg]  B1 B2 B3 B4 B5 B6 B7 B8 B9 B10
+```
+
+Threshold: only bands with `|drift| >= 2h` are surfaced (rounds out FP noise).
+Only shown when `_bandHistoryHist` is loaded AND `_bandHistoryMode !== 'off'`
+AND not still loading.  Full drift breakdown is in the tooltip (all bands,
+not just the top 3).
+
+### Feature 2 - Givoni Tier legend chip
+4-swatch row directly below the existing `Toggle Givoni Engine` / `40-60% RH`
+buttons in the side panel.  Each swatch shows:
+- Color dot (auto-derived from `GIVONI_COLORS` in `psychrometric.js`)
+- Tier label: `A` / `B` / `C+` / `C-`
+- Sub-label: `Comfort` / `Soft trim` / `Hot/humid` / `Cold/dry`
+- Tooltip with the controller-side strategy: `hold` / `hum/dehum` / `cool` / `heat`
+
+Only rendered when `showGivoni === true`.  Auto-skinning preserved: re-skinning
+the chart polygon fills automatically re-skins the legend (single source of
+truth contract).
+
+### Verification (29/29 assertions, `node tests/test_climate_drift_headline.js`)
+- Headline picker math: top-3 by absolute drift / sub-threshold filtered /
+  capped at 3 / identical histograms returns empty / sign captured correctly.
+- Source-bytes assertions: data-testids in place, sign convention arrows
+  present, colour tokens wired, 5-year basis label rendered, legend gated
+  on `showGivoni`, all 4 tiers + all 4 `GIVONI_COLORS` references present.
+
+JSX dashboard (390 KB) + `psy-3d-engine.js` (382 KB) both parse cleanly via
+`@babel/parser` post-edit.  All sibling regression suites unchanged.
+
+### Deploy
+2-file Repair-Mode upload of:
+- `js/psy-3d-engine.js`
+- `dashboard.html`
+Hard-refresh after.  No collector restart needed.
+
+### Verify on controller
+1. Enable Givoni in the side panel.  Confirm the 4-swatch legend appears
+   directly below the `Toggle Givoni` button row (A / B / C+ / C-).
+2. Hover each swatch -- tooltip should read `Tier X - <Label> (<sub>)`.
+3. Hover any VAV dot in the table -- its colour should match the legend
+   swatch for its tier.
+4. Open the 3D view, enable ERV, fetch weather, click the `vs prior` button
+   to cycle into `vs 5y avg` mode.  After history loads, a purple-bordered
+   "Climate drift" headline should appear above the B-shift strip listing
+   the top 3 movers with up/down arrows.
+5. Hover the headline -- tooltip should list all bands with drift >= 2h,
+   not just the top 3.

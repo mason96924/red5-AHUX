@@ -1557,31 +1557,59 @@
                 const currentAhu = ahuData.find(a => a.id === selectedAhuId);
                 if (!currentAhu && !indicatorPos) return null;
                 
-                let tVal, rhVal, hVal, title;
+                let tVal, rhVal, hVal, wVal, title;
                 if (lockedVavId && currentAhu) {
                     const lockedVav = currentAhu.vavs?.find(v => v.id === lockedVavId);
                     if (!lockedVav) return null;
-                    tVal = lockedVav.t; rhVal = lockedVav.rh; hVal = lockedVav.h; title = lockedVav.id;
+                    tVal = lockedVav.t; rhVal = lockedVav.rh; hVal = lockedVav.h;
+                    wVal = lockedVav.w != null ? lockedVav.w : getW(lockedVav.t, lockedVav.rh);
+                    title = lockedVav.id;
                 } else {
                     if (!indicatorPos) return null;
                     tVal = indicatorPos.t;
                     const pw = (indicatorPos.w * P_ATM) / (0.621945 + indicatorPos.w);
                     rhVal = Math.min(100, Math.max(0, (pw / getPsat(tVal)) * 100));
-                    hVal = getH(indicatorPos.t, indicatorPos.w); title = null;
+                    hVal = getH(indicatorPos.t, indicatorPos.w);
+                    wVal = indicatorPos.w;
+                    title = null;
                 }
                 
                 const saP = currentAhu?.points?.find(p => p.label === 'SA');
                 const saH = saP ? getH(saP.t, saP.w) : 0; 
                 const diffH = hVal - saH;
                 
+                // Givoni-tier strategy hint -- mirrors the VAV-table dot
+                // logic so the operator sees the same recommendation in
+                // both places (the row tooltip AND this on-chart callout).
+                const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                const gv = getGivoniTier(tVal, wVal, rhVal, comfortZonePoly, _gvSweet, showGivoni);
+                const showTier = showGivoni;
+                const tooltipH = (title ? 42 : 32) + (showTier ? 14 : 0);
+                const tooltipW = 96;
+
                 return (
                     <g transform={`translate(8, ${title ? -45 : -35})`} className="pointer-events-none drop-shadow-lg shadow-black">
-                        <rect x="0" y="0" width="85" height={title ? "42" : "32"} 
+                        <rect x="0" y="0" width={tooltipW} height={tooltipH} 
                               fill={theme==='dark' ? "rgba(15, 23, 42, 0.6)" : "rgba(255, 255, 255, 0.6)"} 
                               stroke={theme==='dark' ? "#6366f1" : "#818cf8"} strokeWidth="1.5" rx="6" />
-                        {title && <text x="42.5" y="12" textAnchor="middle" fill="#818cf8" fontSize="8" fontWeight="900" className="uppercase tracking-widest">{title}</text>}
-                        <text x="42.5" y={title ? "24" : "14"} textAnchor="middle" fill={theme==='dark' ? "#f8fafc" : "#0f172a"} fontSize="9" fontWeight="900" className="font-mono">{tVal.toFixed(1)}° / {rhVal.toFixed(0)}%</text>
-                        <text x="42.5" y={title ? "36" : "26"} textAnchor="middle" fill={theme==='dark' ? "#f472b6" : "#db2777"} fontSize="9" fontWeight="900" className="font-mono">ΔH: {diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</text>
+                        {title && <text x={tooltipW/2} y="12" textAnchor="middle" fill="#818cf8" fontSize="8" fontWeight="900" className="uppercase tracking-widest">{title}</text>}
+                        <text x={tooltipW/2} y={title ? "24" : "14"} textAnchor="middle" fill={theme==='dark' ? "#f8fafc" : "#0f172a"} fontSize="9" fontWeight="900" className="font-mono">{tVal.toFixed(1)}° / {rhVal.toFixed(0)}%</text>
+                        <text x={tooltipW/2} y={title ? "36" : "26"} textAnchor="middle" fill={theme==='dark' ? "#f472b6" : "#db2777"} fontSize="9" fontWeight="900" className="font-mono">ΔH: {diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</text>
+                        {showTier && (
+                            <g data-testid="givoni-tier-hint">
+                                <circle cx="7" cy={title ? 50 : 40} r="3" fill={gv.dotFill} stroke={gv.ringStroke} strokeWidth="0.8" />
+                                <text x="13" y={title ? 53 : 43} textAnchor="start"
+                                      fill={gv.dotFill}
+                                      fontSize="8" fontWeight="900" className="font-mono uppercase tracking-wider">
+                                    {gv.tier} · {gv.label}
+                                </text>
+                                <text x="13" y={title ? 61 : 51} textAnchor="start"
+                                      fill={theme==='dark' ? "#94a3b8" : "#475569"}
+                                      fontSize="7" fontWeight="700" className="font-mono lowercase">
+                                    {gv.subLabel}
+                                </text>
+                            </g>
+                        )}
                     </g>
                 );
             };
@@ -2147,47 +2175,22 @@
                                                     // sweet" will downgrade from optimal/comfort to
                                                     // warning here too, matching the badge count.
                                                     const diag = getVavDiagnostic(v, saP, comfortZonePoly, activeSweet);
-                                                    // Four-state chip palette that visually samples the
-                                                    // Givoni chart's own polygon fills, so the operator's
-                                                    // eye can map "circle colour -> chart region" without
-                                                    // a legend lookup:
-                                                    //   1. Inside operator-defined sweet-spot strip
-                                                    //      -> DARK EMERALD #059669 (matches strip fill)
-                                                    //   2. Inside CZ but outside sweet-spot
-                                                    //      -> LIGHT EMERALD #10b981 (matches CZ fill)
-                                                    //   3. Outside CZ on the hot/humid side  (T >= 23.5)
-                                                    //      -> ORANGE #f97316
-                                                    //   4. Outside CZ on the cold/dry side   (T <  23.5)
-                                                    //      -> DARK BLUE #1d4ed8
-                                                    //
-                                                    // We use the geometric CZ-centroid temperature 23.5
-                                                    // as the hot/cold discriminator -- matches how an
-                                                    // operator describes the chart ("right side = warm,
-                                                    // left side = cool").
-                                                    const inSweet = showGivoni && showSweetSpot
-                                                        && v.t >= 20 && v.t <= 27
-                                                        && v.rh >= sweetSpotRange.lo && v.rh <= sweetSpotRange.hi;
-                                                    // Use the original CZ-only inCZ (not the AND-narrowed
-                                                    // value returned by getVavDiagnostic) so we can fall
-                                                    // through to the CZ tier even when a sweet-spot is set.
-                                                    const inCZRaw = getZoneDemand(v.t, v.w, comfortZonePoly).inCZ;
-                                                    let statusStyle = null;
-                                                    let statusTitle = '';
-                                                    if (inSweet) {
-                                                        statusStyle = { backgroundColor: '#059669', boxShadow: '0 0 6px rgba(5,150,105,0.55)' };
-                                                        statusTitle = 'In sweet-spot band (' + sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH)';
-                                                    } else if (inCZRaw) {
-                                                        statusStyle = { backgroundColor: '#10b981', opacity: 0.7, boxShadow: '0 0 4px rgba(16,185,129,0.4)' };
-                                                        statusTitle = showGivoni && showSweetSpot
-                                                            ? ('In Givoni CZ (outside ' + sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH sweet-spot)')
-                                                            : 'In Givoni CZ';
-                                                    } else if (v.t >= 23.5) {
-                                                        statusStyle = { backgroundColor: '#f97316', boxShadow: '0 0 5px rgba(249,115,22,0.5)' };
-                                                        statusTitle = 'Outside CZ -- hot/humid side (' + v.t.toFixed(1) + ' deg C, ' + v.rh.toFixed(0) + '% RH)';
-                                                    } else {
-                                                        statusStyle = { backgroundColor: '#1d4ed8', boxShadow: '0 0 5px rgba(29,78,216,0.5)' };
-                                                        statusTitle = 'Outside CZ -- cold/dry side (' + v.t.toFixed(1) + ' deg C, ' + v.rh.toFixed(0) + '% RH)';
-                                                    }
+                                                    // Givoni-aware tier classification.  Single resolver in
+                                                    // psychrometric.js owns BOTH the dot colour (auto-derived
+                                                    // from the same hex tokens the chart polygons use) AND the
+                                                    // control-strategy hint shown in the tooltip + chart
+                                                    // callout, so visual + recommendation stay in lock-step.
+                                                    //   Tier A -> SWEET_FILL    + HOLD setpoints
+                                                    //   Tier B -> CZ_STROKE     + Soft trim humidify/dehumidify
+                                                    //   Tier C+ -> HOT_OUTSIDE  + mech cool / dehumidify
+                                                    //   Tier C- -> COLD_OUTSIDE + mech heat / humidify
+                                                    const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                                                    const gv = getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, _gvSweet, showGivoni);
+                                                    const statusStyle = {
+                                                        backgroundColor: gv.dotFill,
+                                                        boxShadow: '0 0 5px ' + gv.dotFill + '80',
+                                                    };
+                                                    const statusTitle = gv.tooltip;
                                                     return (
                                                         <tr key={v.id} className={`rounded-lg transition-colors shadow-black ${lockedVavId === v.id ? 'bg-indigo-500/30' : (theme==='dark'?'bg-slate-950/40 hover:bg-indigo-500/10':'bg-slate-100 hover:bg-indigo-100')}`}>
                                                             <td className="px-1 py-2" title={statusTitle} data-testid={`vav-cz-status-${v.id}`}>

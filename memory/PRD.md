@@ -1816,3 +1816,77 @@ Single-file Repair-Mode replace of `equipment_mapper.html`. Hard-refresh after.
 3. Drag the Stretch X slider rapidly across its full range; repeat for Stretch Y.
 4. Expected: smooth visual feedback, no "page unresponsive" dialog, no audible
    fan / CPU spike on the host.  Per-tick render budget should stay under 5 ms.
+
+## 2026-02-11 — dashboard.html Givoni 3-tier classification + control-strategy resolver
+**Files:**
+- `/app/archive/Red5-Studio-V1.9/js/psychrometric.js` (+1 helper, +1 token map)
+- `/app/archive/Red5-Studio-V1.9/dashboard.html` (refactored VAV-table dot logic + chart indicator tooltip)
+- `/app/archive/Red5-Studio-V1.9/tests/test_givoni_tier_resolver.js` (NEW — 16 assertions)
+
+### Operator ask
+"Inside the Givoni overlay, the 40-60% humidity range in particular: VAVs inside
+that zone should have the same colour circle in the VAV table; the ones outside
+40-60% but within the Givoni area should be a lighter colour matching the
+Givoni-area background. The control strategy should also be refined by this
+inner humidity range."
+
+### Decisions (operator-confirmed)
+1. Dot colours **auto-derived** from the same hex tokens the chart polygons use
+   (single source of truth in `js/psychrometric.js` -> `GIVONI_COLORS`).
+2. Inner band follows the **live RH sweet-spot slider** (40-60 default, but
+   tightening to e.g. 46-54 flips a 45% RH VAV from Tier A to Tier B).
+3. Tier + strategy hint shown in **BOTH** the VAV-row tooltip AND the on-chart
+   VAV indicator callout (the `VAV-04-E / 25.4 / 38% / dH +17.6` rectangle now
+   gets a new `B · Soft trim · humidify (RH-only)` line beneath it).
+
+### Tier matrix (single resolver — `getGivoniTier(t, w, rh, poly, ss, enabled)`)
+
+| Tier | Condition | Dot fill | Strategy | Label |
+|---|---|---|---|---|
+| A   | inCZ AND inSweet (RH in [ss.lo, ss.hi]) | `#059669` (SWEET_FILL)  | HOLD             | Comfort · hold setpoints           |
+| B   | inCZ AND rh < ss.lo                     | `#10b981` (CZ_STROKE)   | TRIM_HUMIDIFY    | Soft trim · humidify (RH-only)     |
+| B   | inCZ AND rh > ss.hi                     | `#10b981` (CZ_STROKE)   | TRIM_DEHUMIDIFY  | Soft trim · dehumidify (RH-only)   |
+| C+  | !inCZ AND t > 27                        | `#f97316` (HOT_OUTSIDE) | COOL             | Hot/humid · mechanical cool        |
+| C+  | !inCZ AND t in [23.5, 27]               | `#f97316` (HOT_OUTSIDE) | DEHUMIDIFY       | Hot/humid · dehumidify             |
+| C-  | !inCZ AND t < 20                        | `#1d4ed8` (COLD_OUTSIDE)| HEAT             | Cold/dry · mechanical heat         |
+| C-  | !inCZ AND t in [20, 23.5)               | `#1d4ed8` (COLD_OUTSIDE)| HUMIDIFY         | Cold/dry · humidify                |
+
+### Key change vs prior behaviour
+Tier B no longer relies on `opacity: 0.7` (which collapsed visually on dark UI).
+Both Tier A and Tier B are now full-opacity, using their respective polygon-
+stroke hex tokens, so the eye can map "dot colour -> chart region" without a
+legend lookup AND the two greens are now clearly distinguishable on dark backgrounds.
+
+### Verification (16/16 assertions, `node tests/test_givoni_tier_resolver.js`)
+- All 8 VAVs from the operator's 2026-02 screenshot map to the expected tier:
+  - VAV-02-E (21.4 C / 39% RH) -> B / TRIM_HUMIDIFY
+  - VAV-03-E (24.2 / 52)       -> A / HOLD
+  - VAV-04-E (25.4 / 38)       -> B / TRIM_HUMIDIFY
+  - VAV-01-S (25.8 / 37)       -> B / TRIM_HUMIDIFY
+  - VAV-02-S (20.8 / 48)       -> A / HOLD
+  - VAV-01-W / 02-W / 01-N (22.0 / 45) -> A / HOLD
+- Auto-derive contract: `dotFill === GIVONI_COLORS.SWEET_FILL` (Tier A) and
+  `dotFill === GIVONI_COLORS.CZ_STROKE` (Tier B).
+- Live slider: tightening to 46-54 flips 45% RH VAV from A to B.
+- Givoni disabled fallback still produces a usable Tier C result by the 23.5 C
+  centroid split.
+
+JSX parse check on full 372 KB inline source: PASS via `@babel/parser`.
+All sibling regression tests pass at their existing baseline.
+
+### Deploy
+Two-file Repair-Mode replace of `dashboard.html` and `js/psychrometric.js`.
+Hard-refresh after.
+
+### Verify on controller
+1. Open dashboard. Make sure both "Toggle Givoni Engine" and the "40-60% RH"
+   buttons are ON (both should be coloured indigo/emerald in the side panel).
+2. Open the VAV Terminal Hub for an AHU with VAVs spanning both sides of the
+   40-60% band (AHU-01 in the screenshot is a good example).
+3. Expected: VAVs inside the inner green strip get a dark-emerald solid dot
+   (`#059669`); VAVs in CZ but outside the strip get a brighter emerald dot
+   (`#10b981`); VAVs outside the CZ keep their orange/blue dots.
+4. Drag the indicator handle over any VAV - the on-chart callout now shows a
+   third line "<tier> · <label>" + sub-label "humidify (RH-only)" or similar.
+5. Tighten the RH slider to 46-54: VAVs at 45 or 55% RH should immediately
+   re-classify from A to B with their dot colour updating live.

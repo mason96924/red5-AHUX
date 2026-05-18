@@ -168,3 +168,105 @@ const getEnergyMetrics = (ahu) => {
     if (!ra || !oa || !sa) return { exchange: 0, absorption: 0 };
     return { exchange: getH(sa.t, sa.w) - getH(oa.t, oa.w), absorption: getH(ra.t, ra.w) - getH(sa.t, sa.w) };
 };
+
+// Givoni-region color tokens.  Single source of truth shared by the chart
+// polygon fills AND the VAV-table tier dots, so re-skinning the chart
+// automatically re-skins the dot legend (auto-derive contract).
+//   CZ_*    : outer Givoni Comfort Zone (looser ASHRAE 55 envelope)
+//   SWEET_* : operator-defined inner RH sweet-spot (default 40-60% RH)
+const GIVONI_COLORS = {
+    CZ_STROKE:    '#10b981',  // outer CZ stroke / Tier B dot fill
+    CZ_FILL:      '#10b981',  // outer CZ polygon fill (used at low opacity)
+    SWEET_STROKE: '#047857',  // inner sweet-spot stroke
+    SWEET_FILL:   '#059669',  // inner sweet-spot fill / Tier A dot fill
+    HOT_OUTSIDE:  '#f97316',  // Tier C dot — outside CZ on hot/humid side
+    COLD_OUTSIDE: '#1d4ed8',  // Tier C dot — outside CZ on cold/dry side
+};
+
+// Givoni-aware tier classification + control-strategy resolver.
+// Returns a single object describing where the (T, RH, W) point sits
+// relative to the Givoni overlay AND what the controller should do
+// about it.  Tiers:
+//   A   - inside CZ AND inside operator-defined sweet-spot RH strip
+//         -> HOLD setpoints (true comfort)
+//   B   - inside CZ but outside sweet-spot strip
+//         -> SOFT TRIM (RH-only humidify or dehumidify; no temp change)
+//   C+  - outside CZ on hot/humid side  (T >= 23.5 by chart-centroid split)
+//         -> mechanical cooling (or dehumidify if T in [20,27] but RH high)
+//   C-  - outside CZ on cold/dry side   (T <  23.5)
+//         -> mechanical heating (or humidify if T in [20,27] but RH low)
+//
+// All callers (VAV-table row dot, chart indicator tooltip, AHU strategy
+// banner) MUST use this resolver so the colour + recommendation stay
+// in lock-step across the UI.
+const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
+    const _enabled = enabled !== false;  // default ON
+    const demand = getZoneDemand(t, w, comfortPoly);
+    const inCZ = demand.inCZ;
+    const _ss = (_enabled && sweetSpot) ? sweetSpot : null;
+    const inSS = _ss ? (t >= 20 && t <= 27 && rh >= _ss.lo && rh <= _ss.hi) : inCZ;
+
+    // Tier A — inner comfort band (CZ AND sweet-spot)
+    if (inCZ && (!_ss || inSS)) {
+        return {
+            tier: 'A',
+            dotFill: GIVONI_COLORS.SWEET_FILL,
+            dotOpacity: 1,
+            ringStroke: GIVONI_COLORS.SWEET_STROKE,
+            strategy: 'HOLD',
+            label: 'Comfort',
+            subLabel: 'hold setpoints',
+            tooltip: _ss
+                ? ('In sweet-spot band (' + _ss.lo + '-' + _ss.hi + '% RH) | HOLD setpoints')
+                : 'In Givoni CZ | HOLD setpoints',
+        };
+    }
+
+    // Tier B — outer Givoni band (CZ but outside sweet-spot)
+    if (inCZ && _ss) {
+        const tooLow  = rh < _ss.lo;
+        const strategy = tooLow ? 'TRIM_HUMIDIFY' : 'TRIM_DEHUMIDIFY';
+        const subLabel = tooLow ? 'humidify (RH-only)' : 'dehumidify (RH-only)';
+        return {
+            tier: 'B',
+            dotFill: GIVONI_COLORS.CZ_STROKE,
+            dotOpacity: 1,
+            ringStroke: GIVONI_COLORS.SWEET_STROKE,
+            strategy,
+            label: 'Soft trim',
+            subLabel,
+            tooltip: ('In Givoni CZ but outside ' + _ss.lo + '-' + _ss.hi + '% RH | Soft trim ' + (tooLow ? 'humidify' : 'dehumidify')),
+        };
+    }
+
+    // Tier C — outside Givoni
+    const hotSide = t >= 23.5;
+    if (hotSide) {
+        // Hot side: pure mech cool when over 27 C, else dehumidify only
+        const strategy = (t > 27) ? 'COOL' : 'DEHUMIDIFY';
+        const subLabel = (t > 27) ? 'mechanical cool' : 'dehumidify';
+        return {
+            tier: 'C+',
+            dotFill: GIVONI_COLORS.HOT_OUTSIDE,
+            dotOpacity: 1,
+            ringStroke: '#9a3412',
+            strategy,
+            label: 'Hot/humid',
+            subLabel,
+            tooltip: ('Outside CZ - hot/humid side (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | ' + subLabel),
+        };
+    }
+    // Cold side
+    const strategy = (t < 20) ? 'HEAT' : 'HUMIDIFY';
+    const subLabel = (t < 20) ? 'mechanical heat' : 'humidify';
+    return {
+        tier: 'C-',
+        dotFill: GIVONI_COLORS.COLD_OUTSIDE,
+        dotOpacity: 1,
+        ringStroke: '#1e3a8a',
+        strategy,
+        label: 'Cold/dry',
+        subLabel,
+        tooltip: ('Outside CZ - cold/dry side (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | ' + subLabel),
+    };
+};

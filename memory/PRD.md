@@ -2286,3 +2286,36 @@ Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
    with NO delayed-rush slider events.
 7. Refresh the page after dragging -- the next POP opens at the
    last-used position and size (localStorage-persisted).
+
+## 2026-02-11 — Sidebar floating: duplicate ATTACH button fix
+**File:** `dashboard.html` (1-line gate on the header POP/ATTACH button)
+
+### Bug
+After shipping the in-page floating sidebar, the operator spotted **two ATTACH
+buttons** stacked vertically when the panel was popped out: one in the new
+floating-shell title bar (top) and one in the original sidebar header (where
+the POP button lives, but its label flipped to "ATTACH" because
+`sidebarFloating === true`).  Both did the same thing.
+
+### Root cause
+The header button was a single toggle that swapped label POP <-> ATTACH based
+on `sidebarFloating`.  Once the floating shell shipped with its OWN attach
+button in the title bar, the header copy became redundant.
+
+### Fix
+Gated the header button behind `{!sidebarFloating && (...)}` so it only renders
+in the docked state.  Operator re-attaches via the title-bar ATTACH button when
+floating (which is the natural place to look for it -- right next to the
+"drag to move" hint).  Simplified the button so its only job is opening
+the floating mode: `onClick={() => setSidebarFloating(true)}`.
+
+### Verification
+- 29/29 assertions in `tests/test_dashboard_sidebar_popout.js` pass, including:
+  - `button: only renders when docked (gated behind !sidebarFloating)`
+  - `regression: header button does NOT render ATTACH label (no duplicate with shell)`
+- Playwright smoke: `ATTACH buttons visible: 1` (was 2 before fix).  Screenshot
+  confirms the header slot where the second ATTACH used to be is now clean.
+- Title-bar ATTACH still re-docks the panel as expected.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.

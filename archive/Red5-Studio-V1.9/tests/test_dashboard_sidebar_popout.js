@@ -86,10 +86,12 @@ check('shell: attach button flips state to false',
 // ---------- 6. Pop-out button wiring ----------
 check('button: data-testid popout-sidebar-btn present',
       /data-testid="popout-sidebar-btn"/.test(dash));
-check('button: toggles sidebarFloating',
-      /onClick=\{\(\)\s*=>\s*setSidebarFloating\(v\s*=>\s*!v\)/.test(dash));
-check('button: ATTACH vs POP label',
-      /sidebarFloating\s*\?\s*'\\u21A9 ATTACH'\s*:\s*'\\u2197 POP'/.test(dash));
+check('button: only renders when docked (gated behind !sidebarFloating)',
+      /\{\s*!sidebarFloating\s*&&\s*\([\s\S]{0,800}data-testid="popout-sidebar-btn"/.test(dash));
+check('button: click opens floating mode',
+      /setSidebarFloating\(true\)[\s\S]{0,800}data-testid="popout-sidebar-btn"/.test(dash));
+check('regression: header button does NOT render ATTACH label (no duplicate with shell)',
+      !/data-testid="popout-sidebar-btn"[\s\S]{0,800}\\u21A9 ATTACH/.test(dash));
 
 // ---------- 7. Docked sidebar IIFE still works (no isPopped branch deletion) ----------
 check('iife: const isPopped = sidebarFloating',

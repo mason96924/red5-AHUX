@@ -1933,19 +1933,23 @@
                                 </div>
                                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
                                 {/* Pop-out toggle - turns the docked sidebar into
-                                    a floating, draggable in-page panel.  In-page
-                                    (NOT a separate window) so all mouse events
-                                    stay in one document, which keeps window-level
-                                    drag listeners (psychart temp slider, etc.)
-                                    working unchanged. */}
+                                    a floating, draggable in-page panel.  Only
+                                    rendered when the sidebar is DOCKED -- once
+                                    the panel is floating, the title bar inside
+                                    the floating shell already has its own
+                                    ATTACH button, so rendering this header copy
+                                    would produce two identical buttons stacked
+                                    vertically (operator-reported bug). */}
+                                {!sidebarFloating && (
                                 <button
-                                    onClick={() => setSidebarFloating(v => !v)}
-                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${sidebarFloating ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700')}`}
-                                    title={sidebarFloating ? 'Re-attach sidebar to the docked position' : 'Float the sidebar into a draggable, resizable in-page panel'}
+                                    onClick={() => setSidebarFloating(true)}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700'}`}
+                                    title="Float the sidebar into a draggable, resizable in-page panel"
                                     data-testid="popout-sidebar-btn"
                                 >
-                                    {sidebarFloating ? '\u21A9 ATTACH' : '\u2197 POP'}
+                                    {'\u2197 POP'}
                                 </button>
+                                )}
                             </div>
                             <div className="flex items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}

@@ -376,6 +376,39 @@
                 return r.json();
             };
 
+            // ---- Plugin health (auto-discovered Flask services) ----
+            // Polls /api/services once on mount.  Compares the live status
+            // against an "expected" set so we can warn the operator when a
+            // required plug-in is missing (e.g. the band_overrides_service
+            // bug operators hit when they forget to upload it to
+            // /root/data/pgpy/).  Same chip serves as a green-light "all
+            // good" indicator when nothing is wrong.
+            const PLUGIN_EXPECTED = ['band_service', 'telemetry_service',
+                                     'weather_service', 'upload_service',
+                                     'band_overrides_service'];
+            const [pluginHealth, setPluginHealth] = useState({ state: 'unknown', missing: [], failed: [], total: 0 });
+            useEffect(() => {
+                let cancelled = false;
+                (async () => {
+                    try {
+                        const j = await fetchJSON('/api/services');
+                        if (cancelled) return;
+                        const svc = (j && j.services) || [];
+                        const seen = new Set(svc.map(s => s.name));
+                        const missing = PLUGIN_EXPECTED.filter(n => !seen.has(n));
+                        const failed  = svc.filter(s => s.state === 'FAILED' || s.state === 'SKIPPED' || s.state === 'WARNING');
+                        let state = 'ok';
+                        if (missing.length || failed.some(s => s.state === 'FAILED')) state = 'error';
+                        else if (failed.length) state = 'warn';
+                        setPluginHealth({ state, missing, failed, total: svc.length });
+                    } catch (e) {
+                        if (cancelled) return;
+                        setPluginHealth({ state: 'error', missing: [], failed: [], total: 0, detail: e.message });
+                    }
+                })();
+                return () => { cancelled = true; };
+            }, []);
+
             // Operator SA-RH clamp - the SLIDER (sweetSpotRange) is hypothetical
             // until the operator presses "Apply to Controller", at which point
             // we POST to /api/band-overrides/sa-rh-clamp and the value here
@@ -1974,6 +2007,58 @@
                                     </div>
                                 </div>
                                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
+                                {/* Plugin-health chip - polls /api/services once on
+                                    mount.  Surfaces missing or failed plugins at a
+                                    glance so the operator does not discover them
+                                    only by clicking a feature and getting a
+                                    PLUGIN_MISSING error (e.g. the band-overrides
+                                    case). */}
+                                {(() => {
+                                    const h = pluginHealth;
+                                    if (h.state === 'unknown') return null;
+                                    const isOk    = h.state === 'ok';
+                                    const isWarn  = h.state === 'warn';
+                                    // Tailwind JIT only picks up CLASS NAMES that appear as
+                                    // complete literal strings in the source -- dynamic
+                                    // interpolation like `bg-${color}-900/40` would compile
+                                    // to runtime bytes that JIT never sees, so the chip
+                                    // would render unstyled.  Enumerate every variant.
+                                    const cls = isOk
+                                        ? (theme === 'dark'
+                                            ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300 hover:bg-emerald-900/60'
+                                            : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100')
+                                        : (isWarn
+                                            ? (theme === 'dark'
+                                                ? 'bg-amber-900/40 border-amber-700/50 text-amber-300 hover:bg-amber-900/60'
+                                                : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100')
+                                            : (theme === 'dark'
+                                                ? 'bg-rose-900/40 border-rose-700/50 text-rose-300 hover:bg-rose-900/60'
+                                                : 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100'));
+                                    const dot   = isOk ? '\u25CF' : (isWarn ? '\u25B2' : '\u2716');
+                                    const lines = [];
+                                    if (h.missing && h.missing.length) {
+                                        lines.push('Missing (' + h.missing.length + '):');
+                                        for (const m of h.missing) lines.push('  - ' + m + ' (upload to /root/data/pgpy/ + restart Flask)');
+                                    }
+                                    if (h.failed && h.failed.length) {
+                                        lines.push('Loaded but not OK (' + h.failed.length + '):');
+                                        for (const f of h.failed) lines.push('  - ' + f.name + ' [' + f.state + '] ' + (f.detail || ''));
+                                    }
+                                    if (h.detail) lines.push('Probe error: ' + h.detail);
+                                    if (!lines.length) lines.push('All ' + h.total + ' Flask plug-ins registered OK');
+                                    const tip = lines.join('\n');
+                                    return (
+                                        <button
+                                            data-testid="plugin-health-chip"
+                                            data-state={h.state}
+                                            title={tip}
+                                            onClick={() => alert(tip)}
+                                            className={`flex-shrink-0 px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${cls}`}
+                                        >
+                                            {dot} {isOk ? 'OK' : (isWarn ? 'WARN' : (h.missing && h.missing.length ? 'PLUGIN' : 'ERR'))}
+                                        </button>
+                                    );
+                                })()}
                                 {/* Pop-out toggle - turns the docked sidebar into
                                     a floating, draggable in-page panel.  Only
                                     rendered when the sidebar is DOCKED -- once

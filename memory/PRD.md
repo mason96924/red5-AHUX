@@ -2374,3 +2374,72 @@ Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
 Upload `band_overrides_service.py` to `/root/data/pgpy/` on the controller
 and restart Flask.  Until that happens, clicking Apply now shows a clear
 error pointing to exactly that step, instead of "Unexpected token '<'".
+
+## 2026-02-11 — Plugin-health chip
+**Files modified:**
+- `dashboard.html` (+ `pluginHealth` state, `/api/services` probe, chip render)
+- `tests/test_plugin_health_chip.js` (NEW, 26 assertions)
+
+### Operator ask
+Surface missing/failed Flask plug-ins at a glance so the operator does not
+discover them only by clicking a feature and getting a `PLUGIN_MISSING`
+error -- exactly what happened with band_overrides_service when it had not
+been uploaded to /root/data/pgpy/ yet.
+
+### What ships
+- One-shot poll of `/api/services` on mount via `fetchJSON`.
+- `PLUGIN_EXPECTED` static list: `band_service`, `telemetry_service`,
+  `weather_service`, `upload_service`, `band_overrides_service`.
+- Classification:
+  - `error` -- any expected plug-in MISSING from /api/services OR any
+    reported state is FAILED.
+  - `warn`  -- one or more plug-ins SKIPPED or WARNING (loaded, but with
+    issues -- e.g. missing SERVICE_CTX keys).
+  - `ok`    -- every expected plug-in reported state OK.
+- Chip slots into the header right after the theme toggle.  Three Tailwind
+  literal variants (emerald / amber / rose, dark + light) so the CDN JIT
+  picks them up (NO dynamic `${color}-...` interpolation).
+- Tooltip + click-alert lists exactly which plug-ins are missing or
+  failed, each with the deploy hint "upload to /root/data/pgpy/ + restart
+  Flask".  No clicking through nested menus.
+
+### Glyph + label
+- ok    -> green `\u25CF OK`     (filled disc)
+- warn  -> amber `\u25B2 WARN`   (warning triangle)
+- error -> rose  `\u2716 PLUGIN` if missing, `\u2716 ERR` if probe failed.
+
+### Verification (`tests/test_plugin_health_chip.js` -- 26/26 PASS)
+- Expected list contains all 5 required plug-ins.
+- Initial state is `unknown` (chip hidden until probe).
+- `fetchJSON('/api/services')` is the call site.
+- Classification branches: FAILED -> error / SKIPPED -> warn / clean -> ok.
+- Tailwind classes appear as LITERAL strings (regression: no `bg-${color}`
+  interpolation in className).  All 6 variants (emerald/amber/rose, dark/light)
+  enumerated.
+- Chip has `data-testid="plugin-health-chip"` + `data-state=<...>`.
+- Tooltip text includes `/root/data/pgpy/ + restart Flask` deploy hint.
+- 4 functional simulations against /api/services payloads:
+  1. operator-reported case (band_overrides_service missing) -> error
+  2. all OK -> ok
+  3. one FAILED -> error
+  4. one SKIPPED -> warn
+- JSX parses cleanly via `@babel/parser`.
+
+### Visual smoke (Playwright)
+Captured screenshot with the chip in `error` state -- shows the small rose
+`✖ ERR` chip rendered between the theme toggle and the POP button.  The chip
+is small enough that the header stays clean but red enough to draw the
+operator's eye.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
+
+### Verify on controller
+1. Open the dashboard.  Look in the top-right header: there should now be
+   a small chip between the sun/moon theme toggle and the POP button.
+2. If green `\u25CF OK` -> every plug-in is registered. Done.
+3. If rose `\u2716 PLUGIN` or `\u2716 ERR` -> click it.  The alert lists
+   exactly which file to upload to `/root/data/pgpy/` and reminds to
+   restart Flask.  Fix that, refresh, and the chip should turn green.
+4. Amber `\u25B2 WARN` means a plug-in loaded but with SKIPPED/WARNING
+   state.  Click for details.

@@ -1,5 +1,31 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix — Header badge stuck on "Collector not running" (2026-02-19)
+**Brief**: Dashboard header showed an OFF badge with tooltip "Collector not running" even though the simulator was producing telemetry and the dashboard was rendering AHU pills.
+
+Root cause: `/api/telemetry-status` only returned `{last_update, stale_s, polling, mode}`.  The dashboard's badge component reads `s.live`, `s.mock_mode`, `s.stale`, `s.equipment_count`, `s.age_seconds` (V1.9 contract).  All five were `undefined`, so the badge fell through to `isOff = !s.live = true`.
+
+### Fix (`backend/server.py`)
+- `/api/telemetry-status` now returns the full V1.9-compatible shape:
+  - `live: true`, `polling: true`, `stale: false`, `stale_s: 0`, `age_seconds: 0`
+  - `mock_mode`: reflects the effective config (tenant-saved → bundled with anonymous override layered on top)
+  - `equipment_count`, `read_ok`: AHU count (5 in Simulator mode, 3 in Mock)
+  - `collector_version: "v2.0-demo"`, `timestamp_iso: <now>`
+- Tenant-aware via `current_tenant_optional` so signed-in users get their own AHU count.
+
+### Frontend (`dashboard.html`)
+- `/api/telemetry-status` poll now sends `credentials: 'include'` so signed-in users get their tenant snapshot.
+
+### Verification
+- Anonymous + simulator: `live:true, mock_mode:false, equipment_count:5` → badge **LIVE** (green).
+- Anonymous + mock: `live:true, mock_mode:true, equipment_count:3` → badge **SIM** (amber).
+- Browser screenshot confirmed the badge next to "BY DELTA CONTROLS" reads **● LIVE** (was OFF).
+- Regression: 26/26 Phase-1 backend tests pass.
+
+### Files changed
+- `backend/server.py` — telemetry-status payload (~30 lines).
+- `frontend/public/dashboard.html` — 1 line (`credentials: 'include'`).
+
 ## V2.0 Bugfix — Equipment graphic thumb showed "No preview" (2026-02-19)
 **Brief**: User uploaded an equipment graphic via the mapper. The asset was correctly persisted to `tenant_assets` (verified `AHU_TYPE_01.jpg`, 1.04 MB, tenant `ten_dc503be05a94`), but the **SELECT IMAGE FROM CONTROLLER** picker showed only an empty thumbnail with the text "No preview".
 

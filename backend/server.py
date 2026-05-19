@@ -367,11 +367,42 @@ def _anon_effective_config() -> dict:
 
 
 @app.get("/api/telemetry-status")
-async def telemetry_status() -> dict:
+async def telemetry_status(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """V1.9-compatible health probe used by the dashboard header chip.
+
+    The chip shows LIVE / SIM / STALE / OFF based on these flags:
+      * `live=True` -> the demo simulator is producing data (always true here).
+      * `mock_mode` -> reflects the operator's data-source toggle so the
+        chip flips between LIVE (mock_mode=false) and SIM (mock_mode=true).
+      * `stale=False`, `age_seconds=0` -> demo data is generated on each call.
+      * `equipment_count` -> AHU count the dashboard expects to render.
+    """
+    # Resolve the effective config (tenant-saved -> bundled w/ anon override).
+    if tenant:
+        cfg = await read_collector_config(tenant) or _load_json("collector_config.json")
+    else:
+        cfg = _anon_effective_config()
+    is_mock = bool(cfg.get("mock_mode", True))
+    if not is_mock:
+        ahu_count = len((cfg.get("ahu_groups") or {}))
+        if ahu_count == 0:
+            ahu_count = len(_DEMO_AHUS)
+    else:
+        ahu_count = len(_DEMO_AHUS)
+    now = datetime.now(timezone.utc)
     return {
-        "last_update": datetime.now(timezone.utc).isoformat(),
-        "stale_s": 0,
+        "success": True,
+        "live": True,
         "polling": True,
+        "mock_mode": is_mock,
+        "stale": False,
+        "stale_s": 0,
+        "age_seconds": 0,
+        "equipment_count": ahu_count,
+        "read_ok": ahu_count,
+        "read_errors": 0,
+        "timestamp_iso": now.isoformat(),
+        "collector_version": "v2.0-demo",
         "mode": "demo",
     }
 

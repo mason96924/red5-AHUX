@@ -2526,3 +2526,32 @@ Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
    so you can fetch it back without finding the window first.
 6. Close the main dashboard tab -> the popup window auto-closes (no
    orphaned windows).
+
+## 2026-02-11 — Sidebar cross-window placeholder: collapse to 32-px rail
+**File:** `dashboard.html` (placeholder replaced with thin rail)
+
+### Operator ask
+> It seems the real estate we gained by popping the left sidebar into another
+> window is taken up by BRING BACK button.  Is there a better way of doing this?
+
+### Fix
+Collapsed the docked placeholder from a 320 px column down to a 32 px vertical
+rail.  The whole rail is the click target ("Click to bring back").  Rotated
+vertical text ("CLICK TO BRING BACK \u00B7 SIDEBAR ON EXTENDED DISPLAY")
+keeps the rail self-explanatory without crowding the chart.  testids
+(`sidebar-window-attach`, `sidebar-window-placeholder`) preserved so the
+existing test suite stays green.
+
+### Real-estate math
+- Before: 320 px placeholder column == sidebar still occupied full width.
+- After:  32 px rail (90% reclaimed) == chart spans ~290 px more horizontally.
+
+Visible in the smoke screenshot: the psychrometric chart now stretches from
+x ~40 to x ~1900 (was x ~340 to x ~1900 with the wide placeholder).
+
+### Tests / parse
+- 35/35 sidebar-popout assertions still PASS (testids preserved).
+- Full 417 KB inline JSX parses cleanly via @babel/parser.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.

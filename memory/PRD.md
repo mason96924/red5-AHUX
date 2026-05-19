@@ -1,5 +1,30 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Phase 2e — Non-blocking toast queue (2026-02-19)
+**Brief**: Every save / load / error path in the legacy dashboard.html and equipment_mapper.html used the native `alert()` modal — 85 of them.  Each blocked the entire page until OK was clicked, froze background polling, and made multi-step workflows (place markers + upload + save) painful.
+
+### Fix
+- New `/app/frontend/public/js/toast.js` — vanilla-JS toast queue.  ~210 lines, zero deps.  Public API: `window.toast(msg)`, `window.toast.success/error/warning/info(msg)`, `window.toast.dismissAll()`.  Toasts slide in from bottom-right, auto-dismiss (3.8s normal / 6.5s for errors), stack vertically, support `\n`-multiline messages, and have a manual close button.
+- Heuristic auto-classifier on plain `toast(msg)`: messages containing "failed/error/cannot" -> red error; "preview only / sign in / demo mode / anonymous" -> amber warning; "saved/loaded/uploaded/added/applied" -> emerald success; default -> blue info.  Lets bulk-converted callsites pick the right colour without per-site tagging.
+- Pre-init queue: if `toast()` fires before `DOMContentLoaded`, the message is queued and flushed once the host element is attached to `document.body`.  Public API is therefore safe to call from any script (including `<head>` scripts).
+- Wired `<script src="js/toast.js">` into the `<head>` of both legacy pages (after `i18n.js`).
+- Bulk-converted **85** `alert(...)` -> `toast(...)` callsites:
+  - `dashboard.html`: 11
+  - `equipment_mapper.html`: 74
+- `confirm()` and `prompt()` calls (30) intentionally left alone — they collect user input.
+
+### Verification (live)
+- `window.toast` resolves to `function` (was undefined before script attached).
+- Host element `[data-testid="r5-toast-host"]` present in DOM.
+- Programmatically firing 4 toasts of each level rendered 4 stacked children at `{x:1657, y:738, w:247, h:246}` (bottom-right, 1920x1000 viewport).
+- No remaining `alert(` callsites in either page (verified via grep).
+- 107/107 backend tests still pass.
+
+### Files changed
+- `frontend/public/js/toast.js` — new (~210 lines).
+- `frontend/public/dashboard.html` — +1 line (script tag) + 11 `alert(`->`toast(` swaps.
+- `frontend/public/equipment_mapper.html` — +1 line (script tag) + 74 `alert(`->`toast(` swaps.
+
 ## V2.0 Bugfix — "Unexpected token '<'" when loading map_config.json (2026-02-19)
 **Brief**: Equipment mapper's LOAD MAP_CONFIG.JSON button → choose Controller → JSON parse error "Unexpected token '<', '<!doctype'... is not valid JSON".  Root cause: `loadConfigFromController()` fetched the legacy V1.9 path `/assets/configs/map_config.json`.  That path doesn't exist in V2.0 — it 404'd and returned the SPA's HTML index, so the JSON.parse choked on `<!doctype html>`.
 

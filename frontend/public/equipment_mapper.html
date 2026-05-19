@@ -144,6 +144,7 @@
         }
     </script>
     <script src="js/i18n.js"></script>
+    <script src="js/toast.js"></script>
     <script>
         if(!window.t){
             var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
@@ -444,7 +445,7 @@
                 const win = window.open('', 'red5_sidebar',
                     'width=480,height=900,resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no');
                 if (!win) {
-                    alert('Popup window blocked. Please allow popups for this site, then click "Pop Out" again.');
+                    toast('Popup window blocked. Please allow popups for this site, then click "Pop Out" again.');
                     return;
                 }
                 // Wipe any default content; build a clean shell.
@@ -671,7 +672,7 @@
                             if (tIds.length > 0) setTypeId(tIds[0]);
                             setActiveTarget({ type: 'point_group', idx: 0 });
                         }
-                    } catch (err) { alert("Invalid JSON schema file."); }
+                    } catch (err) { toast("Invalid JSON schema file."); }
                 };
                 reader.readAsText(file);
             };
@@ -686,7 +687,7 @@
                 const defaultFilename = file.name;
                 const filename = prompt(`Enter filename for this image:\n(Will be saved to /root/data/${graphicsDir}/)`, defaultFilename);
                 if (!filename) {
-                    alert('Upload cancelled - no filename provided');
+                    toast('Upload cancelled - no filename provided');
                     return;
                 }
                 
@@ -724,15 +725,15 @@
                                     return draft;
                                 });
                                 
-                                alert(`Image saved to controller: /root/data/${data.relative_path}\n\nSchema updated.`);
+                                toast(`Image saved to controller: /root/data/${data.relative_path}\n\nSchema updated.`);
                             } else {
                                 throw new Error(data.error || 'Upload failed');
                             }
                         } catch (err) {
-                            alert(`Failed to save image to server:\n${err.message}\n\nImage loaded in preview only.`);
+                            toast(`Failed to save image to server:\n${err.message}\n\nImage loaded in preview only.`);
                         }
                     } else {
-                        alert('Image loaded in preview only.\n\nThe controller backend was not reachable to save the file.');
+                        toast('Image loaded in preview only.\n\nThe controller backend was not reachable to save the file.');
                     }
                 };
                 reader.readAsDataURL(file);
@@ -753,7 +754,7 @@
                         draft[category][typeId].visual_assets.base_graphic = filename;
                         return draft;
                     });
-                    alert(`Asset loaded: ${filename}\n\nSchema updated to reference this file.`);
+                    toast(`Asset loaded: ${filename}\n\nSchema updated to reference this file.`);
                 };
                 
                 if (source.trim() === '1') {
@@ -998,13 +999,13 @@
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
-                            alert(`✅ Clean schema saved to:\n\n${data.file}\n\nThis is your starting template for building a complete config.`);
+                            toast(`✅ Clean schema saved to:\n\n${data.file}\n\nThis is your starting template for building a complete config.`);
                         } else {
                             throw new Error(data.error || 'Save failed');
                         }
                     })
                     .catch(err => {
-                        alert(`Error saving to server:\n\n${err.message}\n\nFalling back to browser download...`);
+                        toast(`Error saving to server:\n\n${err.message}\n\nFalling back to browser download...`);
                         // Fallback to browser download
                         downloadCleanToBuffer();
                     });
@@ -1150,13 +1151,13 @@
                             })
                             .then(data => {
                                 if (data.success) {
-                                    alert(`✅ Points saved successfully!\n\nSaved to: ${data.file}`);
+                                    toast(`✅ Points saved successfully!\n\nSaved to: ${data.file}`);
                                 } else {
                                     throw new Error(data.error || 'Save failed');
                                 }
                             })
                             .catch(err => {
-                                alert(`⚠️ Points updated in memory, but file save failed:\n${err.message}\n\nUse sidebar export buttons to save manually.`);
+                                toast(`⚠️ Points updated in memory, but file save failed:\n${err.message}\n\nUse sidebar export buttons to save manually.`);
                             });
                         } else {
                             // No deployment path - download to browser
@@ -1168,7 +1169,7 @@
                             downloadAnchorNode.click();
                             downloadAnchorNode.remove();
                             
-                            alert('✅ Points saved and downloaded to browser!');
+                            toast('✅ Points saved and downloaded to browser!');
                         }
                     }, 100);
                     
@@ -1190,13 +1191,13 @@
                         const parsed = JSON.parse(text);
                         setPointsJsonText(JSON.stringify(parsed, null, 2));
                         setJsonError('');
-                        alert('Imported from clipboard');
+                        toast('Imported from clipboard');
                     } catch {
                         setPointsJsonText(text);
                         setJsonError('Pasted as text. Format as JSON array.');
                     }
                 } catch (err) {
-                    alert('Failed to read clipboard: ' + err.message);
+                    toast('Failed to read clipboard: ' + err.message);
                 }
             };
             
@@ -1205,7 +1206,7 @@
                     const text = pointsJsonText;
                     if (navigator.clipboard && navigator.clipboard.writeText) {
                         await navigator.clipboard.writeText(text);
-                        alert('Copied to clipboard!');
+                        toast('Copied to clipboard!');
                     } else {
                         const ta = document.createElement('textarea');
                         ta.value = text;
@@ -1214,10 +1215,10 @@
                         ta.select();
                         document.execCommand('copy');
                         document.body.removeChild(ta);
-                        alert('Copied to clipboard!');
+                        toast('Copied to clipboard!');
                     }
                 } catch (err) {
-                    alert('Failed to copy: ' + err.message);
+                    toast('Failed to copy: ' + err.message);
                 }
             };
             
@@ -1237,7 +1238,7 @@
                             const lines = csvText.split('\n').filter(line => line.trim());
                             
                             if (lines.length === 0) {
-                                alert('❌ CSV file is empty');
+                                toast('❌ CSV file is empty');
                                 return;
                             }
                             
@@ -1256,9 +1257,9 @@
                             
                             setPointsTableData(importedData);
                             setPointsJsonText(JSON.stringify(importedData, null, 2));
-                            alert(`✅ Imported ${importedData.length} rows`);
+                            toast(`✅ Imported ${importedData.length} rows`);
                         } catch (err) {
-                            alert('❌ Failed to parse CSV: ' + err.message);
+                            toast('❌ Failed to parse CSV: ' + err.message);
                         }
                     };
                     reader.readAsText(file);
@@ -1269,7 +1270,7 @@
             const exportCSVFile = () => {
                 try {
                     if (pointsTableData.length === 0) {
-                        alert('❌ No data to export');
+                        toast('❌ No data to export');
                         return;
                     }
                     
@@ -1295,9 +1296,9 @@
                     a.click();
                     URL.revokeObjectURL(url);
                     
-                    alert('✅ CSV downloaded!');
+                    toast('✅ CSV downloaded!');
                 } catch (err) {
-                    alert('❌ Failed to export CSV: ' + err.message);
+                    toast('❌ Failed to export CSV: ' + err.message);
                 }
             };
 
@@ -1699,18 +1700,18 @@
                         if (data.success) {
                             // V2.0 hosted demo: data.file is "virtual-controller://<tenant_id>/equipment_types".
                             // V1.9 controller: data.file is "/root/data/configs/equipment_types.json".
-                            alert(`Equipment schema saved to:\n\n${data.file}`);
+                            toast(`Equipment schema saved to:\n\n${data.file}`);
                         } else if (data.warning) {
                             // Anonymous V2.0 demo: cleanly fall back to browser download
                             // with a friendly message -- no scary "error" wording.
-                            alert(data.warning + '\n\nFalling back to browser download...');
+                            toast(data.warning + '\n\nFalling back to browser download...');
                             downloadToBuffer();
                         } else {
                             throw new Error(data.error || 'Save failed');
                         }
                     })
                     .catch(err => {
-                        alert(`Error saving to server:\n\n${err.message}\n\nFalling back to browser download...`);
+                        toast(`Error saving to server:\n\n${err.message}\n\nFalling back to browser download...`);
                         // Fallback to browser download
                         downloadToBuffer();
                     });
@@ -1740,7 +1741,7 @@
             const finalizeNewFloor = (fileName, imageData) => {
                 const floorName = prompt(`Name this floor plan:\n\nExamples: Ground Floor, Level 2 - East Wing`, `Floor ${floorPlans.length + 1}`);
                 if (!floorName || !floorName.trim()) {
-                    alert('Floor name is required. Floor plan not added.');
+                    toast('Floor name is required. Floor plan not added.');
                     return;
                 }
                 const newFloor = {
@@ -1791,12 +1792,12 @@
                                 });
                                 const data = await response.json();
                                 if (data.success) {
-                                    alert(`Floor plan added.\n\nImage saved to controller: /root/data/${data.relative_path || fileName}`);
+                                    toast(`Floor plan added.\n\nImage saved to controller: /root/data/${data.relative_path || fileName}`);
                                 } else {
-                                    alert(`Floor plan added to preview.\n\nSave to controller failed: ${data.error || data.warning || 'Unknown error'}`);
+                                    toast(`Floor plan added to preview.\n\nSave to controller failed: ${data.error || data.warning || 'Unknown error'}`);
                                 }
                             } catch (err) {
-                                alert(`Floor plan added to preview.\n\nCould not reach controller: ${err.message}`);
+                                toast(`Floor plan added to preview.\n\nCould not reach controller: ${err.message}`);
                             }
                         };
                         reader.readAsDataURL(file);
@@ -1807,7 +1808,7 @@
             
             const replaceFloorBackground = () => {
                 if (floorPlans.length === 0 || !floorPlans[currentFloorIdx]) {
-                    alert('No floor selected. Upload a floor plan first.');
+                    toast('No floor selected. Upload a floor plan first.');
                     return;
                 }
                 
@@ -1827,7 +1828,7 @@
                     // Pick from controller
                     openImagePicker((filename, imageURL) => {
                         applyImage(filename, imageURL);
-                        alert(`Background updated for "${currentFloorName}" using ${filename} from controller.`);
+                        toast(`Background updated for "${currentFloorName}" using ${filename} from controller.`);
                     });
                 } else {
                     // Pick from local PC
@@ -1855,12 +1856,12 @@
                                 });
                                 const data = await response.json();
                                 if (data.success) {
-                                    alert(`Background updated for "${currentFloorName}".\n\nImage saved to controller: /root/data/${data.relative_path || fileName}`);
+                                    toast(`Background updated for "${currentFloorName}".\n\nImage saved to controller: /root/data/${data.relative_path || fileName}`);
                                 } else {
-                                    alert(`Background updated in preview, but save failed: ${data.error || data.warning || 'Unknown error'}`);
+                                    toast(`Background updated in preview, but save failed: ${data.error || data.warning || 'Unknown error'}`);
                                 }
                             } catch (err) {
-                                alert(`Background updated in preview, could not reach controller: ${err.message}`);
+                                toast(`Background updated in preview, could not reach controller: ${err.message}`);
                             }
                         };
                         reader.readAsDataURL(file);
@@ -2145,10 +2146,10 @@
                         Object.entries(collectorConfigData.ahu_groups).forEach(([ahu, grp]) => {
                             msgs.push('  ' + ahu + ': ' + grp.vavs.length + ' VAVs [' + grp.vavs.join(', ') + ']');
                         });
-                        alert(msgs.join('\n'));
+                        toast(msgs.join('\n'));
                     })
                     .catch(err => {
-                        alert('Error saving: ' + err.message + '\n\nFalling back to browser download...');
+                        toast('Error saving: ' + err.message + '\n\nFalling back to browser download...');
                         downloadToBrowser(mapConfigData, imageManifest, collectorConfigData);
                     });
                 } else {
@@ -2190,7 +2191,7 @@
 
                 const ahuCount = collectorConfigData ? Object.keys(collectorConfigData.ahu_groups).length : 0;
                 const vavCount = collectorConfigData ? Object.values(collectorConfigData.ahu_groups).reduce((s, g) => s + g.vavs.length, 0) : 0;
-                alert(`Exported to Downloads:\n1. map_config.json\n2. image_files_manifest.json\n3. collector_config.json (${ahuCount} AHUs, ${vavCount} VAVs)\n\nCopy to /root/data/configs/ on your controller.`);
+                toast(`Exported to Downloads:\n1. map_config.json\n2. image_files_manifest.json\n3. collector_config.json (${ahuCount} AHUs, ${vavCount} VAVs)\n\nCopy to /root/data/configs/ on your controller.`);
             };
             
             // ============= AUTHENTICATION FUNCTIONS (v12.5) =============
@@ -2207,9 +2208,9 @@
                         setIsAuthenticated(true);
                         setShowPasswordDialog(false);
                         setPasswordInput('');
-                        alert('Password set! You now have full access to the configuration tool.');
+                        toast('Password set! You now have full access to the configuration tool.');
                     } else {
-                        alert('Please enter a valid password');
+                        toast('Please enter a valid password');
                     }
                 } else {
                     // Verify existing password
@@ -2225,7 +2226,7 @@
                             console.log('🔓 Master key used for access');
                         }
                     } else {
-                        alert('Incorrect password!');
+                        toast('Incorrect password!');
                         setPasswordInput('');
                     }
                 }
@@ -2239,33 +2240,33 @@
                 
                 // Verify current password OR master key
                 if (currentHash !== configPassword && currentPwd !== MASTER_KEY) {
-                    alert('Incorrect current password!');
+                    toast('Incorrect current password!');
                     return;
                 }
                 
                 const newPwd = prompt('Enter new password:');
                 if (!newPwd || !newPwd.trim()) {
-                    alert('Password cannot be empty');
+                    toast('Password cannot be empty');
                     return;
                 }
                 
                 const confirmPwd = prompt('Confirm new password:');
                 if (newPwd !== confirmPwd) {
-                    alert('Passwords do not match!');
+                    toast('Passwords do not match!');
                     return;
                 }
                 
                 const newHash = await hashPassword(newPwd);
                 setConfigPassword(newHash);
                 localStorage.setItem('configPasswordHash', newHash);
-                alert('Password changed successfully!');
+                toast('Password changed successfully!');
             };
             
             const resetPassword = () => {
                 const masterKeyInput = prompt('Enter master key to reset password:');
                 
                 if (masterKeyInput !== MASTER_KEY) {
-                    alert('Invalid master key!');
+                    toast('Invalid master key!');
                     return;
                 }
                 
@@ -2274,7 +2275,7 @@
                     localStorage.removeItem('configPasswordHash');
                     setIsAuthenticated(false);
                     setShowPasswordDialog(true);
-                    alert('Password has been reset. Please set a new password.');
+                    toast('Password has been reset. Please set a new password.');
                 }
             };
             
@@ -2323,10 +2324,10 @@
                     if (data.success) {
                         openFileBrowser(fileBrowserPath);
                     } else {
-                        alert(`Delete failed: ${data.error}`);
+                        toast(`Delete failed: ${data.error}`);
                     }
                 } catch (err) {
-                    alert(`Could not reach controller: ${err.message}`);
+                    toast(`Could not reach controller: ${err.message}`);
                 }
             };
             
@@ -2363,7 +2364,7 @@
                         }
                     }
                     
-                    alert(`Upload results:\n\n${results.join('\n')}`);
+                    toast(`Upload results:\n\n${results.join('\n')}`);
                     openFileBrowser(fileBrowserPath);
                 };
                 input.click();
@@ -2554,7 +2555,7 @@
                     a.click();
                     setTimeout(() => URL.revokeObjectURL(url), 5000);
                 } catch (err) {
-                    if (!err.response) alert('GET selected error: ' + err.message);
+                    if (!err.response) toast('GET selected error: ' + err.message);
                     // Server-side errors are already shown in the toast.
                 }
             };
@@ -2579,7 +2580,7 @@
                     a.click();
                     setTimeout(() => URL.revokeObjectURL(url), 5000);
                 } catch (err) {
-                    if (!err.response) alert('GET dir error: ' + err.message);
+                    if (!err.response) toast('GET dir error: ' + err.message);
                     // Server-side errors are already shown in the toast.
                 }
             };
@@ -2649,7 +2650,7 @@
                             results.push(relPath + ' \u2014 ' + err.message);
                         }
                     }
-                    alert('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
+                    toast('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
                           (results.length ? '\n\n' + results.join('\n') : ''));
                     openFileBrowser(fileBrowserPath);
                 };
@@ -2672,10 +2673,10 @@
                     if (data.success) {
                         openFileBrowser(fileBrowserPath);
                     } else {
-                        alert(`Create folder failed: ${data.error}`);
+                        toast(`Create folder failed: ${data.error}`);
                     }
                 } catch (err) {
-                    alert(`Could not reach controller: ${err.message}`);
+                    toast(`Could not reach controller: ${err.message}`);
                 }
             };
 
@@ -2694,10 +2695,10 @@
                     if (data.success) {
                         openFileBrowser(fileBrowserPath);
                     } else {
-                        alert(`Delete folder failed: ${data.error}`);
+                        toast(`Delete folder failed: ${data.error}`);
                     }
                 } catch (err) {
-                    alert(`Could not reach controller: ${err.message}`);
+                    toast(`Could not reach controller: ${err.message}`);
                 }
             };
 
@@ -2718,10 +2719,10 @@
                     if (data.success) {
                         openFileBrowser(fileBrowserPath);
                     } else {
-                        alert(`Move failed: ${data.error}`);
+                        toast(`Move failed: ${data.error}`);
                     }
                 } catch (err) {
-                    alert(`Could not reach controller: ${err.message}`);
+                    toast(`Could not reach controller: ${err.message}`);
                 }
             };
 
@@ -2765,7 +2766,7 @@
                         results.push(`${name} - ERROR: ${err.message}`);
                     }
                 }
-                alert(`Batch delete results:\n\n${results.join('\n')}`);
+                toast(`Batch delete results:\n\n${results.join('\n')}`);
                 openFileBrowser(fileBrowserPath);
             };
 
@@ -2791,7 +2792,7 @@
                         results.push(`${name} - ERROR: ${err.message}`);
                     }
                 }
-                alert(`Batch move results:\n\n${results.join('\n')}`);
+                toast(`Batch move results:\n\n${results.join('\n')}`);
                 openFileBrowser(fileBrowserPath);
             };
             
@@ -2897,7 +2898,7 @@
                     if (onFail) {
                         onFail(err);
                     } else {
-                        alert(`Failed to load ${filepath} from controller:\n${err.message}`);
+                        toast(`Failed to load ${filepath} from controller:\n${err.message}`);
                     }
                 }
             };
@@ -2919,8 +2920,8 @@
                             if (tIds.length > 0) setTypeId(tIds[0]);
                             setActiveTarget({ type: 'point_group', idx: 0 });
                         }
-                        alert('Equipment schema loaded successfully.');
-                    } catch (err) { alert('Invalid JSON schema file: ' + err.message); }
+                        toast('Equipment schema loaded successfully.');
+                    } catch (err) { toast('Invalid JSON schema file: ' + err.message); }
                 };
                 
                 if (source.trim() === '1') {
@@ -3046,10 +3047,10 @@
                             const ahuCount = allMarkers.filter(m => m.type === 'ahu').length;
                             const vavCount = allMarkers.filter(m => m.type === 'vav').length;
                             
-                            alert(`map_config.json loaded.\n\n${floorCount} floor${floorCount !== 1 ? 's' : ''}, ${ahuCount} AHU${ahuCount !== 1 ? 's' : ''}, ${vavCount} VAV${vavCount !== 1 ? 's' : ''}.\n\nYou can continue editing from where you left off.`);
+                            toast(`map_config.json loaded.\n\n${floorCount} floor${floorCount !== 1 ? 's' : ''}, ${ahuCount} AHU${ahuCount !== 1 ? 's' : ''}, ${vavCount} VAV${vavCount !== 1 ? 's' : ''}.\n\nYou can continue editing from where you left off.`);
                         }
                     } catch (err) {
-                        alert('Error loading map_config.json: ' + err.message);
+                        toast('Error loading map_config.json: ' + err.message);
                     }
                 };
                 reader.readAsText(file);
@@ -4545,7 +4546,7 @@
                                                                 });
                                                                 setSelectedEquipmentType(categoryKey);
                                                             } else {
-                                                                alert('Category already exists!');
+                                                                toast('Category already exists!');
                                                             }
                                                         }
                                                     }}
@@ -4593,7 +4594,7 @@
                                                                 setSelectedEquipmentId(newId);
                                                                 setPointsJsonText('[]');
                                                             } else {
-                                                                alert('Equipment ID already exists!');
+                                                                toast('Equipment ID already exists!');
                                                             }
                                                         }
                                                     }}
@@ -4656,7 +4657,7 @@
                                                             a.download = `points_${category}_${typeId}_${Date.now()}.json`;
                                                             a.click();
                                                             URL.revokeObjectURL(url);
-                                                        } catch (err) { alert('Failed: ' + err.message); }
+                                                        } catch (err) { toast('Failed: ' + err.message); }
                                                     }}
                                                     className="py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-all"
                                                 >
@@ -4666,7 +4667,7 @@
                                                     onClick={() => {
                                                         try {
                                                             const pts = JSON.parse(pointsJsonText);
-                                                            if (!Array.isArray(pts) || pts.length === 0) { alert('No points to export'); return; }
+                                                            if (!Array.isArray(pts) || pts.length === 0) { toast('No points to export'); return; }
                                                             const keys = Object.keys(pts[0]);
                                                             const rows = [keys.join(',')];
                                                             pts.forEach(p => { rows.push(keys.map(k => { const v = p[k]; return v === null || v === undefined ? '' : String(v).includes(',') ? '"'+v+'"' : String(v); }).join(',')); });
@@ -4677,7 +4678,7 @@
                                                             a.download = `points_${category}_${typeId}_${Date.now()}.csv`;
                                                             a.click();
                                                             URL.revokeObjectURL(url);
-                                                        } catch (err) { alert('Failed: ' + err.message); }
+                                                        } catch (err) { toast('Failed: ' + err.message); }
                                                     }}
                                                     className="py-2 bg-amber-700 hover:bg-amber-600 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-all"
                                                 >
@@ -5669,10 +5670,10 @@
                                     const msg = [];
                                     if (data.created.length) msg.push(`Created:\n${data.created.join('\n')}`);
                                     if (data.existing.length) msg.push(`Already existed:\n${data.existing.join('\n')}`);
-                                    alert(msg.join('\n\n'));
+                                    toast(msg.join('\n\n'));
                                     openFileBrowser(fileBrowserPath);
-                                } else { alert(`Init failed: ${data.error}`); }
-                            } catch (err) { alert(`Could not reach controller: ${err.message}`); }
+                                } else { toast(`Init failed: ${data.error}`); }
+                            } catch (err) { toast(`Could not reach controller: ${err.message}`); }
                         }}
                         onDownload={downloadFileFromController}
                         onDownloadDir={downloadDirFromController}

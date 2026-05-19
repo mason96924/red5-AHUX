@@ -17,6 +17,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="js/i18n.js"></script>
+    <script src="js/toast.js"></script>
     <script src="js/docs_index.js"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
@@ -333,7 +334,7 @@
                 if (sidebarPopoutWin && !sidebarPopoutWin.closed) { sidebarPopoutWin.focus(); return; }
                 const result = red5OpenPopupWindow('sidebar', 'Red5 Sidebar (popped out)', 420, 950);
                 if (!result) {
-                    alert('Popup window blocked. Please allow popups for this site, then click the WIN button again.');
+                    toast('Popup window blocked. Please allow popups for this site, then click the WIN button again.');
                     return;
                 }
                 // Mutually exclusive with in-page floating mode.
@@ -727,7 +728,7 @@
                 if (currentWin && !currentWin.closed) { currentWin.focus(); return; }
                 const result = red5OpenPopupWindow(label, title, 1600, 1000);
                 if (!result) {
-                    alert('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
+                    toast('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
                     return;
                 }
                 setterPair[0](result.win);
@@ -2223,7 +2224,7 @@
                                             data-testid="plugin-health-chip"
                                             data-state={h.state}
                                             title={tip}
-                                            onClick={() => alert(tip)}
+                                            onClick={() => toast(tip)}
                                             className={`flex-shrink-0 px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${cls}`}
                                         >
                                             {dot} {isOk ? 'OK' : (isWarn ? 'WARN' : (h.missing && h.missing.length ? 'PLUGIN' : 'ERR'))}
@@ -2460,10 +2461,10 @@
                                                     if (j.status === 'ok') {
                                                         setBandClampModal({ lo: sweetSpotRange.lo, hi: sweetSpotRange.hi, preview: j.preview });
                                                     } else {
-                                                        alert('Preview failed: ' + (j.message || 'unknown'));
+                                                        toast('Preview failed: ' + (j.message || 'unknown'));
                                                     }
                                                 } catch (e) {
-                                                    alert(e.message);
+                                                    toast(e.message);
                                                 }
                                             };
                                             const onReset = async () => {
@@ -2475,10 +2476,10 @@
                                                     if (j.status === 'ok') {
                                                         setBandClampApplied(null);
                                                     } else {
-                                                        alert('Reset failed: ' + (j.message || 'unknown'));
+                                                        toast('Reset failed: ' + (j.message || 'unknown'));
                                                     }
                                                 } catch (e) {
-                                                    alert(e.message);
+                                                    toast(e.message);
                                                 } finally {
                                                     setBandClampBusy(false);
                                                 }
@@ -3342,10 +3343,10 @@
                                     setBandClampApplied({ lo, hi });
                                     setBandClampModal(null);
                                 } else {
-                                    alert('Apply failed: ' + (j.message || 'unknown'));
+                                    toast('Apply failed: ' + (j.message || 'unknown'));
                                 }
                             } catch (e) {
-                                alert(e.message);
+                                toast(e.message);
                             } finally {
                                 setBandClampBusy(false);
                             }
@@ -3416,8 +3417,8 @@
                             const name = document.getElementById('wl-new-name').value.trim();
                             const lat = parseFloat(document.getElementById('wl-new-lat').value);
                             const lon = parseFloat(document.getElementById('wl-new-lon').value);
-                            if (!name) { alert('Enter a location name.'); return; }
-                            if (isNaN(lat) || isNaN(lon)) { alert('Enter valid coordinates.'); return; }
+                            if (!name) { toast('Enter a location name.'); return; }
+                            if (isNaN(lat) || isNaN(lon)) { toast('Enter valid coordinates.'); return; }
                             const loc = { name, lat, lon };
                             selectLocation(loc);
                         };

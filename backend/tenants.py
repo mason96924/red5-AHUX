@@ -357,3 +357,57 @@ async def write_weather_location(tenant: dict, update: WeatherLocationUpdate) ->
         upsert=True,
     )
     return {"ok": True, "persisted": True, "tenant_id": tenant["tenant_id"]}
+
+
+# ---------------------------------------------------------------------------
+# Tenant-asset file-system helpers (Phase 2 comprehensive port from V1.9).
+# The V1.9 controller exposes /api/create-directory, /api/delete-directory,
+# /api/delete-file, /api/move-file, /api/upload-file, /api/init-directories.
+# In SaaS we have no filesystem -- we treat `tenant_assets.filename` as a
+# virtual path and operate on it via Mongo updates.  Directories are pure
+# fictions reconstructed from filename prefixes; "create directory" is a
+# no-op success because listing logic already derives dirs from prefixes.
+# ---------------------------------------------------------------------------
+
+
+async def delete_tenant_asset(tenant: dict, filename: str) -> dict:
+    safe = filename.lstrip("/").replace("\\", "/")
+    r = await ten_asset_col.delete_one({"tenant_id": tenant["tenant_id"], "filename": safe})
+    return {"success": r.deleted_count > 0,
+            "deleted_count": r.deleted_count,
+            "filename": safe}
+
+
+async def delete_tenant_directory(tenant: dict, dirname: str) -> dict:
+    safe = dirname.strip("/").replace("\\", "/")
+    if not safe:
+        return {"success": False, "error": "Cannot delete root directory"}
+    prefix = safe + "/"
+    r = await ten_asset_col.delete_many(
+        {"tenant_id": tenant["tenant_id"],
+         "filename": {"$regex": "^" + _re_escape(prefix)}},
+    )
+    return {"success": True, "deleted_count": r.deleted_count, "dirname": safe}
+
+
+async def move_tenant_asset(tenant: dict, src: str, dest_dir: str) -> dict:
+    src_safe  = src.lstrip("/").replace("\\", "/")
+    dest_safe = dest_dir.strip("/").replace("\\", "/")
+    doc = await ten_asset_col.find_one(
+        {"tenant_id": tenant["tenant_id"], "filename": src_safe})
+    if not doc:
+        return {"success": False, "error": f"Source not found: {src_safe}"}
+    basename = src_safe.rsplit("/", 1)[-1]
+    new_name = (dest_safe + "/" + basename) if dest_safe else basename
+    if new_name == src_safe:
+        return {"success": True, "moved": False, "filename": src_safe}
+    await ten_asset_col.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"filename": new_name, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {"success": True, "moved": True, "from": src_safe, "to": new_name}
+
+
+def _re_escape(s: str) -> str:
+    import re as _re
+    return _re.escape(s)

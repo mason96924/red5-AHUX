@@ -1,5 +1,61 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Phase 2d — Comprehensive legacy-endpoint port (2026-02-19)
+**Brief**: After the operator (rightly) flagged the piecemeal endpoint-by-endpoint fixing pattern, did a single comprehensive diff of every V1.9 controller endpoint vs the V2.0 backend.  Result: 11 frontend-called endpoints were still missing or 404ing.  Ported them all in one commit so future feature exploration in the UI does not silently 404.
+
+### Diff method
+```
+grep -rhE "add_url_rule|@app\.route" /app/archive/Red5-Studio-V1.9/*.py
+  | grep -oE "/api/[a-zA-Z0-9_/<>:-]+" | sort -u
+```
+vs
+```
+grep -E "@app\.(get|post|...)" /app/backend/server.py
+  | grep -oE "/api/[a-zA-Z0-9_/{}:-]+" | sort -u
+```
+Cross-referenced against `grep -rhoE "/api/[a-zA-Z0-9_/-]+" frontend/...` to filter out hardware-only endpoints the SaaS UI never touches.
+
+### Endpoints ported (`backend/server.py`)
+| Endpoint | Method | Maps to (V2.0) |
+|---|---|---|
+| `/api/save-map-config` | POST | Alias for `/api/save-config` (some legacy builds POST here) |
+| `/api/create-directory` | POST | No-op success (virtual FS — dirs are prefix-derived) |
+| `/api/delete-directory` | POST | `delete_tenant_directory(tenant, dirname)` |
+| `/api/delete-file` | POST | `delete_tenant_asset(tenant, filename)` |
+| `/api/move-file` | POST | `move_tenant_asset(tenant, src, dest_dir)` |
+| `/api/upload-file` | POST | Generic asset upload (same handler shape as `/api/save-image`) |
+| `/api/init-directories` | POST | No-op success (virtual FS) |
+| `/api/directory-scaffold` | GET | Returns 7 implicit scaffold entries (all `exists:true`) |
+| `/api/write-point` | POST | Accept + log to `virtual_write_log` collection; reflect writes |
+| `/api/zip-files` | POST | Stream a ZIP of `tenant_assets` by name list |
+| `/api/zip-dir` | POST | Stream a ZIP of `tenant_assets` under a virtual directory prefix |
+
+### Backend helpers (`backend/tenants.py`)
+- New `delete_tenant_asset`, `delete_tenant_directory` (prefix-regex delete), `move_tenant_asset` (rename via `update_one`).
+
+### New regression suite
+- `backend/tests/test_v2_phase2d_legacy_port.py` — **13/13 PASS** covering:
+  - `write-point` accept + reflect, reject empty
+  - `create-directory` success + `..` rejection
+  - `delete-directory` anon friendly error
+  - `upload-file` → `move-file` → `delete-file` round-trip
+  - `init-directories`, `directory-scaffold` shapes
+  - `save-map-config` alias floors count
+  - `zip-dir` 200 (PK header) signed, 403 anon
+
+### Total backend test coverage
+- Phase 1: 26/26
+- Phase 2a (auth): 12/12
+- Phase 2b (tenants): 31/31
+- Phase 2c (allowlist): 25/25
+- Phase 2d (legacy port): 13/13
+- **Total: 107/107**
+
+### Files changed
+- `backend/server.py` — +~190 lines (11 endpoint stubs/handlers).
+- `backend/tenants.py` — +~50 lines (3 FS helpers).
+- `backend/tests/test_v2_phase2d_legacy_port.py` — new (~140 lines).
+
 ## V2.0 Bugfix — "Background updated in preview, but save failed: undefined" (2026-02-19)
 **Brief**: When uploading a floor-plan background image in the equipment mapper, the user got `save failed: undefined`.  Root cause: the mapper POSTs to `/api/save-floor-plan` which did not exist on the V2.0 backend → 404 → response body `{detail:"Not Found"}` → frontend read `data.error` (undefined) and printed it literally.
 

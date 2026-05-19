@@ -78,6 +78,9 @@ from tenants import (  # noqa: E402
     save_tenant_asset,
     read_tenant_asset,
     list_tenant_assets,
+    delete_tenant_asset,
+    delete_tenant_directory,
+    move_tenant_asset,
     read_collector_config,
     write_collector_config,
     read_map_config,
@@ -927,6 +930,218 @@ async def assets_manifest() -> dict:
         "floor": None,
         "ahu_types": {},
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 comprehensive port: V1.9 endpoints used by the dashboard / mapper
+# that previously 404'd in V2.0.  All operate on the tenant_assets virtual
+# filesystem (signed-in) or return a polite anonymous response (no 404).
+# ---------------------------------------------------------------------------
+
+@app.post("/api/save-map-config")
+async def save_map_config_alias(payload: dict,
+                                tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """V1.9 alias for /api/save-config.  Some legacy mapper builds POST here."""
+    return await save_config(payload, tenant=tenant)  # type: ignore[arg-type]
+
+
+@app.post("/api/create-directory")
+async def create_directory(payload: dict,
+                           tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Virtual-FS no-op: directories are derived from filename prefixes in
+    `tenant_assets`, so 'creating' one is a success unless the name is bogus."""
+    dirname = (payload or {}).get("dirname", "") or ""
+    if not dirname or ".." in dirname:
+        return {"success": False, "error": "Invalid directory name"}
+    if not tenant:
+        return {"success": False, "error": "Sign in to manage your virtual controller filesystem.",
+                "warning": "Anonymous demo -- mapper can browse but not mutate."}
+    return {"success": True, "message": f"Directory ready: {dirname}",
+            "path": f"virtual-controller://{tenant['tenant_id']}/{dirname.strip('/')}"}
+
+
+@app.post("/api/delete-directory")
+async def delete_directory(payload: dict,
+                           tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    dirname = (payload or {}).get("dirname", "") or ""
+    if not dirname or ".." in dirname:
+        return {"success": False, "error": "Invalid directory name"}
+    if not tenant:
+        return {"success": False, "error": "Sign in to delete from your virtual controller."}
+    return await delete_tenant_directory(tenant, dirname)
+
+
+@app.post("/api/delete-file")
+async def delete_file(payload: dict,
+                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    filename = (payload or {}).get("filename", "") or ""
+    if not filename or ".." in filename:
+        return {"success": False, "error": "Invalid filename"}
+    if not tenant:
+        return {"success": False, "error": "Sign in to delete from your virtual controller."}
+    return await delete_tenant_asset(tenant, filename)
+
+
+@app.post("/api/move-file")
+async def move_file(payload: dict,
+                    tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    src      = (payload or {}).get("src", "") or ""
+    dest_dir = (payload or {}).get("dest_dir", "") or ""
+    if not src or ".." in src or ".." in dest_dir:
+        return {"success": False, "error": "Invalid path"}
+    if not tenant:
+        return {"success": False, "error": "Sign in to manage your virtual controller filesystem."}
+    return await move_tenant_asset(tenant, src, dest_dir)
+
+
+@app.post("/api/upload-file")
+async def upload_file(payload: dict,
+                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Generic file upload (V1.9 mapper uses this for non-image config drops,
+    e.g. CSV).  Routes through `tenant_assets`; content_type inferred from
+    the data-URL prefix, with a sensible application/octet-stream fallback."""
+    filename = (payload or {}).get("filename", "") or ""
+    file_data = (payload or {}).get("file_data", "") or ""
+    if not filename or ".." in filename:
+        return {"success": False, "error": "Invalid filename"}
+    if not file_data:
+        return {"success": False, "error": "No file data"}
+    if not tenant:
+        return {"success": False, "error": "Sign in to upload to your virtual controller."}
+    if file_data.startswith("data:"):
+        try:
+            head, b64 = file_data.split(",", 1)
+        except ValueError:
+            return {"success": False, "error": "malformed data-URL"}
+        content_type = head[len("data:"):].split(";", 1)[0] or "application/octet-stream"
+    else:
+        b64 = file_data
+        content_type = "application/octet-stream"
+    try:
+        data_bytes = base64.b64decode(b64)
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": f"base64 decode failed: {e}"}
+    res = await save_tenant_asset(tenant, filename, content_type, data_bytes)
+    return {"success": True, "message": f"Uploaded: {filename}",
+            "file": res["relative_path"], "size": res["size_bytes"],
+            "tenant_id": tenant["tenant_id"]}
+
+
+@app.post("/api/init-directories")
+async def init_directories(payload: Optional[dict] = None) -> dict:
+    """V1.9 created /root/data/{configs,graphics,...} on first run.  In SaaS
+    the tenant_assets schema is flat -- directories are implicit -- so this
+    is a no-op success."""
+    return {"success": True, "created": [], "existing": [], "mode": "virtual-fs"}
+
+
+@app.get("/api/directory-scaffold")
+async def directory_scaffold() -> dict:
+    """Mirror the V1.9 response so the mapper's `scaffold` view does not
+    show a permanent red 'not initialized' badge."""
+    return {"success": True, "scaffold": [
+        {"path": "configs", "exists": True},
+        {"path": "graphics", "exists": True},
+        {"path": "graphics/equipments", "exists": True},
+        {"path": "graphics/equipments/AHUs", "exists": True},
+        {"path": "graphics/equipments/VAVs", "exists": True},
+        {"path": "graphics/floor_plans", "exists": True},
+        {"path": "graphics/icons", "exists": True},
+    ]}
+
+
+@app.post("/api/write-point")
+async def write_point(payload: dict,
+                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """V1.9 BACnet RW write via dibt.Write().  In SaaS there is no real
+    BACnet target -- we accept the write and reflect it back as 'applied'
+    so the dashboard's APPLY TO CONTROLLER / clamp / override flows complete
+    without throwing.  Each write is logged to `virtual_write_log`."""
+    equip = (payload or {}).get("equipment_name") or ""
+    writes = (payload or {}).get("writes") or {}
+    if not equip or not isinstance(writes, dict) or not writes:
+        return {"success": False, "error": "equipment_name and writes required"}
+    log_doc = {
+        "tenant_id": (tenant or {}).get("tenant_id") or None,
+        "equipment_name": equip,
+        "writes": writes,
+        "applied_at": datetime.now(timezone.utc),
+        "mode": "virtual-controller",
+    }
+    try:
+        from motor.motor_asyncio import AsyncIOMotorClient as _MC
+        _mc = _MC(os.environ["MONGO_URL"])
+        await _mc[os.environ["DB_NAME"]]["virtual_write_log"].insert_one(log_doc)
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; never fail the operator's write
+    return {
+        "success": True,
+        "equipment_name": equip,
+        "writes": writes,
+        "mode": "virtual-controller",
+        "note": "Write accepted and logged.  Virtual controller -- no real BACnet target.",
+    }
+
+
+@app.post("/api/zip-files")
+async def zip_files(payload: dict,
+                    tenant: Optional[dict] = Depends(current_tenant_optional)) -> FastResponse:
+    """Stream a ZIP of the named files from `tenant_assets`."""
+    if not tenant:
+        raise HTTPException(403, "Sign in to download your virtual controller assets.")
+    names: list[str] = (payload or {}).get("names") or []
+    base_path: str = (payload or {}).get("path") or ""
+    if not isinstance(names, list) or not names:
+        raise HTTPException(400, "names[] required")
+    import io, zipfile
+    buf = io.BytesIO()
+    added = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in names:
+            if ".." in name or name.startswith("/"):
+                continue
+            rel = (base_path.strip("/") + "/" + name).strip("/") if base_path else name
+            doc = await read_tenant_asset(tenant, rel)
+            if doc and doc.get("data_bytes"):
+                zf.writestr(name, doc["data_bytes"])
+                added += 1
+    buf.seek(0)
+    return FastResponse(content=buf.getvalue(),
+                        media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="bundle-{added}.zip"'})
+
+
+@app.post("/api/zip-dir")
+async def zip_dir(payload: dict,
+                  tenant: Optional[dict] = Depends(current_tenant_optional)) -> FastResponse:
+    """Stream a ZIP of every file under the named virtual directory."""
+    if not tenant:
+        raise HTTPException(403, "Sign in to download your virtual controller assets.")
+    dirname: str = (payload or {}).get("dirname") or ""
+    base_path: str = (payload or {}).get("path") or ""
+    prefix = ((base_path.strip("/") + "/") if base_path else "") + dirname.strip("/")
+    prefix = prefix.strip("/") + "/"
+    import io, zipfile, re
+    from tenants import ten_asset_col as _assets_col  # noqa: WPS433
+    buf = io.BytesIO()
+    added = 0
+    cursor = _assets_col.find(
+        {"tenant_id": tenant["tenant_id"],
+         "filename": {"$regex": "^" + re.escape(prefix)}},
+        {"_id": 0, "filename": 1, "data_bytes": 1},
+    )
+    docs = await cursor.to_list(length=10000)
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for doc in docs:
+            short = doc["filename"][len(prefix):]
+            zf.writestr(short or doc["filename"], doc.get("data_bytes") or b"")
+            added += 1
+    buf.seek(0)
+    arcname = (dirname.strip("/") or "assets").replace("/", "_")
+    return FastResponse(content=buf.getvalue(),
+                        media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{arcname}.zip"'})
+
 
 
 # ---------------------------------------------------------------------------

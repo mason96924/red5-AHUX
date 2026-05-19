@@ -190,6 +190,66 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
         })
     ra_t = sum(v["t"] for v in vav_list) / len(vav_list) if vav_list else 24.0
     ra_rh = sum(v["rh"] for v in vav_list) / len(vav_list) if vav_list else 50.0
+
+    # ---- Equipment-graphic telemetry ---------------------------------------
+    # The dashboard's animations (fan rotor, dampers, valves, VFDs, DP
+    # switches) read driver points like SAFM/SAFS/OAD/HCV/CCV from
+    # `ahu.all_points` -- if these are missing the animations freeze and
+    # the M|S pills disable themselves.  Generate plausible values so an
+    # operator-saved schema "just lights up" on the demo simulator.
+    # Equipment-graphic telemetry: see _MANUAL_OVERRIDES below.
+    raw_band_id = band.get("Band", 5)
+    try:
+        band_id = int(str(raw_band_id).lstrip("B").lstrip("b") or 5)
+    except (ValueError, TypeError):
+        band_id = 5
+    # Fan: run by default (manual-mode pill state stored separately)
+    safm = _MANUAL_OVERRIDES.get(ahu_id + ":SAFM", 1.0)   # 1 = manual-on
+    eafm = _MANUAL_OVERRIDES.get(ahu_id + ":EAFM", 1.0)
+    safs = 1.0 if safm > 0 else 0.0                       # status mirrors manual
+    eafs = 1.0 if eafm > 0 else 0.0
+    # Fan speed: 55% baseline + 10% per band offset, clamped to [40, 95]
+    safp = max(40.0, min(95.0, 55.0 + (band_id - 5) * 4.0))
+    eafp = max(40.0, min(95.0, safp - 5.0))
+    # Damper positions: driven by band's OA_Damper_SP plus a tiny drift
+    oad  = float(band["OA_Damper_SP"]) + 2.0 * math.sin(time.time() / 60.0)
+    oad  = max(0.0, min(100.0, oad))
+    rad  = 100.0 - oad                                    # return damper inverse
+    # Coil valve positions: heating if cold OA, cooling if warm OA
+    hcv = max(0.0, min(100.0, (18.0 - oa["t"]) * 6.0))
+    ccv = max(0.0, min(100.0, (oa["t"] - 22.0) * 8.0))
+    # Humidifier: drive toward SA_RH_Delivery
+    hum = max(0.0, min(100.0, (float(band["SA_RH_Delivery"]) - 45.0) * 4.0))
+    # Filter loading: 12% baseline + slow ramp; freeze-stat OK in non-cold
+    fdps = 12.0 + 4.0 * math.sin(time.time() / 300.0)
+    fzs  = 0.0 if oa["t"] > 2.0 else 1.0                  # 1 = tripped
+    afpc = round(safp * 1.05, 1)                          # actual ~ commanded
+    fms  = round(safp * 1.0, 1)
+    safa = round(safp - 2.5, 1)                           # actual hz feedback
+
+    all_points = {
+        # legacy 6
+        "OAT": oa["t"], "OAH": oa["rh"],
+        "SAT": round(sa_t, 2), "SAH": round(sa_rh, 1),
+        "RAT": round(ra_t, 2), "RAH": round(ra_rh, 1),
+        # fan controls + status
+        "SAFM": safm, "EAFM": eafm,
+        "SAFS": safs, "EAFS": eafs,
+        "SAFP": round(safp, 1), "EAFP": round(eafp, 1),
+        "SAFA": safa, "AFPC": afpc, "FMS": fms,
+        # damper positions
+        "OAD": round(oad, 1), "SAD": round(oad, 1), "RAD": round(rad, 1),
+        "EAD": round(oad, 1),
+        # coil valves
+        "HCV": round(hcv, 1), "CCV": round(ccv, 1),
+        # humidifier
+        "HUM": round(hum, 1), "HMD": round(hum, 1),
+        # filter / freeze
+        "FDPS": round(fdps, 1), "FZS": fzs,
+        # Alarms (off in demo unless freeze tripped)
+        "ALM": 1.0 if fzs > 0 else 0.0,
+    }
+
     return {
         "id": ahu_id,
         "procColor": color,
@@ -202,11 +262,7 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
             {"label": "RA", "t": round(ra_t, 2), "rh": round(ra_rh, 1),
              "w": round(_humidity_ratio(ra_t, ra_rh), 5), "color": "#f43f5e"},
         ],
-        "all_points": {
-            "OAT": oa["t"], "OAH": oa["rh"],
-            "SAT": round(sa_t, 2), "SAH": round(sa_rh, 1),
-            "RAT": round(ra_t, 2), "RAH": round(ra_rh, 1),
-        },
+        "all_points": all_points,
         "vavs": vav_list,
         "active_band": {
             "id": band["Band"],
@@ -219,6 +275,15 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
             "oa_source": "demo",
         },
     }
+
+
+# Manual override store (process-wide, in-memory).  When the operator clicks
+# the AHU equipment-graphic M|S pill we receive `POST /api/write-point` with
+# {equipment_name, writes:{SAFM:0|1}}.  Stash the value here keyed by
+# "<ahu>:<point>" so the very next `/api/data` poll reflects the toggle
+# without needing a real BACnet target.  Anonymous demo state -- lost on
+# backend restart (intentional).
+_MANUAL_OVERRIDES: dict[str, float] = {}
 
 
 # Demo AHUs and their VAVs.  Mirrors the configs/AHU-*_vav_proj.csv layout.
@@ -1061,6 +1126,14 @@ async def write_point(payload: dict,
     writes = (payload or {}).get("writes") or {}
     if not equip or not isinstance(writes, dict) or not writes:
         return {"success": False, "error": "equipment_name and writes required"}
+    # Update the in-memory simulator overrides so the very next /api/data
+    # poll reflects the operator's pill toggle.  Anonymous demo state --
+    # process-lifetime only.
+    for k, v in writes.items():
+        try:
+            _MANUAL_OVERRIDES[f"{equip}:{k}"] = float(v)
+        except (TypeError, ValueError):
+            _MANUAL_OVERRIDES[f"{equip}:{k}"] = 1.0 if v else 0.0
     log_doc = {
         "tenant_id": (tenant or {}).get("tenant_id") or None,
         "equipment_name": equip,

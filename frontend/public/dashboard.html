@@ -3599,7 +3599,9 @@
                                     : v)
                             })));
                             fetch(`${API_URL}/api/write-point`, {
-                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {'Content-Type':'application/json'},
                                 body: JSON.stringify({ equipment_name: vavEquipId, writes: { [label]: num } })
                             }).then(r => r.json()).then(d => {
                                 if (!d.success) console.warn('VAV Write failed:', d.error);
@@ -4291,7 +4293,9 @@
                                 return { ...a, all_points: { ...(a.all_points || {}), [label]: num } };
                             }));
                             fetch(`${API_URL}/api/write-point`, {
-                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {'Content-Type':'application/json'},
                                 body: JSON.stringify({ equipment_name: showAhuModalFor, writes: { [label]: num } })
                             }).then(r => r.json()).then(d => {
                                 if (!d.success) console.warn('Write failed:', d.error);
@@ -4591,7 +4595,28 @@
                                         <div className="absolute inset-0 pointer-events-none" style={{perspective:'1500px'}}>
                                         {schemaAnimations.map((a, ai) => {
                                             if (a.x == null || a.y == null) return null;
-                                            const tKey = a.telemetry_key || '';
+                                            // Sensible per-type defaults so an animation lights up
+                                            // even when the operator hasn't bound a telemetry_key
+                                            // yet in the mapper.  The bound `a.telemetry_key`
+                                            // always wins; this only fires when it is empty/missing.
+                                            const _atype0 = a.animation_type;
+                                            const _defaultKey = (
+                                                _atype0 === 'centrifugal_fan'        ? 'SAFP' :
+                                                _atype0 === 'rectangular_fan'        ? 'EAFP' :
+                                                _atype0 === 'rectangular_fan_aligner'? 'EAFP' :
+                                                _atype0 === 'damper'                 ? 'OAD'  :
+                                                _atype0 === 'circular_damper'        ? 'OAD'  :
+                                                _atype0 === 'neon_pipe_coil'         ? (a.element_id && /heat/i.test(a.element_id) ? 'HCV' : 'CCV') :
+                                                _atype0 === 'hydration_valve'        ? 'HUM'  :
+                                                _atype0 === 'hydration_valve_aligner'? 'HUM'  :
+                                                _atype0 === 'antifreeze_coil_valve'  ? 'HCV'  :
+                                                _atype0 === 'antifreeze_coil'        ? 'HCV'  :
+                                                _atype0 === 'diff_pressure_switch'   ? 'FDPS' :
+                                                _atype0 === 'differential_pressure_switch_aligner' ? 'FDPS' :
+                                                _atype0 === 'vfd_aligner'            ? 'SAFP' :
+                                                _atype0 === 'air_flow_path'          ? 'SAFP' : ''
+                                            );
+                                            const tKey = (a.telemetry_key && a.telemetry_key !== 'UNKNOWN') ? a.telemetry_key : _defaultKey;
                                             const tVal = vn(tKey);
                                             const isAlarm = isBool(tKey + '_ALM');
                                             const isRunning = isBool(tKey + '_STATUS') || tVal > 0;

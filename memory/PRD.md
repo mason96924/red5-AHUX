@@ -1,5 +1,39 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix — Centrifugal fan pill unresponsive + animation frozen (2026-02-19)
+**Brief**: Operator opened AHU-01 equipment graphic; centrifugal fan was stationary and its M|S pill did not respond.  Three independent root causes:
+
+1. **Backend simulator emitted only 6 telemetry points** (OAT/OAH/SAT/SAH/RAT/RAH).  The graphic's fan/damper/valve/VFD/DP-switch animations read SAFM/SAFS/SAFP/OAD/HCV/CCV/HUM/FDPS/FZS — all undefined → `tVal=undefined` → `isRunning=false` → animation frozen.  M|S pill checks `ap[writeTarget]` to enable; with no value the pill rendered `pointer-events-none`.
+2. **`writeRW` / `writeVavRW` did not send `credentials:'include'`** on the `/api/write-point` POST, so the user's session cookie never reached the backend.
+3. **Operator's saved schema has `telemetry_key:'UNKNOWN'`** on every animation (mapper placeholder before binding).  Animation code did `a.telemetry_key || ''` → 'UNKNOWN' is truthy → looked up point named 'UNKNOWN' → undefined.
+
+### Fix (`backend/server.py`)
+- `_simulate_ahu()`: emits 26 points covering fan controls + status (SAFM/EAFM/SAFS/EAFS/SAFP/EAFP/SAFA/AFPC/FMS), damper positions (OAD/SAD/RAD/EAD), coil valve commands (HCV/CCV), humidifier (HUM/HMD), filter loading (FDPS), freeze-stat (FZS), and alarm bit (ALM).  Values are driven by the active Givoni band + a small sinusoidal drift so the graphic looks alive.
+- New `_MANUAL_OVERRIDES` process-wide dict.  `/api/write-point` writes both log the event AND stash the value as `"<equip>:<point>"`, so the next `/api/data` poll reflects the toggle (`SAFM:0` → `SAFS:0`, only on the targeted AHU).
+- Fixed `band_id` parsing for string Band values like `'B5'`.
+
+### Fix (`frontend/public/dashboard.html`)
+- `writeRW` (AHU pill) and `writeVavRW` (VAV pill) now send `credentials:'include'`.
+- Animation block now resolves `tKey = (telemetry_key && telemetry_key !== 'UNKNOWN') ? telemetry_key : _defaultKey`.  Per-type defaults:
+  - `centrifugal_fan` -> `SAFP`
+  - `rectangular_fan(_aligner)` -> `EAFP`
+  - `damper` / `circular_damper` -> `OAD`
+  - `neon_pipe_coil` -> `HCV` if element-id contains 'heat', else `CCV`
+  - `hydration_valve(_aligner)` -> `HUM`
+  - `antifreeze_coil(_valve)` -> `HCV`
+  - `diff_pressure_switch` / `differential_pressure_switch_aligner` -> `FDPS`
+  - `vfd_aligner` -> `SAFP`
+  - `air_flow_path` -> `SAFP`
+
+### Verification
+- `GET /api/data` AHU now ships 26 points (was 6): SAFM=1, SAFS=1, SAFP=55-95, OAD=0-100, HCV/CCV/HUM=0-100, ALM=0, etc.
+- `POST /api/write-point {AHU-01-E, SAFM:0}` -> next poll: `SAFM:0, SAFS:0` on AHU-01-E only; other AHUs unchanged.
+- 107/107 backend tests still pass.
+
+### Files changed
+- `backend/server.py` -- `_simulate_ahu` expanded (~50 new lines for 20 new points) + `_MANUAL_OVERRIDES` dict + `write_point` override stash + band_id parsing.
+- `frontend/public/dashboard.html` -- per-animation-type telemetry_key fallback + `credentials:'include'` on `writeRW` / `writeVavRW`.
+
 ## V2.0 Phase 2e — Non-blocking toast queue (2026-02-19)
 **Brief**: Every save / load / error path in the legacy dashboard.html and equipment_mapper.html used the native `alert()` modal — 85 of them.  Each blocked the entire page until OK was clicked, froze background polling, and made multi-step workflows (place markers + upload + save) painful.
 

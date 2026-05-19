@@ -2853,13 +2853,45 @@
                 }
             };
             
-            // Load a JSON config file from controller by fetching /assets/path
+            // Load a JSON config file from the virtual controller.
+            // V2.0 routes well-known configs through dedicated API endpoints
+            // (map_config.json -> /api/map-config, equipment_types.json ->
+            // /api/equipment-types) so we always get tenant-aware data instead
+            // of HTML from the SPA fallback route.  Unknown paths still fall
+            // back to /api/assets/<path> so the legacy "load arbitrary JSON
+            // from /root/data/<x>" flow keeps working.
             const loadConfigFromController = async (filepath, onLoaded, onFail) => {
                 try {
                     const apiUrl = window.API_BASE_URL || '';
-                    const response = await fetch(`${apiUrl}/assets/${filepath}`);
+                    const lower  = (filepath || '').toLowerCase();
+                    let url;
+                    if (lower.endsWith('map_config.json')) {
+                        url = `${apiUrl}/api/map-config`;
+                    } else if (lower.endsWith('equipment_types.json')) {
+                        url = `${apiUrl}/api/equipment-types`;
+                    } else if (lower.endsWith('collector_config.json')) {
+                        url = `${apiUrl}/api/collector-config`;
+                    } else {
+                        url = `${apiUrl}/api/assets/${filepath}`;
+                    }
+                    const response = await fetch(url, { credentials: 'include' });
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const ct = (response.headers.get('content-type') || '').toLowerCase();
                     const text = await response.text();
+                    // The API endpoints can return an "empty/demo" envelope when
+                    // nothing is saved for this tenant (e.g. {floors:[], mode:'demo'}).
+                    // Treat that as a fail so the alternate-path fallback can fire.
+                    if (lower.endsWith('map_config.json') && ct.includes('json')) {
+                        try {
+                            const obj = JSON.parse(text);
+                            if (obj && Array.isArray(obj.floors) && obj.floors.length === 0) {
+                                throw new Error('No map_config saved yet');
+                            }
+                        } catch (parseErr) {
+                            if (parseErr.message === 'No map_config saved yet') throw parseErr;
+                            // not JSON -> fall through to onLoaded so caller can re-parse
+                        }
+                    }
                     onLoaded(text, filepath);
                 } catch (err) {
                     if (onFail) {

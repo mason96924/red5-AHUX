@@ -1,5 +1,26 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix — "Unexpected token '<'" when loading map_config.json (2026-02-19)
+**Brief**: Equipment mapper's LOAD MAP_CONFIG.JSON button → choose Controller → JSON parse error "Unexpected token '<', '<!doctype'... is not valid JSON".  Root cause: `loadConfigFromController()` fetched the legacy V1.9 path `/assets/configs/map_config.json`.  That path doesn't exist in V2.0 — it 404'd and returned the SPA's HTML index, so the JSON.parse choked on `<!doctype html>`.
+
+### Fix (`frontend/public/equipment_mapper.html`)
+- `loadConfigFromController()` now routes well-known config filenames to their proper V2.0 API endpoints:
+  - `*map_config.json` → `/api/map-config`
+  - `*equipment_types.json` → `/api/equipment-types`
+  - `*collector_config.json` → `/api/collector-config`
+  - Other paths still fall back to `/api/assets/<path>` (unchanged).
+- Sends `credentials: 'include'` on every fetch.
+- Detects the backend's "no saved config" envelope (`{floors:[], mode:'demo'}`) and treats it as a load-fail so the existing alternate-path fallback fires, instead of silently loading an empty floor list.
+
+### Verification
+- `GET /api/map-config` returns proper `application/json` (verified).
+- Legacy `/assets/configs/map_config.json` correctly returns 404 (no SPA index intercept).
+- After save+reload via SAVE TO VIRTUAL CONTROLLER and LOAD MAP_CONFIG.JSON, floors+markers round-trip through `tenant_map_config`.
+- 107/107 backend tests still pass.
+
+### Files changed
+- `frontend/public/equipment_mapper.html` — `loadConfigFromController` rewrite (~40 lines).
+
 ## V2.0 Phase 2d — Comprehensive legacy-endpoint port (2026-02-19)
 **Brief**: After the operator (rightly) flagged the piecemeal endpoint-by-endpoint fixing pattern, did a single comprehensive diff of every V1.9 controller endpoint vs the V2.0 backend.  Result: 11 frontend-called endpoints were still missing or 404ing.  Ported them all in one commit so future feature exploration in the UI does not silently 404.
 

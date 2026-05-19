@@ -112,6 +112,20 @@ check('iife: resize handle gated behind !isPopped',
       /\{\s*!isPopped\s*&&\s*\([\s\S]{0,400}data-testid="sidebar-resize-handle"/.test(dash));
 
 // ====================================================================
+// DARK-MODE PORTAL FIX
+// --------------------------------------------------------------------
+// When the sidebar tree is portaled into a separate OS-level browser
+// window, it is lifted OUT of the App wrapper that supplies the
+// theme-driven text color (`${ui.text}`).  Without an explicit text
+// color on the sidebar root, the popup window inherits the browser
+// default (black), which is unreadable on bg-slate-900 in dark mode.
+// Regression guard: the sidebar root must always carry `${ui.text}`
+// so the color travels with the portal.
+// ====================================================================
+check('dark-portal: sidebar root carries ${ui.text} so portaled text stays themed',
+      /className=\{`\$\{ui\.sidebar\}\s+\$\{ui\.text\}/.test(dash));
+
+// ====================================================================
 // JSX parses
 // ====================================================================
 let babelParser;

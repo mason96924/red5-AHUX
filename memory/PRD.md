@@ -2555,3 +2555,46 @@ x ~40 to x ~1900 (was x ~340 to x ~1900 with the wide placeholder).
 
 ### Deploy
 Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
+
+
+## V1.9 Bugfix - Cross-Window Sidebar Dark Mode Text Invisible (2026-02-13)
+**Brief**: User reported that when the left sidebar was popped out to a separate
+OS-level browser window, dark-mode text became invisible (dark characters on the
+slate-900 background). Reattaching the sidebar to the main window restored proper
+contrast. The bug only manifested in cross-window pop-out mode, not in docked or
+in-page floating modes.
+
+### Root cause
+`ReactDOM.createPortal(sidebarTree, sidebarPopoutHost)` lifts the sidebar JSX OUT
+of the App wrapper at `<div className="flex h-screen overflow-hidden ${ui.text}
+${ui.bg} ...">`. That wrapper was the only ancestor supplying the theme-driven
+text color via CSS inheritance. Once portaled into a fresh window whose `<body>`
+has no themed text class, the sidebar tree inherited the browser default (black),
+which is unreadable on the `bg-slate-900` sidebar in dark mode. The dock case
+worked because the App wrapper was the actual DOM parent.
+
+### Fix
+Added `${ui.text}` directly onto the sidebar root div className so the themed
+text color travels with the portal and does not depend on inherited cascade:
+```diff
+- className={`${ui.sidebar} ${isPopped ? '' : 'border-r ' + ui.border} ...`}
++ className={`${ui.sidebar} ${ui.text} ${isPopped ? '' : 'border-r ' + ui.border} ...`}
+```
+Single 8-character addition. Works for all 3 render modes (docked, floating,
+cross-window) because the class is set on the root sidebar div before the IIFE
+branches on mode. Theme toggles continue to propagate live since `ui` is derived
+from React state and React re-renders the portaled subtree.
+
+### Tests
+- New regression check appended to `tests/test_dashboard_sidebar_popout.js`:
+  `dark-portal: sidebar root carries ${ui.text} so portaled text stays themed`.
+- 36/36 sidebar-popout assertions pass (was 35, now 36).
+- Broader smoke: 5 related test suites (popout / climate-drift / plugin-health /
+  fetchJSON / Givoni tier) total 126 checks, all green.
+
+### Files changed
+- `dashboard.html` (line 1996, sidebarTree root div) - added `${ui.text}` to className.
+- `tests/test_dashboard_sidebar_popout.js` - +1 regression guard.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`. Hard-refresh after.

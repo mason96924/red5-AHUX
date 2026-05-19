@@ -277,7 +277,7 @@ def serve_asset(filename):
     # or documentation that changes between deploys. Static graphics
     # (PNG/JPG/SVG) can be cached aggressively since they're re-uploaded
     # via equipment_mapper.
-    if lower.endswith('.js') or lower.endswith('.html') or lower.endswith('.css') or lower.endswith('.md'):
+    if lower.endswith('.js') or lower.endswith('.html') or lower.endswith('.css') or lower.endswith('.md') or lower.endswith('.json'):
         resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         resp.headers['Pragma'] = 'no-cache'
         resp.headers['Expires'] = '0'

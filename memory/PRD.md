@@ -3044,3 +3044,72 @@ FRONTEND_ORIGIN env}.
 - Piece C: first-login setup wizard (location, AHU/VAV count, ERV epsilon,
   design CFM) that seeds the tenant collections from V1.9 demo data.
 
+
+## V2.0 Phase 2 Piece B - Tenant Collections + Per-User Isolation (2026-02-13)
+
+### Scope
+- 1 signed-in user == 1 tenant (org/billing/multi-user lands in Phase 4).
+- Endpoints made tenant-aware: equipment-types (R+W), band-overrides
+  sa-rh-clamp (R+W), weather-location (R+W).
+- Anonymous demo path PRESERVED: anon callers still get canned demo data;
+  only signed-in callers see their own collections.
+
+### What ships
+- New module `/app/backend/tenants.py`:
+    Collections (db = $DB_NAME):
+      tenants                ( tenant_id, owner_user_id, name, created_at, updated_at )
+      tenant_equipment_types ( tenant_id, ahu_types, vav_types, updated_at )
+      tenant_band_overrides  ( tenant_id, sa_rh_clamp, updated_at )
+      tenant_locations       ( tenant_id, active, saved[], updated_at )
+    Helpers:
+      get_or_create_tenant_for_user(user)  idempotent, seeds 3 side-cols
+      current_tenant_optional dependency    None for anon, tenant doc otherwise
+      read_/write_ helpers for equipment_types, sa_rh_clamp, weather_location
+- `auth.py` exchange_session now eagerly seeds the tenant on first sign-in.
+- `server.py` endpoint shells thread `tenant: Optional[dict] = Depends(...)`
+  and fall back to canned demo when tenant is None.
+- New endpoint:  POST /api/weather-location  (signed-in persists; anon no-ops).
+- POST /api/save-equipment-schema  now actually persists for signed-in users.
+- POST /api/band-overrides/sa-rh-clamp  now actually persists.
+
+### Seed-on-first-touch design (decision matrix point `x`)
+A signed-in user's first read populates all three side-collections with
+COPIES of the canned demo_data/ values.  No empty-state surprise; the
+new account works out of the box with the same Adelaide/Perth/Seoul/
+Beijing/Seattle weather list and the V1.9 equipment_types.
+
+### Tests
+- /app/backend/tests/test_v2_phase2b_tenants.py  18/18 assertions pass.
+  Covers:
+    - anon reads return canned demo data unmodified
+    - first signed-in read auto-creates `tenants` row + seeds side-cols
+    - POST /api/save-equipment-schema (signed in) -> persisted:true
+    - subsequent GET returns the modified schema
+    - user A's edits do NOT leak to user B (isolation)
+    - user A's edits do NOT leak to anonymous reads (isolation)
+    - band-clamp roundtrip (per tenant)
+    - weather-location roundtrip + anonymous warning
+    - /api/auth/me anon contract preserved (Phase 2a regression check)
+- Phase 1 + 2a regression suites still 25/25 + 12/12.
+- ruff clean on backend/.
+
+### Live behavior
+- Anonymous visitor at /dashboard.html: identical to Phase 1.
+- Signed-in visitor at /dashboard.html: pulls THEIR equipment_types,
+  THEIR clamp setting, THEIR weather list.  Edits to any of those
+  persist across logouts because they live in MongoDB scoped by
+  tenant_id, NOT in the browser.
+- POST /api/save-equipment-schema returns `persisted:true` once the
+  user is signed in (previously a no-op).  The equipment_mapper page
+  now genuinely saves.
+
+### What is NOT in scope (lands in Piece C)
+- First-login setup wizard.
+- Editing the tenant's display name.
+- Domain allowlist on sign-in.
+
+### Future sessions
+- Piece C: setup wizard.
+- Phase 3: edge agent `red5-edge.py` that POSTs live BACnet to /api/edge/...
+- Phase 4: Stripe billing + email alerts + audit log + time-series archive.
+

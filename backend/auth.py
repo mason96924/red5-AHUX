@@ -178,6 +178,22 @@ async def exchange_session(payload: SessionExchangeRequest, response: Response):
         path="/",
     )
 
+    # Phase 2 Piece B: ensure the tenant + seeded side-collections exist
+    # the moment the user signs in.  Late-imported to keep auth.py free of
+    # circular dependencies on tenants.py.
+    try:
+        from tenants import get_or_create_tenant_for_user  # noqa: E402
+        user_doc_for_tenant = {
+            "user_id": user_id,
+            "email": email,
+            "name": data.get("name") or email,
+        }
+        await get_or_create_tenant_for_user(user_doc_for_tenant)
+    except Exception as e:  # noqa: BLE001
+        # Tenant seed failure should not block login -- the user can still
+        # use the demo paths.  Surface to logs only.
+        print("[auth] tenant seed failed for user_id=%s: %s" % (user_id, e))
+
     return {
         "ok": True,
         "user": {

@@ -33,7 +33,7 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 load_dotenv()  # MONGO_URL + DB_NAME live in backend/.env
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -61,6 +61,18 @@ app.add_middleware(
 # Wire the auth router (Phase 2 Piece A).
 from auth import router as auth_router  # noqa: E402
 app.include_router(auth_router)
+
+# Tenant-aware helpers (Phase 2 Piece B).
+from tenants import (  # noqa: E402
+    current_tenant_optional,
+    read_equipment_types,
+    write_equipment_types,
+    read_sa_rh_clamp,
+    write_sa_rh_clamp,
+    read_weather_location,
+    write_weather_location,
+    WeatherLocationUpdate,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +265,12 @@ async def telemetry_status() -> dict:
 
 
 @app.get("/api/equipment-types")
-async def equipment_types() -> Any:
+async def equipment_types(tenant: Optional[dict] = Depends(current_tenant_optional)) -> Any:
+    """Signed-in users get THEIR copy (Phase 2 Piece B); anonymous gets demo."""
+    if tenant:
+        tenant_eq = await read_equipment_types(tenant)
+        if tenant_eq:
+            return tenant_eq
     return _load_json("equipment_types.json")
 
 
@@ -277,8 +294,22 @@ async def services() -> dict:
 
 
 @app.get("/api/weather-location")
-async def weather_location() -> dict:
+async def weather_location(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    if tenant:
+        loc = await read_weather_location(tenant)
+        if loc:
+            return loc
     return {"active": ACTIVE_LOCATION, "saved": SAVED_LOCATIONS}
+
+
+@app.post("/api/weather-location")
+async def set_weather_location(update: WeatherLocationUpdate,
+                               tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Persist the operator's weather-location pick.  Anonymous = no-op."""
+    if not tenant:
+        return {"ok": False, "persisted": False,
+                "warning": "Sign in to save weather locations."}
+    return await write_weather_location(tenant, update)
 
 
 @app.get("/api/weather-history")
@@ -305,17 +336,29 @@ async def tomorrow_forecast() -> dict:
 
 
 @app.get("/api/band-overrides/sa-rh-clamp")
-async def get_sa_rh_clamp() -> dict:
+async def get_sa_rh_clamp(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    if tenant:
+        clamp = await read_sa_rh_clamp(tenant)
+        return {"status": "ok", "sa_rh_clamp": clamp, "tenant_id": tenant["tenant_id"]}
     return {"status": "ok", "sa_rh_clamp": None}
 
 
 @app.post("/api/band-overrides/sa-rh-clamp")
-async def set_sa_rh_clamp(payload: dict) -> dict:
+async def set_sa_rh_clamp(payload: dict,
+                          tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    if not tenant:
+        return {
+            "status": "ok",
+            "sa_rh_clamp": payload.get("sa_rh_clamp"),
+            "applied": False,
+            "warning": "Demo mode -- sign in to persist clamp settings.",
+        }
+    await write_sa_rh_clamp(tenant, payload.get("sa_rh_clamp"))
     return {
         "status": "ok",
         "sa_rh_clamp": payload.get("sa_rh_clamp"),
-        "applied": False,
-        "warning": "Demo mode -- clamp accepted in UI but not persisted to a controller.",
+        "applied": True,
+        "tenant_id": tenant["tenant_id"],
     }
 
 
@@ -380,12 +423,22 @@ async def disk_status() -> dict:
 
 
 @app.post("/api/save-equipment-schema")
-async def save_equipment_schema(payload: dict) -> dict:
+async def save_equipment_schema(payload: dict,
+                                tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    if not tenant:
+        return {
+            "status": "ok",
+            "saved_keys": list(payload.keys()),
+            "persisted": False,
+            "warning": "Demo mode -- sign in to persist equipment_types edits.",
+        }
+    res = await write_equipment_types(tenant, payload)
     return {
         "status": "ok",
         "saved_keys": list(payload.keys()),
-        "persisted": False,
-        "warning": "Demo mode -- equipment_types.json edits are not persisted.",
+        "persisted": True,
+        "tenant_id": res["tenant_id"],
+        "updated_at": res["updated_at"],
     }
 
 

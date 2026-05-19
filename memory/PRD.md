@@ -2719,3 +2719,75 @@ before committing.  The test gate
 (`tests/test_enteliweb_parser_safe.py`) will fail fast in CI if anyone
 forgets.  Sanitizer is AST-preserving so it is safe to re-run idempotently.
 
+
+## V1.9 Bugfix - enteliWEB Save Spinner Hangs Sequel (2026-02-13)
+**Brief**: After applying the comment-scrub from the previous fix, the
+operator reported the enteliWEB script-editor was STILL hanging on app.py
+save.  Investigation revealed the parser-safety hypothesis was wrong: the
+pre-scrub baseline (with em-dashes and apostrophes intact) saves cleanly.
+Root cause was the SHAPE of the new code line, not the comment content.
+
+### Bisect path (preserved here for next time)
+1. Restored byte-identical pre-scrub baseline (commit a5583dc, MD5
+   c2d4cb59...) -> SAVED FINE in enteliWEB.  Em-dashes + apostrophes are
+   NOT a problem for the script-object editor (only for runtime imports
+   under the embedded controller's CPython, which is a different parser).
+2. Pasted the same baseline with one character flipped in a comment
+   (same byte count) -> SAVED FINE.  Editor is healthy.
+3. Pasted the baseline + a single +27 byte addition to line 280
+   (`or lower.endswith('.json')` appended to a 4-clause OR chain) ->
+   SPINNER HANGS forever.
+4. Rewrote the same logic as a set-membership lookup
+   (`lower.rsplit('.',1)[-1] in {'js','html','css','md','json'}`) which
+   is 41 bytes SHORTER than the baseline -> SAVED FINE.
+
+### Working theory
+The Delta Controls embedded Python parser has a quadratic or pathological
+hot-spot in either the long OR-chain expression path or the line-length
+handling.  Appending another `or X.endswith(...)` to an already-long
+boolean chain tipped it over a compile-time threshold and the editor's
+save-with-syntax-check never completed.  Set-membership is parsed as a
+single comparison and avoids the slow path entirely.
+
+### Fix
+`app.py` line 280 now uses set-membership.  The change is also more
+idiomatic Python and supports the `.json` no-cache use case.  Net effect:
+  - File is 59,387 bytes (41 bytes SMALLER than the pre-fix baseline).
+  - Equipment-mapper edits now persist across reload because
+    /assets/configs/equipment_types.json hits the no-store branch.
+  - All 27 regression test suites still pass.
+
+### Files changed
+- `app.py` line 280: OR-chain -> set-membership.  No other lines touched
+  vs. the pre-scrub baseline that the operator confirmed saves fine.
+- `tests/test_assets_json_no_cache.py`: regex updated to accept either
+  the set-membership form OR the legacy OR-chain form, so historical
+  app.py snapshots also pass.
+- `equipment_mapper.html`: client-side `?ts=Date.now()` cache-buster
+  retained (defense in depth from the previous fix).
+
+### Removed (over-aggressive)
+- `tests/test_enteliweb_parser_safe.py` -- DELETED.  The hypothesis it
+  guarded against (em-dash / apostrophe in comments breaks enteliWEB
+  save) was disproven by operator testing.
+- `tests/_sanitize_py_comments.py` -- DELETED for the same reason.
+
+### Note on the 12 .py files scrubbed in the previous fix
+They remain comment-scrubbed (em-dashes -> --, contractions expanded).
+The scrub is functionally a no-op (AST + non-comment tokenstream are
+bit-for-bit identical), so leaving them as-is causes no harm.  Future
+edits do NOT need to obey the scrub rules.
+
+### Deploy
+- Paste the new `app.py` (59,387 bytes) into the enteliWEB script editor.
+  Save may take a few seconds of "delay" but completes.  No spinner hang.
+- All other plug-ins ship via Repair Mode as usual.
+
+### Lessons logged
+- Long OR-chains can hang the enteliWEB compile step on the controller.
+  Prefer set-membership / dict-lookup forms for multi-extension checks.
+- ALWAYS bisect operator-reported "the spinner hangs" issues at the
+  byte-diff level before assuming a hypothesis about parser quirks --
+  the parser is less fragile than the cumulative debugging history of
+  this codebase suggests.
+

@@ -14,7 +14,7 @@ Endpoints registered:
   GET  /api/band-csv/guide
   GET  /api/band-csv/<ahu_id>
 """
-# Required SERVICE_CTX keys — validated by app.py auto-discovery.
+# Required SERVICE_CTX keys -- validated by app.py auto-discovery.
 _service_dependencies = ['DATA_ROOT', '_no_cache']
 import os
 from flask import jsonify, send_from_directory

@@ -16,10 +16,10 @@ from flask import Flask, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
 
 # Ensure /root/scripts is on the import path (app.py lives there).
-# Plug-ins live under /root/data/pgpy/ — added to sys.path further below
+# Plug-ins live under /root/data/pgpy/ -- added to sys.path further below
 # AFTER PLUGINS_ROOT is defined (the controller firmware deletes any .py
-# files in /root/scripts/ that aren't pre-registered enteliWEB objects,
-# so plug-ins can't live there safely).
+# files in /root/scripts/ that are not pre-registered enteliWEB objects,
+# so plug-ins cannot live there safely).
 if '/root/scripts' not in sys.path:
     sys.path.insert(0, '/root/scripts')
 
@@ -285,7 +285,7 @@ def serve_asset(filename):
         resp.headers['Pragma'] = 'no-cache'
         resp.headers['Expires'] = '0'
     else:
-        # Aggressive browser caching for static base graphics / floor plans —
+        # Aggressive browser caching for static base graphics / floor plans --
         # these rarely change (re-uploaded via equipment_mapper), and URLs
         # re-fetch fresh on page reload anyway.
         resp.headers['Cache-Control'] = 'public, max-age=3600, stale-while-revalidate=86400'
@@ -778,11 +778,11 @@ ALLOWED_EXTENSIONS = {'.html', '.css', '.js', '.json', '.png', '.jpg', '.jpeg', 
 DATA_ROOT = '/root/data'
 SCRIPTS_ROOT = '/root/scripts'
 # enteliWEB / Delta Controls firmware deletes any .py file in
-# /root/scripts/ that isn't pre-registered as an enteliWEB "object".
+# /root/scripts/ that is not pre-registered as an enteliWEB "object".
 # app.py is manually created as such an object by the operator (one-time
 # setup); all other plug-in scripts (`*_service.py`, collector.py, etc.)
 # live here, where the firmware leaves them alone.  Discovered 2026-05-08
-# after the bundle's /root/scripts/ extraction was silently wiped.
+# after the bundles /root/scripts/ extraction was silently wiped.
 PLUGINS_ROOT = '/root/data/pgpy'
 MASTER_KEY = MASTER_KEY_CONST
 
@@ -790,7 +790,7 @@ ALLOWED_ROOTS = {'data': DATA_ROOT, 'scripts': SCRIPTS_ROOT, 'pgpy': PLUGINS_ROO
 
 # PLUGINS_ROOT must be importable for auto-discovery.  Insert AFTER the
 # /root/scripts entry so app.py (which lives in /root/scripts/) keeps
-# precedence — operators can override a bundled plug-in by manually
+# precedence -- operators can override a bundled plug-in by manually
 # creating an enteliWEB object with the same name in /root/scripts/.
 try:
     os.makedirs(PLUGINS_ROOT, exist_ok=True)
@@ -801,7 +801,7 @@ if PLUGINS_ROOT not in sys.path:
 
 # Configs live under /root/data/configs/ on the controller.  Used by
 # /api/equipment-types, /api/map-config, /api/save-equipment-schema,
-# /api/save-map-config, /api/save-config — restored 2026-05-08 after the
+# /api/save-map-config, /api/save-config -- restored 2026-05-08 after the
 # service-split refactor accidentally dropped this top-level binding.
 CONFIG_DIR = os.path.join(DATA_ROOT, 'configs')
 
@@ -824,12 +824,12 @@ def _resolve_root(root_name):
 # Every *_service.py in /root/scripts/ that defines a register(app, ctx)
 # entry point is discovered, imported, and registered automatically.
 # This means: to ADD a new subsystem, you just include `<name>_service.py`
-# in the next bundle upload — no edit to app.py is needed.  To DISABLE
+# in the next bundle upload -- no edit to app.py is needed.  To DISABLE
 # one without removing it, rename it to e.g. `<name>_service.py.disabled`.
 #
 # Each module pulls only the keys it needs out of SERVICE_CTX and ignores
 # the rest.  Failures are reported per-module but never crash boot, so a
-# broken plug-in can't take the whole controller down.
+# broken plug-in cannot take the whole controller down.
 # =====================================================================
 import importlib
 import glob
@@ -848,7 +848,7 @@ SERVICE_CTX = {
     'ahu_records':        ahu_records,
 }
 
-# Test hook: tests can set os.environ['RED5_DISABLE_BG_THREADS']='1' to
+# Test hook: tests can set os.environ[RED5_DISABLE_BG_THREADS]=1 to
 # suppress background daemons (weather forecast loop, band CSV refresh
 # loop) without having to patch app.py.  Production leaves it unset, so
 # normal boot enables both threads.
@@ -859,9 +859,9 @@ if os.environ.get('RED5_DISABLE_BG_THREADS') == '1':
 # =====================================================================
 # Self-healing: relocate misplaced *_service.py files
 # =====================================================================
-# Plug-in modules live in PLUGINS_ROOT (/root/data/pgpy/) — they cannot
+# Plug-in modules live in PLUGINS_ROOT (/root/data/pgpy/) -- they cannot
 # safely live in /root/scripts/ because the enteliWEB firmware deletes
-# any .py there that isn't a pre-registered enteliWEB object.
+# any .py there that is not a pre-registered enteliWEB object.
 #
 # A buggy emergency-bootstrap extractor (or a manual upload via
 # /api/upload-file) can land service modules in DATA_ROOT (flat) or
@@ -870,9 +870,9 @@ if os.environ.get('RED5_DISABLE_BG_THREADS') == '1':
 # falls back to the emergency UI even though the right files are
 # physically present on disk somewhere else.  Detect it here and
 # migrate them to PLUGINS_ROOT before the discovery loop runs.
-# Idempotent — does nothing on a clean install.
+# Idempotent -- does nothing on a clean install.
 #
-# Scope: only files matching `*_service.py` — never user data, never
+# Scope: only files matching `*_service.py` -- never user data, never
 # unrelated `.py` scripts.  app.py is excluded by the glob pattern (it
 # does not match `*_service.py`).  We log every move so the boot log
 # clearly shows what was healed.
@@ -932,9 +932,9 @@ for _d in _search_dirs:
         _service_paths.append(_p)
 
 # =====================================================================
-# Service auto-discovery loop — collects status into _SERVICE_STATUS so
+# Service auto-discovery loop -- collects status into _SERVICE_STATUS so
 # /api/services exposes it at runtime (no need to grep boot logs from
-# the embedded controller, which often doesn't have persistent stdout).
+# the embedded controller, which often does not have persistent stdout).
 # =====================================================================
 _SERVICE_STATUS = []   # list of dicts: {name, path, state, detail}
 
@@ -950,11 +950,11 @@ for _path in _service_paths:
             continue
         # Defensive contract check: every service module may declare a
         # `_service_dependencies` list of SERVICE_CTX keys it needs.  If
-        # any are missing we SKIP the module with a clear log line — the
+        # any are missing we SKIP the module with a clear log line -- the
         # service never crashes mid-register, and the rest of the
         # plug-ins continue to load normally.  Modules without a
         # dependency declaration are treated as opt-out (dangerous but
-        # backward-compatible — any pre-existing service module without
+        # backward-compatible -- any pre-existing service module without
         # the declaration will still load).
         _deps = getattr(_mod, '_service_dependencies', None)
         if _deps is not None:
@@ -971,7 +971,7 @@ for _path in _service_paths:
         _SERVICE_STATUS.append({'name': _name, 'path': _path,
                                 'state': 'OK', 'detail': ''})
     except BaseException as _e:
-        # Catch BaseException (not just Exception) — on the embedded
+        # Catch BaseException (not just Exception) -- on the embedded
         # controller a C-extension init (e.g., dibt) can raise non-
         # Exception subclasses that would otherwise abort all of app.py
         # silently.  Always include the exception TYPE so the operator
@@ -1021,7 +1021,7 @@ if not _service_paths:
 
 
 # =====================================================================
-# Emergency bootstrap — chicken-and-egg recovery
+# Emergency bootstrap -- chicken-and-egg recovery
 # =====================================================================
 # If no service module registered /update or /api/upload-bundle (e.g.,
 # the operator deployed a new app.py but forgot to deploy the matching
@@ -1124,7 +1124,7 @@ if '/update' not in _existing_rules and '/api/upload-bundle' not in _existing_ru
                     if '/tests/' in '/' + entry + '/' or '/__pycache__/' in '/' + entry + '/':
                         continue
                     # Bootloader protection: app.py is operator-managed.
-                    # Refuse to auto-replace it — see upload_service.py for
+                    # Refuse to auto-replace it -- see upload_service.py for
                     # the long-form rationale.  Even in emergency boot,
                     # the safest assumption is that the operator already
                     # has the app.py they want; a bundle should only
@@ -1186,9 +1186,9 @@ def download_bundle():
             return jsonify({'success': False, 'error': 'Password is required.'}), 400
 
         # Files / patterns to exclude in replication mode. These are per-
-        # controller runtime artifacts that shouldn't follow the bundle.
+        # controller runtime artifacts that should not follow the bundle.
         # weather_location.json IS kept on purpose so the destination
-        # controller inherits the source's saved-locations list — the
+        # controller inherits the sources saved-locations list -- the
         # operator can edit it from the destination dashboard afterwards.
         REPLICATE_EXCLUDE_BASENAMES = {
             'telemetry.json',
@@ -1204,7 +1204,7 @@ def download_bundle():
             if base in REPLICATE_EXCLUDE_BASENAMES:
                 return True
             # Cached open-meteo history files: weather_<lat>_<lon>_<year>.json.
-            # Drop them — they'll re-cache on first selection at the destination.
+            # Drop them -- they will re-cache on first selection at the destination.
             # Do NOT match weather_location.json (preferred-locations list).
             if base.startswith('weather_') and base.endswith('.json') and base != 'weather_location.json':
                 return True
@@ -1231,7 +1231,7 @@ def download_bundle():
                         manifest['included'] += 1
                     except (FileNotFoundError, OSError):
                         pass
-            # Include /root/scripts/ files under 'scripts/' prefix
+            # Include /root/scripts/ files under scripts/ prefix
             if os.path.isdir(SCRIPTS_ROOT):
                 for dirpath, dirnames, filenames in os.walk(SCRIPTS_ROOT):
                     rel_dir = os.path.relpath(dirpath, SCRIPTS_ROOT)

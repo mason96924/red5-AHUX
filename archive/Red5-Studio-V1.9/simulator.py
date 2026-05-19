@@ -48,11 +48,11 @@ DEFAULT_INTERVAL = 5
 VERSION = '1.0'
 
 # ---- dibt ----
-# simulator.py is the mock-mode telemetry generator — it never actually
+# simulator.py is the mock-mode telemetry generator -- it never actually
 # calls dibt.  The previous defensive `import dibt` was harmless on dev
 # hosts but on the controller it raised non-ImportError C-extension
 # faults that prevented this script from running.  Removed entirely
-# 2026-05-08; mock-mode telemetry doesn't need BACnet.
+# 2026-05-08; mock-mode telemetry does not need BACnet.
 DIBT_AVAILABLE = False
 
 
@@ -318,7 +318,7 @@ def sim_value(pt, equip_name, sim_state=None, drift=False):
         return _get_vav_psy_state(equip_name)['rh']
 
     # --- Non-psychrometric points (valves, modes, inverters, etc.) ---
-    # Sticky boolean state per (equip, label) so mode/status points don't flip
+    # Sticky boolean state per (equip, label) so mode/status points do not flip
     # every sim cycle. Stored on the sim_value function itself.
     _boolean_memo = getattr(sim_value, '_boolean_memo', None)
     if _boolean_memo is None:

@@ -86,7 +86,7 @@ def _build_registers(snap):
             int((a.get('band') or 'B0')[1:] or 0) if isinstance(a.get('band'), str) else 0,
             0, 0, 0, 0, 0,
         ]
-        # Modbus 16-bit signed → wrap negatives to two's-complement.
+        # Modbus 16-bit signed -> wrap negatives to twos-complement.
         out.extend([(v if v >= 0 else (v + 0x10000)) & 0xFFFF for v in block])
     if not out:
         out = [0] * 16
@@ -124,7 +124,7 @@ def _run():
     _status['state']   = 'running'
     _status['enabled'] = True
     bridge_log(_NAME, 'starting Modbus TCP on %s:%d' % (cfg.get('host', '0.0.0.0'), int(cfg.get('port', 5020))))
-    # Updater thread — pushes telemetry into the register block every 5 s.
+    # Updater thread -- pushes telemetry into the register block every 5 s.
     upd = threading.Thread(target=_update_loop, args=(_context,),
                            name='bridge-modbus-upd', daemon=True)
     upd.start()
@@ -142,7 +142,7 @@ def get_status():
 
 
 _TEST_SENTINEL_REGISTER = 999
-_TEST_SENTINEL_VALUE    = 0xCAFE   # 51966 — distinctive, unlikely to occur naturally
+_TEST_SENTINEL_VALUE    = 0xCAFE   # 51966 -- distinctive, unlikely to occur naturally
 
 
 def test_fire():

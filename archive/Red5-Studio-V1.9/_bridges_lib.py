@@ -35,7 +35,7 @@ _DEFAULT_CONFIG = {
                   'write_allowlist': []},
 }
 
-# Each bridge calls register_bridge_status('mqtt', lambda: {...}) on register()
+# Each bridge calls register_bridge_status(mqtt, lambda: {...}) on register()
 # so the admin endpoint can render a live picture of all four.
 _status_callbacks = {}
 _status_lock      = threading.Lock()
@@ -50,7 +50,7 @@ def load_bridges_config():
             on_disk = json.load(f)
     except (OSError, ValueError):
         on_disk = {}
-    # Merge per-bridge — preserves operator's overrides while filling in any
+    # Merge per-bridge -- preserves operators overrides while filling in any
     # new defaults a future release adds.
     merged = {}
     for k, defaults in _DEFAULT_CONFIG.items():

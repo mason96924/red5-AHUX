@@ -42,7 +42,7 @@ _CTX = None
 DATA_ROOT = None
 CONFIG_DIR = None
 
-# Same ObjectID regex as collector.py — kept in sync intentionally; if
+# Same ObjectID regex as collector.py -- kept in sync intentionally; if
 # you broaden it here also broaden it in collector.py._is_bacnet_objectid.
 _OBJECTID_RE = re.compile(
     r'^(AV|AI|AO|BV|BI|BO|MSV|MSI|MSO|CSV|TL|SCH|FILE|DEV|PROG|LSP|TLP|EE|NC|GRP|CAL)\d+$'
@@ -167,7 +167,7 @@ def diagnose_config_csv():
 
 
 # ----------------------------------------------------------------------
-# Plug-in entrypoint — auto-discovered by app.py at boot via the standard
+# Plug-in entrypoint -- auto-discovered by app.py at boot via the standard
 # `register(app, ctx)` contract.  Also re-invoked when the operator hot-
 # reloads this file through /api/repair/reload-module/<this>.py.
 # ----------------------------------------------------------------------

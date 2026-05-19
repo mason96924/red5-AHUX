@@ -17,7 +17,7 @@ OUT  = os.path.join(HERE, 'red5_bundle.zip')
 # Files at zip ROOT (everything that lives next to app.py in source).
 ROOT_FILES = [
     # Bootloader + core services (loaded by /root/scripts/app.py).
-    # NOTE: app.py is included for completeness, but the controller's
+    # NOTE: app.py is included for completeness, but the controllers
     # upload pipeline filters it out with reason "Bootloader (app.py)
     # not auto-deployed".  Keeping it in the zip lets operators inspect
     # the canonical version.

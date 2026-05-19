@@ -48,8 +48,8 @@ from flask import jsonify, request
 
 
 # 1) Declare what you need from SERVICE_CTX.  The loader will SKIP this
-#    module (with a clear log line) if any of these keys are missing —
-#    so an old app.py + a new service module won't cause a 500 cascade.
+#    module (with a clear log line) if any of these keys are missing --
+#    so an old app.py + a new service module will not cause a 500 cascade.
 _service_dependencies = ['DATA_ROOT']
 
 
@@ -58,7 +58,7 @@ _service_dependencies = ['DATA_ROOT']
 DATA_ROOT = None
 
 
-# 2) Your route handlers — plain Flask views.  They have access to the
+# 2) Your route handlers -- plain Flask views.  They have access to the
 #    module-level globals you populate in register().  Keep them small;
 #    move heavy logic into helper functions defined below.
 
@@ -97,7 +97,7 @@ def register(app, ctx):
     # 4) (Optional) start a background thread, do some warm-up, etc.
     # NB: gate any daemons behind a ctx flag so tests can suppress them:
     #
-    #     if ctx.get('start_my_thread', True):
+    #     if ctx.get(start_my_thread, True):
     #         import threading
     #         threading.Thread(target=_my_loop, daemon=True,
-    #                          name='my-service-loop').start()
+    #                          name=my-service-loop).start()

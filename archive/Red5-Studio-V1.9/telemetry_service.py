@@ -18,7 +18,7 @@ Endpoints registered:
   GET      /api/write-history
   GET      /api/trend-history
 """
-# Required SERVICE_CTX keys — validated by app.py auto-discovery.
+# Required SERVICE_CTX keys -- validated by app.py auto-discovery.
 _service_dependencies = ['DATA_ROOT', 'get_psat', 'get_w', 'get_h', 'ahu_records']
 import os
 import sys
@@ -57,7 +57,7 @@ COLLECTOR_CONFIG_PATH = None
 # NOTE on BACnet writes (architecture, 2026-05-08):
 # This module no longer imports dibt directly. dibt is the Delta Controls
 # native BACnet binding, available ONLY when a script is registered as
-# an enteliWEB "object" and runs in the controller's runtime (where
+# an enteliWEB "object" and runs in the controllers runtime (where
 # `dibt` is preloaded as a global). Importing it from a Python plug-in
 # auto-loaded into Flask via importlib FAILS on the hardware (raises
 # non-ImportError C-extension faults) and causes the whole telemetry
@@ -65,8 +65,8 @@ COLLECTOR_CONFIG_PATH = None
 #
 # Instead, /api/write-point serializes its CSV write request into a
 # queue file (`write_queue.json` under CONFIG_DIR) and returns success
-# immediately. `collector.py` — which IS an enteliWEB object and DOES
-# have dibt available — polls that queue file on each cycle and
+# immediately. `collector.py` -- which IS an enteliWEB object and DOES
+# have dibt available -- polls that queue file on each cycle and
 # executes the writes via dibt.Write().  Result audit goes back into
 # `write_results.json` for /api/write-history to surface.
 
@@ -77,7 +77,7 @@ WRITE_HISTORY_MAX = 100
 # Sim-mode write overrides: persists UI-originated writes so they reflect in /api/data
 # while the background simulator keeps regenerating random values. Keyed by
 # (equipment_name -> {label: (value, timestamp)}). Entries persist until explicitly
-# overwritten by another write — this matches real BACnet setpoint behavior.
+# overwritten by another write -- this matches real BACnet setpoint behavior.
 _sim_overrides = {}
 
 def _record_write(equip_name, writes, csv_object, csv_value, success, mock=False, queued=False):
@@ -135,7 +135,7 @@ def _load_telemetry():
             _last_good_telemetry = data
             return data
         except (json.JSONDecodeError, IOError):
-            # Mid-write collision or corrupt file — fall back to last-good snapshot
+            # Mid-write collision or corrupt file -- fall back to last-good snapshot
             if _last_good_telemetry is not None:
                 return _last_good_telemetry
     return None
@@ -176,7 +176,7 @@ def _build_write_csv(point_defs, write_dict):
 
 # ---------------- BLOCK B: data-mode + /api/data ----------------
 # --- Data mode state (persisted in memory; switchable from dashboard) ---
-_data_mode = 'simulator'   # 'simulator' or 'mock'
+_data_mode = 'simulator'   # simulator or mock
 
 
 # --- API ENDPOINTS ---
@@ -235,13 +235,13 @@ def api_data():
             vav_map = dashboard_map.get('vav', {})
             embedded_vavs = ahu_data.get('vavs', {})
 
-            # VAV identity list is PINNED to the static collector_config → matches map_config.json.
+            # VAV identity list is PINNED to the static collector_config -> matches map_config.json.
             # Telemetry only supplies values; missing/empty telemetry shows VAV with defaults,
             # never drops it from the list (prevents flicker between telemetry writes).
             _cfg_grp = collector_config.get('ahu_groups', {}).get(ahu_name, {})
             _cfg_vav_names = _cfg_grp.get('vavs', [])
             if not _cfg_vav_names:
-                # No static list configured → fall back to whatever telemetry has
+                # No static list configured -> fall back to whatever telemetry has
                 _cfg_vav_names = list(embedded_vavs.keys())
 
             vav_list, vav_temps, vav_rhs = [], [], []
@@ -571,8 +571,8 @@ def write_point():
         # value immediately even before collector.py executes the write.
         # NOTE: `mock=False` here because the Flask side has no way to know
         # whether the dibt.Write inside collector.py will hit MOCK or real
-        # path — the truthful state is "queued, outcome pending".  The
-        # actual mock flag is only set in collector.py's write_results.json.
+        # path -- the truthful state is "queued, outcome pending".  The
+        # actual mock flag is only set in collector.pys write_results.json.
         # The optimistic UI override is still applied (the helper checks
         # `success`, not `mock`, when caching).
         _record_write(equip_name, writes, csv_object, csv_value, True, mock=False, queued=True)

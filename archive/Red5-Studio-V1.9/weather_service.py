@@ -20,7 +20,7 @@ Endpoints registered:
   POST /api/forecast-config
   POST /api/forecast-write-now
 """
-# Required SERVICE_CTX keys — validated by app.py auto-discovery.
+# Required SERVICE_CTX keys -- validated by app.py auto-discovery.
 _service_dependencies = ['DATA_ROOT']
 import os
 import math
@@ -44,7 +44,7 @@ FORECAST_CONFIG_PATH = None
 
 
 # -----------------------------------------------------------------------------
-# Weather location persistence — stored on the controller so the selected city
+# Weather location persistence -- stored on the controller so the selected city
 # survives browser cache clears, different operator devices, etc.
 # -----------------------------------------------------------------------------
 WEATHER_LOC_PATH = os.path.join('/root/data/configs', 'weather_location.json')
@@ -174,8 +174,8 @@ def weather_history():
     if not lat or not lon:
         return jsonify({'success': False, 'error': 'lat and lon required'}), 400
 
-    # Normalize lat/lon for the cache key. open-meteo's grid resolution is
-    # ~0.1° (~11 km), so 2 decimal places (~1.1 km) is more than enough — and
+    # Normalize lat/lon for the cache key. open-meteos grid resolution is
+    # ~0.1 deg  (~11 km), so 2 decimal places (~1.1 km) is more than enough -- and
     # using a fixed precision means the cache key is stable regardless of
     # how many decimals the caller sends (37.5665 vs 37.57 must hit the
     # same cache entry, otherwise every selection re-downloads from the net).
@@ -244,7 +244,7 @@ def weather_history():
                     try: os.remove(fp)
                     except OSError: pass
                     continue
-                # Keep only if it's a complete payload AND there's no canonical
+                # Keep only if it is a complete payload AND there is no canonical
                 # already covering the same coordinates+year.
                 if (isinstance(d, dict)
                         and d.get('success') is True
@@ -283,13 +283,13 @@ def weather_history():
                     continue
                 core = fn[len('weather_'):-len(f'_{year}.json')]
                 # core is "<lat>_<lon>" (lon may be negative). Lat is always first
-                # and never starts with '-' here for these grids; for safety try
+                # and never starts with - here for these grids; for safety try
                 # both single split orientations.
                 parts = core.split('_')
                 if len(parts) < 2:
                     continue
                 # Reconstruct: if there are 2 parts, lat=parts[0], lon=parts[1]
-                # If 3 parts (negative number using '-'), join accordingly.
+                # If 3 parts (negative number using -), join accordingly.
                 try:
                     if len(parts) == 2:
                         f_lat, f_lon = float(parts[0]), float(parts[1])
@@ -314,8 +314,8 @@ def weather_history():
                         except OSError: pass
                         return cached
                     else:
-                        # Stale / incomplete legacy entry — clean it up so it
-                        # doesn't shadow a future good cache.
+                        # Stale / incomplete legacy entry -- clean it up so it
+                        # does not shadow a future good cache.
                         try: os.remove(candidate)
                         except OSError: pass
         except OSError:
@@ -323,7 +323,7 @@ def weather_history():
         return None
 
     # Decide if the cache is fresh enough to return without a network round-trip.
-    # Past years are immutable → cache forever. Current year grows daily → only
+    # Past years are immutable -> cache forever. Current year grows daily -> only
     # treat the cache as fresh if it was written within the last 24 h.
     import datetime, time
     is_current_year = (str(year) == str(datetime.date.today().year))
@@ -465,7 +465,7 @@ def weather_history():
 
         # Always cache. Past years are immutable; current-year cache is honored
         # for 24 h before being re-fetched (see freshness check above), so we
-        # don't need a year filter here. fsync to flash so it survives a
+        # do not need a year filter here. fsync to flash so it survives a
         # controller power cycle.
         try:
             tmp = cache_file + '.tmp'
@@ -486,7 +486,7 @@ def weather_history():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# --- TOMORROW FORECAST (from past year's same-day data) ---
+# --- TOMORROW FORECAST (from past years same-day data) ---
 import datetime
 import threading
 
@@ -569,7 +569,7 @@ def get_tomorrow_forecast(lat, lon):
             data = {'daily': daily}
 
             # Only write a separate cache here if the weather-history endpoint
-            # hasn't already populated a *complete* canonical cache. Writing a
+            # has not already populated a *complete* canonical cache. Writing a
             # daily-only payload over the top of the rich daily+hourly payload
             # would silently corrupt it, and the orphan sweep would later
             # delete this incomplete file.
@@ -623,7 +623,7 @@ def write_forecast_to_bacnet(forecast, csv_id='CSV1'):
 
     # --- PLACEHOLDER: BACnet write ---
     # from dibt import Write
-    # Write(csv_id, 'Present_Value', csv_value)
+    # Write(csv_id, Present_Value, csv_value)
     print(f'[FORECAST] Would write to {csv_id}: {csv_value}')
     print(f'[FORECAST] For date: {forecast["forecast_date"]} (source: {forecast["source_date"]})')
 
@@ -696,7 +696,7 @@ def _daily_forecast_job():
             threading.Event().wait(60)
 
 # (Background forecast thread is started inside register(), not at
-# module-import time, so the thread doesn't run before app.py is ready.)
+# module-import time, so the thread does not run before app.py is ready.)
 
 
 def tomorrow_forecast():

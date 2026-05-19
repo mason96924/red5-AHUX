@@ -61,7 +61,7 @@ def _run():
         _status['clients_now']        = len(_clients)
         try:
             async for raw in websocket:
-                # Inbound writes — JSON-decoded, ACL-gated.
+                # Inbound writes -- JSON-decoded, ACL-gated.
                 try:
                     msg = json.loads(raw)
                 except (TypeError, ValueError):
@@ -146,7 +146,7 @@ def test_fire():
         }
     msg = json.dumps({'test': True, 'hello': 'world', 'ts': time.time(),
                       'note': 'test-fire from /update Data Bridges card'})
-    # The WS server lives in its own asyncio loop; we can't easily await
+    # The WS server lives in its own asyncio loop; we cannot easily await
     # from here.  Instead schedule the broadcast via asyncio.run_coroutine_threadsafe.
     sent = 0
     dead = []

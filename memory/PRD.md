@@ -2651,3 +2651,71 @@ disk.
 Single-file Repair-Mode uploads of `app.py` + `equipment_mapper.html`.
 Backend restart required for `app.py`. Hard-refresh after to clear any
 existing 3600-second cache entry already pinned in the operator's browser.
+
+## V1.9 Bugfix - enteliWEB Script Editor Hangs On app.py Save (2026-02-13)
+**Brief**: User reported that pasting `app.py` into the enteliWEB script
+editor showed the save spinner spinning forever; the file never persisted.
+Same family of bug that crashed collector.py in the previous session, but
+manifesting as a save-stall instead of a runtime crash.
+
+### Root cause
+Delta Controls' embedded Python tokenizer (used by the enteliWEB script
+editor) cannot handle two characters inside `#` comments:
+  1. Any non-ASCII byte (em-dash `--`, smart-quote, ellipsis, etc.).
+  2. An odd number of apostrophes -- it reads the lone `'` as the start
+     of an unterminated string and never completes tokenization.
+
+Both classes had accumulated in app.py and most plug-in files: 68 non-
+ASCII bytes (mostly `--` em-dashes) and 10 comment lines with odd
+apostrophe counts (`aren't`, `can't`, `isn't`, `doesn't`, ...).  The
+controller's enteliWEB editor would silently hang on the first such
+character it encountered while parsing the save.
+
+### Fix
+1. Built `tests/_sanitize_py_comments.py`: a Python tokenizer-driven
+   scrubber that rewrites ONLY `tokenize.COMMENT` tokens:
+     - Replaces non-ASCII chars with safe ASCII equivalents (`--`, `->`,
+       `[ok]`, `1/2`, ...).
+     - Expands every contraction in the dictionary (`don't` -> `do not`,
+       `won't` -> `will not`, ...).
+     - Strips any residual apostrophes from comments (possessives like
+       `team's` are reduced to `teams`).
+   AST and non-COMMENT token streams are bit-for-bit identical before
+   and after the scrub -- functional behaviour is unchanged.
+2. Ran the scrub against all 18 controller deploy `.py` files.  12 were
+   rewritten; 6 were already clean (band_csv_generator.py,
+   band_overrides_service.py, bridges_admin_service.py, collector.py,
+   mqtt_bridge_service.py, webhook_bridge_service.py).
+3. Wrote `tests/test_enteliweb_parser_safe.py`: a regression test that
+   walks the same 18-file deploy set, audits every COMMENT token, and
+   fails the build if any file accumulates a non-ASCII byte or an
+   odd-apostrophe comment again.  Catches the next regression at PR time
+   instead of waiting for the operator to discover it on the controller.
+
+### Verification
+- `tests/test_enteliweb_parser_safe.py`: 18/18 deploy files clean.
+- AST-equivalence check across all 12 rewritten files: identical.
+- Non-comment tokenstream check: identical.
+- Full regression sweep across 27 test suites: all green.
+
+### Files changed
+- `app.py`, `_bridges_lib.py`, `_service_template.py`,
+  `bacnet_diag_service.py`, `band_service.py`, `build_bundle.py`,
+  `modbus_bridge_service.py`, `simulator.py`, `telemetry_service.py`,
+  `upload_service.py`, `weather_service.py`, `ws_bridge_service.py`
+  -- comment-only scrub (12 files, total delta +43 bytes).
+- `tests/_sanitize_py_comments.py` -- NEW scrubber utility.
+- `tests/test_enteliweb_parser_safe.py` -- NEW regression guard.
+
+### Deploy
+- For `app.py`: paste the scrubbed `app.py` into the enteliWEB script
+  editor and hit save.  The spinner should now complete in seconds.
+- All other plug-in `.py` files can ship via Repair Mode upload as usual.
+
+### Future-proofing
+Whenever a Python file in the deploy set is edited, run:
+    python3 tests/_sanitize_py_comments.py *.py
+before committing.  The test gate
+(`tests/test_enteliweb_parser_safe.py`) will fail fast in CI if anyone
+forgets.  Sanitizer is AST-preserving so it is safe to re-run idempotently.
+

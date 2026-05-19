@@ -1192,9 +1192,15 @@
             // Fetch map_config.json for floor plan layout
             useEffect(() => {
                 const API_URL = window.API_BASE_URL || window.location.origin;
-                fetch(`${API_URL}/api/map-config`)
+                fetch(`${API_URL}/api/map-config`, { credentials: 'include' })
                     .then(r => { if (!r.ok) throw new Error('No map_config.json'); return r.json(); })
-                    .then(data => setMapConfig(data))
+                    .then(data => {
+                        // Backend may return a wrapper with `{floors:..., mode:'demo'}`
+                        // when nothing is saved; treat that as "no map" so the
+                        // fallback layout renders instead of an empty grid.
+                        if (data && Array.isArray(data.floors) && data.floors.length > 0) setMapConfig(data);
+                        else setMapConfig(null);
+                    })
                     .catch(() => setMapConfig(null));
             }, []);
 
@@ -4828,8 +4834,8 @@
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
                                             <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>{window.t ? window.t("data_source_mode") : "Data Source Mode"}</label>
                                             <div className="flex gap-2">
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('simulator'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('mock'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('simulator'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = false; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Simulator (preview only -- sign in to persist).' : 'Switched to Simulator.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('mock'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = true; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Mock (preview only -- sign in to persist).' : 'Switched to Mock.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
                                             </div>
                                             <p className={`text-[8px] mt-2 ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>Simulator reads from collector_config.json. Mock generates 14 random demo AHUs.</p>
                                         </div>

@@ -2115,6 +2115,7 @@
                     Promise.all([
                         fetch(`${apiUrl}/api/save-config`, {
                             method: 'POST',
+                            credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 deployment_path: deploymentPath,
@@ -2124,6 +2125,7 @@
                         }).then(r => r.json()),
                         fetch(`${apiUrl}/api/collector-config`, {
                             method: 'POST',
+                            credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(collectorConfigData)
                         }).then(r => r.json())

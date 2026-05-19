@@ -35,6 +35,35 @@ const LandingPage = () => {
 
     useEffect(() => { checkAuth(); }, [checkAuth]);
 
+    // Live demo stats — pulled from the backend so the LandingPage reflects
+    // the operator's actual tenant config (AHU count + weather location)
+    // instead of the hard-coded "Seattle 2020 / 3 AHUs" placeholders.
+    const [stats, setStats] = useState({
+        ahuCount: null,
+        weatherYear: null,
+        weatherLabel: null,
+    });
+    useEffect(() => {
+        const backendUrl = process.env.REACT_APP_BACKEND_URL || window.location.origin;
+        const opts = { credentials: 'include' };
+        Promise.allSettled([
+            fetch(`${backendUrl}/api/telemetry-status`, opts).then(r => r.ok ? r.json() : null),
+            fetch(`${backendUrl}/api/weather-location`, opts).then(r => r.ok ? r.json() : null),
+        ]).then(([tStat, wLoc]) => {
+            const tel = tStat && tStat.status === 'fulfilled' ? tStat.value : null;
+            const loc = wLoc && wLoc.status === 'fulfilled' ? wLoc.value : null;
+            const ahuCount = tel && typeof tel.equipment_count === 'number' ? tel.equipment_count : 3;
+            const yearNow = new Date().getFullYear();
+            const cityName = (loc && loc.active && (loc.active.name || loc.active.label))
+                || 'Seattle';
+            setStats({
+                ahuCount,
+                weatherYear: yearNow,
+                weatherLabel: `${cityName} (Open-Meteo) live`,
+            });
+        });
+    }, []);
+
     const handleSignIn = () => {
         // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
         const redirectUrl = window.location.origin + '/dashboard';
@@ -168,8 +197,22 @@ const LandingPage = () => {
 
                     <div className="mt-14 grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
                         <DemoStat label="Givoni Bands"   value="10"   sub="Climate-aware SA strategy table"     testid="v2-stat-bands"/>
-                        <DemoStat label="Weather Year"   value="2020" sub="Seattle (Open-Meteo) cached"        testid="v2-stat-weather"/>
-                        <DemoStat label="Simulated AHUs" value="3"    sub="East / South / West zones"         testid="v2-stat-ahus"/>
+                        <DemoStat
+                            label="Weather Year"
+                            value={stats.weatherYear ?? '—'}
+                            sub={stats.weatherLabel ?? 'Loading...'}
+                            testid="v2-stat-weather"
+                        />
+                        <DemoStat
+                            label="Simulated AHUs"
+                            value={stats.ahuCount ?? '—'}
+                            sub={
+                                stats.ahuCount && stats.ahuCount > 3
+                                    ? `From your saved collector config`
+                                    : `East / South / West zones`
+                            }
+                            testid="v2-stat-ahus"
+                        />
                     </div>
                 </div>
             </main>

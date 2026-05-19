@@ -210,6 +210,7 @@ async def read_weather_location(tenant: Optional[dict]) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 ten_asset_col = _db["tenant_assets"]
 ten_cfg_col   = _db["tenant_collector_config"]
+ten_map_col   = _db["tenant_map_config"]
 
 
 async def save_tenant_asset(tenant: dict, filename: str,
@@ -309,6 +310,37 @@ async def write_collector_config(tenant: dict, cfg: dict) -> dict:
         upsert=True,
     )
     return {"ok": True, "persisted": True, "tenant_id": tenant["tenant_id"]}
+
+
+async def read_map_config(tenant: Optional[dict]) -> Optional[dict]:
+    """Return the tenant's saved map_config (floors + markers) or None."""
+    if not tenant:
+        return None
+    doc = await ten_map_col.find_one(
+        {"tenant_id": tenant["tenant_id"]},
+        {"_id": 0, "tenant_id": 0, "updated_at": 0},
+    )
+    return doc or None
+
+
+async def write_map_config(tenant: dict, map_config: dict,
+                           image_manifest: Optional[dict] = None) -> dict:
+    """Persist the equipment_mapper's map_config.json payload per-tenant.
+    `image_manifest` (file -> b64) is stored alongside but separately so we
+    can keep it out of the main payload return shape."""
+    safe = {k: v for k, v in (map_config or {}).items() if not k.startswith("_")}
+    safe["tenant_id"] = tenant["tenant_id"]
+    safe["updated_at"] = datetime.now(timezone.utc)
+    if image_manifest:
+        safe["_image_manifest"] = image_manifest
+    await ten_map_col.update_one(
+        {"tenant_id": tenant["tenant_id"]},
+        {"$set": safe},
+        upsert=True,
+    )
+    floors = len(safe.get("floors") or [])
+    return {"ok": True, "persisted": True, "tenant_id": tenant["tenant_id"],
+            "floors": floors}
 
 
 

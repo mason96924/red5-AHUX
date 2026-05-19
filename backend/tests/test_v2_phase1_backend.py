@@ -154,8 +154,9 @@ check("/api/disk-status  -> 200 + percent_used",
       s == 200 and "percent_used" in json.loads(body))
 
 s, body = get("/api/map-config")
-check("/api/map-config  -> has schema",
-      s == 200 and "schema" in json.loads(body))
+data = json.loads(body) if s == 200 else {}
+check("/api/map-config  -> V1.9 floors-array shape",
+      s == 200 and "floors" in data and isinstance(data["floors"], list))
 
 # Assets (no-path manifest + with-path passthrough)
 s, body = get("/api/assets")

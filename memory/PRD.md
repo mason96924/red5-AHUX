@@ -1,5 +1,61 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 — LandingPage dynamic stats + map_config persistence (2026-02-19)
+
+### Issue 1 — LandingPage hard-coded "Seattle 2020 / 3 AHUs"
+The demo-stat cards on `/` showed `WEATHER YEAR: 2020 — Seattle (Open-Meteo) cached` and `SIMULATED AHUS: 3 — East/South/West zones` regardless of the operator's actual saved state.
+
+**Fix (`frontend/src/pages/LandingPage.jsx`)**:
+- On mount, fetch `/api/telemetry-status` and `/api/weather-location` (both with `credentials:'include'`).
+- Render WEATHER YEAR as `new Date().getFullYear()` (so it's always current).
+- Render the weather city from `weather_location.active.name` (falls back to "Seattle").
+- Render AHU count from `telemetry.equipment_count` (was hard-coded 3).
+- Sub-label says "From your saved collector config" when count > 3, else the demo default.
+
+### Issue 2 — map_config.json "not working"
+The dashboard's floor-plan modal showed `No map_config.json — using fallback layout` because:
+1. The mapper's SAVE TO VIRTUAL CONTROLLER POSTed `/api/save-config` — endpoint did not exist in V2.0 → silent 404 → nothing persisted.
+2. The dashboard's `GET /api/map-config` returned `{schema, mode}` (equipment_types envelope), not the V1.9 `{floors:[{markers}]}` shape the dashboard's `getFloorForAhu()` reads.
+
+**Fix (`backend/tenants.py`, `backend/server.py`)**:
+- New `tenant_map_config` Mongo collection + `read_map_config` / `write_map_config` helpers (the latter stores `_image_manifest` alongside as a hidden field).
+- New `POST /api/save-config` (tenant-aware): persists `map_config` and `image_manifest` per-tenant. Anonymous → `{success:false, error: "Demo mode -- sign in"}`.
+- Rewrote `GET /api/map-config` to return the V1.9 floors-array shape directly: signed-in → tenant's saved doc; anonymous → bundled `demo_data/map_config.json` if present, else `{floors:[], mode:'demo', warning:...}`.
+- Updated `test_v2_phase1_backend.py` assertion (was checking for the now-removed `schema` key).
+- `frontend/public/dashboard.html` `/api/map-config` fetch: now sends `credentials:'include'`; treats `floors:[]` as "no map saved" so the fallback layout still renders.
+- `frontend/public/equipment_mapper.html` `/api/save-config` and `/api/collector-config` POSTs: now send `credentials:'include'`.
+
+### Verification
+- LandingPage rendering: stats card now reads "WEATHER YEAR 2026 / Seattle Children's (Open-Meteo) live" and "SIMULATED AHUS 5 / From your saved collector config" for the signed-in operator.
+- map_config round-trip: POST a 1-floor, 2-marker payload → 200 `{success, persisted, floors:1}`. GET returns same.
+- 94/94 backend tests pass.
+
+### Files changed
+- `frontend/src/pages/LandingPage.jsx` — +30 lines (stats fetch + dynamic render).
+- `backend/tenants.py` — +35 lines (`tenant_map_config` collection + helpers).
+- `backend/server.py` — replaced `/api/map-config` + new `/api/save-config` (~55 lines).
+- `backend/tests/test_v2_phase1_backend.py` — updated assertion.
+- `frontend/public/dashboard.html` — 1 line (`credentials:'include'` + empty-floors guard).
+- `frontend/public/equipment_mapper.html` — 2 lines (`credentials:'include'`).
+
+## V2.0 Bugfix — Simulator/Mock toggle reverted on Save Config (2026-02-19)
+**Brief**: Signed-in user (`seeker0829@gmail.com`) clicked the **Simulator (Config AHUs)** button in the COLLECTOR Settings tab.  Backend correctly received the POST and flipped `tenant_collector_config.mock_mode` to `false`.  But when the user later clicked **Save Config** (the global save button in the COLLECTOR modal), the saved config still carried `mock_mode: true` — because the toggle button updated `setDataMode('simulator')` (a separate React state used only by the badge) but did NOT update `ccConfig.mock_mode` (the form-state object that `saveCollectorCfg` POSTs).  Result: header badge re-rendered as SIM, sidebar showed mock AHU-01-E/02-S/03-W, not the user's AHU-01..AHU-05.
+
+### Fix (`frontend/public/dashboard.html`)
+- `Simulator (Config AHUs)` button onClick now ALSO sets `ccConfig.mock_mode = false` and shows a `Switched to Simulator.` toast.
+- `Mock (14 Demo AHUs)` button onClick now ALSO sets `ccConfig.mock_mode = true` and shows the corresponding toast.
+- Anonymous case (`d.persisted === false`) gets the preview-only suffix in the toast.
+
+### Data fix
+- Reset the affected tenant's `tenant_collector_config.mock_mode` from `true` → `false` (one-off direct DB write) so the operator did not have to re-toggle after the code fix landed.
+
+### Verification
+- Anonymous browser session: badge **● LIVE** (green), sidebar AHU-01..AHU-05 (5 user AHUs from bundled config).
+- Future signed-in toggle: POST to `/api/data-mode` flips `mock_mode` in Mongo AND in local `ccConfig`, so subsequent Save Config no longer reverts.
+
+### Files changed
+- `frontend/public/dashboard.html` — Simulator + Mock button handlers (2 onClick replacements).
+
 ## V2.0 Bugfix — Header badge stuck on "Collector not running" (2026-02-19)
 **Brief**: Dashboard header showed an OFF badge with tooltip "Collector not running" even though the simulator was producing telemetry and the dashboard was rendering AHU pills.
 

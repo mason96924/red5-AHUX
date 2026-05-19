@@ -80,6 +80,8 @@ from tenants import (  # noqa: E402
     list_tenant_assets,
     read_collector_config,
     write_collector_config,
+    read_map_config,
+    write_map_config,
     WeatherLocationUpdate,
 )
 import base64  # noqa: E402
@@ -759,8 +761,54 @@ async def trend_history(point: str = Query("OA"), window_min: int = Query(60)) -
 
 
 @app.get("/api/map-config")
-async def map_config() -> dict:
-    return {"schema": _load_json("equipment_types.json"), "mode": "demo"}
+async def map_config(tenant: Optional[dict] = Depends(current_tenant_optional)) -> Any:
+    """Return the tenant's saved map_config (floors + markers).  Anonymous
+    callers get the bundled demo map_config so the dashboard's floor-plan
+    overlay still renders during the demo walkthrough.
+
+    Response is the V1.9 map_config.json shape (NOT wrapped):
+        { floors: [{id, name, markers: [{type, name, id, x, y, ...}]}],
+          version, ... }
+    The dashboard's `getFloorForAhu()` reads `data.floors[*].markers[*]`
+    directly so we cannot wrap the payload in another envelope."""
+    if tenant:
+        saved = await read_map_config(tenant)
+        if saved:
+            return saved
+    # Bundled demo fallback (optional file).  If absent, return an empty
+    # shape with `mode:'demo'` so the legacy 'No map_config.json' banner
+    # still fires for anonymous users without a saved layout.
+    demo_path = os.path.join(DEMO_DATA_DIR, "map_config.json")
+    if os.path.exists(demo_path):
+        with open(demo_path, "r") as f:
+            return json.load(f)
+    return {"floors": [], "mode": "demo", "warning": "No map_config saved yet."}
+
+
+@app.post("/api/save-config")
+async def save_config(payload: dict,
+                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Equipment-mapper SAVE TO VIRTUAL CONTROLLER button posts here.
+
+    Payload shape (V1.9):
+        { deployment_path: '/root', map_config: {...}, image_manifest: {...} }
+    """
+    map_cfg  = payload.get("map_config") or {}
+    img_man  = payload.get("image_manifest") or {}
+    if not tenant:
+        return {
+            "success": False,
+            "error": "Demo mode (anonymous) -- sign in to save the floor-plan map_config.",
+            "persisted": False,
+        }
+    res = await write_map_config(tenant, map_cfg, img_man)
+    return {
+        "success": True,
+        "persisted": True,
+        "tenant_id": res["tenant_id"],
+        "floors": res["floors"],
+        "file": f"virtual-controller://{res['tenant_id']}/map_config.json",
+    }
 
 
 @app.get("/api/disk-status")

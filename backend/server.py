@@ -228,16 +228,40 @@ _DEMO_AHUS = [
      ["VAV-1-W-A", "VAV-1-W-B", "VAV-1-W-C", "VAV-1-W-D"]),
 ]
 
+# Color palette for simulator-mode (user-configured) AHUs.  Cycled deterministic-
+# ally by AHU index so the dashboard's hue mapping is stable across reloads.
+_AHU_COLORS = ["#6366f1", "#f59e0b", "#14b8a6", "#a855f7", "#ef4444",
+               "#22d3ee", "#84cc16", "#ec4899", "#0ea5e9", "#f97316"]
 
-def _build_snapshot() -> list:
-    """Return a V1.9-shaped /api/data ARRAY (one entry per AHU)."""
+
+def _ahus_from_config(cfg: dict) -> list[tuple[str, str, list[str]]]:
+    """Translate a user-saved `collector_config.ahu_groups` dict into the
+    `(ahu_id, color, vavs)` tuples that `_build_snapshot` already consumes.
+    Sorting by ID keeps the dashboard order stable across saves."""
+    groups = cfg.get("ahu_groups") or {}
+    out: list[tuple[str, str, list[str]]] = []
+    for idx, ahu_id in enumerate(sorted(groups.keys())):
+        g = groups[ahu_id] or {}
+        vavs = g.get("vavs")
+        if not isinstance(vavs, list):
+            vavs = []
+        color = _AHU_COLORS[idx % len(_AHU_COLORS)]
+        out.append((ahu_id, color, [str(v) for v in vavs]))
+    return out
+
+
+def _build_snapshot(ahus: Optional[list[tuple[str, str, list[str]]]] = None) -> list:
+    """Return a V1.9-shaped /api/data ARRAY (one entry per AHU).  When `ahus`
+    is supplied (e.g. from a tenant's saved collector_config) we use it
+    verbatim; otherwise we fall back to the bundled demo template."""
     now = time.time()
     oa = _demo_oa_state(now)
     band = _resolve_band(oa["t"], oa["rh"])
-    offsets = [0.0, 0.3, -0.2]
+    ahu_list = ahus if ahus is not None else _DEMO_AHUS
     return [
-        _simulate_ahu(aid, oa, band, color, vavs, off)
-        for (aid, color, vavs), off in zip(_DEMO_AHUS, offsets)
+        _simulate_ahu(aid, oa, band, color, vavs,
+                      offset_deg=((idx % 3) - 1) * 0.3)
+        for idx, (aid, color, vavs) in enumerate(ahu_list)
     ]
 
 
@@ -255,21 +279,59 @@ async def version() -> dict:
 
 
 @app.get("/api/data-mode")
-async def data_mode() -> dict:
-    return {"mode": "demo", "live": False, "source": "phase1-simulator"}
+async def data_mode(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Reflect the tenant's saved `mock_mode` (set via the COLLECTOR modal's
+    Settings tab) so the dashboard's mode toggle shows the right pill on
+    page load.  Anonymous callers see the demo defaults."""
+    if tenant:
+        cfg = await read_collector_config(tenant) or {}
+        mock = bool(cfg.get("mock_mode", True))
+        groups = cfg.get("ahu_groups") or {}
+        if not mock and groups:
+            return {"mode": "simulator", "live": False,
+                    "source": "tenant-config",
+                    "ahu_count": len(groups)}
+        return {"mode": "mock", "live": False, "source": "tenant-config-mock",
+                "ahu_count": len(_DEMO_AHUS)}
+    return {"mode": "mock", "live": False, "source": "phase1-simulator",
+            "ahu_count": len(_DEMO_AHUS)}
 
 
 @app.get("/api/data")
-async def get_data() -> list:
-    """V1.9 contract: ARRAY of AHU entries.  Dashboard rejects non-array."""
+async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) -> list:
+    """V1.9 contract: ARRAY of AHU entries.  Dashboard rejects non-array.
+
+    Source-of-truth precedence:
+      1. Signed-in tenant w/ saved collector_config in Simulator mode AND a
+         non-empty `ahu_groups` dict -> synthesize data from those names.
+      2. Otherwise -> bundled `_DEMO_AHUS` template.
+    """
+    if tenant:
+        cfg = await read_collector_config(tenant)
+        if cfg and not cfg.get("mock_mode", True):
+            ahus = _ahus_from_config(cfg)
+            if ahus:
+                return _build_snapshot(ahus)
     return _build_snapshot()
 
 
 @app.post("/api/data-mode")
-async def set_data_mode(payload: dict) -> dict:
-    """Demo backend accepts the mode toggle but always returns demo data."""
-    return {"success": True, "mode": payload.get("mode", "simulator"),
-            "warning": "Demo mode -- mode toggle is cosmetic; data source is fixed."}
+async def set_data_mode(payload: dict,
+                        tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Persist the operator's Simulator <-> Mock toggle.  Signed-in users get
+    their `tenant_collector_config.mock_mode` flipped (so a page reload picks
+    up the right source); anonymous callers get a cosmetic ok response."""
+    desired_mode = (payload.get("mode") or "").lower()
+    is_mock = desired_mode == "mock"
+    if not tenant:
+        return {"success": True, "mode": desired_mode,
+                "persisted": False,
+                "warning": "Demo mode (anonymous) -- sign in to persist data-source mode."}
+    cfg = await read_collector_config(tenant) or {}
+    cfg["mock_mode"] = is_mock
+    await write_collector_config(tenant, cfg)
+    return {"success": True, "mode": desired_mode, "persisted": True,
+            "tenant_id": tenant["tenant_id"]}
 
 
 @app.get("/api/telemetry-status")

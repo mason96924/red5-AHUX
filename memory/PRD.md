@@ -1,5 +1,29 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix — Dashboard ignored saved AHU/VAV config (2026-02-19)
+**Brief**: Operator configured 5 AHU groups + their VAVs via the COLLECTOR modal and selected **SIMULATOR (CONFIG AHUS)**, but the dashboard kept showing the mock template (AHU-01-E/02-S/03-W).  Root cause: `/api/data` was hard-wired to the bundled `_DEMO_AHUS` list and ignored the tenant's saved `collector_config`.  `/api/data-mode` was likewise static.
+
+### Fix (`backend/server.py`)
+- `_build_snapshot(ahus=None)` now accepts an optional `(id, color, vavs)` list so it can be driven from any source.
+- New `_ahus_from_config(cfg)` translates `collector_config.ahu_groups` into the snapshot tuple format, sorted by AHU id and cycling through a 10-color palette.
+- `/api/data` is now tenant-aware via `current_tenant_optional`: signed-in tenant + `mock_mode:false` + non-empty `ahu_groups` → synthesize from the saved config; otherwise fall back to the bundled demo template.
+- `/api/data-mode` (GET) reflects the persisted `mock_mode` so the modal's pill is correct on reload.
+- `/api/data-mode` (POST) now flips `tenant_collector_config.mock_mode` (true/false) when signed in, so the Simulator/Mock toggle persists across reloads.
+
+### Frontend (`frontend/public/dashboard.html`)
+- `/api/data`, `/api/data-mode` (GET and POST) calls now send `credentials: 'include'` so the session cookie reaches the backend.
+
+### Verification
+- Anonymous → 3 mock AHUs (unchanged).
+- Signed-in tenant w/ saved 5-AHU config + simulator mode → **5 user AHUs** (AHU-01..AHU-05) with the operator's exact VAV names round-trip through Mongo.
+- Toggle mock ↔ simulator via POST `/api/data-mode` flips the AHU list on the next `/api/data` poll.
+- Live browser test (seeded session cookie): sidebar showed AHU-01..AHU-05 (not the mock AHU-*-E/S/W).
+- Regression: 94/94 backend tests pass.
+
+### Files changed
+- `backend/server.py` — +40 lines (snapshot refactor, tenant-aware endpoints).
+- `frontend/public/dashboard.html` — +4 lines (`credentials: 'include'` on 4 fetches).
+
 ## V2.0 Feature — Selectable Weather Location (2026-02-19)
 **Brief**: User reported the weather strip was hard-pinned to Seattle Children's regardless of which location they picked in the WEATHER LOCATION modal.  Root cause: the V2.0 backend's `/api/weather-history` only knew about the one bundled cache file (`weather_47.60_-122.30_2020.json`); for any other lat/lon it fell through to the same Seattle file → strip kept showing Seattle data.  This commit ports the V1.9 controller's live-fetch + Mongo-cache logic into the V2.0 backend so any city on Earth works.
 

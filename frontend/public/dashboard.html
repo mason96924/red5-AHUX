@@ -1423,7 +1423,7 @@
             const fetchTelemetry = React.useCallback(async (signal) => {
                 try {
                     const API_URL = window.API_BASE_URL || window.location.origin;
-                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal } : undefined);
+                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal, credentials: 'include' } : { credentials: 'include' });
                     if (!response.ok) return;
                     const data = await response.json();
                     if (!Array.isArray(data)) return;
@@ -1482,7 +1482,7 @@
             // Load initial data mode from backend
             useEffect(() => {
                 const API_URL = window.API_BASE_URL || window.location.origin;
-                fetch(API_URL + '/api/data-mode').then(r => r.json()).then(d => {
+                fetch(API_URL + '/api/data-mode', { credentials: 'include' }).then(r => r.json()).then(d => {
                     if (d.success && d.mode) setDataMode(d.mode);
                 }).catch(() => {});
             }, []);
@@ -4828,8 +4828,8 @@
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
                                             <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>{window.t ? window.t("data_source_mode") : "Data Source Mode"}</label>
                                             <div className="flex gap-2">
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('simulator'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('mock'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('simulator'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('mock'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
                                             </div>
                                             <p className={`text-[8px] mt-2 ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>Simulator reads from collector_config.json. Mock generates 14 random demo AHUs.</p>
                                         </div>

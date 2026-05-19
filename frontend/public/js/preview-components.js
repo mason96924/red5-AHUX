@@ -666,11 +666,20 @@ const PreviewAirFlowSimulator = ({ segments, fanSpeed, isActive, antiFreeze, hea
                             </g>
                         </svg>
                         
-                        {isActive && (
+                        {/* Editing handles (rotate dot + scale square) belong to
+                            the config tool ONLY.  The dashboard re-uses
+                            isActive to mean "fan is running" so we must
+                            gate the handles on onSegmentMouseDown being
+                            defined — i.e., a parent passed an edit callback,
+                            so we ARE in the config tool.  Without that, the
+                            fuchsia scale-resize square + amber rotate dot
+                            were leaking into the operator dashboard whenever
+                            the fan was running. */}
+                        {isActive && onSegmentMouseDown && (
                             <React.Fragment>
                                 <div className="absolute top-[-20px] left-1/2 -translate-x-1/2 w-[1px] h-[20px] bg-amber-400/50 pointer-events-none"></div>
-                                <div onMouseDown={(e) => onSegmentMouseDown && onSegmentMouseDown(e, 'rotate', segId)} className="absolute top-[-24px] left-1/2 -translate-x-1/2 w-4 h-4 bg-amber-400 rounded-full border-2 border-white cursor-grab active:cursor-grabbing shadow-md z-50 pointer-events-auto"></div>
-                                <div onMouseDown={(e) => onSegmentMouseDown && onSegmentMouseDown(e, 'scale', segId)} className={`absolute bottom-[-6px] right-[-6px] w-4 h-4 rounded-sm border-2 border-white bg-fuchsia-500 cursor-nwse-resize shadow-md z-50 pointer-events-auto`}></div>
+                                <div onMouseDown={(e) => onSegmentMouseDown(e, 'rotate', segId)} className="absolute top-[-24px] left-1/2 -translate-x-1/2 w-4 h-4 bg-amber-400 rounded-full border-2 border-white cursor-grab active:cursor-grabbing shadow-md z-50 pointer-events-auto"></div>
+                                <div onMouseDown={(e) => onSegmentMouseDown(e, 'scale', segId)} className={`absolute bottom-[-6px] right-[-6px] w-4 h-4 rounded-sm border-2 border-white bg-fuchsia-500 cursor-nwse-resize shadow-md z-50 pointer-events-auto`}></div>
                             </React.Fragment>
                         )}
                     </div>

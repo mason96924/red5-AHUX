@@ -71,6 +71,364 @@ global.initPsy3D = function(container, opts){
   var _optMinH = 25; // kJ/kg dry air
   var _optMaxH = 50; // kJ/kg dry air
 
+  /* ---------- DESIGNER MODE (MEP equipment-sizing overlay) ----------
+     Persisted-state inputs for the Designer-Mode psychrometric overlay,
+     hoisted to module scope so render2DChart can reach them without going
+     through closures.  Defaults are realistic Korean-climate summer-design
+     numbers a junior MEP engineer would pull off Ch. 14 of the ASHRAE
+     Fundamentals handbook before doing any selection work. */
+  var _designerMode    = false;
+  var _designerCFM     = 10000;   /* SA volumetric flow, ft^3/min */
+  var _designerOAFrac  = 0.20;    /* fraction of OA in mixed air (0..1) */
+  var _designerOA_T    = 35.0;    /* OA dry-bulb, degC (typical 1% summer) */
+  var _designerOA_RH   = 50.0;    /* OA relative humidity, % */
+  var _designerRA_T    = 24.0;    /* RA dry-bulb, degC (occupied setpoint) */
+  var _designerRA_RH   = 50.0;    /* RA relative humidity, % */
+  var _designerSA_T    = 13.0;    /* SA dry-bulb, degC (cooling coil leaving) */
+  var _designerSA_RH   = 95.0;    /* SA relative humidity, % (near saturation) */
+  /* ERV (Energy Recovery Ventilator) — desiccant wheel or membrane-plate
+     heat-and-moisture exchanger between OA intake and EA exhaust.  When
+     ON, draws OA' (pre-conditioned OA) on the OA->RA line at fractional
+     distance epsilon from OA toward RA, and re-runs the coil-sizing
+     numbers off the OA' -> MA' -> SA polygon instead of OA -> MA -> SA.
+     Typical good-wheel epsilon = 0.75..0.85; budget plate ERV = 0.55..0.65. */
+  var _designerERVOn   = false;
+  var _designerERVEps  = 0.80;    /* enthalpy effectiveness, 0..1 */
+
+  /* ----------------------------------------------------------------------
+     ERV ROLLOUT — annual rollup, monthly sparkline, ROI calculator,
+     climate-zone tariff presets, savings-threshold slider, A/B ghost
+     cloud, peak-hour annotations, CSV export.
+     All state persisted under localStorage.red5ErvRolloutState.
+     Computations are derived on-demand from the same weatherData +
+     _designerCFM + _designerRA_T/RH + _designerERVEps used by the
+     Drops cloud, so there is exactly ONE source of truth. */
+  var _ervClimateZones = [
+    /* $/kWh retail commercial tariff (rough public-data 2024-2025 averages). */
+    {id:'KR-Seoul', name:'Korea (Seoul)',     kwh:0.094, currency:'$'},
+    {id:'US-NY',    name:'US Northeast',      kwh:0.21,  currency:'$'},
+    {id:'US-CA',    name:'US California',     kwh:0.28,  currency:'$'},
+    {id:'SG',       name:'Singapore',         kwh:0.20,  currency:'$'},
+    {id:'JP-TOK',   name:'Japan (Tokyo)',     kwh:0.24,  currency:'$'},
+    {id:'EU-DE',    name:'EU (Germany)',      kwh:0.40,  currency:'$'},
+    {id:'CN-SH',    name:'China (Shanghai)',  kwh:0.092, currency:'$'},
+    {id:'AE-DXB',   name:'UAE (Dubai)',       kwh:0.083, currency:'$'},
+    {id:'AU-SYD',   name:'Australia (SYD)',   kwh:0.27,  currency:'$'},
+    {id:'CUSTOM',   name:'Custom rate',       kwh:null,  currency:'$'}
+  ];
+  var _ervClimateZone     = 'KR-Seoul';
+  var _ervTariffKwh       = 0.094;       /* $/kWh */
+  var _ervInstallCost     = 12000;       /* $ install + commissioning */
+  var _ervMaintAnnual     = 200;         /* $/yr maintenance (filters, belts) */
+  var _ervRoiOpen         = false;       /* ROI drawer expanded */
+  var _ervMinKJkg         = 0;           /* hide hours where |dh_saved| < this */
+  var _ervGhostEps        = 0;           /* 0 = off; >0 = second ε for A/B */
+  var _ervShowPeaks       = true;        /* annotate top-3 peak-savings hours */
+  var _ervRolloutClosed   = false;       /* user clicked ✕ — keep hidden until revive */
+  var _ervRolloutPos      = null;        /* {x, y} bottom-left offset; null = default */
+  var _ervRolloutSize     = null;        /* {w, h}; null = auto/min */
+  /* Band-source toggle: when true AND ERV is on, B1-B10 band lookups
+     (color + SA target) bucket the hour by OA' (post-wheel) instead of
+     raw OA.  Models a wheel-aware controller that intentionally picks
+     less-aggressive SA targets when the wheel has already softened the
+     incoming air.  Persisted under red5BandSourceOaP. */
+  var _bandSourceOaP      = false;       /* false = OA (default), true = OA' */
+  try {
+    var _bs = localStorage.getItem('red5BandSourceOaP');
+    if (_bs === '1' || _bs === 'true') _bandSourceOaP = true;
+  } catch(_) {}
+  /* Effective band-input helper: returns {T, RH, W} -- raw OA when the
+     toggle is OFF or when ERV is off, post-wheel OA' otherwise.  Used by
+     _bandRGB / _saReset call sites so the band selection follows the
+     toggle without leaking the conditional into every call site. */
+  function _bandInputFor(p){
+    if (!_saDropERVOn || !_bandSourceOaP) return { T: p.t, RH: p.rh, W: p.w };
+    var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
+    var T = p.t + eps * (raT - p.t);
+    var W = p.w + eps * (raW - p.w);
+    /* Recover RH from (T, W) for band lookup (bands key on T and RH). */
+    var ps = psat(T);
+    var pw = W * (101.325) / (0.621945 + W);  /* invert getW: pw = w*Pa / (0.622+w) */
+    var RH = Math.max(0, Math.min(100, (pw / ps) * 100));
+    return { T: T, RH: RH, W: W };
+  }
+  /* Module-scoped mirror of the render2DChart-local bandLabel.  Used by
+     the per-band hour-count delta strip so we can compute the histogram
+     without duplicating the rules inside a render path. */
+  function _bandLabelOf(t, rh){
+    if(t<5&&rh<30)                       return 'B1';
+    if(t>=5&&t<15&&rh>=30&&rh<=60)       return 'B2';
+    if(t>=15&&t<20&&rh<30)               return 'B3';
+    if(t>=18&&t<22&&rh>=30&&rh<=50)      return 'B4';
+    if(t>=22&&t<=25&&rh>=40&&rh<=60)     return 'B5';
+    if(t>25&&t<=27&&rh>=50&&rh<=70)      return 'B6';
+    if(t>27&&t<=32&&rh>60&&rh<=80)       return 'B7';
+    if(t>32&&t<=38&&rh>70)               return 'B8';
+    if(t>35&&rh<30)                      return 'B9';
+    if(t>30&&rh>85)                      return 'B10';
+    return '?';
+  }
+  /* Walk weatherData twice -- once with raw OA, once with OA' -- to build
+     a {Bn: {oa, oap}} map of hour-counts per band.  Cheap (O(N) twice,
+     N ~ 2900 for a full year) and not memoized because epsilon + RA can
+     live-edit and we always want WYSIWYG.  Returns null if ERV is off
+     (caller renders nothing). */
+  function _bandHourDelta(){
+    if (!_saDropERVOn || !weatherData || !weatherData.length) return null;
+    var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
+    var out = {}; var labels = ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','?'];
+    labels.forEach(function(b){ out[b] = {oa:0, oap:0}; });
+    var total = 0;
+    weatherData.forEach(function(p){
+      total++;
+      var bOa = _bandLabelOf(p.t, p.rh);
+      out[bOa].oa++;
+      var T = p.t + eps * (raT - p.t);
+      var W = p.w + eps * (raW - p.w);
+      var ps = psat(T);
+      var pw = W * 101.325 / (0.621945 + W);
+      var RH = Math.max(0, Math.min(100, (pw / ps) * 100));
+      var bOap = _bandLabelOf(T, RH);
+      out[bOap].oap++;
+    });
+    out._total = total;
+    return out;
+  }
+
+  /* HISTORICAL COMPARISON (year-over-year climate drift).
+     _bandHistoryMode: 'off' | '1y' | '5y'  -- cycle via the strip button.
+     _bandHistoryHist: cached {Bn:{oa,oap}} averaged across the historical
+                       window(s), or null if not loaded / loading.
+     _bandHistoryKey:  memo key combining location + date span + mode so
+                       we don't re-fetch when the user toggles back and
+                       forth.  Also persisted to localStorage so the
+                       comparison survives a page reload. */
+  var _bandHistoryMode = 'off';
+  var _bandHistoryHist = null;
+  var _bandHistoryKey  = null;
+  var _bandHistoryLoading = false;
+  try {
+    var _hm = localStorage.getItem('red5BandHistoryMode');
+    if (_hm === '1y' || _hm === '5y' || _hm === 'off') _bandHistoryMode = _hm;
+  } catch(_) {}
+
+  /* Compute histogram from a raw weather-data array (same point shape
+     as weatherData: {t, rh, w}).  Same RA + eps as the live histogram. */
+  function _histogramFromPts(pts){
+    var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
+    var out = {}; ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','?'].forEach(function(b){ out[b]={oa:0,oap:0}; });
+    pts.forEach(function(p){
+      out[_bandLabelOf(p.t, p.rh)].oa++;
+      var T = p.t + eps * (raT - p.t);
+      var W = p.w + eps * (raW - p.w);
+      var ps = psat(T);
+      var pw = W * 101.325 / (0.621945 + W);
+      var RH = Math.max(0, Math.min(100, (pw / ps) * 100));
+      out[_bandLabelOf(T, RH)].oap++;
+    });
+    return out;
+  }
+
+  /* Shift an ISO 'YYYY-MM-DD' date back N years, preserving M-D.  Handles
+     Feb 29 by clamping to Feb 28 in non-leap years. */
+  function _shiftYearISO(iso, yearsBack){
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var y = d.getUTCFullYear() - yearsBack;
+    var m = d.getUTCMonth();
+    var dd = d.getUTCDate();
+    if (m === 1 && dd === 29) {
+      var ly = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+      if (!ly) dd = 28;
+    }
+    return y + '-' + String(m+1).padStart(2,'0') + '-' + String(dd).padStart(2,'0');
+  }
+
+  function _loadBandHistory(mode, cb){
+    /* Fetches archive-api hourly data for the same M-D range as the
+       currently loaded weatherData, but yearsBack=1 (mode '1y') or
+       averaged across yearsBack=1..5 (mode '5y').  cb() is invoked
+       after _bandHistoryHist is populated (or set to null on error). */
+    if (mode === 'off' || !weatherData.length) {
+      _bandHistoryHist = null;
+      _bandHistoryKey  = null;
+      return cb && cb();
+    }
+    var lat = parseFloat($('#p3-lat').value);
+    var lon = parseFloat($('#p3-lon').value);
+    var fromD = $('#p3-from').value, toD = $('#p3-to').value;
+    if (isNaN(lat) || isNaN(lon) || !fromD || !toD) return cb && cb();
+    var key = lat.toFixed(3) + ',' + lon.toFixed(3) + ',' + fromD + '..' + toD + ',' + mode;
+    if (_bandHistoryKey === key && _bandHistoryHist) return cb && cb();  /* memo hit */
+    if (_bandHistoryLoading) return;
+    _bandHistoryLoading = true;
+    _refreshBandDelta();  /* show "loading..." state */
+    var years = (mode === '5y') ? [1,2,3,4,5] : [1];
+    Promise.all(years.map(function(yb){
+      var f = _shiftYearISO(fromD, yb);
+      var t = _shiftYearISO(toD,   yb);
+      return fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+
+                   '&start_date='+f+'&end_date='+t+'&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+        .then(function(r){return r.ok ? r.json() : Promise.reject(r.status);})
+        .then(function(j){
+          if (j.error) throw new Error(j.reason||j.error);
+          var times=j.hourly.time, temps=j.hourly.temperature_2m;
+          var rhs=j.hourly.relative_humidity_2m||j.hourly.relativehumidity_2m;
+          if (!times||!temps||!rhs) throw new Error('Missing data');
+          var pts=[];
+          for(var i=0;i<times.length;i++){
+            if (temps[i]==null || rhs[i]==null) continue;
+            pts.push({t:temps[i], rh:rhs[i], w:getW(temps[i],rhs[i])});
+          }
+          return _histogramFromPts(pts);
+        });
+    })).then(function(hs){
+      /* Average the per-year histograms.  Same band keys exist in each. */
+      var avg = {}; ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','?'].forEach(function(b){ avg[b]={oa:0,oap:0}; });
+      hs.forEach(function(h){ Object.keys(avg).forEach(function(b){ avg[b].oa += h[b].oa; avg[b].oap += h[b].oap; }); });
+      var n = hs.length || 1;
+      Object.keys(avg).forEach(function(b){ avg[b].oa = Math.round(avg[b].oa / n); avg[b].oap = Math.round(avg[b].oap / n); });
+      _bandHistoryHist = avg;
+      _bandHistoryKey  = key;
+      _bandHistoryLoading = false;
+      _refreshBandDelta();
+      if (cb) cb();
+    }).catch(function(){
+      _bandHistoryHist = null;
+      _bandHistoryLoading = false;
+      _refreshBandDelta();
+      if (cb) cb();
+    });
+  }
+  /* Module-scoped placeholder so _loadBandHistory (above) can call the
+     real implementation that gets assigned inside setupControls.  Using
+     a var assignment (not a function declaration) avoids hoisting
+     shadowing the inner version. */
+  var _refreshBandDelta = function(){};
+  function _ervRolloutLoad(){
+    try {
+      var s = JSON.parse(localStorage.getItem('red5ErvRolloutState') || '{}');
+      if (typeof s.zone     === 'string')  _ervClimateZone = s.zone;
+      if (typeof s.tariff   === 'number')  _ervTariffKwh   = s.tariff;
+      if (typeof s.install  === 'number')  _ervInstallCost = s.install;
+      if (typeof s.maint    === 'number')  _ervMaintAnnual = s.maint;
+      if (typeof s.roiOpen  === 'boolean') _ervRoiOpen     = s.roiOpen;
+      if (typeof s.minKJ    === 'number')  _ervMinKJkg     = s.minKJ;
+      if (typeof s.ghostEps === 'number')  _ervGhostEps    = s.ghostEps;
+      if (typeof s.showPeaks=== 'boolean') _ervShowPeaks   = s.showPeaks;
+      if (typeof s.closed   === 'boolean') _ervRolloutClosed = s.closed;
+      if (s.pos && typeof s.pos.x === 'number') _ervRolloutPos = s.pos;
+      if (s.size && typeof s.size.w === 'number') _ervRolloutSize = s.size;
+    } catch(_) {}
+  }
+  function _ervRolloutSave(){
+    try {
+      localStorage.setItem('red5ErvRolloutState', JSON.stringify({
+        zone:_ervClimateZone, tariff:_ervTariffKwh,
+        install:_ervInstallCost, maint:_ervMaintAnnual,
+        roiOpen:_ervRoiOpen, minKJ:_ervMinKJkg,
+        ghostEps:_ervGhostEps, showPeaks:_ervShowPeaks,
+        closed:_ervRolloutClosed, pos:_ervRolloutPos, size:_ervRolloutSize
+      }));
+    } catch(_) {}
+  }
+  _ervRolloutLoad();
+
+  /* Compute the per-hour savings series given an epsilon.  Returns an
+     array of {idx, ts, dh_kJkg (signed, +cooling/-heating), abs_dh,
+     rtH (RT*h per hour at current Designer CFM), kWh}.  Uses Designer
+     Mode's RA state as the wheel's other inlet — single source of
+     truth across the 2D overlay, the 3D cloud, and this rollout. */
+  function _ervSavingsSeries(eps){
+    var out = [];
+    if (!weatherData || !weatherData.length) return out;
+    var raT = _designerRA_T;
+    var raW = getW(_designerRA_T, _designerRA_RH); /* kg/kg, same units as p.w */
+    var cfm = _designerCFM;
+    /* RT*h conversion per kJ/kg at given CFM (from the existing Designer
+       Mode formula): (CFM * 4.5 * (dh_kJkg / 0.4299)) / 12000 RT for one
+       hour duration = RT*h.  1 RT = 3.517 kW so kWh = RT*h * 3.517. */
+    var rt_per_kJkg = (cfm * 4.5 / 0.4299) / 12000;
+    for (var i = 0; i < weatherData.length; i++) {
+      var p   = weatherData[i];
+      var inT = p.t + eps * (raT - p.t);
+      var inW = p.w + eps * (raW - p.w);
+      var h_oa  = enthalpy(p.t, p.w);
+      var h_oap = enthalpy(inT, inW);
+      var dh    = h_oa - h_oap; /* +ve: wheel pre-cooled OA (summer); -ve: pre-warmed (winter) */
+      var abs_dh = Math.abs(dh);
+      var rtH   = abs_dh * rt_per_kJkg;
+      out.push({ idx:i, ts:p.ts, dh_kJkg:dh, abs_dh:abs_dh, rtH:rtH, kWh:rtH * 3.517 });
+    }
+    return out;
+  }
+
+  /* Aggregate a per-hour series into the rollup totals + per-month
+     buckets used by the panel renderer.  Returns:
+       { totalRtH, totalKWh, totalUSD, peaks:[3 top entries by abs_dh],
+         monthly:[12 entries with {kJkg_sum, kWh, usd}] }
+     Computed lazily on render; not memoized because Designer CFM / RA /
+     epsilon all live-edit and we want WYSIWYG. */
+  function _ervAggregate(series){
+    var monthly = [];
+    for (var m = 0; m < 12; m++) monthly.push({kJkg:0, kWh:0, usd:0, hours:0});
+    var totRt = 0, totKWh = 0;
+    var topN = [];
+    for (var i = 0; i < series.length; i++) {
+      var s = series[i];
+      if (s.abs_dh < _ervMinKJkg) continue;
+      totRt  += s.rtH;
+      totKWh += s.kWh;
+      var d = new Date(s.ts);
+      var m = d.getMonth();
+      monthly[m].kJkg  += s.abs_dh;
+      monthly[m].kWh   += s.kWh;
+      monthly[m].usd   += s.kWh * _ervTariffKwh;
+      monthly[m].hours += 1;
+      /* maintain top-3 by abs_dh */
+      if (topN.length < 3) { topN.push(s); topN.sort(function(a,b){return b.abs_dh - a.abs_dh;}); }
+      else if (s.abs_dh > topN[2].abs_dh) {
+        topN[2] = s;
+        topN.sort(function(a,b){return b.abs_dh - a.abs_dh;});
+      }
+    }
+    return {
+      totalRtH: totRt,
+      totalKWh: totKWh,
+      totalUSD: totKWh * _ervTariffKwh,
+      peaks: topN,
+      monthly: monthly
+    };
+  }
+
+  /* Compute simple-payback + 10-yr NPV at 5% discount.
+     payback = install / (annualSavingsUSD - maintenance).
+     NPV uses constant annual cash-flow over 10 years. */
+  function _ervROI(annualUSD){
+    var net = annualUSD - _ervMaintAnnual;
+    var payback = (net > 0.0001) ? (_ervInstallCost / net) : Infinity;
+    var r = 0.05, npv = -_ervInstallCost;
+    for (var y = 1; y <= 10; y++) npv += net / Math.pow(1 + r, y);
+    return { payback:payback, npv:npv, net:net };
+  }
+  function _ervFmtMoney(v){
+    if (!isFinite(v))            return '\u2014';
+    var abs = Math.abs(v);
+    var sign = v < 0 ? '\u2212' : '';
+    if (abs >= 1e6) return sign + '$' + (abs/1e6).toFixed(2) + 'M';
+    if (abs >= 1e3) return sign + '$' + (abs/1e3).toFixed(1) + 'k';
+    return sign + '$' + abs.toFixed(0);
+  }
+  function _ervFmtRtH(v){
+    if (!isFinite(v)) return '\u2014';
+    if (v >= 1e6) return (v/1e6).toFixed(2) + 'M RT\u00b7h';
+    if (v >= 1e3) return (v/1e3).toFixed(1) + 'k RT\u00b7h';
+    return v.toFixed(0) + ' RT\u00b7h';
+  }
+
   /* ---------- theme helpers (synced with dashboard via localStorage.red5.theme) ---------- */
   function _p3Theme(){ try { return localStorage.getItem('red5.theme') || 'dark'; } catch(e){ return 'dark'; } }
   var P3_DARK_BG = 0x0f172a, P3_LIGHT_BG = 0xc5cbd2;
@@ -284,6 +642,310 @@ global.initPsy3D = function(container, opts){
 
   /* enthalpy helper */
   function enthalpy(T,W){return 1.006*T+W*(2501+1.86*T);}
+
+  /* ---------- DESIGNER MODE drawing helper ----------
+     Draws the OA -> MA -> SA process polygon on the 2D psych chart and
+     renders the four sizing numbers an MEP engineer pulls off the chart
+     during equipment selection:
+       - Coil dh           (kJ/kg dry air)         total enthalpy delta
+       - Coil tons         (= CFM*4.5*dh_btulb/12000)
+       - Coil BF           bypass factor = (SA - ADP) / (MA - ADP) on T axis
+       - ADP               apparatus dew point - intersection of the MA->SA
+                           process line extended to the saturation curve
+       - Room sensible     (kBTU/h)  = CFM * 1.08 * (RA_T - SA_T)
+     The chart is the same Carrier / ASHRAE chart designers learned in
+     school, just plotted at 1:1 with the live psych chart so the picture
+     reads identically.  Decoupled from live telemetry -- this is a
+     design-phase schematic tool.
+
+     Args:
+       ctx   - 2D canvas context, scaled by dpr already by caller
+       tx,wy - coordinate transforms (T degC -> px, W g/kg -> px)
+       pad   - {left,right,top,bottom} chart padding in px
+       pw,ph - inner plot width, height in px
+  */
+  function _drawDesignerOverlay(ctx, tx, wy, pad, pw, ph){
+    if (!_designerMode) return;
+    /* 1. Compute the four state points.  W stored in g/kg dry air. */
+    var oa_T = _designerOA_T, oa_W = getW(_designerOA_T, _designerOA_RH) * 1000;
+    var ra_T = _designerRA_T, ra_W = getW(_designerRA_T, _designerRA_RH) * 1000;
+    var sa_T = _designerSA_T, sa_W = getW(_designerSA_T, _designerSA_RH) * 1000;
+    /* ERV pre-treatment: if the wheel is on, the air entering the mixing
+       box is no longer OA -- it's OA', which sits on the OA->RA line
+       at fractional distance epsilon from OA toward RA.  Geometrically
+       linear-interpolating T and W along OA->RA approximates moving
+       along the enthalpy axis within <0.5% across the comfort range.
+       Effective enthalpy effectiveness: (h_OA - h_OA')/(h_OA - h_RA)
+       collapses to epsilon under that linear interpolation. */
+    var oap_T = oa_T, oap_W = oa_W;
+    if (_designerERVOn) {
+        var eps = _designerERVEps;
+        oap_T = oa_T + eps * (ra_T - oa_T);
+        oap_W = oa_W + eps * (ra_W - oa_W);
+    }
+    /* MA = OAfrac * OA(or OA') + (1 - OAfrac) * RA  on dry-bulb T and W
+       (linear mixing is accurate to <0.5% over comfort range; full
+       enthalpy mixing would require iterating because W = f(T, RH) is
+       nonlinear, but that's classroom over-engineering for a screen
+       readout). */
+    var f = _designerOAFrac;
+    var mix_T = _designerERVOn ? oap_T : oa_T;
+    var mix_W = _designerERVOn ? oap_W : oa_W;
+    var ma_T = f * mix_T + (1 - f) * ra_T;
+    var ma_W = f * mix_W + (1 - f) * ra_W;
+
+    /* 2. Find ADP: extend the MA -> SA line until it intersects the
+       saturation curve (W = W_sat(T)).  Walk T downward from SA in 0.1
+       degC steps along the (MA->SA) direction.  Stop when W_line >=
+       W_sat(T_line) or when we run off the chart. */
+    var dT = sa_T - ma_T, dW = sa_W - ma_W;   /* both negative for cooling */
+    var lineW = function(t){ if (Math.abs(dT) < 1e-6) return sa_W; return ma_W + dW * (t - ma_T) / dT; };
+    var adp_T = sa_T, adp_W = sa_W;
+    for (var step = 0; step < 200; step++){
+        var tt = sa_T - step * 0.1;
+        if (tt < T_MIN + 0.5) break;
+        var wsat = getW(tt, 100) * 1000;
+        var wline = lineW(tt);
+        if (wline >= wsat) { adp_T = tt; adp_W = wsat; break; }
+    }
+
+    /* 3. Coil sizing numbers. */
+    var h_oa = enthalpy(oa_T, oa_W / 1000);
+    var h_ra = enthalpy(ra_T, ra_W / 1000);
+    var h_oap = enthalpy(oap_T, oap_W / 1000);   /* equals h_oa when ERV off */
+    var h_ma = enthalpy(ma_T, ma_W / 1000);    /* kJ/kg dry air */
+    var h_sa = enthalpy(sa_T, sa_W / 1000);
+    var dh_kj = h_ma - h_sa;                   /* coil total dh (cooling) */
+    var dh_btulb = dh_kj * 0.4299;             /* kJ/kg -> Btu/lb */
+    var tons = (_designerCFM * 4.5 * dh_btulb) / 12000;
+    /* ERV savings: how many tons did the wheel shave off relative to the
+       same system without the wheel?  Compute baseline tons by re-running
+       the math with mix_T/W = OA (no wheel) and compare. */
+    var ervSavedTons = 0, ervSavedPct = 0;
+    if (_designerERVOn && Math.abs(h_oa - h_ra) > 0.01) {
+        var ma_baseT = f * oa_T + (1 - f) * ra_T;
+        var ma_baseW = f * oa_W + (1 - f) * ra_W;
+        var dh_base = enthalpy(ma_baseT, ma_baseW / 1000) - h_sa;
+        var tons_base = (_designerCFM * 4.5 * (dh_base * 0.4299)) / 12000;
+        ervSavedTons = tons_base - tons;
+        ervSavedPct  = (tons_base > 0) ? (ervSavedTons / tons_base) * 100 : 0;
+    }
+    /* Bypass factor: BF = (SA - ADP) / (MA - ADP).  Defined on T axis
+       (most common form).  BF approaching 0 = denser coil; ~0.05 for
+       8-row, ~0.15 for 4-row.  We display whichever has non-zero
+       denominator. */
+    var bf = (Math.abs(ma_T - adp_T) > 0.01)
+              ? (sa_T - adp_T) / (ma_T - adp_T)
+              : 0.0;
+    bf = Math.max(0, Math.min(1, bf));
+    /* Room sensible: classic 1.08 multiplier for CFM-degF.  Convert
+       (RA_T - SA_T) from degC to degF: dF = dC * 1.8.  */
+    var dTF = (ra_T - sa_T) * 1.8;
+    var kbtu_sens = (_designerCFM * 1.08 * dTF) / 1000;
+
+    /* 4. Draw process polygon: OA -> MA -> SA -> ADP, with thin amber
+       lines + larger labeled dots at each anchor point. */
+    var dot = function(t, w, color, label){
+        var X = tx(t), Y = wy(w);
+        ctx.beginPath(); ctx.arc(X, Y, 5.5, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1.2; ctx.stroke();
+        if (label){
+            ctx.fillStyle = color; ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(label, X + 8, Y - 6);
+        }
+    };
+    /* OA -> RA mixing line (dashed, slate) so the OA fraction is
+       visually obvious */
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = 'rgba(148,163,184,.55)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(tx(oa_T), wy(oa_W));
+    ctx.lineTo(tx(ra_T), wy(ra_W));
+    ctx.stroke();
+    ctx.restore();
+    /* ERV recovery arrow: cyan dashed OA -> OA' showing where the wheel
+       moves the entering air along the OA-RA line. */
+    if (_designerERVOn) {
+        ctx.save();
+        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 2.0;
+        ctx.beginPath();
+        ctx.moveTo(tx(oa_T), wy(oa_W));
+        ctx.lineTo(tx(oap_T), wy(oap_W));
+        ctx.stroke();
+        ctx.restore();
+        /* Tiny arrowhead on the recovery line so direction is unambiguous. */
+        var ahX = tx(oap_T), ahY = wy(oap_W);
+        var dx0 = tx(oap_T) - tx(oa_T), dy0 = wy(oap_W) - wy(oa_W);
+        var len0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1;
+        var ux = dx0 / len0, uy = dy0 / len0;
+        var perp = function(s){ return [-uy * s, ux * s]; };
+        ctx.fillStyle = '#22d3ee';
+        ctx.beginPath();
+        ctx.moveTo(ahX, ahY);
+        var p1 = perp(4); ctx.lineTo(ahX - ux * 8 + p1[0], ahY - uy * 8 + p1[1]);
+        var p2 = perp(-4); ctx.lineTo(ahX - ux * 8 + p2[0], ahY - uy * 8 + p2[1]);
+        ctx.closePath(); ctx.fill();
+    }
+    /* MA -> SA process line (solid amber, thicker) */
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(tx(ma_T), wy(ma_W));
+    ctx.lineTo(tx(sa_T), wy(sa_W));
+    ctx.stroke();
+    /* SA -> ADP extension (thinner amber dashed) to show where the
+       process line lands on the saturation curve */
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(245,158,11,.55)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(tx(sa_T), wy(sa_W));
+    ctx.lineTo(tx(adp_T), wy(adp_W));
+    ctx.stroke();
+    ctx.restore();
+    /* Plot dots in z-order (back to front: ADP, OA, RA, MA, SA so SA is
+       on top because it's the smallest space).  SA gets its temp inline
+       so when SA and ADP nearly overlap (typical: SA=13, ADP=12) the
+       operator can still read both.  Labels offset symmetrically to
+       avoid stacking. */
+    dot(adp_T, adp_W, '#67e8f9', 'ADP ' + adp_T.toFixed(1) + '\u00b0C');
+    dot(oa_T,  oa_W,  '#fb7185', 'OA ' + oa_T.toFixed(1) + '\u00b0C ' + Math.round(_designerOA_RH) + '%');
+    /* OA' (post-recovery) only when ERV is on, in cyan to match the arrow. */
+    if (_designerERVOn) {
+        dot(oap_T, oap_W, '#22d3ee', "OA' " + oap_T.toFixed(1) + '\u00b0C \u03b5=' + _designerERVEps.toFixed(2));
+    }
+    dot(ra_T,  ra_W,  '#a3e635', 'RA ' + ra_T.toFixed(1) + '\u00b0C ' + Math.round(_designerRA_RH) + '%');
+    dot(ma_T,  ma_W,  '#fbbf24', 'MA ' + ma_T.toFixed(1) + '\u00b0C');
+    /* SA label placed ABOVE the dot (negative y offset) instead of the
+       default to avoid colliding with the ADP label (which sits to the
+       right of ADP) when SA-ADP \u0394T is small. */
+    var saX = tx(sa_T), saY = wy(sa_W);
+    ctx.beginPath(); ctx.arc(saX, saY, 5.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#22d3ee'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = '#22d3ee'; ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('SA ' + sa_T.toFixed(1) + '\u00b0C ' + Math.round(_designerSA_RH) + '%', saX + 8, saY + 16);
+
+    /* 5. Read-out card: pinned bottom-left of the chart inside the clip
+       region.  Compact digital display, 5 rows by default; +1 row when
+       ERV is on (savings) and +1 more row when ERV is doing harm (the
+       wheel is making the coil bigger -- a real-world commissioning
+       failure mode in shoulder/winter conditions when OA is cooler or
+       drier than RA; the tool flags it with an amber pulse line). */
+    var hasERVRow  = _designerERVOn;
+    var ervIsHarmful = _designerERVOn && ervSavedTons < -0.05;
+    /* Bypass-factor warning: BF > 0.18 means the coil is essentially
+       under-sized -- a real coil with this BF won't actually pull SA down
+       to the requested leaving temperature.  Surface a one-line caption
+       so the operator knows what the red number is telling them and what
+       to change. */
+    var bfIsHigh = (bf > 0.18);
+    var cardX = pad.left + 12;
+    var cardW = 220;
+    var cardH = 110 + (hasERVRow ? 16 : 0) + (ervIsHarmful ? 22 : 0) + (bfIsHigh ? 14 : 0);
+    var cardY = pad.top + ph - cardH - 12;
+    ctx.fillStyle = 'rgba(2,6,23,.92)';
+    ctx.strokeStyle = ervIsHarmful ? '#f59e0b' : '#b45309';
+    ctx.lineWidth = ervIsHarmful ? 1.5 : 1;
+    ctx.beginPath();
+    ctx.rect(cardX, cardY, cardW, cardH);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    var hdr = 'DESIGNER  CFM ' + _designerCFM.toLocaleString() + '   OA ' + Math.round(f * 100) + '%';
+    if (_designerERVOn) hdr += '   +ERV';
+    ctx.fillText(hdr, cardX + 8, cardY + 14);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px monospace';
+    var row = function(y, label, value, color){
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(label, cardX + 8, cardY + y);
+        ctx.fillStyle = color || '#fbbf24';
+        ctx.textAlign = 'right';
+        ctx.fillText(value, cardX + cardW - 8, cardY + y);
+        ctx.textAlign = 'left';
+    };
+    row(32, 'Coil \u0394h',    dh_kj.toFixed(1) + ' kJ/kg', '#fb923c');
+    row(48, 'Cooling tons', tons.toFixed(1) + ' RT',     '#fb923c');
+    row(64, 'ADP',          adp_T.toFixed(1) + ' \u00b0C',     '#67e8f9');
+    row(80, 'Bypass BF',    bf.toFixed(2),                bf < 0.08 ? '#22c55e' : (bf < 0.18 ? '#fbbf24' : '#ef4444'));
+    /* Y offset for everything below the BF row -- depends on whether the
+       BF caption is being shown.  Keeps Room sens. + ERV rows aligned. */
+    var bfCaptionDY = 0;
+    if (bfIsHigh) {
+        ctx.save();
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('\u25B8 add coil rows or lower SA RH', cardX + 8, cardY + 94);
+        ctx.restore();
+        bfCaptionDY = 14;
+    }
+    row(96  + bfCaptionDY, 'Room sens.',   kbtu_sens.toFixed(1) + ' kBTU/h', '#a3e635');
+    if (_designerERVOn) {
+        /* ERV savings row: cyan when positive (wheel helps), amber-pulse
+           when negative (wheel hurts -- engineer should add a bypass
+           damper).  Pulse uses Date.now() so the row visibly flickers
+           every render tick, drawing the operator's eye. */
+        var ervColor;
+        if (ervIsHarmful) {
+            var pulse = 0.6 + 0.4 * Math.sin(Date.now() / 240);
+            /* lerp #f59e0b -> #fef08a using `pulse` so it breathes amber */
+            var r = Math.round(245 + (254 - 245) * pulse);
+            var g = Math.round(158 + (240 - 158) * pulse);
+            var b = Math.round( 11 + (138 -  11) * pulse);
+            ervColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+            /* Trigger a re-render every ~120ms so the pulse stays alive
+               without burning CPU when Designer Mode is off. */
+            if (!_drawDesignerOverlay._pulseTimer){
+                _drawDesignerOverlay._pulseTimer = setInterval(function(){
+                    if (_designerMode && _designerERVOn) {
+                        try { render2DChart(); } catch(_) {}
+                    } else if (_drawDesignerOverlay._pulseTimer) {
+                        clearInterval(_drawDesignerOverlay._pulseTimer);
+                        _drawDesignerOverlay._pulseTimer = null;
+                    }
+                }, 120);
+            }
+        } else {
+            ervColor = '#22d3ee';
+            if (_drawDesignerOverlay._pulseTimer){
+                clearInterval(_drawDesignerOverlay._pulseTimer);
+                _drawDesignerOverlay._pulseTimer = null;
+            }
+        }
+        row(112 + bfCaptionDY,
+            'ERV saved',
+            ervSavedTons.toFixed(1) + ' RT (' + ervSavedPct.toFixed(0) + '%)',
+            ervColor);
+        if (ervIsHarmful) {
+            /* Two-line caption explaining WHY savings are negative and
+               what an engineer should do.  Smaller font, centred across
+               the card width, amber to match the pulse.  Without this
+               operators unfamiliar with the OA-vs-RA enthalpy geometry
+               can mistake the negative number for a bug. */
+            ctx.save();
+            ctx.fillStyle = ervColor;
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('\u26A0 OA cooler/drier than RA',  cardX + 8, cardY + 128 + bfCaptionDY);
+            ctx.font = '9px monospace';
+            ctx.fillStyle = '#cbd5e1';
+            ctx.fillText('bypass ERV \u2014 free pre-cooling', cardX + 8, cardY + 140 + bfCaptionDY);
+            ctx.restore();
+        }
+    }
+  }
 
   /* i18n shim -- safely calls window.t() if i18n.js is loaded, otherwise
      falls back to the English default passed in.  Lets every chart string
@@ -555,6 +1217,20 @@ global.initPsy3D = function(container, opts){
      2D layer, so a B7 hot-humid hour is the same orange in both views).
      Toggled via the chip next to the OA→SA Drops layer toggle. */
   var _saDropColorMode = 't';
+  /* Whether the OA→SA Drops layer should pre-treat each OA point through an
+     ERV wheel before drawing the drop.  When ON, every OA point is shifted
+     toward the user's RA design state by the Designer-Mode epsilon
+     (_designerERVEps), so the drop lines start at OA' instead of OA -- the
+     same geometric trick the Designer-Mode panel uses.  Visualises the
+     entire year of OA hours AFTER ERV pre-treatment so engineers can see
+     how much the wheel "moves" the cloud toward the comfort zone before the
+     coil ever fires.  Persisted to localStorage so the toggle survives a
+     page reload. */
+  var _saDropERVOn = false;
+  try {
+    var _sd = localStorage.getItem('red5SaDropERV');
+    if (_sd === '1' || _sd === 'true') _saDropERVOn = true;
+  } catch (e) { /* private-mode / quota - ignore */ }
   /* Cached during T×Time render so the mousemove handler can build per-point
      tooltips that include the active control band, its SA setpoint and the
      OA damper % without re-running classifyBand on every mouse event. */
@@ -830,6 +1506,8 @@ global.initPsy3D = function(container, opts){
         if (t[0]==='saDrop') {
           var chip=document.getElementById('p3-saDrop-color');
           if (chip) chip.style.display = o.visible ? 'inline-flex' : 'none';
+          var ervChip=document.getElementById('p3-saDrop-erv');
+          if (ervChip) ervChip.style.display = o.visible ? 'inline-flex' : 'none';
         }
       };
       tgEl.appendChild(div);
@@ -864,6 +1542,441 @@ global.initPsy3D = function(container, opts){
         // Initial visibility tracks the layer (default: hidden until user enables it).
         if (saDropGroup && saDropGroup.visible) chip.style.display = 'inline-flex';
         tgEl.appendChild(chip);
+
+        /* ERV pre-treatment chip -- second toggle next to the T|B chip.
+           Off by default; when ON, the Drops layer re-routes every OA
+           point through OA' (using Designer Mode's epsilon + RA inputs)
+           so the post-wheel cloud is what you see drop to the SA floor.
+           Pulses with a cyan highlight when active so the modal nature
+           of the layer is unmistakable. */
+        var ervChip=document.createElement('div');
+        ervChip.id='p3-saDrop-erv';
+        ervChip.style.cssText='display:none;align-items:center;gap:0;background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:4px;padding:0 0;cursor:pointer;font-size:7px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;user-select:none;backdrop-filter:blur(14px);overflow:hidden';
+        ervChip.title='Pre-treat OA through an ERV wheel before drawing the drop. Uses Designer Mode\'s epsilon + RA inputs. When ON, the cloud shows POST-wheel conditions -- the actual air the coil sees.';
+        function _renderErvChip(){
+          var on = !!_saDropERVOn;
+          ervChip.innerHTML =
+            '<span data-erv="off" style="padding:3px 7px;color:'+(!on?'#22d3ee':'#94a3b8')+';background:'+(!on?'rgba(34,211,238,.15)':'transparent')+'">ERV</span>'+
+            '<span style="color:#475569">|</span>'+
+            '<span data-erv="on"  style="padding:3px 7px;color:'+( on?'#22d3ee':'#94a3b8')+';background:'+( on?'rgba(34,211,238,.15)':'transparent')+'">\u00B7</span>';
+          ervChip.style.borderColor = on ? '#22d3ee' : '#334155';
+        }
+        _renderErvChip();
+        ervChip.addEventListener('click', function(e){
+          var s = e.target.closest('[data-erv]');
+          if (!s) return;
+          var want = (s.getAttribute('data-erv') === 'on');
+          if (want === _saDropERVOn) return;
+          _saDropERVOn = want;
+          try { localStorage.setItem('red5SaDropERV', want ? '1' : '0'); } catch(_) {}
+          _renderErvChip();
+          _buildSaDropGeometry();
+        });
+        if (saDropGroup && saDropGroup.visible) ervChip.style.display = 'inline-flex';
+        tgEl.appendChild(ervChip);
+
+        /* ERV legend chip -- two-swatch readout that auto-appears whenever
+           BOTH the Drops layer is visible AND the ERV toggle is ON. Tells
+           new operators what the two colors in the cloud mean without
+           making them hunt through tooltips:
+             [cyan bar]  ERV SAVED   -- horizontal ribbons at cloud top
+             [T-spec  ]  COIL WORK   -- vertical drops to the SA floor
+           Background and border match the chips above for visual unity. */
+        var ervLegend=document.createElement('div');
+        ervLegend.id='p3-saDrop-erv-legend';
+        ervLegend.style.cssText='display:none;align-items:center;gap:6px;background:rgba(15,23,42,.92);border:1px solid #22d3ee;border-radius:4px;padding:3px 7px;font-size:7px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;user-select:none;backdrop-filter:blur(14px)';
+        ervLegend.title='Color legend: cyan = energy the ERV wheel saved per hour; temperature-spectrum drop = the remaining coil work after pre-treatment.';
+        // Temperature-spectrum gradient swatch (blue → cyan → green → yellow → red)
+        // mirrors what t2rgb() produces across the OA temperature range.
+        ervLegend.innerHTML =
+          '<span style="display:inline-block;width:14px;height:5px;background:#22d3ee;border-radius:1px"></span>'+
+          '<span style="color:#22d3ee">ERV saved</span>'+
+          '<span style="color:#475569;padding:0 2px">|</span>'+
+          '<span style="display:inline-block;width:18px;height:5px;background:linear-gradient(to right,#2563eb,#22d3ee,#84cc16,#fbbf24,#ef4444);border-radius:1px"></span>'+
+          '<span style="color:#94a3b8">coil work</span>';
+        function _refreshErvLegend(){
+          var on = !!_saDropERVOn && !!(saDropGroup && saDropGroup.visible);
+          ervLegend.style.display = on ? 'inline-flex' : 'none';
+        }
+        // Hook into existing event surfaces:
+        //   1. ERV chip click already calls _renderErvChip + _buildSaDropGeometry;
+        //      wrap its listener to also refresh us.
+        //   2. Drops layer toggle click already adjusts the chip displays;
+        //      we ride along by patching the same path.
+        // Cheapest: poll-on-event style via a microtask after each click.
+        ervChip.addEventListener('click', function(){ setTimeout(_refreshErvLegend, 0); });
+        // tgEl click bubbles up from the Drops row too; refresh after any
+        // toggle inside the panel to catch the parent-layer hide path.
+        tgEl.addEventListener('click', function(){ setTimeout(_refreshErvLegend, 0); });
+        _refreshErvLegend();
+        tgEl.appendChild(ervLegend);
+
+        /* ----------------------------------------------------------------
+           ERV ROLLOUT PANEL — appended at the document level (not inside
+           tgEl) and absolutely positioned at the bottom-left corner of
+           the 3D root so it never crowds the toggle list.  Auto-shows
+           only when BOTH the Drops layer is visible AND ERV is ON, same
+           gate as the legend.  Renders annual rollup + sparkline + ROI
+           drawer + climate-zone preset + threshold + ghost ε + CSV. */
+        var rollout = document.createElement('div');
+        rollout.id = 'p3-erv-rollout';
+        rollout.style.cssText =
+          'position:absolute;left:14px;bottom:14px;z-index:18;display:none;'+
+          'min-width:320px;max-width:480px;background:rgba(15,23,42,.92);'+
+          'border:1px solid #22d3ee;border-radius:6px;padding:9px 11px 14px;'+
+          'font-family:\'Courier New\',monospace;font-size:9px;line-height:1.6;'+
+          'color:#cbd5e1;backdrop-filter:blur(14px);user-select:none';
+        /* Revival chip — shown only when the user has explicitly closed the
+           full panel via the ✕ button.  Reads the latest aggregate snapshot
+           so the dollar number stays current even while collapsed. */
+        var revive = document.createElement('div');
+        revive.id = 'p3-erv-revive';
+        revive.style.cssText =
+          'position:absolute;left:14px;bottom:14px;z-index:18;display:none;'+
+          'background:rgba(15,23,42,.92);border:1px solid #22d3ee;border-radius:4px;'+
+          'padding:5px 9px;cursor:pointer;font-family:\'Courier New\',monospace;'+
+          'font-size:9px;font-weight:900;color:#22d3ee;letter-spacing:.05em;'+
+          'text-transform:uppercase;backdrop-filter:blur(14px);user-select:none';
+        revive.title = 'Reopen ERV Rollout panel';
+        revive.addEventListener('click', function(){
+          _ervRolloutClosed = false;
+          _ervRolloutSave();
+          _renderRollout();
+        });
+        function _applyRolloutGeometry(){
+          /* If user has dragged the panel, switch from bottom/left anchoring
+             to top/left coordinates so the drag math stays in one frame.
+             Same coordinate flip is applied to the revival chip. */
+          var els = [rollout, revive];
+          els.forEach(function(el){
+            if (_ervRolloutPos && typeof _ervRolloutPos.x === 'number'){
+              el.style.left   = _ervRolloutPos.x + 'px';
+              el.style.top    = _ervRolloutPos.y + 'px';
+              el.style.right  = 'auto';
+              el.style.bottom = 'auto';
+            } else {
+              el.style.left   = '14px';
+              el.style.bottom = '14px';
+              el.style.top    = 'auto';
+              el.style.right  = 'auto';
+            }
+          });
+          if (_ervRolloutSize) {
+            if (typeof _ervRolloutSize.w === 'number') rollout.style.width  = _ervRolloutSize.w + 'px';
+            if (typeof _ervRolloutSize.h === 'number') rollout.style.height = _ervRolloutSize.h + 'px';
+          }
+        }
+        function _wireDragHandle(handle){
+          handle.style.cursor = 'move';
+          handle.addEventListener('mousedown', function(e){
+            /* Ignore drags that started on buttons/inputs inside the header
+               (e.g., the ✕ button or the CSV/ROI/PEAKS toggle row). */
+            if (e.target.closest('button, input, select, [data-erv-input], [data-erv-btn]')) return;
+            e.preventDefault();
+            var startX = e.clientX, startY = e.clientY;
+            var rect = rollout.getBoundingClientRect();
+            var rootRect = root.getBoundingClientRect();
+            var origX = rect.left - rootRect.left;
+            var origY = rect.top  - rootRect.top;
+            function onMove(ev){
+              var nx = Math.max(0, Math.min(rootRect.width  - 50, origX + (ev.clientX - startX)));
+              var ny = Math.max(0, Math.min(rootRect.height - 30, origY + (ev.clientY - startY)));
+              _ervRolloutPos = { x: nx, y: ny };
+              _applyRolloutGeometry();
+            }
+            function onUp(){
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup',   onUp);
+              _ervRolloutSave();
+            }
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup',   onUp);
+          });
+        }
+        /* Resize grip — bottom-right corner handle */
+        var grip = document.createElement('div');
+        grip.id = 'p3-erv-grip';
+        grip.style.cssText =
+          'position:absolute;right:2px;bottom:2px;width:12px;height:12px;'+
+          'cursor:nwse-resize;opacity:.6;z-index:1;'+
+          'background:linear-gradient(135deg,transparent 0%,transparent 40%,#22d3ee 40%,#22d3ee 45%,transparent 45%,transparent 55%,#22d3ee 55%,#22d3ee 60%,transparent 60%)';
+        grip.title = 'Drag to resize';
+        grip.addEventListener('mousedown', function(e){
+          e.preventDefault(); e.stopPropagation();
+          var startX = e.clientX, startY = e.clientY;
+          var rect = rollout.getBoundingClientRect();
+          var startW = rect.width, startH = rect.height;
+          function onMove(ev){
+            var nw = Math.max(260, Math.min(800, startW + (ev.clientX - startX)));
+            var nh = Math.max(120, Math.min(700, startH + (ev.clientY - startY)));
+            _ervRolloutSize = { w: nw, h: nh };
+            rollout.style.width  = nw + 'px';
+            rollout.style.height = nh + 'px';
+          }
+          function onUp(){
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup',   onUp);
+            _ervRolloutSave();
+          }
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup',   onUp);
+        });
+        function _ervCurrencyOpt(){
+          var z = _ervClimateZones.find(function(c){return c.id===_ervClimateZone;}) || _ervClimateZones[0];
+          return z.currency || '$';
+        }
+        function _ervPresetOptions(){
+          return _ervClimateZones.map(function(c){
+            var rate = (c.kwh==null) ? '' : (' \u2014 ' + (c.currency||'$') + c.kwh.toFixed(3) + '/kWh');
+            return '<option value="'+c.id+'"'+(c.id===_ervClimateZone?' selected':'')+'>'+c.name+rate+'</option>';
+          }).join('');
+        }
+        function _ervMonthlySpark(monthly, maxKWh){
+          /* Bars are pure CSS divs; cyan height-mapped.  No SVG needed. */
+          var names = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+          var max = maxKWh > 0.001 ? maxKWh : 1;
+          var bars = '';
+          for (var m=0;m<12;m++){
+            var h = monthly[m].kWh > 0 ? Math.max(2, Math.round(28 * monthly[m].kWh / max)) : 1;
+            var col = monthly[m].kWh > 0 ? '#22d3ee' : '#1e293b';
+            var ttl = names[m]+': '+monthly[m].kWh.toFixed(0)+' kWh, '+monthly[m].hours+' h';
+            bars += '<div title="'+ttl+'" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">'+
+              '<div style="width:100%;height:'+h+'px;background:'+col+';opacity:.9;border-radius:1px 1px 0 0"></div>'+
+              '<div style="font-size:7px;color:#64748b">'+names[m]+'</div>'+
+              '</div>';
+          }
+          return '<div style="display:flex;align-items:flex-end;gap:2px;height:34px;margin:4px 0 2px">'+bars+'</div>';
+        }
+        function _renderRollout(){
+          var on = !!_saDropERVOn && !!(saDropGroup && saDropGroup.visible);
+          /* When ERV gets toggled OFF, automatically clear the closed
+             flag so the next time the user enables ERV the full panel
+             pops back open instead of just the chip.  This means the
+             close button is "session-scoped" within a single ERV-on
+             session — predictable behaviour without surprise. */
+          if (!on && _ervRolloutClosed) {
+            _ervRolloutClosed = false;
+            _ervRolloutSave();
+          }
+          rollout.style.display = (on && !_ervRolloutClosed) ? 'block' : 'none';
+          revive.style.display  = (on &&  _ervRolloutClosed) ? 'inline-block' : 'none';
+          if (!on) {
+            /* Clear the dashboard badge by publishing a disabled snapshot. */
+            try {
+              var snapOff = { enabled:false, ts:Date.now() };
+              window.red5ErvSnapshot = snapOff;
+              localStorage.setItem('red5ErvSnapshot', JSON.stringify(snapOff));
+              window.dispatchEvent(new CustomEvent('red5-erv-rollout-update', {detail: snapOff}));
+            } catch(_) {}
+            return;
+          }
+          if (!weatherData || !weatherData.length) {
+            rollout.innerHTML = '<div id="p3-erv-header" style="display:flex;justify-content:space-between;align-items:center;cursor:move">'+
+              '<div style="color:#fbbf24;font-weight:900;text-transform:uppercase;letter-spacing:.08em">ERV Rollout</div>'+
+              '<button data-erv-btn="close" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 5px;font:inherit;font-size:9px;cursor:pointer;border-radius:2px">\u2715</button>'+
+              '</div>'+
+              '<div style="color:#94a3b8;margin-top:6px">Fetch weather data first to see annual savings.</div>';
+            rollout.querySelector('[data-erv-btn=close]').addEventListener('click', function(){ _ervRolloutClosed = true; _ervRolloutSave(); _renderRollout(); });
+            _wireDragHandle(rollout.querySelector('#p3-erv-header'));
+            _applyRolloutGeometry();
+            return;
+          }
+          var series = _ervSavingsSeries(_designerERVEps);
+          var agg    = _ervAggregate(series);
+          var roi    = _ervROI(agg.totalUSD);
+          /* Publish snapshot for the dashboard's PSYCH-tab AHU sidebar
+             badge (and any other consumer).  Written to BOTH the global
+             window object AND localStorage so a fresh dashboard page-load
+             can hydrate the badge before the 3D engine has mounted, and a
+             CustomEvent fires for in-page listeners. */
+          try {
+            var snap = {
+              enabled: true,
+              totalUSD: agg.totalUSD,
+              totalRtH: agg.totalRtH,
+              totalKWh: agg.totalKWh,
+              payback:  roi.payback,
+              npv:      roi.npv,
+              tariffKwh: _ervTariffKwh,
+              zone:     _ervClimateZone,
+              eps:      _designerERVEps,
+              ts:       Date.now()
+            };
+            window.red5ErvSnapshot = snap;
+            localStorage.setItem('red5ErvSnapshot', JSON.stringify(snap));
+            window.dispatchEvent(new CustomEvent('red5-erv-rollout-update', {detail: snap}));
+          } catch(_) {}
+          var ghostAgg = null;
+          if (_ervGhostEps > 0 && Math.abs(_ervGhostEps - _designerERVEps) > 0.005) {
+            var gS = _ervSavingsSeries(_ervGhostEps);
+            ghostAgg = _ervAggregate(gS);
+          }
+          var maxMonth = 0;
+          for (var m=0;m<12;m++) if (agg.monthly[m].kWh > maxMonth) maxMonth = agg.monthly[m].kWh;
+          var cur = _ervCurrencyOpt();
+
+          var paybackStr = isFinite(roi.payback)
+            ? (roi.payback < 99 ? roi.payback.toFixed(1)+' yr' : '\u003e 99 yr')
+            : 'never';
+          var npvStr = _ervFmtMoney(roi.npv);
+          var npvCol = roi.npv > 0 ? '#22d3ee' : '#fb7185';
+
+          var ghostHtml = '';
+          if (ghostAgg) {
+            var delta = ghostAgg.totalUSD - agg.totalUSD;
+            ghostHtml = '<div style="margin-top:5px;padding:4px 6px;background:rgba(168,85,247,.10);border-left:2px solid #a855f7;border-radius:2px;font-size:8px">'+
+              '<b style="color:#c084fc;letter-spacing:.05em">A/B \u03b5='+_ervGhostEps.toFixed(2)+':</b> '+
+              _ervFmtMoney(ghostAgg.totalUSD)+'/yr '+
+              '<span style="color:'+(delta>=0?'#22d3ee':'#fb7185')+'">('+(delta>=0?'+':'')+_ervFmtMoney(delta)+' vs \u03b5='+_designerERVEps.toFixed(2)+')</span>'+
+              '</div>';
+          }
+
+          var roiBody = '';
+          if (_ervRoiOpen) {
+            roiBody =
+              '<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #334155">'+
+                '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">'+
+                  '<label style="flex:1;color:#94a3b8">Install '+cur+'</label>'+
+                  '<input data-erv-input="install" type="number" value="'+_ervInstallCost+'" style="width:80px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+                '</div>'+
+                '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">'+
+                  '<label style="flex:1;color:#94a3b8">Maint/yr '+cur+'</label>'+
+                  '<input data-erv-input="maint" type="number" value="'+_ervMaintAnnual+'" style="width:80px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+                '</div>'+
+                '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">'+
+                  '<label style="flex:1;color:#94a3b8">Tariff '+cur+'/kWh</label>'+
+                  '<input data-erv-input="tariff" type="number" step="0.001" value="'+_ervTariffKwh.toFixed(3)+'" style="width:80px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+                '</div>'+
+                '<div style="display:flex;gap:10px;margin-top:5px;font-size:9px">'+
+                  '<div>Payback <b style="color:#fbbf24">'+paybackStr+'</b></div>'+
+                  '<div>10-yr NPV <b style="color:'+npvCol+'">'+npvStr+'</b></div>'+
+                '</div>'+
+              '</div>';
+          }
+
+          rollout.innerHTML =
+            '<div id="p3-erv-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;cursor:move">'+
+              '<div style="color:#22d3ee;font-weight:900;text-transform:uppercase;letter-spacing:.10em;font-size:9px">ERV Rollout</div>'+
+              '<div style="display:flex;gap:4px">'+
+                '<button data-erv-btn="csv"     style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="Download hourly CSV">CSV</button>'+
+                '<button data-erv-btn="roi"     style="background:transparent;border:1px solid '+(_ervRoiOpen?'#fbbf24':'#475569')+';color:'+(_ervRoiOpen?'#fbbf24':'#94a3b8')+';padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="ROI inputs">ROI '+(_ervRoiOpen?'\u25BC':'\u25B6')+'</button>'+
+                '<button data-erv-btn="peaks"   style="background:transparent;border:1px solid '+(_ervShowPeaks?'#22d3ee':'#475569')+';color:'+(_ervShowPeaks?'#22d3ee':'#94a3b8')+';padding:1px 5px;font:inherit;font-size:7px;cursor:pointer;border-radius:2px" title="Highlight top-3 peak hours">PEAKS</button>'+
+                '<button data-erv-btn="close"   style="background:transparent;border:1px solid #475569;color:#fb7185;padding:1px 5px;font:inherit;font-size:9px;cursor:pointer;border-radius:2px" title="Close panel (toggle ERV off-then-on to reopen)">\u2715</button>'+
+              '</div>'+
+            '</div>'+
+            /* Climate-zone preset */
+            '<div style="display:flex;gap:5px;align-items:center;font-size:8px;margin-bottom:3px">'+
+              '<span style="color:#64748b">Region</span>'+
+              '<select data-erv-input="zone" style="flex:1;background:#020617;border:1px solid #334155;color:#cbd5e1;font:inherit;padding:1px 3px;border-radius:2px">'+
+                _ervPresetOptions()+
+              '</select>'+
+            '</div>'+
+            /* Main rollup */
+            '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px">'+
+              '<div><b style="color:#22d3ee;font-size:13px">'+_ervFmtMoney(agg.totalUSD)+'</b><span style="color:#94a3b8"> /yr saved</span></div>'+
+              '<div style="color:#94a3b8;font-size:8px">'+_ervFmtRtH(agg.totalRtH)+' &middot; '+agg.totalKWh.toFixed(0)+' kWh</div>'+
+            '</div>'+
+            ghostHtml+
+            /* Monthly sparkline */
+            _ervMonthlySpark(agg.monthly, maxMonth)+
+            /* Threshold + ghost epsilon */
+            '<div style="display:flex;gap:8px;align-items:center;margin-top:3px;font-size:8px">'+
+              '<span style="color:#64748b">Min kJ/kg</span>'+
+              '<input data-erv-input="minKJ" type="range" min="0" max="20" step="0.5" value="'+_ervMinKJkg+'" style="flex:1;accent-color:#22d3ee"/>'+
+              '<span style="color:#cbd5e1;min-width:24px;text-align:right" data-erv-display="minKJ">'+_ervMinKJkg.toFixed(1)+'</span>'+
+            '</div>'+
+            '<div style="display:flex;gap:8px;align-items:center;font-size:8px">'+
+              '<span style="color:#64748b">A/B ghost \u03b5</span>'+
+              '<input data-erv-input="ghostEps" type="number" min="0" max="0.95" step="0.05" value="'+_ervGhostEps.toFixed(2)+'" style="width:50px;background:#020617;border:1px solid #334155;color:#e2e8f0;padding:1px 4px;font:inherit;border-radius:2px"/>'+
+              '<span style="color:#64748b;font-size:7px">(0 = off)</span>'+
+            '</div>'+
+            roiBody;
+
+          /* Wire input handlers */
+          rollout.querySelectorAll('[data-erv-input]').forEach(function(el){
+            var key = el.getAttribute('data-erv-input');
+            var handler = function(){
+              var v = el.value;
+              if (key === 'zone') {
+                _ervClimateZone = v;
+                var z = _ervClimateZones.find(function(c){return c.id===v;});
+                if (z && z.kwh != null) _ervTariffKwh = z.kwh;
+              } else if (key === 'tariff') {
+                _ervTariffKwh = parseFloat(v) || 0;
+                _ervClimateZone = 'CUSTOM';
+              } else if (key === 'install')  _ervInstallCost = parseFloat(v) || 0;
+              else if (key === 'maint')      _ervMaintAnnual = parseFloat(v) || 0;
+              else if (key === 'minKJ')      { _ervMinKJkg = parseFloat(v) || 0;
+                                                var disp = rollout.querySelector('[data-erv-display=minKJ]');
+                                                if (disp) disp.textContent = _ervMinKJkg.toFixed(1);
+                                                _buildSaDropGeometry(); }
+              else if (key === 'ghostEps')   { _ervGhostEps = Math.max(0, Math.min(0.95, parseFloat(v) || 0));
+                                                _buildSaDropGeometry(); }
+              _ervRolloutSave();
+              if (key === 'minKJ') return; /* avoid full re-render on drag */
+              _renderRollout();
+            };
+            el.addEventListener('change', handler);
+            if (el.tagName === 'INPUT' && el.type === 'range') el.addEventListener('input', handler);
+          });
+          /* Wire buttons */
+          rollout.querySelectorAll('[data-erv-btn]').forEach(function(b){
+            var k = b.getAttribute('data-erv-btn');
+            b.addEventListener('click', function(){
+              if (k === 'roi')   { _ervRoiOpen = !_ervRoiOpen; _ervRolloutSave(); _renderRollout(); }
+              else if (k === 'peaks') { _ervShowPeaks = !_ervShowPeaks; _ervRolloutSave(); _buildSaDropGeometry(); _renderRollout(); }
+              else if (k === 'csv')   { _ervExportCsv(); }
+              else if (k === 'close') { _ervRolloutClosed = true; _ervRolloutSave(); _renderRollout(); }
+            });
+          });
+          /* Drag + resize.  Attach AFTER innerHTML rewrite (handle nodes
+             are freshly created on each render).  Position/size persist
+             across renders + page-loads via _ervRolloutSave. */
+          var hdr = rollout.querySelector('#p3-erv-header');
+          if (hdr) _wireDragHandle(hdr);
+          /* Re-append the grip after every innerHTML refresh wipes it. */
+          if (!rollout.querySelector('#p3-erv-grip')) rollout.appendChild(grip);
+          _applyRolloutGeometry();
+          /* Update revive chip text with the current savings number. */
+          revive.innerHTML = '<span style="opacity:.6;margin-right:5px">\u21BB</span>ERV '+
+            _ervFmtMoney(agg.totalUSD).replace('$','$ ') + '/yr';
+        }
+        /* CSV export: hourly rows for the current epsilon. */
+        function _ervExportCsv(){
+          var series = _ervSavingsSeries(_designerERVEps);
+          if (!series.length) return;
+          var raT = _designerRA_T, raW = getW(_designerRA_T, _designerRA_RH);
+          var rows = ['date_iso,OA_T_C,OA_RH_pct,OA_W_gkg,OA_prime_T_C,OA_prime_W_gkg,h_OA_kJkg,h_OAprime_kJkg,dh_saved_kJkg,RTh_saved,kWh_saved,USD_saved'];
+          var eps = _designerERVEps;
+          for (var i=0;i<series.length;i++){
+            var s = series[i], p = weatherData[s.idx];
+            var inT = p.t + eps * (raT - p.t);
+            var inW = p.w + eps * (raW - p.w);
+            var h_oa  = enthalpy(p.t, p.w);
+            var h_oap = enthalpy(inT, inW);
+            rows.push([
+              p.ts, p.t.toFixed(2), p.rh.toFixed(1), (p.w*1000).toFixed(3),
+              inT.toFixed(2), (inW*1000).toFixed(3),
+              h_oa.toFixed(2), h_oap.toFixed(2), s.dh_kJkg.toFixed(3),
+              s.rtH.toFixed(3), s.kWh.toFixed(3), (s.kWh*_ervTariffKwh).toFixed(3)
+            ].join(','));
+          }
+          var blob = new Blob([rows.join('\n')], {type:'text/csv'});
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'erv_savings_eps' + _designerERVEps.toFixed(2) + '.csv';
+          document.body.appendChild(a); a.click();
+          setTimeout(function(){ try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch(_){} }, 200);
+        }
+        /* Re-render the rollout whenever the legend would refresh. */
+        var _origRefreshLegend = _refreshErvLegend;
+        _refreshErvLegend = function(){ _origRefreshLegend(); _renderRollout(); };
+        root.appendChild(rollout);
+        root.appendChild(revive);
+        /* Hook re-render to weather refresh + designer-mode edits.  Both
+           events already exist for the [USE LIVE OA] button. */
+        window.addEventListener('red5-weather-loaded', function(){ if (rollout.style.display !== 'none') _renderRollout(); });
+        _renderRollout();
       }
     });
 
@@ -894,6 +2007,17 @@ global.initPsy3D = function(container, opts){
           var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display = (c[0]==='front') ? 'block' : 'none';
           // Monthly \u00d7 Sites multi-city comparison only in T\u00d7Time.
           var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display = (c[0]==='front') ? 'block' : 'none';
+          // Designer Mode is psychrometric-chart specific (OA->MA->SA on the
+          // T-vs-W canvas), hide it in time-series modes.
+          var dmBtnHide=$('#p3-btn-designer'); if(dmBtnHide) dmBtnHide.style.display='none';
+          var dCfgHide =$('#p3-designer-cfg'); if(dCfgHide)  dCfgHide.style.display='none';
+          /* X-Y-only buttons: band-source toggle + band-shift strip +
+             both insight popups.  Hide them in time-series modes since
+             they overlap with the BACK TO 3D button at the right side
+             of the header.  Re-shown in the X-Y Detail handler. */
+          ['p3-btn-band-src','p3-band-help','p3-design-help','p3-band-delta'].forEach(function(id){
+            var el=$('#'+id); if(el) el.style.display='none';
+          });
           // Strategy-overlay toggles only valid inside Monthly \u00d7 Sites mode.
           ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
             var el=$('#'+id); if(el) el.style.display='none';
@@ -923,6 +2047,15 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
+      var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='block';
+      var dCfgSh=$('#p3-designer-cfg'); if(dCfgSh) dCfgSh.style.display = _designerMode ? 'block' : 'none';
+      /* Re-show X-Y-only buttons; band-src + band-delta only visible when
+         ERV is on (their own toggles handle that), so we set display:'block'
+         and let their internal refresh handlers gate visibility. */
+      var bsSrcSh = $('#p3-btn-band-src'); if (bsSrcSh) bsSrcSh.style.display = 'block';
+      var bhSh    = $('#p3-band-help');    if (bhSh)    bhSh.style.display    = 'block';
+      var dhSh    = $('#p3-design-help');  if (dhSh)    dhSh.style.display    = 'block';
+      var bdSh    = $('#p3-band-delta');   if (bdSh)    bdSh.style.display    = _saDropERVOn ? 'flex' : 'none';
       ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
@@ -941,6 +2074,12 @@ global.initPsy3D = function(container, opts){
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
+      var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='none';
+      var dCfgSh=$('#p3-designer-cfg'); if(dCfgSh) dCfgSh.style.display='none';
+      /* Also hide X-Y-only auxiliary buttons in 3D view. */
+      ['p3-btn-band-src','p3-band-help','p3-design-help','p3-band-delta'].forEach(function(id){
+        var el=$('#'+id); if(el) el.style.display='none';
+      });
       ['p3-btn-strat-dd','p3-strat-dd-panel','p3-btn-ms-oa','p3-btn-sites-dd','p3-ms-optcfg','p3-ms-modes','p3-ms-costcfg'].forEach(function(id){
         var el=$('#'+id); if(el) el.style.display='none';
       });
@@ -958,6 +2097,454 @@ global.initPsy3D = function(container, opts){
       pmBtn.textContent='Mode: '+labels[projMode];
       render2DChart();
     };
+
+    /* Band-source toggle chip — sits next to the Mode button.  Toggles
+       whether B1-B10 bucketing uses raw OA (default) or post-wheel OA'
+       (wheel-aware controller).  Only visible/clickable when ERV is on,
+       otherwise the toggle is a no-op (greyed). */
+    var bsBtn = document.createElement('button');
+    bsBtn.id = 'p3-btn-band-src';
+    function _refreshBandSrcBtn(){
+      var ervOn = !!_saDropERVOn;
+      var oap = !!_bandSourceOaP;
+      bsBtn.textContent = 'Band src: ' + (ervOn && oap ? "OA'" : 'OA');
+      var col = !ervOn ? '#475569' : (oap ? '#22d3ee' : '#94a3b8');
+      bsBtn.style.cssText =
+        'position:absolute;top:12px;right:300px;z-index:51;background:rgba(15,23,42,.92);'+
+        'border:1px solid '+col+';color:'+col+';padding:6px 14px;border-radius:6px;'+
+        'font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;'+
+        'cursor:'+(ervOn?'pointer':'not-allowed')+';font-family:inherit;backdrop-filter:blur(14px);'+
+        'opacity:'+(ervOn?'1':'.45');
+      bsBtn.title = ervOn
+        ? "Bucket each hour into a B1-B10 band by RAW outdoor air (OA, default) OR by post-wheel OA' (wheel-aware controller picks less-aggressive SA targets that the wheel makes possible)."
+        : 'Enable ERV in the 3D Drops layer to compare OA vs OA\u2032 band bucketing.';
+    }
+    _refreshBandSrcBtn();
+    bsBtn.onclick = function(){
+      if (!_saDropERVOn) return;
+      _bandSourceOaP = !_bandSourceOaP;
+      try { localStorage.setItem('red5BandSourceOaP', _bandSourceOaP ? '1' : '0'); } catch(_) {}
+      _refreshBandSrcBtn();
+      _refreshBandDelta();
+      render2DChart();
+      _buildSaDropGeometry();   /* reflect band-source change in 3D drops too */
+    };
+    /* Track ERV state changes so the chip enables/disables itself in
+       real time -- piggy-back on the existing red5-erv-rollout-update
+       event the rollout panel already dispatches. */
+    window.addEventListener('red5-erv-rollout-update', function(){ _refreshBandSrcBtn(); _refreshBandDelta(); });
+    var overlayEl = $('#p3-overlay2d');
+    if (overlayEl) overlayEl.appendChild(bsBtn);
+
+    /* Per-band hour-count delta strip.  10 cells laid out horizontally
+       below the Mode/Band-src chip row, one per band.  Each cell shows:
+         - Band id label (color-coded)
+         - Two side-by-side bars: OA hours (faded) vs OA' hours (full color)
+         - Δ count below the bars (green if gained hours, amber if lost)
+       Visible only when ERV is on -- without the wheel there is no Δ. */
+    var deltaStrip = document.createElement('div');
+    deltaStrip.id = 'p3-band-delta';
+    deltaStrip.style.cssText =
+      'position:absolute;top:48px;right:8px;z-index:51;display:none;'+
+      'background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:6px;'+
+      'padding:6px 8px;font-family:\'Courier New\',monospace;color:#cbd5e1;'+
+      'backdrop-filter:blur(14px);user-select:none';
+    deltaStrip.title = 'B1-B10 hour-count: raw OA bucketing vs OA\u2032 (post-wheel) bucketing.\n\u0394 = how many hours move into/out of each band when the wheel is on.\n\nNote: negative \u0394 is not a loss -- hours are re-routed, not subtracted.\nB1-B4 losses = winter hours pre-heated into B5 (right-size your boiler).\nB7-B10 losses = summer hours pre-cooled into B5 (right-size your chiller).\nB5 gain = your building now operates in "comfort" most of the year (tune PI loops for B5).\n\nSee erv_band_shift_insight.md for the full walkthrough.';
+    _refreshBandDelta = function(){
+      var on = !!_saDropERVOn;
+      deltaStrip.style.display = on ? 'flex' : 'none';
+      if (!on) return;
+      var hist = _bandHourDelta();
+      if (!hist) { deltaStrip.innerHTML = '<span style="color:#94a3b8;font-size:8px">Fetch weather to see band shifts.</span>'; return; }
+      var BANDS = ['B1','B2','B3','B4','B5','B6','B7','B8','B9','B10'];
+      var COLOR = {B1:'#1e40af',B2:'#2563eb',B3:'#0ea5e9',B4:'#06b6d4',B5:'#10b981',
+                   B6:'#84cc16',B7:'#facc15',B8:'#fb923c',B9:'#f97316',B10:'#ea580c'};
+      /* Find max count across both columns to scale the bar heights. */
+      var maxH = 1;
+      BANDS.forEach(function(b){ maxH = Math.max(maxH, hist[b].oa, hist[b].oap); });
+      /* Include history extremes in maxH so ghost outlines aren't clipped. */
+      if (_bandHistoryHist) BANDS.forEach(function(b){ maxH = Math.max(maxH, _bandHistoryHist[b].oa, _bandHistoryHist[b].oap); });
+      /* Climate-drift headline: when comparison mode is on, compute the
+         top movers (current year minus historical baseline, by raw OA
+         hour-count) and surface the 3 biggest absolute changes in a
+         single tooltip-able line above the per-band cells.  Lets the
+         operator answer "did my climate actually change?" without
+         eyeballing 10 ghost-outline bars.  Sign convention:
+           delta > 0  -> current year has MORE hours in this band
+                         (climate moving INTO the band) -> up arrow + green
+           delta < 0  -> current year has FEWER hours
+                         (climate moving OUT of the band) -> down arrow + amber
+      */
+      var headlineHtml = '';
+      if (_bandHistoryHist && _bandHistoryMode !== 'off' && !_bandHistoryLoading) {
+        var drifts = BANDS.map(function(b){
+          var d = (hist[b].oa || 0) - (_bandHistoryHist[b].oa || 0);
+          return { band: b, drift: d, abs: Math.abs(d) };
+        }).filter(function(x){ return x.abs >= 2; });
+        drifts.sort(function(a,b){ return b.abs - a.abs; });
+        var top = drifts.slice(0, 3);
+        if (top.length) {
+          var basisLabel = _bandHistoryMode === '1y' ? 'vs prior year' : 'vs 5\u2011year avg';
+          var fullTooltip = 'Climate drift ' + basisLabel + ': '
+            + drifts.map(function(t){
+                var sign = t.drift > 0 ? '+' : '';
+                return t.band + ' ' + sign + t.drift + 'h';
+              }).join(', ')
+            + '. Positive = current year has more hours in that band than the historical baseline.';
+          var pillsHtml = top.map(function(t){
+            var up = t.drift > 0;
+            var arrow = up ? '\u2191' : '\u2193';
+            var dCol  = up ? '#a3e635' : '#fb7185';
+            var sign  = up ? '+' : '';
+            return '<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 4px;border-radius:3px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25)">'
+              + '<span style="color:'+COLOR[t.band]+';font-weight:900">'+t.band+'</span>'
+              + '<span style="color:'+dCol+';font-weight:900">'+arrow+sign+t.drift+'h</span>'
+              + '</span>';
+          }).join(' ');
+          headlineHtml =
+            '<div data-erv-headline="climate-drift" title="' + fullTooltip.replace(/"/g, '&quot;') + '" '
+              + 'style="display:flex;align-items:center;gap:6px;padding:3px 4px 4px 4px;margin:-2px -4px 2px -4px;'
+              + 'border-bottom:1px dashed rgba(168,85,247,0.35);font-size:8px;line-height:1.1">'
+              + '<span style="color:#a855f7;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;font-size:7px;white-space:nowrap">Climate drift</span>'
+              + '<span style="display:flex;gap:3px;flex-wrap:wrap">' + pillsHtml + '</span>'
+              + '<span style="color:#64748b;font-size:7px;margin-left:auto;white-space:nowrap;font-style:italic">' + basisLabel + '</span>'
+            + '</div>';
+        }
+      }
+      /* Switch the strip to a column layout so the headline can sit on
+         top and the existing bands row stays as a flex row underneath. */
+      deltaStrip.style.flexDirection = 'column';
+      deltaStrip.style.gap = '0';
+      deltaStrip.style.alignItems = 'stretch';
+      /* Comparison-mode toggle button: cycles off -> 1y -> 5y -> off. */
+      var histLabel = (_bandHistoryMode === 'off')
+        ? 'vs prior'
+        : (_bandHistoryMode === '1y' ? 'vs 1y' : 'vs 5y\u2009avg');
+      var histBorder = (_bandHistoryMode === 'off') ? '#475569' : '#a855f7';
+      var histColor  = (_bandHistoryMode === 'off') ? '#94a3b8' : '#c084fc';
+      if (_bandHistoryLoading) { histLabel = 'loading\u2026'; histColor = '#fbbf24'; histBorder = '#fbbf24'; }
+      var html =
+        '<div style="display:flex;flex-direction:column;align-items:stretch;gap:3px;align-self:stretch;justify-content:space-between">'+
+          '<div style="font-size:7px;color:#64748b;letter-spacing:.1em;text-transform:uppercase;font-weight:900;text-align:center">B-shift</div>'+
+          '<button data-erv-btn="band-history" title="Cycle: off \u2192 vs prior year \u2192 vs 5-year average. Compares this year\u2019s wheel impact to historical climate." style="background:transparent;border:1px solid '+histBorder+';color:'+histColor+';padding:1px 4px;font:inherit;font-size:7px;font-weight:900;cursor:pointer;border-radius:2px;letter-spacing:.03em">'+histLabel+'</button>'+
+        '</div>';
+      BANDS.forEach(function(b){
+        var oa  = hist[b].oa;
+        var oap = hist[b].oap;
+        var dH  = oap - oa;
+        var hOa  = oa  > 0 ? Math.max(2, Math.round(34 * oa  / maxH)) : 1;
+        var hOap = oap > 0 ? Math.max(2, Math.round(34 * oap / maxH)) : 1;
+        var col = COLOR[b];
+        var dCol = dH > 0 ? '#a3e635' : (dH < 0 ? '#fb7185' : '#64748b');
+        var dSign = dH > 0 ? '+' : '';
+        var ttl = b + ': OA ' + oa + 'h \u2192 OA\u2032 ' + oap + 'h  (\u0394 ' + dSign + dH + 'h)';
+        /* If history loaded, overlay ghost outline bars showing the
+           historical OA count.  Single thin purple-bordered outline
+           anchored at the same baseline so the operator sees how many
+           hours used to fall in this band historically vs this year. */
+        var ghost = '';
+        if (_bandHistoryHist && _bandHistoryMode !== 'off') {
+          var hh = _bandHistoryHist[b];
+          var ghOa  = hh.oa  > 0 ? Math.max(2, Math.round(34 * hh.oa  / maxH)) : 1;
+          var ghOap = hh.oap > 0 ? Math.max(2, Math.round(34 * hh.oap / maxH)) : 1;
+          ghost = '<div style="position:absolute;left:0;bottom:0;display:flex;gap:1px;align-items:flex-end;height:36px;pointer-events:none">'+
+            '<div style="width:6px;height:'+ghOa +'px;border:1px dashed #a855f7;border-bottom:none;box-sizing:border-box;opacity:.85"></div>'+
+            '<div style="width:8px;height:'+ghOap+'px;border:1px dashed #a855f7;border-bottom:none;box-sizing:border-box;opacity:.85"></div>'+
+          '</div>';
+          var driftOa = hh.oa  - oa;
+          var driftSign = driftOa > 0 ? '+' : '';
+          ttl += '  | historical OA '+hh.oa+'h (drift '+driftSign+driftOa+'h)';
+        }
+        html += '<div title="'+ttl+'" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:34px">'+
+          '<div style="position:relative;display:flex;gap:1px;align-items:flex-end;height:36px">'+
+            ghost+
+            '<div style="width:6px;height:'+hOa +'px;background:'+col+';opacity:.35;border-radius:1px 0 0 0"></div>'+
+            '<div style="width:8px;height:'+hOap+'px;background:'+col+';opacity:.95;border-radius:0 1px 0 0"></div>'+
+          '</div>'+
+          '<div style="font-size:7px;font-weight:900;color:'+col+';letter-spacing:.02em">'+b+'</div>'+
+          '<div style="font-size:7px;color:'+dCol+';font-weight:900;line-height:1">'+dSign+dH+'</div>'+
+        '</div>';
+      });
+      /* Show '?' bucket if any hours fell out of all bands. */
+      if (hist['?'].oa || hist['?'].oap) {
+        html += '<div title="Hours not classified by any band (rare edges)" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:30px">'+
+          '<div style="display:flex;gap:1px;align-items:flex-end;height:36px">'+
+            '<div style="width:6px;height:'+(hist['?'].oa  > 0 ? Math.max(2, Math.round(34*hist['?'].oa /maxH)) : 1)+'px;background:#475569;opacity:.35"></div>'+
+            '<div style="width:8px;height:'+(hist['?'].oap > 0 ? Math.max(2, Math.round(34*hist['?'].oap/maxH)) : 1)+'px;background:#475569;opacity:.95"></div>'+
+          '</div>'+
+          '<div style="font-size:7px;font-weight:900;color:#64748b">?</div>'+
+          '<div style="font-size:7px;color:#64748b;line-height:1">'+(hist['?'].oap-hist['?'].oa)+'</div>'+
+        '</div>';
+      }
+      deltaStrip.innerHTML =
+        headlineHtml +
+        '<div data-erv-row="bands" style="display:flex;gap:4px;align-items:flex-end">' + html + '</div>';
+      /* Wire the history toggle button. */
+      var hBtn = deltaStrip.querySelector('[data-erv-btn=band-history]');
+      if (hBtn) hBtn.addEventListener('click', function(){
+        var order = ['off','1y','5y'];
+        _bandHistoryMode = order[(order.indexOf(_bandHistoryMode)+1) % order.length];
+        try { localStorage.setItem('red5BandHistoryMode', _bandHistoryMode); } catch(_) {}
+        _loadBandHistory(_bandHistoryMode, function(){ _refreshBandDelta(); });
+      });
+    };
+    /* If a non-default history mode was persisted, kick off the fetch
+       on init so the ghost bars appear after first weather load. */
+    if (_bandHistoryMode !== 'off') {
+      window.addEventListener('red5-weather-loaded', function(){
+        _loadBandHistory(_bandHistoryMode, function(){ _refreshBandDelta(); });
+      });
+    }
+    _refreshBandDelta();
+    if (overlayEl) overlayEl.appendChild(deltaStrip);
+    /* Refresh on weather load (more hours = new histogram). */
+    window.addEventListener('red5-weather-loaded', _refreshBandDelta);
+
+    /* ----------------------------------------------------------------
+       B-SHIFT INSIGHT POPUP — `?` button on the strip opens a draggable
+       overlay with the full erv_band_shift_insight.md walkthrough so the
+       explanation is one click away during owner walkthroughs instead
+       of buried in the archive folder.  Position + closed state
+       persisted under red5BandInsightState.
+
+       Implemented as a generic factory _createInsightPopup(opts) so the
+       same draggable + EN/한국어 toggle + markdown renderer can host
+       multiple in-app docs (band-shift insight, psych-design workflow,
+       future additions) without code duplication. */
+    function _createInsightPopup(opts){
+      /* opts: {
+           btnId, btnTitle, btnStyle, popupId,
+           docEN, docKO,
+           titleEN, titleKO,
+           storageKey  (for pos+closed),
+           storageLang (for explicit language),
+           anchorEl    (where to attach the ? button; defaults to overlayEl)
+         } */
+      var anchor = opts.anchorEl || overlayEl;
+      if (!anchor) return { button: null, popup: null, show: function(){} };
+      var _pos = null, _closed = true;
+      try {
+        var _s = JSON.parse(localStorage.getItem(opts.storageKey) || '{}');
+        if (_s && _s.pos && typeof _s.pos.x === 'number') _pos = _s.pos;
+      } catch(_) {}
+      var _loaded = {};   /* {en, ko} markdown text cache */
+      var _lang = (function(){
+        try { var l = window.getLang ? window.getLang() : 'en'; return l === 'ko' ? 'ko' : 'en'; } catch(_) { return 'en'; }
+      })();
+      try {
+        var _il = localStorage.getItem(opts.storageLang);
+        if (_il === 'ko' || _il === 'en') _lang = _il;
+      } catch(_) {}
+
+      var btn = document.createElement('button');
+      btn.id = opts.btnId;
+      btn.textContent = '?';
+      btn.title = opts.btnTitle;
+      btn.style.cssText = opts.btnStyle;
+
+      var popup = document.createElement('div');
+      popup.id = opts.popupId;
+      popup.style.cssText =
+        'position:absolute;left:80px;top:60px;width:560px;height:480px;z-index:80;display:none;'+
+        'background:rgba(15,23,42,.96);border:1px solid #60a5fa;border-radius:8px;'+
+        'box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(16px);'+
+        'font-family:\'Courier New\',monospace;color:#cbd5e1;overflow:hidden;'+
+        'flex-direction:column';
+
+      function show(){
+        popup.style.display = 'flex';
+        if (_pos) { popup.style.left = _pos.x+'px'; popup.style.top = _pos.y+'px'; }
+        try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:false})); } catch(_) {}
+        _fetch();
+      }
+      function paint(){
+        var md = _loaded[_lang];
+        var loadingLabel = _lang === 'ko' ? '\ub85c\ub529 \uc911\u2026' : 'Loading\u2026';
+        var titleLabel   = _lang === 'ko' ? opts.titleKO : opts.titleEN;
+        var body = md ? _renderMd(md) :
+          '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
+        var langChip =
+          '<div data-lang-toggle="1" style="display:inline-flex;border:1px solid #475569;border-radius:3px;overflow:hidden;font-size:8px;font-weight:900;letter-spacing:.05em;user-select:none">'+
+            '<span data-set-lang="en" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='en'?'#60a5fa':'transparent')+';color:'+(_lang==='en'?'#0f172a':'#94a3b8')+'">EN</span>'+
+            '<span data-set-lang="ko" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='ko'?'#60a5fa':'transparent')+';color:'+(_lang==='ko'?'#0f172a':'#94a3b8')+'">\ud55c\uad6d\uc5b4</span>'+
+          '</div>';
+        popup.innerHTML =
+          '<div data-hdr="1" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
+            '<div style="display:flex;align-items:center;gap:10px">'+
+              '<div style="color:#60a5fa;font-weight:900;font-size:10px;letter-spacing:.08em;text-transform:uppercase">'+titleLabel+'</div>'+
+              langChip+
+            '</div>'+
+            '<button data-close="1" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 6px;font:900 11px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
+          '</div>'+
+          '<div style="flex:1;overflow-y:auto;padding:8px 14px;color:#cbd5e1">'+body+'</div>';
+        var hdr = popup.querySelector('[data-hdr]');
+        if (hdr) hdr.addEventListener('mousedown', function(e){
+          if (e.target.closest('button, [data-lang-toggle], [data-set-lang]')) return;
+          e.preventDefault();
+          var startX = e.clientX, startY = e.clientY;
+          var rect = popup.getBoundingClientRect();
+          var rootRect = root.getBoundingClientRect();
+          var origX = rect.left - rootRect.left;
+          var origY = rect.top  - rootRect.top;
+          function onMove(ev){
+            var nx = Math.max(0, Math.min(rootRect.width - 80, origX + (ev.clientX - startX)));
+            var ny = Math.max(0, Math.min(rootRect.height - 40, origY + (ev.clientY - startY)));
+            _pos = {x:nx, y:ny};
+            popup.style.left = nx+'px';
+            popup.style.top  = ny+'px';
+          }
+          function onUp(){
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup',   onUp);
+            try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:false})); } catch(_) {}
+          }
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup',   onUp);
+        });
+        var closeBtn = popup.querySelector('[data-close]');
+        if (closeBtn) closeBtn.addEventListener('click', function(){
+          popup.style.display = 'none';
+          try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:true})); } catch(_) {}
+        });
+        popup.querySelectorAll('[data-set-lang]').forEach(function(el){
+          el.addEventListener('click', function(){
+            var lang = el.getAttribute('data-set-lang');
+            if (lang === _lang) return;
+            _lang = lang;
+            try { localStorage.setItem(opts.storageLang, lang); } catch(_) {}
+            _fetch();
+          });
+        });
+      }
+      function _fetch(){
+        if (_loaded[_lang]) { paint(); return; }
+        paint(); /* loading state */
+        /* Cache-bust to bypass any stale 404 the browser may have
+           cached from an upload race.  Same hardening as docs_index.js. */
+        var base = _lang === 'ko' ? opts.docKO : opts.docEN;
+        var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
+        fetch(url, {cache:'no-store'})
+          .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
+          .then(function(txt){ _loaded[_lang] = txt; paint(); })
+          .catch(function(err){
+            /* Don't cache the error; show inline retry hint instead. */
+            var msg_en = '# Unable to load doc\n\nFile fetch failed (' + err + ').\n\n*Reopen the popup or hard-refresh the page (Ctrl+Shift+R) to retry.*';
+            var msg_ko = '# \ubb38\uc11c \ub85c\ub4dc \uc2e4\ud328\n\n\ud30c\uc77c \uac00\uc838\uc624\uae30 \uc2e4\ud328 (' + err + ').\n\n*\ud31d\uc5c5\uc744 \ub2e4\uc2dc \uc5f4\uac70\ub098 \ud558\ub4dc \uc0c8\ub85c\uace0\uce68 (Ctrl+Shift+R) \ud574\uc8fc\uc138\uc694.*';
+            var bodyEl = popup.querySelector('div[style*="overflow-y:auto"]');
+            if (bodyEl) bodyEl.innerHTML = _renderMd(_lang === 'ko' ? msg_ko : msg_en);
+          });
+      }
+      btn.addEventListener('click', show);
+      window.addEventListener('langchange', function(){
+        try {
+          var newLang = window.getLang ? window.getLang() : 'en';
+          newLang = (newLang === 'ko') ? 'ko' : 'en';
+          var explicit = localStorage.getItem(opts.storageLang);
+          if (explicit) return;
+          if (newLang === _lang) return;
+          _lang = newLang;
+          if (popup.style.display !== 'none') show();
+        } catch(_) {}
+      });
+      anchor.appendChild(btn);
+      anchor.appendChild(popup);
+      return { button: btn, popup: popup, show: show };
+    }
+
+    /* Band-shift insight `?` button (top-right of overlay, near B-shift strip). */
+    _createInsightPopup({
+      btnId:       'p3-band-help',
+      btnTitle:    'Open the B-shift insight walkthrough (explains what "losing hours" means).',
+      btnStyle:    'position:absolute;top:22px;right:8px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #60a5fa;color:#60a5fa;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px',
+      popupId:     'p3-band-help-popup',
+      docEN:       '/assets/erv_band_shift_insight.md',
+      docKO:       '/assets/erv_band_shift_insight.ko.md',
+      titleEN:     'B-Shift Insight',
+      titleKO:     'B-\uc2dc\ud504\ud2b8 \ud1b5\ucc30',
+      storageKey:  'red5BandInsightState',
+      storageLang: 'red5BandInsightLang'
+    });
+    /* Psych-design-workflow `?` button — anchored next to the
+       `+ Designer Mode` button (top:46 left:435).  Visibility is driven
+       by the front/side/X-Y/Back-to-3D handlers higher in setupControls,
+       not by a polling interval (cheaper + race-free). */
+    var designHelp = _createInsightPopup({
+      btnId:       'p3-design-help',
+      btnTitle:    'Open the psychrometric-design workflow walkthrough.',
+      btnStyle:    'position:absolute;top:46px;left:435px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #f59e0b;color:#f59e0b;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px;display:none',
+      popupId:     'p3-design-help-popup',
+      docEN:       '/assets/psychrometric_design_workflow.md',
+      docKO:       '/assets/psychrometric_design_workflow.ko.md',
+      titleEN:     'Psych Design Workflow',
+      titleKO:     '\uc2b5\uacf5\uae30\uc120\ub3c4 \uc124\uacc4 \uc6cc\ud06c\ud50c\ub85c',
+      storageKey:  'red5DesignInsightState',
+      storageLang: 'red5DesignInsightLang'
+    });
+
+    /* Minimal markdown -> HTML renderer.  Supports the subset our doc
+       actually uses: H1/H2/H3, blockquote, ordered/unordered lists,
+       tables, **bold**, *italic*, `code`, fenced ``` blocks.  Avoids
+       pulling in a full md library to keep the controller lean. */
+    function _renderMd(md){
+      function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+      var lines = md.split('\n');
+      var out = [];
+      var i = 0;
+      while (i < lines.length) {
+        var L = lines[i];
+        if (/^```/.test(L)) {
+          var code = [];
+          i++;
+          while (i < lines.length && !/^```/.test(lines[i])) { code.push(esc(lines[i])); i++; }
+          out.push('<pre style="background:#020617;border:1px solid #334155;border-radius:4px;padding:8px;overflow-x:auto;font-size:9px;line-height:1.5;color:#94a3b8">'+code.join('\n')+'</pre>');
+          i++; continue;
+        }
+        /* Tables: detect a header row followed by a separator like |---|---| */
+        if (/^\s*\|.*\|\s*$/.test(L) && i+1<lines.length && /^\s*\|[\s\-:|]+\|\s*$/.test(lines[i+1])) {
+          var rows = [L];
+          i += 2;
+          while (i<lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(lines[i]); i++; }
+          var parsed = rows.map(function(r){
+            return r.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split('|').map(function(c){return c.trim();});
+          });
+          var head = parsed.shift();
+          out.push('<table style="border-collapse:collapse;width:100%;font-size:9px;margin:6px 0"><thead><tr>'+
+            head.map(function(h){return '<th style="border:1px solid #334155;padding:4px 6px;text-align:left;background:#1e293b;color:#e2e8f0">'+_inline(h)+'</th>';}).join('')+
+            '</tr></thead><tbody>'+
+            parsed.map(function(r){return '<tr>'+r.map(function(c){return '<td style="border:1px solid #334155;padding:4px 6px">'+_inline(c)+'</td>';}).join('')+'</tr>';}).join('')+
+            '</tbody></table>');
+          continue;
+        }
+        if (/^# /.test(L))      { out.push('<h2 style="color:#60a5fa;font-size:13px;font-weight:900;margin:8px 0 4px;border-bottom:1px solid #1e293b;padding-bottom:3px">'+_inline(L.slice(2))+'</h2>'); i++; continue; }
+        if (/^## /.test(L))     { out.push('<h3 style="color:#22d3ee;font-size:11px;font-weight:900;margin:8px 0 3px;letter-spacing:.05em;text-transform:uppercase">'+_inline(L.slice(3))+'</h3>'); i++; continue; }
+        if (/^### /.test(L))    { out.push('<h4 style="color:#fbbf24;font-size:10px;font-weight:900;margin:6px 0 2px">'+_inline(L.slice(4))+'</h4>'); i++; continue; }
+        if (/^> /.test(L))      { out.push('<blockquote style="border-left:3px solid #60a5fa;padding:2px 8px;margin:4px 0;background:rgba(96,165,250,.05);color:#cbd5e1;font-style:italic;font-size:10px">'+_inline(L.slice(2))+'</blockquote>'); i++; continue; }
+        if (/^---+$/.test(L))   { out.push('<hr style="border:none;border-top:1px dashed #334155;margin:8px 0"/>'); i++; continue; }
+        if (/^\s*-\s+/.test(L)) {
+          var items = [];
+          while (i<lines.length && /^\s*-\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*-\s+/,'')); i++; }
+          out.push('<ul style="margin:4px 0 4px 14px;padding:0;font-size:10px;line-height:1.55">'+items.map(function(it){return '<li style="margin:2px 0">'+_inline(it)+'</li>';}).join('')+'</ul>');
+          continue;
+        }
+        if (/^\s*\d+\.\s+/.test(L)) {
+          var items2 = [];
+          while (i<lines.length && /^\s*\d+\.\s+/.test(lines[i])) { items2.push(lines[i].replace(/^\s*\d+\.\s+/,'')); i++; }
+          out.push('<ol style="margin:4px 0 4px 16px;padding:0;font-size:10px;line-height:1.55">'+items2.map(function(it){return '<li style="margin:2px 0">'+_inline(it)+'</li>';}).join('')+'</ol>');
+          continue;
+        }
+        if (/^\s*$/.test(L)) { out.push(''); i++; continue; }
+        out.push('<p style="margin:3px 0;font-size:10px;line-height:1.55">'+_inline(L)+'</p>');
+        i++;
+      }
+      function _inline(s){
+        s = esc(s);
+        s = s.replace(/`([^`]+)`/g, '<code style="background:#020617;border:1px solid #334155;border-radius:2px;padding:0 3px;font-size:9px;color:#fbbf24">$1</code>');
+        s = s.replace(/\*\*([^*]+)\*\*/g, '<b style="color:#e2e8f0">$1</b>');
+        s = s.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+        return s;
+      }
+      return out.join('\n');
+    }
 
     /* B1-B10 strategy toggle — only meaningful in T×Time mode.  Hidden when
        in W×Time / X-Y Detail / 3D.  Drives whether the green B1-B10 cumulative
@@ -1030,6 +2617,10 @@ global.initPsy3D = function(container, opts){
       var mr = $('#p3-ms-modes');   if (mr) mr.style.display   = inMs ? 'block' : 'none';
       var cc = $('#p3-ms-costcfg'); if (cc) cc.style.display = (inMs && _msMode === '$') ? 'block' : 'none';
       var bs2=$('#p3-btn-band-strategy'); if(bs2) bs2.style.display = inMs ? 'none' : 'block';
+      // Designer Mode toggle + inputs panel only meaningful in 'psy' mode,
+      // hide them in monthly-sites or any other non-psych-chart layout.
+      var dmBtn2=$('#p3-btn-designer'); if(dmBtn2) dmBtn2.style.display = (chart2DMode==='psy') ? 'block' : 'none';
+      var dCfg2 =$('#p3-designer-cfg'); if(dCfg2)  dCfg2.style.display  = (chart2DMode==='psy' && _designerMode) ? 'block' : 'none';
       render2DChart();
     };
 
@@ -1107,6 +2698,245 @@ global.initPsy3D = function(container, opts){
     msOptBtn.onclick    = function(){ _msShowOpt     = !_msShowOpt;     _refreshMsBtn(msOptBtn,     _msShowOpt);
                                        _refreshOptCfg();                render2DChart(); };
 
+    /* ---------- Designer Mode toggle + inputs panel ----------
+       A standalone MEP equipment-sizing overlay on the 2D psychrometric
+       chart.  When toggled on, plots the OA -> MA -> SA process line plus
+       extension to saturation curve (ADP), and renders a numeric readout
+       (coil tons, dh, BF, ADP, room sensible) so an engineer can read
+       sizing numbers straight off the chart without leaving the dashboard.
+       Decoupled from live telemetry on purpose - this is a design-phase
+       schematic tool, fed by user-input design conditions, not live BACnet
+       data.  (The live telemetry already drives the dot-cloud + dynamics
+       animation; Designer Mode is the parallel "what coil do I need?"
+       view.) */
+    var dmBtn = $('#p3-btn-designer');
+    if (!dmBtn) {
+        dmBtn = document.createElement('button');
+        dmBtn.id = 'p3-btn-designer';
+        dmBtn.type = 'button';
+        dmBtn.textContent = '+ Designer Mode';
+        $('#p3-overlay2d').appendChild(dmBtn);
+    }
+    /* Anchor on the LEFT side at x=470, ABOVE the "B1-B10 + Dyn-Reset"
+       button to avoid collisions.  Visible only when the 2D chart is in
+       'psy' mode (not T-Time, W-Time, monthly-sites). */
+    dmBtn.style.cssText = 'position:absolute;top:46px;left:280px;z-index:51;'+
+        'background:rgba(15,23,42,.92);border:1px solid #f59e0b;color:#f59e0b;'+
+        'padding:6px 14px;border-radius:6px;font-size:10px;font-weight:900;'+
+        'letter-spacing:.08em;text-transform:uppercase;cursor:pointer;'+
+        'font-family:inherit;backdrop-filter:blur(14px);display:none';
+    dmBtn.title = 'MEP equipment-sizing overlay: plots OA -> MA -> SA process line on the psych chart and shows coil tons / dh / BF / ADP / room-sensible readouts. Design-phase tool (user-input conditions), separate from live telemetry.';
+
+    var _refreshDesignerBtn = function(){
+      dmBtn.style.borderColor = _designerMode ? '#f59e0b' : '#475569';
+      dmBtn.style.color       = _designerMode ? '#f59e0b' : '#94a3b8';
+      dmBtn.textContent       = (_designerMode ? '\u2713 ' : '+ ') + 'Designer Mode';
+    };
+    _refreshDesignerBtn();
+
+    /* Inputs panel - 5 number inputs + 2 dropdowns sit in a small floating
+       card.  Hidden unless _designerMode === true.  Sliders/inputs are
+       intentionally compact (digital readout aesthetic) to match the rest
+       of the dashboard. */
+    var dCfg = $('#p3-designer-cfg');
+    if (!dCfg) {
+        dCfg = document.createElement('div');
+        dCfg.id = 'p3-designer-cfg';
+        dCfg.style.cssText = 'position:absolute;top:78px;left:280px;z-index:51;'+
+            'background:rgba(15,23,42,.95);border:1px solid #b45309;border-radius:6px;'+
+            "padding:10px 12px;font-family:'Courier New',monospace;font-size:10px;"+
+            'color:#e2e8f0;backdrop-filter:blur(14px);width:300px;display:none';
+        dCfg.innerHTML =
+            '<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#f59e0b;margin-bottom:8px;font-weight:900">Design Inputs</div>'+
+            '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center">'+
+              '<label>CFM</label>'+
+                '<input type="number" id="p3-d-cfm" min="500" max="200000" step="500" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">ft\u00b3/min</span>'+
+              '<label>OA frac</label>'+
+                '<input type="number" id="p3-d-oafrac" min="0" max="1" step="0.05" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">0\u20131</span>'+
+              '<label>OA T</label>'+
+                '<input type="number" id="p3-d-oat" min="-30" max="50" step="0.5" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">\u00b0C</span>'+
+              '<label>OA RH</label>'+
+                '<input type="number" id="p3-d-oarh" min="0" max="100" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">%</span>'+
+              '<span></span>'+
+                '<button type="button" id="p3-d-uselive" title="Copy the most recent weatherData point\'s T and RH into the OA inputs above." style="background:#020617;color:#fb7185;border:1px solid #fb7185;padding:4px 8px;font-family:inherit;font-size:9px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;border-radius:3px;font-weight:900">\u00b7 use live OA \u00b7</button>'+
+                '<span></span>'+
+              '<label>RA T</label>'+
+                '<input type="number" id="p3-d-rat" min="15" max="30" step="0.5" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">\u00b0C</span>'+
+              '<label>RA RH</label>'+
+                '<input type="number" id="p3-d-rarh" min="30" max="70" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">%</span>'+
+              '<label>SA T</label>'+
+                '<input type="number" id="p3-d-sat" min="5" max="35" step="0.5" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">\u00b0C</span>'+
+              '<label>SA RH</label>'+
+                '<input type="number" id="p3-d-sarh" min="50" max="100" step="1" style="background:#020617;color:#fbbf24;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                '<span style="color:#64748b">%</span>'+
+            '</div>'+
+            '<div style="margin-top:8px;font-size:9px;color:#64748b">MA = OA frac \u00d7 OA + (1 \u2013 OA frac) \u00d7 RA</div>'+
+            /* ERV toggle row -- visually distinct (separator + cyan accent)
+               so operators can see at a glance that toggling it changes
+               where the coil starts its work.  When the checkbox is on,
+               draw OA' on the OA->RA line and re-run the sizing numbers
+               from OA' instead of OA. */
+            '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #334155">'+
+              '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">'+
+                '<input type="checkbox" id="p3-d-ervon" style="accent-color:#22d3ee">'+
+                '<span style="color:#22d3ee;font-weight:900;letter-spacing:.05em">+ ERV</span>'+
+                '<span style="color:#64748b;font-size:9px">energy-recovery wheel</span>'+
+              '</label>'+
+              '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center;margin-top:6px">'+
+                '<label style="color:#94a3b8">\u03b5 (effectiveness)</label>'+
+                  '<input type="number" id="p3-d-erveps" min="0" max="1" step="0.05" style="background:#020617;color:#22d3ee;border:1px solid #334155;padding:3px 6px;font-family:inherit;font-size:10px;width:100%">'+
+                  '<span style="color:#64748b">0\u20131</span>'+
+              '</div>'+
+              '<div style="margin-top:4px;font-size:9px;color:#64748b">OA\' = OA + \u03b5 \u00d7 (RA \u2013 OA) along enthalpy</div>'+
+            '</div>';
+        $('#p3-overlay2d').appendChild(dCfg);
+    }
+    /* Populate inputs from persisted state (localStorage) + wire change handlers. */
+    var _LS_KEY_D = 'red5DesignerState';
+    try {
+        var saved = JSON.parse(localStorage.getItem(_LS_KEY_D) || '{}');
+        if (typeof saved.cfm    === 'number') _designerCFM    = saved.cfm;
+        if (typeof saved.oafrac === 'number') _designerOAFrac = saved.oafrac;
+        if (typeof saved.oat    === 'number') _designerOA_T   = saved.oat;
+        if (typeof saved.oarh   === 'number') _designerOA_RH  = saved.oarh;
+        if (typeof saved.rat    === 'number') _designerRA_T   = saved.rat;
+        if (typeof saved.rarh   === 'number') _designerRA_RH  = saved.rarh;
+        if (typeof saved.sat    === 'number') _designerSA_T   = saved.sat;
+        if (typeof saved.sarh   === 'number') _designerSA_RH  = saved.sarh;
+        if (typeof saved.on     === 'boolean') _designerMode  = saved.on;
+        if (typeof saved.ervon  === 'boolean') _designerERVOn = saved.ervon;
+        if (typeof saved.erveps === 'number')  _designerERVEps = saved.erveps;
+    } catch(e) { /* ignore */ }
+    var _setD = function(id, val){ var el = dCfg.querySelector('#'+id); if (el) el.value = val; };
+    _setD('p3-d-cfm',    _designerCFM);
+    _setD('p3-d-oafrac', _designerOAFrac);
+    _setD('p3-d-oat',    _designerOA_T);
+    _setD('p3-d-oarh',   _designerOA_RH);
+    _setD('p3-d-rat',    _designerRA_T);
+    _setD('p3-d-rarh',   _designerRA_RH);
+    _setD('p3-d-sat',    _designerSA_T);
+    _setD('p3-d-sarh',   _designerSA_RH);
+    /* ERV checkbox + epsilon */
+    var _ervCheck = dCfg.querySelector('#p3-d-ervon');
+    if (_ervCheck) _ervCheck.checked = !!_designerERVOn;
+    _setD('p3-d-erveps', _designerERVEps);
+    _refreshDesignerBtn();
+    dCfg.style.display = _designerMode ? 'block' : 'none';
+
+    var _persistDesignerState = function(){
+        try {
+            localStorage.setItem(_LS_KEY_D, JSON.stringify({
+                cfm: _designerCFM, oafrac: _designerOAFrac,
+                oat: _designerOA_T, oarh: _designerOA_RH,
+                rat: _designerRA_T, rarh: _designerRA_RH,
+                sat: _designerSA_T, sarh: _designerSA_RH,
+                on: _designerMode,
+                ervon: _designerERVOn,
+                erveps: _designerERVEps,
+            }));
+        } catch(e) { /* quota / private-mode - ignore */ }
+    };
+    var _wireInput = function(id, setter, parser){
+        var el = dCfg.querySelector('#'+id);
+        if (!el) return;
+        el.oninput = function(){
+            var v = parser ? parser(el.value) : parseFloat(el.value);
+            if (!isFinite(v)) return;
+            setter(v);
+            _persistDesignerState();
+            render2DChart();
+        };
+    };
+    _wireInput('p3-d-cfm',    function(v){ _designerCFM    = Math.max(500, v); });
+    _wireInput('p3-d-oafrac', function(v){ _designerOAFrac = Math.max(0, Math.min(1, v)); });
+    _wireInput('p3-d-oat',    function(v){ _designerOA_T   = v; });
+    _wireInput('p3-d-oarh',   function(v){ _designerOA_RH  = Math.max(0, Math.min(100, v)); });
+    _wireInput('p3-d-rat',    function(v){ _designerRA_T   = v; _saDropMaybeRefresh(); });
+    _wireInput('p3-d-rarh',   function(v){ _designerRA_RH  = Math.max(0, Math.min(100, v)); _saDropMaybeRefresh(); });
+    _wireInput('p3-d-sat',    function(v){ _designerSA_T   = v; });
+    _wireInput('p3-d-sarh',   function(v){ _designerSA_RH  = Math.max(0, Math.min(100, v)); });
+    _wireInput('p3-d-erveps', function(v){ _designerERVEps = Math.max(0, Math.min(1, v)); _saDropMaybeRefresh(); });
+    /* ERV on/off checkbox -- separate handler because it's a checkbox not
+       a number input. */
+    if (_ervCheck) {
+        _ervCheck.onchange = function(){
+            _designerERVOn = !!_ervCheck.checked;
+            _persistDesignerState();
+            render2DChart();
+        };
+    }
+    /* [USE LIVE OA] button: copies the most recent weatherData point into
+       the OA T + OA RH inputs.  Disabled (grey, dimmed) when no weather
+       data has loaded yet so users don't get a silently-stuck click.
+       Toggling a fresh weather strip via the location/from/to controls
+       re-fills weatherData -- a subsequent click then picks up the new
+       last point. */
+    var _liveBtn = dCfg.querySelector('#p3-d-uselive');
+    var _refreshLiveBtn = function(){
+        if (!_liveBtn) return;
+        var has = (typeof weatherData !== 'undefined') && weatherData && weatherData.length > 0;
+        _liveBtn.disabled = !has;
+        _liveBtn.style.opacity = has ? '1' : '0.45';
+        _liveBtn.style.cursor  = has ? 'pointer' : 'not-allowed';
+        if (has) {
+            var p = weatherData[weatherData.length - 1];
+            _liveBtn.title = 'Click to copy live OA = ' + p.t.toFixed(1) + '\u00b0C / ' + p.rh.toFixed(0) +
+                             '% (latest point in current Weather Strip) into the OA inputs above.';
+        } else {
+            _liveBtn.title = 'No weather data loaded yet. Load a Weather Strip first, then click here to pull the latest OA reading.';
+        }
+    };
+    _refreshLiveBtn();
+    if (_liveBtn) {
+        _liveBtn.onclick = function(){
+            if (typeof weatherData === 'undefined' || !weatherData || !weatherData.length) {
+                /* Soft feedback rather than alert() -- flash the button red
+                   for 600ms so the operator notices but isn't interrupted. */
+                _liveBtn.style.color = '#ef4444'; _liveBtn.style.borderColor = '#ef4444';
+                _liveBtn.textContent = '\u2716 no data yet';
+                setTimeout(function(){
+                    _liveBtn.style.color = '#fb7185'; _liveBtn.style.borderColor = '#fb7185';
+                    _liveBtn.textContent = '\u00b7 use live OA \u00b7';
+                }, 800);
+                return;
+            }
+            var p = weatherData[weatherData.length - 1];
+            _designerOA_T  = p.t;
+            _designerOA_RH = p.rh;
+            _setD('p3-d-oat',  +_designerOA_T.toFixed(1));
+            _setD('p3-d-oarh', Math.round(_designerOA_RH));
+            _persistDesignerState();
+            /* Brief green confirmation pulse so the operator sees the action
+               registered. */
+            _liveBtn.style.color = '#22c55e'; _liveBtn.style.borderColor = '#22c55e';
+            _liveBtn.textContent = '\u2713 ' + p.t.toFixed(1) + '\u00b0C / ' + p.rh.toFixed(0) + '%';
+            setTimeout(function(){
+                _liveBtn.style.color = '#fb7185'; _liveBtn.style.borderColor = '#fb7185';
+                _liveBtn.textContent = '\u00b7 use live OA \u00b7';
+            }, 1100);
+            render2DChart();
+        };
+    }
+    /* Refresh the button's enabled-state whenever a Weather Strip finishes
+       loading.  weatherData mutates inside the existing fetch path; hook
+       the same DOM event the chart already listens to. */
+    window.addEventListener('red5-weather-loaded', _refreshLiveBtn);
+
+    dmBtn.onclick = function(){
+        _designerMode = !_designerMode;
+        _refreshDesignerBtn();
+        dCfg.style.display = _designerMode ? 'block' : 'none';
+        _persistDesignerState();
+        render2DChart();
+    };
+
     /* OA-intake visualisation toggle.  Controls the OA-damper line on
        each panel + the monthly damper strip below the X axis + the
        header annotation ("Avg OA: 35%").  Defaults ON because the
@@ -1139,6 +2969,20 @@ global.initPsy3D = function(container, opts){
         'padding:6px 10px;font-size:9px;color:#e2e8f0;font-family:inherit;'+
         'backdrop-filter:blur(14px);display:none;min-width:170px;'+
         'box-shadow:0 6px 18px rgba(0,0,0,.45)';
+      // Compute B1-B10's SA-enthalpy range once.  Opt-SA stays a true
+      // theoretical floor only when the envelope [optMin, optMax] FULLY
+      // ENCLOSES this range — otherwise the clamp can force Opt-SA to do
+      // more work than B1-B10 in some bands and the "floor" claim breaks.
+      var _bandHsaRange = (function(){
+        var lo = Infinity, hi = -Infinity;
+        for (var i = 0; i < BANDS.length; i++){
+          var b = BANDS[i];
+          var h = enthalpy(b.sa_t, getW(b.sa_t, b.sa_rh));
+          if (h < lo) lo = h;
+          if (h > hi) hi = h;
+        }
+        return {lo: lo, hi: hi};
+      })();
       optCfg.innerHTML =
         '<div style="font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#c084fc;margin-bottom:6px">Opt-SA envelope (kJ/kg)</div>'+
         '<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
@@ -1150,22 +2994,49 @@ global.initPsy3D = function(container, opts){
           '<span style="width:28px;color:#c084fc;font-weight:700">max</span>'+
           '<input id="p3-opt-max" type="range" min="20" max="80" step="0.5" value="'+_optMaxH+'" style="flex:1;accent-color:#c084fc">'+
           '<span id="p3-opt-max-v" style="width:32px;text-align:right;font-variant-numeric:tabular-nums">'+_optMaxH.toFixed(1)+'</span>'+
-        '</label>';
+        '</label>'+
+        '<div id="p3-opt-warn" data-testid="opt-sa-floor-warn" style="display:none;margin-top:6px;padding:4px 7px;'+
+          'background:rgba(120,53,15,.55);border:1px solid #f59e0b;border-radius:4px;'+
+          'color:#fcd34d;font-size:8.5px;line-height:1.45;letter-spacing:.02em;cursor:help" '+
+          'title="Opt-SA stays a true energy floor only when [min, max] fully encloses B1-B10\u2019s SA-enthalpy range ('+
+          _bandHsaRange.lo.toFixed(1)+'\u2013'+_bandHsaRange.hi.toFixed(1)+' kJ/kg). Inside that range, the clamp can force Opt-SA to do MORE work than B1-B10 in some bands.">'+
+          '<span style="font-weight:900">\u26A0 NOT A TRUE FLOOR</span> '+
+          '<span id="p3-opt-warn-detail"></span>'+
+        '</div>';
       $('#p3-overlay2d').appendChild(optCfg);
       var minInp = optCfg.querySelector('#p3-opt-min');
       var maxInp = optCfg.querySelector('#p3-opt-max');
       var minV   = optCfg.querySelector('#p3-opt-min-v');
       var maxV   = optCfg.querySelector('#p3-opt-max-v');
+      var warnEl = optCfg.querySelector('#p3-opt-warn');
+      var warnDt = optCfg.querySelector('#p3-opt-warn-detail');
+      function _updateOptWarn(){
+        // True floor requires optMin <= bandHsaRange.lo AND optMax >= bandHsaRange.hi.
+        var minOk = _optMinH <= _bandHsaRange.lo + 0.01;
+        var maxOk = _optMaxH >= _bandHsaRange.hi - 0.01;
+        if (minOk && maxOk) {
+          warnEl.style.display = 'none';
+          return;
+        }
+        var bits = [];
+        if (!minOk) bits.push('min &gt; '+_bandHsaRange.lo.toFixed(1));
+        if (!maxOk) bits.push('max &lt; '+_bandHsaRange.hi.toFixed(1));
+        warnDt.innerHTML = '\u2014 envelope inside B1\u2013B10 range ('+bits.join(', ')+'). Opt-SA may exceed B1\u2013B10 in some bands.';
+        warnEl.style.display = 'block';
+      }
+      _updateOptWarn();
       minInp.addEventListener('input', function(){
         _optMinH = parseFloat(this.value);
         if (_optMinH > _optMaxH - 1) { _optMinH = _optMaxH - 1; this.value = _optMinH; }
         minV.textContent = _optMinH.toFixed(1);
+        _updateOptWarn();
         render2DChart();
       });
       maxInp.addEventListener('input', function(){
         _optMaxH = parseFloat(this.value);
         if (_optMaxH < _optMinH + 1) { _optMaxH = _optMinH + 1; this.value = _optMaxH; }
         maxV.textContent = _optMaxH.toFixed(1);
+        _updateOptWarn();
         render2DChart();
       });
     }
@@ -1754,6 +3625,22 @@ global.initPsy3D = function(container, opts){
         }else if(hitObj===pts&&idx<weatherData.length){
           var p=weatherData[idx];var d=new Date(p.ts);
           html='<div style="color:#f472b6;margin-bottom:1px"><b>'+d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})+'</b></div><div>T = <b style="color:#60a5fa">'+p.t.toFixed(1)+' \u00b0C</b></div><div>RH = <b style="color:#34d399">'+p.rh.toFixed(0)+'%</b></div><div>W = <b style="color:#fbbf24">'+(p.w*1000).toFixed(1)+' g/kg</b></div>';
+          /* When ERV is ON, append a savings block: OA' state + per-hour
+             enthalpy delta in kJ/kg + dollar value at current tariff. */
+          if (_saDropERVOn && saDropGroup && saDropGroup.visible) {
+            var hEps = Math.max(0, Math.min(1, _designerERVEps));
+            var hRaT = _designerRA_T, hRaW = getW(_designerRA_T, _designerRA_RH);
+            var hOaT = p.t + hEps * (hRaT - p.t);
+            var hOaW = p.w + hEps * (hRaW - p.w);
+            var hDh  = enthalpy(p.t, p.w) - enthalpy(hOaT, hOaW);
+            var hRtH = Math.abs(hDh) * (_designerCFM * 4.5 / 0.4299) / 12000;
+            var hKWh = hRtH * 3.517;
+            var hUSD = hKWh * _ervTariffKwh;
+            html += '<div style="margin-top:3px;padding-top:3px;border-top:1px dashed #475569"></div>'+
+              '<div style="color:#22d3ee">OA\u2032 = <b>'+hOaT.toFixed(1)+' \u00b0C / '+(hOaW*1000).toFixed(1)+' g/kg</b></div>'+
+              '<div style="color:#22d3ee">\u0394h<sub>saved</sub> = <b>'+hDh.toFixed(1)+' kJ/kg</b></div>'+
+              '<div style="color:#22d3ee">'+hRtH.toFixed(2)+' RT\u00b7h \u00b7 '+_ervFmtMoney(hUSD)+' saved</div>';
+          }
         }
         if(html){tipEl.innerHTML=html;tipEl.style.display='block';tipEl.style.left=(e.clientX-root.getBoundingClientRect().left+14)+'px';tipEl.style.top=(e.clientY-root.getBoundingClientRect().top-16)+'px';}
         else{tipEl.style.display='none';}
@@ -1814,6 +3701,9 @@ global.initPsy3D = function(container, opts){
       if(weatherData.length>4000){var step=Math.ceil(weatherData.length/4000);var ds=[];for(var i=0;i<weatherData.length;i+=step)ds.push(weatherData[i]);weatherData=ds;}
       $('#p3-status').textContent=weatherData.length+' pts loaded';
       buildWeatherVis(locName,fromD,toD);
+      /* Fire a window-level event so other UI bits (Designer Mode's
+         [USE LIVE OA] button) can refresh their enabled state. */
+      try { window.dispatchEvent(new CustomEvent('red5-weather-loaded', {detail:{count:weatherData.length}})); } catch(_){}
     })
     .catch(function(e){$('#p3-status').textContent='Error: '+e.message;})
     .finally(function(){$('#p3-fetch').disabled=false;});
@@ -1830,22 +3720,116 @@ global.initPsy3D = function(container, opts){
     while (saDropGroup.children.length) saDropGroup.remove(saDropGroup.children[0]);
     var saV=[], saC=[], dV=[], dC=[];
     var bandMode = (_saDropColorMode === 'band');
-    weatherData.forEach(function(p){
-      var sa = _saReset(p.t, p.rh, p.w);
+    /* If ERV pre-treatment is active, pre-compute the RA reference point
+       once (don't recalc psat() inside the per-point loop).  RA conditions
+       come from the Designer Mode panel so a user dialling RA from 24
+       to 22 propagates through to the Drops cloud without leaving the
+       psych chart.  Epsilon clamped to [0,1] defensively. */
+    var ervOn = _saDropERVOn;
+    var rawW2gkg = 1000; /* getW returns kg/kg, multiply to g/kg */
+    var ra_T = _designerRA_T;
+    var ra_W = getW(_designerRA_T, _designerRA_RH);  /* kg/kg (same units as p.w) */
+    var eps = Math.max(0, Math.min(1, _designerERVEps));
+    /* For the savings-threshold filter + peak-hour annotations: walk the
+       series once to find the top-3 hours by |dh_saved|.  Skipped when
+       ERV is off (no savings to rank). */
+    var peakIdxs = [];
+    if (ervOn && _ervShowPeaks) {
+      var rank = [];
+      for (var pi = 0; pi < weatherData.length; pi++) {
+        var pp = weatherData[pi];
+        var ppT = pp.t + eps * (ra_T - pp.t);
+        var ppW = pp.w + eps * (ra_W - pp.w);
+        var dh = Math.abs(enthalpy(pp.t, pp.w) - enthalpy(ppT, ppW));
+        rank.push({i:pi, dh:dh});
+      }
+      rank.sort(function(a,b){return b.dh - a.dh;});
+      for (var rk = 0; rk < Math.min(3, rank.length); rk++) peakIdxs.push(rank[rk].i);
+    }
+    weatherData.forEach(function(p, _i){
+      /* Compute the entering-air state the coil ACTUALLY sees -- OA when
+         the wheel is bypassed, OA' (linearly interpolated OA->RA at eps)
+         when the wheel is on.  The SA-reset target is left untouched
+         because the control strategy decides on raw OA, not post-wheel
+         OA -- the wheel is a thermodynamic upstream pre-treatment, not a
+         control input.  This matches the Designer Mode geometry. */
+      var inT = p.t, inW = p.w;
+      if (ervOn) {
+        inT = p.t + eps * (ra_T - p.t);
+        inW = p.w + eps * (ra_W - p.w);
+        /* Savings-threshold filter (g): drop hours where the wheel barely
+           did anything so the cloud focuses on the heavy-lifting season. */
+        if (_ervMinKJkg > 0) {
+          var dh_abs = Math.abs(enthalpy(p.t, p.w) - enthalpy(inT, inW));
+          if (dh_abs < _ervMinKJkg) return;
+        }
+      }
+      /* SA target via _saReset.  When the band-source toggle is on AND
+         ERV is on, _bandInputFor returns OA' so the band picker sees
+         post-wheel conditions and may pick a less-aggressive SA setpoint
+         (wheel-aware controller).  Otherwise this is the raw-OA baseline. */
+      var bi = _bandInputFor(p);
+      var sa = _saReset(bi.T, bi.RH, bi.W);
       // Cull no-action samples (zero-length drops would clutter the floor).
-      if (Math.abs(sa.t-p.t)<0.5 && Math.abs(sa.w-p.w)<0.0003) return;
-      var oaX = t2sx(p.t), oaY = frac2sy(p.frac), oaZ = w2sz(p.w);
+      // After ERV pre-treatment, "no action" is computed against the
+      // entering-air state (inT/inW), not raw OA, so already-tempered
+      // hours where the coil barely works are correctly hidden.
+      if (Math.abs(sa.t-inT)<0.5 && Math.abs(sa.w-inW)<0.0003) return;
+      var oaX = t2sx(inT), oaY = frac2sy(p.frac), oaZ = w2sz(inW);
       var saX = t2sx(sa.t),                      saZ = w2sz(sa.w);
-      // Color: temperature-spectrum OR band palette.
-      var c = bandMode ? _bandRGB(p.t, p.rh) : t2rgb(p.t);
+      // Color: temperature-spectrum OR band palette.  Band palette uses
+      // the same effective input (raw OA or OA') as the SA picker so
+      // colors stay coherent with the SA target choice.
+      var c = bandMode ? _bandRGB(bi.T, bi.RH) : t2rgb(ervOn ? inT : p.t);
       // SA dot on floor (full color).
       saV.push(saX, 0.3, saZ);
       saC.push(c[0], c[1], c[2]);
-      // Drop line: top vertex = full OA color; bottom vertex = 35% color so
-      // the line visually fades as it descends to the floor.
+      /* ERV "savings ribbon" -- a cyan segment from the RAW OA point
+         (where the air would have been with no wheel) to OA' (where the
+         wheel ACTUALLY delivered it).  Drawn at the same time-Y so it
+         shows up as a near-horizontal cyan trail at the cloud's top.
+         Communicates per-hour wheel work alongside the per-hour coil
+         work (the existing OA'->SA drop below).  Colour faded at the
+         "raw OA" end (low opacity) and brightens toward OA' so the
+         direction of energy recovery is unambiguous. */
+      if (ervOn) {
+        var rawOaX = t2sx(p.t), rawOaZ = w2sz(p.w);
+        // Cyan #22d3ee = rgb(34, 211, 238) -> /255 = (.133, .827, .933)
+        dV.push(rawOaX, oaY, rawOaZ,  oaX, oaY, oaZ);
+        dC.push(.07, .42, .47,        .13, .83, .93);
+      }
+      // Coil drop line: top vertex (OA or OA') = full color; bottom vertex
+      // (SA on floor) = 35% color so the line fades as it descends.
       dV.push(oaX, oaY, oaZ,  saX, 0, saZ);
       dC.push(c[0], c[1], c[2],  c[0]*0.35, c[1]*0.35, c[2]*0.35);
     });
+
+    /* A/B GHOST CLOUD (h): if _ervGhostEps is set and different from the
+       active epsilon, render a translucent second cloud using the same
+       drop layout but in purple so the comparison is visually distinct
+       from the active cyan/spectrum cloud.  No SA-floor dots for the
+       ghost — only the OA'->SA drop lines — to keep the floor uncluttered. */
+    var ghostV = null, ghostC = null;
+    if (ervOn && _ervGhostEps > 0 && Math.abs(_ervGhostEps - eps) > 0.005) {
+      ghostV = [];
+      ghostC = [];
+      var gEps = Math.max(0, Math.min(0.95, _ervGhostEps));
+      weatherData.forEach(function(p){
+        var gT = p.t + gEps * (ra_T - p.t);
+        var gW = p.w + gEps * (ra_W - p.w);
+        if (_ervMinKJkg > 0) {
+          var dh = Math.abs(enthalpy(p.t, p.w) - enthalpy(gT, gW));
+          if (dh < _ervMinKJkg) return;
+        }
+        var sa = _saReset(p.t, p.rh, p.w);
+        if (Math.abs(sa.t-gT)<0.5 && Math.abs(sa.w-gW)<0.0003) return;
+        var oaX = t2sx(gT), oaY = frac2sy(p.frac), oaZ = w2sz(gW);
+        var saX = t2sx(sa.t),                      saZ = w2sz(sa.w);
+        /* Purple #a855f7 for ghost -- contrasts with cyan/spectrum live cloud. */
+        ghostV.push(oaX, oaY, oaZ, saX, 0, saZ);
+        ghostC.push(.66, .33, .97,  .23, .12, .34);
+      });
+    }
     if (!saV.length) return;
     var saGeo = new THREE.BufferGeometry();
     saGeo.setAttribute('position', new THREE.Float32BufferAttribute(saV, 3));
@@ -1860,6 +3844,56 @@ global.initPsy3D = function(container, opts){
     saDropGroup.add(new THREE.LineSegments(dropGeo, new THREE.LineBasicMaterial({
       vertexColors:true, transparent:true, opacity:.45, depthWrite:false
     })));
+    if (ghostV && ghostV.length) {
+      var gGeo = new THREE.BufferGeometry();
+      gGeo.setAttribute('position', new THREE.Float32BufferAttribute(ghostV, 3));
+      gGeo.setAttribute('color',    new THREE.Float32BufferAttribute(ghostC, 3));
+      saDropGroup.add(new THREE.LineSegments(gGeo, new THREE.LineBasicMaterial({
+        vertexColors:true, transparent:true, opacity:.32, depthWrite:false
+      })));
+    }
+
+    /* PEAK-HOUR ANNOTATIONS (f): render small floating sprite labels at
+       the OA'-side of the top-3 cyan ribbons.  Sprite size in world units
+       picked so the label is legible at the default camera distance. */
+    if (peakIdxs.length) {
+      peakIdxs.forEach(function(pIdx, rank){
+        var p = weatherData[pIdx];
+        var pT = p.t + eps * (ra_T - p.t);
+        var pW = p.w + eps * (ra_W - p.w);
+        var dhP = Math.abs(enthalpy(p.t, p.w) - enthalpy(pT, pW));
+        var d = new Date(p.ts);
+        var stamp = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + 'h';
+        var txt = '#' + (rank+1) + '  ' + stamp + '  ' + dhP.toFixed(1) + ' kJ/kg';
+        var cv = document.createElement('canvas');
+        cv.width = 256; cv.height = 48;
+        var ctx2 = cv.getContext('2d');
+        ctx2.fillStyle = 'rgba(15,23,42,.92)';
+        ctx2.fillRect(0,0,cv.width,cv.height);
+        ctx2.strokeStyle = '#fbbf24';
+        ctx2.lineWidth = 3;
+        ctx2.strokeRect(0,0,cv.width,cv.height);
+        ctx2.fillStyle = '#fbbf24';
+        ctx2.font = '900 22px Courier New';
+        ctx2.fillText(txt, 10, 32);
+        var tex = new THREE.CanvasTexture(cv);
+        var spr = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false}));
+        spr.position.set(t2sx(pT), frac2sy(p.frac) + 2.5, w2sz(pW));
+        spr.scale.set(10, 1.9, 1);
+        saDropGroup.add(spr);
+      });
+    }
+  }
+
+  /* Tiny adapter called whenever a Designer-Mode input that the Drops
+     layer depends on (RA T/RH, ERV epsilon) changes.  Rebuilds the Drops
+     geometry ONLY if both the layer is enabled AND ERV pre-treatment is
+     on -- otherwise it's a pointless no-op.  Keeps the live-edit feel
+     of the Designer panel without forcing a full weather refetch. */
+  function _saDropMaybeRefresh(){
+    if (!saDropGroup || !saDropGroup.visible) return;
+    if (!_saDropERVOn) return;
+    _buildSaDropGeometry();
   }
 
   function buildWeatherVis(locName,fromD,toD){
@@ -4308,10 +6342,11 @@ global.initPsy3D = function(container, opts){
         var vavClusters={};var czIn=0,czOut=0;
         weatherData.forEach(function(p){
           var wg=p.w*1000;if(wg>W_MAX)return;
-          var sa=computeSA(p.t,p.rh,p.w);
+          var bi=_bandInputFor(p);
+          var sa=computeSA(bi.T,bi.RH,bi.W);
           if(Math.abs(sa.t-p.t)<0.5&&Math.abs(sa.w-p.w)<0.0003)return;
-          var bl=bandLabel(p.t,p.rh);
-          if(!vavClusters[bl])vavClusters[bl]={pts:[],col:bandCol(p.t,p.rh,.6),colSolid:bandCol(p.t,p.rh,.9),inCZ:0,outCZ:0};
+          var bl=bandLabel(bi.T,bi.RH);
+          if(!vavClusters[bl])vavClusters[bl]={pts:[],col:bandCol(bi.T,bi.RH,.6),colSolid:bandCol(bi.T,bi.RH,.9),inCZ:0,outCZ:0};
           for(var vi=0;vi<NUM_VAV;vi++){
             var zt=sa.t+vavHG[vi], zw=sa.w+vavMG[vi];
             var zwg=zw*1000;if(zwg>W_MAX)zwg=W_MAX;
@@ -4360,10 +6395,11 @@ global.initPsy3D = function(container, opts){
         var saClusters={};
         weatherData.forEach(function(p){
           var wg=p.w*1000;if(wg>W_MAX)return;
-          var sa=computeSA(p.t,p.rh,p.w);var swg=Math.min(sa.w*1000,W_MAX);
+          var bi=_bandInputFor(p);
+          var sa=computeSA(bi.T,bi.RH,bi.W);var swg=Math.min(sa.w*1000,W_MAX);
           if(Math.abs(sa.t-p.t)<0.5&&Math.abs(swg-wg)<0.3)return;
-          var bl=bandLabel(p.t,p.rh);
-          if(!saClusters[bl])saClusters[bl]={pts:[],col:bandCol(p.t,p.rh,.7),colSolid:bandCol(p.t,p.rh,.95)};
+          var bl=bandLabel(bi.T,bi.RH);
+          if(!saClusters[bl])saClusters[bl]={pts:[],col:bandCol(bi.T,bi.RH,.7),colSolid:bandCol(bi.T,bi.RH,.95)};
           saClusters[bl].pts.push({t:sa.t,w:swg});
         });
         Object.keys(saClusters).forEach(function(bl){
@@ -4386,9 +6422,10 @@ global.initPsy3D = function(container, opts){
         ctx.lineWidth=0.6;
         weatherData.forEach(function(p){
           var wg=p.w*1000;if(wg>W_MAX)return;
-          var sa=computeSA(p.t,p.rh,p.w);var swg=Math.min(sa.w*1000,W_MAX);
+          var bi=_bandInputFor(p);
+          var sa=computeSA(bi.T,bi.RH,bi.W);var swg=Math.min(sa.w*1000,W_MAX);
           if(Math.abs(sa.t-p.t)<0.5&&Math.abs(swg-wg)<0.3)return;
-          ctx.strokeStyle=bandCol(p.t,p.rh);
+          ctx.strokeStyle=bandCol(bi.T,bi.RH);
           ctx.beginPath();ctx.moveTo(tx(p.t),wy(wg));ctx.lineTo(tx(sa.t),wy(swg));ctx.stroke();
         });
       }
@@ -4407,6 +6444,12 @@ global.initPsy3D = function(container, opts){
     }
 
     ctx.restore();
+
+    /* Designer Mode overlay: drawn AFTER ctx.restore() so it sits above
+       the clipped chart contents but draws into the same pad/tx/wy
+       coordinate space.  Internally guarded by _designerMode -- no-op
+       when toggle is off so the regular weather-strip view is untouched. */
+    _drawDesignerOverlay(ctx, tx, wy, pad, pw, ph);
 
     /* axes */
     ctx.strokeStyle='#64748b';ctx.lineWidth=1;

@@ -2895,3 +2895,84 @@ exist, and the dotfile / `*.tmp` skip mirrors.  CI catches drift.
    (`band_guide.csv` + Seattle weather cache) -- behaviour matches
    `app.py` intent.
 
+
+## V2.0 Phase 1 - Web-Hosted Demo Backend (2026-02-13)
+**Goal**: Public Demo Mode on Emergent.  No MongoDB, no auth, no live BACnet.
+The V1.9 dashboard runs zero-modification against a FastAPI thin shell that
+synthesizes plausible telemetry from canned V1.9 demo configs + a daily
+sinusoid OA simulator.
+
+### Decisions (operator picked "defaults" = 1c + 2b + 3a + 4a + 5a)
+- **1c**  Hybrid frontend: React landing page (`/`) + V1.9 dashboard.html
+          served verbatim from `/app/frontend/public/`.
+- **2b**  Full V1.9-compatible read-only endpoint surface so the dashboard
+          runs zero-modification.
+- **3a**  JSON files on disk (no MongoDB until Phase 2).
+- **4a**  Public demo, no auth.
+- **5a**  Real V1.9 configs verbatim (equipment_types.json, band_guide.csv,
+          AHU-01-E / AHU-02-S projections, Seattle 2020 Open-Meteo cache).
+
+### Files added
+- `/app/backend/server.py`              FastAPI app with 20 endpoints + asset
+                                        passthrough + path-traversal guard.
+- `/app/backend/demo_data/`             Canned V1.9 configs (6 files copied
+                                        verbatim from V1.9 controllers).
+- `/app/backend/tests/test_v2_phase1_backend.py`  25-assertion regression
+                                        guard (all pass).
+- `/app/frontend/src/pages/LandingPage.jsx`  Rewritten as the polished
+                                        public V2.0 landing.  Old password-
+                                        gate logic removed (returns in Phase 2).
+- `/app/frontend/public/`               V1.9 frontend copied verbatim
+                                        (dashboard.html, equipment_mapper.html,
+                                        js/, docs/, assets/, .md docs).
+- `/app/frontend/public/assets/js`      Symlink -> ../js so the V1.9
+                                        `/assets/js/<module>` module-loader URLs
+                                        resolve without rewriting the dashboard.
+
+### Endpoints (all read-only except marked W)
+  /api/health, /api/version, /api/data-mode (R+W cosmetic),
+  /api/data, /api/telemetry-status,
+  /api/equipment-types, /api/collector-config,
+  /api/services, /api/weather-location,
+  /api/weather-history (lat,lon default to active location),
+  /api/tomorrow-forecast,
+  /api/band-overrides/sa-rh-clamp (R+W demo-no-op),
+  /api/band-overrides/preview,
+  /api/write-history, /api/collector-log, /api/trend-history,
+  /api/map-config, /api/disk-status,
+  /api/save-equipment-schema (W demo-no-op),
+  /api/assets (manifest), /api/assets/{path} (passthrough).
+
+### What works end-to-end
+- Landing page renders V2.0 brand chrome + "Try the Dashboard" CTA.
+- Click-through to /dashboard.html loads the V1.9 SPA with:
+  - Live polling /api/data every ~2s with simulated AHU/VAV state.
+  - Givoni 3-tier comfort zone polygons + sweet-spot slider.
+  - AHU sidebar showing AHU-01-E / AHU-02-S with OA/SA/RA pills.
+  - Asset Search, axis settings, theme toggle, language selector.
+  - Apply-to-Controller dialog (accepted but no-op in demo).
+
+### Known minor warnings (non-blocking)
+- "[BABEL] code generator deoptimised" -- in-browser Babel for 500KB+ inline
+  source.  Cosmetic; chart still renders.
+- "cdn.tailwindcss.com should not be used in production" -- preexisting V1.9.
+  Will be replaced by a build step in a later phase.
+
+### Tests
+- 25/25 V2.0 backend assertions pass against the live URL.
+- Frontend lints clean.
+- Backend lints clean.
+
+### Live URL
+  https://controller-dashboard-2.preview.emergentagent.com/
+
+### Next phases
+- Phase 2: Emergent Google OAuth + MongoDB tenant collections + setup wizard.
+- Phase 3: Edge agent (red5-edge.py) that POSTs live BACnet to the API.
+- Phase 4: Stripe billing + email alerts + audit log + time-series archive.
+
+### Hosting the demo on a company website
+Several patterns documented; recommend a subdomain CNAME
+(demo.yourcompany.com  ->  emergent prod URL) once the preview is signed
+off.  See WEB_HOSTING_GUIDE.md and the chat decision matrix.
+

@@ -67,6 +67,34 @@ h1 span{color:#ef4444;font-style:italic}
 <div id="diskStatus" style="margin-top:10px;font-size:12px"></div>
 </div>
 
+<div class="card" id="hotReloadCard">
+<h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <span>Hot-Reload Plug-In</span>
+  <span style="color:#64748b;font-size:10px;letter-spacing:.1em;text-transform:uppercase">no flask restart</span>
+</h2>
+<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">
+  <p class="note" style="margin:0 0 6px;font-style:normal">Swap a single plug-in module's code in-place after pushing a new bundle, instead of toggling the enteliWEB <code style="background:#1e293b;padding:1px 4px;border-radius:3px">app.py</code> object. Brand-new routes added since boot are attached on the fly. If <code style="background:#1e293b;padding:1px 4px;border-radius:3px">register()</code> raises, every partially-bound route is rolled back atomically.</p>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <select id="hotReloadPlugin" data-testid="hot-reload-plugin-select"
+    style="background:#020617;color:#e2e8f0;border:1px solid #334155;padding:8px 10px;font-family:'Courier New',monospace;font-size:12px;border-radius:4px;flex:1;min-width:240px">
+    <option value="upload_service">upload_service</option>
+    <option value="weather_service">weather_service</option>
+    <option value="band_service">band_service</option>
+    <option value="telemetry_service">telemetry_service</option>
+    <option value="webhook_bridge_service">webhook_bridge_service</option>
+    <option value="mqtt_bridge_service">mqtt_bridge_service</option>
+    <option value="modbus_bridge_service">modbus_bridge_service</option>
+    <option value="ws_bridge_service">ws_bridge_service</option>
+    <option value="bridges_admin_service">bridges_admin_service</option>
+  </select>
+  <button class="btn" id="hotReloadBtn" data-testid="hot-reload-btn"
+    style="padding:8px 16px;font-size:11px;background:#1e1b4b;color:#a5b4fc;border:1px solid #4f46e5;text-transform:uppercase;letter-spacing:.08em"
+    onclick="hotReloadPlugin()" title="POST /api/repair/reload-module/<name>">Reload</button>
+</div>
+<div id="hotReloadStatus" data-testid="hot-reload-status" style="margin-top:10px;font-size:12px"></div>
+</div>
+
 <style>
 .disk-meter{margin:6px 0 14px;background:#020617;border:1px solid #1e293b;border-radius:6px;padding:10px 12px}
 .disk-meter .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:11px;color:#94a3b8;letter-spacing:.05em;text-transform:uppercase}
@@ -140,7 +168,7 @@ h1 span{color:#ef4444;font-style:italic}
 <div class="card">
 <h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>Data Bridges</span>
   <span style="display:flex;gap:8px;align-items:center">
-    <a href="data_bridges_guide.md" target="_blank" style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#020617;color:#a5b4fc;border:1px solid #6366f1;text-decoration:none" title="Plain-language setup guide with copy-paste examples">Setup Guide</a>
+    <a href="/api/repair/download-plugin/data_bridges_guide.md" target="_blank" style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#020617;color:#a5b4fc;border:1px solid #6366f1;text-decoration:none" title="Plain-language setup guide with copy-paste examples">Setup Guide</a>
     <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#1e3a8a;color:#93c5fd;border:1px solid #3b82f6;vertical-align:middle">AHU Telemetry Out</span>
   </span>
 </h2>
@@ -155,6 +183,16 @@ h1 span{color:#ef4444;font-style:italic}
   </div>
 </details>
 <div id="bridgesStatus" style="margin-top:10px;font-size:12px"></div>
+</div>
+
+<div class="card" id="bacnetDiagCard">
+<h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>BACnet Config Health</span>
+  <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#1e3a8a;color:#93c5fd;border:1px solid #3b82f6;vertical-align:middle">ObjectID Check</span>
+</h2>
+<p class="note" style="margin-bottom:12px">BACnet writes via <code style="background:#1e293b;padding:1px 4px;border-radius:3px">dibt.Write</code> silently fail when <code style="background:#1e293b;padding:1px 4px;border-radius:3px">collector_config.json</code> uses Object <b>Names</b> (e.g. <code>AHU01_SAT_SP</code>) instead of Object <b>IDs</b> (e.g. <code>CSV1</code>, <code>AV23</code>). This card scans the live config and flags any AHU whose <code style="background:#1e293b;padding:1px 4px;border-radius:3px">csv_object</code> entry won't resolve at write-time.</p>
+<button id="bacnetDiagRunBtn" class="btn" style="background:#1e3a8a;color:#93c5fd;border:1px solid #3b82f6;padding:6px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:900" data-testid="bacnet-diag-run">Run Diagnose</button>
+<a id="bacnetDiagDlBtn" href="/api/bacnet/diagnose-config/csv" target="_blank" rel="noopener" class="btn" style="display:inline-block;background:#020617;color:#94a3b8;border:1px solid #334155;padding:6px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;text-decoration:none;margin-left:6px" title="Download a paste-ready TSV skeleton for fixing collector_config.json">Download TSV Skeleton</a>
+<div id="bacnetDiagResult" style="margin-top:12px;font-size:12px" data-testid="bacnet-diag-result"></div>
 </div>
 
 <div class="card">
@@ -224,7 +262,7 @@ function _renderDiskMeter(payload, statusMsg){
             '<b>' + (c.uploads_files_removed || 0) + '</b> stale upload spool file(s) (' + _fmtBytes(c.uploads_bytes_freed || 0) + ')</div>';
     }
     body.innerHTML = html + '<p class="note" style="margin:0;font-style:normal">Pre-flight thresholds: ' +
-        '<b>20 MB</b> free + <b>400 inodes</b>. Below those the controller refuses uploads (HTTP 507) so a partial deploy never corrupts the install.</p>';
+        '<b>~bundle size + 1 MB</b> free + <b>400 inodes</b>. Below those the controller refuses uploads (HTTP 507) so a partial deploy never corrupts the install.</p>';
     if (statusMsg) {
         statusEl.className = tier === 'crit' ? 'status-err' : (tier === 'warn' ? 'status-info' : 'status-ok');
         statusEl.textContent = statusMsg;
@@ -320,6 +358,93 @@ function cleanupDisk(){
         });
 }
 
+function hotReloadPlugin(){
+    var base = getApiBase(); if (!base) return;
+    var sel = document.getElementById('hotReloadPlugin');
+    var name = sel && sel.value ? sel.value : '';
+    var btn = document.getElementById('hotReloadBtn');
+    var statusEl = document.getElementById('hotReloadStatus');
+    if (!name){ return; }
+    if (btn){ btn.disabled = true; btn.textContent = 'Reloading...'; }
+    if (statusEl){
+        statusEl.className = '';
+        statusEl.style.color = '#94a3b8';
+        statusEl.innerHTML = 'POST <code style="background:#1e293b;padding:1px 4px;border-radius:3px">/api/repair/reload-module/' + name + '</code>...';
+    }
+    fetch(base + '/api/repair/reload-module/' + encodeURIComponent(name),
+          {method:'POST', mode:'cors'})
+        .then(function(r){
+            return r.text().then(function(t){
+                var j = {};
+                try { j = JSON.parse(t); } catch(e){ /* leave empty */ }
+                return {status: r.status, json: j, raw: t};
+            });
+        })
+        .then(function(out){
+            if (out.status === 200 && out.json && out.json.success){
+                var swapped = out.json.swapped_endpoints || [];
+                var added   = out.json.new_endpoints     || [];
+                var fresh   = !!out.json.fresh_import;
+                var rm      = out.json.route_map         || {};
+                var html = '<span style="color:#22c55e;font-weight:700">OK</span> &mdash; <b>' + name + '</b> ';
+                html += fresh ? 'imported & registered' : 'hot-reloaded';
+                html += '. ';
+                html += '<span style="color:#64748b">Swapped: ' + swapped.length + ' &middot; Newly attached: ' + added.length + '</span>';
+                var renderEp = function(ep, accent){
+                    var routes = rm[ep] || [];
+                    if (!routes.length){
+                        return '<span style="color:#64748b">' + ep + '</span>';
+                    }
+                    return routes.map(function(rt){
+                        var methods = (rt.methods || []).join('|') || 'ANY';
+                        return '<span style="color:' + accent + '">' + rt.rule + '</span>' +
+                               ' <span style="color:#475569">[' + methods + ']</span>' +
+                               ' <span style="color:#64748b">&rarr; ' + ep + '</span>';
+                    }).join('<br>');
+                };
+                if (added.length){
+                    html += '<div style="margin-top:6px;font-family:\'Courier New\',monospace;font-size:11px;color:#a5b4fc">';
+                    html += '<div style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">+ new routes</div>';
+                    html += added.map(function(ep){ return '&nbsp;&nbsp;' + renderEp(ep, '#a5b4fc'); }).join('<br>');
+                    html += '</div>';
+                }
+                if (swapped.length){
+                    html += '<details style="margin-top:4px;font-family:\'Courier New\',monospace;font-size:11px">';
+                    html += '<summary style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer">'
+                          + '&middot; ' + swapped.length + ' swapped route' + (swapped.length === 1 ? '' : 's') + ' (click to expand)</summary>';
+                    html += '<div style="margin-top:3px;color:#94a3b8">';
+                    html += swapped.map(function(ep){ return '&nbsp;&nbsp;' + renderEp(ep, '#94a3b8'); }).join('<br>');
+                    html += '</div></details>';
+                }
+                if (out.json.note){
+                    html += '<div style="margin-top:4px;color:#64748b;font-style:italic">' + out.json.note + '</div>';
+                }
+                statusEl.style.color = '#22c55e';
+                statusEl.innerHTML = html;
+            } else {
+                statusEl.style.color = '#ef4444';
+                var err = (out.json && out.json.error) || ('HTTP ' + out.status);
+                var html = '<b>FAILED</b> &mdash; ' + err;
+                var rb = out.json && out.json.rolled_back_endpoints;
+                if (Array.isArray(rb) && rb.length){
+                    html += '<div style="margin-top:6px;color:#fbbf24">Rolled back ' + rb.length + ' partially-bound route(s): ' +
+                            '<span style="font-family:\'Courier New\',monospace">' + rb.join(', ') + '</span></div>';
+                }
+                if (out.json && Array.isArray(out.json.allowed)){
+                    html += '<div style="margin-top:4px;color:#64748b;font-size:11px">Allowed: ' + out.json.allowed.join(', ') + '</div>';
+                }
+                statusEl.innerHTML = html;
+            }
+        })
+        .catch(function(err){
+            statusEl.style.color = '#ef4444';
+            statusEl.textContent = 'Reload request failed: ' + err.message;
+        })
+        .then(function(){
+            if (btn){ btn.disabled = false; btn.textContent = 'Reload'; }
+        });
+}
+
 function getApiBase() {
     var url = document.getElementById('serverUrl').value.trim().replace(/\/+$/, '');
     if (!url) {
@@ -409,6 +534,77 @@ function _renderUploadResult(data){
         (data.extracted || []).forEach(function(f) { html += '<div class="file ok">' + f.file + ' (' + f.size + ' B)</div>'; });
         (data.skipped || []).forEach(function(f) { html += '<div class="file skip">' + f.file + ' - ' + f.reason + '</div>'; });
         (data.errors || []).forEach(function(f) { html += '<div class="file err">' + f.file + ' - ' + f.error + '</div>'; });
+
+        // Render auto-reload summary: every *_service.py that just landed
+        // is hot-reloaded in-process so its routes go live immediately
+        // (no Flask restart / no enteliWEB app.py object toggle).
+        var rms = data.reloaded_modules || [];
+        var rsum = data.reload_summary || {};
+        if (rms.length){
+            html += '<div style="margin-top:12px;padding:10px 12px;background:#020617;border:1px solid #1e293b;border-radius:6px">';
+            html += '<div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#a5b4fc;margin-bottom:6px">Auto-Reload Plug-Ins &nbsp;'
+                 + '<span style="color:#64748b">'
+                 + 'attempted: ' + (rsum.attempted || 0)
+                 + ' &middot; <span style="color:#22c55e">ok: ' + (rsum.succeeded || 0) + '</span>'
+                 + ' &middot; <span style="color:' + ((rsum.failed || 0) ? '#ef4444' : '#64748b') + '">failed: ' + (rsum.failed || 0) + '</span>'
+                 + '</span></div>';
+            rms.forEach(function(r){
+                var color = r.success ? '#22c55e' : '#ef4444';
+                var dot   = r.success ? '\u25CF' : '\u25CB';
+                html += '<div style="font-family:\'Courier New\',monospace;font-size:11px;color:' + color + ';margin:2px 0">';
+                html += dot + ' <b>' + (r.module || '?') + '</b>';
+                if (r.fresh_import) html += ' <span style="color:#fbbf24">[fresh]</span>';
+                var sw = (r.swapped_endpoints || []).length;
+                var ne = (r.new_endpoints     || []).length;
+                html += ' <span style="color:#64748b">swapped: ' + sw + ' &middot; new: ' + ne + '</span>';
+                if (!r.success && r.error){
+                    html += '<div style="margin-left:14px;color:#fbbf24">' + r.error + '</div>';
+                }
+                // Self-documenting: show each endpoint's actual URL rule +
+                // HTTP methods so operators can read the deploy report and
+                // immediately tell which HTTP routes just came online.
+                var rm = r.route_map || {};
+                var renderEpRoutes = function(ep, accentColor){
+                    var routes = rm[ep] || [];
+                    if (!routes.length){
+                        return '<span style="color:#64748b">' + ep + '</span>';
+                    }
+                    return routes.map(function(rt){
+                        var methods = (rt.methods || []).join('|') || 'ANY';
+                        return '<span style="color:' + accentColor + '">' + rt.rule + '</span>' +
+                               ' <span style="color:#475569">[' + methods + ']</span>' +
+                               ' <span style="color:#64748b">&rarr; ' + ep + '</span>';
+                    }).join('<br>');
+                };
+                if (ne && r.success){
+                    html += '<div style="margin-left:14px;margin-top:4px;color:#a5b4fc">' +
+                            '<div style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">+ new routes</div>' +
+                            (r.new_endpoints || []).map(function(ep){
+                                return '&nbsp;&nbsp;' + renderEpRoutes(ep, '#a5b4fc');
+                            }).join('<br>') +
+                            '</div>';
+                }
+                if (sw && r.success){
+                    // Collapsible by default — keep the deploy panel compact for
+                    // chatty plug-ins like upload_service (10 endpoints).
+                    var detailsId = 'sw-' + (r.module || 'x') + '-' + Math.random().toString(36).slice(2,6);
+                    html += '<details style="margin-left:14px;margin-top:4px">' +
+                            '<summary style="color:#64748b;font-size:10px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer">' +
+                            '&middot; ' + sw + ' swapped route' + (sw === 1 ? '' : 's') + ' (click to expand)</summary>' +
+                            '<div style="margin-top:3px;color:#94a3b8">' +
+                            (r.swapped_endpoints || []).map(function(ep){
+                                return '&nbsp;&nbsp;' + renderEpRoutes(ep, '#94a3b8');
+                            }).join('<br>') +
+                            '</div></details>';
+                }
+                var rb = r.rolled_back_endpoints || [];
+                if (rb.length){
+                    html += '<div style="margin-left:14px;color:#fbbf24">rolled back: ' + rb.join(', ') + '</div>';
+                }
+            });
+            html += '</div>';
+        }
+
         reportEl.innerHTML = html;
         reportEl.style.display = 'block';
         _setUploadProgress(100, 'Deploy complete', 'done');
@@ -598,12 +794,14 @@ var REPAIR_FILES = [
     {name: 'mqtt_bridge_service.py',    label: 'MQTT Bridge',               desc: 'Publish/subscribe (needs paho-mqtt — graceful no-op if missing)', kind: 'plugin'},
     {name: 'modbus_bridge_service.py',  label: 'Modbus TCP Bridge',         desc: 'Expose telemetry as holding registers (needs pymodbus)',       kind: 'plugin'},
     {name: 'ws_bridge_service.py',      label: 'WebSocket Bridge',          desc: 'Push telemetry to live clients (needs websockets)',            kind: 'plugin'},
+    {name: 'bacnet_diag_service.py',    label: 'BACnet Diagnose Service',   desc: '/api/bacnet/diagnose-config — detect name-based BACnet targets', kind: 'plugin'},
     // -- UI / static files --
     {name: 'update.html',          label: 'update.html',       desc: 'This page (Repair Mode + Data Bridges UI)',       kind: 'ui'},
     {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
     {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
     {name: 'landing.html',         label: 'landing.html',      desc: 'Landing page',                                    kind: 'ui'},
     {name: 'data_bridges_guide.md',label: 'data_bridges_guide.md', desc: 'Plain-language Data Bridges setup guide',     kind: 'ui'},
+    {name: 'opt_sa_insight.md',   label: 'opt_sa_insight.md',    desc: 'Opt-SA strategy explainer (6th-grader mode)',  kind: 'ui'},
     {name: 'configs/bridges.json', label: 'bridges.json',      desc: 'Bridge config (broker URLs, write_allowlist, etc.)', kind: 'ui'},
 ];
 
@@ -613,22 +811,50 @@ function _renderRepairList(){
     box.innerHTML = '';
     REPAIR_FILES.forEach(function(f){
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;background:#020617;border:1px solid #1e293b;border-radius:6px';
+        row.style.cssText = 'display:flex;flex-direction:column;padding:8px 10px;background:#020617;border:1px solid #1e293b;border-radius:6px';
         var color = f.kind === 'plugin' ? '#a5b4fc' : '#86efac';
         var bg    = f.kind === 'plugin' ? '#312e81' : '#064e3b';
-        row.innerHTML = ''
+        var safeId = f.name.replace(/\W/g,'_');
+        var head = document.createElement('div');
+        head.style.cssText = 'display:flex;align-items:center;gap:8px';
+        head.innerHTML = ''
             + '<span style="display:inline-block;padding:2px 6px;border-radius:3px;background:' + bg + ';color:' + color + ';font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">' + f.kind + '</span>'
             + '<span style="flex:1"><span style="color:#e2e8f0;font-size:12px;font-weight:700">' + f.name + '</span><span style="color:#64748b;font-size:10px;display:block;margin-top:1px">' + f.desc + '</span></span>'
-            + '<input type="file" accept=".py,.html" id="rf_' + f.name.replace(/\W/g,'_') + '" style="display:none">'
+            + '<input type="file" accept=".py,.html" id="rf_' + safeId + '" style="display:none">'
             + '<button class="btn" data-act="pick" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em">Replace</button>'
             + (f.kind === 'plugin'
                 ? '<button class="btn" data-act="reload" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#312e81;color:#a5b4fc;border:1px solid #4338ca;text-transform:uppercase;letter-spacing:.05em" title="Hot-reload — re-imports the module without restarting Flask">Reload</button>'
                 : '')
             + '<a href="#" data-act="dl" data-name="' + f.name + '" class="btn" style="padding:6px 10px;font-size:10px;background:#020617;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em;text-decoration:none">View</a>';
+        row.appendChild(head);
+        // Per-row badge slot: hidden by default; populated when /api/repair/
+        // reload-module responds with fresh_import:true (i.e., a brand-new
+        // plug-in just attached its routes to the running Flask app).
+        var badge = document.createElement('div');
+        badge.id = 'rb_' + safeId;
+        badge.dataset.name = f.name;
+        badge.style.cssText = 'display:none;margin-top:8px;padding:6px 10px;background:#022c22;border:1px solid #34d399;border-radius:6px;color:#86efac;font-size:10px;line-height:1.55;font-family:Menlo,Consolas,monospace';
+        row.appendChild(badge);
         box.appendChild(row);
     });
     box.addEventListener('click', _onRepairClick);
     box.addEventListener('change', _onRepairFileChange);
+}
+
+function _showFreshBadge(name, newEndpoints){
+    var b = document.getElementById('rb_' + name.replace(/\W/g,'_'));
+    if (!b) return;
+    var eps = newEndpoints || [];
+    var epHtml = eps.length
+        ? eps.map(function(e){ return '<code style="background:#064e3b;color:#a7f3d0;padding:1px 5px;border-radius:3px;margin:0 2px">' + e + '</code>'; }).join(' ')
+        : '<span style="color:#fbbf24">(register() ran but reported no new endpoints)</span>';
+    b.innerHTML = ''
+        + '<span style="color:#34d399;font-weight:700;letter-spacing:.05em">\u2713 FRESH IMPORT</span> '
+        + '<span style="color:#86efac">'
+        + eps.length + ' new route' + (eps.length === 1 ? '' : 's')
+        + ' live (no Flask restart needed)</span><br>'
+        + epHtml;
+    b.style.display = 'block';
 }
 function _onRepairClick(e){
     var btn = e.target.closest('[data-act]'); if (!btn) return;
@@ -659,8 +885,17 @@ function _doRepairReload(name){
         .then(function(rs){
             if (rs.ok && rs.j && rs.j.success){
                 status.className = 'status-ok';
-                var n = (rs.j.swapped_endpoints || []).length;
-                status.textContent = 'OK: hot-reloaded ' + name + ' — swapped ' + n + ' endpoint(s): ' + (rs.j.swapped_endpoints || []).join(', ');
+                if (rs.j.fresh_import === true){
+                    var ne = (rs.j.new_endpoints || []);
+                    status.textContent = 'OK: fresh-imported ' + name + ' — ' + ne.length + ' new route(s) now live: ' + ne.join(', ');
+                    _showFreshBadge(name, ne);
+                } else {
+                    var n = (rs.j.swapped_endpoints || []).length;
+                    var ne2 = (rs.j.new_endpoints || []);
+                    status.textContent = 'OK: hot-reloaded ' + name + ' — swapped ' + n + ' endpoint(s)' +
+                        (ne2.length ? ' + attached ' + ne2.length + ' NEW route(s): ' + ne2.join(', ') : ': ' + (rs.j.swapped_endpoints || []).join(', '));
+                    if (ne2.length) _showFreshBadge(name, ne2);
+                }
             } else {
                 status.className = 'status-err';
                 status.textContent = 'Reload error: ' + ((rs.j && rs.j.error) || ('HTTP ' + rs.status));
@@ -679,7 +914,19 @@ function _onRepairFileChange(e){
     // Map munged id back to actual name from REPAIR_FILES
     var picked = REPAIR_FILES.find(function(f){ return f.name.replace(/\W/g,'_') === match[1]; });
     if (!picked) return;
-    if (file.name !== picked.name && !confirm('Selected file name ('+file.name+') does not match expected ('+picked.name+'). Upload anyway as '+picked.name+'?')){
+    // STRICT name check: refuse rename-on-upload outright.  Picking
+    // "dashboard.html" on the "update.html" row used to offer to upload
+    // it AS update.html — that overwrote /root/data/update.html with
+    // dashboard contents and broke the /update page.  Now we just say
+    // no and require the operator to pick the correctly-named file.
+    if (file.name !== picked.name){
+        var status = document.getElementById('repairStatus');
+        if (status){
+            status.className = 'status-err';
+            status.textContent = 'File name mismatch — you picked "' + file.name + '" but this row replaces "' + picked.name + '". Re-name the file on disk (or pick a different file) and try again.';
+        } else {
+            alert('File name mismatch — you picked "' + file.name + '" but this row replaces "' + picked.name + '".');
+        }
         fi.value = '';
         return;
     }
@@ -714,8 +961,17 @@ function _doRepairUpload(name, file){
                         .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); })
                         .then(function(rl){
                             if (rl.ok && rl.j && rl.j.success){
-                                var n = (rl.j.swapped_endpoints || []).length;
-                                status.textContent = 'OK: replaced + hot-reloaded ' + name + ' — ' + n + ' endpoint(s) now serve the new code, no Flask restart needed.';
+                                if (rl.j.fresh_import === true){
+                                    var ne = (rl.j.new_endpoints || []);
+                                    status.textContent = 'OK: replaced + fresh-imported ' + name + ' — ' + ne.length + ' new route(s) now live, no Flask restart needed.';
+                                    _showFreshBadge(name, ne);
+                                } else {
+                                    var n = (rl.j.swapped_endpoints || []).length;
+                                    var ne2 = (rl.j.new_endpoints || []);
+                                    status.textContent = 'OK: replaced + hot-reloaded ' + name + ' — ' + n + ' endpoint(s) now serve the new code' +
+                                        (ne2.length ? ' + attached ' + ne2.length + ' NEW route(s): ' + ne2.join(', ') : '') + ', no Flask restart needed.';
+                                    if (ne2.length) _showFreshBadge(name, ne2);
+                                }
                             } else {
                                 status.className = 'status-info';
                                 status.textContent = 'Replace OK, reload failed: ' + ((rl.j && rl.j.error) || ('HTTP ' + rl.status)) + '. Restart Flask manually to activate the new module.';
@@ -874,6 +1130,50 @@ document.getElementById('bridgesSaveBtn').onclick = function(){
 document.getElementById('bridgesReloadBtn').onclick = _refreshBridges;
 setTimeout(_refreshBridges, 800);
 setInterval(function(){ if (document.visibilityState === 'visible') _refreshBridges(); }, 15000);
+
+// ---------- BACnet Config Health card ----------
+function _runBacnetDiag(){
+    var btn  = document.getElementById('bacnetDiagRunBtn');
+    var box  = document.getElementById('bacnetDiagResult');
+    if (!btn || !box) return;
+    btn.disabled = true; btn.textContent = 'Scanning…';
+    box.innerHTML = '<span style="color:#94a3b8">Scanning collector_config.json…</span>';
+    fetch('/api/bacnet/diagnose-config').then(function(r){
+        return r.json().then(function(j){ return {ok: r.ok, j: j}; });
+    }).then(function(rs){
+        btn.disabled = false; btn.textContent = 'Run Diagnose';
+        if (!rs.ok || !rs.j || rs.j.success === false){
+            box.innerHTML = '<span style="color:#fca5a5">Error: ' + ((rs.j && rs.j.error) || 'HTTP failure') + '</span>';
+            return;
+        }
+        var d = rs.j;
+        var totals = d.totals || {id:0, name:0, missing:0};
+        var headerColor = d.healthy ? '#34d399' : '#f59e0b';
+        var headerBg    = d.healthy ? '#022c22' : '#422006';
+        var headerBd    = d.healthy ? '#34d399' : '#f59e0b';
+        var rowsHtml = (d.ahus || []).map(function(a){
+            var color, bg, label;
+            if (a.kind === 'ID')      { color='#86efac'; bg='#064e3b'; label='ObjectID'; }
+            else if (a.kind === 'NAME')   { color='#fcd34d'; bg='#422006'; label='NAME (broken)'; }
+            else                          { color='#fca5a5'; bg='#450a0a'; label='MISSING'; }
+            return '<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:#020617;border:1px solid #1e293b;border-radius:6px;margin-top:4px">'
+                + '<span style="font-weight:700;color:#e2e8f0;width:96px">' + a.ahu + '</span>'
+                + '<code style="background:#1e293b;color:#cbd5e1;padding:2px 6px;border-radius:3px;font-size:11px;flex:1">' + (a.csv_object || '\u2014') + '</code>'
+                + '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:' + bg + ';color:' + color + ';border:1px solid ' + color + '">' + label + '</span>'
+                + (a.suggestion ? ('<span style="color:#94a3b8;font-size:10px;flex-basis:100%;margin-top:4px">' + a.suggestion + '</span>') : '')
+                + '</div>';
+        }).join('');
+        box.innerHTML = ''
+            + '<div data-testid="bacnet-diag-summary" style="padding:8px 12px;background:' + headerBg + ';border:1px solid ' + headerBd + ';border-radius:6px;color:' + headerColor + ';font-weight:700;margin-bottom:8px">' + d.summary + '</div>'
+            + '<div style="font-size:10px;color:#64748b;margin-bottom:4px">Config: <code style="background:#1e293b;padding:1px 4px;border-radius:3px">' + d.config_path + '</code> · version ' + (d.config_version || '?') + ' · mock_mode ' + (d.mock_mode ? '<b style="color:#fbbf24">ON</b>' : 'off') + '</div>'
+            + '<div style="font-size:10px;color:#64748b;margin-bottom:8px">Totals: <b style="color:#86efac">' + totals.id + '</b> ID · <b style="color:#fcd34d">' + totals.name + '</b> NAME · <b style="color:#fca5a5">' + totals.missing + '</b> MISSING</div>'
+            + rowsHtml;
+    }).catch(function(ex){
+        btn.disabled = false; btn.textContent = 'Run Diagnose';
+        box.innerHTML = '<span style="color:#fca5a5">Network error: ' + (ex && ex.message || ex) + '</span>';
+    });
+}
+document.getElementById('bacnetDiagRunBtn').onclick = _runBacnetDiag;
 
 // Auto-detect server from current page origin (works when served by controller)
 (function() {

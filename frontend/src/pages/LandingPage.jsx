@@ -1,299 +1,123 @@
 /**
- * Main Landing Page - Password Protected Entry Point
- * 
- * Flow:
- * - No password / Skip → Master UI Dashboard (public operational view)
- * - With password → Engineer Portal (Config Tool + Master UI options)
- * 
- * Uses the password created in Config Tool (stored in localStorage)
+ * Red5 Studio V2.0 - Public Demo Landing Page (Phase 1)
+ *
+ * This is the polished entry point for the publicly-hosted demo. It is
+ * deliberately auth-less in Phase 1 -- the goal is to let prospects /
+ * partners click "Try the Demo" and immediately see the live V1.9
+ * dashboard running against the FastAPI demo backend.
+ *
+ * Phase 2 will reintroduce auth (Emergent Google OAuth) here, gating
+ * access to per-tenant data instead of the canned demo configs.
  */
-
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React from 'react';
 
 const LandingPage = () => {
-    const navigate = useNavigate();
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [error, setError] = useState('');
-    const [isFirstTime, setIsFirstTime] = useState(false);
-
-    // Check if password exists on mount
-    React.useEffect(() => {
-        const hasPassword = localStorage.getItem('hashedPassword');
-        setIsFirstTime(!hasPassword);
-        
-        // Clear password fields for security (after logout or page load)
-        setPassword('');
-        setConfirmPassword('');
-        setError('');
-    }, []);
-
-    const handleCreatePassword = async (e) => {
-        e.preventDefault();
-        
-        if (!password.trim()) {
-            setError('Password cannot be empty');
-            setTimeout(() => setError(''), 3000);
-            return;
-        }
-
-        if (password !== confirmPassword) {
-            setError('Passwords do not match');
-            setTimeout(() => setError(''), 3000);
-            return;
-        }
-
-        if (password.length < 6) {
-            setError('Password must be at least 6 characters');
-            setTimeout(() => setError(''), 3000);
-            return;
-        }
-
-        // Hash and store the new password
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password);
-        
-        try {
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            
-            localStorage.setItem('hashedPassword', hashHex);
-            
-            // Password created, proceed to Engineer Portal
-            navigate('/engineer-portal');
-        } catch (err) {
-            setError('Failed to create password: ' + err.message);
-            setTimeout(() => setError(''), 3000);
-        }
-    };
-
-    const handlePasswordSubmit = (e) => {
-        e.preventDefault();
-        
-        if (!password.trim()) {
-            // No password entered - go to public dashboard
-            navigate('/dashboard');
-            return;
-        }
-
-        // Get the user-created password hash from Config Tool (localStorage)
-        const storedHash = localStorage.getItem('hashedPassword');
-        
-        // Master key hash for emergency access (password: b%9P$MdeQP][)
-        const MASTER_KEY_HASH = '466d4a3ceb4bdba2cfab78a16650d92d4718dc0f280ab3b4e3d79c9a5b75df0c';
-
-        // Hash the entered password using same method as Config Tool
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password);
-        
-        crypto.subtle.digest('SHA-256', data).then(hashBuffer => {
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const inputHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            
-            // Check against user password first, then master key
-            if ((storedHash && inputHash === storedHash) || inputHash === MASTER_KEY_HASH) {
-                // Correct password or master key - go to engineer portal
-                navigate('/engineer-portal');
-            } else {
-                setError('Incorrect password');
-                setTimeout(() => setError(''), 3000);
-            }
-        });
-    };
-
-    const skipToDashboard = () => {
-        navigate('/dashboard');
-    };
-
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex items-center justify-center p-8">
-            <div className="max-w-lg w-full">
-                {/* Header */}
-                <div className="text-center mb-12">
-                    <h1 className="text-5xl font-black italic uppercase tracking-tight leading-none mb-3">
-                        <span className="text-red-500">Red5</span>{' '}
-                        <span className="text-white">Platform Studio</span>
-                    </h1>
-                    <p className="text-slate-500 text-sm font-medium tracking-wide">
-                        by Delta Controls
+        <div className="min-h-screen w-screen bg-slate-950 text-slate-100 flex flex-col"
+             data-testid="v2-landing-root">
+            {/* Top nav */}
+            <header className="border-b border-slate-800 px-6 sm:px-10 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded bg-gradient-to-br from-amber-500 to-rose-500 flex items-center justify-center font-black text-slate-950">
+                        R5
+                    </div>
+                    <div className="font-black uppercase tracking-tight text-sm">
+                        Red5 Studio
+                        <span className="ml-2 text-[10px] font-mono font-bold text-amber-400 align-middle"
+                              data-testid="v2-phase-chip">
+                            V2.0 / DEMO
+                        </span>
+                    </div>
+                </div>
+                <a
+                    href="/dashboard.html"
+                    data-testid="v2-nav-dashboard-link"
+                    className="text-xs font-bold uppercase tracking-wider text-slate-300 hover:text-amber-300 transition-colors"
+                >
+                    Open Dashboard &rarr;
+                </a>
+            </header>
+
+            {/* Hero */}
+            <main className="flex-1 grid place-items-center px-6 sm:px-10 py-12">
+                <div className="max-w-3xl text-center">
+                    <p className="text-[11px] font-mono font-black uppercase tracking-[0.25em] text-amber-400 mb-3"
+                       data-testid="v2-hero-eyebrow">
+                        Building Diagnostic Command Center
                     </p>
-                </div>
-
-                {/* Password Card */}
-                <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-8 shadow-2xl">
-                    {isFirstTime ? (
-                        // First-time setup: Create Password
-                        <>
-                            <div className="mb-6">
-                                <h2 className="text-xl font-bold text-white mb-2">
-                                    🔐 Create Your Password
-                                </h2>
-                                <p className="text-slate-400 text-sm">
-                                    Set up your engineer password to secure access to configuration tools
-                                </p>
-                            </div>
-
-                            <form onSubmit={handleCreatePassword} className="space-y-4">
-                                {/* New Password */}
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                                        New Password
-                                    </label>
-                                    <input
-                                        type="password"
-                                        value={password}
-                                        onChange={(e) => {
-                                            setPassword(e.target.value);
-                                            setError('');
-                                        }}
-                                        placeholder="Create a password..."
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors"
-                                        autoFocus
-                                    />
-                                </div>
-
-                                {/* Confirm Password */}
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                                        Confirm Password
-                                    </label>
-                                    <input
-                                        type="password"
-                                        value={confirmPassword}
-                                        onChange={(e) => {
-                                            setConfirmPassword(e.target.value);
-                                            setError('');
-                                        }}
-                                        placeholder="Confirm password..."
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors"
-                                    />
-                                </div>
-
-                                {error && (
-                                    <p className="text-red-400 text-xs mt-2 animate-pulse">
-                                        ⚠️ {error}
-                                    </p>
-                                )}
-
-                                {/* Buttons */}
-                                <div className="grid grid-cols-2 gap-3 pt-2">
-                                    <button
-                                        type="button"
-                                        onClick={skipToDashboard}
-                                        className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-sm uppercase tracking-wide transition-all"
-                                    >
-                                        Skip
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm uppercase tracking-wide transition-all shadow-lg shadow-indigo-500/20"
-                                    >
-                                        Create
-                                    </button>
-                                </div>
-                            </form>
-
-                            {/* Info */}
-                            <div className="mt-6 pt-6 border-t border-slate-800">
-                                <div className="flex items-start gap-2 text-xs text-slate-500">
-                                    <svg className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <div>
-                                        <p className="font-medium text-slate-400 mb-1">First-time Setup:</p>
-                                        <p>Create a password to access engineer tools, or skip for operational dashboard only.</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    ) : (
-                        // Regular login
-                        <>
-                            <div className="mb-6">
-                                <h2 className="text-xl font-bold text-white mb-2">
-                                    Welcome
-                                </h2>
-                                <p className="text-slate-400 text-sm">
-                                    Enter password for engineer access, or skip to operational dashboard
-                                </p>
-                            </div>
-
-                            <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                                {/* Password Input */}
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                                        Password (optional)
-                                    </label>
-                                    <input
-                                        type="password"
-                                        value={password}
-                                        onChange={(e) => {
-                                            setPassword(e.target.value);
-                                            setError('');
-                                        }}
-                                        placeholder="Enter engineer password..."
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-600 outline-none focus:border-indigo-500 transition-colors"
-                                        autoFocus
-                                    />
-                                    {error && (
-                                        <p className="text-red-400 text-xs mt-2 animate-pulse">
-                                            ⚠️ {error}
-                                        </p>
-                                    )}
-                                </div>
-
-                                {/* Buttons */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={skipToDashboard}
-                                        className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-bold text-sm uppercase tracking-wide transition-all"
-                                    >
-                                        Skip
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm uppercase tracking-wide transition-all shadow-lg shadow-indigo-500/20"
-                                    >
-                                        Enter
-                                    </button>
-                                </div>
-                            </form>
-
-                            {/* Info */}
-                            <div className="mt-6 pt-6 border-t border-slate-800">
-                                <div className="flex items-start gap-2 text-xs text-slate-500">
-                                    <svg className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <div>
-                                        <p className="font-medium text-slate-400 mb-1">Access Levels:</p>
-                                        <p><span className="text-emerald-400">With Password:</span> Full engineer access (Config Tool + Master UI)</p>
-                                        <p className="mt-1"><span className="text-indigo-400">Skip:</span> Operational dashboard only</p>
-                                        <p className="mt-2 text-amber-400/60">
-                                            🔑 Emergency master key available for recovery
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                {/* Footer */}
-                <div className="mt-8 text-center text-slate-600 text-xs font-mono">
-                    <div className="mb-1">
-                        🔒 Secure Hardware Controller Platform
+                    <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-none mb-5"
+                        data-testid="v2-hero-title">
+                        Read the psychrometrics.<br />
+                        <span className="bg-gradient-to-r from-amber-400 via-rose-400 to-fuchsia-400 bg-clip-text text-transparent">
+                            Run the building.
+                        </span>
+                    </h1>
+                    <p className="text-base sm:text-lg text-slate-400 mb-10 leading-relaxed">
+                        Live 3D psychrometric chart, Givoni-band SA strategy
+                        engine, ERV B-shift visualizer, and a no-BMS-required
+                        Demo Mode pulling from a year of real Open-Meteo
+                        weather. Tap the dashboard below to take it for a spin.
+                    </p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <a
+                            href="/dashboard.html"
+                            data-testid="v2-cta-open-dashboard"
+                            className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-amber-400 hover:bg-amber-300 text-slate-950 font-black uppercase tracking-wider text-sm transition-colors"
+                        >
+                            Try the Dashboard
+                            <span aria-hidden>&rarr;</span>
+                        </a>
+                        <a
+                            href="/equipment_mapper.html"
+                            data-testid="v2-cta-open-mapper"
+                            className="inline-flex items-center gap-2 px-6 py-3 rounded-md border border-slate-700 hover:border-amber-400 hover:text-amber-300 text-slate-300 font-black uppercase tracking-wider text-sm transition-colors"
+                        >
+                            Equipment Mapper
+                        </a>
                     </div>
-                    <div>
-                        Version 12.10 | [ABC] Deployment
+
+                    {/* Quick stats row */}
+                    <div className="mt-14 grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+                        <DemoStat
+                            label="Givoni Bands"
+                            value="10"
+                            sub="Climate-aware SA strategy table"
+                            testid="v2-stat-bands"
+                        />
+                        <DemoStat
+                            label="Weather Year"
+                            value="2020"
+                            sub="Seattle (Open-Meteo) cached"
+                            testid="v2-stat-weather"
+                        />
+                        <DemoStat
+                            label="Simulated AHUs"
+                            value="3"
+                            sub="East / South / West zones"
+                            testid="v2-stat-ahus"
+                        />
                     </div>
                 </div>
-            </div>
+            </main>
+
+            {/* Footer */}
+            <footer className="border-t border-slate-800 px-6 sm:px-10 py-4 text-[11px] font-mono text-slate-500 flex flex-col sm:flex-row justify-between gap-2">
+                <span data-testid="v2-footer-mode">
+                    Demo Mode &middot; Read-only &middot; No controller
+                    required &middot; No login
+                </span>
+                <span>V2.0 / Phase 1</span>
+            </footer>
         </div>
     );
 };
+
+const DemoStat = ({ label, value, sub, testid }) => (
+    <div className="border border-slate-800 rounded-md px-4 py-3 bg-slate-900/40" data-testid={testid}>
+        <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500">{label}</div>
+        <div className="text-3xl font-black text-amber-300 mt-1">{value}</div>
+        <div className="text-xs text-slate-400 mt-1">{sub}</div>
+    </div>
+);
 
 export default LandingPage;

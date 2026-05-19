@@ -17,6 +17,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="js/i18n.js"></script>
+    <script src="js/docs_index.js"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
@@ -107,6 +108,55 @@
     <script type="text/plain" id="main-source">
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
+        // ====================================================================
+        // Cross-modal pop-out helper.
+        // ----------------------------------------------------------------------
+        // Opens a separate browser window, clones the parent's stylesheets +
+        // Tailwind CDN, and returns { win, host } where `host` is a freshly
+        // created <div> in the new window.  Callers feed that host into
+        // ReactDOM.createPortal() to render their modal tree into the popup,
+        // preserving all React state, telemetry, click handlers etc.
+        //
+        // The popup auto-closes when the parent tab unloads (registered by
+        // the calling component) — we don't try to keep orphaned popups
+        // alive because they'd point at a dead React root.
+        // ----------------------------------------------------------------------
+        function red5OpenPopupWindow(name, title, width, height) {
+            const winName = 'red5_' + name;
+            const features = 'width=' + width + ',height=' + height +
+                ',resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no';
+            const win = window.open('', winName, features);
+            if (!win) return null;
+            win.document.open();
+            win.document.write('<!doctype html><html><head></head><body></body></html>');
+            win.document.close();
+            const titleEl = win.document.createElement('title');
+            titleEl.textContent = title;
+            win.document.head.appendChild(titleEl);
+            const baseEl = win.document.createElement('base');
+            baseEl.href = window.location.href;
+            win.document.head.appendChild(baseEl);
+            // Clone every <style> and stylesheet <link> so Tailwind class names resolve.
+            document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
+                win.document.head.appendChild(node.cloneNode(true));
+            });
+            // Re-execute the Tailwind CDN runtime so utility classes are compiled in the popup.
+            const tailwind = document.querySelector('script[src*="tailwindcss"]');
+            if (tailwind) {
+                const tw = win.document.createElement('script');
+                tw.src = tailwind.src;
+                win.document.head.appendChild(tw);
+            }
+            win.document.body.className = document.body.className;
+            win.document.body.style.margin = '0';
+            win.document.body.style.background = 'transparent';
+            const host = win.document.createElement('div');
+            host.id = 'red5-popup-' + name;
+            host.style.cssText = 'display:block;width:100vw;min-height:100vh;position:relative;';
+            win.document.body.appendChild(host);
+            return { win: win, host: host };
+        }
+
         // Components loaded from: js/psychrometric.js, js/dashboard-components.js
 
         const App = () => {
@@ -129,11 +179,156 @@
             });
             const API_URL = window.API_BASE_URL || window.location.origin;
 
+            // ---- Left sidebar in-page floating mode ----
+            // Previously this was a cross-window window.open + ReactDOM.createPortal
+            // popup.  That had two latent bugs:
+            //   1) Range-slider drags inside the popup did not work because their
+            //      onMouseDown attached mousemove/mouseup to `window` (the parent),
+            //      not the popup window -- events fired in the popup never reached
+            //      the listener.
+            //   2) On re-attach, queued slider mousemove events fired in a rush
+            //      because the portal teardown moved the slider DOM node back
+            //      under the parent window's listener mid-drag.
+            // Switching to an in-page absolutely-positioned floating panel keeps
+            // every DOM event inside a single document, so window-level mousemove
+            // listeners (used by the temp slider, the resize handle, etc.) work
+            // unchanged.  Position + size persist to localStorage so the operator
+            // does not have to re-position the panel after each refresh.
+            const [sidebarFloating, setSidebarFloating] = useState(false);
+            const [sidebarFloatPos, setSidebarFloatPos] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.sidebarFloatPos')); if (v && typeof v.x === 'number') return v; } catch (e) {}
+                return { x: 24, y: 24 };
+            });
+            const [sidebarFloatSize, setSidebarFloatSize] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.sidebarFloatSize')); if (v && typeof v.w === 'number') return v; } catch (e) {}
+                return { w: 380, h: 800 };
+            });
+            const sidebarDragRef = useRef({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 });
+            const sidebarResizeRef = useRef({ active: false, startX: 0, startY: 0, baseW: 0, baseH: 0 });
+
+            // Drag handle mousedown -> follow mousemove via window listener so
+            // dragging stays smooth even if the cursor leaves the title bar
+            // (same pattern used by VAV / Floor Plan modals in this file).
+            const onSidebarTitleMouseDown = useCallback((e) => {
+                // Ignore clicks on the title bar's buttons (pop-out/attach, close).
+                if (e.target.closest('[data-no-drag]')) return;
+                e.preventDefault();
+                sidebarDragRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseX: sidebarFloatPos.x, baseY: sidebarFloatPos.y };
+                const onMove = (mv) => {
+                    if (!sidebarDragRef.current.active) return;
+                    const nx = Math.max(0, Math.min(window.innerWidth - 80,
+                        sidebarDragRef.current.baseX + (mv.clientX - sidebarDragRef.current.startX)));
+                    const ny = Math.max(0, Math.min(window.innerHeight - 40,
+                        sidebarDragRef.current.baseY + (mv.clientY - sidebarDragRef.current.startY)));
+                    setSidebarFloatPos({ x: nx, y: ny });
+                };
+                const onUp = () => {
+                    sidebarDragRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setSidebarFloatPos(p => { try { localStorage.setItem('red5.sidebarFloatPos', JSON.stringify(p)); } catch (e) {} return p; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [sidebarFloatPos]);
+
+            // Resize handle (bottom-right corner) mousedown.
+            const onSidebarResizeMouseDown = useCallback((e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                sidebarResizeRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseW: sidebarFloatSize.w, baseH: sidebarFloatSize.h };
+                const onMove = (mv) => {
+                    if (!sidebarResizeRef.current.active) return;
+                    const nw = Math.max(280, Math.min(window.innerWidth - 40,
+                        sidebarResizeRef.current.baseW + (mv.clientX - sidebarResizeRef.current.startX)));
+                    const nh = Math.max(360, Math.min(window.innerHeight - 40,
+                        sidebarResizeRef.current.baseH + (mv.clientY - sidebarResizeRef.current.startY)));
+                    setSidebarFloatSize({ w: nw, h: nh });
+                };
+                const onUp = () => {
+                    sidebarResizeRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setSidebarFloatSize(s => { try { localStorage.setItem('red5.sidebarFloatSize', JSON.stringify(s)); } catch (e) {} return s; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [sidebarFloatSize]);
+
+            // ---- Left sidebar cross-window pop-out (extended-display) ----
+            // Mirrors the AHU / VAV / Floor-Plan modal pattern in this file:
+            // `red5OpenPopupWindow` spawns a fresh OS-level browser window with
+            // the same Tailwind + stylesheets, then we portal the sidebar JSX
+            // into it via ReactDOM.createPortal so React state stays wired to
+            // the original component instance.  In-page floating mode and
+            // window pop-out mode are MUTUALLY EXCLUSIVE -- opening one closes
+            // the other so the operator never has two copies of the sidebar
+            // fighting for the same state.  The window auto-closes when the
+            // parent tab unloads (registered in a useEffect below).
+            const [sidebarPopoutWin,  setSidebarPopoutWin]  = useState(null);
+            const [sidebarPopoutHost, setSidebarPopoutHost] = useState(null);
+            const popOutSidebarToWindow = useCallback(() => {
+                if (sidebarPopoutWin && !sidebarPopoutWin.closed) { sidebarPopoutWin.focus(); return; }
+                const result = red5OpenPopupWindow('sidebar', 'Red5 Sidebar (popped out)', 420, 950);
+                if (!result) {
+                    alert('Popup window blocked. Please allow popups for this site, then click the WIN button again.');
+                    return;
+                }
+                // Mutually exclusive with in-page floating mode.
+                setSidebarFloating(false);
+                setSidebarPopoutWin(result.win);
+                setSidebarPopoutHost(result.host);
+                const watcher = setInterval(() => {
+                    if (result.win.closed) {
+                        clearInterval(watcher);
+                        setSidebarPopoutWin(null);
+                        setSidebarPopoutHost(null);
+                    }
+                }, 400);
+            }, [sidebarPopoutWin]);
+
+            // Close orphan sidebar popup when the parent tab navigates away.
+            // (AHU/VAV/Floor-Plan popups have their own equivalent useEffect;
+            // we register a dedicated one for the sidebar so it stays
+            // independent of the modal lifecycle.)
+            useEffect(() => {
+                const onUnload = () => {
+                    if (sidebarPopoutWin && !sidebarPopoutWin.closed) {
+                        try { sidebarPopoutWin.close(); } catch (e) {}
+                    }
+                };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, [sidebarPopoutWin]);
+
             // === Stale-cache detector ===
             // Flask injects window.__BUILD_MTIME__ at HTTP response time. We compare it
             // against the live /api/version to detect when this browser is running a
             // stale-cached HTML while the controller has a newer build deployed.
             const [staleCache, setStaleCache] = useState(null);
+            /* ERV Rollout snapshot — written by psy-3d-engine.js whenever
+               the ERV chip is ON in the 3D WX tab. Hydrate from
+               localStorage so a fresh page-load shows the badge before
+               the 3D engine mounts; refresh on the custom event. */
+            const [ervSnap, setErvSnap] = useState(() => {
+                try {
+                    const raw = localStorage.getItem('red5ErvSnapshot');
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) { return null; }
+            });
+            useEffect(() => {
+                const onUpd = (e) => setErvSnap(e.detail || null);
+                window.addEventListener('red5-erv-rollout-update', onUpd);
+                return () => window.removeEventListener('red5-erv-rollout-update', onUpd);
+            }, []);
+            // Reflect language changes in the browser tab title — the
+            // <title> in <head> is outside React so we update it here
+            // whenever i18n.js becomes available or the language flips.
+            useEffect(() => {
+                if (window.t) {
+                    try { document.title = window.t('ahu_diagnostic_hub_v') + ' v31.39'; } catch (e) {}
+                }
+            }, [lang, i18nReady]);
             useEffect(() => {
                 const myMtime = window.__BUILD_MTIME__;
                 if (!myMtime) return; // older app.py (pre-build-stamp); skip detector
@@ -169,6 +364,166 @@
             const [isProcessVisible, setIsProcessVisible] = useState(false);
             const [isDraggingIndicator, setIsDraggingIndicator] = useState(false);
             const [showGivoni, setShowGivoni] = useState(true);
+            const [showSweetSpot, setShowSweetSpot] = useState(true);
+            // Operator-tunable sweet-spot range (RH percent).  Defaults to
+            // ASHRAE 55 / ISO 7730's 40-60% band but can be tightened
+            // (e.g. 45-55% for cleanrooms / archives) or widened.
+            // Persisted to localStorage so the operator's preference
+            // survives page reload.
+            const [sweetSpotRange, setSweetSpotRange] = useState(() => {
+                try {
+                    const raw = localStorage.getItem('red5_sweet_spot_range');
+                    if (raw) {
+                        const p = JSON.parse(raw);
+                        if (Number.isFinite(p.lo) && Number.isFinite(p.hi) && p.lo < p.hi) return p;
+                    }
+                } catch (e) { /* fall through */ }
+                return { lo: 40, hi: 60 };
+            });
+            useEffect(() => {
+                try { localStorage.setItem('red5_sweet_spot_range', JSON.stringify(sweetSpotRange)); } catch (e) {}
+            }, [sweetSpotRange]);
+
+            // Robust JSON fetch that catches the common controller-side
+            // failure mode where an unregistered route gets handled by the
+            // SPA fallback and returns HTML instead of JSON.  Without this
+            // helper the caller sees a cryptic "Unexpected token '<'" from
+            // r.json() and assumes the controller is offline -- when in
+            // reality band_overrides_service.py just was not uploaded to
+            // /root/data/pgpy/ yet, or Flask was not restarted after the
+            // upload.  We detect HTML in the response and surface a
+            // controller-side deploy hint that the operator can act on.
+            const fetchJSON = async (url, options) => {
+                let r;
+                try {
+                    r = await fetch(url, options);
+                } catch (netErr) {
+                    const err = new Error('Controller unreachable: ' + netErr.message);
+                    err.code = 'NETWORK';
+                    throw err;
+                }
+                const ct = (r.headers.get('content-type') || '').toLowerCase();
+                if (!ct.includes('application/json')) {
+                    const head = (await r.text()).slice(0, 60).replace(/\s+/g, ' ').trim();
+                    if (r.status === 404 || /<!doctype/i.test(head) || /<html/i.test(head)) {
+                        const err = new Error(
+                            'Band-overrides service not found on the controller. '
+                          + 'Upload band_overrides_service.py to /root/data/pgpy/ '
+                          + 'and restart Flask, then try again.\n\n'
+                          + '(HTTP ' + r.status + ', response began with: ' + head + ')'
+                        );
+                        err.code = 'PLUGIN_MISSING';
+                        throw err;
+                    }
+                    const err = new Error('Unexpected non-JSON response (HTTP ' + r.status + '): ' + head);
+                    err.code = 'BAD_RESPONSE';
+                    throw err;
+                }
+                return r.json();
+            };
+
+            // ---- Plugin health (auto-discovered Flask services) ----
+            // Polls /api/services once on mount.  Compares the live status
+            // against an "expected" set so we can warn the operator when a
+            // required plug-in is missing (e.g. the band_overrides_service
+            // bug operators hit when they forget to upload it to
+            // /root/data/pgpy/).  Same chip serves as a green-light "all
+            // good" indicator when nothing is wrong.
+            const PLUGIN_EXPECTED = ['band_service', 'telemetry_service',
+                                     'weather_service', 'upload_service',
+                                     'band_overrides_service'];
+            const [pluginHealth, setPluginHealth] = useState({ state: 'unknown', missing: [], failed: [], total: 0 });
+            useEffect(() => {
+                let cancelled = false;
+                (async () => {
+                    try {
+                        const j = await fetchJSON('/api/services');
+                        if (cancelled) return;
+                        const svc = (j && j.services) || [];
+                        const seen = new Set(svc.map(s => s.name));
+                        const missing = PLUGIN_EXPECTED.filter(n => !seen.has(n));
+                        const failed  = svc.filter(s => s.state === 'FAILED' || s.state === 'SKIPPED' || s.state === 'WARNING');
+                        let state = 'ok';
+                        if (missing.length || failed.some(s => s.state === 'FAILED')) state = 'error';
+                        else if (failed.length) state = 'warn';
+                        setPluginHealth({ state, missing, failed, total: svc.length });
+                    } catch (e) {
+                        if (cancelled) return;
+                        setPluginHealth({ state: 'error', missing: [], failed: [], total: 0, detail: e.message });
+                    }
+                })();
+                return () => { cancelled = true; };
+            }, []);
+
+            // Operator SA-RH clamp - the SLIDER (sweetSpotRange) is hypothetical
+            // until the operator presses "Apply to Controller", at which point
+            // we POST to /api/band-overrides/sa-rh-clamp and the value here
+            // (bandClampApplied) gets updated.  Dirty state = slider differs
+            // from applied = Apply button highlighted amber.
+            //   null    -> no clamp on controller (factory bands)
+            //   {lo,hi} -> clamp currently enforced on controller
+            const [bandClampApplied, setBandClampApplied] = useState(null);
+            const [bandClampModal,   setBandClampModal]   = useState(null);  // { lo, hi, preview }
+            const [bandClampBusy,    setBandClampBusy]    = useState(false);
+            useEffect(() => {
+                let cancelled = false;
+                (async () => {
+                    try {
+                        const j = await fetchJSON('/api/band-overrides/sa-rh-clamp');
+                        if (cancelled) return;
+                        if (j.status === 'ok' && j.sa_rh_clamp && j.sa_rh_clamp.enabled) {
+                            setBandClampApplied({ lo: j.sa_rh_clamp.lo, hi: j.sa_rh_clamp.hi });
+                        }
+                    } catch (e) {
+                        // Silent on initial mount -- the operator gets a
+                        // clear error message later when they actually
+                        // click Apply / Reset.  fetchJSON already classified
+                        // the failure (PLUGIN_MISSING, NETWORK, etc.).
+                        if (typeof console !== 'undefined') console.warn('[band-overrides initial GET]', e.message);
+                    }
+                })();
+                return () => { cancelled = true; };
+            }, []);
+
+            // Clamp-effectiveness sparkline (P2 mockup):
+            // Rolling buffer of mean SA-RH (across all AHUs) sampled from the
+            // existing /api/data polling loop.  Pure client-side -- zero new
+            // BACnet writes, zero new backend routes.  30 samples @ ~30s
+            // cadence = a 15-min rolling window.  Persisted to localStorage so
+            // the chart survives page reloads instead of starting empty.
+            const SPARK_MAX        = 30;
+            const SPARK_INTERVAL_MS = 30 * 1000;
+            const [clampSpark, setClampSpark] = useState(() => {
+                try {
+                    const v = JSON.parse(localStorage.getItem('red5.clampSpark') || '[]');
+                    if (Array.isArray(v)) return v.slice(-SPARK_MAX);
+                } catch (e) {}
+                return [];
+            });
+            useEffect(() => {
+                if (!Array.isArray(ahuData) || ahuData.length === 0) return;
+                // Collect SA-RH per AHU.  Skip equipment that does not expose
+                // an SA point or whose rh is non-finite (mock mode w/ NaN).
+                const perAhu = [];
+                ahuData.forEach(a => {
+                    const sa = (a.points || []).find(p => p.label === 'SA');
+                    if (!sa) return;
+                    const rh = Number(sa.rh);
+                    if (!Number.isFinite(rh)) return;
+                    perAhu.push({ id: a.id, rh });
+                });
+                if (perAhu.length === 0) return;
+                const meanRh = perAhu.reduce((s, x) => s + x.rh, 0) / perAhu.length;
+                const ts = Date.now();
+                setClampSpark(prev => {
+                    if (prev.length > 0 && (ts - prev[prev.length - 1].ts) < SPARK_INTERVAL_MS) {
+                        return prev;
+                    }
+                    const next = [...prev, { ts, meanRh, perAhu }].slice(-SPARK_MAX);
+                    try { localStorage.setItem('red5.clampSpark', JSON.stringify(next)); } catch (e) {}
+                    return next;
+                });
+            }, [ahuData]);
             const [showPath, setShowPath] = useState(true);
             const [vecVis, setVecVis] = useState({ enthalpy: true, sensible: true, latent: true, diagnostic: true });
             const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true });
@@ -184,31 +539,294 @@
             const [isVavModalDragging, setIsVavModalDragging] = useState(false);
             const [vavCfm, setVavCfm] = useState(400);
 
+            // AHU + VAV modal dimensions persisted to localStorage so the
+            // operator's preferred diagram size restores on next open
+            // instead of always defaulting to 1600x900 / 1400x850.  Lazy
+            // initializer reads once at mount; the modal element itself
+            // is observed below (look for "modalSizePersist" effect) so
+            // user-resizes via the `resize:both` CSS handle are written
+            // back without lag.
+            const _LS_AHU_SIZE = 'red5AhuModalSize';
+            const _LS_VAV_SIZE = 'red5VavModalSize';
+            const _LS_FP_SIZE  = 'red5FloorPlanModalSize';
+            const _loadSize = (key, fallback) => {
+                try {
+                    const raw = localStorage.getItem(key);
+                    if (!raw) return fallback;
+                    const j = JSON.parse(raw);
+                    if (typeof j.w === 'number' && typeof j.h === 'number'
+                        && j.w >= 400 && j.h >= 300 && j.w <= 4000 && j.h <= 3000) {
+                        return j;
+                    }
+                } catch (e) { /* corrupt or quota - ignore */ }
+                return fallback;
+            };
             const [showAhuModalFor, setShowAhuModalFor] = useState(null);
             const [_forceApTick, _setForceApTick] = useState(0);
-            const [ahuModalSize, setAhuModalSize] = useState({ w: 1600, h: 900 });
+            const [ahuModalSize, setAhuModalSize] = useState(() => _loadSize(_LS_AHU_SIZE, { w: 1600, h: 900 }));
+            const ahuOuterRef = useRef(null);
             const [ahuBodySize, setAhuBodySize] = useState({ w: 1560, h: 820 });
             const ahuBodyRef = useRef(null);
+            // Pop-out window/host state hoisted UP to here so the AHU
+            // useEffects below (which depend on ahuModalPopupHost so they
+            // re-run when the modal pops in/out and re-bind ResizeObservers
+            // to the popup-document image) can reference it without a
+            // temporal-dead-zone ReferenceError at first render.
+            const [ahuModalPopupWin,  setAhuModalPopupWin]  = useState(null);
+            const [ahuModalPopupHost, setAhuModalPopupHost] = useState(null);
+            const [vavModalPopupWin,  setVavModalPopupWin]  = useState(null);
+            const [vavModalPopupHost, setVavModalPopupHost] = useState(null);
+            const [floorPlanPopupWin,  setFloorPlanPopupWin]  = useState(null);
+            const [floorPlanPopupHost, setFloorPlanPopupHost] = useState(null);
             useEffect(() => {
                 if (!showAhuModalFor || !ahuBodyRef.current) return;
                 const el = ahuBodyRef.current;
                 const update = () => { setAhuBodySize({ w: el.clientWidth, h: el.clientHeight }); };
                 update();
-                if (typeof ResizeObserver !== 'undefined') {
-                    const ro = new ResizeObserver(update);
+                // CRITICAL: when the modal is popped out via createPortal,
+                // `el` lives inside the popup window's document.  The
+                // PARENT window's ResizeObserver silently ignores cross-
+                // document targets — we must grab the observer constructor
+                // from the element's own document so resize events in the
+                // popup actually fire.  Same applies to the ahuImgRef
+                // ResizeObserver below.
+                const RO = (el.ownerDocument && el.ownerDocument.defaultView && el.ownerDocument.defaultView.ResizeObserver) || (typeof ResizeObserver !== 'undefined' ? ResizeObserver : null);
+                if (RO) {
+                    const ro = new RO(update);
                     ro.observe(el);
-                    return () => ro.disconnect();
+                    // Also re-measure on window resize in case the popup is
+                    // being dragged across monitors with different DPRs.
+                    const winRef = el.ownerDocument && el.ownerDocument.defaultView;
+                    if (winRef) winRef.addEventListener('resize', update);
+                    return () => {
+                        ro.disconnect();
+                        if (winRef) winRef.removeEventListener('resize', update);
+                    };
                 }
-            }, [showAhuModalFor]);
+            }, [showAhuModalFor, ahuModalPopupHost]);
             const [ahuModalOffset, setAhuModalOffset] = useState({ x: 150, y: 50 });
             const [isAhuModalDragging, setIsAhuModalDragging] = useState(false);
             const [ahuImgDims, setAhuImgDims] = useState({ natW: 1600, natH: 700, dispW: 1600, dispH: 700 });
             const ahuImgRef = useRef(null);
+            // The AHU equipment image scales via CSS (max-w-full + maxHeight)
+            // whenever the modal is resized.  We rely on `imgScale = dispW /
+            // natW` to scale pixel-based animation offsets so they stay
+            // proportional to the rendered image.  Without a ResizeObserver
+            // here, `dispW` is captured only at <img onLoad> and goes stale
+            // on every resize — the equipment shrinks but the overlays stay
+            // huge, causing the misalignment the operator reported.
+            useEffect(() => {
+                if (!showAhuModalFor) return;
+                const im = ahuImgRef.current;
+                if (!im) return;
+                const update = () => {
+                    if (!im) return;
+                    const nW = im.naturalWidth || 1600, nH = im.naturalHeight || 700;
+                    const dW = im.offsetWidth || nW,    dH = im.offsetHeight || nH;
+                    setAhuImgDims(prev => (prev.natW === nW && prev.natH === nH
+                                            && prev.dispW === dW && prev.dispH === dH)
+                                          ? prev
+                                          : { natW: nW, natH: nH, dispW: dW, dispH: dH });
+                };
+                update();
+                // CRITICAL (popout fix): see ahuBodyRef comment above.
+                // Use the image's OWN document's ResizeObserver so events
+                // in the popped-out window actually fire.  Also schedule
+                // a microtask + a 60ms delayed re-measure to absorb the
+                // layout race between createPortal mounting the React
+                // subtree and the popup's layout engine reporting its
+                // final width.
+                const RO = (im.ownerDocument && im.ownerDocument.defaultView && im.ownerDocument.defaultView.ResizeObserver) || (typeof ResizeObserver !== 'undefined' ? ResizeObserver : null);
+                const winRef = im.ownerDocument && im.ownerDocument.defaultView;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(im); }
+                if (winRef) winRef.addEventListener('resize', update);
+                const settleT = setTimeout(update, 60);
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (winRef) winRef.removeEventListener('resize', update);
+                    clearTimeout(settleT);
+                };
+            }, [showAhuModalFor, ahuModalSize.w, ahuModalSize.h, ahuModalPopupHost]);
+            // Pop-out window state for AHU / VAV / Floor-Plan modals.  Each
+            // modal owns its own popup so the operator can fan them out across
+            // multiple monitors (e.g. AHU diagram on monitor 2, floor plan on
+            // monitor 3, VAV detail on the main screen).  When the active
+            // selection changes, the popup auto-updates via React's normal
+            // state flow — selecting a different AHU rerenders the AHU popup
+            // with the new AHU's telemetry instead of closing and reopening it.
+            // (state declarations hoisted ABOVE the AHU/VAV useEffects so the
+            // image-resize effects can depend on *PopupHost without TDZ.)
+
+            // Generic open-or-focus helper.  ``setterPair`` is [setWin, setHost]
+            // for the modal whose popup we're spawning.  Returns nothing —
+            // the calling button just kicks it off.
+            const openPopupFor = useCallback((label, title, currentWin, setterPair) => {
+                if (currentWin && !currentWin.closed) { currentWin.focus(); return; }
+                const result = red5OpenPopupWindow(label, title, 1600, 1000);
+                if (!result) {
+                    alert('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
+                    return;
+                }
+                setterPair[0](result.win);
+                setterPair[1](result.host);
+                const watcher = setInterval(() => {
+                    if (result.win.closed) {
+                        clearInterval(watcher);
+                        setterPair[0](null);
+                        setterPair[1](null);
+                    }
+                }, 400);
+            }, []);
+
+            const popOutAhuModal       = useCallback(() => openPopupFor('ahu_modal',  'Red5 AHU Equipment Diagram (popped out)',  ahuModalPopupWin,  [setAhuModalPopupWin,  setAhuModalPopupHost]),  [openPopupFor, ahuModalPopupWin]);
+            const popOutVavModal       = useCallback(() => openPopupFor('vav_modal',  'Red5 VAV Detail (popped out)',             vavModalPopupWin,  [setVavModalPopupWin,  setVavModalPopupHost]),  [openPopupFor, vavModalPopupWin]);
+            const popOutFloorPlanModal = useCallback(() => openPopupFor('floor_plan', 'Red5 Floor Plan (popped out)',             floorPlanPopupWin, [setFloorPlanPopupWin, setFloorPlanPopupHost]), [openPopupFor, floorPlanPopupWin]);
+
+            // Close every popup when the parent tab is about to unload.
+            useEffect(() => {
+                const onUnload = () => {
+                    [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin].forEach(w => {
+                        if (w && !w.closed) { try { w.close(); } catch (e) {} }
+                    });
+                };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin]);
+
+            // Auto-close the popup when its underlying modal toggles off.
+            useEffect(() => {
+                if (!showAhuModalFor && ahuModalPopupWin && !ahuModalPopupWin.closed) ahuModalPopupWin.close();
+            }, [showAhuModalFor, ahuModalPopupWin]);
+            useEffect(() => {
+                if (!selectedVavForModal && vavModalPopupWin && !vavModalPopupWin.closed) vavModalPopupWin.close();
+            }, [selectedVavForModal, vavModalPopupWin]);
+            // floor-plan auto-close is wired below after showFloorPlanForAhu is declared
             const [vavImgDims, setVavImgDims] = useState({ natW: 1600, natH: 1004, dispW: 1600, dispH: 1004 });
             const vavImgRef = useRef(null);
-            const [vavModalSize, setVavModalSize] = useState({ w: 1400, h: 850 });
+            const vavOuterRef = useRef(null);
+            const [vavModalSize, setVavModalSize] = useState(() => _loadSize(_LS_VAV_SIZE, { w: 1400, h: 850 }));
+            // VAV modal pop-out lives in a separate window; mirror the AHU
+            // image-resize handling so the air-flow chevron overlays stay
+            // aligned to the rendered image at every popped-out width.
+            // Keyed on vavModalPopupHost so the effect re-binds when the
+            // popout opens/closes and vavImgRef.current points at the
+            // newly-mounted image in the popup document.
+            useEffect(() => {
+                const im = vavImgRef.current;
+                if (!im) return;
+                const update = () => {
+                    if (!im) return;
+                    const nW = im.naturalWidth || 1600, nH = im.naturalHeight || 1004;
+                    const dW = im.offsetWidth || nW,    dH = im.offsetHeight || nH;
+                    setVavImgDims(prev => (prev.natW === nW && prev.natH === nH
+                                           && prev.dispW === dW && prev.dispH === dH)
+                                          ? prev
+                                          : { natW: nW, natH: nH, dispW: dW, dispH: dH });
+                };
+                update();
+                const RO = (im.ownerDocument && im.ownerDocument.defaultView && im.ownerDocument.defaultView.ResizeObserver) || (typeof ResizeObserver !== 'undefined' ? ResizeObserver : null);
+                const winRef = im.ownerDocument && im.ownerDocument.defaultView;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(im); }
+                if (winRef) winRef.addEventListener('resize', update);
+                const settleT = setTimeout(update, 60);
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (winRef) winRef.removeEventListener('resize', update);
+                    clearTimeout(settleT);
+                };
+            }, [vavModalSize.w, vavModalSize.h, vavModalPopupHost]);
+
+            // modalSizePersist: observe the AHU + VAV modal outer div for
+            // user-driven resizes (the CSS `resize:both` handle the user
+            // drags from the bottom-right corner doesn't update React
+            // state by itself).  Debounce 200ms so we don't pound
+            // localStorage on every pixel of a drag.  Only persists when
+            // the modal is NOT popped out (popped-out windows use OS
+            // window sizing, irrelevant to the inline modal preference).
+            useEffect(() => {
+                if (!showAhuModalFor || ahuModalPopupHost) return;
+                const el = ahuOuterRef.current;
+                if (!el) return;
+                let debounce = null;
+                const update = () => {
+                    if (!el) return;
+                    const w = el.offsetWidth, h = el.offsetHeight;
+                    if (w < 400 || h < 300) return;
+                    if (debounce) clearTimeout(debounce);
+                    debounce = setTimeout(() => {
+                        setAhuModalSize(prev => (prev.w === w && prev.h === h) ? prev : { w: w, h: h });
+                        try { localStorage.setItem(_LS_AHU_SIZE, JSON.stringify({ w: w, h: h })); } catch(_) {}
+                    }, 200);
+                };
+                update();
+                const RO = (typeof ResizeObserver !== 'undefined') ? ResizeObserver : null;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(el); }
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (debounce) clearTimeout(debounce);
+                };
+            }, [showAhuModalFor, ahuModalPopupHost]);
+
+            useEffect(() => {
+                if (!selectedVavForModal || vavModalPopupHost) return;
+                const el = vavOuterRef.current;
+                if (!el) return;
+                let debounce = null;
+                const update = () => {
+                    if (!el) return;
+                    const w = el.offsetWidth, h = el.offsetHeight;
+                    if (w < 400 || h < 300) return;
+                    if (debounce) clearTimeout(debounce);
+                    debounce = setTimeout(() => {
+                        setVavModalSize(prev => (prev.w === w && prev.h === h) ? prev : { w: w, h: h });
+                        try { localStorage.setItem(_LS_VAV_SIZE, JSON.stringify({ w: w, h: h })); } catch(_) {}
+                    }, 200);
+                };
+                update();
+                const RO = (typeof ResizeObserver !== 'undefined') ? ResizeObserver : null;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(el); }
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (debounce) clearTimeout(debounce);
+                };
+            }, [selectedVavForModal, vavModalPopupHost]);
 
             const [showFloorPlanForAhu, setShowFloorPlanForAhu] = useState(null);
+            const [floorPlanModalSize, setFloorPlanModalSize] = useState(() => _loadSize(_LS_FP_SIZE, { w: 1400, h: 900 }));
+            const floorOuterRef = useRef(null);
+
+            useEffect(() => {
+                if (!showFloorPlanForAhu || floorPlanPopupHost) return;
+                const el = floorOuterRef.current;
+                if (!el) return;
+                let debounce = null;
+                const update = () => {
+                    if (!el) return;
+                    const w = el.offsetWidth, h = el.offsetHeight;
+                    if (w < 400 || h < 300) return;
+                    if (debounce) clearTimeout(debounce);
+                    debounce = setTimeout(() => {
+                        setFloorPlanModalSize(prev => (prev.w === w && prev.h === h) ? prev : { w: w, h: h });
+                        try { localStorage.setItem(_LS_FP_SIZE, JSON.stringify({ w: w, h: h })); } catch(_) {}
+                    }, 200);
+                };
+                update();
+                const RO = (typeof ResizeObserver !== 'undefined') ? ResizeObserver : null;
+                let ro = null;
+                if (RO) { ro = new RO(update); ro.observe(el); }
+                return () => {
+                    if (ro) ro.disconnect();
+                    if (debounce) clearTimeout(debounce);
+                };
+            }, [showFloorPlanForAhu, floorPlanPopupHost]);
+
+            useEffect(() => {
+                if (!showFloorPlanForAhu && floorPlanPopupWin && !floorPlanPopupWin.closed) floorPlanPopupWin.close();
+            }, [showFloorPlanForAhu, floorPlanPopupWin]);
             const [floorPlanOffset, setFloorPlanOffset] = useState({ x: 100, y: 50 });
 
             /* Sun-Path Phase A integration (Dashboard). Tracks live sun-state
@@ -910,6 +1528,19 @@
                 const rh20_CZ = []; for(let t=27; t>=20; t-=0.5) rh20_CZ.push([t, getW(t, 20)]);
 
                 const CZ = [...rh80, [27, getW(27, 50)], [27, getW(27, 20)], ...rh20_CZ];
+                // Operator-defined "sweet spot" sub-strip — default is
+                // ASHRAE 55 / ISO 7730's 40-60% RH band but the operator
+                // can tighten it (e.g. 45-55% for cleanrooms / archives)
+                // or widen it via the inline number inputs next to the
+                // Givoni toggle.  Rendered as a darker emerald shade
+                // inside the CZ polygon; geometric intersection with
+                // the CZ is enforced via SVG <clipPath> below so any
+                // configured band stays visually clipped at the CZ's
+                // slanted upper-right boundary.
+                const _ssLo = sweetSpotRange.lo, _ssHi = sweetSpotRange.hi;
+                const rhHi_top = []; for (let tt = 20; tt <= 27; tt += 0.5) rhHi_top.push([tt, getW(tt, _ssHi)]);
+                const rhLo_bot = []; for (let tt = 27; tt >= 20; tt -= 0.5) rhLo_bot.push([tt, getW(tt, _ssLo)]);
+                const SWEET = [...rhHi_top, ...rhLo_bot];
                 const NV = [...rh100, [32, 15.4/1000], [32, 6.2/1000], ...rh20Line];
                 const Mass = [...rh80, [33, 16/1000], [37, getW(37, 30)], [37, 3/1000], [20, getW(20, 20)]];
                 const MCV = [...rh80, [40, 16/1000], [44, getW(44, 20)], [44, 3/1000], [20, getW(20, 20)]];
@@ -934,19 +1565,42 @@
                         <polygon points={safePts(EVAP)} fill="#06b6d4" fillOpacity="0.08" stroke="#06b6d4" strokeWidth="1" />
                         <polygon points={safePts(NV)} fill="#f59e0b" fillOpacity="0.05" stroke="#f59e0b" strokeWidth="1" />
                         <polygon points={safePts(CZ)} fill="#10b981" fillOpacity="0.15" stroke="#10b981" strokeWidth="1.2" />
+                        {/* 40-60% RH sweet-spot sub-strip — darker emerald
+                            inside the CZ polygon.  Geometric clipping via
+                            SVG <clipPath> guarantees pixel-perfect
+                            intersection with the CZ at the slanted upper-
+                            right boundary (where the 60% RH isopleth
+                            crosses the 80%→50% CZ ceiling around T~26.3). */}
+                        {showSweetSpot && (
+                            <g>
+                                <defs>
+                                    <clipPath id="cz-clip-path" clipPathUnits="userSpaceOnUse">
+                                        <polygon points={safePts(CZ)} />
+                                    </clipPath>
+                                </defs>
+                                <polygon data-testid="givoni-sweet-strip" points={safePts(SWEET)} clipPath="url(#cz-clip-path)" fill="#059669" fillOpacity="0.32" stroke="#047857" strokeWidth="0.8" strokeDasharray="3,2" />
+                                <text x={safe(x(23.5))} y={safe(y(getW(23.5, (sweetSpotRange.lo + sweetSpotRange.hi) / 2)))}
+                                      fill="#022c22" fontSize="8" fontWeight="900"
+                                      textAnchor="middle"
+                                      className="uppercase font-black font-mono tracking-widest pointer-events-none"
+                                      style={{paintOrder:'stroke', stroke:'#a7f3d0', strokeWidth:'2.5px', strokeLinejoin:'round'}}>
+                                    {sweetSpotRange.lo}-{sweetSpotRange.hi}% RH
+                                </text>
+                            </g>
+                        )}
                         <polygon points={safePts(WINTER)} fill="#3b82f6" fillOpacity="0.15" stroke="none" />
                         <path d={`M ${safePts(winterRH20)} L ${safePts(winterRH80)}`} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4,4" opacity="0.8" />
                         <line x1={safe(x(19))} y1={yLineTop19} x2={safe(x(19))} y2={pad.top+gridHeight} stroke="#3b82f6" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
                         <text x={safe(x(19))-5} y={yLineTop19 + 5} fill="#3b82f6" fontSize="10" fontWeight="900" transform={`rotate(-90, ${safe(x(19))-5}, ${yLineTop19 + 5})`} className="uppercase font-black shadow-black drop-shadow-md" textAnchor="end">19°C Boundary</text>
-                        <text x={safe(x(50)-10)} y={safe(y(8/1000))} fill="#6366f1" fontSize="10" textAnchor="middle" transform={`rotate(-90, ${safe(x(50)-10)}, ${safe(y(8/1000))})`} className="uppercase font-black font-mono tracking-widest shadow-black">Mechanical Cooling</text>
-                        <text x={safe(x(44)-18)} y={safe(y(8/1000))} fill="#ec4899" fontSize="9" textAnchor="middle" transform={`rotate(-90, ${safe(x(44)-18)}, ${safe(y(8/1000))})`} className="uppercase font-black font-mono tracking-tighter shadow-black">Mass Cooling</text>
+                        <text x={safe(x(50)-10)} y={safe(y(8/1000))} fill="#6366f1" fontSize="10" textAnchor="middle" transform={`rotate(-90, ${safe(x(50)-10)}, ${safe(y(8/1000))})`} className="uppercase font-black font-mono tracking-widest shadow-black">{window.t ? window.t("mechanical_cooling") : "Mechanical Cooling"}</text>
+                        <text x={safe(x(44)-18)} y={safe(y(8/1000))} fill="#ec4899" fontSize="9" textAnchor="middle" transform={`rotate(-90, ${safe(x(44)-18)}, ${safe(y(8/1000))})`} className="uppercase font-black font-mono tracking-tighter shadow-black">{window.t ? window.t("mass_cooling") : "Mass Cooling"}</text>
                         <text x={safe(x(44)-2)} y={safe(y(8/1000))} fill="#ec4899" fontSize="9" textAnchor="middle" transform={`rotate(-90, ${safe(x(44)-2)}, ${safe(y(8/1000))})`} className="uppercase font-black font-mono tracking-tighter shadow-black">& {t('natural_ventilation')}</text>
-                        <text x={safe(x(37)-10)} y={safe(y(8/1000))} fill="#8b5cf6" fontSize="9" textAnchor="middle" transform={`rotate(-90, ${safe(x(37)-10)}, ${safe(y(8/1000))})`} className="uppercase font-black font-mono tracking-tighter shadow-black">Mass Cooling</text>
-                        <text x={safe(x(34))} y={safe(y(0.5/1000)-8)} fill="#06b6d4" fontSize="9" textAnchor="middle" className="uppercase font-black font-mono tracking-widest shadow-black">Evaporative</text>
+                        <text x={safe(x(37)-10)} y={safe(y(8/1000))} fill="#8b5cf6" fontSize="9" textAnchor="middle" transform={`rotate(-90, ${safe(x(37)-10)}, ${safe(y(8/1000))})`} className="uppercase font-black font-mono tracking-tighter shadow-black">{window.t ? window.t("mass_cooling") : "Mass Cooling"}</text>
+                        <text x={safe(x(34))} y={safe(y(0.5/1000)-8)} fill="#06b6d4" fontSize="9" textAnchor="middle" className="uppercase font-black font-mono tracking-widest shadow-black">{window.t ? window.t("evaporative") : "Evaporative"}</text>
                         <path id="nv-curve-label" d={`M ${safe(x(21))},${safe(y(getW(21,100))+22)} Q ${safe(x(24))},${safe(y(getW(24,100))+22)} ${safe(x(27))},${safe(y(getW(27,100))+22)}`} fill="none" />
                         <text fill="#f59e0b" fontSize="9" fontWeight="900" className="uppercase font-black font-mono tracking-widest shadow-black"><textPath href="#nv-curve-label" startOffset="10%">{t('natural_ventilation')}</textPath></text>
                         <text x={safe(x(23.5))} y={safe(y(getW(23.5, 45)))} fill="#10b981" fontSize="11" fontWeight="900" textAnchor="middle" className="uppercase font-black drop-shadow-md shadow-black">{t('comfort')}</text>
-                        <text x={safe(x(18.75))} y={safe(y(getW(18.75, 45)))} fill="#3b82f6" fontSize="11" fontWeight="900" textAnchor="middle" transform={`rotate(-90, ${safe(x(18.75))}, ${safe(y(getW(18.75, 45)))})`} className="uppercase font-black drop-shadow-md shadow-black">Winter</text>
+                        <text x={safe(x(18.75))} y={safe(y(getW(18.75, 45)))} fill="#3b82f6" fontSize="11" fontWeight="900" textAnchor="middle" transform={`rotate(-90, ${safe(x(18.75))}, ${safe(y(getW(18.75, 45)))})`} className="uppercase font-black drop-shadow-md shadow-black">{window.t ? window.t("winter") : "Winter"}</text>
                     </g>
                 );
             };
@@ -1166,31 +1820,59 @@
                 const currentAhu = ahuData.find(a => a.id === selectedAhuId);
                 if (!currentAhu && !indicatorPos) return null;
                 
-                let tVal, rhVal, hVal, title;
+                let tVal, rhVal, hVal, wVal, title;
                 if (lockedVavId && currentAhu) {
                     const lockedVav = currentAhu.vavs?.find(v => v.id === lockedVavId);
                     if (!lockedVav) return null;
-                    tVal = lockedVav.t; rhVal = lockedVav.rh; hVal = lockedVav.h; title = lockedVav.id;
+                    tVal = lockedVav.t; rhVal = lockedVav.rh; hVal = lockedVav.h;
+                    wVal = lockedVav.w != null ? lockedVav.w : getW(lockedVav.t, lockedVav.rh);
+                    title = lockedVav.id;
                 } else {
                     if (!indicatorPos) return null;
                     tVal = indicatorPos.t;
                     const pw = (indicatorPos.w * P_ATM) / (0.621945 + indicatorPos.w);
                     rhVal = Math.min(100, Math.max(0, (pw / getPsat(tVal)) * 100));
-                    hVal = getH(indicatorPos.t, indicatorPos.w); title = null;
+                    hVal = getH(indicatorPos.t, indicatorPos.w);
+                    wVal = indicatorPos.w;
+                    title = null;
                 }
                 
                 const saP = currentAhu?.points?.find(p => p.label === 'SA');
                 const saH = saP ? getH(saP.t, saP.w) : 0; 
                 const diffH = hVal - saH;
                 
+                // Givoni-tier strategy hint -- mirrors the VAV-table dot
+                // logic so the operator sees the same recommendation in
+                // both places (the row tooltip AND this on-chart callout).
+                const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                const gv = getGivoniTier(tVal, wVal, rhVal, comfortZonePoly, _gvSweet, showGivoni);
+                const showTier = showGivoni;
+                const tooltipH = (title ? 42 : 32) + (showTier ? 14 : 0);
+                const tooltipW = 96;
+
                 return (
                     <g transform={`translate(8, ${title ? -45 : -35})`} className="pointer-events-none drop-shadow-lg shadow-black">
-                        <rect x="0" y="0" width="85" height={title ? "42" : "32"} 
+                        <rect x="0" y="0" width={tooltipW} height={tooltipH} 
                               fill={theme==='dark' ? "rgba(15, 23, 42, 0.6)" : "rgba(255, 255, 255, 0.6)"} 
                               stroke={theme==='dark' ? "#6366f1" : "#818cf8"} strokeWidth="1.5" rx="6" />
-                        {title && <text x="42.5" y="12" textAnchor="middle" fill="#818cf8" fontSize="8" fontWeight="900" className="uppercase tracking-widest">{title}</text>}
-                        <text x="42.5" y={title ? "24" : "14"} textAnchor="middle" fill={theme==='dark' ? "#f8fafc" : "#0f172a"} fontSize="9" fontWeight="900" className="font-mono">{tVal.toFixed(1)}° / {rhVal.toFixed(0)}%</text>
-                        <text x="42.5" y={title ? "36" : "26"} textAnchor="middle" fill={theme==='dark' ? "#f472b6" : "#db2777"} fontSize="9" fontWeight="900" className="font-mono">ΔH: {diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</text>
+                        {title && <text x={tooltipW/2} y="12" textAnchor="middle" fill="#818cf8" fontSize="8" fontWeight="900" className="uppercase tracking-widest">{title}</text>}
+                        <text x={tooltipW/2} y={title ? "24" : "14"} textAnchor="middle" fill={theme==='dark' ? "#f8fafc" : "#0f172a"} fontSize="9" fontWeight="900" className="font-mono">{tVal.toFixed(1)}° / {rhVal.toFixed(0)}%</text>
+                        <text x={tooltipW/2} y={title ? "36" : "26"} textAnchor="middle" fill={theme==='dark' ? "#f472b6" : "#db2777"} fontSize="9" fontWeight="900" className="font-mono">ΔH: {diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</text>
+                        {showTier && (
+                            <g data-testid="givoni-tier-hint">
+                                <circle cx="7" cy={title ? 50 : 40} r="3" fill={gv.dotFill} stroke={gv.ringStroke} strokeWidth="0.8" />
+                                <text x="13" y={title ? 53 : 43} textAnchor="start"
+                                      fill={gv.dotFill}
+                                      fontSize="8" fontWeight="900" className="font-mono uppercase tracking-wider">
+                                    {gv.tier} · {gv.label}
+                                </text>
+                                <text x="13" y={title ? 61 : 51} textAnchor="start"
+                                      fill={theme==='dark' ? "#94a3b8" : "#475569"}
+                                      fontSize="7" fontWeight="700" className="font-mono lowercase">
+                                    {gv.subLabel}
+                                </text>
+                            </g>
+                        )}
                     </g>
                 );
             };
@@ -1318,7 +2000,7 @@
                         <span style={{fontWeight:600, opacity:0.9, textTransform:'none'}}>
                             This browser is running build {staleCache.mine} but controller has {staleCache.latest}. Press <kbd style={{padding:'2px 6px', background:'#fff', color:'#dc2626', borderRadius:'4px', fontFamily:'monospace', fontWeight:900}}>Ctrl + Shift + R</kbd> to load the new build.
                         </span>
-                        <button onClick={() => { try { if (caches && caches.keys) caches.keys().then(ks => ks.forEach(k => caches.delete(k))); } catch (e) {} location.reload(); }} style={{padding:'4px 10px', background:'#fff', color:'#dc2626', border:'none', borderRadius:'4px', fontWeight:900, cursor:'pointer', fontFamily:'inherit', fontSize:'10px', textTransform:'uppercase'}}>Reload Now</button>
+                        <button onClick={() => { try { if (caches && caches.keys) caches.keys().then(ks => ks.forEach(k => caches.delete(k))); } catch (e) {} location.reload(); }} style={{padding:'4px 10px', background:'#fff', color:'#dc2626', border:'none', borderRadius:'4px', fontWeight:900, cursor:'pointer', fontFamily:'inherit', fontSize:'10px', textTransform:'uppercase'}}>{window.t ? window.t('reload_now') : 'Reload Now'}</button>
                     </div>
                 )}
                 <div className={`flex h-screen overflow-hidden ${ui.text} ${ui.bg} transition-colors duration-500`} style={staleCache ? {paddingTop:'42px'} : {}} onMouseMove={(e) => {
@@ -1338,15 +2020,27 @@
                     }
                 }} onMouseUp={() => {setIsDraggingIndicator(false); setIsCardDragging(false); setIsVavDragging(false); setIsVavModalDragging(false); setIsAhuModalDragging(false); setIsFloorPlanDragging(false);}}>
                     
-                    {/* LEFT SIDEBAR — resizable */}
+                    {/* LEFT SIDEBAR — three render modes:
+                          docked      : original in-flow column.
+                          floating    : in-page draggable+resizable shell
+                                        (same document, mouse events stable).
+                          cross-window: portaled into a separate OS-level
+                                        browser window for extended displays
+                                        (mirrors AHU/VAV modal pattern). */}
+                    {(() => {
+                        const isPoppedToWin   = !!sidebarPopoutWin;
+                        const isPoppedFloat   = sidebarFloating && !isPoppedToWin;
+                        const isPopped        = isPoppedFloat || isPoppedToWin;
+                        const sidebarTree = (
                     <div
-                        className={`${ui.sidebar} border-r ${ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
-                        style={{ width: `${sidebarWidth}px` }}
-                        data-testid="left-sidebar"
+                        className={`${ui.sidebar} ${ui.text} ${isPopped ? '' : 'border-r ' + ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
+                        style={isPopped ? {width:'100%',height:'100%',minHeight:0} : { width: `${sidebarWidth}px` }}
+                        data-testid={isPoppedToWin ? "left-sidebar-popped-window" : (isPoppedFloat ? "left-sidebar-popped" : "left-sidebar")}
                     >
-                        {/* Drag handle on the right edge to resize the sidebar.
-                            Min width = 250px (tested: AHU title + theme toggle keep
-                            a small gap). Max width = 320px (original baseline). */}
+                        {/* Inline resize handle only used when docked.  Float
+                            mode has the floating-shell corner grip; cross-window
+                            mode has the OS window border. */}
+                        {!isPopped && (
                         <div
                             data-testid="sidebar-resize-handle"
                             onMouseDown={(e) => {
@@ -1366,8 +2060,9 @@
                                 window.addEventListener('mouseup', onUp);
                             }}
                             className="absolute top-0 right-0 h-full w-1 cursor-col-resize z-30 hover:bg-indigo-500/40"
-                            title="Drag to resize"
+                            title={window.t ? window.t("drag_to_resize") : "Drag to resize"}
                         />
+                        )}
                         <div className="p-4 pb-3 border-b border-slate-800 font-black" style={{overflow:'visible'}}>
                             <div className="flex justify-between items-start">
                                 <div>
@@ -1395,12 +2090,140 @@
                                         })()}
                                     </div>
                                 </div>
+                                <div className="flex items-center gap-1 flex-wrap justify-end">
                                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
+                                {/* Plugin-health chip - polls /api/services once on
+                                    mount.  Surfaces missing or failed plugins at a
+                                    glance so the operator does not discover them
+                                    only by clicking a feature and getting a
+                                    PLUGIN_MISSING error (e.g. the band-overrides
+                                    case). */}
+                                {(() => {
+                                    const h = pluginHealth;
+                                    if (h.state === 'unknown') return null;
+                                    const isOk    = h.state === 'ok';
+                                    const isWarn  = h.state === 'warn';
+                                    // Tailwind JIT only picks up CLASS NAMES that appear as
+                                    // complete literal strings in the source -- dynamic
+                                    // interpolation like `bg-${color}-900/40` would compile
+                                    // to runtime bytes that JIT never sees, so the chip
+                                    // would render unstyled.  Enumerate every variant.
+                                    const cls = isOk
+                                        ? (theme === 'dark'
+                                            ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300 hover:bg-emerald-900/60'
+                                            : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100')
+                                        : (isWarn
+                                            ? (theme === 'dark'
+                                                ? 'bg-amber-900/40 border-amber-700/50 text-amber-300 hover:bg-amber-900/60'
+                                                : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100')
+                                            : (theme === 'dark'
+                                                ? 'bg-rose-900/40 border-rose-700/50 text-rose-300 hover:bg-rose-900/60'
+                                                : 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100'));
+                                    const dot   = isOk ? '\u25CF' : (isWarn ? '\u25B2' : '\u2716');
+                                    const lines = [];
+                                    if (h.missing && h.missing.length) {
+                                        lines.push('Missing (' + h.missing.length + '):');
+                                        for (const m of h.missing) lines.push('  - ' + m + ' (upload to /root/data/pgpy/ + restart Flask)');
+                                    }
+                                    if (h.failed && h.failed.length) {
+                                        lines.push('Loaded but not OK (' + h.failed.length + '):');
+                                        for (const f of h.failed) lines.push('  - ' + f.name + ' [' + f.state + '] ' + (f.detail || ''));
+                                    }
+                                    if (h.detail) lines.push('Probe error: ' + h.detail);
+                                    if (!lines.length) lines.push('All ' + h.total + ' Flask plug-ins registered OK');
+                                    const tip = lines.join('\n');
+                                    return (
+                                        <button
+                                            data-testid="plugin-health-chip"
+                                            data-state={h.state}
+                                            title={tip}
+                                            onClick={() => alert(tip)}
+                                            className={`flex-shrink-0 px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${cls}`}
+                                        >
+                                            {dot} {isOk ? 'OK' : (isWarn ? 'WARN' : (h.missing && h.missing.length ? 'PLUGIN' : 'ERR'))}
+                                        </button>
+                                    );
+                                })()}
+                                {/* Pop-out toggle - turns the docked sidebar into
+                                    a floating, draggable in-page panel.  Only
+                                    rendered when the sidebar is DOCKED -- once
+                                    the panel is floating, the title bar inside
+                                    the floating shell already has its own
+                                    ATTACH button, so rendering this header copy
+                                    would produce two identical buttons stacked
+                                    vertically (operator-reported bug). */}
+                                {!sidebarFloating && !sidebarPopoutWin && (
+                                <button
+                                    onClick={() => setSidebarFloating(true)}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700'}`}
+                                    title="Float the sidebar into a draggable, resizable in-page panel"
+                                    data-testid="popout-sidebar-btn"
+                                >
+                                    {'\u2197 POP'}
+                                </button>
+                                )}
+                                {/* Cross-window pop-out - opens a separate
+                                    browser window the operator can drag to an
+                                    extended display.  Mirrors the AHU / VAV /
+                                    Floor-Plan modal pattern.  Hidden when the
+                                    sidebar is already in a popout window
+                                    (operator brings it back via the "Bring
+                                    Back" button in the docked placeholder). */}
+                                {!sidebarPopoutWin && (
+                                <button
+                                    onClick={popOutSidebarToWindow}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-violet-500 hover:text-violet-700'}`}
+                                    title="Pop the sidebar out to a separate browser window (extended display)"
+                                    data-testid="popout-sidebar-window-btn"
+                                >
+                                    {'\u29C9 WIN'}
+                                </button>
+                                )}
+                                </div>
                             </div>
                             <div className="flex items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}
-                                <button onClick={openCollectorCfg} className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title="Collector Configuration">Collector</button>
+                                <button
+                                    onClick={() => window.red5DocsIndex && window.red5DocsIndex.open()}
+                                    data-testid="docs-index-btn"
+                                    title={window.t ? (window.t('docs_index') || 'Open Docs Index — band-shift insight, design workflow, and more') : 'Open Docs Index'}
+                                    className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-blue-400 hover:bg-slate-700 hover:border-blue-400':'bg-slate-100 border-slate-300 text-blue-600 hover:bg-blue-50'}`}>
+                                    📚 Docs
+                                </button>
+                                <button onClick={openCollectorCfg} className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"}>Collector</button>
                                 <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded text-[8px] font-black uppercase tracking-wider transition-all`}>{t('config')}</button>
+                                {/* Reset Modal Sizes: clears localStorage entries
+                                    for the AHU / VAV / Floor Plan modal dimensions
+                                    so the next time an operator opens a modal it
+                                    falls back to the safe defaults.  Useful when
+                                    a modal got accidentally shrunk to an unusable
+                                    size (the resize:both handle has no minimum
+                                    limit short of 400x300).  Brief green flash
+                                    on success so the user sees the action
+                                    registered without an alert/toast. */}
+                                <button data-testid="reset-modal-sizes-btn"
+                                        onClick={(e) => {
+                                            try {
+                                                localStorage.removeItem('red5AhuModalSize');
+                                                localStorage.removeItem('red5VavModalSize');
+                                                localStorage.removeItem('red5FloorPlanModalSize');
+                                            } catch(_) {}
+                                            setAhuModalSize({ w: 1600, h: 900 });
+                                            setVavModalSize({ w: 1400, h: 850 });
+                                            setFloorPlanModalSize({ w: 1400, h: 900 });
+                                            const b = e.currentTarget;
+                                            const orig = b.textContent;
+                                            b.textContent = '\u2713 reset';
+                                            b.style.color = '#22c55e';
+                                            b.style.borderColor = '#22c55e';
+                                            setTimeout(() => {
+                                                b.textContent = orig;
+                                                b.style.color = '';
+                                                b.style.borderColor = '';
+                                            }, 1100);
+                                        }}
+                                        title="Reset AHU / VAV / Floor Plan modal sizes to their defaults. Clears the stored sizes from local storage."
+                                        className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded text-[8px] font-black uppercase tracking-wider transition-all`}>Reset Sizes</button>
                             </div>
                         </div>
                         <div className={`flex border-b ${ui.border}`} data-testid="view-tabs" style={{gap:'1px'}}>
@@ -1429,7 +2252,252 @@
                                 );
                             })}
                         </div>
-                        <div className={`p-4 border-b ${ui.border} bg-opacity-50`}><button onClick={() => setShowGivoni(!showGivoni)} className={`w-full py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button></div>
+                        <div className={`p-4 border-b ${ui.border} bg-opacity-50`}>
+                            <div className="flex gap-2">
+                                <button onClick={() => setShowGivoni(!showGivoni)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button>
+                                <button
+                                    data-testid="toggle-sweet-spot"
+                                    onClick={() => setShowSweetSpot(!showSweetSpot)}
+                                    disabled={!showGivoni}
+                                    title={showGivoni
+                                        ? (showSweetSpot ? 'Hide sweet-spot RH strip' : 'Show sweet-spot RH strip')
+                                        : 'Enable Givoni first to use this overlay'}
+                                    className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-white shadow-lg' : ui.btnToggle)}`}
+                                >{sweetSpotRange.lo}-{sweetSpotRange.hi}% RH</button>
+                            </div>
+                            {/* Tier legend chip - colour-codes the VAV-table dots so
+                                the operator can map "circle colour -> chart region"
+                                without hovering each row.  Colours come from the
+                                same GIVONI_COLORS token map the chart polygons use
+                                (single source of truth in psychrometric.js). */}
+                            {showGivoni && (() => {
+                                const swatches = [
+                                    { tier: 'A',  fill: GIVONI_COLORS.SWEET_FILL,   label: 'Comfort',   sub: 'hold' },
+                                    { tier: 'B',  fill: GIVONI_COLORS.CZ_STROKE,    label: 'Soft trim', sub: 'hum/dehum' },
+                                    { tier: 'C+', fill: GIVONI_COLORS.HOT_OUTSIDE,  label: 'Hot/humid', sub: 'cool' },
+                                    { tier: 'C-', fill: GIVONI_COLORS.COLD_OUTSIDE, label: 'Cold/dry',  sub: 'heat' },
+                                ];
+                                return (
+                                    <div className={`mt-2.5 grid grid-cols-4 gap-1 px-0.5`} data-testid="givoni-tier-legend">
+                                        {swatches.map(s => (
+                                            <div key={s.tier}
+                                                 title={`Tier ${s.tier} — ${s.label} (${s.sub})`}
+                                                 data-testid={`givoni-tier-legend-${s.tier}`}
+                                                 className={`flex flex-col items-center gap-0.5 py-1.5 rounded-md border ${theme==='dark'?'bg-slate-950/60 border-slate-800':'bg-slate-50 border-slate-200'}`}>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="w-2 h-2 rounded-full" style={{ background: s.fill, boxShadow: '0 0 4px ' + s.fill + '99' }} />
+                                                    <span className="font-black text-[9px] font-mono tracking-wider" style={{ color: s.fill }}>{s.tier}</span>
+                                                </div>
+                                                <span className={`text-[7px] font-mono font-bold uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>{s.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+                            {showGivoni && showSweetSpot && (() => {
+                                // Dual-handle RH range slider matching the
+                                // dry-bulb axis-settings widget below.  Track
+                                // is bounded [30, 70]% so the strip can never
+                                // configure outside the operator's expected
+                                // comfort regime; min gap of 2% prevents the
+                                // handles from collapsing.
+                                const ABS_LO = 30, ABS_HI = 70, GAP = 2;
+                                const pct = (v) => ((v - ABS_LO) / (ABS_HI - ABS_LO)) * 100;
+                                const pickHandle = (clientX, trackEl) => {
+                                    const r = trackEl.getBoundingClientRect();
+                                    const v = ABS_LO + ((clientX - r.left) / r.width) * (ABS_HI - ABS_LO);
+                                    return Math.abs(v - sweetSpotRange.lo) <= Math.abs(v - sweetSpotRange.hi) ? 'lo' : 'hi';
+                                };
+                                const startDrag = (e, handle) => {
+                                    e.preventDefault();
+                                    const trackEl = e.currentTarget.closest('[data-testid="sweet-spot-range"]');
+                                    const r = trackEl.getBoundingClientRect();
+                                    const which = handle || pickHandle(e.clientX, trackEl);
+                                    const onMove = (mv) => {
+                                        const raw = ABS_LO + ((mv.clientX - r.left) / r.width) * (ABS_HI - ABS_LO);
+                                        const v = Math.round(Math.max(ABS_LO, Math.min(ABS_HI, raw)));
+                                        setSweetSpotRange(prev => {
+                                            if (which === 'lo') return { lo: Math.min(v, prev.hi - GAP), hi: prev.hi };
+                                            return { lo: prev.lo, hi: Math.max(v, prev.lo + GAP) };
+                                        });
+                                    };
+                                    const onUp = () => {
+                                        window.removeEventListener('mousemove', onMove);
+                                        window.removeEventListener('mouseup', onUp);
+                                    };
+                                    window.addEventListener('mousemove', onMove);
+                                    window.addEventListener('mouseup', onUp);
+                                };
+                                const trackBg   = theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300';
+                                const handleCls = `absolute -top-1 w-4 h-4 -ml-2 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing ${theme==='dark'?'bg-emerald-400':'bg-emerald-500'}`;
+                                const labelCls  = `absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold whitespace-nowrap pointer-events-none ${theme==='dark'?'bg-slate-900 text-emerald-300 border border-emerald-500/40':'bg-white text-emerald-700 border border-emerald-300'}`;
+                                return (
+                                    <div data-testid="sweet-spot-range" className="mt-3 px-1 pt-6 pb-1 relative">
+                                        <div className={`relative h-2 ${trackBg} rounded-full`}
+                                             onMouseDown={(e) => startDrag(e)}>
+                                            <div className="absolute h-2 bg-emerald-500 rounded-full"
+                                                 style={{left:`${pct(sweetSpotRange.lo)}%`, width:`${pct(sweetSpotRange.hi)-pct(sweetSpotRange.lo)}%`}} />
+                                            <div className={handleCls} style={{left:`${pct(sweetSpotRange.lo)}%`}}
+                                                 data-testid="sweet-spot-lo-handle"
+                                                 onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'lo'); }}>
+                                                <span className={labelCls} style={{left:'50%'}}>{sweetSpotRange.lo}%</span>
+                                            </div>
+                                            <div className={handleCls} style={{left:`${pct(sweetSpotRange.hi)}%`}}
+                                                 data-testid="sweet-spot-hi-handle"
+                                                 onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'hi'); }}>
+                                                <span className={labelCls} style={{left:'50%'}}>{sweetSpotRange.hi}%</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between text-[8px] font-mono mt-1.5 text-slate-500">
+                                            <span>30% RH</span>
+                                            <button
+                                                data-testid="sweet-spot-reset"
+                                                onClick={() => setSweetSpotRange({ lo: 40, hi: 60 })}
+                                                title="Reset to ASHRAE 55 default (40-60%)"
+                                                className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black tracking-wider transition-all ${theme==='dark'?'text-slate-500 hover:text-emerald-300 hover:bg-slate-800':'text-slate-500 hover:text-emerald-700 hover:bg-slate-100'}`}>Reset</button>
+                                            <span>70% RH</span>
+                                        </div>
+                                        {/* Apply-to-Controller row.  The slider above is hypothetical
+                                            until pressed; the small chip on the left shows what is
+                                            currently enforced on the BACnet side. */}
+                                        {(() => {
+                                            const applied = bandClampApplied;
+                                            const dirty = applied
+                                                ? (applied.lo !== sweetSpotRange.lo || applied.hi !== sweetSpotRange.hi)
+                                                : true;
+                                            const appliedLabel = applied
+                                                ? `Live: ${applied.lo}-${applied.hi}% RH`
+                                                : 'Live: factory bands';
+                                            const onApply = async () => {
+                                                try {
+                                                    const j = await fetchJSON('/api/band-overrides/preview?lo=' + sweetSpotRange.lo + '&hi=' + sweetSpotRange.hi);
+                                                    if (j.status === 'ok') {
+                                                        setBandClampModal({ lo: sweetSpotRange.lo, hi: sweetSpotRange.hi, preview: j.preview });
+                                                    } else {
+                                                        alert('Preview failed: ' + (j.message || 'unknown'));
+                                                    }
+                                                } catch (e) {
+                                                    alert(e.message);
+                                                }
+                                            };
+                                            const onReset = async () => {
+                                                if (!applied) return;
+                                                if (!window.confirm('Reset to factory bands?  This removes the SA-RH clamp from the controller.')) return;
+                                                setBandClampBusy(true);
+                                                try {
+                                                    const j = await fetchJSON('/api/band-overrides/sa-rh-clamp', { method: 'DELETE' });
+                                                    if (j.status === 'ok') {
+                                                        setBandClampApplied(null);
+                                                    } else {
+                                                        alert('Reset failed: ' + (j.message || 'unknown'));
+                                                    }
+                                                } catch (e) {
+                                                    alert(e.message);
+                                                } finally {
+                                                    setBandClampBusy(false);
+                                                }
+                                            };
+                                            return (
+                                                <div className="mt-2 flex items-center gap-2" data-testid="band-clamp-row">
+                                                    <span className={`text-[8px] font-mono font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${applied ? (theme==='dark'?'bg-emerald-900/40 text-emerald-300 border border-emerald-700/40':'bg-emerald-50 text-emerald-700 border border-emerald-200') : (theme==='dark'?'bg-slate-800 text-slate-400 border border-slate-700':'bg-slate-100 text-slate-500 border border-slate-300')}`}
+                                                          data-testid="band-clamp-live">{appliedLabel}</span>
+                                                    {/* Clamp-effectiveness sparkline -- "is the equipment honouring the target?"
+                                                        Inline 64x22 SVG plotted from clampSpark (mean SA-RH across all AHUs over
+                                                        the last ~15 min, sampled every 30s).  Pure client-side, no new BACnet
+                                                        writes.  Three color states: emerald inside band, rose drifting outside,
+                                                        slate baseline when no clamp is applied. */}
+                                                    {clampSpark.length >= 2 && (() => {
+                                                        const W = 64, H = 22, PADX = 2;
+                                                        const lastN = clampSpark.slice(-12);
+                                                        const last = lastN[lastN.length - 1];
+                                                        const meanRh = last.meanRh;
+                                                        // Y-domain: prefer the clamp window with a 5-pt cushion,
+                                                        // else fall back to the actual sample min/max with padding.
+                                                        let yMin, yMax;
+                                                        if (applied) {
+                                                            yMin = Math.min(applied.lo - 5, Math.min(...lastN.map(s => s.meanRh)) - 2);
+                                                            yMax = Math.max(applied.hi + 5, Math.max(...lastN.map(s => s.meanRh)) + 2);
+                                                        } else {
+                                                            const vs = lastN.map(s => s.meanRh);
+                                                            yMin = Math.min(...vs) - 3;
+                                                            yMax = Math.max(...vs) + 3;
+                                                        }
+                                                        if (yMax - yMin < 10) { const c = (yMin + yMax) / 2; yMin = c - 5; yMax = c + 5; }
+                                                        const yOf = (rh) => H - ((rh - yMin) / (yMax - yMin)) * H;
+                                                        const xOf = (i) => PADX + (i * (W - 2 * PADX)) / Math.max(1, lastN.length - 1);
+                                                        // Honored = mean inside band at each sample (only meaningful when clamp applied)
+                                                        const honored = applied
+                                                            ? lastN.filter(s => s.meanRh >= applied.lo && s.meanRh <= applied.hi).length
+                                                            : null;
+                                                        const insideBand = applied && meanRh >= applied.lo && meanRh <= applied.hi;
+                                                        const driftAbove = applied && meanRh > applied.hi;
+                                                        const stroke   = !applied ? '#94a3b8' : (insideBand ? '#34d399' : '#fb7185');
+                                                        const dotFill  = stroke;
+                                                        const dotEdge  = !applied ? '#0f172a' : (insideBand ? '#022c22' : '#7f1d1d');
+                                                        const borderC  = !applied ? 'rgba(100,116,139,0.35)'
+                                                                            : (insideBand ? 'rgba(16,185,129,0.3)' : 'rgba(251,113,133,0.5)');
+                                                        const textCls  = !applied ? 'text-slate-400' : (insideBand ? 'text-emerald-300' : 'text-rose-300');
+                                                        const points   = lastN.map((s, i) => `${xOf(i).toFixed(1)},${yOf(s.meanRh).toFixed(1)}`).join(' ');
+                                                        // Per-AHU tooltip line
+                                                        const perAhuStr = (last.perAhu || []).map(p => `${p.id}:${p.rh.toFixed(0)}%`).join(', ');
+                                                        const tipParts = [
+                                                            `Mean SA-RH: ${meanRh.toFixed(1)}%`,
+                                                            applied ? `Window: ${applied.lo}-${applied.hi}% RH` : 'No clamp applied (factory bands)',
+                                                            applied ? `Honored: ${honored}/${lastN.length} samples` : null,
+                                                            `Sources: ${perAhuStr}`,
+                                                            `Window: ~${Math.round((last.ts - lastN[0].ts) / 60000)} min`,
+                                                        ].filter(Boolean);
+                                                        return (
+                                                            <div className="flex items-center gap-1.5"
+                                                                 data-testid="clamp-spark"
+                                                                 title={tipParts.join('\n')}>
+                                                                <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${borderC}`, borderRadius: 3 }}>
+                                                                    {applied && (
+                                                                        <React.Fragment>
+                                                                            <rect x="0" y={yOf(applied.hi)} width={W} height={Math.max(0, yOf(applied.lo) - yOf(applied.hi))} fill="rgba(16,185,129,0.18)"/>
+                                                                            <line x1="0" y1={yOf(applied.hi)} x2={W} y2={yOf(applied.hi)} stroke="#10b981" strokeWidth="0.5" strokeDasharray="2,1.5" opacity="0.7"/>
+                                                                            <line x1="0" y1={yOf(applied.lo)} x2={W} y2={yOf(applied.lo)} stroke="#10b981" strokeWidth="0.5" strokeDasharray="2,1.5" opacity="0.7"/>
+                                                                        </React.Fragment>
+                                                                    )}
+                                                                    <polyline fill="none" stroke={stroke} strokeWidth="1.4" points={points}/>
+                                                                    <circle cx={xOf(lastN.length - 1)} cy={yOf(meanRh)} r="1.7" fill={dotFill} stroke={dotEdge} strokeWidth="0.5"/>
+                                                                    {applied && !insideBand && (
+                                                                        <text x={W - 9} y={H - 1} fontSize="9" fontWeight="900" fill="#fb7185" fontFamily="ui-monospace,Menlo,monospace">!</text>
+                                                                    )}
+                                                                </svg>
+                                                                <span className={`text-[9px] font-mono font-black ${textCls}`} data-testid="clamp-spark-mean">
+                                                                    {meanRh.toFixed(1)}%{driftAbove ? '\u2191' : ''}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                    <button
+                                                        data-testid="band-clamp-apply"
+                                                        onClick={onApply}
+                                                        disabled={!dirty || bandClampBusy}
+                                                        title={dirty ? 'Apply slider window to controller (clamps every band SA-RH target)' : 'Slider matches controller - nothing to apply'}
+                                                        className={`flex-1 py-1.5 rounded text-[9px] font-black uppercase tracking-wider border transition-all ${
+                                                            !dirty
+                                                                ? (theme==='dark' ? 'bg-slate-800/60 border-slate-700 text-slate-600 cursor-not-allowed' : 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed')
+                                                                : (theme==='dark' ? 'bg-amber-600 border-amber-400 text-white hover:bg-amber-500 shadow-md shadow-amber-600/30' : 'bg-amber-500 border-amber-600 text-white hover:bg-amber-600 shadow-md')
+                                                        }`}>
+                                                        {bandClampBusy ? '...' : (dirty ? 'Apply to Controller' : 'Applied')}
+                                                    </button>
+                                                    {applied && (
+                                                        <button
+                                                            data-testid="band-clamp-reset"
+                                                            onClick={onReset}
+                                                            disabled={bandClampBusy}
+                                                            title="Remove the SA-RH clamp from the controller (revert to factory bands)"
+                                                            className={`px-2 py-1.5 rounded text-[9px] font-black uppercase tracking-wider border transition-all ${theme==='dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-rose-900/30 hover:border-rose-600 hover:text-rose-300' : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-700'}`}>Reset</button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                );
+                            })()}
+                        </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-10 space-y-2`}><h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] px-1 font-black shadow-black">{t('asset_search')}</h2><input type="text" placeholder="Search ID (Wildcard *, ?)..." className={`w-full ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-xl py-2 px-4 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                         {/* AXIS SETTINGS — dual-handle range slider, bounded to [-15, 50] */}
                         <div className={`p-4 border-b ${ui.border} bg-opacity-20 space-y-3`}>
@@ -1490,6 +2558,36 @@
                             })()}
                         </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-5`}><div className="flex justify-between items-center px-2">{['OA', 'SA', 'RA'].map(p => { const configs = { OA: { rgb: '59, 130, 246' }, SA: { rgb: '16, 185, 129' }, RA: { rgb: '244, 63, 94' } }; const labels = { OA: t('oa'), SA: t('sa'), RA: t('ra') }; const active = pointVisibility[p]; const c = configs[p]; return <button key={p} onClick={() => setPointVisibility({...pointVisibility, [p]: !pointVisibility[p]})} className="w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center font-black text-[10px] shadow-black" style={{ backgroundColor: active ? `rgb(${c.rgb})` : `rgba(${c.rgb}, 0.15)`, borderColor: active ? (theme==='dark'?'#fff':'#000') : `rgb(${c.rgb})`, color: active ? '#fff' : `rgb(${c.rgb})`, opacity: active ? 1 : 0.6 }}>{labels[p]}</button>; })}</div></div>
+                        {/* ERV ROI badge — only shown when the 3D WX tab's ERV
+                            chip is ON. Click anywhere on the badge to jump
+                            directly to the 3D WX tab + the rollout panel. */}
+                        {ervSnap && ervSnap.enabled && isFinite(ervSnap.totalUSD) && (
+                            <div onClick={() => setActiveView('weather3d')}
+                                 data-testid="erv-roi-badge"
+                                 className={`mx-2 mt-2 p-2 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity`}
+                                 style={{ borderColor: '#22d3ee', background: 'rgba(34,211,238,.08)' }}>
+                                <div className="flex items-center justify-between gap-2 font-mono text-[10px]">
+                                    <span style={{ color: '#22d3ee' }} className="font-black uppercase tracking-widest">ERV</span>
+                                    <span className={ui.text}>
+                                        <b style={{ color: '#22d3ee' }}>
+                                            {ervSnap.totalUSD >= 1e6 ? '$' + (ervSnap.totalUSD/1e6).toFixed(2) + 'M'
+                                             : ervSnap.totalUSD >= 1e3 ? '$' + (ervSnap.totalUSD/1e3).toFixed(1) + 'k'
+                                             : '$' + ervSnap.totalUSD.toFixed(0)}
+                                        </b>
+                                        <span className="opacity-70"> /yr · </span>
+                                        <b style={{ color: isFinite(ervSnap.payback) && ervSnap.payback < 5 ? '#a3e635' : '#fbbf24' }}>
+                                            {isFinite(ervSnap.payback)
+                                                ? (ervSnap.payback < 99 ? ervSnap.payback.toFixed(1) + ' yr' : '>99 yr')
+                                                : 'never'}
+                                        </b>
+                                        <span className="opacity-70"> payback</span>
+                                    </span>
+                                </div>
+                                <div className="font-mono text-[8px] opacity-60 mt-0.5">
+                                    ε={ervSnap.eps ? ervSnap.eps.toFixed(2) : '0.80'} · {ervSnap.zone || 'KR-Seoul'} · {(ervSnap.totalKWh/1000).toFixed(0)}k kWh/yr
+                                </div>
+                            </div>
+                        )}
                         <div className={`flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar bg-opacity-20`}>{filteredAhuData.map(ahu => { 
                             const isSelected = selectedAhuId === ahu.id; 
                             const m = getEnergyMetrics(ahu); 
@@ -1501,6 +2599,99 @@
                             ); 
                         })}</div>
                     </div>
+                        );
+                        if (isPoppedToWin && sidebarPopoutHost) {
+                            // Cross-window mode: portal the sidebar React tree
+                            // into the popup window's host div + render a THIN
+                            // vertical rail (~36 px) in place of the old docked
+                            // column so the chart claims the freed real estate.
+                            // The rail itself is clickable -- click anywhere on
+                            // it to close the popup and bring the sidebar back.
+                            const placeholder = (
+                                <button
+                                    type="button"
+                                    data-testid="sidebar-window-attach"
+                                    onClick={() => { try { sidebarPopoutWin.close(); } catch (e) {} }}
+                                    title="Sidebar is on the extended display.  Click to bring it back."
+                                    className={`flex flex-col items-center justify-center py-2 z-20 flex-shrink-0 cursor-pointer transition-all border-r ${theme==='dark' ? 'bg-slate-950 border-indigo-500/30 hover:bg-indigo-900/20 text-indigo-300' : 'bg-slate-50 border-slate-300 hover:bg-indigo-50 text-indigo-600'}`}
+                                    style={{ width: '32px' }}
+                                >
+                                    <span className="text-[11px] font-black mb-1">{'\u29C9'}</span>
+                                    {/* Vertical "SIDEBAR \u2192 EXT DISPLAY \u00B7 CLICK TO BRING BACK"
+                                        rotated so it reads upward along the rail. */}
+                                    <span
+                                        className="text-[8px] font-black uppercase tracking-widest whitespace-nowrap"
+                                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', letterSpacing: '0.2em' }}
+                                        data-testid="sidebar-window-placeholder"
+                                    >
+                                        {'\u21A9 Click to bring back \u00B7 Sidebar on extended display'}
+                                    </span>
+                                </button>
+                            );
+                            return (
+                                <React.Fragment>
+                                    {placeholder}
+                                    {ReactDOM.createPortal(sidebarTree, sidebarPopoutHost)}
+                                </React.Fragment>
+                            );
+                        }
+                        if (isPoppedFloat) {
+                            // In-page floating shell.  Same document, so mouse
+                            // events for every existing drag-handler (including
+                            // the psychart temp slider) work unchanged.
+                            return (
+                                <div
+                                    className={`fixed z-[80] rounded-xl shadow-2xl overflow-hidden ${theme==='dark' ? 'border border-indigo-500/40 bg-slate-900' : 'border border-slate-300 bg-white'}`}
+                                    style={{
+                                        left: sidebarFloatPos.x + 'px',
+                                        top:  sidebarFloatPos.y + 'px',
+                                        width:  sidebarFloatSize.w + 'px',
+                                        height: sidebarFloatSize.h + 'px',
+                                    }}
+                                    data-testid="sidebar-floating-shell"
+                                >
+                                    <div
+                                        onMouseDown={onSidebarTitleMouseDown}
+                                        className={`cursor-grab active:cursor-grabbing flex items-center justify-between px-3 py-1.5 border-b ${theme==='dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}
+                                        data-testid="sidebar-floating-titlebar"
+                                    >
+                                        <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                                            {'\u2725 Sidebar \u2014 drag to move'}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            {/* Escalation: send the floating panel out to a separate window
+                                                without losing position state.  Float -> window. */}
+                                            <button
+                                                data-no-drag
+                                                data-testid="sidebar-floating-to-window"
+                                                onClick={popOutSidebarToWindow}
+                                                className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border transition-all ${theme==='dark' ? 'bg-slate-700 border-slate-500 text-slate-200 hover:bg-cyan-700 hover:border-cyan-400' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-cyan-100 hover:border-cyan-400'}`}
+                                                title="Send the sidebar to a separate browser window (extended display)"
+                                            >{'\u29C9 To Window'}</button>
+                                            <button
+                                                data-no-drag
+                                                data-testid="sidebar-floating-attach"
+                                                onClick={() => setSidebarFloating(false)}
+                                                className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600 transition-all"
+                                                title="Re-attach sidebar to the docked position"
+                                            >{'\u21A9 Attach'}</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col" style={{ height: 'calc(100% - 30px)' }}>
+                                        {sidebarTree}
+                                    </div>
+                                    <div
+                                        onMouseDown={onSidebarResizeMouseDown}
+                                        title="Drag to resize"
+                                        data-testid="sidebar-floating-resize"
+                                        className={`absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-[81] ${theme==='dark' ? 'bg-indigo-500/40 hover:bg-indigo-500/80' : 'bg-indigo-300 hover:bg-indigo-500'}`}
+                                        style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
+                                    />
+                                </div>
+                            );
+                        }
+                        return sidebarTree;
+                    })()}
 
                     {activeView === 'diagnostics' && React.createElement(DiagnosticsConsole)}
                     {activeView === 'dynamics' && (
@@ -1532,11 +2723,11 @@
                                                         e.stopPropagation(); 
                                                         setShowFloorPlanForAhu(selectedAhuId); 
                                                     }}
-                                                    title="Click to map VAVs on Floor Plan"
+                                                    title={window.t ? window.t("click_to_map_vavs") : "Click to map VAVs on Floor Plan"}
                                                 >
                                                     {selectedAhuId}
                                                 </div>
-                                                <div className="text-[9px] text-slate-500 uppercase tracking-widest mt-1 mb-2 font-black font-mono">Real-time Diagnostic Hub</div>
+                                                <div className="text-[9px] text-slate-500 uppercase tracking-widest mt-1 mb-2 font-black font-mono">{window.t ? window.t("real_time_diag_hub") : "Real-time Diagnostic Hub"}</div>
                                             </div>
                                             <div className="grid grid-cols-3 gap-1 mt-2 h-full">
                                                 {ahuData.find(a => a.id === selectedAhuId)?.points.map(p => (
@@ -1563,7 +2754,13 @@
                                         const currentAhu = ahuData.find(a => a.id === selectedAhuId);
                                         const oaP = currentAhu?.points?.find(p => p.label === 'OA');
                                         const saP = currentAhu?.points?.find(p => p.label === 'SA');
-                                        const ahuDiag = getAhuDiagnostic(currentAhu, comfortZonePoly);
+                                        // Active sweet-spot filter narrows the CZ% to the
+                                        // intersection of (CZ polygon) AND (operator-defined
+                                        // RH band) when both overlay toggles are on.  Off-state
+                                        // falls back to the looser CZ-only count so the figure
+                                        // stays consistent with what the operator sees.
+                                        const activeSweet = (showGivoni && showSweetSpot) ? { lo: sweetSpotRange.lo, hi: sweetSpotRange.hi } : null;
+                                        const ahuDiag = getAhuDiagnostic(currentAhu, comfortZonePoly, activeSweet);
                                         return (
                                             <React.Fragment>
                                     <div className={`p-4 ${theme==='dark'?'bg-indigo-600/10 border-indigo-500/20':'bg-indigo-50 border-indigo-200'} border-b cursor-grab active:cursor-grabbing font-black shadow-black`} onMouseDown={(e) => { setIsVavDragging(true); setDragStart({ x: e.clientX - vavTableOffset.x, y: e.clientY - vavTableOffset.y }); }}>
@@ -1574,8 +2771,9 @@
                                                     <span className={`text-[9px] font-black uppercase tracking-wider ${ahuDiag.process === 'heating' ? 'text-orange-400' : ahuDiag.process === 'cooling' ? 'text-cyan-400' : 'text-emerald-400'}`}>
                                                         {ahuDiag.process === 'heating' ? 'HTG' : ahuDiag.process === 'cooling' ? 'CLG' : 'IDLE'}
                                                     </span>
-                                                    <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
-                                                        {ahuDiag.comfortPct}% CZ
+                                                    <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}
+                                                          title={activeSweet ? `${ahuDiag.inCZCount}/${ahuDiag.totalVavs} VAVs inside Givoni CZ AND ${activeSweet.lo}-${activeSweet.hi}% RH` : `${ahuDiag.inCZCount}/${ahuDiag.totalVavs} VAVs inside Givoni CZ`}>
+                                                        {ahuDiag.comfortPct}% {activeSweet ? 'CZ' + String.fromCharCode(0x2229) + 'SS' : 'CZ'}
                                                     </span>
                                                 </div>
                                             )}
@@ -1595,13 +2793,34 @@
                                                 {currentAhu.vavs && currentAhu.vavs.map(v => {
                                                     const saH = saP ? getH(saP.t, saP.w) : 0;
                                                     const diffH = v.h - saH;
-                                                    const diag = getVavDiagnostic(v, saP, comfortZonePoly);
-                                                    const statusColor = diag.status === 'optimal' ? 'bg-emerald-500' : diag.status === 'comfort' ? 'bg-emerald-400/60' : diag.status === 'warning' ? 'bg-amber-500' : 'bg-red-500';
-                                                    const statusTitle = diag.status === 'optimal' ? 'In CZ, near target' : diag.status === 'comfort' ? 'In CZ' : diag.status === 'warning' ? 'Near CZ boundary' : 'Outside CZ';
+                                                    // Pass the SAME activeSweet filter as the AHU-level
+                                                    // diagnostic so the row's status and the badge's
+                                                    // CZ% stay in sync: a VAV that's "in CZ but not
+                                                    // sweet" will downgrade from optimal/comfort to
+                                                    // warning here too, matching the badge count.
+                                                    const diag = getVavDiagnostic(v, saP, comfortZonePoly, activeSweet);
+                                                    // Givoni-aware tier classification.  Single resolver in
+                                                    // psychrometric.js owns BOTH the dot colour (auto-derived
+                                                    // from the same hex tokens the chart polygons use) AND the
+                                                    // control-strategy hint shown in the tooltip + chart
+                                                    // callout, so visual + recommendation stay in lock-step.
+                                                    //   Tier A -> SWEET_FILL    + HOLD setpoints
+                                                    //   Tier B -> CZ_STROKE     + Soft trim humidify/dehumidify
+                                                    //   Tier C+ -> HOT_OUTSIDE  + mech cool / dehumidify
+                                                    //   Tier C- -> COLD_OUTSIDE + mech heat / humidify
+                                                    const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                                                    const gv = getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, _gvSweet, showGivoni);
+                                                    const statusStyle = {
+                                                        backgroundColor: gv.dotFill,
+                                                        boxShadow: '0 0 5px ' + gv.dotFill + '80',
+                                                    };
+                                                    const statusTitle = gv.tooltip;
                                                     return (
                                                         <tr key={v.id} className={`rounded-lg transition-colors shadow-black ${lockedVavId === v.id ? 'bg-indigo-500/30' : (theme==='dark'?'bg-slate-950/40 hover:bg-indigo-500/10':'bg-slate-100 hover:bg-indigo-100')}`}>
-                                                            <td className="px-1 py-2" title={statusTitle}><div className={`w-2.5 h-2.5 rounded-full ${statusColor} shadow-sm`}></div></td>
-                                                            <td className="px-2 py-2 text-indigo-500 font-bold cursor-pointer hover:underline transition-colors hover:text-indigo-400" onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }} title="View Diagram">{v.id}</td>
+                                                            <td className="px-1 py-2" title={statusTitle} data-testid={`vav-cz-status-${v.id}`}>
+                                                                <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={statusStyle}></div>
+                                                            </td>
+                                                            <td className="px-2 py-2 text-indigo-500 font-bold cursor-pointer hover:underline transition-colors hover:text-indigo-400" onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }} title={window.t ? window.t("view_diagram") : "View Diagram"}>{v.id}</td>
                                                             <td className="font-black">{v.t.toFixed(1)}</td>
                                                             <td className="font-black">{v.rh.toFixed(0)}</td>
                                                             <td className="text-pink-500 font-black">{v.h.toFixed(1)}</td>
@@ -1657,7 +2876,7 @@
                     <div className={`w-full ${theme==='dark'?'bg-slate-900 border-slate-800':'bg-slate-100 border-slate-300'} border-t`}>
                         {!weatherLocation ? (
                             <div className="flex items-center justify-between px-6 py-3">
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>Yearly Weather Distribution</span>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>{window.t ? window.t("yearly_weather_dist") : "Yearly Weather Distribution"}</span>
                                 <button onClick={() => setShowWeatherSettings(true)} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black uppercase tracking-wider rounded transition-all">{t('set_location')}</button>
                             </div>
                         ) : weatherLoading ? (
@@ -1693,7 +2912,7 @@
                                 {/* SVG Strip - viewBox matches chart width for horizontal alignment */}
                                 {(() => {
                                     const view = getWeatherView();
-                                    if (!view || !view.data || view.data.length < 2) return <div className="px-4 py-2" style={{paddingLeft:'7%'}}><span className={`text-[9px] font-mono ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>No data for this period</span></div>;
+                                    if (!view || !view.data || view.data.length < 2) return <div className="px-4 py-2" style={{paddingLeft:'7%'}}><span className={`text-[9px] font-mono ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>{window.t ? window.t("no_data_for_period") : "No data for this period"}</span></div>;
                                     const allVisible = view.data;
                                     const isHourly = view.isHourly || false;
                                     const hourlyInterval = view.hourlyInterval || 1;
@@ -1820,7 +3039,7 @@
                                             {/* Right margin: period label + legend + zoom reset */}
                                             <text x={stripW - spad.r + 10} y={spad.t + 14} textAnchor="start" fontSize="9" fill={theme==='dark'?'#38bdf8':'#0284c7'} fontWeight="900" className="font-mono">{periodLabel}</text>
                                             {weatherZoom && (
-                                                <text x={stripW - spad.r + 10} y={spad.t + 28} textAnchor="start" fontSize="7" fill={theme==='dark'?'#6366f1':'#4f46e5'} fontWeight="900" className="cursor-pointer" onClick={() => setWeatherZoom(null)}>RESET ZOOM</text>
+                                                <text x={stripW - spad.r + 10} y={spad.t + 28} textAnchor="start" fontSize="7" fill={theme==='dark'?'#6366f1':'#4f46e5'} fontWeight="900" className="cursor-pointer" onClick={() => setWeatherZoom(null)}>{window.t ? window.t("reset_zoom") : "RESET ZOOM"}</text>
                                             )}
                                             <text x={stripW - spad.r + 10} y={spad.t + gH - 22} textAnchor="start" fontSize="7" fill="#f97316" fontWeight="800">T</text>
                                             <text x={stripW - spad.r + 24} y={spad.t + gH - 22} textAnchor="start" fontSize="7" fill="#38bdf8" fontWeight="800">RH</text>
@@ -2010,7 +3229,7 @@
                         ) : (
                             <div className="flex items-center justify-between px-6 py-3">
                                 <div className="flex items-center gap-3">
-                                    <span className={`text-[10px] font-mono ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>No weather data loaded</span>
+                                    <span className={`text-[10px] font-mono ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>{window.t ? window.t("no_weather_loaded") : "No weather data loaded"}</span>
                                     {weatherError && <span className={`text-[9px] font-mono text-red-400`}>{weatherError}</span>}
                                 </div>
                                 <button onClick={() => setShowWeatherSettings(true)} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black uppercase tracking-wider rounded transition-all">{t('set_location')}</button>
@@ -2020,6 +3239,74 @@
                     )}
                     </div>
                     
+                    {/* Band SA-RH Clamp Confirm Modal */}
+                    {bandClampModal && (() => {
+                        const { lo, hi, preview } = bandClampModal;
+                        const changed = preview.filter(p => p.changed);
+                        const onCancel = () => setBandClampModal(null);
+                        const onConfirm = async () => {
+                            setBandClampBusy(true);
+                            try {
+                                const j = await fetchJSON('/api/band-overrides/sa-rh-clamp', {
+                                    method: 'POST',
+                                    headers: {'Content-Type':'application/json'},
+                                    body: JSON.stringify({ lo, hi, enabled: true, applied_by: 'dashboard' })
+                                });
+                                if (j.status === 'ok') {
+                                    setBandClampApplied({ lo, hi });
+                                    setBandClampModal(null);
+                                } else {
+                                    alert('Apply failed: ' + (j.message || 'unknown'));
+                                }
+                            } catch (e) {
+                                alert(e.message);
+                            } finally {
+                                setBandClampBusy(false);
+                            }
+                        };
+                        return (
+                            <div onClick={onCancel} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-testid="band-clamp-modal">
+                                <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-amber-500/60':'bg-white border-amber-400'} border-2 rounded-2xl p-5 shadow-2xl`} style={{width:'480px', maxHeight:'80vh', overflow:'hidden', display:'flex', flexDirection:'column'}}>
+                                    <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-amber-400':'text-amber-700'} mb-2`}>Confirm SA-RH Clamp</h3>
+                                    <p className={`text-[10px] font-mono mb-3 leading-relaxed ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>
+                                        Applying <span className="font-black text-amber-500">{lo}-{hi}% RH</span> will clamp every band SA-RH target into this window and force the hum mode where needed.  This rewrites <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>band_guide.csv</code> and every AHU <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>CSV.Description</code> string on the controller.
+                                    </p>
+                                    <div className={`text-[9px] font-mono mb-2 px-2 py-1.5 rounded ${theme==='dark'?'bg-amber-900/30 border border-amber-700/40 text-amber-300':'bg-amber-50 border border-amber-300 text-amber-800'}`} data-testid="band-clamp-warning">
+                                        <span className="font-black uppercase tracking-wider">Warning:</span> {changed.length} of {preview.length} bands will change.  The clamped SA-RH value is written to each AHU humidity setpoint BACnet point (default: <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>AV&lt;n&gt;</code> where <code>n</code> is the AHU number; override via <code>humidity_sp</code> in <code>collector_config.json</code>).  This DRIVES the humidifier coil mechanically -- confirm only if your AHU has a humidity loop wired to that point.
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar -mx-1 px-1" data-testid="band-clamp-preview">
+                                        <table className="w-full text-left border-separate border-spacing-y-1 text-[10px] font-mono">
+                                            <thead>
+                                                <tr className={`text-[8px] font-black uppercase ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>
+                                                    <th>Band</th><th>SA-RH Before</th><th>After</th><th>Hum Before</th><th>After</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {preview.map(p => (
+                                                    <tr key={p.id} className={`${p.changed ? (theme==='dark'?'bg-amber-900/20':'bg-amber-50') : (theme==='dark'?'bg-slate-950/40':'bg-slate-100/50')} rounded`}>
+                                                        <td className={`px-2 py-1 font-black ${theme==='dark'?'text-indigo-400':'text-indigo-600'}`}>{p.id}</td>
+                                                        <td className="px-2 py-1">{p.before.sa_rh}%</td>
+                                                        <td className={`px-2 py-1 font-black ${p.changed ? (p.direction === 'down' ? 'text-cyan-400' : 'text-rose-400') : (theme==='dark'?'text-slate-500':'text-slate-400')}`}>
+                                                            {p.after.sa_rh}%{p.changed ? (p.direction === 'down' ? ' \u2193' : ' \u2191') : ''}
+                                                        </td>
+                                                        <td className={`px-2 py-1 text-[9px] ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>{p.before.hum}</td>
+                                                        <td className={`px-2 py-1 text-[9px] font-black ${p.changed ? (theme==='dark'?'text-amber-400':'text-amber-700') : (theme==='dark'?'text-slate-500':'text-slate-400')}`}>{p.after.hum}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="mt-3 flex gap-2 justify-end">
+                                        <button data-testid="band-clamp-cancel" onClick={onCancel} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700':'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'}`}>Cancel</button>
+                                        <button data-testid="band-clamp-confirm" onClick={onConfirm} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-amber-600 border-amber-400 text-white hover:bg-amber-500':'bg-amber-500 border-amber-600 text-white hover:bg-amber-600'} shadow-md`}>
+                                            {bandClampBusy ? 'Applying...' : 'Confirm & Apply'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {/* Weather Location Settings Modal */}
                     {showWeatherSettings && (() => {
                         const savedLocs = savedWeatherLocations;
@@ -2073,7 +3360,7 @@
                         return (
                         <div onClick={() => setShowWeatherSettings(false)} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
                             <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-indigo-500/50':'bg-white border-slate-300'} border-2 rounded-2xl p-5`} style={{width:'320px', overflow:'hidden'}}>
-                                <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-indigo-400':'text-indigo-600'} mb-3`}>Weather Location</h3>
+                                <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-indigo-400':'text-indigo-600'} mb-3`}>{window.t ? window.t("weather_location") : "Weather Location"}</h3>
                                 {weatherSaveError && (
                                     <div data-testid="weather-save-error" className={`mb-3 px-2 py-1.5 rounded text-[9px] font-mono font-bold ${theme==='dark'?'bg-red-900/40 border border-red-500/40 text-red-300':'bg-red-50 border border-red-300 text-red-700'}`}>
                                         {weatherSaveError}
@@ -2082,7 +3369,7 @@
 
                                 {/* Custom dropdown with inline delete */}
                                 <div className="mb-3 relative">
-                                    <label className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-1`}>Current Location</label>
+                                    <label className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-1`}>{window.t ? window.t("current_location") : "Current Location"}</label>
                                     <button
                                         id="wl-dropdown-btn"
                                         onClick={() => { const dd = document.getElementById('wl-dropdown-list'); dd.style.display = dd.style.display === 'block' ? 'none' : 'block'; }}
@@ -2109,7 +3396,7 @@
                                             );
                                         })}
                                         {savedLocs.length === 0 && (
-                                            <div className={`px-3 py-2 text-[10px] italic ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>No saved locations</div>
+                                            <div className={`px-3 py-2 text-[10px] italic ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>{window.t ? window.t("no_saved_locations") : "No saved locations"}</div>
                                         )}
                                     </div>
                                 </div>
@@ -2117,7 +3404,7 @@
                                 {/* Add new location */}
                                 <div className={`p-3 rounded-lg border border-dashed ${theme==='dark'?'border-slate-600 bg-slate-800/30':'border-slate-300 bg-slate-50'}`}>
                                     <div className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} mb-2`}>Add New</div>
-                                    <input id="wl-new-name" type="text" placeholder="Location name" className={`w-full mb-2 ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
+                                    <input id="wl-new-name" type="text" placeholder={window.t ? window.t("location_name_ph") : "Location name"} className={`w-full mb-2 ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
                                     <div className="flex gap-1.5 mb-2">
                                         <input id="wl-new-lat" type="number" step="0.01" placeholder="Lat" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
                                         <input id="wl-new-lon" type="number" step="0.01" placeholder="Lon" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
@@ -2233,11 +3520,22 @@
                             }).catch(e => console.warn('VAV Write error:', e));
                         };
 
-                        return (
-                            <div className={`absolute z-[120] select-none shadow-2xl drop-shadow-2xl`} style={{ top: `${safe(vavModalOffset.y)}px`, left: `${safe(vavModalOffset.x)}px` }}>
-                                <div className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} rounded-xl shadow-2xl border-2 relative flex flex-col overflow-hidden`} style={{ width: `${vavModalSize.w}px`, height: `${vavModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' }} onMouseDown={e => e.stopPropagation()}>
+                        const vavIsPopped = !!(vavModalPopupWin && vavModalPopupHost);
+                        const vavOuterStyle = vavIsPopped
+                            ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
+                            : { top: `${safe(vavModalOffset.y)}px`, left: `${safe(vavModalOffset.x)}px` };
+                        const vavOuterCls = vavIsPopped
+                            ? 'block select-none'
+                            : 'absolute z-[120] select-none shadow-2xl drop-shadow-2xl';
+                        const vavInnerStyle = vavIsPopped
+                            ? { width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none' }
+                            : { width: `${vavModalSize.w}px`, height: `${vavModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' };
+
+                        const vavModalTree = (
+                            <div className={vavOuterCls} style={vavOuterStyle}>
+                                <div ref={vavOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${vavIsPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={vavInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                     
-                                    <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
+                                    <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (vavIsPopped) return; setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
                                         <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}{modalBandTrim && (
                                             <span className={`ml-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold tracking-wider ${modalBandTrim.sun_trim_c < 0
                                                 ? (theme === 'dark' ? 'bg-amber-500/15 border-amber-500/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-amber-700')
@@ -2249,23 +3547,41 @@
                                                 <span>SA {modalBandTrim.sa_t_sp}°C</span>
                                                 {modalBandTrim.sun_trim_c !== 0 && <span className="opacity-80">({modalBandTrim.sun_trim_c > 0 ? '+' : ''}{modalBandTrim.sun_trim_c.toFixed(2)} sun)</span>}
                                             </span>
-                                        )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>Drag corner ↘ to resize</span></h3>
-                                        <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer mr-1`} onMouseDown={e => e.stopPropagation()} onClick={() => setSelectedVavForModal(null)}>
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                        </button>
+                                        )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{vavIsPopped ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>
+                                        <div className="flex items-center gap-2 mr-1" onMouseDown={e => e.stopPropagation()}>
+                                            <button
+                                                data-testid="popout-vav-modal-btn"
+                                                onClick={() => { if (vavModalPopupWin && !vavModalPopupWin.closed) { vavModalPopupWin.close(); } else { popOutVavModal(); } }}
+                                                title={vavIsPopped ? 'Re-attach VAV modal to this window' : 'Pop the VAV modal out into a draggable window'}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${vavIsPopped ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                            >
+                                                {vavIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                            </button>
+                                            <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setSelectedVavForModal(null)}>
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className={`relative w-full flex-1 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
                                         {!effectiveVavImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
-                                                <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">VAV IMAGE MISSING</span>
+                                                <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("vav_image_missing") : "VAV IMAGE MISSING"}</span>
                                                 <span className="text-xs">Define <code className="bg-slate-200 px-1 rounded">visual_assets.base_graphic</code> for vav_type {vavTypeId || 'N'} in the Config Tool</span>
                                             </div>
                                         ) : (
-                                        <div className="relative inline-block pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]">
-                                            <img ref={vavImgRef} src={effectiveVavImage} alt="VAV" className="block max-w-full pointer-events-none" style={{ maxHeight: 'calc(100% - 4px)' }}
+                                        <div className="relative pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]"
+                                             style={{
+                                               display: 'grid',
+                                               gridTemplateColumns: '1fr',
+                                               gridTemplateRows: '1fr',
+                                               maxWidth: '100%',
+                                               maxHeight: '100%',
+                                             }}>
+                                            <img ref={vavImgRef} src={effectiveVavImage} alt="VAV" className="block pointer-events-none"
+                                                 style={{ gridArea: '1 / 1', maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', display: 'block' }}
                                                  onLoad={(e) => { const im = e.target; setVavImgDims({ natW: im.naturalWidth || 1600, natH: im.naturalHeight || 1004, dispW: im.offsetWidth, dispH: im.offsetHeight }); }} />
-                                            <div className="absolute inset-0 pointer-events-none">
+                                            <div className="relative pointer-events-none" style={{ gridArea: '1 / 1' }}>
 
                                                 {/* === SCHEMA-DRIVEN VAV POINTS === */}
                                                 {vavSchemaPoints.map((p, pi) => {
@@ -2438,18 +3754,43 @@
                                 </div>
                             </div>
                         );
+                        return vavIsPopped
+                            ? ReactDOM.createPortal(vavModalTree, vavModalPopupHost)
+                            : vavModalTree;
                     })()}
 
                     {/* Floor Plan Mapper Modal */}
-                    {showFloorPlanForAhu && (
-                        <div className={`absolute z-[110] select-none shadow-2xl drop-shadow-2xl`} style={{ top: `${safe(floorPlanOffset.y)}px`, left: `${safe(floorPlanOffset.x)}px` }}>
-                            <div className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-white' : 'bg-white border-slate-300 text-slate-800'} rounded-2xl shadow-2xl border relative flex flex-col overflow-hidden`} style={{ maxWidth: 'calc(min(1400px, 95vw))', maxHeight: 'calc(min(900px, 95vh))', width: 'auto', height: 'auto' }} onMouseDown={e => e.stopPropagation()}>
+                    {showFloorPlanForAhu && (() => {
+                        const floorIsPopped = !!(floorPlanPopupWin && floorPlanPopupHost);
+                        const floorOuterStyle = floorIsPopped
+                            ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
+                            : { top: `${safe(floorPlanOffset.y)}px`, left: `${safe(floorPlanOffset.x)}px` };
+                        const floorOuterCls = floorIsPopped
+                            ? 'block select-none'
+                            : 'absolute z-[110] select-none shadow-2xl drop-shadow-2xl';
+                        const floorInnerStyle = floorIsPopped
+                            ? { width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none' }
+                            : { width: `${floorPlanModalSize.w}px`, height: `${floorPlanModalSize.h}px`, maxWidth: '95vw', maxHeight: '95vh', resize: 'both' };
+
+                        const floorModalTree = (
+                        <div className={floorOuterCls} style={floorOuterStyle}>
+                            <div ref={floorOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-white' : 'bg-white border-slate-300 text-slate-800'} ${floorIsPopped ? '' : 'rounded-2xl border'} shadow-2xl relative flex flex-col overflow-hidden`} style={floorInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                 
-                                <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'} border-b p-4 flex justify-between items-center z-[60] relative`} onMouseDown={(e) => { setIsFloorPlanDragging(true); setDragStart({ x: e.clientX - floorPlanOffset.x, y: e.clientY - floorPlanOffset.y }); }}>
-                                    <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE</h3>
-                                    <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer mr-2`} onMouseDown={e => e.stopPropagation()} onClick={() => setShowFloorPlanForAhu(null)}>
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                    </button>
+                                <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'} border-b p-4 flex justify-between items-center z-[60] relative`} onMouseDown={(e) => { if (floorIsPopped) return; setIsFloorPlanDragging(true); setDragStart({ x: e.clientX - floorPlanOffset.x, y: e.clientY - floorPlanOffset.y }); }}>
+                                    <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE {!floorIsPopped && <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal', textTransform:'none', letterSpacing:'normal'}}>Drag corner ↘ to resize</span>}</h3>
+                                    <div className="flex items-center gap-2 mr-2" onMouseDown={e => e.stopPropagation()}>
+                                        <button
+                                            data-testid="popout-floorplan-modal-btn"
+                                            onClick={() => { if (floorPlanPopupWin && !floorPlanPopupWin.closed) { floorPlanPopupWin.close(); } else { popOutFloorPlanModal(); } }}
+                                            title={floorIsPopped ? 'Re-attach floor plan to this window' : 'Pop the floor plan out into a draggable window'}
+                                            className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${floorIsPopped ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                        >
+                                            {floorIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                        </button>
+                                        <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowFloorPlanForAhu(null)}>
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                        </button>
+                                    </div>
                                 </div>
                                 
                                 <div className={`relative ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} overflow-hidden flex items-center justify-center`}>
@@ -2745,7 +4086,11 @@
                                 </div>
                             </div>
                         </div>
-                    )}
+                        );
+                        return floorIsPopped
+                            ? ReactDOM.createPortal(floorModalTree, floorPlanPopupHost)
+                            : floorModalTree;
+                    })()}
 
                     {/* AHU SCADA Overlay Modal */}
                     {showAhuModalFor && (() => {
@@ -2928,22 +4273,48 @@
                         const groupedPoints = [];
                         {
                             const processed = new Set();
+                            // Treat a point as "co-located" with the group's
+                            // first candidate when both x and y match within
+                            // 0.5 percentage units.  This lets the operator
+                            // BREAK A POINT OUT of its hardcoded group simply
+                            // by dragging it to a different location in the
+                            // mapper — e.g., placing SAFM as a standalone
+                            // toggle near the fan instead of inside the SA
+                            // databox.  Without this guard, every label that
+                            // matches a hardcoded group would be force-merged
+                            // into that group regardless of where the operator
+                            // placed it.
+                            const POS_EPS = 0.5;
                             SENSOR_GROUPS.forEach(g => {
-                                const groupIndices = [];
+                                // Collect ALL label/regex matches first.
+                                const candidates = [];
                                 schemaPoints.forEach((p, i) => {
-                                    if (!processed.has(i) && (g.match.includes(p.label) || (g.matchRegex && g.matchRegex.test(p.label)))) {
-                                        groupIndices.push(i); processed.add(i);
+                                    if (processed.has(i)) return;
+                                    if (g.match.includes(p.label) || (g.matchRegex && g.matchRegex.test(p.label))) {
+                                        candidates.push(i);
                                     }
                                 });
-                                if (groupIndices.length > 0) {
-                                    const firstPt = schemaPoints[groupIndices[0]];
-                                    groupedPoints.push({
-                                        isGroup: true, groupId: g.id, defaultName: g.defaultName,
-                                        indices: groupIndices, points: groupIndices.map(i => schemaPoints[i]),
-                                        x: firstPt.x, y: firstPt.y, scale: firstPt.scale || 1.0,
-                                        name: (firstPt.name && firstPt.name !== firstPt.label) ? firstPt.name : g.defaultName
-                                    });
-                                }
+                                if (candidates.length === 0) return;
+                                // Only points co-located with the first
+                                // candidate join the group; the rest fall
+                                // through to PHASE 2 as standalone pills.
+                                const anchor = schemaPoints[candidates[0]];
+                                const groupIndices = candidates.filter(i => {
+                                    const p = schemaPoints[i];
+                                    return p.x != null && p.y != null
+                                        && anchor.x != null && anchor.y != null
+                                        && Math.abs(p.x - anchor.x) < POS_EPS
+                                        && Math.abs(p.y - anchor.y) < POS_EPS;
+                                });
+                                if (groupIndices.length === 0) return;
+                                groupIndices.forEach(i => processed.add(i));
+                                const firstPt = schemaPoints[groupIndices[0]];
+                                groupedPoints.push({
+                                    isGroup: true, groupId: g.id, defaultName: g.defaultName,
+                                    indices: groupIndices, points: groupIndices.map(i => schemaPoints[i]),
+                                    x: firstPt.x, y: firstPt.y, scale: firstPt.scale || 1.0,
+                                    name: (firstPt.name && firstPt.name !== firstPt.label) ? firstPt.name : g.defaultName
+                                });
                             });
                             schemaPoints.forEach((p, i) => {
                                 if (!processed.has(i)) {
@@ -2965,30 +4336,68 @@
                         // translate correctly to the displayed image space.
                         const imgScale = (ahuImgDims.dispW && ahuImgDims.natW) ? (ahuImgDims.dispW / ahuImgDims.natW) : 1;
 
-                        return (
-                            <div className={`absolute z-[130] select-none shadow-2xl drop-shadow-2xl`} style={{ top: `${safe(ahuModalOffset.y)}px`, left: `${safe(ahuModalOffset.x)}px` }}>
-                                <div className={`${dk ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} rounded-xl shadow-2xl border-2 relative flex flex-col overflow-hidden`} style={{ width: `${ahuModalSize.w}px`, height: `${ahuModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' }} onMouseDown={e => e.stopPropagation()}>
+                        // When popped out into a separate window, the modal
+                        // fills the popup viewport and is no longer
+                        // draggable/resizable from the docked overlay
+                        // (the OS window chrome handles both natively).
+                        const isPopped = !!(ahuModalPopupWin && ahuModalPopupHost);
+                        const outerStyle = isPopped
+                            ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
+                            : { top: `${safe(ahuModalOffset.y)}px`, left: `${safe(ahuModalOffset.x)}px` };
+                        const outerCls = isPopped
+                            ? 'block select-none'
+                            : 'absolute z-[130] select-none shadow-2xl drop-shadow-2xl';
+                        const innerStyle = isPopped
+                            ? { width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none' }
+                            : { width: `${ahuModalSize.w}px`, height: `${ahuModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' };
 
-                                    <div className={`cursor-grab active:cursor-grabbing ${dk ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-2.5 flex justify-between items-center z-[60]`} onMouseDown={(e) => { setIsAhuModalDragging(true); setDragStart({ x: e.clientX - ahuModalOffset.x, y: e.clientY - ahuModalOffset.y }); }}>
-                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${dk ? 'text-slate-300' : 'text-slate-700'}`}>{showAhuModalFor} EQUIPMENT DIAGRAM <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>Drag corner ↘ to resize</span></h3>
-                                        <button className={`${dk ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer mr-1`} onMouseDown={e => e.stopPropagation()} onClick={() => setShowAhuModalFor(null)}>
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                        </button>
+                        const modalTree = (
+                            <div className={outerCls} style={outerStyle}>
+                                <div ref={ahuOuterRef} className={`${dk ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${isPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={innerStyle} onMouseDown={e => e.stopPropagation()}>
+
+                                    <div className={`cursor-grab active:cursor-grabbing ${dk ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-2.5 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (ahuModalPopupWin) return; setIsAhuModalDragging(true); setDragStart({ x: e.clientX - ahuModalOffset.x, y: e.clientY - ahuModalOffset.y }); }}>
+                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${dk ? 'text-slate-300' : 'text-slate-700'}`}>{showAhuModalFor} EQUIPMENT DIAGRAM <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{ahuModalPopupWin ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>
+                                        <div className="flex items-center gap-2 mr-1" onMouseDown={e => e.stopPropagation()}>
+                                            <button
+                                                data-testid="popout-ahu-modal-btn"
+                                                onClick={() => { if (ahuModalPopupWin && !ahuModalPopupWin.closed) { ahuModalPopupWin.close(); } else { popOutAhuModal(); } }}
+                                                title={ahuModalPopupWin ? 'Re-attach modal to this window' : 'Pop modal out into a draggable window (move it to another monitor)'}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${ahuModalPopupWin ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (dk ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                            >
+                                                {ahuModalPopupWin ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                            </button>
+                                            <button className={`${dk ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowAhuModalFor(null)}>
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div ref={ahuBodyRef} className={`relative w-full flex-1 ${dk ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
                                         {!currentAhuImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
-                                                <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">AHU IMAGE MISSING</span>
+                                                <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("ahu_image_missing") : "AHU IMAGE MISSING"}</span>
                                                 <span className="text-xs">Upload: ahu_type_{ahuTypeId || 'N'}.jpg</span>
                                             </div>
                                         ) : (
-                                        <div className="relative inline-block pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]" style={{ perspective: '1500px' }}>
+                                        <div className="relative pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.15)]"
+                                             style={{
+                                               perspective: '1500px',
+                                               display: 'grid',
+                                               gridTemplateColumns: '1fr',
+                                               gridTemplateRows: '1fr',
+                                               maxWidth: '100%',
+                                               maxHeight: '100%',
+                                               /* Image is the size-source.  Setting both maxW + maxH lets it
+                                                  scale-to-fit the body in BOTH dimensions; the grid cell
+                                                  collapses to the image's rendered size, and every overlay
+                                                  layer below shares the same cell via gridArea:'1/1' so
+                                                  percentage coords ALWAYS land on the right pixel. */
+                                             }}>
                                             <img ref={ahuImgRef} src={currentAhuImage} alt="AHU"
-                                                 className="block max-w-full pointer-events-none"
-                                                 style={{ maxHeight: 'calc(100% - 4px)' }}
+                                                 className="block pointer-events-none"
+                                                 style={{ gridArea: '1 / 1', maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', display: 'block' }}
                                                  onLoad={(e) => { const im = e.target; setAhuImgDims({ natW: im.naturalWidth || 1600, natH: im.naturalHeight || 700, dispW: im.offsetWidth, dispH: im.offsetHeight }); }} />
-                                            <div className="absolute inset-0 pointer-events-none" style={{ perspective: '1500px' }}>
+                                            <div className="relative pointer-events-none" style={{ gridArea: '1 / 1', perspective: '1500px' }}>
 
                                         {/* === SCHEMA-DRIVEN OVERLAYS (mirrors Config Tool groupedPoints renderer) === */}
                                         {groupedPoints.map((grp, gi) => {
@@ -3140,6 +4549,17 @@
                                             const sX = a.sensor_x != null ? a.sensor_x : a.x;
                                             const sY = a.sensor_y != null ? a.sensor_y : a.y - 20;
                                             const sScale = a.sensor_scale != null ? a.sensor_scale : 0.8;
+                                            // Decoupled M|R/S pill for centrifugal_fan — mirrors the mapper's
+                                            // "DECOUPLED PILL BODY (For Fans)" block (equipment_mapper.html
+                                            // ~line 4840).  Driven by real telemetry (isAuto / isRunning /
+                                            // isAlarm) instead of the mapper's simulator state.  Position is
+                                            // independent of the fan body (a.pill_x / a.pill_y in the schema)
+                                            // so the operator can place the toggle wherever it reads best.
+                                            const hasFanPill = atype === 'centrifugal_fan';
+                                            const pX = a.pill_x != null ? a.pill_x : a.x;
+                                            const pY = a.pill_y != null ? a.pill_y : a.y + 10;
+                                            const pScale = a.pill_scale != null ? a.pill_scale : 1.0;
+                                            const fanOn = isRunning && !isAlarm;
                                             return (
                                                 <React.Fragment key={`anim_frag_${ai}`}>
                                                 <div key={`anim_${ai}`} className="absolute z-20" style={{left:`${a.x}%`,top:`${a.y}%`,width:wPx+'px',height:hPx+'px',marginLeft:`-${wPx/2}px`,marginTop:`-${hPx/2}px`,transform:transformStyle,transformStyle:'preserve-3d'}}>
@@ -3164,6 +4584,39 @@
                                                         </div>
                                                     </div>
                                                 )}
+                                                {/* Centrifugal-fan M | R/S pill (mirrors mapper).  Click-to-toggle
+                                                    SAFM (Supply Air Fan Manual mode).  Visual state tracks REAL
+                                                    fan telemetry (isRunning && !isAlarm), so the R/S badge shows
+                                                    actual inverter state — there's a brief lag while the inverter
+                                                    ramps after a write.  The schema can override the write target
+                                                    via a.pill_write_target (defaults to SAFM). */}
+                                                {hasFanPill && (() => {
+                                                    var writeTarget = a.pill_write_target || 'SAFM';
+                                                    var hasTarget = ap[writeTarget] !== undefined;
+                                                    var onClickPill = function(e){
+                                                        e.stopPropagation(); e.preventDefault();
+                                                        var cur = ap[writeTarget];
+                                                        var curOn = cur === 1 || cur === true || cur === '1';
+                                                        writeRW(writeTarget, curOn ? 0 : 1);
+                                                    };
+                                                    return (
+                                                        <div data-testid="ahu-fan-pill" className="absolute z-30" style={{left:`${pX}%`, top:`${pY}%`, transform:`translate(-50%,-50%) scale(${pScale})`}}>
+                                                            <button type="button"
+                                                                onClick={hasTarget ? onClickPill : undefined}
+                                                                onMouseDown={e => e.preventDefault()}
+                                                                disabled={!hasTarget}
+                                                                title={hasTarget ? `Click to toggle ${writeTarget}` : `${writeTarget} not in telemetry`}
+                                                                className={`bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border shadow-[0_10px_20px_rgba(0,0,0,0.8)] flex items-center gap-3 select-none border-slate-700 ${hasTarget ? 'pointer-events-auto cursor-pointer hover:border-emerald-400/70 hover:ring-2 hover:ring-emerald-400/30 transition-all' : 'pointer-events-none opacity-70'}`}
+                                                                style={{padding:'6px 12px'}}>
+                                                                <div className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-[9px] font-black text-slate-400 pointer-events-none">M</div>
+                                                                <div className={`w-9 h-5 rounded-full p-0.5 shadow-inner flex items-center pointer-events-none ${fanOn ? 'bg-emerald-500' : 'bg-slate-800 border border-slate-600'}`}>
+                                                                    <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${fanOn ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                                </div>
+                                                                <div className={`text-[10px] font-black w-3 text-center pointer-events-none ${fanOn ? 'text-emerald-400' : 'text-slate-500'}`}>{fanOn ? 'R' : 'S'}</div>
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })()}
                                                 </React.Fragment>
                                             );
                                         })}
@@ -3182,6 +4635,9 @@
                                 </div>
                             </div>
                         );
+                        return isPopped
+                            ? ReactDOM.createPortal(modalTree, ahuModalPopupHost)
+                            : modalTree;
                     })()}
 
 
@@ -3190,7 +4646,7 @@
                     <div onClick={() => setShowCollectorCfg(false)} className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-testid="collector-config-modal">
                         <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-cyan-500/40':'bg-white border-slate-300'} border-2 rounded-2xl w-[700px] max-h-[85vh] flex flex-col shadow-2xl`}>
                             <div className={`p-5 border-b ${theme==='dark'?'border-slate-700':'border-slate-200'} flex justify-between items-center`}>
-                                <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-cyan-400':'text-cyan-600'}`}>Collector Configuration</h3>
+                                <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-cyan-400':'text-cyan-600'}`}>{window.t ? window.t("collector_configuration") : "Collector Configuration"}</h3>
                                 <button onClick={() => setShowCollectorCfg(false)} className={`w-7 h-7 rounded-full flex items-center justify-center text-lg font-bold ${theme==='dark'?'bg-slate-800 text-slate-400 hover:text-white':'bg-slate-100 text-slate-500 hover:text-slate-800'} transition-all`}>&times;</button>
                             </div>
                             <div className={`flex border-b ${theme==='dark'?'border-slate-700':'border-slate-200'}`}>
@@ -3201,7 +4657,7 @@
                             {ccMsg && <div className={`px-5 py-2 text-[10px] font-bold ${ccMsg.includes('Error')||ccMsg.includes('fail') ? 'text-red-400 bg-red-500/10' : 'text-emerald-400 bg-emerald-500/10'}`}>{ccMsg}</div>}
                             <div className="flex-1 overflow-y-auto p-5 space-y-4" style={{maxHeight:'60vh'}}>
                                 {!ccConfig ? (
-                                    <div className={`text-center py-10 ${theme==='dark'?'text-slate-500':'text-slate-400'} text-sm`}>Loading configuration...</div>
+                                    <div className={`text-center py-10 ${theme==='dark'?'text-slate-500':'text-slate-400'} text-sm`}>{window.t ? window.t("loading_configuration") : "Loading configuration..."}</div>
                                 ) : ccTab === 'groups' ? (
                                     <div className="space-y-3">
                                         {Object.entries(ccConfig.ahu_groups || {}).map(([name, grp]) => (
@@ -3217,16 +4673,16 @@
                                                                     {ccEditGroup===name && <button onClick={() => { const c = JSON.parse(JSON.stringify(ccConfig)); c.ahu_groups[name].vavs = c.ahu_groups[name].vavs.filter(x => x !== v); setCcConfig(c); }} className="ml-1 text-red-400 hover:text-red-300 font-black">&times;</button>}
                                                                 </span>
                                                             ))}
-                                                            {(!grp.vavs || grp.vavs.length === 0) && <span className={`text-[8px] italic ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>No VAVs assigned</span>}
+                                                            {(!grp.vavs || grp.vavs.length === 0) && <span className={`text-[8px] italic ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>{window.t ? window.t("no_vavs_assigned") : "No VAVs assigned"}</span>}
                                                         </div>
                                                         {ccEditGroup===name && (
                                                             <div className="space-y-2 mt-3">
                                                                 <div className="flex gap-1">
-                                                                    <input type="text" value={ccNewVav} onChange={e=>setCcNewVav(e.target.value)} placeholder="Add VAV name" className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                                    <input type="text" value={ccNewVav} onChange={e=>setCcNewVav(e.target.value)} placeholder={window.t ? window.t("add_vav_name_ph") : "Add VAV name"} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
                                                                     <button onClick={() => { if (!ccNewVav.trim()) return; const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.ahu_groups[name].vavs) c.ahu_groups[name].vavs = []; if (!c.ahu_groups[name].vavs.includes(ccNewVav.trim())) { c.ahu_groups[name].vavs.push(ccNewVav.trim()); setCcConfig(c); setCcNewVav(''); } }} className="px-2 py-1 bg-cyan-600 text-white rounded text-[9px] font-black uppercase hover:bg-cyan-500 transition-all">+VAV</button>
                                                                 </div>
                                                                 <div>
-                                                                    <label className={`text-[8px] font-black uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-500'}`}>CSV Object:</label>
+                                                                    <label className={`text-[8px] font-black uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-500'}`}>{window.t ? window.t("csv_object_label") : "CSV Object:"}</label>
                                                                     <input type="text" defaultValue={grp.csv_object||''} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); c.ahu_groups[name].csv_object = e.target.value.trim(); setCcConfig(c); }} className={`w-full mt-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
                                                                 </div>
                                                             </div>
@@ -3240,10 +4696,10 @@
                                             </div>
                                         ))}
                                         <div className={`p-4 rounded-xl border border-dashed ${theme==='dark'?'border-slate-600 bg-slate-800/30':'border-slate-300 bg-slate-50'}`}>
-                                            <div className={`text-[9px] font-black uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-500'} mb-2`}>Add New AHU Group</div>
+                                            <div className={`text-[9px] font-black uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-500'} mb-2`}>{window.t ? window.t("add_new_ahu_group") : "Add New AHU Group"}</div>
                                             <div className="flex gap-2">
-                                                <input type="text" value={ccNewGroupName} onChange={e=>setCcNewGroupName(e.target.value)} placeholder="AHU name (e.g. AHU-03-W)" className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
-                                                <input type="text" value={ccNewGroupCsv} onChange={e=>setCcNewGroupCsv(e.target.value)} placeholder="CSV object" className={`w-36 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                <input type="text" value={ccNewGroupName} onChange={e=>setCcNewGroupName(e.target.value)} placeholder={window.t ? window.t("ahu_name_ph") : "AHU name (e.g. AHU-03-W)"} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                <input type="text" value={ccNewGroupCsv} onChange={e=>setCcNewGroupCsv(e.target.value)} placeholder={window.t ? window.t("csv_object_ph") : "CSV object"} className={`w-36 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
                                                 <button onClick={() => { if (!ccNewGroupName.trim()) return; const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.ahu_groups) c.ahu_groups = {}; if (c.ahu_groups[ccNewGroupName.trim()]) { setCcMsg('Error: Group already exists'); return; } c.ahu_groups[ccNewGroupName.trim()] = { csv_object: ccNewGroupCsv.trim() || 'CSV_' + ccNewGroupName.trim().replace(/[^A-Za-z0-9]/g,''), vavs: [] }; setCcConfig(c); setCcNewGroupName(''); setCcNewGroupCsv(''); }} className="px-3 py-1.5 bg-cyan-600 text-white rounded text-[9px] font-black uppercase hover:bg-cyan-500 transition-all">Add</button>
                                             </div>
                                         </div>
@@ -3285,12 +4741,12 @@
                                                     ))}
                                                 </div>
                                             );
-                                        }) : <div className={`text-center py-10 ${theme==='dark'?'text-slate-500':'text-slate-400'} text-sm`}>Loading equipment types...</div>}
+                                        }) : <div className={`text-center py-10 ${theme==='dark'?'text-slate-500':'text-slate-400'} text-sm`}>{window.t ? window.t("loading_equip_types") : "Loading equipment types..."}</div>}
                                     </div>
                                 ) : ccTab === 'settings' ? (
                                     <div className="space-y-4">
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
-                                            <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>Data Source Mode</label>
+                                            <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>{window.t ? window.t("data_source_mode") : "Data Source Mode"}</label>
                                             <div className="flex gap-2">
                                                 <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('simulator'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
                                                 <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('mock'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
@@ -3302,7 +4758,7 @@
                                             <input type="number" min="1" max="300" defaultValue={ccConfig.interval || 5} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); c.interval = Math.max(1, Math.min(300, parseInt(e.target.value) || 5)); setCcConfig(c); }} className={`w-32 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500`} />
                                         </div>
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
-                                            <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-3`}>Dashboard Point Map</label>
+                                            <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-3`}>{window.t ? window.t("dashboard_point_map") : "Dashboard Point Map"}</label>
                                             {['ahu', 'vav'].map(eqType => {
                                                 const dpm = (ccConfig.dashboard_point_map || {})[eqType] || {};
                                                 return (
@@ -3334,14 +4790,14 @@
                 {showConfigAuth && (
                     <div onClick={() => setShowConfigAuth(false)} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
                         <div onClick={e => e.stopPropagation()} className="bg-slate-900 border-2 border-amber-500/50 rounded-2xl p-8 w-80">
-                            <h3 className="text-sm font-black uppercase tracking-widest text-amber-400 mb-4">Config Password</h3>
+                            <h3 className="text-sm font-black uppercase tracking-widest text-amber-400 mb-4">{window.t ? window.t("config_password") : "Config Password"}</h3>
                             <input 
                                 type="password" 
                                 value={configPwInput} 
                                 onChange={e => { setConfigPwInput(e.target.value); setConfigPwError(''); }}
                                 onKeyDown={e => { if (e.key === 'Enter') { const MASTER_KEY = 'b%9P$MdeQP]['; const pw = configPwInput; if (!pw || !pw.trim()) return; const hashPw = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h = h & h; } const hex = Math.abs(h).toString(16).padStart(8, '0'); let h2 = 0; const salted = s + hex; for (let i = 0; i < salted.length; i++) { h2 = ((h2 << 5) - h2) + salted.charCodeAt(i); h2 = h2 & h2; } return hex + Math.abs(h2).toString(16).padStart(8, '0'); }; const storedHash = localStorage.getItem('configPasswordHash') || ''; if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) { sessionStorage.setItem('engineerAuthenticated', 'true'); window.location.href = window.location.origin + '/mapper'; } else if (!storedHash) { setConfigPwError('No password set. Use landing page first.'); } else { setConfigPwError('Incorrect password.'); setConfigPwInput(''); } } }}
                                 autoFocus
-                                placeholder="Enter password"
+                                placeholder={window.t ? window.t("enter_password_ph") : "Enter password"}
                                 className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500 font-mono"
                             />
                             {configPwError && <p className="text-red-400 text-xs font-bold mt-2">{configPwError}</p>}

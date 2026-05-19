@@ -2791,3 +2791,60 @@ edits do NOT need to obey the scrub rules.
   the parser is less fragile than the cumulative debugging history of
   this codebase suggests.
 
+
+## P2 Feature - Clamp-effectiveness Sparkline (2026-02-13)
+**Brief**: Implemented the mockup from `mockups/clamp_sparkline_preview.html`
+as an inline 64x22 SVG sparkline in the band-clamp row, answering at a
+glance: "is the equipment honoring the SA-RH clamp target?"
+
+### What ships
+- **Pure client-side** -- ZERO new BACnet writes, ZERO new backend
+  routes.  The mockup originally proposed a ~30-line endpoint but the
+  data is already streamed via the existing `/api/data` poll, so we just
+  ring-buffer it in React state instead.
+- **Sampling**: 30-second cadence, 30-sample rolling buffer (= ~15 min
+  window).  Mean SA-RH across all AHUs; per-AHU breakdown is preserved
+  in each sample for the hover tooltip.
+- **Persistence**: localStorage (`red5.clampSpark`) so the sparkline
+  survives a page reload instead of starting empty.
+- **Three color states** match the mockup:
+  - emerald polyline + emerald window band -- clamp applied AND mean
+    currently inside `[lo, hi]`.
+  - rose polyline + rose border + `!` glyph + up-arrow on numeric
+    mean -- clamp applied AND mean drifting outside the window.
+  - slate polyline (no window band) -- factory bands, sparkline serves
+    as a baseline "what is SA-RH actually doing right now?" view.
+- **Tooltip** (native HTML title attr to keep zero new deps): mean,
+  window, honored/total samples, per-AHU breakdown, span in minutes.
+
+### Files changed
+- `dashboard.html`:
+  - +30 LoC near the existing bandClamp* state declarations (state
+    decl + sampling effect, persisted to localStorage).
+  - +70 LoC inline IIFE inside the existing `band-clamp-row` JSX --
+    sits between the `Live: ...` chip and the `Apply to Controller`
+    button.  No layout reshuffle, no testid renames.
+- `tests/test_clamp_sparkline.js` -- NEW.  31 assertions covering
+  state, sampling rate, persistence, render gates, color-state logic,
+  layout-insertion position, and the no-backend-route guarantee.
+
+### Tests
+- 31/31 sparkline assertions pass.
+- 12 related regression suites (sidebar popout, climate drift, givoni
+  tier, plugin health, etc.) all still green.
+- JSX parses cleanly via `@babel/parser` against the full inline
+  main-source block.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after
+to pick up the new JS.  No backend / controller restart needed.
+
+### UX notes
+- The sparkline renders only once we have >= 2 samples (i.e. ~30s
+  after page load).  Subsequent reloads display immediately from
+  localStorage cache.
+- When the operator toggles factory bands -> clamp applied, the existing
+  buffer is preserved -- the window band just gets drawn on top of the
+  same line, so the operator sees their pre-clamp baseline next to the
+  new constraint immediately.
+

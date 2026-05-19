@@ -484,6 +484,46 @@
                 })();
                 return () => { cancelled = true; };
             }, []);
+
+            // Clamp-effectiveness sparkline (P2 mockup):
+            // Rolling buffer of mean SA-RH (across all AHUs) sampled from the
+            // existing /api/data polling loop.  Pure client-side -- zero new
+            // BACnet writes, zero new backend routes.  30 samples @ ~30s
+            // cadence = a 15-min rolling window.  Persisted to localStorage so
+            // the chart survives page reloads instead of starting empty.
+            const SPARK_MAX        = 30;
+            const SPARK_INTERVAL_MS = 30 * 1000;
+            const [clampSpark, setClampSpark] = useState(() => {
+                try {
+                    const v = JSON.parse(localStorage.getItem('red5.clampSpark') || '[]');
+                    if (Array.isArray(v)) return v.slice(-SPARK_MAX);
+                } catch (e) {}
+                return [];
+            });
+            useEffect(() => {
+                if (!Array.isArray(ahuData) || ahuData.length === 0) return;
+                // Collect SA-RH per AHU.  Skip equipment that does not expose
+                // an SA point or whose rh is non-finite (mock mode w/ NaN).
+                const perAhu = [];
+                ahuData.forEach(a => {
+                    const sa = (a.points || []).find(p => p.label === 'SA');
+                    if (!sa) return;
+                    const rh = Number(sa.rh);
+                    if (!Number.isFinite(rh)) return;
+                    perAhu.push({ id: a.id, rh });
+                });
+                if (perAhu.length === 0) return;
+                const meanRh = perAhu.reduce((s, x) => s + x.rh, 0) / perAhu.length;
+                const ts = Date.now();
+                setClampSpark(prev => {
+                    if (prev.length > 0 && (ts - prev[prev.length - 1].ts) < SPARK_INTERVAL_MS) {
+                        return prev;
+                    }
+                    const next = [...prev, { ts, meanRh, perAhu }].slice(-SPARK_MAX);
+                    try { localStorage.setItem('red5.clampSpark', JSON.stringify(next)); } catch (e) {}
+                    return next;
+                });
+            }, [ahuData]);
             const [showPath, setShowPath] = useState(true);
             const [vecVis, setVecVis] = useState({ enthalpy: true, sensible: true, latent: true, diagnostic: true });
             const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true });
@@ -2361,6 +2401,76 @@
                                                 <div className="mt-2 flex items-center gap-2" data-testid="band-clamp-row">
                                                     <span className={`text-[8px] font-mono font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${applied ? (theme==='dark'?'bg-emerald-900/40 text-emerald-300 border border-emerald-700/40':'bg-emerald-50 text-emerald-700 border border-emerald-200') : (theme==='dark'?'bg-slate-800 text-slate-400 border border-slate-700':'bg-slate-100 text-slate-500 border border-slate-300')}`}
                                                           data-testid="band-clamp-live">{appliedLabel}</span>
+                                                    {/* Clamp-effectiveness sparkline -- "is the equipment honouring the target?"
+                                                        Inline 64x22 SVG plotted from clampSpark (mean SA-RH across all AHUs over
+                                                        the last ~15 min, sampled every 30s).  Pure client-side, no new BACnet
+                                                        writes.  Three color states: emerald inside band, rose drifting outside,
+                                                        slate baseline when no clamp is applied. */}
+                                                    {clampSpark.length >= 2 && (() => {
+                                                        const W = 64, H = 22, PADX = 2;
+                                                        const lastN = clampSpark.slice(-12);
+                                                        const last = lastN[lastN.length - 1];
+                                                        const meanRh = last.meanRh;
+                                                        // Y-domain: prefer the clamp window with a 5-pt cushion,
+                                                        // else fall back to the actual sample min/max with padding.
+                                                        let yMin, yMax;
+                                                        if (applied) {
+                                                            yMin = Math.min(applied.lo - 5, Math.min(...lastN.map(s => s.meanRh)) - 2);
+                                                            yMax = Math.max(applied.hi + 5, Math.max(...lastN.map(s => s.meanRh)) + 2);
+                                                        } else {
+                                                            const vs = lastN.map(s => s.meanRh);
+                                                            yMin = Math.min(...vs) - 3;
+                                                            yMax = Math.max(...vs) + 3;
+                                                        }
+                                                        if (yMax - yMin < 10) { const c = (yMin + yMax) / 2; yMin = c - 5; yMax = c + 5; }
+                                                        const yOf = (rh) => H - ((rh - yMin) / (yMax - yMin)) * H;
+                                                        const xOf = (i) => PADX + (i * (W - 2 * PADX)) / Math.max(1, lastN.length - 1);
+                                                        // Honored = mean inside band at each sample (only meaningful when clamp applied)
+                                                        const honored = applied
+                                                            ? lastN.filter(s => s.meanRh >= applied.lo && s.meanRh <= applied.hi).length
+                                                            : null;
+                                                        const insideBand = applied && meanRh >= applied.lo && meanRh <= applied.hi;
+                                                        const driftAbove = applied && meanRh > applied.hi;
+                                                        const stroke   = !applied ? '#94a3b8' : (insideBand ? '#34d399' : '#fb7185');
+                                                        const dotFill  = stroke;
+                                                        const dotEdge  = !applied ? '#0f172a' : (insideBand ? '#022c22' : '#7f1d1d');
+                                                        const borderC  = !applied ? 'rgba(100,116,139,0.35)'
+                                                                            : (insideBand ? 'rgba(16,185,129,0.3)' : 'rgba(251,113,133,0.5)');
+                                                        const textCls  = !applied ? 'text-slate-400' : (insideBand ? 'text-emerald-300' : 'text-rose-300');
+                                                        const points   = lastN.map((s, i) => `${xOf(i).toFixed(1)},${yOf(s.meanRh).toFixed(1)}`).join(' ');
+                                                        // Per-AHU tooltip line
+                                                        const perAhuStr = (last.perAhu || []).map(p => `${p.id}:${p.rh.toFixed(0)}%`).join(', ');
+                                                        const tipParts = [
+                                                            `Mean SA-RH: ${meanRh.toFixed(1)}%`,
+                                                            applied ? `Window: ${applied.lo}-${applied.hi}% RH` : 'No clamp applied (factory bands)',
+                                                            applied ? `Honored: ${honored}/${lastN.length} samples` : null,
+                                                            `Sources: ${perAhuStr}`,
+                                                            `Window: ~${Math.round((last.ts - lastN[0].ts) / 60000)} min`,
+                                                        ].filter(Boolean);
+                                                        return (
+                                                            <div className="flex items-center gap-1.5"
+                                                                 data-testid="clamp-spark"
+                                                                 title={tipParts.join('\n')}>
+                                                                <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${borderC}`, borderRadius: 3 }}>
+                                                                    {applied && (
+                                                                        <React.Fragment>
+                                                                            <rect x="0" y={yOf(applied.hi)} width={W} height={Math.max(0, yOf(applied.lo) - yOf(applied.hi))} fill="rgba(16,185,129,0.18)"/>
+                                                                            <line x1="0" y1={yOf(applied.hi)} x2={W} y2={yOf(applied.hi)} stroke="#10b981" strokeWidth="0.5" strokeDasharray="2,1.5" opacity="0.7"/>
+                                                                            <line x1="0" y1={yOf(applied.lo)} x2={W} y2={yOf(applied.lo)} stroke="#10b981" strokeWidth="0.5" strokeDasharray="2,1.5" opacity="0.7"/>
+                                                                        </React.Fragment>
+                                                                    )}
+                                                                    <polyline fill="none" stroke={stroke} strokeWidth="1.4" points={points}/>
+                                                                    <circle cx={xOf(lastN.length - 1)} cy={yOf(meanRh)} r="1.7" fill={dotFill} stroke={dotEdge} strokeWidth="0.5"/>
+                                                                    {applied && !insideBand && (
+                                                                        <text x={W - 9} y={H - 1} fontSize="9" fontWeight="900" fill="#fb7185" fontFamily="ui-monospace,Menlo,monospace">!</text>
+                                                                    )}
+                                                                </svg>
+                                                                <span className={`text-[9px] font-mono font-black ${textCls}`} data-testid="clamp-spark-mean">
+                                                                    {meanRh.toFixed(1)}%{driftAbove ? '\u2191' : ''}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                     <button
                                                         data-testid="band-clamp-apply"
                                                         onClick={onApply}

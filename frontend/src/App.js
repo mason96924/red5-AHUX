@@ -5,6 +5,7 @@ import EngineerPortal from "./pages/EngineerPortal";
 import Dashboard from "./pages/Dashboard";
 import ConfigTool from "./pages/ConfigTool";
 import AuthCallback from "./pages/AuthCallback";
+import AccessControl from "./pages/AccessControl";
 
 /**
  * AppRouter intercepts the Emergent OAuth callback BEFORE the normal route
@@ -25,6 +26,7 @@ function AppRouter() {
       <Route path="/engineer-portal" element={<EngineerPortal />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/config-tool" element={<ConfigTool />} />
+      <Route path="/admin/access-control" element={<AccessControl />} />
     </Routes>
   );
 }

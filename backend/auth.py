@@ -132,6 +132,15 @@ async def exchange_session(payload: SessionExchangeRequest, response: Response):
     if not email:
         raise HTTPException(400, "Emergent response missing email")
 
+    # Phase 2 Piece C: enforce allowlist BEFORE persisting anything.  An empty
+    # allowlist is "open" (demo default); admin emails are always allowed.
+    from allowlist import is_email_allowed  # late import to avoid circular
+    if not await is_email_allowed(email):
+        raise HTTPException(
+            403,
+            "Access not permitted. Contact your administrator to be added to the allowlist.",
+        )
+
     # Upsert user keyed on email so re-logins do not duplicate identities.
     now = datetime.now(timezone.utc)
     existing = await users_col.find_one({"email": email}, {"_id": 0})
@@ -213,11 +222,13 @@ async def me(request: Request,
     to render the avatar drop-down or the Sign-in button, AND by the V1.9
     SPA so it can surface who is signed in."""
     user = await current_user(session_token=session_token, authorization=authorization)
+    from allowlist import is_admin  # late import to avoid circular
     return {
         "user_id": user["user_id"],
         "email": user["email"],
         "name": user["name"],
         "picture": user.get("picture"),
+        "is_admin": is_admin(user),
     }
 
 

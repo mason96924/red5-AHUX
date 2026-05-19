@@ -91,6 +91,15 @@ const LandingPage = () => {
                                 <div className="font-bold leading-tight" data-testid="v2-user-name">{user.name}</div>
                                 <div className="text-slate-500 leading-tight" data-testid="v2-user-email">{user.email}</div>
                             </div>
+                            {user.is_admin && (
+                                <a
+                                    href="/admin/access-control"
+                                    data-testid="v2-admin-allowlist-link"
+                                    className="ml-1 px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider border border-amber-700 text-amber-300 hover:bg-amber-400 hover:text-slate-950 rounded transition-colors"
+                                >
+                                    Access Control
+                                </a>
+                            )}
                             <button
                                 onClick={handleLogout}
                                 data-testid="v2-logout-btn"

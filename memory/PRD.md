@@ -1,5 +1,50 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Phase 2c — Sign-in Allowlist + Admin Console (2026-02-19)
+**Brief**: Adds domain/email-level allow-listing for Google sign-ins, gated behind an `ADMIN_EMAILS` env-var roster.  Empty list = open (demo-friendly).  Admin emails always bypass the list to prevent lockout.  Admin-only React page at `/admin/access-control` for CRUD.  Denied users see a polished 403 screen, not a generic error.
+
+### Backend (`/app/backend/`)
+- New `allowlist.py`:
+  - Collection `auth_allowlist` with shape `{id, type: 'domain'|'email', value, added_by, added_at}`.
+  - `is_email_allowed(email)` — empty list is open, admin emails always pass, exact email match first, then domain match (case-insensitive).
+  - `is_admin(user_doc)` — reads `ADMIN_EMAILS` from env on every call.
+  - Router under `/api/auth/allowlist` with GET/POST/DELETE, all gated via `current_user` + admin check (returns 401 anonymous, 403 non-admin).
+  - Pydantic validation: email entries must contain `@`, domain entries must contain `.` and no `@`.
+- `auth.py`:
+  - `/api/auth/session` short-circuits to HTTP 403 with a friendly `detail` BEFORE persisting the user/session if `is_email_allowed(email)` is False.
+  - `/api/auth/me` payload now includes `is_admin: bool`.
+- `server.py`: wires `allowlist.router`.
+- `.env`: new `ADMIN_EMAILS=seeker0829@gmail.com`.
+
+### Frontend (`/app/frontend/src/pages/`)
+- New `AccessControl.jsx` (route `/admin/access-control`):
+  - Guards: shows "Sign-in required" for anonymous, "403 — Admin Only" for non-admins, full CRUD for admins.
+  - Open-allowlist amber banner when list is empty.
+  - Add form: type select (domain|email) + value input + ADD button.
+  - Table with type chip, value, added-date, REMOVE button per row.
+  - `data-testid` on every interactive element.
+- `LandingPage.jsx`: admin-only "ACCESS CONTROL" link in the header (visible only when `user.is_admin === true`).
+- `AuthCallback.jsx`: detects 403 from `/api/auth/session`, parses `detail`, renders dedicated denied screen (`data-testid="auth-callback-denied"`) instead of redirecting silently.
+- `App.js`: adds `/admin/access-control` route.
+
+### Tests
+- New `backend/tests/test_v2_phase2c_allowlist.py` — **25/25 PASS**: open-mode, domain match, case-insensitivity, admin bypass, `is_admin` helper, /me payload, anonymous 401, non-admin 403, admin CRUD round-trip, duplicate idempotence, invalid-payload 400s, delete-unknown 404.
+- Existing Phase 1 / 2a / 2b suites: **94/94 PASS** (no regressions).
+
+### Files changed
+- `backend/allowlist.py` — new (~135 lines).
+- `backend/auth.py` — +14 lines (allowlist gate in `/session`, `is_admin` in `/me`).
+- `backend/server.py` — +4 lines (router include).
+- `backend/.env` — +1 line (`ADMIN_EMAILS`).
+- `backend/tests/test_v2_phase2c_allowlist.py` — new (~230 lines).
+- `frontend/src/pages/AccessControl.jsx` — new (~245 lines).
+- `frontend/src/pages/LandingPage.jsx` — +9 lines (admin link).
+- `frontend/src/pages/AuthCallback.jsx` — +44 lines (denied-screen branch).
+- `frontend/src/App.js` — +2 lines (route + import).
+
+## V2.0 Routing Bugfix — /dashboard Telemetry Error (2026-02-19)
+**Brief**: A stale React `/dashboard` page from the legacy scaffold was throwing a runtime "Telemetry error" instead of loading the V1.9 SPA (which lives at `/dashboard.html`).  Replaced the offending `Dashboard.jsx` with a 22-line redirect stub that immediately `window.location.replace('/dashboard.html')`.  Verified via screenshot — landing the user on `/dashboard` now seamlessly opens the V1.9 AHU Diagnostic HUB.
+
 ## 🌿 Codebase Fork (2026-02-13)
 - **`/app/archive/Red5-Studio-V1.9/`** — **Controller Edition** (production at `219.79.12.63:5001`). Frozen baseline; bug-fix only. All work in this PRD before 2026-02-13 refers to this version.
 - **`/app/archive/Red5-Studio-V2.0/`** — **Web Hosted Edition** (greenfield, just forked). Multi-tenant SaaS target. Migration plan: `Red5-Studio-V2.0/WEB_HOSTING_GUIDE.md`. Version-split rationale: `Red5-Studio-V2.0/VERSION.md`. Phase 1 = Demo Mode on Emergent (1-2 days).

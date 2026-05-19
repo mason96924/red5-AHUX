@@ -44,6 +44,17 @@ const AuthCallback = () => {
             body: JSON.stringify({ session_id: sessionId }),
         })
             .then(async (r) => {
+                if (r.status === 403) {
+                    // Allowlist rejection (Phase 2c).  Surface a friendly screen
+                    // instead of redirecting away silently.
+                    let detail = 'Access not permitted. Contact your administrator.';
+                    try {
+                        const body = await r.json();
+                        if (body && body.detail) detail = body.detail;
+                    } catch (e) { /* keep default */ }
+                    setStatus('denied:' + detail);
+                    return null;
+                }
                 if (!r.ok) {
                     const txt = await r.text();
                     throw new Error('Session exchange failed: ' + txt);
@@ -51,6 +62,7 @@ const AuthCallback = () => {
                 return r.json();
             })
             .then((body) => {
+                if (body === null) return;  // 403 path already handled
                 // Clear the fragment so a back-button does not re-trigger.
                 // After Piece A, the post-login landing is the V1.9 dashboard.
                 window.location.replace('/dashboard.html');
@@ -61,6 +73,30 @@ const AuthCallback = () => {
                 setTimeout(() => window.location.replace('/'), 1500);
             });
     }, []);
+
+    if (status.startsWith('denied:')) {
+        const message = status.slice('denied:'.length);
+        return (
+            <div data-testid="auth-callback-denied"
+                 className="min-h-screen w-screen bg-slate-950 text-slate-100 grid place-items-center px-6">
+                <div className="max-w-md text-center border border-rose-900 rounded-lg p-8 bg-slate-900/40">
+                    <div className="text-rose-400 text-[10px] font-mono font-black uppercase tracking-[0.25em] mb-3">
+                        403 — Access Denied
+                    </div>
+                    <h1 className="text-2xl font-black mb-3">Sign-in not permitted</h1>
+                    <p className="text-slate-300 text-sm leading-relaxed mb-6"
+                       data-testid="auth-callback-denied-message">
+                        {message}
+                    </p>
+                    <a href="/"
+                       data-testid="auth-callback-denied-home"
+                       className="inline-block px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black uppercase tracking-wider text-xs rounded">
+                        Back to home
+                    </a>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div data-testid="auth-callback-root"

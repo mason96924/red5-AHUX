@@ -62,6 +62,10 @@ app.add_middleware(
 from auth import router as auth_router  # noqa: E402
 app.include_router(auth_router)
 
+# Wire the allowlist router (Phase 2 Piece C).
+from allowlist import router as allowlist_router  # noqa: E402
+app.include_router(allowlist_router)
+
 # Tenant-aware helpers (Phase 2 Piece B).
 from tenants import (  # noqa: E402
     current_tenant_optional,

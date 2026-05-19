@@ -1,5 +1,22 @@
 # Test Credentials
 
+## V2.0 Phase 2c (Admin Allowlist)
+
+**Admin roster**: `ADMIN_EMAILS` in `/app/backend/.env` (comma-separated).
+Current admins:
+- `seeker0829@gmail.com`
+
+Admin status surfaces as `is_admin: true` on `GET /api/auth/me` and renders the
+**ACCESS CONTROL** button in the V2.0 landing header.  Admin-gated endpoints:
+
+| Method | Path                                | Notes                     |
+|--------|-------------------------------------|---------------------------|
+| GET    | `/api/auth/allowlist`               | List entries + open=true/false |
+| POST   | `/api/auth/allowlist`               | `{type: domain|email, value}` |
+| DELETE | `/api/auth/allowlist/{id}`          | Remove entry              |
+
+Admin emails always bypass the allowlist so a typo can never lock you out.
+
 ## V2.0 Phase 2a (Emergent Google Auth)
 
 **Auth provider**: Emergent-managed Google OAuth.  No app-managed passwords.

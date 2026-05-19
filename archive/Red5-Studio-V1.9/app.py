@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
 
 # Ensure /root/scripts is on the import path (app.py lives there).
-# Plug-ins live under /root/data/pgpX/ — added to sys.path further below
+# Plug-ins live under /root/data/pgpy/ — added to sys.path further below
 # AFTER PLUGINS_ROOT is defined (the controller firmware deletes any .py
 # files in /root/scripts/ that aren't pre-registered enteliWEB objects,
 # so plug-ins can't live there safely).
@@ -277,7 +277,7 @@ def serve_asset(filename):
     # or documentation that changes between deploys. Static graphics
     # (PNG/JPG/SVG) can be cached aggressively since they're re-uploaded
     # via equipment_mapper.
-    if lower.endswith('.js') or lower.endswith('.html') or lower.endswith('.css') or lower.endswith('.md'):
+    if lower.rsplit('.',1)[-1] in {'js','html','css','md','json'}:
         resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         resp.headers['Pragma'] = 'no-cache'
         resp.headers['Expires'] = '0'

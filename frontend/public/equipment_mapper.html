@@ -646,9 +646,9 @@
                         // Legacy base64 format
                         setBgImage(graphicAsset);
                     } else {
-                        // File reference - load via API assets route
+                        // File reference - load via API assets route (V2.0: /api/assets/)
                         const apiUrl = window.API_BASE_URL || '';
-                        setBgImage(`${apiUrl}/assets/${graphicAsset}`);
+                        setBgImage(`${apiUrl}/api/assets/${graphicAsset}`);
                     }
                 } else {
                     setBgImage(null);
@@ -2369,7 +2369,7 @@
                 const apiUrl = window.API_BASE_URL || '';
                 const fullName = fileBrowserPath ? `${fileBrowserPath}/${filename}` : filename;
                 const link = document.createElement('a');
-                link.href = `${apiUrl}/assets/${fullName}`;
+                link.href = `${apiUrl}/api/assets/${fullName}`;
                 link.download = filename;
                 link.click();
             };
@@ -2951,8 +2951,8 @@
                                     id: f.id,
                                     name: f.name,
                                     imagePath: rawPath,
-                                    // If imageData is embedded, use it; otherwise load from /assets/
-                                    imageData: f.imageData || (rawPath ? `${apiUrl}/assets/${rawPath}` : null),
+                                    // If imageData is embedded, use it; otherwise load from /api/assets/
+                                    imageData: f.imageData || (rawPath ? `${apiUrl}/api/assets/${rawPath}` : null),
                                     originalFileName: rawPath
                                 };
                             });

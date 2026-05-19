@@ -65,7 +65,10 @@ const ImagePickerModal = ({ isOpen, onClose, files, loading, currentPath, onNavi
                             }
                             const apiUrl = window.API_BASE_URL || '';
                             const fullRelPath = currentPath ? `${currentPath}/${file.name}` : file.name;
-                            const thumbURL = `${apiUrl}/assets/${fullRelPath}`;
+                            // V2.0: assets are served under /api/assets/...
+                            // (legacy V1.9 used /assets/... but the new
+                            // backend route is /api-prefixed).
+                            const thumbURL = `${apiUrl}/api/assets/${fullRelPath}`;
                             return (
                                 <button 
                                     key={i}

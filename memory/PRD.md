@@ -1,5 +1,29 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix — Equipment graphic thumb showed "No preview" (2026-02-19)
+**Brief**: User uploaded an equipment graphic via the mapper. The asset was correctly persisted to `tenant_assets` (verified `AHU_TYPE_01.jpg`, 1.04 MB, tenant `ten_dc503be05a94`), but the **SELECT IMAGE FROM CONTROLLER** picker showed only an empty thumbnail with the text "No preview".
+
+Root cause: the picker (and a few other places in the legacy V1.9 HTML) built thumb URLs as `${apiUrl}/assets/<path>` (the V1.9 convention).  V2.0 serves uploaded assets under `/api/assets/<path>` — the no-prefix path 404s, fires the `<img onError>` fallback, and paints the "No preview" label.
+
+### Fix
+- `frontend/public/js/image-picker.js` — `thumbURL` now uses `/api/assets/` (was `/assets/`).
+- `frontend/public/dashboard.html` — floor-plan `imgSrc` now uses `/api/assets/`.
+- `frontend/public/equipment_mapper.html` — three more legacy URLs corrected:
+  - mapper background image (line 651)
+  - file-browser download link (line 2372)
+  - floor-plan picker `imageData` (line 2955)
+
+### Verification (live, in cache-busted browser)
+- Picker `<img src>` now: `…/api/assets/graphics/equipments/AHUs/AHU_TYPE_01.jpg`
+- `naturalWidth × naturalHeight` = 3988 × 2356 (image loaded — was 0 × 0).
+- "No preview" overlay count: 0 (was 1).
+- Regression: 94/94 backend tests pass.
+
+### Files changed
+- `frontend/public/js/image-picker.js` — 1 line.
+- `frontend/public/dashboard.html` — 1 line.
+- `frontend/public/equipment_mapper.html` — 3 lines.
+
 ## V2.0 Bugfix follow-up — Anonymous Simulator toggle did nothing (2026-02-19)
 **Brief**: Even after the previous fix made `/api/data` tenant-aware, the user (browsing anonymously) saved 5 AHU groups in the COLLECTOR modal and selected Simulator, but the dashboard still showed the 3 mock AHUs.  Root cause: the previous fix only honored saved config for SIGNED-IN tenants.  Anonymous users:
   - Saw a populated COLLECTOR modal (because GET `/api/collector-config` returned the bundled demo file with 5 AHU groups).

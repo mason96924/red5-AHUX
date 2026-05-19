@@ -1,5 +1,25 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V1.9 Backport — Same centrifugal-fan animation fix (2026-02-19)
+**Brief**: User reported the same centrifugal-fan animation issue on the V1.9 controller deployment.  Root cause is identical: the operator's saved schema carries `telemetry_key:"UNKNOWN"` placeholders and the dashboard's `const tKey = a.telemetry_key || ''` treats that as truthy, so the animation looks up a point named "UNKNOWN" and finds nothing.
+
+### Fix (`archive/Red5-Studio-V1.9/dashboard.html`)
+- Two callsites patched (AHU at line 4507, VAV at line 3670) with the same per-animation-type fallback table used in V2.0:
+  - `centrifugal_fan`/`vfd_aligner`/`air_flow_path` -> `SAFP`
+  - `rectangular_fan(_aligner)` -> `EAFP`
+  - `damper`/`circular_damper` -> `OAD`
+  - `neon_pipe_coil` -> `HCV` if element-id contains 'heat', else `CCV`
+  - `hydration_valve(_aligner)` -> `HUM`
+  - `antifreeze_coil(_valve)` -> `HCV`
+  - `diff_pressure_switch`/`differential_pressure_switch_aligner` -> `FDPS`
+- Guarded with `(a.telemetry_key && a.telemetry_key !== 'UNKNOWN') ? a.telemetry_key : _defaultKey` so existing bound schemas remain unaffected.
+- Change is pure JSX (no Python), so the controller-parser long-OR-chain hang doesn't apply.
+
+### Deployment
+- Upload only `dashboard.html` to the controller via the standard Save-to-Controller flow.
+- Excludes (per `CONTROLLER_UPLOAD_LIST.md`): `tests/`, `mockups/`, `__pycache__/` -- unchanged.
+- For production, operators should still bind real BACnet point names via the equipment mapper -- the fallback table is a safety net, not a substitute.
+
 ## V2.0 Bugfix — Centrifugal fan pill unresponsive + animation frozen (2026-02-19)
 **Brief**: Operator opened AHU-01 equipment graphic; centrifugal fan was stationary and its M|S pill did not respond.  Three independent root causes:
 

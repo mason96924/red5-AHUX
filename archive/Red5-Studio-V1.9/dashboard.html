@@ -3667,7 +3667,27 @@
                                                     const vavImgScale = (vavImgDims.dispW && vavImgDims.natW) ? (vavImgDims.dispW / vavImgDims.natW) : 1;
                                                     return vavSchemaAnimations.map((a, ai) => {
                                                         if (a.x == null || a.y == null) return null;
-                                                        const tKey = a.telemetry_key || '';
+                                                        // Per-type defaults so an animation lights up even
+                                                        // when the operator hasn't bound (or wrote 'UNKNOWN')
+                                                        // as the telemetry_key in the mapper.  Bound key wins.
+                                                        const _atype0v = a.animation_type;
+                                                        const _defaultKey = (
+                                                            _atype0v === 'centrifugal_fan'        ? 'SAFP' :
+                                                            _atype0v === 'rectangular_fan'        ? 'EAFP' :
+                                                            _atype0v === 'rectangular_fan_aligner'? 'EAFP' :
+                                                            _atype0v === 'damper'                 ? 'OAD'  :
+                                                            _atype0v === 'circular_damper'        ? 'OAD'  :
+                                                            _atype0v === 'neon_pipe_coil'         ? (a.element_id && /heat/i.test(a.element_id) ? 'HCV' : 'CCV') :
+                                                            _atype0v === 'hydration_valve'        ? 'HUM'  :
+                                                            _atype0v === 'hydration_valve_aligner'? 'HUM'  :
+                                                            _atype0v === 'antifreeze_coil_valve'  ? 'HCV'  :
+                                                            _atype0v === 'antifreeze_coil'        ? 'HCV'  :
+                                                            _atype0v === 'diff_pressure_switch'   ? 'FDPS' :
+                                                            _atype0v === 'differential_pressure_switch_aligner' ? 'FDPS' :
+                                                            _atype0v === 'vfd_aligner'            ? 'SAFP' :
+                                                            _atype0v === 'air_flow_path'          ? 'SAFP' : ''
+                                                        );
+                                                        const tKey = (a.telemetry_key && a.telemetry_key !== 'UNKNOWN') ? a.telemetry_key : _defaultKey;
                                                         const tVal = vavVn(tKey);
                                                         const isAlarm = vavIsBool(tKey + '_ALM');
                                                         const isRunning = vavIsBool(tKey + '_STATUS') || tVal > 0;
@@ -4504,7 +4524,27 @@
                                         <div className="absolute inset-0 pointer-events-none" style={{perspective:'1500px'}}>
                                         {schemaAnimations.map((a, ai) => {
                                             if (a.x == null || a.y == null) return null;
-                                            const tKey = a.telemetry_key || '';
+                                            // Per-type defaults so an animation lights up even when the
+                                            // operator hasn't bound (or wrote 'UNKNOWN') as the
+                                            // telemetry_key in the mapper.  Bound key always wins.
+                                            const _atype0 = a.animation_type;
+                                            const _defaultKey = (
+                                                _atype0 === 'centrifugal_fan'        ? 'SAFP' :
+                                                _atype0 === 'rectangular_fan'        ? 'EAFP' :
+                                                _atype0 === 'rectangular_fan_aligner'? 'EAFP' :
+                                                _atype0 === 'damper'                 ? 'OAD'  :
+                                                _atype0 === 'circular_damper'        ? 'OAD'  :
+                                                _atype0 === 'neon_pipe_coil'         ? (a.element_id && /heat/i.test(a.element_id) ? 'HCV' : 'CCV') :
+                                                _atype0 === 'hydration_valve'        ? 'HUM'  :
+                                                _atype0 === 'hydration_valve_aligner'? 'HUM'  :
+                                                _atype0 === 'antifreeze_coil_valve'  ? 'HCV'  :
+                                                _atype0 === 'antifreeze_coil'        ? 'HCV'  :
+                                                _atype0 === 'diff_pressure_switch'   ? 'FDPS' :
+                                                _atype0 === 'differential_pressure_switch_aligner' ? 'FDPS' :
+                                                _atype0 === 'vfd_aligner'            ? 'SAFP' :
+                                                _atype0 === 'air_flow_path'          ? 'SAFP' : ''
+                                            );
+                                            const tKey = (a.telemetry_key && a.telemetry_key !== 'UNKNOWN') ? a.telemetry_key : _defaultKey;
                                             const tVal = vn(tKey);
                                             const isAlarm = isBool(tKey + '_ALM');
                                             const isRunning = isBool(tKey + '_STATUS') || tVal > 0;

@@ -2976,3 +2976,71 @@ Several patterns documented; recommend a subdomain CNAME
 (demo.yourcompany.com  ->  emergent prod URL) once the preview is signed
 off.  See WEB_HOSTING_GUIDE.md and the chat decision matrix.
 
+
+## V2.0 Phase 2 Piece A - Emergent Google Auth (2026-02-13)
+**Decision matrix used**: c + i + x.
+  - c: Build Piece A only this session; defer Mongo tenant collections (B)
+       and setup wizard (C) to later sessions.
+  - i: Anonymous demo stays publicly accessible.  Sign-in is OPTIONAL and
+       adds an identity overlay without gating /dashboard.html.
+  - x: New accounts will eventually inherit V1.9 demo configs as a seed
+       (used when Piece B lands).
+
+### What ships
+- Backend (`/app/backend/auth.py`):
+    POST /api/auth/session   exchange URL-fragment session_id -> session_token + httpOnly cookie
+    GET  /api/auth/me        cookie OR Bearer -> {user_id, email, name, picture} | 401
+    POST /api/auth/logout    delete session row + clear cookie
+- MongoDB (`red5_v2_demo` db):
+    `users`         user_id (custom UUID), email, name, picture, google_sub, created_at, last_login_at
+    `user_sessions` user_id, session_token, expires_at, created_at
+  Both use the `{"_id": 0}` projection convention.
+- Frontend:
+    `/app/frontend/src/App.js`             AppRouter intercepts `#session_id=` synchronously before route table.
+    `/app/frontend/src/pages/AuthCallback.jsx`  Exchanges session_id, sets cookie, redirects to /dashboard.html.
+    `/app/frontend/src/pages/LandingPage.jsx`   Adds Sign-in / avatar / Logout chrome.  Skips /me when fragment present.
+- `/app/auth_testing.md` saved per playbook contract.
+- `/app/memory/test_credentials.md` updated with the Mongo-seed test pattern.
+
+### CORS change (REQUIRED by Emergent Auth)
+`allow_origins=["*"]` is INVALID with `allow_credentials=True` per the
+CORS spec, and the auth cookie requires credentials.  Switched to a
+positive allowlist of {frontend dev, emergent preview host, optional
+FRONTEND_ORIGIN env}.
+
+### Tests
+- /app/backend/tests/test_v2_phase2a_auth.py -- 12/12 assertions pass.
+  Covers: anonymous 401, Bearer auth, Cookie auth, invalid token, expired
+  token, logout removes DB row, bogus session_id from /auth/session,
+  anonymous demo path preserved, no _id leak in response.
+- Phase 1 backend regression (25 assertions) still green.
+- Frontend lint clean.  Visual snapshots verify both anon and signed-in
+  states render correctly.
+
+### Live verification
+  /              Landing -- shows Sign-in button when anon, avatar+name+Logout when signed in.
+  /dashboard     OAuth landing target -- if returning from Emergent, AuthCallback runs first.
+  /dashboard.html  V1.9 SPA -- still publicly accessible (anonymous demo intact).
+
+### CRITICAL invariants (do not regress)
+- DO NOT hardcode the OAuth redirect URL or add fallbacks.  Use
+  `window.location.origin + '/dashboard'` exclusively.
+- DO NOT call `/auth/v1/env/oauth/session-data` from the browser -- only
+  the backend may hit Emergent's session-data endpoint.
+- The httpOnly session cookie MUST be `secure=True, samesite="none",
+  path="/"` -- otherwise the cookie is silently dropped by Chromium-based
+  browsers under the cross-site iframe contexts Emergent runs.
+
+### What is NOT in scope (lands in Piece B)
+- Per-tenant data isolation.  Every signed-in user still sees the SAME
+  canned demo until B ships the tenant collections.
+- Setup wizard.
+- Domain allowlist on sign-in.
+
+### Future sessions
+- Piece B: tenants + buildings + equipment collections + tenant_id-aware
+  middleware that scopes every /api/* read to the logged-in identity.
+  Anonymous demo path stays on the canned configs.
+- Piece C: first-login setup wizard (location, AHU/VAV count, ERV epsilon,
+  design CFM) that seeds the tenant collections from V1.9 demo data.
+

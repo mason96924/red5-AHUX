@@ -30,6 +30,9 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from dotenv import load_dotenv
+load_dotenv()  # MONGO_URL + DB_NAME live in backend/.env
+
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -37,13 +40,27 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEMO_DATA_DIR = os.path.join(ROOT, "demo_data")
 
-app = FastAPI(title="Red5 Studio V2.0 Demo Backend", version="2.0.0-phase1")
+app = FastAPI(title="Red5 Studio V2.0 Demo Backend", version="2.0.0-phase2a")
+# CORS: allow_credentials=True is REQUIRED for the auth cookie to flow.
+# allow_origins=["*"] is INVALID when allow_credentials=True per the CORS spec;
+# we restrict to known origins (frontend dev + emergent preview hosts).
+_allowed_origins = [
+    os.environ.get("FRONTEND_ORIGIN", ""),
+    "http://localhost:3000",
+    "https://controller-dashboard-2.preview.emergentagent.com",
+]
+_allowed_origins = [o for o in _allowed_origins if o]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins or ["http://localhost:3000"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Wire the auth router (Phase 2 Piece A).
+from auth import router as auth_router  # noqa: E402
+app.include_router(auth_router)
 
 
 # ---------------------------------------------------------------------------

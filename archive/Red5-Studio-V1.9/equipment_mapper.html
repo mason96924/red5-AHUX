@@ -451,8 +451,14 @@
 
             useEffect(() => {
                 const apiUrl = (window.API_BASE_URL || '');
+                // Cache-buster: /api/save-equipment-schema rewrites this file,
+                // but Flask's /assets/ route used to send the JSON with
+                // Cache-Control: max-age=3600.  Old browsers / pinned tabs may
+                // still hold a 1-hour cache from a pre-fix server, so attach
+                // a per-load timestamp to guarantee a fresh GET.
+                const bust = '?ts=' + Date.now();
                 // Try configs/ subfolder first, then root
-                fetch(apiUrl + '/assets/configs/equipment_types.json')
+                fetch(apiUrl + '/assets/configs/equipment_types.json' + bust)
                     .then(r => { if (!r.ok) throw new Error('not in configs/'); return r.json(); })
                     .then(data => { 
                         if (data && Object.keys(data).length > 0) {
@@ -465,7 +471,7 @@
                     })
                     .catch(() => {
                         // Fallback to root
-                        fetch(apiUrl + '/assets/equipment_types.json')
+                        fetch(apiUrl + '/assets/equipment_types.json' + bust)
                             .then(r => r.ok ? r.json() : {})
                             .then(data => { 
                                 if (data && Object.keys(data).length > 0) {

@@ -273,11 +273,14 @@ def download_bundle_file(filename):
 def serve_asset(filename):
     resp = send_from_directory('/root/data', filename)
     lower = filename.lower()
-    # JS/HTML/MD must never be heuristically cached — they carry app logic
-    # or documentation that changes between deploys. Static graphics
-    # (PNG/JPG/SVG) can be cached aggressively since they're re-uploaded
-    # via equipment_mapper.
-    if lower.endswith('.js') or lower.endswith('.html') or lower.endswith('.css') or lower.endswith('.md'):
+    # JS/HTML/CSS/MD/JSON must never be heuristically cached -- they carry
+    # app logic, documentation, or configuration that changes via the API
+    # (e.g. equipment_types.json is rewritten by /api/save-equipment-schema,
+    # so a stale 1-hour browser cache would make the mapper appear to lose
+    # the operator edits on reload).  Static graphics (PNG/JPG/SVG) can be
+    # cached aggressively since they are re-uploaded via equipment_mapper
+    # and URLs re-fetch fresh on page reload anyway.
+    if lower.endswith('.js') or lower.endswith('.html') or lower.endswith('.css') or lower.endswith('.md') or lower.endswith('.json'):
         resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         resp.headers['Pragma'] = 'no-cache'
         resp.headers['Expires'] = '0'

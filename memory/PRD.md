@@ -2598,3 +2598,56 @@ from React state and React re-renders the portaled subtree.
 
 ### Deploy
 Single-file Repair-Mode upload of `dashboard.html`. Hard-refresh after.
+
+
+## V1.9 Bugfix - Equipment Mapper Edits Not Persisting After Reload (2026-02-13)
+**Brief**: User reported that on the equipment_mapper page, equipment-type
+selections and graphics edits were successfully sent to the controller
+(server alert showed `Equipment schema saved to /root/data/configs/
+equipment_types.json`), but after refreshing the page the changes appeared
+to revert. The on-disk file was correctly updated by the API; only the
+mapper UI was reading stale data.
+
+### Root cause
+The Flask `/assets/<path:filename>` route had a single conditional
+classifying file types as either "logic that must never cache" (.js, .html,
+.css, .md) or "static graphics that can cache hard". JSON fell into the
+`else` branch with `Cache-Control: public, max-age=3600,
+stale-while-revalidate=86400` -- so once a browser had fetched
+`/assets/configs/equipment_types.json`, it would keep returning the cached
+copy for up to an hour even though `/api/save-equipment-schema` had
+rewritten the file seconds earlier. The dashboard was unaffected because it
+reads via the `/api/equipment-types` JSON endpoint, which always reads from
+disk.
+
+### Fix
+1. **Server (`app.py` `serve_asset`)**: Added `.json` to the no-cache
+   extension list alongside `.js / .html / .css / .md`. JSON files served
+   via `/assets/` now respond with `Cache-Control: no-store, no-cache,
+   must-revalidate, max-age=0` + `Pragma: no-cache` + `Expires: 0`. Static
+   graphics (PNG/JPG/SVG) retain aggressive caching.
+2. **Client (`equipment_mapper.html`)**: Defense-in-depth -- appended a
+   per-load timestamp cache-buster (`?ts=Date.now()`) to both
+   `/assets/configs/equipment_types.json` and `/assets/equipment_types.json`
+   fetches, so older pinned-tab browsers still holding a pre-fix cache get
+   a fresh GET on the next reload.
+
+### Tests
+- New `tests/test_assets_json_no_cache.py`: 4 checks
+  - serve_asset regex confirms `.json` joined the no-cache `endswith()` chain.
+  - Reverse guard: still exactly ONE `public, max-age=3600` branch (no
+    duplicate aggressive-cache leak).
+  - `save_equipment_schema` still writes `CONFIG_DIR/equipment_types.json`.
+  - Mapper fetches now carry the `?ts=Date.now()` buster.
+- Full regression sweep (5 suites, 99 checks): all green.
+
+### Files changed
+- `app.py` -- `/assets/` route: `.json` added to no-cache extension list;
+  comment refreshed to call out the equipment_types.json rewrite pathway.
+- `equipment_mapper.html` -- load-time fetch carries `?ts=Date.now()`.
+- `tests/test_assets_json_no_cache.py` -- NEW regression guard.
+
+### Deploy
+Single-file Repair-Mode uploads of `app.py` + `equipment_mapper.html`.
+Backend restart required for `app.py`. Hard-refresh after to clear any
+existing 3600-second cache entry already pinned in the operator's browser.

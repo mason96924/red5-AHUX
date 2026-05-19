@@ -64,8 +64,18 @@ const AuthCallback = () => {
             .then((body) => {
                 if (body === null) return;  // 403 path already handled
                 // Clear the fragment so a back-button does not re-trigger.
-                // After Piece A, the post-login landing is the V1.9 dashboard.
-                window.location.replace('/dashboard.html');
+                // Honor an optional post-login redirect target set by other
+                // legacy pages (e.g. equipment_mapper.html) so the user lands
+                // back where they kicked off the sign-in flow.
+                let target = '/dashboard.html';
+                try {
+                    const stashed = localStorage.getItem('r5_post_login_redirect');
+                    if (stashed && stashed.startsWith('/')) {
+                        target = stashed;
+                        localStorage.removeItem('r5_post_login_redirect');
+                    }
+                } catch (e) { /* localStorage may be disabled */ }
+                window.location.replace(target);
             })
             .catch((err) => {
                 console.error('[AuthCallback]', err);

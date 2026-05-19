@@ -1,5 +1,29 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Persistence UX — Sign-in Affordance on Static Pages (2026-02-19)
+**Brief**: The user reported that "image failed to save to the server" + "the same config has to be done — setup is not persistent" on `equipment_mapper.html`.  Root cause: the user was anonymous (never signed in) and the static legacy HTML pages had ZERO sign-in affordance — they only saw the backend's anonymous-mode warning, not a way to actually sign in.  Persistence works correctly once the session cookie is present (verified end-to-end below); the UX gap was the discoverability of sign-in from inside the legacy SPAs.
+
+### Fix — `/app/frontend/public/equipment_mapper.html` and `/dashboard.html`
+- Added a fixed top-right auth banner (outside the React tree, plain JS) that:
+  - Calls `/api/auth/me` on load to detect sign-in state.
+  - **Anonymous**: shows `ANONYMOUS (PREVIEW ONLY)` + a prominent amber `SIGN IN WITH GOOGLE` button that kicks off the Emergent OAuth flow.
+  - **Signed-in**: shows `SIGNED IN: <email>` + a Logout button that hits `/api/auth/logout` and reloads.
+  - `data-testid` on every element (`mapper-auth-banner`, `mapper-auth-state`, `mapper-signin-btn`, `mapper-logout-btn`; same shape on `dashboard-*`).
+- Banner stashes `localStorage.r5_post_login_redirect = '/equipment_mapper.html'` (or `/dashboard.html`) before redirecting to Emergent so the user returns where they started.
+- `AuthCallback.jsx`: after a successful session exchange, reads `r5_post_login_redirect` from localStorage (if present and absolute path), uses it as the redirect target, then clears the key.  Falls back to `/dashboard.html` for the existing landing-page sign-in flow.
+
+### Verification (live)
+- Anonymous banner renders correctly on `/equipment_mapper.html` and `/dashboard.html` (screenshot-verified).
+- With a seeded session cookie:
+  - Banner flips to `SIGNED IN: persist-test@example.com` + Logout visible.
+  - `POST /api/save-image` → `success: true, tenant_id: ten_...` (image bytes persist in Mongo `tenant_assets`).
+  - `POST /api/save-equipment-schema` → `success: true, persisted: true` (schema lands in `tenant_equipment_types`).
+
+### Files changed
+- `frontend/public/equipment_mapper.html` — +66 lines (banner + JS).
+- `frontend/public/dashboard.html` — +66 lines (banner + JS).
+- `frontend/src/pages/AuthCallback.jsx` — +12 lines (localStorage redirect resolver).
+
 ## V2.0 Phase 2c — Sign-in Allowlist + Admin Console (2026-02-19)
 **Brief**: Adds domain/email-level allow-listing for Google sign-ins, gated behind an `ADMIN_EMAILS` env-var roster.  Empty list = open (demo-friendly).  Admin emails always bypass the list to prevent lockout.  Admin-only React page at `/admin/access-control` for CRUD.  Denied users see a polished 403 screen, not a generic error.
 

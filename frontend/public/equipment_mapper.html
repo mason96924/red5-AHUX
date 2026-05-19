@@ -152,6 +152,72 @@
     </script>
 </head>
 <body class="flex h-screen">
+    <!-- V2.0 Phase 2a/c: lightweight auth banner.  Sits outside the React tree
+         so we never risk breaking the legacy V1.9 main-source.  Detects sign-in
+         via /api/auth/me; offers Google sign-in when anonymous so save-image
+         and save-equipment-schema can actually persist. -->
+    <div id="v2-auth-banner" style="position:fixed;top:0;right:0;z-index:99999;
+        font-family: 'Inter', system-ui, sans-serif; font-size: 11px;
+        padding: 6px 10px; display: none; align-items: center; gap: 8px;
+        background: rgba(15,23,42,0.92); border-bottom-left-radius: 8px;
+        border: 1px solid #1e293b; border-top: none; border-right: none;
+        color: #e2e8f0;" data-testid="mapper-auth-banner">
+        <span id="v2-auth-state" style="font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px;
+            color: #94a3b8;" data-testid="mapper-auth-state">checking...</span>
+        <button id="v2-auth-signin" data-testid="mapper-signin-btn"
+            style="display: none; background:#fbbf24; color:#0f172a;
+            border: none; border-radius: 4px; padding: 5px 10px;
+            font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
+            font-size: 10px; cursor: pointer;">Sign in with Google</button>
+        <button id="v2-auth-logout" data-testid="mapper-logout-btn"
+            style="display: none; background: transparent; color: #94a3b8;
+            border: 1px solid #334155; border-radius: 4px; padding: 4px 8px;
+            font-size: 9px; cursor: pointer; text-transform: uppercase;
+            letter-spacing: 0.08em;">Logout</button>
+    </div>
+    <script>
+        (function () {
+            var apiUrl = window.API_BASE_URL || window.location.origin;
+            var banner = document.getElementById('v2-auth-banner');
+            var state  = document.getElementById('v2-auth-state');
+            var btnIn  = document.getElementById('v2-auth-signin');
+            var btnOut = document.getElementById('v2-auth-logout');
+            banner.style.display = 'flex';
+
+            btnIn.addEventListener('click', function () {
+                // Remember where to return after the OAuth round-trip.
+                try { localStorage.setItem('r5_post_login_redirect', '/equipment_mapper.html'); } catch (e) {}
+                var redirectUrl = window.location.origin + '/dashboard';
+                window.location.href = 'https://auth.emergentagent.com/?redirect=' + encodeURIComponent(redirectUrl);
+            });
+            btnOut.addEventListener('click', function () {
+                fetch(apiUrl + '/api/auth/logout', { method: 'POST', credentials: 'include' })
+                    .finally(function () { window.location.reload(); });
+            });
+
+            fetch(apiUrl + '/api/auth/me', { credentials: 'include' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (me) {
+                    if (me && me.email) {
+                        state.textContent = 'Signed in: ' + me.email;
+                        state.style.color = '#a3e635';
+                        btnOut.style.display = 'inline-block';
+                        window.__v2_signed_in = true;
+                    } else {
+                        state.textContent = 'Anonymous (preview only)';
+                        state.style.color = '#fbbf24';
+                        btnIn.style.display = 'inline-block';
+                        window.__v2_signed_in = false;
+                    }
+                })
+                .catch(function () {
+                    state.textContent = 'Auth check failed';
+                    state.style.color = '#f87171';
+                    btnIn.style.display = 'inline-block';
+                });
+        })();
+    </script>
     <div id="root" class="w-full h-full flex"></div>
     <script type="text/plain" id="main-source">
         const { useState, useRef, useEffect, useMemo, useCallback } = React;

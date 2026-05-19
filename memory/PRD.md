@@ -3171,3 +3171,53 @@ an edge agent that runs on a real controller and POSTs telemetry up to
 the SAME tenant, so customers can "graduate" from the virtual controller
 to a hardware-backed one without re-entering config.
 
+
+## V2.0 Phase 2 Piece B - Hotfix: Image-Upload Endpoint (2026-02-13)
+**User report**: "asset save image to the server failed."
+
+### Root cause
+The V1.9 equipment_mapper.html ships TWO save paths:
+  1. POST /api/save-equipment-schema   (schema config, fixed last hotfix)
+  2. POST /api/save-image              (graphic PNG/JPG/SVG uploads)
+Phase 2 Piece B implemented (1) but never wired (2), so the upload hit
+the SPA-fallback HTML response, JSON-parsed to `undefined`, and surfaced
+as a generic "Upload failed" toast.  Separate bug from the schema-save fix.
+
+### What ships
+- Backend (`tenants.py`):
+    - New `tenant_assets` collection ( tenant_id + filename composite key,
+      content_type, data_bytes, size_bytes, updated_at ).
+    - `save_tenant_asset()` upserts the decoded image bytes.
+    - `read_tenant_asset()` retrieves them for the asset GET path.
+- Backend (`server.py`):
+    - New POST /api/save-image:
+        Anon  -> success:false + sign-in warning (mapper falls back to download).
+        Signed -> base64-decodes the data-URL, stores bytes, returns
+                   { success:true, relative_path, size_bytes, tenant_id }.
+    - GET /api/assets/{path} extended: signed-in misses now fall back to
+      the tenant's uploaded asset bytes before 404'ing.  Content-Type and
+      no-cache headers propagate from the stored doc.
+- Frontend (`/app/frontend/public/dashboard.html`):
+    - Three URL builders patched from `${API_URL}/assets/<base_graphic>`
+      to `${API_URL}/api/assets/<base_graphic>` so the dashboard fetches
+      tenant-stored images through the FastAPI route instead of the
+      frontend dev-server's static handler (which would 404 for newly-
+      uploaded files).  V2.0-only patch -- V1.9 controller dashboard.html
+      remains untouched.
+
+### Tests
+- `tests/test_v2_phase2b_tenants.py` expanded from 22 -> 27 assertions:
+    + POST /api/save-image (signed in) -> success:true + relative_path + size_bytes (NEW)
+    + GET /api/assets/<uploaded image> -> 200 + image/png + PNG magic bytes (NEW)
+    + User B cannot read user A's uploaded asset -> 404 (isolation, NEW)
+    + Anonymous /api/save-image -> success:false + sign-in warning (NEW)
+    + POST /api/save-image without filename -> success:false (no crash, NEW)
+- All 64 backend assertions across Phase 1/2a/2b green.
+- Smoke-verified via curl: 1x1 transparent PNG round-trips correctly.
+
+### Files changed
+- `/app/backend/server.py`         (+POST /api/save-image, GET assets fallback)
+- `/app/backend/tenants.py`        (+tenant_assets collection + helpers)
+- `/app/frontend/public/dashboard.html` (3 URL-builder patches)
+- `/app/backend/tests/test_v2_phase2b_tenants.py` (+5 assertions)
+

@@ -71,8 +71,12 @@ from tenants import (  # noqa: E402
     write_sa_rh_clamp,
     read_weather_location,
     write_weather_location,
+    save_tenant_asset,
+    read_tenant_asset,
     WeatherLocationUpdate,
 )
+import base64  # noqa: E402
+from fastapi.responses import Response as FastResponse  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +460,45 @@ async def save_equipment_schema(payload: dict,
     }
 
 
+@app.post("/api/save-image")
+async def save_image(payload: dict,
+                     tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Mapper POSTs {deployment_path, filename, image_data} where image_data
+    is a data-URL (data:image/png;base64,...).  Anonymous = preview-only no-op."""
+    filename = payload.get("filename") or ""
+    image_data = payload.get("image_data") or ""
+    if not filename or not image_data:
+        return {"success": False, "error": "filename and image_data are required"}
+    if not tenant:
+        return {
+            "success": False,
+            "error": "Sign in to save asset images to your virtual controller.",
+            "warning": "Anonymous demo -- image preview-only; sign in to persist.",
+        }
+    # Decode the data-URL.  Accept both "data:<mime>;base64,XXX" and the bare
+    # base64 form some clients send.
+    if image_data.startswith("data:"):
+        try:
+            head, b64 = image_data.split(",", 1)
+        except ValueError:
+            return {"success": False, "error": "malformed data-URL"}
+        content_type = head[len("data:"):].split(";", 1)[0] or "application/octet-stream"
+    else:
+        b64 = image_data
+        content_type = "application/octet-stream"
+    try:
+        data_bytes = base64.b64decode(b64)
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": f"base64 decode failed: {e}"}
+    res = await save_tenant_asset(tenant, filename, content_type, data_bytes)
+    return {
+        "success": True,
+        "relative_path": res["relative_path"],
+        "size_bytes": res["size_bytes"],
+        "tenant_id": tenant["tenant_id"],
+    }
+
+
 @app.get("/api/assets")
 async def assets_manifest() -> dict:
     """V1.9 returns a manifest of visual-asset URLs (AHU/VAV graphics).
@@ -475,7 +518,8 @@ async def assets_manifest() -> dict:
 # Path traversal blocked.
 # ---------------------------------------------------------------------------
 @app.get("/api/assets/{path:path}")
-async def assets(path: str, request: Request):
+async def assets(path: str, request: Request,
+                 tenant: Optional[dict] = Depends(current_tenant_optional)):
     public_root = os.path.normpath(os.path.join(ROOT, "..", "frontend", "public"))
     full = os.path.normpath(os.path.join(public_root, path))
     if not full.startswith(public_root):
@@ -484,6 +528,14 @@ async def assets(path: str, request: Request):
         return JSONResponse(_load_json("equipment_types.json"),
                             headers={"Cache-Control": "no-store"})
     if not os.path.exists(full):
+        # Phase 2 Piece B: signed-in users get their personal asset bytes
+        # served back here.  Mapper uploads end up in `tenant_assets`.
+        if tenant:
+            doc = await read_tenant_asset(tenant, path)
+            if doc and doc.get("data_bytes"):
+                ctype = doc.get("content_type") or "application/octet-stream"
+                return FastResponse(content=doc["data_bytes"], media_type=ctype,
+                                    headers={"Cache-Control": "no-store"})
         alt = os.path.join(DEMO_DATA_DIR, os.path.basename(path))
         if os.path.exists(alt):
             full = alt

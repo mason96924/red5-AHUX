@@ -233,7 +233,68 @@ check("anonymous /api/weather-location POST -> persisted:false",
       s == 200 and json.loads(body)["persisted"] is False)
 
 
-# ====== 7. Anonymous /api/auth/me still 401 (auth unchanged) ==============
+# ====== 7. Image upload + tenant-asset fetchback ==========================
+# 1x1 transparent PNG (97 bytes).
+TINY_PNG_B64 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAAC"
+                "nej3aAAAAAXRSTlMAQObYZgAAAAxJREFUCNdjYGBgAAAABAABJzQnCgAAAA"
+                "BJRU5ErkJggg==")
+upload_payload = {
+    "deployment_path": "/root",
+    "filename": "ahu_types/TEST_TYPE/base_graphic.png",
+    "image_data": "data:image/png;base64," + TINY_PNG_B64,
+}
+s, body = post("/api/save-image", upload_payload, token_a)
+upl = json.loads(body)
+check("POST /api/save-image (signed in) -> success:true + relative_path",
+      s == 200 and upl["success"] is True
+      and upl["relative_path"] == "ahu_types/TEST_TYPE/base_graphic.png"
+      and upl["size_bytes"] > 0)
+
+# Read it back via /api/assets/<path>: backend returns the bytes with
+# the original content-type.  Use a raw urlopen so we can inspect headers.
+req = urllib.request.Request(
+    BASE + "/api/assets/ahu_types/TEST_TYPE/base_graphic.png",
+    headers={"Authorization": "Bearer " + token_a},
+)
+with urllib.request.urlopen(req, timeout=10) as r:
+    img_status = r.status
+    img_bytes = r.read()
+    img_ct = r.headers.get("Content-Type", "")
+check("GET /api/assets/<uploaded image> -> 200 + image/png + correct bytes",
+      img_status == 200 and img_ct.startswith("image/png")
+      and img_bytes.startswith(b"\x89PNG"))
+
+# User B cannot read user A's uploaded asset.
+import urllib.error as _ue
+req = urllib.request.Request(
+    BASE + "/api/assets/ahu_types/TEST_TYPE/base_graphic.png",
+    headers={"Authorization": "Bearer " + token_b},
+)
+try:
+    with urllib.request.urlopen(req, timeout=10) as r:
+        bbody = r.read()
+        bs = r.status
+except _ue.HTTPError as e:
+    bs = e.code
+    bbody = b""
+check("user B cannot read user A's uploaded asset (404 isolated)",
+      bs == 404)
+
+# Anonymous /api/save-image returns success:false + warning.
+s, body = post("/api/save-image", upload_payload)
+anon_upl = json.loads(body)
+check("anonymous /api/save-image -> success:false + sign-in warning",
+      s == 200 and anon_upl["success"] is False
+      and "warning" in anon_upl)
+
+# Bad payload guard (no filename) -> success:false (no crash, no upload).
+s, body = post("/api/save-image", {"image_data": "data:image/png;base64," + TINY_PNG_B64}, token_a)
+check("POST /api/save-image without filename -> success:false (no crash)",
+      s == 200 and json.loads(body)["success"] is False)
+
+
+# ====== 8. Anonymous /api/auth/me still 401 (auth unchanged) ==============
+
 s, _ = get("/api/auth/me")
 check("anonymous /api/auth/me still 401 (Phase 2a contract preserved)",
       s == 401)
@@ -250,6 +311,7 @@ for uid in (user_a, user_b):
         db["tenant_equipment_types"].delete_many({"tenant_id": tid})
         db["tenant_band_overrides"].delete_many({"tenant_id": tid})
         db["tenant_locations"].delete_many({"tenant_id": tid})
+        db["tenant_assets"].delete_many({"tenant_id": tid})
         db["tenants"].delete_one({"tenant_id": tid})
 
 

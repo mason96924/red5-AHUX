@@ -1100,7 +1100,7 @@
                                 const types = [...Object.values(et.ahu_types || {}), ...Object.values(et.vav_types || {})];
                                 types.forEach(tdef => {
                                     const p = tdef && tdef.visual_assets && tdef.visual_assets.base_graphic;
-                                    if (p) { const im = new Image(); im.src = `${API_URL}/assets/${p}`; }
+                                    if (p) { const im = new Image(); im.src = `${API_URL}/api/assets/${p}`; }
                                 });
                             } catch (e) {}
                         }).catch(() => {});
@@ -3452,7 +3452,7 @@
                         }
                         const vavSchema = ccEquipTypes && ccEquipTypes.vav_types ? ccEquipTypes.vav_types[vavTypeId] : null;
                         const schemaVavImage = (vavSchema && vavSchema.visual_assets && vavSchema.visual_assets.base_graphic)
-                            ? `${API_URL}/assets/${vavSchema.visual_assets.base_graphic}`
+                            ? `${API_URL}/api/assets/${vavSchema.visual_assets.base_graphic}`
                             : null;
                         const effectiveVavImage = schemaVavImage || vavImage;
                         const vavSchemaPoints = (vavSchema && vavSchema.points) || [];
@@ -4129,7 +4129,7 @@
                             if (firstKey) ahuTypeId = firstKey;
                         }
                         const schemaType = ccEquipTypes && ccEquipTypes.ahu_types ? ccEquipTypes.ahu_types[ahuTypeId] : null;
-                        const currentAhuImage = (schemaType && schemaType.visual_assets && schemaType.visual_assets.base_graphic && `${API_URL}/assets/${schemaType.visual_assets.base_graphic}`) || (ahuTypeId && ahuTypeImages[ahuTypeId]) || ahuTypeImages['generic'] || ahuImage;
+                        const currentAhuImage = (schemaType && schemaType.visual_assets && schemaType.visual_assets.base_graphic && `${API_URL}/api/assets/${schemaType.visual_assets.base_graphic}`) || (ahuTypeId && ahuTypeImages[ahuTypeId]) || ahuTypeImages['generic'] || ahuImage;
 
                         const v = (k) => { const val = ap[k]; return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(1) : String(val)) : '0.0'; };
                         const vn = (k) => { const val = ap[k]; return typeof val === 'number' ? val : 0; };

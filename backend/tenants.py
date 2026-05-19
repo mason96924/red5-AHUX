@@ -202,6 +202,45 @@ async def read_weather_location(tenant: Optional[dict]) -> Optional[dict]:
     return {"active": doc.get("active"), "saved": doc.get("saved", [])}
 
 
+# ---------------------------------------------------------------------------
+# Tenant-scoped image asset storage (Phase 2 Piece B / hotfix).
+# Mapper POSTs base64-encoded PNG/JPG/SVG bytes to /api/save-image.  We
+# decode them and stash in `tenant_assets`.  Subsequent GETs flow through
+# /api/assets/<filename> -> read_tenant_asset(tenant, filename).
+# ---------------------------------------------------------------------------
+ten_asset_col = _db["tenant_assets"]
+
+
+async def save_tenant_asset(tenant: dict, filename: str,
+                            content_type: str, data_bytes: bytes) -> dict:
+    """Upsert image bytes for (tenant, filename).  Returns the relative path
+    the V1.9 mapper writes into the schema's `visual_assets.base_graphic`."""
+    now = datetime.now(timezone.utc)
+    # Normalize the filename so the schema field round-trips cleanly.
+    safe = filename.lstrip("/").replace("\\", "/")
+    await ten_asset_col.update_one(
+        {"tenant_id": tenant["tenant_id"], "filename": safe},
+        {"$set": {
+            "tenant_id": tenant["tenant_id"],
+            "filename": safe,
+            "content_type": content_type,
+            "data_bytes": data_bytes,
+            "size_bytes": len(data_bytes),
+            "updated_at": now,
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "relative_path": safe, "size_bytes": len(data_bytes)}
+
+
+async def read_tenant_asset(tenant: dict, filename: str) -> Optional[dict]:
+    safe = filename.lstrip("/").replace("\\", "/")
+    return await ten_asset_col.find_one(
+        {"tenant_id": tenant["tenant_id"], "filename": safe},
+        {"_id": 0},
+    )
+
+
 class WeatherLocationUpdate(BaseModel):
     active: Optional[dict] = None
     saved:  Optional[list] = None

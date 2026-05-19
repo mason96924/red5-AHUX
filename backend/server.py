@@ -360,16 +360,197 @@ async def set_weather_location(update: WeatherLocationUpdate,
 @app.get("/api/weather-history")
 async def weather_history(lat: float = Query(ACTIVE_LOCATION["lat"]),
                           lon: float = Query(ACTIVE_LOCATION["lon"]),
-                          year: Optional[int] = None) -> Any:
-    """Return the cached Open-Meteo year file.  Defaults to active location
-    (Seattle in demo) so the dashboard can call this with zero args on first
-    paint before the user has picked a city."""
-    fname = f"weather_{lat:.2f}_{lon:.2f}_2020.json"
-    path = os.path.join(DEMO_DATA_DIR, fname)
-    if not os.path.exists(path):
-        path = os.path.join(DEMO_DATA_DIR, "weather_47.60_-122.30_2020.json")
-    with open(path, "r") as f:
-        return json.load(f)
+                          year: Optional[int] = None,
+                          force: bool = Query(False)) -> Any:
+    """Return weather history for (lat, lon, year).
+
+    Resolution order:
+      1. Mongo `weather_cache` (per coord+year) — past years are immutable
+         and cached forever; current-year cache is refreshed every 24 h.
+      2. Bundled demo_data file for Seattle 2020 (offline fallback).
+      3. Live open-meteo archive API (real climate for any city).
+
+    All non-2020 responses get their dates re-stamped to the requested year
+    so the dashboard's `date.startsWith('YYYY')` filter aligns when we
+    serve cached data from a different year.
+    """
+    import httpx  # local import keeps cold-start fast
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    lat_key = round(float(lat), 2)
+    lon_key = round(float(lon), 2)
+    target_year = int(year) if year else datetime.now(timezone.utc).year
+    is_current_year = target_year == datetime.now(timezone.utc).year
+
+    # ---- 1. Mongo cache ----
+    mongo_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    wx_col = mongo_client[os.environ["DB_NAME"]]["weather_cache"]
+    cache_key = {"lat": lat_key, "lon": lon_key, "year": target_year}
+    if not force:
+        doc = await wx_col.find_one(cache_key, {"_id": 0, "payload": 1, "fetched_at": 1})
+        if doc:
+            stale = False
+            if is_current_year:
+                fetched = doc.get("fetched_at")
+                if fetched and isinstance(fetched, datetime):
+                    if fetched.tzinfo is None:
+                        fetched = fetched.replace(tzinfo=timezone.utc)
+                    stale = (datetime.now(timezone.utc) - fetched).total_seconds() > 86400
+                else:
+                    stale = True
+            if not stale and doc.get("payload"):
+                p = doc["payload"]
+                p["_from_cache"] = True
+                return p
+
+    # ---- 2. Bundled demo file (Seattle 2020 only) ----
+    bundle = os.path.join(DEMO_DATA_DIR, f"weather_{lat_key:.2f}_{lon_key:.2f}_2020.json")
+    if os.path.exists(bundle):
+        with open(bundle, "r") as f:
+            payload = json.load(f)
+        if target_year != 2020:
+            payload = _restamp_year(payload, target_year)
+        return payload
+
+    # ---- 3. Live open-meteo ----
+    end_d = f"{target_year}-12-31"
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    if end_d > today_iso:
+        end_d = today_iso
+    params = {
+        "latitude": lat_key,
+        "longitude": lon_key,
+        "start_date": f"{target_year}-01-01",
+        "end_date": end_d,
+        "hourly": "temperature_2m,relative_humidity_2m",
+        "daily": "weather_code",
+        "timezone": "auto",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get("https://archive-api.open-meteo.com/v1/archive", params=params)
+        if r.status_code != 200:
+            # Network fallback: serve the bundled Seattle file re-stamped.
+            with open(os.path.join(DEMO_DATA_DIR, "weather_47.60_-122.30_2020.json"), "r") as f:
+                payload = json.load(f)
+            payload = _restamp_year(payload, target_year)
+            payload["source"] = "demo-fallback"
+            payload["warning"] = f"open-meteo returned {r.status_code}; serving demo data"
+            return payload
+        data = r.json()
+    except Exception as e:  # noqa: BLE001
+        with open(os.path.join(DEMO_DATA_DIR, "weather_47.60_-122.30_2020.json"), "r") as f:
+            payload = json.load(f)
+        payload = _restamp_year(payload, target_year)
+        payload["source"] = "demo-fallback"
+        payload["warning"] = f"open-meteo unreachable ({e}); serving demo data"
+        return payload
+
+    hourly = data.get("hourly") or {}
+    times = hourly.get("time") or []
+    temps = hourly.get("temperature_2m") or []
+    rhs   = hourly.get("relative_humidity_2m") or []
+    daily_raw = data.get("daily") or {}
+    wc_dates = daily_raw.get("time") or []
+    wc_codes = daily_raw.get("weather_code") or []
+    weather_codes = {wc_dates[i]: (wc_codes[i] if i < len(wc_codes) else None)
+                     for i in range(len(wc_dates))}
+
+    # Aggregate hourly -> daily
+    day_bucket: dict[str, dict] = {}
+    for i, ts in enumerate(times):
+        day = ts[:10]
+        t = temps[i] if i < len(temps) else None
+        rh = rhs[i] if i < len(rhs) else None
+        if t is None or rh is None:
+            continue
+        day_bucket.setdefault(day, {"temps": [], "rhs": []})
+        day_bucket[day]["temps"].append(t)
+        day_bucket[day]["rhs"].append(rh)
+
+    daily_out: list[dict] = []
+    hourly_out: list[dict] = []
+    for day in sorted(day_bucket.keys()):
+        d = day_bucket[day]
+        h_values = []
+        for t, rh in zip(d["temps"], d["rhs"]):
+            w_kgkg = _humidity_ratio(t, rh)
+            h_values.append(_enthalpy(t, w_kgkg))
+        daily_out.append({
+            "date": day,
+            "temp_min": round(min(d["temps"]), 1),
+            "temp_max": round(max(d["temps"]), 1),
+            "temp_avg": round(sum(d["temps"]) / len(d["temps"]), 1),
+            "rh_min": round(min(d["rhs"])),
+            "rh_max": round(max(d["rhs"])),
+            "rh_avg": round(sum(d["rhs"]) / len(d["rhs"])),
+            "h_min": round(min(h_values), 1),
+            "h_max": round(max(h_values), 1),
+            "h_avg": round(sum(h_values) / len(h_values), 1),
+            "wc": weather_codes.get(day),
+        })
+    for i, ts in enumerate(times):
+        t = temps[i] if i < len(temps) else None
+        rh = rhs[i] if i < len(rhs) else None
+        if t is None or rh is None:
+            continue
+        w_kgkg = _humidity_ratio(t, rh)
+        hourly_out.append({
+            "time": ts, "temp": round(t, 1), "rh": round(rh),
+            "h": round(_enthalpy(t, w_kgkg), 1),
+        })
+
+    payload = {
+        "success": True,
+        "source": "open-meteo",
+        "lat": lat_key,
+        "lon": lon_key,
+        "year": target_year,
+        "timezone": data.get("timezone", ""),
+        "daily": daily_out,
+        "hourly": hourly_out,
+        "hourly_count": len(hourly_out),
+    }
+    await wx_col.update_one(
+        cache_key,
+        {"$set": {"payload": payload, "fetched_at": datetime.now(timezone.utc), **cache_key}},
+        upsert=True,
+    )
+    payload["_from_cache"] = False
+    return payload
+
+
+def _restamp_year(payload: dict, target_year: int) -> dict:
+    """Rewrite a cached payload's date / time / year fields to `target_year`,
+    dropping Feb-29 for non-leap years.  Used when we serve the bundled 2020
+    Seattle file for a different year, or when open-meteo is unreachable."""
+    is_leap = (target_year % 4 == 0 and target_year % 100 != 0) or (target_year % 400 == 0)
+    yr = f"{target_year:04d}"
+
+    def _rs(d: str) -> str:
+        if not d or len(d) < 10 or d[4] != "-":
+            return d
+        month, day = d[5:7], d[8:10]
+        if month == "02" and day == "29" and not is_leap:
+            day = "28"
+        return yr + "-" + month + "-" + day + d[10:]
+
+    out = dict(payload)
+    out["year"] = target_year
+    if isinstance(out.get("daily"), list):
+        out["daily"] = [
+            {**row, "date": _rs(row.get("date", ""))}
+            for row in out["daily"]
+            if not (row.get("date", "").endswith("-02-29") and not is_leap)
+        ]
+    if isinstance(out.get("hourly"), list):
+        out["hourly"] = [
+            {**row, "time": _rs(row.get("time", ""))}
+            for row in out["hourly"]
+            if not (row.get("time", "")[5:10] == "02-29" and not is_leap)
+        ]
+        out["hourly_count"] = len(out["hourly"])
+    return out
 
 
 @app.get("/api/tomorrow-forecast")

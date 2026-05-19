@@ -1,5 +1,40 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Feature — Selectable Weather Location (2026-02-19)
+**Brief**: User reported the weather strip was hard-pinned to Seattle Children's regardless of which location they picked in the WEATHER LOCATION modal.  Root cause: the V2.0 backend's `/api/weather-history` only knew about the one bundled cache file (`weather_47.60_-122.30_2020.json`); for any other lat/lon it fell through to the same Seattle file → strip kept showing Seattle data.  This commit ports the V1.9 controller's live-fetch + Mongo-cache logic into the V2.0 backend so any city on Earth works.
+
+### Backend (`backend/server.py` `/api/weather-history`)
+**3-tier resolution order**:
+1. **Mongo cache** (collection `weather_cache`, keyed `{lat, lon, year}`) — past years cached forever, current year refreshed every 24 h.
+2. **Bundled demo file** if it exists for the requested coords (currently only Seattle 2020).  Dates re-stamped to the requested year (Feb 29 dropped on non-leap years).
+3. **Live open-meteo archive API** (`https://archive-api.open-meteo.com/v1/archive`).  Result aggregated to per-day min/max/avg + enthalpy via existing `_humidity_ratio` / `_enthalpy` helpers, persisted to Mongo cache for next call.
+4. **Network-failure fallback**: serve bundled Seattle file re-stamped, with `source: "demo-fallback"` + `warning` so the UI knows.
+
+### Verification
+- Seattle 2025: bundled, restamped → 365 days, `2025-01-01 → 2025-12-31`, instant.
+- Seoul 2024 (live fetch): 366 days, `Asia/Seoul` tz, ~1.6 s first call.
+- Seoul 2024 (cache hit): 0.15 s (~10× speedup).
+- Browser end-to-end: typed Seoul (37.56, 127.04) in the **+ ADD & LOAD** form on the WEATHER LOCATION modal → active location pill flipped to **SEOUL**, network badge `NET 1388MS`, weather strip re-drew with Seoul's continental-climate curves.
+- Regression: 94/94 backend tests still pass.
+
+### Files changed
+- `backend/server.py` — replaced static `/api/weather-history` with 3-tier fetch + new `_restamp_year` helper (~140 lines net).
+
+## V2.0 Bugfix — Weather Strip "No data for this period" (2026-02-19)
+**Brief**: Operator toggled the WEATHER strip on the live dashboard and saw the strip header populate (`NET 922MS`, location pill) but the body read "No data for this period".  Root cause: the V2.0 backend always returned the cached 2020 Open-Meteo file regardless of the year query parameter.  The frontend `getWeatherView()` filters daily/hourly rows on `date.startsWith(currentYear)` — with all rows dated `2020-*` the filter returned 0 rows.
+
+### Fix (`backend/server.py` `/api/weather-history`)
+- Re-stamp the cached payload's `date` / `time` / `year` fields to the requested year before returning.
+- Leap-year handling: drop `02-29` rows when the target year is non-leap; keep them in leap years.
+- Update `hourly_count` to match the post-filter length.
+- No external API call — still 100% demo-cached, just date-rewritten.
+
+### Verification
+- `GET /api/weather-history?year=2025` → 365 daily rows spanning `2025-01-01 → 2025-12-31`, 8760 hourly rows.
+- `GET /api/weather-history?year=2024` → 366 daily rows, Feb 29 preserved.
+- Live dashboard: weather strip renders temperature + humidity curves across Jan–Dec with `Active = 2025 + 2026 YTD (139d)` overlay; TODAY indicator at May (current date).
+- Regression: 94/94 backend tests still pass.
+
 ## V2.0 Bugfix — Collector Configuration "Error: Unknown" (2026-02-19)
 **Brief**: User opened the dashboard's COLLECTOR modal and saw `Error: Unknown` in the banner.  Root cause: the V2.0 backend only had `GET /api/collector-config` — the modal's `Save Config` button POSTed to the same URL and got HTTP 405, whose JSON body has no `success`/`error` keys, falling through to the literal "Unknown" string.
 

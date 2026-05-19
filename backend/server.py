@@ -280,58 +280,90 @@ async def version() -> dict:
 
 @app.get("/api/data-mode")
 async def data_mode(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Reflect the tenant's saved `mock_mode` (set via the COLLECTOR modal's
-    Settings tab) so the dashboard's mode toggle shows the right pill on
-    page load.  Anonymous callers see the demo defaults."""
+    """Reflect the operator's `mock_mode` setting so the dashboard's mode
+    toggle shows the right pill on page load.  Signed-in users see their
+    saved tenant state; anonymous users see the in-memory anonymous override
+    (defaults to whatever the bundled collector_config.json says)."""
     if tenant:
         cfg = await read_collector_config(tenant) or {}
-        mock = bool(cfg.get("mock_mode", True))
-        groups = cfg.get("ahu_groups") or {}
-        if not mock and groups:
-            return {"mode": "simulator", "live": False,
-                    "source": "tenant-config",
-                    "ahu_count": len(groups)}
-        return {"mode": "mock", "live": False, "source": "tenant-config-mock",
-                "ahu_count": len(_DEMO_AHUS)}
-    return {"mode": "mock", "live": False, "source": "phase1-simulator",
-            "ahu_count": len(_DEMO_AHUS)}
+        mock = bool(cfg.get("mock_mode", _bundled_mock_mode_default()))
+        groups = cfg.get("ahu_groups") or _load_json("collector_config.json").get("ahu_groups") or {}
+        return {"mode": "mock" if mock else "simulator", "live": False,
+                "source": "tenant-config", "ahu_count": len(groups)}
+    cfg = _anon_effective_config()
+    return {"mode": "mock" if cfg.get("mock_mode") else "simulator",
+            "live": False, "source": "anon-config",
+            "ahu_count": len(cfg.get("ahu_groups") or {})}
 
 
 @app.get("/api/data")
 async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) -> list:
     """V1.9 contract: ARRAY of AHU entries.  Dashboard rejects non-array.
 
-    Source-of-truth precedence:
-      1. Signed-in tenant w/ saved collector_config in Simulator mode AND a
-         non-empty `ahu_groups` dict -> synthesize data from those names.
-      2. Otherwise -> bundled `_DEMO_AHUS` template.
+    Resolution:
+      - Signed-in: tenant's saved collector_config (falling back to bundled
+        demo if the tenant hasn't saved one yet).
+      - Anonymous: bundled collector_config.json with the in-memory
+        anonymous mock_mode override applied.
+
+    `mock_mode:false` + non-empty `ahu_groups` -> snapshot built from those
+    AHU/VAV names.  Otherwise -> the bundled `_DEMO_AHUS` template.
     """
     if tenant:
         cfg = await read_collector_config(tenant)
-        if cfg and not cfg.get("mock_mode", True):
-            ahus = _ahus_from_config(cfg)
-            if ahus:
-                return _build_snapshot(ahus)
+        if cfg is None:
+            cfg = _load_json("collector_config.json")
+    else:
+        cfg = _anon_effective_config()
+    if not cfg.get("mock_mode", True):
+        ahus = _ahus_from_config(cfg)
+        if ahus:
+            return _build_snapshot(ahus)
     return _build_snapshot()
 
 
 @app.post("/api/data-mode")
 async def set_data_mode(payload: dict,
                         tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Persist the operator's Simulator <-> Mock toggle.  Signed-in users get
-    their `tenant_collector_config.mock_mode` flipped (so a page reload picks
-    up the right source); anonymous callers get a cosmetic ok response."""
+    """Persist Simulator <-> Mock.  Signed-in -> tenant's collector_config;
+    anonymous -> a process-wide in-memory override so demo users can also
+    toggle without signing in (state is lost on backend restart; that is
+    intentional)."""
     desired_mode = (payload.get("mode") or "").lower()
     is_mock = desired_mode == "mock"
     if not tenant:
-        return {"success": True, "mode": desired_mode,
-                "persisted": False,
-                "warning": "Demo mode (anonymous) -- sign in to persist data-source mode."}
+        _ANON_OVERRIDE["mock_mode"] = is_mock
+        return {"success": True, "mode": desired_mode, "persisted": False,
+                "scope": "anonymous-in-memory",
+                "note": "Anonymous toggle held in server memory; sign in to persist across restarts."}
     cfg = await read_collector_config(tenant) or {}
+    if not cfg:
+        # First save -> seed from bundled defaults so we don't end up with
+        # an empty `ahu_groups` on the tenant record.
+        cfg = _load_json("collector_config.json") or {}
     cfg["mock_mode"] = is_mock
     await write_collector_config(tenant, cfg)
     return {"success": True, "mode": desired_mode, "persisted": True,
             "tenant_id": tenant["tenant_id"]}
+
+
+# ---------------------------------------------------------------------------
+# Anonymous mode override (process-wide, in-memory, demo-only).
+# ---------------------------------------------------------------------------
+_ANON_OVERRIDE: dict = {}  # e.g. {"mock_mode": False}
+
+
+def _bundled_mock_mode_default() -> bool:
+    return bool((_load_json("collector_config.json") or {}).get("mock_mode", True))
+
+
+def _anon_effective_config() -> dict:
+    """Bundled `collector_config.json` with any in-memory anonymous override
+    (currently just `mock_mode`) layered on top."""
+    cfg = dict(_load_json("collector_config.json") or {})
+    if "mock_mode" in _ANON_OVERRIDE:
+        cfg["mock_mode"] = _ANON_OVERRIDE["mock_mode"]
+    return cfg
 
 
 @app.get("/api/telemetry-status")
@@ -357,12 +389,13 @@ async def equipment_types(tenant: Optional[dict] = Depends(current_tenant_option
 @app.get("/api/collector-config")
 async def collector_config(tenant: Optional[dict] = Depends(current_tenant_optional)) -> Any:
     """Signed-in users get THEIR saved collector config; anonymous gets the
-    canned demo template."""
+    bundled demo template with the in-memory anonymous mode override applied
+    so the modal's Simulator/Mock pill matches what /api/data is using."""
     if tenant:
         saved = await read_collector_config(tenant)
         if saved:
             return saved
-    return _load_json("collector_config.json")
+    return _anon_effective_config()
 
 
 @app.post("/api/collector-config")

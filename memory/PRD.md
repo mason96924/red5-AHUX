@@ -1,5 +1,28 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix follow-up — Anonymous Simulator toggle did nothing (2026-02-19)
+**Brief**: Even after the previous fix made `/api/data` tenant-aware, the user (browsing anonymously) saved 5 AHU groups in the COLLECTOR modal and selected Simulator, but the dashboard still showed the 3 mock AHUs.  Root cause: the previous fix only honored saved config for SIGNED-IN tenants.  Anonymous users:
+  - Saw a populated COLLECTOR modal (because GET `/api/collector-config` returned the bundled demo file with 5 AHU groups).
+  - But the bundled file ships with `mock_mode: true`, and the anonymous POST `/api/data-mode` was a no-op, so `/api/data` always hit `_DEMO_AHUS` (the 3 mock entries).
+
+### Fix (`backend/server.py`)
+- New process-wide `_ANON_OVERRIDE` dict + `_anon_effective_config()` helper that layers anonymous overrides on top of the bundled `collector_config.json`.
+- `/api/data` anonymous path now reads `_anon_effective_config()` and honors its `mock_mode` flag — so when the operator toggles to Simulator, the next poll picks up the 5 AHU groups from the bundled file.
+- `/api/data-mode` POST anonymous flips `_ANON_OVERRIDE["mock_mode"]` (process-wide, in-memory; lost on backend restart — intentional for demo).
+- `/api/data-mode` GET reflects the override so the modal pill matches reality.
+- `/api/collector-config` GET anonymous layers the override on the bundled file.
+- Signed-in `/api/data-mode` POST now seeds the tenant config from the bundled defaults when there is no saved doc yet (so the toggle doesn't strand the user with an empty `ahu_groups`).
+
+### Verification
+- Anonymous default: `mode:mock, ahu_count:5` (config says 5 groups; data path uses mock template = 3 AHUs).
+- After anonymous POST `{mode:simulator}`: `/api/data` returns **5 user AHUs** (AHU-01..AHU-05) with the bundled file's VAV names.
+- After anonymous POST `{mode:mock}`: `/api/data` returns 3 mock AHUs.
+- Live browser test (cookies cleared, no sign-in) post-toggle: sidebar shows AHU-01..AHU-05 with the bundled VAVs.
+- Regression: 94/94 backend tests pass.
+
+### Files changed
+- `backend/server.py` — +30 lines (`_ANON_OVERRIDE` + `_anon_effective_config()` + anonymous-aware endpoints).
+
 ## V2.0 Bugfix — Dashboard ignored saved AHU/VAV config (2026-02-19)
 **Brief**: Operator configured 5 AHU groups + their VAVs via the COLLECTOR modal and selected **SIMULATOR (CONFIG AHUS)**, but the dashboard kept showing the mock template (AHU-01-E/02-S/03-W).  Root cause: `/api/data` was hard-wired to the bundled `_DEMO_AHUS` list and ignored the tenant's saved `collector_config`.  `/api/data-mode` was likewise static.
 

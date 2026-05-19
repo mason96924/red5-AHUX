@@ -1045,7 +1045,7 @@
                     const cached = (window._equipTypesCache && Object.keys(window._equipTypesCache).length)
                         ? window._equipTypesCache : null;
                     if (cached) {
-                        const cfgRes = await fetch(API_URL + '/api/collector-config');
+                        const cfgRes = await fetch(API_URL + '/api/collector-config', { credentials: 'include' });
                         const cfgData = await cfgRes.json();
                         setCcConfig(cfgData.config || cfgData);
                         setCcEquipTypes(cached);
@@ -1053,8 +1053,8 @@
                         return;
                     }
                     const [cfgRes, etRes] = await Promise.all([
-                        fetch(API_URL + '/api/collector-config'),
-                        fetch(API_URL + '/api/equipment-types')
+                        fetch(API_URL + '/api/collector-config', { credentials: 'include' }),
+                        fetch(API_URL + '/api/equipment-types', { credentials: 'include' })
                     ]);
                     const cfgData = await cfgRes.json();
                     const etData = await etRes.json();
@@ -1069,12 +1069,20 @@
                 setCcSaving(true); setCcMsg('');
                 try {
                     const r = await fetch(API_URL + '/api/collector-config', {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {'Content-Type':'application/json'},
                         body: JSON.stringify(cfg)
                     });
                     const d = await r.json();
-                    if (d.success) { setCcConfig(cfg); setCcMsg('Saved.'); }
-                    else setCcMsg('Error: ' + (d.error || 'Unknown'));
+                    if (d.success) {
+                        setCcConfig(cfg);
+                        setCcMsg(d.persisted === false
+                            ? (d.warning || 'Saved (preview only -- sign in to persist).')
+                            : 'Saved.');
+                    } else {
+                        setCcMsg('Error: ' + (d.error || d.detail || 'Unknown'));
+                    }
                 } catch (e) { setCcMsg('Save failed: ' + e.message); }
                 setCcSaving(false);
             };
@@ -1083,12 +1091,22 @@
                 setCcSaving(true); setCcMsg('');
                 try {
                     const r = await fetch(API_URL + '/api/save-equipment-schema', {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {'Content-Type':'application/json'},
                         body: JSON.stringify({ equipment_schema: et })
                     });
                     const d = await r.json();
-                    if (d.success) { setCcEquipTypes(et); setCcMsg('Equipment types saved.'); }
-                    else setCcMsg('Error: ' + (d.error || 'Unknown'));
+                    if (d.success) {
+                        setCcEquipTypes(et);
+                        setCcMsg(d.persisted === false
+                            ? (d.warning || 'Saved (preview only -- sign in to persist).')
+                            : 'Equipment types saved.');
+                    } else {
+                        setCcMsg(d.warning
+                            ? d.warning
+                            : 'Error: ' + (d.error || d.detail || 'Unknown'));
+                    }
                 } catch (e) { setCcMsg('Save failed: ' + e.message); }
                 setCcSaving(false);
             };

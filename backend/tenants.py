@@ -209,6 +209,7 @@ async def read_weather_location(tenant: Optional[dict]) -> Optional[dict]:
 # /api/assets/<filename> -> read_tenant_asset(tenant, filename).
 # ---------------------------------------------------------------------------
 ten_asset_col = _db["tenant_assets"]
+ten_cfg_col   = _db["tenant_collector_config"]
 
 
 async def save_tenant_asset(tenant: dict, filename: str,
@@ -282,6 +283,33 @@ async def list_tenant_assets(tenant: dict, path_prefix: str = "") -> list[dict]:
 class WeatherLocationUpdate(BaseModel):
     active: Optional[dict] = None
     saved:  Optional[list] = None
+
+
+async def read_collector_config(tenant: Optional[dict]) -> Optional[dict]:
+    """Return the tenant's saved collector_config, or None if anonymous /
+    not yet saved."""
+    if not tenant:
+        return None
+    doc = await ten_cfg_col.find_one({"tenant_id": tenant["tenant_id"]},
+                                     {"_id": 0, "tenant_id": 0, "updated_at": 0})
+    return doc or None
+
+
+async def write_collector_config(tenant: dict, cfg: dict) -> dict:
+    """Persist the collector_config payload sent by the dashboard's COLLECTOR
+    modal.  We strip MongoDB-illegal keys (`_id`) defensively but otherwise
+    accept the operator's payload verbatim."""
+    now = datetime.now(timezone.utc)
+    safe = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    safe["tenant_id"] = tenant["tenant_id"]
+    safe["updated_at"] = now
+    await ten_cfg_col.update_one(
+        {"tenant_id": tenant["tenant_id"]},
+        {"$set": safe},
+        upsert=True,
+    )
+    return {"ok": True, "persisted": True, "tenant_id": tenant["tenant_id"]}
+
 
 
 async def write_weather_location(tenant: dict, update: WeatherLocationUpdate) -> dict:

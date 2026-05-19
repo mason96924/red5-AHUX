@@ -1,5 +1,27 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix — Collector Configuration "Error: Unknown" (2026-02-19)
+**Brief**: User opened the dashboard's COLLECTOR modal and saw `Error: Unknown` in the banner.  Root cause: the V2.0 backend only had `GET /api/collector-config` — the modal's `Save Config` button POSTed to the same URL and got HTTP 405, whose JSON body has no `success`/`error` keys, falling through to the literal "Unknown" string.
+
+### Fix
+- **Backend** (`backend/tenants.py`, `backend/server.py`):
+  - New `tenant_collector_config` collection + `read_collector_config` / `write_collector_config` helpers.
+  - New `POST /api/collector-config`: persists per-tenant when signed in, returns `{success: true, persisted: false, warning: "Demo mode -- sign in to persist..."}` for anonymous so the modal stops showing a misleading error.
+  - `GET /api/collector-config` now tenant-aware: signed-in users get their saved copy, anonymous gets the canned demo template.
+- **Frontend** (`frontend/public/dashboard.html`):
+  - `saveCollectorCfg` / `saveEquipTypes` / `loadCollectorCfg` now include `credentials: 'include'` and surface the polite `persisted:false` warning instead of "Error: Unknown".
+  - Banner text differentiates `Saved.` (signed-in) from `Demo mode (anonymous) -- sign in to persist...` (anonymous), styled emerald (success) instead of red.
+
+### Verification (live)
+- Anonymous: `POST /api/collector-config` → 200 `{success: true, persisted: false, warning: ...}`.  Modal banner: emerald "Demo mode (anonymous) -- sign in to persist collector configuration."
+- Signed-in (Bearer): `POST /api/collector-config {interval:7, ahu_groups:{AHU-X:...}}` → 200 `{success: true, persisted: true, tenant_id: ten_...}`.  Subsequent GET returns the same payload (round-trip confirmed in Mongo `tenant_collector_config`).
+- Regression: 94/94 backend tests still pass.
+
+### Files changed
+- `backend/tenants.py` — +30 lines (collection + 2 helpers).
+- `backend/server.py` — +30 lines (POST endpoint, tenant-aware GET).
+- `frontend/public/dashboard.html` — +20 lines (credentials, friendlier banner).
+
 ## V2.0 Persistence UX — Sign-in Affordance on Static Pages (2026-02-19)
 **Brief**: The user reported that "image failed to save to the server" + "the same config has to be done — setup is not persistent" on `equipment_mapper.html`.  Root cause: the user was anonymous (never signed in) and the static legacy HTML pages had ZERO sign-in affordance — they only saw the backend's anonymous-mode warning, not a way to actually sign in.  Persistence works correctly once the session cookie is present (verified end-to-end below); the UX gap was the discoverability of sign-in from inside the legacy SPAs.
 

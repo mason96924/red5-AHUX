@@ -78,6 +78,8 @@ from tenants import (  # noqa: E402
     save_tenant_asset,
     read_tenant_asset,
     list_tenant_assets,
+    read_collector_config,
+    write_collector_config,
     WeatherLocationUpdate,
 )
 import base64  # noqa: E402
@@ -291,8 +293,35 @@ async def equipment_types(tenant: Optional[dict] = Depends(current_tenant_option
 
 
 @app.get("/api/collector-config")
-async def collector_config() -> Any:
+async def collector_config(tenant: Optional[dict] = Depends(current_tenant_optional)) -> Any:
+    """Signed-in users get THEIR saved collector config; anonymous gets the
+    canned demo template."""
+    if tenant:
+        saved = await read_collector_config(tenant)
+        if saved:
+            return saved
     return _load_json("collector_config.json")
+
+
+@app.post("/api/collector-config")
+async def save_collector_config(payload: dict,
+                                tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Dashboard COLLECTOR modal posts the whole cfg JSON here.  We persist
+    per-tenant when signed in.  Anonymous callers get success:true with a
+    `persisted:false` flag so the modal does not show a misleading error --
+    the live dashboard still works in demo mode regardless."""
+    if not tenant:
+        return {
+            "success": True,
+            "persisted": False,
+            "warning": "Demo mode (anonymous) -- sign in to persist collector configuration.",
+        }
+    res = await write_collector_config(tenant, payload)
+    return {
+        "success": True,
+        "persisted": True,
+        "tenant_id": res["tenant_id"],
+    }
 
 
 @app.get("/api/services")

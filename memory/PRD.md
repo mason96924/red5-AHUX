@@ -1,5 +1,21 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Bugfix — "Background updated in preview, but save failed: undefined" (2026-02-19)
+**Brief**: When uploading a floor-plan background image in the equipment mapper, the user got `save failed: undefined`.  Root cause: the mapper POSTs to `/api/save-floor-plan` which did not exist on the V2.0 backend → 404 → response body `{detail:"Not Found"}` → frontend read `data.error` (undefined) and printed it literally.
+
+### Fix
+- `backend/server.py`: added `@app.post("/api/save-floor-plan")` as an additional route on the existing `save_image` handler (single shared decorator stack).  Floor-plan PNGs now land in the same `tenant_assets` collection as every other graphic.
+- `frontend/public/equipment_mapper.html`: both `/api/save-floor-plan` POSTs (new-floor upload + replace-background) now include `credentials:'include'` and the error toast fall-through reads `data.error || data.warning || 'Unknown error'` so a malformed response no longer surfaces as "undefined".
+
+### Verification
+- Anonymous POST `/api/save-floor-plan` → `{success:false, error:"Sign in to save asset images..."}` (was 404).
+- Signed-in POST → `{success:true, relative_path:"graphics/floor_plans/floor_plan_01.jpg", tenant_id:"..."}`, persisted to Mongo.
+- 94/94 backend tests still pass.
+
+### Files changed
+- `backend/server.py` — 1 line (additional route decorator on `save_image`).
+- `frontend/public/equipment_mapper.html` — 2 fetch blocks (credentials + improved error toast).
+
 ## V2.0 — LandingPage dynamic stats + map_config persistence (2026-02-19)
 
 ### Issue 1 — LandingPage hard-coded "Seattle 2020 / 3 AHUs"

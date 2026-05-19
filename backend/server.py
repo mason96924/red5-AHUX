@@ -872,10 +872,16 @@ async def list_files(path: str = Query(""),
 
 
 @app.post("/api/save-image")
+@app.post("/api/save-floor-plan")
 async def save_image(payload: dict,
                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """Mapper POSTs {deployment_path, filename, image_data} where image_data
-    is a data-URL (data:image/png;base64,...).  Anonymous = preview-only no-op."""
+    is a data-URL (data:image/png;base64,...).  Anonymous = preview-only no-op.
+
+    The `/api/save-floor-plan` alias exists because the V1.9 mapper's
+    floor-plan background-upload flow POSTs to that legacy URL; both
+    routes share the same handler so floor-plan PNGs land in the same
+    `tenant_assets` collection as every other graphic."""
     filename = payload.get("filename") or ""
     image_data = payload.get("image_data") or ""
     if not filename or not image_data:

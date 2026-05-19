@@ -1785,6 +1785,7 @@
                                 const apiUrl = window.API_BASE_URL || '';
                                 const response = await fetch(`${apiUrl}/api/save-floor-plan`, {
                                     method: 'POST',
+                                    credentials: 'include',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ filename: `graphics/floor_plans/${fileName}`, image_data: imageDataURL })
                                 });
@@ -1792,7 +1793,7 @@
                                 if (data.success) {
                                     alert(`Floor plan added.\n\nImage saved to controller: /root/data/${data.relative_path || fileName}`);
                                 } else {
-                                    alert(`Floor plan added to preview.\n\nSave to controller failed: ${data.error}`);
+                                    alert(`Floor plan added to preview.\n\nSave to controller failed: ${data.error || data.warning || 'Unknown error'}`);
                                 }
                             } catch (err) {
                                 alert(`Floor plan added to preview.\n\nCould not reach controller: ${err.message}`);
@@ -1848,6 +1849,7 @@
                                 const apiUrl = window.API_BASE_URL || '';
                                 const response = await fetch(`${apiUrl}/api/save-floor-plan`, {
                                     method: 'POST',
+                                    credentials: 'include',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ filename: `graphics/floor_plans/${fileName}`, image_data: imageDataURL })
                                 });
@@ -1855,7 +1857,7 @@
                                 if (data.success) {
                                     alert(`Background updated for "${currentFloorName}".\n\nImage saved to controller: /root/data/${data.relative_path || fileName}`);
                                 } else {
-                                    alert(`Background updated in preview, but save failed: ${data.error}`);
+                                    alert(`Background updated in preview, but save failed: ${data.error || data.warning || 'Unknown error'}`);
                                 }
                             } catch (err) {
                                 alert(`Background updated in preview, could not reach controller: ${err.message}`);

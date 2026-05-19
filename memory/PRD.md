@@ -2848,3 +2848,50 @@ to pick up the new JS.  No backend / controller restart needed.
   same line, so the operator sees their pre-clamp baseline next to the
   new constraint immediately.
 
+
+## Operator tool - Clone-bundle dry-run preview (2026-02-13)
+**Brief**: Added a standalone CLI that lists exactly what a clone-download
+(`/api/download-bundle`) would pack from the controller before the operator
+generates the bundle.  Useful for eyeballing the manifest after major
+configuration edits, and for verifying the per-mode include/exclude rules
+match `app.py` exactly.
+
+### Usage
+```bash
+# FULL mode (default) -- everything in /root/data + /root/scripts
+python3 tests/dryrun_clone_bundle.py
+
+# REPLICATE mode -- minus per-controller runtime state
+python3 tests/dryrun_clone_bundle.py --mode replicate
+
+# Self-test (synthetic fixtures + app.py source-sync)
+python3 tests/dryrun_clone_bundle.py --self-test
+
+# Custom roots (useful from a dev box pointed at a checked-out repo)
+python3 tests/dryrun_clone_bundle.py --data-root /app/archive/Red5-Studio-V1.9
+```
+
+### Output
+- Sorted INCLUDED list with per-file size.
+- Sorted EXCLUDED list (only populated in `replicate` mode) with reason.
+- Totals row + on-disk byte size.
+
+### Lock-step guarantee
+The dry-run duplicates the exclusion rules from `app.py download_bundle()`
+to stay 100% stdlib (operator can run it on the controller).  The
+`--self-test` mode greps `app.py` source and asserts every entry in
+`REPLICATE_EXCLUDE_BASENAMES` is present in the live `app.py`, the
+`weather_<lat>_<lon>_<year>.json` carve-out is wired, both walk loops
+exist, and the dotfile / `*.tmp` skip mirrors.  CI catches drift.
+
+### Files added
+- `tests/dryrun_clone_bundle.py` -- CLI + self-test (30 assertions).
+
+### Findings on first run against this repo (full mode)
+1. `__pycache__/*.pyc` files would ship in a bundle.  Not blocked by any
+   rule today; flagged for a future tiny patch (1-line skip) since they
+   regenerate on import.
+2. `replicate` mode against this fixture excluded exactly 2 files
+   (`band_guide.csv` + Seattle weather cache) -- behaviour matches
+   `app.py` intent.
+

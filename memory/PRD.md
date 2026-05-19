@@ -2443,3 +2443,86 @@ Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
    restart Flask.  Fix that, refresh, and the chip should turn green.
 4. Amber `\u25B2 WARN` means a plug-in loaded but with SKIPPED/WARNING
    state.  Click for details.
+
+## 2026-02-11 — Sidebar: 3-mode pop-out (docked / floating / cross-window)
+**Files:**
+- `dashboard.html` (sidebar IIFE expanded to 3 render branches, new WIN button,
+  new state + callback, beforeunload cleanup, header controls wrapped in a
+  flex-wrap container so POP + WIN fit cleanly)
+- `tests/test_dashboard_sidebar_popout.js` (rewritten, 35 assertions covering
+  all 3 modes + regressions)
+
+### Operator ask
+> dashboard left-sidebar, make it behave like AHU/VAV graphics modal pop-out:
+> (1) pop out from the host page and draggable,
+> (2) draggable outside the page so it can be displayed on an extended display.
+> When the host page closes, the pop-out also closes.
+
+### Architecture - mutually exclusive 3-mode render
+| Mode          | Trigger                       | Render                                            | Mouse events                       |
+|---------------|-------------------------------|---------------------------------------------------|------------------------------------|
+| Docked        | default                       | original in-flow column                           | parent window                      |
+| Floating      | header POP button             | absolutely-positioned in-page draggable shell     | parent window (same document)      |
+| Cross-window  | header WIN button (or float to-window) | ReactDOM.createPortal into red5OpenPopupWindow target | popup window's own document |
+
+- **In-page floating** keeps every existing drag handler working unchanged
+  (psychart temp slider etc.) because all listeners stay on the parent window.
+- **Cross-window** uses the SAME `red5OpenPopupWindow` helper the AHU/VAV/
+  Floor-Plan modals already use, so the operator can drag the popup window
+  to an extended display.
+- Opening WIN while floating auto-closes the floating shell (mutually exclusive
+  via `setSidebarFloating(false)` inside `popOutSidebarToWindow`).  Closing the
+  popup window snaps the sidebar back to the docked column automatically
+  (a 400ms setInterval watches `win.closed`).
+- A docked placeholder ("Sidebar on extended display + Bring Back button")
+  renders where the sidebar used to be so the operator knows where it went
+  and can fetch it back without finding the popup window first.
+- `beforeunload` handler on the parent closes the popup so an orphaned
+  window never lingers.
+- The floating shell also offers a "To Window" escalation button -- one click
+  to send the floating panel to a separate window without losing position state.
+
+### UI - header controls wrapped in a flex-wrap container
+The chip + POP + WIN didn't all fit on one line at the default 320 px sidebar
+width.  Wrapping the right-side controls (theme + chip + POP + WIN) in a
+`flex items-center gap-1 flex-wrap justify-end` div lets them wrap onto a
+second line cleanly.  Visible in the smoke screenshot: row 1 = theme + chip,
+row 2 = POP + WIN.
+
+### Verification (`tests/test_dashboard_sidebar_popout.js` -- 35/35 PASS)
+- 13 floating-mode guards (state, drag handlers, persistence, shell testids,
+  "to window" escalation button, no-drag attribute on attach).
+- 13 cross-window-mode guards (state, callback, red5OpenPopupWindow usage,
+  setInterval watcher, mutual exclusion with floating, beforeunload cleanup,
+  WIN button testid + gating, placeholder + Bring Back testids, createPortal,
+  data-testid swap).
+- 4 POP-button gates (rendered only when neither popped, opens floating mode,
+  regression: no duplicate ATTACH label).
+- 4 IIFE structure asserts (isPoppedToWin, isPoppedFloat, returns sidebarTree
+  when docked, resize handle gated behind !isPopped).
+- JSX parses cleanly via @babel/parser.
+
+Playwright smoke confirmed:
+- Both POP + WIN buttons visible and clickable in docked state.
+- POP -> floating shell -> "To Window" escalation works.
+- Closing the popup window snaps the sidebar back.
+
+### Deploy
+Single-file Repair-Mode upload of `dashboard.html`.  Hard-refresh after.
+
+### Verify on controller
+1. Open the dashboard.  Look at the top-right of the sidebar: two buttons
+   should be visible -- `\u2197 POP` and `\u29C9 WIN`.
+2. Click POP -> floating shell appears, drag it around with the title bar.
+   Inside the title bar there is now a "To Window" button for escalation.
+   Click Attach to dock it back.
+3. Click WIN (or the in-shell "To Window" button) -> a separate browser
+   window opens with the sidebar.  Drag it to an extended display.  Click
+   any AHU in the popup -- the chart in the main window still updates
+   (same React component instance).
+4. Close the popup window -> sidebar snaps back to the docked column.
+5. While the popup window is open, look at the docked column -- it now
+   shows a small "Sidebar on extended display + Bring Back" placeholder
+   so you can fetch it back without finding the window first.
+6. Close the main dashboard tab -> the popup window auto-closes (no
+   orphaned windows).

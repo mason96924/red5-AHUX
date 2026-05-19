@@ -255,6 +255,52 @@
                 window.addEventListener('mouseup', onUp);
             }, [sidebarFloatSize]);
 
+            // ---- Left sidebar cross-window pop-out (extended-display) ----
+            // Mirrors the AHU / VAV / Floor-Plan modal pattern in this file:
+            // `red5OpenPopupWindow` spawns a fresh OS-level browser window with
+            // the same Tailwind + stylesheets, then we portal the sidebar JSX
+            // into it via ReactDOM.createPortal so React state stays wired to
+            // the original component instance.  In-page floating mode and
+            // window pop-out mode are MUTUALLY EXCLUSIVE -- opening one closes
+            // the other so the operator never has two copies of the sidebar
+            // fighting for the same state.  The window auto-closes when the
+            // parent tab unloads (registered in a useEffect below).
+            const [sidebarPopoutWin,  setSidebarPopoutWin]  = useState(null);
+            const [sidebarPopoutHost, setSidebarPopoutHost] = useState(null);
+            const popOutSidebarToWindow = useCallback(() => {
+                if (sidebarPopoutWin && !sidebarPopoutWin.closed) { sidebarPopoutWin.focus(); return; }
+                const result = red5OpenPopupWindow('sidebar', 'Red5 Sidebar (popped out)', 420, 950);
+                if (!result) {
+                    alert('Popup window blocked. Please allow popups for this site, then click the WIN button again.');
+                    return;
+                }
+                // Mutually exclusive with in-page floating mode.
+                setSidebarFloating(false);
+                setSidebarPopoutWin(result.win);
+                setSidebarPopoutHost(result.host);
+                const watcher = setInterval(() => {
+                    if (result.win.closed) {
+                        clearInterval(watcher);
+                        setSidebarPopoutWin(null);
+                        setSidebarPopoutHost(null);
+                    }
+                }, 400);
+            }, [sidebarPopoutWin]);
+
+            // Close orphan sidebar popup when the parent tab navigates away.
+            // (AHU/VAV/Floor-Plan popups have their own equivalent useEffect;
+            // we register a dedicated one for the sidebar so it stays
+            // independent of the modal lifecycle.)
+            useEffect(() => {
+                const onUnload = () => {
+                    if (sidebarPopoutWin && !sidebarPopoutWin.closed) {
+                        try { sidebarPopoutWin.close(); } catch (e) {}
+                    }
+                };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, [sidebarPopoutWin]);
+
             // === Stale-cache detector ===
             // Flask injects window.__BUILD_MTIME__ at HTTP response time. We compare it
             // against the live /api/version to detect when this browser is running a
@@ -1934,28 +1980,26 @@
                     }
                 }} onMouseUp={() => {setIsDraggingIndicator(false); setIsCardDragging(false); setIsVavDragging(false); setIsVavModalDragging(false); setIsAhuModalDragging(false); setIsFloorPlanDragging(false);}}>
                     
-                    {/* LEFT SIDEBAR — resizable + floating-mode toggle.
-                        When `sidebarFloating` is true the same sidebar JSX is
-                        rendered as an absolutely-positioned, draggable + resizable
-                        panel inside the same document (NOT a separate window).
-                        This keeps all mouse events in one document so the
-                        psychart temperature slider continues to work while the
-                        sidebar is floated (window-level mousemove listeners
-                        used by the slider's drag-handler need the same window
-                        that fired the mousedown). */}
+                    {/* LEFT SIDEBAR — three render modes:
+                          docked      : original in-flow column.
+                          floating    : in-page draggable+resizable shell
+                                        (same document, mouse events stable).
+                          cross-window: portaled into a separate OS-level
+                                        browser window for extended displays
+                                        (mirrors AHU/VAV modal pattern). */}
                     {(() => {
-                        const isPopped = sidebarFloating;
+                        const isPoppedToWin   = !!sidebarPopoutWin;
+                        const isPoppedFloat   = sidebarFloating && !isPoppedToWin;
+                        const isPopped        = isPoppedFloat || isPoppedToWin;
                         const sidebarTree = (
                     <div
                         className={`${ui.sidebar} ${isPopped ? '' : 'border-r ' + ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
                         style={isPopped ? {width:'100%',height:'100%',minHeight:0} : { width: `${sidebarWidth}px` }}
-                        data-testid={isPopped ? "left-sidebar-popped" : "left-sidebar"}
+                        data-testid={isPoppedToWin ? "left-sidebar-popped-window" : (isPoppedFloat ? "left-sidebar-popped" : "left-sidebar")}
                     >
-                        {/* Drag handle on the right edge to resize the sidebar.
-                            Min width = 250px (tested: AHU title + theme toggle keep
-                            a small gap). Max width = 320px (original baseline).
-                            Hidden when floating -- the floating shell has its
-                            own corner resize handle. */}
+                        {/* Inline resize handle only used when docked.  Float
+                            mode has the floating-shell corner grip; cross-window
+                            mode has the OS window border. */}
                         {!isPopped && (
                         <div
                             data-testid="sidebar-resize-handle"
@@ -2006,6 +2050,7 @@
                                         })()}
                                     </div>
                                 </div>
+                                <div className="flex items-center gap-1 flex-wrap justify-end">
                                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
                                 {/* Plugin-health chip - polls /api/services once on
                                     mount.  Surfaces missing or failed plugins at a
@@ -2067,7 +2112,7 @@
                                     ATTACH button, so rendering this header copy
                                     would produce two identical buttons stacked
                                     vertically (operator-reported bug). */}
-                                {!sidebarFloating && (
+                                {!sidebarFloating && !sidebarPopoutWin && (
                                 <button
                                     onClick={() => setSidebarFloating(true)}
                                     className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700'}`}
@@ -2077,6 +2122,24 @@
                                     {'\u2197 POP'}
                                 </button>
                                 )}
+                                {/* Cross-window pop-out - opens a separate
+                                    browser window the operator can drag to an
+                                    extended display.  Mirrors the AHU / VAV /
+                                    Floor-Plan modal pattern.  Hidden when the
+                                    sidebar is already in a popout window
+                                    (operator brings it back via the "Bring
+                                    Back" button in the docked placeholder). */}
+                                {!sidebarPopoutWin && (
+                                <button
+                                    onClick={popOutSidebarToWindow}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-violet-500 hover:text-violet-700'}`}
+                                    title="Pop the sidebar out to a separate browser window (extended display)"
+                                    data-testid="popout-sidebar-window-btn"
+                                >
+                                    {'\u29C9 WIN'}
+                                </button>
+                                )}
+                                </div>
                             </div>
                             <div className="flex items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}
@@ -2427,11 +2490,39 @@
                         })}</div>
                     </div>
                         );
-                        if (isPopped) {
-                            // Floating in-page shell: fixed position, drag handle
-                            // at top, corner resize handle at bottom-right.  The
-                            // sidebar content is rendered AS-IS inside it so the
-                            // same React component instance owns all state.
+                        if (isPoppedToWin && sidebarPopoutHost) {
+                            // Cross-window mode: portal the same React tree into
+                            // the popup window's host div + render a small
+                            // "Sidebar is on extended display" placeholder in the
+                            // docked column so the operator knows where it went.
+                            const placeholder = (
+                                <div
+                                    className={`${ui.sidebar} border-r ${ui.border} flex flex-col items-center justify-center gap-3 px-3 py-6 z-20 shadow-2xl flex-shrink-0`}
+                                    style={{ width: `${sidebarWidth}px` }}
+                                    data-testid="sidebar-window-placeholder"
+                                >
+                                    <div className={`text-[10px] font-black uppercase tracking-widest text-center ${theme==='dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                                        {'\u29C9 Sidebar on extended display'}
+                                    </div>
+                                    <button
+                                        data-testid="sidebar-window-attach"
+                                        onClick={() => { try { sidebarPopoutWin.close(); } catch (e) {} }}
+                                        className="px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600 transition-all"
+                                        title="Close the extended-display window and bring the sidebar back here"
+                                    >{'\u21A9 Bring Back'}</button>
+                                </div>
+                            );
+                            return (
+                                <React.Fragment>
+                                    {placeholder}
+                                    {ReactDOM.createPortal(sidebarTree, sidebarPopoutHost)}
+                                </React.Fragment>
+                            );
+                        }
+                        if (isPoppedFloat) {
+                            // In-page floating shell.  Same document, so mouse
+                            // events for every existing drag-handler (including
+                            // the psychart temp slider) work unchanged.
                             return (
                                 <div
                                     className={`fixed z-[80] rounded-xl shadow-2xl overflow-hidden ${theme==='dark' ? 'border border-indigo-500/40 bg-slate-900' : 'border border-slate-300 bg-white'}`}
@@ -2443,7 +2534,6 @@
                                     }}
                                     data-testid="sidebar-floating-shell"
                                 >
-                                    {/* Title bar: drag-to-move + Attach button. */}
                                     <div
                                         onMouseDown={onSidebarTitleMouseDown}
                                         className={`cursor-grab active:cursor-grabbing flex items-center justify-between px-3 py-1.5 border-b ${theme==='dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}
@@ -2452,19 +2542,28 @@
                                         <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>
                                             {'\u2725 Sidebar \u2014 drag to move'}
                                         </span>
-                                        <button
-                                            data-no-drag
-                                            data-testid="sidebar-floating-attach"
-                                            onClick={() => setSidebarFloating(false)}
-                                            className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600 transition-all"
-                                            title="Re-attach sidebar to the docked position"
-                                        >{'\u21A9 Attach'}</button>
+                                        <div className="flex items-center gap-1">
+                                            {/* Escalation: send the floating panel out to a separate window
+                                                without losing position state.  Float -> window. */}
+                                            <button
+                                                data-no-drag
+                                                data-testid="sidebar-floating-to-window"
+                                                onClick={popOutSidebarToWindow}
+                                                className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border transition-all ${theme==='dark' ? 'bg-slate-700 border-slate-500 text-slate-200 hover:bg-cyan-700 hover:border-cyan-400' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-cyan-100 hover:border-cyan-400'}`}
+                                                title="Send the sidebar to a separate browser window (extended display)"
+                                            >{'\u29C9 To Window'}</button>
+                                            <button
+                                                data-no-drag
+                                                data-testid="sidebar-floating-attach"
+                                                onClick={() => setSidebarFloating(false)}
+                                                className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600 transition-all"
+                                                title="Re-attach sidebar to the docked position"
+                                            >{'\u21A9 Attach'}</button>
+                                        </div>
                                     </div>
-                                    {/* Scrollable body that holds the original sidebar JSX. */}
                                     <div className="flex flex-col" style={{ height: 'calc(100% - 30px)' }}>
                                         {sidebarTree}
                                     </div>
-                                    {/* Bottom-right corner resize grip. */}
                                     <div
                                         onMouseDown={onSidebarResizeMouseDown}
                                         title="Drag to resize"

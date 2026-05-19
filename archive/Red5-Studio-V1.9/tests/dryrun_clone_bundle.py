@@ -58,6 +58,19 @@ REPLICATE_EXCLUDE_BASENAMES = {
     'band_guide.csv',
 }
 
+# Directory-level skips applied to BOTH modes.  These trees are dev-only
+# and must never reach a controller (operator-tooling tests, design
+# mockups, Python bytecode cache, diagnostic scratch).
+EXCLUDE_DIRS = {'tests', 'mockups', '__pycache__', '_diagnostic'}
+
+
+def _path_in_excluded_dir(rel_path: str) -> bool:
+    parts = rel_path.replace('\\', '/').split('/')
+    for p in parts:
+        if p in EXCLUDE_DIRS:
+            return True
+    return False
+
 
 def _replicate_should_skip(arc_name: str):
     """Return (skip: bool, reason: str).  Matches app.py logic exactly."""
@@ -72,7 +85,12 @@ def _replicate_should_skip(arc_name: str):
 
 
 def _walk_root(root_dir: str, prefix: str, mode: str):
-    """Yield (arc_name, full_path, included: bool, reason: str)."""
+    """Yield (arc_name, full_path, included: bool, reason: str).
+
+    Unlike app.py (which prunes dirnames for perf), the dry-run walks
+    into excluded subtrees and labels each file -- the operator can see
+    exactly what is being filtered.
+    """
     if not os.path.isdir(root_dir):
         return
     for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -87,6 +105,9 @@ def _walk_root(root_dir: str, prefix: str, mode: str):
             full_path = os.path.join(dirpath, fname)
             rel = os.path.relpath(full_path, root_dir)
             arc_name = (prefix + rel) if prefix else rel
+            if _path_in_excluded_dir(arc_name):
+                yield arc_name, full_path, False, 'dev-only directory (tests/mockups/__pycache__/_diagnostic)'
+                continue
             if mode == 'replicate':
                 skip, reason = _replicate_should_skip(arc_name)
                 if skip:
@@ -187,6 +208,16 @@ def _self_test():
         w(os.path.join(data, '.hidden'))
         w(os.path.join(data, 'configs', 'something.tmp'))
 
+        # Dev-only trees that should ALWAYS be skipped (both modes)
+        os.makedirs(os.path.join(data, 'tests'), exist_ok=True)
+        os.makedirs(os.path.join(data, 'mockups'), exist_ok=True)
+        os.makedirs(os.path.join(data, '__pycache__'), exist_ok=True)
+        os.makedirs(os.path.join(data, '_diagnostic'), exist_ok=True)
+        w(os.path.join(data, 'tests', 'test_foo.py'))
+        w(os.path.join(data, 'mockups', 'sketch.html'))
+        w(os.path.join(data, '__pycache__', 'app.cpython-311.pyc'))
+        w(os.path.join(data, '_diagnostic', 'scratch.txt'))
+
         # Files that should be SKIPPED in replicate mode only
         w(os.path.join(data, 'telemetry.json'))
         w(os.path.join(data, 'collector_log.json'))
@@ -216,9 +247,17 @@ def _self_test():
               'telemetry.json' in inc_full_names)
         check('full: weather cache INCLUDED in full mode',
               'configs/weather_47.60_-122.30_2020.json' in inc_full_names)
-        check('full: exclude list empty in full mode',
-              len(exc_full) == 0,
+        check('full: exclude list contains ONLY the 4 dev-only trees in full mode',
+              len(exc_full) == 4,
               'got: %s' % sorted(exc_full_names))
+        check('full: tests/ subtree excluded in full mode',
+              'tests/test_foo.py' in exc_full_names)
+        check('full: mockups/ subtree excluded in full mode',
+              'mockups/sketch.html' in exc_full_names)
+        check('full: __pycache__/ subtree excluded in full mode',
+              '__pycache__/app.cpython-311.pyc' in exc_full_names)
+        check('full: _diagnostic/ subtree excluded in full mode',
+              '_diagnostic/scratch.txt' in exc_full_names)
 
         # ---- REPLICATE mode ----
         inc_rep, exc_rep, totals_rep = plan('replicate', data, scripts)
@@ -250,9 +289,14 @@ def _self_test():
               '.hidden' not in inc_rep_names and
               '.hidden' not in exc_rep_names and
               'configs/something.tmp' not in inc_rep_names)
-        check('replicate: replicate-mode included count = full-included minus 7 exclude rows',
+        check('replicate: replicate-mode included matches full-included',
               totals_rep['included'] == totals_full['included'] - 7,
-              'full=%d  replicate=%d' % (totals_full['included'], totals_rep['included']))
+              'full=%d  replicate=%d  expected_delta=7 runtime files' % (totals_full['included'], totals_rep['included']))
+        check('replicate: dev-only trees also excluded (inherited from full mode)',
+              'tests/test_foo.py' in exc_rep_names
+              and 'mockups/sketch.html' in exc_rep_names
+              and '__pycache__/app.cpython-311.pyc' in exc_rep_names
+              and '_diagnostic/scratch.txt' in exc_rep_names)
 
     # ---- 2. Verify the rules in this script MATCH app.py source ----
     if os.path.exists(APP_PY):
@@ -289,6 +333,20 @@ def _self_test():
         # scripts/ arc-name prefix
         check('app-py-sync: scripts/ arc-name prefix used',
               "'scripts/'" in src)
+        # EXCLUDE_DIRS set + helper + os.walk pruning must be present in app.py
+        m_ed = re.search(r"EXCLUDE_DIRS\s*=\s*\{(.*?)\}", src, re.DOTALL)
+        check('app-py-sync: EXCLUDE_DIRS set declared in app.py', m_ed is not None)
+        if m_ed:
+            ed_body = m_ed.group(1)
+            for d in EXCLUDE_DIRS:
+                pat = "'" + d + "'"
+                check('app-py-sync: EXCLUDE_DIRS contains %s' % d,
+                      pat in ed_body,
+                      'missing in app.py')
+        check('app-py-sync: _path_in_excluded_dir helper present',
+              '_path_in_excluded_dir' in src)
+        check('app-py-sync: os.walk dirnames pruned via EXCLUDE_DIRS',
+              re.search(r"dirnames\[:\]\s*=\s*\[d for d in dirnames if d not in EXCLUDE_DIRS\]", src) is not None)
     else:
         check('app-py-sync: app.py reachable for source sync check',
               False, 'expected at ' + APP_PY)

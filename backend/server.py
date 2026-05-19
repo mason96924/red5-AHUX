@@ -425,17 +425,31 @@ async def disk_status() -> dict:
 @app.post("/api/save-equipment-schema")
 async def save_equipment_schema(payload: dict,
                                 tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    # The V1.9 equipment_mapper.html sends the schema wrapped:
+    #     { deployment_path: "/root", equipment_schema: { ahu_types, vav_types } }
+    # while the Phase 2b backend originally expected the schema at the top
+    # level.  Unwrap if present, fall back to direct payload for clients
+    # (tests, integration scripts) that POST the schema flat.
+    schema = payload.get("equipment_schema") if isinstance(payload.get("equipment_schema"), dict) else payload
     if not tenant:
+        # Anonymous demo: return the V1.9-shaped failure so the mapper drops
+        # into its built-in browser-download fallback gracefully.
         return {
             "status": "ok",
-            "saved_keys": list(payload.keys()),
+            "success": False,
+            "saved_keys": list(schema.keys()),
             "persisted": False,
-            "warning": "Demo mode -- sign in to persist equipment_types edits.",
+            "warning": "Demo mode (anonymous) -- sign in to save to your virtual controller.",
         }
-    res = await write_equipment_types(tenant, payload)
+    res = await write_equipment_types(tenant, schema)
     return {
         "status": "ok",
-        "saved_keys": list(payload.keys()),
+        "success": True,
+        # The V1.9 mapper alerts the operator with `data.file`; we surface
+        # a virtual-controller path so the dialog reads sensibly without
+        # claiming a filesystem write that never happened.
+        "file": "virtual-controller://%s/equipment_types" % res["tenant_id"],
+        "saved_keys": list(schema.keys()),
         "persisted": True,
         "tenant_id": res["tenant_id"],
         "updated_at": res["updated_at"],

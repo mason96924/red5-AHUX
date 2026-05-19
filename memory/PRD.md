@@ -3113,3 +3113,61 @@ Beijing/Seattle weather list and the V1.9 equipment_types.
 - Phase 3: edge agent `red5-edge.py` that POSTs live BACnet to /api/edge/...
 - Phase 4: Stripe billing + email alerts + audit log + time-series archive.
 
+
+## V2.0 Phase 2 Piece B - Hotfix: "Save to Controller" Errored on Hosted Demo (2026-02-13)
+**User report**: "save to controller reports an error.  Come to think of
+it, this is a hosted web. There is no controller. Can this be a virtual
+controller?"  Operator pointed at exactly the right concept -- the tenant
+IS the virtual controller in V2.0.  Three bugs to fix at once:
+
+### Bugs found
+1. **Envelope-mismatch storage bug**: The V1.9 equipment_mapper.html
+   posts `{deployment_path, equipment_schema: {ahu_types, vav_types}}` but
+   Phase 2b's `save_equipment_schema` was writing the WHOLE envelope into
+   the tenant collection (so subsequent reads would return the wrapper
+   keys instead of the schema).  Critical data-integrity bug.
+2. **Response-shape mismatch**: V1.9 mapper expects `{success: true,
+   file: "..."}` to show the success dialog; backend was returning
+   `{status: "ok", persisted: true}` which dropped into the
+   `data.success` falsy branch -> "Save failed" error toast.
+3. **Misleading copy**: "Save to Controller" label on a hosted demo is
+   confusing -- there is no controller in V2.0.
+
+### Fix
+- `server.py save_equipment_schema`:
+    - Unwrap `payload.get("equipment_schema")` if present (falls back to
+      the flat shape for testing scripts / future API clients).
+    - Return `success: true` + `file: "virtual-controller://<tenant_id>/equipment_types"`
+      so the V1.9 mapper shows a sensible Save dialog.
+    - Anonymous case returns `success: false` + a friendly warning so
+      the mapper drops into its browser-download fallback cleanly.
+- `equipment_mapper.html`:
+    - Handle `data.warning` (anonymous save path) with a friendly message
+      instead of the alarming "Error saving to server".
+- `i18n.js`:
+    - "Save to Controller" -> "Save to Virtual Controller" in all 5
+      languages (en/zh-CN/zh-TW/ja/ko).
+
+### Tests
+- `tests/test_v2_phase2b_tenants.py` -- expanded from 18 to 22 assertions:
+    + POST save with FLAT payload still persists (regression guard).
+    + POST save with V1.9 WRAPPED envelope persists correctly (NEW).
+    + Response carries `success: true` + virtual-controller `file` URL (NEW).
+    + Subsequent GET does NOT leak envelope keys into the stored schema (NEW).
+    + Anonymous wrapped save -> persisted:false + warning, no crash (NEW).
+- All 59 backend assertions across Phase 1/2a/2b green.
+
+### Files changed
+- `/app/backend/server.py`             (save_equipment_schema rewrite)
+- `/app/frontend/public/equipment_mapper.html`  (data.warning branch)
+- `/app/frontend/public/js/i18n.js`    (label translations)
+- `/app/backend/tests/test_v2_phase2b_tenants.py`  (+4 assertions)
+
+### What this clarifies in the V2.0 product story
+The tenant **is** the virtual controller.  Operator-edited equipment_types,
+band-clamp settings, and weather lists live in the tenant's MongoDB
+collections.  No physical Delta Controls box involved.  Phase 3 will add
+an edge agent that runs on a real controller and POSTs telemetry up to
+the SAME tenant, so customers can "graduate" from the virtual controller
+to a hardware-backed one without re-entering config.
+

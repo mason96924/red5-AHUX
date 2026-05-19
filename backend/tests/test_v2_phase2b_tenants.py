@@ -133,14 +133,43 @@ modified_eq = {
 }
 s, body = post("/api/save-equipment-schema", modified_eq, token_a)
 saved = json.loads(body)
-check("POST /api/save-equipment-schema (signed in) -> persisted:true",
+check("POST /api/save-equipment-schema flat payload -> persisted:true",
       s == 200 and saved["persisted"] is True and "tenant_id" in saved)
+check("POST /api/save-equipment-schema -> V1.9 response shape (success:true + file)",
+      saved.get("success") is True
+      and saved.get("file", "").startswith("virtual-controller://"))
+
+# V1.9 equipment_mapper sends the schema WRAPPED:
+#     { deployment_path: "/root", equipment_schema: {...} }
+# The Phase 2b backend must unwrap to avoid storing the envelope.
+wrapped = {
+    "deployment_path": "/root",
+    "equipment_schema": {
+        "ahu_types": {"DEMO_TYPE": {"label": "Phase 2b Test Type", "icon": "test"},
+                      "VAV_WRAP_TYPE": {"label": "Wrap unwrap proof"}},
+        "vav_types": {"DEMO_VAV": {"label": "Phase 2b Test VAV"}},
+    },
+}
+s, body = post("/api/save-equipment-schema", wrapped, token_a)
+saved = json.loads(body)
+check("POST /api/save-equipment-schema wrapped envelope -> persisted (V1.9 client shape)",
+      s == 200 and saved["success"] is True and saved["persisted"] is True)
 
 s, body = get("/api/equipment-types", token_a)
 after = json.loads(body)
 check("signed-in read after save -> sees the modified schema",
       s == 200 and "DEMO_TYPE" in after["ahu_types"]
+      and "VAV_WRAP_TYPE" in after["ahu_types"]
       and after["ahu_types"]["DEMO_TYPE"]["label"] == "Phase 2b Test Type")
+check("signed-in read after wrapped save -> envelope keys NOT leaked into schema",
+      "deployment_path" not in after
+      and "equipment_schema" not in after)
+
+# Anonymous wrapped save should also unwrap gracefully and report warning.
+s, body = post("/api/save-equipment-schema", wrapped)
+anon_save = json.loads(body)
+check("anonymous wrapped save -> persisted:false + warning (no crash)",
+      s == 200 and anon_save["persisted"] is False and "warning" in anon_save)
 
 
 # ====== 4. Tenant isolation: user A's edits do not leak into user B ======

@@ -1631,7 +1631,14 @@
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
+                            // V2.0 hosted demo: data.file is "virtual-controller://<tenant_id>/equipment_types".
+                            // V1.9 controller: data.file is "/root/data/configs/equipment_types.json".
                             alert(`Equipment schema saved to:\n\n${data.file}`);
+                        } else if (data.warning) {
+                            // Anonymous V2.0 demo: cleanly fall back to browser download
+                            // with a friendly message -- no scary "error" wording.
+                            alert(data.warning + '\n\nFalling back to browser download...');
+                            downloadToBuffer();
                         } else {
                             throw new Error(data.error || 'Save failed');
                         }

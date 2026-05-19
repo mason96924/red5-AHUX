@@ -3221,3 +3221,82 @@ as a generic "Upload failed" toast.  Separate bug from the schema-save fix.
 - `/app/frontend/public/dashboard.html` (3 URL-builder patches)
 - `/app/backend/tests/test_v2_phase2b_tenants.py` (+5 assertions)
 
+
+## V2.0 Phase 2 Piece B - Hotfix Pair (2026-02-13)
+
+### Bug #1: Process lines incomplete on the psy-chart
+**Symptom**: Operator screenshot showed only ONE point plotted on the
+psychrometric chart instead of the OA / SA / RA triangle, and the AHU
+diagnostic-hub enthalpy pill read "23122.6h" / "4150.5 kJ/kg" -- absurd.
+
+**Root cause**: The V1.9 collector returns `w` in DECIMAL kg/kg form
+(e.g. 0.009).  The dashboard's pill renderer + chart plotting multiply
+by 1000 to display g/kg.  My Phase 1 simulator returned w in g/kg
+directly (e.g. 9.0), so the dashboard plotted points at w*1000 = 9000
+g/kg -- entirely off the visible 0-30 g/kg axis -- and computed enthalpy
+with w=9 plugged into `1.006*T + w*(2501 + 1.86*T)` giving the ~23,000
+nonsense.
+
+**Fix**: `_humidity_ratio()` now returns kg/kg; the rounding bumped from
+3 -> 5 decimals so 0.009 doesn't truncate to 0.009 exactly.  Same fix
+applied to `_enthalpy()` (now takes w_kgkg).
+
+**Regression guard added to `test_v2_phase1_backend.py`**:
+  `/api/data -> w is kg/kg decimal (V1.9 contract, NOT g/kg)`
+  asserts `0 < oa.w < 0.05` so future edits cannot revert the unit.
+
+### Bug #2: Asset image upload not persistent
+**Symptom**: "Asset save image to the server failed" after the previous
+hotfix supposedly fixed it.  Also: image picker (Load from Controller)
+showed an empty dialog.
+
+**Root causes**: Three separate gaps, only the first was fixed last round.
+  - POST /api/save-image -- previously wired (still works).
+  - GET /api/files -- missing entirely.  The mapper's image picker
+    requested it, got the SPA fallback HTML, and rendered an empty list.
+  - selectImageFromController (mapper) built the URL as
+    `${apiUrl}/assets/<path>` (frontend dev-server) instead of the
+    tenant-aware `${apiUrl}/api/assets/<path>` route.
+
+**Fix**:
+  - Added `list_tenant_assets(tenant, prefix)` in tenants.py -- groups
+    filenames by prefix into synthetic directories.
+  - Added GET /api/files in server.py -- returns the V1.9 file-browser
+    response shape ({success, files[]}).  Anonymous returns empty list
+    with a "Sign in to browse" warning.
+  - Patched `selectImageFromController` in equipment_mapper.html to
+    build `/api/assets/<path>` URLs.
+
+**Regression guards added to `test_v2_phase2b_tenants.py`**:
+  - GET /api/files (signed in) lists tenant_assets directory tree.
+  - GET /api/files?path=<dir> drills into the directory.
+  - User B's /api/files is empty (tenant isolation).
+  - Anonymous /api/files returns empty list + sign-in warning.
+
+### Files changed
+- `/app/backend/server.py`              (w unit fix, +GET /api/files)
+- `/app/backend/tenants.py`             (+list_tenant_assets)
+- `/app/frontend/public/equipment_mapper.html`  (selectImageFromController URL)
+- `/app/backend/tests/test_v2_phase1_backend.py`  (+w unit guard)
+- `/app/backend/tests/test_v2_phase2b_tenants.py` (+4 /api/files assertions)
+
+### Test totals
+- Phase 1 backend: 26/26 pass.
+- Phase 2a auth:   12/12 pass.
+- Phase 2b tenants: 31/31 pass.
+- **All 69 backend assertions green.**
+
+### Visual verification
+- Dashboard renders OA/SA/RA triangle correctly; VAV terminal hub
+  populated with 6 zones; Givoni comfort polygons drawn; AHU pills
+  show sensible enthalpy values (~45 kJ/kg, not 23,000).
+
+### Workflow note for operators
+V2.0 mapper save-flow is identical to V1.9:
+  1. Drag image onto an equipment type   -> uploads bytes to tenant_assets
+  2. Click "Save to Virtual Controller" -> writes the schema reference
+
+Both steps are required for a full persistence cycle.  Skipping step 2
+leaves an orphan image in storage and an outdated `base_graphic` field on
+reload (same behaviour as the V1.9 controller).
+

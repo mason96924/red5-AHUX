@@ -2772,7 +2772,11 @@
             const selectImageFromController = (filename) => {
                 const apiUrl = window.API_BASE_URL || '';
                 const fullRelPath = imagePickerPath ? `${imagePickerPath}/${filename}` : filename;
-                const imageURL = `${apiUrl}/assets/${fullRelPath}`;
+                // V2.0 hosted demo: image bytes live in MongoDB and are
+                // served through the /api/assets/ route (which falls back
+                // to the tenant_assets collection).  V1.9 controllers also
+                // accept the /api/assets/ prefix (the route is registered).
+                const imageURL = `${apiUrl}/api/assets/${fullRelPath}`;
                 setShowImagePicker(false);
                 if (imagePickerCallback.current) {
                     imagePickerCallback.current(fullRelPath, imageURL);

@@ -241,6 +241,44 @@ async def read_tenant_asset(tenant: dict, filename: str) -> Optional[dict]:
     )
 
 
+async def list_tenant_assets(tenant: dict, path_prefix: str = "") -> list[dict]:
+    """Browse-style listing for the image-picker modal.
+
+    Returns directory entries (synthetic, derived from filename prefixes)
+    and image files under `path_prefix`.  Matches the V1.9 /api/files
+    response shape: { name, type: 'image'|'directory', size?, full_path? }.
+    """
+    safe_prefix = path_prefix.strip("/").replace("\\", "/")
+    cursor = ten_asset_col.find(
+        {"tenant_id": tenant["tenant_id"]},
+        {"_id": 0, "filename": 1, "size_bytes": 1, "content_type": 1},
+    )
+    all_files = await cursor.to_list(length=10000)
+    dirs: set[str] = set()
+    files: list[dict] = []
+    for d in all_files:
+        fname = d["filename"]
+        # Only consider files that live under the requested prefix.
+        if safe_prefix:
+            if not fname.startswith(safe_prefix + "/"):
+                continue
+            rest = fname[len(safe_prefix) + 1:]
+        else:
+            rest = fname
+        if "/" in rest:
+            dirs.add(rest.split("/", 1)[0])
+        else:
+            files.append({
+                "name": rest,
+                "type": "image",
+                "size": d.get("size_bytes", 0),
+                "full_path": fname,
+            })
+    out = [{"name": d, "type": "directory"} for d in sorted(dirs)]
+    out.extend(sorted(files, key=lambda x: x["name"]))
+    return out
+
+
 class WeatherLocationUpdate(BaseModel):
     active: Optional[dict] = None
     saved:  Optional[list] = None

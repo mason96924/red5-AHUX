@@ -292,6 +292,30 @@ s, body = post("/api/save-image", {"image_data": "data:image/png;base64," + TINY
 check("POST /api/save-image without filename -> success:false (no crash)",
       s == 200 and json.loads(body)["success"] is False)
 
+# /api/files browser listing (signed-in vs anonymous).
+s, body = get("/api/files", token_a)
+files_a = json.loads(body)
+check("GET /api/files (signed in) -> success + lists tenant assets",
+      s == 200 and files_a["success"] is True
+      and any(f["name"] == "ahu_types" and f["type"] == "directory"
+              for f in files_a["files"]))
+
+s, body = get("/api/files?path=ahu_types/TEST_TYPE", token_a)
+files_inner = json.loads(body)
+check("GET /api/files?path=<dir> -> lists images inside the directory",
+      s == 200 and any(f["name"] == "base_graphic.png" and f["type"] == "image"
+                       for f in files_inner["files"]))
+
+s, body = get("/api/files", token_b)
+files_b = json.loads(body)
+check("user B's /api/files is empty (isolated from A's uploads)",
+      s == 200 and files_b["files"] == [])
+
+s, body = get("/api/files")
+files_anon = json.loads(body)
+check("anonymous /api/files -> empty + sign-in warning",
+      s == 200 and files_anon["files"] == [] and "warning" in files_anon)
+
 
 # ====== 8. Anonymous /api/auth/me still 401 (auth unchanged) ==============
 

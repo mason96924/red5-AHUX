@@ -73,6 +73,7 @@ from tenants import (  # noqa: E402
     write_weather_location,
     save_tenant_asset,
     read_tenant_asset,
+    list_tenant_assets,
     WeatherLocationUpdate,
 )
 import base64  # noqa: E402
@@ -117,16 +118,23 @@ _DEMO_START_TS = time.time()
 
 
 def _humidity_ratio(t_c: float, rh: float) -> float:
-    """Humidity ratio w [g/kg] at sea-level pressure (Magnus formula)."""
+    """Humidity ratio w [kg/kg] at sea-level pressure (Magnus formula).
+
+    V1.9 collector / psychrometric.js convention: `w` is the DECIMAL form
+    (kg of water vapour per kg of dry air, e.g. 0.009).  Dashboard pills
+    + animation overlay multiply by 1000 to display g/kg.  Returning the
+    g/kg-direct number breaks the chart (points plot at w~9000 instead of 9)
+    AND the AHU pill enthalpy field (`getH(t, w)` -> ~23,000 instead of ~45).
+    """
     p_ws = 0.6108 * math.exp((17.27 * t_c) / (t_c + 237.3))
     p_w = (rh / 100.0) * p_ws
-    return 622.0 * p_w / (101.325 - p_w)
+    # 622 * p_w / (P - p_w) gives g/kg.  Divide by 1000 to match V1.9 contract.
+    return (622.0 * p_w / (101.325 - p_w)) / 1000.0
 
 
-def _enthalpy(t_c: float, w_gkg: float) -> float:
+def _enthalpy(t_c: float, w_kgkg: float) -> float:
     """Moist-air enthalpy [kJ/kg dry air].  Matches V1.9 psychrometric.js get_h."""
-    w_kg = w_gkg / 1000.0
-    return 1.006 * t_c + w_kg * (2501.0 + 1.86 * t_c)
+    return 1.006 * t_c + w_kgkg * (2501.0 + 1.86 * t_c)
 
 
 def _demo_oa_state(now_ts: float) -> dict:
@@ -137,7 +145,7 @@ def _demo_oa_state(now_ts: float) -> dict:
     rh = 55.0 - 18.0 * math.sin(2 * math.pi * (hours - 8.0) / 24.0)
     rh = max(20.0, min(95.0, rh))
     return {"t": round(t, 2), "rh": round(rh, 1),
-            "w": round(_humidity_ratio(t, rh), 3)}
+            "w": round(_humidity_ratio(t, rh), 5)}
 
 
 def _resolve_band(oa_t: float, oa_rh: float) -> dict:
@@ -166,7 +174,7 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
         vw = _humidity_ratio(vt, vrh)
         vav_list.append({
             "id": vn, "t": round(vt, 2), "rh": round(vrh, 1),
-            "w": round(vw, 3), "h": round(_enthalpy(vt, vw), 2),
+            "w": round(vw, 5), "h": round(_enthalpy(vt, vw), 2),
             "all_points": {"t": round(vt, 2), "rh": round(vrh, 1)},
         })
     ra_t = sum(v["t"] for v in vav_list) / len(vav_list) if vav_list else 24.0
@@ -179,9 +187,9 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
             {"label": "OA", "t": oa["t"], "rh": oa["rh"],
              "w": oa["w"], "color": "#3b82f6"},
             {"label": "SA", "t": round(sa_t, 2), "rh": round(sa_rh, 1),
-             "w": round(_humidity_ratio(sa_t, sa_rh), 3), "color": "#10b981"},
+             "w": round(_humidity_ratio(sa_t, sa_rh), 5), "color": "#10b981"},
             {"label": "RA", "t": round(ra_t, 2), "rh": round(ra_rh, 1),
-             "w": round(_humidity_ratio(ra_t, ra_rh), 3), "color": "#f43f5e"},
+             "w": round(_humidity_ratio(ra_t, ra_rh), 5), "color": "#f43f5e"},
         ],
         "all_points": {
             "OAT": oa["t"], "OAH": oa["rh"],
@@ -458,6 +466,21 @@ async def save_equipment_schema(payload: dict,
         "tenant_id": res["tenant_id"],
         "updated_at": res["updated_at"],
     }
+
+
+@app.get("/api/files")
+async def list_files(path: str = Query(""),
+                     tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """V1.9-compatible file-browser response shape used by the image picker.
+
+    Anonymous callers get an empty list (so the picker simply shows nothing
+    instead of crashing).  Signed-in callers get their tenant_assets,
+    grouped by prefix into synthetic directories.
+    """
+    if not tenant:
+        return {"success": True, "files": [],
+                "warning": "Sign in to browse your uploaded assets."}
+    return {"success": True, "files": await list_tenant_assets(tenant, path)}
 
 
 @app.post("/api/save-image")

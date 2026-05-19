@@ -78,6 +78,14 @@ if isinstance(data, list) and data:
           "got: %s" % labels)
     check("/api/data  -> OA has t, rh, w + numeric",
           all(isinstance(a["points"][0].get(k), (int, float)) for k in ("t", "rh", "w")))
+    # V1.9 contract: w is kg/kg (decimal), NOT g/kg.  Dashboard pills and the
+    # animation overlay multiply by 1000 to display g/kg, so a g/kg value
+    # would plot at w*1000 ~= 9000 (completely off-chart) and render
+    # nonsensical enthalpy in the AHU pill (~23,000 kJ/kg).
+    oa = a["points"][0]
+    check("/api/data  -> w is kg/kg decimal (V1.9 contract, NOT g/kg)",
+          0.0 < oa["w"] < 0.05,
+          "got w=%s (expected ~0.009 kg/kg, NOT 9 g/kg)" % oa["w"])
 
 # Equipment + collector configs
 s, body = get("/api/equipment-types")
@@ -172,7 +180,7 @@ check("POST /api/band-overrides/sa-rh-clamp  -> ok + applied:false (demo)",
       s == 200 and json.loads(body)["applied"] is False)
 
 # -----------------------------------------------------------------------
-print("V2.0 Phase 1 backend: %d pass, %d fail." % (len(failures) == 0 and 25 - len(failures) or 25 - len(failures), len(failures)))
+print("V2.0 Phase 1 backend: %d pass, %d fail." % (26 - len(failures), len(failures)))
 if failures:
     print("FAILURES:")
     for f in failures:

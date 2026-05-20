@@ -93,6 +93,19 @@ canvas{display:block}
 </head>
 <body>
 <button id="theme-toggle" title="Toggle Dark/Light Mode" onclick="toggleTheme()">☀</button>
+<!-- V2.0: tiny back-to-learn link in top-right (next to theme toggle).
+     Lets users navigate back to /learn.html (Comfort Decoded public site)
+     without having to chain through the dashboard. -->
+<a id="back-to-learn" href="/learn.html" data-testid="psy3d-back-to-learn"
+   title="Back to Comfort Decoded (public site)"
+   style="position:absolute;top:174px;right:12px;z-index:13;
+          background:rgba(15,23,42,.78);border:1px solid rgba(34,211,238,.55);
+          border-radius:999px;padding:5px 11px;font-size:9px;font-weight:800;
+          letter-spacing:.08em;text-transform:uppercase;color:#22d3ee;
+          text-decoration:none;font-family:inherit;backdrop-filter:blur(14px);
+          opacity:.55;transition:opacity .18s, padding .18s, border-radius .18s, background .18s;cursor:pointer;line-height:14px;display:inline-block"
+   onmouseenter="this.style.opacity='1';this.style.background='rgba(15,23,42,.95)';this.style.borderRadius='6px';"
+   onmouseleave="this.style.opacity='.55';this.style.background='rgba(15,23,42,.78)';this.style.borderRadius='999px';">&#8629; Comfort Decoded</a>
 <div id="container">
   <div id="hud" style="position:absolute;top:12px;left:230px;z-index:10;pointer-events:none">
     <h1 style="font-size:13px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#60a5fa" id="hud-title">3D Psychrometric Weather Strip</h1>

@@ -134,6 +134,13 @@
             border: 1px solid #334155; border-radius: 4px; padding: 3px 7px;
             font-size: 9px; cursor: pointer; text-transform: uppercase;
             letter-spacing: 0.08em;">Logout</button>
+        <a id="v2-back-to-learn" href="/learn.html" data-testid="dashboard-back-to-learn"
+            title="Back to Comfort Decoded (public site)"
+            style="display: none; color: #22d3ee; text-decoration: none;
+            border: 1px solid rgba(34,211,238,.55); border-radius: 4px;
+            padding: 3px 7px; font-size: 9px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            white-space: nowrap; cursor: pointer;">&#8629; Comfort Decoded</a>
     </div>
     <script>
         (function () {
@@ -143,6 +150,7 @@
             var state  = document.getElementById('v2-auth-state');
             var btnIn  = document.getElementById('v2-auth-signin');
             var btnOut = document.getElementById('v2-auth-logout');
+            var lnkLearn = document.getElementById('v2-back-to-learn');
             banner.style.display = 'flex';
             // Track hover so we can show the full email when expanded and a
             // short label when collapsed — avoids the pill obscuring the
@@ -156,6 +164,8 @@
               // the pill stays tiny — they reveal on hover.
               if (btnIn.dataset.allowed === '1')  btnIn.style.display  = _hovered ? 'inline-block' : 'none';
               if (btnOut.dataset.allowed === '1') btnOut.style.display = _hovered ? 'inline-block' : 'none';
+              // Back-to-Learn link always available, hidden until hover.
+              lnkLearn.style.display = _hovered ? 'inline-block' : 'none';
             }
             banner.addEventListener('mouseenter', function(){ _hovered = true;  applyLabel(); });
             banner.addEventListener('mouseleave', function(){ _hovered = false; applyLabel(); });

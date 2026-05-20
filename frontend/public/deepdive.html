@@ -936,9 +936,9 @@
         <div>© <span id="year"></span> Delta Red5 · Deep Dive · Part of <strong>Red5 Studio</strong>.<br>
         <span style="opacity:.7;font-size:10px">All claims cited to ASHRAE, SEMI, USP, NEBB, ACCA, RESNET, SSA, or equivalent industry standards. Cross-check the cited section before acting on critical equipment.</span></div>
         <div>
-            <a href="/learn.html">↩ Interactive Chart</a>
+            <a href="/learn.html" data-testid="back-to-learn-footer">↩ Interactive Chart</a>
             &nbsp;·&nbsp;
-            <a href="/dashboard.html">Pro View →</a>
+            <a href="javascript:void(0)" data-testid="close-deepdive-tab" onclick="try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){history.length>1?history.back():(location.href='/dashboard.html');}},150);return false;">↩ Close &amp; return to Pro View</a>
         </div>
     </footer>
 </div>

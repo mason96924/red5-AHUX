@@ -582,43 +582,355 @@
         .usedby.is-bands a {
             color: var(--accent-2);
         }
+        /* ===== Matrix view styles ===== */
+        .shell-matrix { grid-template-columns: 1fr; }
+        .hero-compact { padding: 36px 32px 16px; }
+        .hero-compact h1 { font-size: clamp(22px, 2.8vw, 36px); margin-bottom: 8px; }
+        .hero-compact p.lead { font-size: 14px; }
+
+        .matrix-wrap {
+            margin: 0 32px 28px;
+            padding: 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+        }
+        .matrix-legend {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 14px;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+        .matrix-legend .legend-chip { display: inline-flex; align-items: center; gap: 6px; }
+        .matrix-legend .dot {
+            width: 12px; height: 12px; border-radius: 3px;
+            display: inline-block;
+        }
+        .matrix-legend .dot.heavy    { background: var(--accent-2); }
+        .matrix-legend .dot.moderate { background: rgba(251, 191, 36, 0.35); border: 1px solid var(--accent); }
+        .matrix-legend .dot.rare     { background: var(--bg-soft); border: 1px solid var(--line); }
+        .matrix-legend .legend-hint {
+            margin-left: auto;
+            color: var(--text-mute);
+            font-style: italic;
+            font-size: 11px;
+        }
+        @media (max-width: 700px) {
+            .matrix-legend .legend-hint { margin-left: 0; }
+        }
+
+        .matrix-scroll { overflow-x: auto; }
+        table.matrix {
+            border-collapse: separate;
+            border-spacing: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            margin: 0 auto;
+        }
+        table.matrix th, table.matrix td {
+            padding: 0;
+            text-align: center;
+            font-weight: 700;
+        }
+        table.matrix th {
+            background: transparent;
+            color: var(--text-dim);
+            min-width: 56px;
+        }
+        table.matrix th.bt-th {
+            text-align: right;
+            padding-right: 10px;
+            color: var(--text);
+            font-weight: 600;
+            white-space: nowrap;
+            font-family: -apple-system, sans-serif;
+            font-size: 12px;
+            min-width: 200px;
+        }
+        table.matrix th.bt-th .bt-code {
+            font-family: monospace;
+            color: var(--text-mute);
+            margin-right: 6px;
+            font-size: 11px;
+        }
+        table.matrix th.band-th {
+            padding: 6px 4px 10px;
+        }
+        table.matrix th.band-th .band-code {
+            display: block;
+            color: var(--accent-2);
+            font-size: 13px;
+            font-weight: 900;
+            margin-bottom: 2px;
+        }
+        table.matrix th.band-th .band-mood {
+            display: block;
+            color: var(--text-mute);
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            font-family: -apple-system, sans-serif;
+            line-height: 1.3;
+            max-width: 76px;
+            margin: 0 auto;
+        }
+        table.matrix td.cell {
+            width: 56px;
+            height: 44px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 120ms ease, box-shadow 120ms ease;
+            position: relative;
+            color: rgba(255,255,255,0.85);
+            font-size: 10px;
+        }
+        table.matrix td.cell.heavy {
+            background: var(--accent-2);
+            color: #fff;
+        }
+        table.matrix td.cell.moderate {
+            background: rgba(251, 191, 36, 0.20);
+            color: var(--accent);
+            border: 1px solid rgba(251, 191, 36, 0.35);
+        }
+        table.matrix td.cell.rare {
+            background: var(--bg-soft);
+            color: var(--text-mute);
+            border: 1px solid var(--line);
+        }
+        table.matrix td.cell:hover {
+            transform: scale(1.08);
+            z-index: 2;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        table.matrix td.cell.selected {
+            box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent);
+            z-index: 3;
+        }
+        table.matrix td.cell .cell-mark {
+            font-family: monospace;
+            font-weight: 900;
+            font-size: 12px;
+            opacity: 0.85;
+        }
+
+        /* ===== Detail pane ===== */
+        .detail-wrap {
+            margin: 0 32px 60px;
+            scroll-margin-top: 16px;
+        }
+        .detail-head {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 12px 12px 0 0;
+            border-bottom: 0;
+            padding: 22px 24px 16px;
+        }
+        .detail-pills {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-family: monospace;
+            font-weight: 900;
+            font-size: 14px;
+        }
+        .pill {
+            padding: 4px 10px;
+            border-radius: 5px;
+            letter-spacing: 0.06em;
+        }
+        .pill.bt-pill   { background: var(--accent); color: #0b1220; }
+        .pill.band-pill { background: var(--accent-2); color: #fff; }
+        .pill-sep      { color: var(--text-mute); font-size: 16px; }
+        #detail-title  {
+            margin: 0 0 4px;
+            font-size: clamp(20px, 2.4vw, 28px);
+            font-weight: 900;
+            letter-spacing: -0.01em;
+        }
+        .detail-sub {
+            margin: 0;
+            color: var(--text-dim);
+            font-size: 13px;
+            line-height: 1.55;
+            max-width: 760px;
+        }
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-top: 1px dashed var(--bg-soft);
+            border-radius: 0 0 12px 12px;
+            overflow: hidden;
+        }
+        @media (max-width: 980px) {
+            .detail-grid { grid-template-columns: 1fr; }
+        }
+        .detail-col {
+            padding: 22px 24px;
+        }
+        .detail-col.col-bt {
+            border-right: 1px solid var(--bg-soft);
+        }
+        @media (max-width: 980px) {
+            .detail-col.col-bt {
+                border-right: 0;
+                border-bottom: 1px solid var(--bg-soft);
+            }
+        }
+        .detail-col h3 {
+            margin: 0 0 14px;
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+        }
+        .detail-col h4 {
+            margin: 16px 0 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .detail-col .intro {
+            font-size: 13px;
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0 0 14px;
+        }
+        .detail-col .spec-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 12px;
+            border-bottom: 1px solid var(--bg-soft);
+        }
+        .detail-col .spec-row:last-of-type { border-bottom: 0; }
+        .detail-col .spec-row .k { color: var(--text-dim); }
+        .detail-col .spec-row .v { font-family: monospace; color: var(--text); font-weight: 700; }
+        .detail-col .spec-cite {
+            margin-top: 10px;
+            font-size: 10px;
+            font-style: italic;
+            font-family: monospace;
+            color: var(--text-mute);
+        }
+        .detail-col ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .detail-col li {
+            font-size: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--bg-soft);
+            line-height: 1.5;
+        }
+        .detail-col li:last-child { border-bottom: 0; }
+        .detail-col li .symptom { font-weight: 700; color: var(--text); display: block; margin-bottom: 2px; }
+        .detail-col li .cause   { color: var(--text-dim); display: block; }
+        .detail-col li .ref     {
+            display: block;
+            color: var(--text-mute);
+            font-family: monospace;
+            font-size: 9px;
+            font-style: italic;
+            margin-top: 3px;
+        }
+        .detail-col .compduty-mini {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            margin: 8px 0 14px;
+        }
+        .detail-col .compduty-mini .cd {
+            background: var(--bg-soft);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 6px 2px;
+            text-align: center;
+            font-size: 9px;
+        }
+        .detail-col .compduty-mini .cd .k { display: block; color: var(--text-mute); font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; }
+        .detail-col .compduty-mini .cd .v { font-family: monospace; font-weight: 800; font-size: 11px; }
+        .detail-col .compduty-mini .cd.off  { color: var(--text-mute); }
+        .detail-col .compduty-mini .cd.low  .v { color: #06b6d4; }
+        .detail-col .compduty-mini .cd.med  .v { color: var(--accent); }
+        .detail-col .compduty-mini .cd.high .v { color: var(--orange); }
+        .detail-col .compduty-mini .cd.max  .v { color: var(--accent-2); }
+        .detail-col .check-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--bg-soft);
+            font-size: 12px;
+        }
+        .detail-col .check-row input[type="checkbox"] {
+            margin-top: 3px;
+            accent-color: var(--accent);
+        }
+        .detail-col .check-row:last-of-type { border-bottom: 0; }
+        .detail-col .check-row .task { font-weight: 600; color: var(--text); }
+        .detail-col .check-row .freq { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; margin-left: 6px; }
+        .detail-col .check-row .ref  { color: var(--text-mute); font-family: monospace; font-size: 9px; font-style: italic; display: block; margin-top: 2px; }
     </style>
 </head>
 <body>
 
-<div class="shell">
+<div class="shell shell-matrix">
 
-    <header class="hero">
+    <header class="hero hero-compact">
         <div class="brand">
             <span class="brand-badge">R5</span>
             <span class="brand-delta">Δ</span>
             <span class="brand-name">Delta Red5</span>
             <span class="brand-tag">· Deep Dive</span>
         </div>
-        <h1>The Red5 playbook — <em>ten climate bands</em> and <em>twelve building types</em>, in one page.</h1>
-        <p class="lead">B1–B10 are the ten climate-band control strategies the Red5 controller switches between as outside conditions change. BT1–BT12 are the building types you actually run. This page tells you what each band does, which buildings lean on which bands, and the failure modes / maintenance rhythm for each.</p>
+        <h1>Pick a <em>building × climate band</em> — see the playbook.</h1>
+        <p class="lead">120 cells, one matrix. Click any cell below to see what that building type does under that control band: duty cycle, failure modes, maintenance, refs.</p>
         <p class="crumb">← Back to <a href="/learn.html" data-testid="back-to-learn">Comfort Decoded (interactive chart)</a></p>
     </header>
 
-    <div class="season-bar" data-testid="season-bar">
-        <span class="label">Season view</span>
-        <div class="toggle" role="tablist" aria-label="HVAC season mode">
-            <button data-season="summer" aria-pressed="true"  data-testid="season-summer">☀ Summer</button>
-            <button data-season="winter" aria-pressed="false" data-testid="season-winter">❄ Winter</button>
+    <!-- ===== MATRIX HEAT-MAP ===== -->
+    <section class="matrix-wrap" data-testid="matrix">
+        <div class="matrix-legend">
+            <div class="legend-chip"><span class="dot heavy"></span>Primary band for this BT</div>
+            <div class="legend-chip"><span class="dot moderate"></span>Occasional / scenario-dependent</div>
+            <div class="legend-chip"><span class="dot rare"></span>Rare / by code unreachable</div>
+            <div class="legend-hint">Click any cell. Selected cell loads the detail pane below.</div>
         </div>
-        <span class="hint">Toggle changes the HVAC process diagrams in every section below — cooling vs heating, damper positions, supply-air temps.</span>
-    </div>
-
-    <aside class="rail">
-        <div class="rail-inner" id="rail" data-testid="rail">
-            <div class="rail-label">Jump to building</div>
-            <!-- nav links injected by JS -->
+        <div class="matrix-scroll">
+            <table class="matrix" id="matrix" aria-label="Building × Band matrix">
+                <thead id="matrix-head"></thead>
+                <tbody id="matrix-body"></tbody>
+            </table>
         </div>
-    </aside>
+    </section>
 
-    <main id="main" data-testid="main">
-        <!-- sections injected by JS -->
-    </main>
+    <!-- ===== DETAIL PANE ===== -->
+    <section class="detail-wrap" id="detail" data-testid="detail">
+        <div class="detail-head">
+            <div class="detail-pills">
+                <span class="pill bt-pill" id="detail-bt-pill">BT?</span>
+                <span class="pill-sep">×</span>
+                <span class="pill band-pill" id="detail-band-pill">B?</span>
+            </div>
+            <h2 id="detail-title">Pick a cell above</h2>
+            <p id="detail-subtitle" class="detail-sub">The detail pane will fill in once you click a matrix cell.</p>
+        </div>
+        <div class="detail-grid" id="detail-grid">
+            <!-- Two columns injected by JS: BT card + Band card -->
+        </div>
+    </section>
 
     <footer>
         <div>© <span id="year"></span> Delta Red5 · Deep Dive · Part of <strong>Red5 Studio</strong>.<br>
@@ -1351,305 +1663,189 @@
     ];
 
     // ============================================================
-    // RENDER NAV  (two groups: B-bands then BT-buildings)
+    // LOOKUP MAPS
     // ============================================================
-    const rail = document.getElementById('rail');
-    // remove the seed rail-label that hard-codes "Jump to building"
-    while (rail.firstChild) rail.removeChild(rail.firstChild);
-
-    function _addRailGroup(title, items, isBand) {
-        const hdr = document.createElement('div');
-        hdr.className = 'rail-group';
-        hdr.textContent = title;
-        rail.appendChild(hdr);
-        items.forEach(it => {
-            const a = document.createElement('a');
-            a.href = '#' + it.key;
-            a.dataset.target = it.key;
-            if (isBand) a.classList.add('is-band');
-            a.innerHTML = '<span class="b-code">' + it.code + '</span>' + it.name;
-            rail.appendChild(a);
-        });
-    }
-    _addRailGroup('Control bands', BANDS, true);
-    _addRailGroup('Building types', BUILDINGS, false);
-
-    // ============================================================
-    // RENDER SECTIONS
-    // ============================================================
-    const main = document.getElementById('main');
-    const FREQ_ORDER = ['Daily start-of-shift', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annual', 'Annual', 'Annual + after change', 'Annual + after move', 'Per SOP', 'Pre-event', 'Pre-season', '3 mo', '5 yr', 'Seasonal'];
-
     function escapeHtml(s) {
-        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+    const BT_LOOKUP   = {}; BUILDINGS.forEach(b => { BT_LOOKUP[b.key] = b; });
+    const BAND_LOOKUP = {}; BANDS.forEach(b => { BAND_LOOKUP[b.key] = b; });
 
-    // Build a single HVAC process SVG for a building, given the active season.
-    function buildDiagram(bld, season) {
-        const sn = bld[season];
-        const isWarm = season === 'summer';
-        const flowColor = isWarm ? '#3b82f6' : '#f97316';  // blue cool, orange warm
-        const coilColor = sn.coil === 'cool' ? '#0ea5e9' : '#f43f5e';
-        const coilLabel = sn.coil === 'cool' ? 'COOL' : 'HEAT';
-
-        // Stage positions
-        // OA -> MAD -> coil -> fan -> SA -> ZONE -> RA -> back to MAD
-        return `
-        <svg class="diag-svg" viewBox="0 0 720 220" aria-label="HVAC process diagram">
-            <defs>
-                <marker id="arr-${bld.key}-${season}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                    <path d="M0,0 L10,5 L0,10 z" fill="${flowColor}"/>
-                </marker>
-            </defs>
-            <!-- Stage boxes -->
-            <g font-family="monospace" font-size="10" font-weight="700">
-                <!-- OA -->
-                <rect x="10"  y="60" width="70" height="50" rx="6" fill="${isWarm ? '#1e293b' : '#0c1424'}" stroke="${flowColor}" stroke-width="1.4"/>
-                <text x="45" y="80" text-anchor="middle" fill="${flowColor}">OA</text>
-                <text x="45" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">${sn.oa_pct}%</text>
-
-                <!-- MAD (mixing damper) -->
-                <rect x="120" y="60" width="70" height="50" rx="6" fill="#0c1424" stroke="#94a3b8" stroke-width="1.2"/>
-                <text x="155" y="80" text-anchor="middle" fill="#e2e8f0">MIX</text>
-                <text x="155" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">${sn.oa_pct}/${sn.ma_pct}</text>
-
-                <!-- Coil -->
-                <rect x="230" y="60" width="80" height="50" rx="6" fill="${coilColor}" fill-opacity="0.18" stroke="${coilColor}" stroke-width="1.6"/>
-                <text x="270" y="80" text-anchor="middle" fill="${coilColor}" font-weight="900">${coilLabel} COIL</text>
-                <text x="270" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">active</text>
-
-                <!-- Fan -->
-                <circle cx="365" cy="85" r="22" fill="#0c1424" stroke="#94a3b8" stroke-width="1.2"/>
-                <text x="365" y="89" text-anchor="middle" fill="#e2e8f0">FAN</text>
-
-                <!-- SA label -->
-                <text x="430" y="78" text-anchor="middle" fill="${flowColor}" font-size="11" font-weight="900">SA</text>
-                <text x="430" y="94" text-anchor="middle" fill="#94a3b8" font-size="10">${sn.sa_c} °C</text>
-
-                <!-- Zone -->
-                <rect x="490" y="40" width="110" height="90" rx="6" fill="#0c1424" stroke="#94a3b8" stroke-width="1.4"/>
-                <text x="545" y="70" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="900">ZONE</text>
-                <text x="545" y="88" text-anchor="middle" fill="#94a3b8" font-size="9">${bld.spec[1].v}</text>
-                <text x="545" y="102" text-anchor="middle" fill="#94a3b8" font-size="9">${bld.spec[0].v}</text>
-
-                <!-- RA back -->
-                <text x="650" y="78" text-anchor="middle" fill="#94a3b8" font-size="10">RA</text>
-            </g>
-
-            <!-- Flow arrows -->
-            <g stroke="${flowColor}" stroke-width="2" fill="none" marker-end="url(#arr-${bld.key}-${season})">
-                <line x1="80"  y1="85" x2="115" y2="85"/>
-                <line x1="190" y1="85" x2="225" y2="85"/>
-                <line x1="310" y1="85" x2="338" y2="85"/>
-                <line x1="392" y1="85" x2="455" y2="85"/>
-                <line x1="475" y1="85" x2="490" y2="85"/>
-            </g>
-            <!-- Return loop -->
-            <g stroke="${flowColor}" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arr-${bld.key}-${season})">
-                <path d="M600 85 L660 85 L660 175 L155 175 L155 115"/>
-            </g>
-            <text x="660" y="100" fill="#94a3b8" font-size="9" font-family="monospace" font-style="italic">RA</text>
-        </svg>
-        <div class="diag-legend">
-            <span class="chip"><span class="dot" style="background:${flowColor}"></span>Air flow (${season})</span>
-            <span class="chip"><span class="dot" style="background:${coilColor}"></span>${coilLabel} coil active</span>
-            <span class="chip" style="color:var(--text-mute);font-style:italic">${escapeHtml(sn.note)}</span>
-        </div>
-        `;
+    // ============================================================
+    // USAGE MATRIX (BT × Band -> intensity)
+    //
+    // 3 tiers per cell:
+    //   'heavy'    -- BT key is in band.used_by  (primary band for this BT)
+    //   'moderate' -- not declared primary, but realistic in operation
+    //   'rare'     -- BT essentially never enters this band by code/scenario
+    //
+    // The 'rare' set is intentionally small.  Most BTs operate across
+    // most bands -- the rarity exists where a BT is locked at 100% OA
+    // (hospital/lab/pharmacy/fab can't economize) or whose internal load
+    // prevents the band (datacenter rarely sees winter cold inside).
+    // ============================================================
+    const RARE_MAP = {
+        // hospital / lab / pharmacy / fab: 100% OA, no economizer
+        hospital: ['b4','b5'],
+        lab:      ['b4','b5'],
+        pharmacy: ['b4','b5'],
+        fab:      ['b4','b5'],
+        // data center: internal heat means cool-side bands rarely occur
+        datacenter: ['b1','b2','b3'],
+        // self-storage: low people, low T-extreme variation indoors
+        selfstorage: ['b6','b7','b8'],
+        // museum: tight RH control means mech cool/humidify always engages
+        museum: ['b9','b10']
+    };
+    function cellTier(bt, band) {
+        if ((band.used_by || []).indexOf(bt.key) !== -1) return 'heavy';
+        if ((RARE_MAP[bt.key] || []).indexOf(band.key) !== -1) return 'rare';
+        return 'moderate';
     }
+    const TIER_MARK = { heavy: '●', moderate: '○', rare: '·' };
 
-    function renderSection(bld) {
-        const sec = document.createElement('section');
-        sec.className = 'bld';
-        sec.id = bld.key;
-        sec.dataset.testid = 'section-' + bld.key;
+    // ============================================================
+    // RENDER MATRIX HEAT-MAP
+    // ============================================================
+    const matrixHead = document.getElementById('matrix-head');
+    const matrixBody = document.getElementById('matrix-body');
 
-        const specRows = bld.spec.map(s => `<div class="spec-row"><span class="k">${escapeHtml(s.k)}</span><span class="v">${escapeHtml(s.v)}</span></div>`).join('');
-        const failuresLi = bld.failures.map(f => `
-            <li>
-                <span class="symptom">"${escapeHtml(f.symptom)}"</span>
-                <span class="cause">↳ ${escapeHtml(f.cause)}</span>
-                <span class="ref">${escapeHtml(f.ref)}</span>
-            </li>`).join('');
-        const checksLi = bld.checks.map(c => `
-            <li class="check-item">
-                <input type="checkbox" aria-label="Mark ${escapeHtml(c.task)} done">
-                <span class="check-body">
-                    <span class="check-task">${escapeHtml(c.task)}<span class="check-freq">${escapeHtml(c.freq)}</span></span>
-                    <span class="ref">${escapeHtml(c.ref)}</span>
-                </span>
-            </li>`).join('');
-
-        // Cross-link: which control bands this BT leans on
-        const primaryBandKeys = BT_PRIMARY_BANDS[bld.key] || [];
-        const bandsLine = primaryBandKeys.map(k => {
-            const b = BAND_LOOKUP[k];
-            if (!b) return '';
-            return `<a href="#${b.key}">${b.code} ${escapeHtml(b.name)}</a>`;
-        }).join(' · ');
-
-        sec.innerHTML = `
-            <h2><span class="b-code">${bld.code}</span> ${escapeHtml(bld.name)}</h2>
-            <p class="bld-intro">${bld.intro}</p>
-            <div class="topgrid">
-                <div class="spec-card">
-                    <h3 class="card-title">Spec sheet</h3>
-                    ${specRows}
-                    <div class="spec-cite">${escapeHtml(bld.cite)}</div>
-                </div>
-                <div class="diag-card" data-diag-host>
-                    <h3 class="card-title">HVAC process — <span data-diag-season>summer</span> mode</h3>
-                    <div data-diag-body>${buildDiagram(bld, 'summer')}</div>
-                </div>
-            </div>
-            <div class="bottomgrid">
-                <div class="listcard">
-                    <h3>Common failure modes <span style="font-weight:600;color:var(--text-mute)">(symptom → cause → ref)</span></h3>
-                    <ul>${failuresLi}</ul>
-                </div>
-                <div class="listcard">
-                    <h3>Maintenance checklist <span style="font-weight:600;color:var(--text-mute)">(printable)</span></h3>
-                    <ul>${checksLi}</ul>
-                </div>
-            </div>
-            ${bandsLine ? `<div class="usedby is-bands"><strong>Primary control bands for ${bld.code}:</strong> ${bandsLine}</div>` : ''}
-            <details class="notes">
-                <summary>📘 Student / Engineer notes — the “why”</summary>
-                <div class="notes-body">${bld.notes}</div>
-            </details>
-        `;
-        // store the bld key so the season toggle can find it
-        sec.dataset.bldKey = bld.key;
-        return sec;
-    }
-
-    // ----- Build a name lookup for BT cross-link rendering -----
-    const BT_LOOKUP = {};
-    BUILDINGS.forEach(b => { BT_LOOKUP[b.key] = b; });
-    const BAND_LOOKUP = {};
-    BANDS.forEach(b => { BAND_LOOKUP[b.key] = b; });
-
-    // ----- Reverse mapping: which bands each BT relies on -----
-    const BT_PRIMARY_BANDS = {};
+    // Header row: blank corner + 10 band columns
+    const trHead = document.createElement('tr');
+    const corner = document.createElement('th');
+    corner.className = 'bt-th';
+    corner.innerHTML = '<span style="opacity:0.5;font-family:monospace;font-size:11px">BT ↓ &nbsp; band →</span>';
+    trHead.appendChild(corner);
     BANDS.forEach(band => {
-        (band.used_by || []).forEach(btKey => {
-            if (!BT_PRIMARY_BANDS[btKey]) BT_PRIMARY_BANDS[btKey] = [];
-            BT_PRIMARY_BANDS[btKey].push(band.key);
+        const th = document.createElement('th');
+        th.className = 'band-th';
+        th.innerHTML = `<span class="band-code">${escapeHtml(band.code)}</span><span class="band-mood">${escapeHtml(band.mood.replace(/^[^a-zA-Z]+/, '').trim())}</span>`;
+        trHead.appendChild(th);
+    });
+    matrixHead.appendChild(trHead);
+
+    // Body rows: one per BT
+    BUILDINGS.forEach(bt => {
+        const tr = document.createElement('tr');
+        const lbl = document.createElement('th');
+        lbl.className = 'bt-th';
+        lbl.innerHTML = `<span class="bt-code">${escapeHtml(bt.code)}</span>${escapeHtml(bt.name)}`;
+        tr.appendChild(lbl);
+        BANDS.forEach(band => {
+            const td = document.createElement('td');
+            const tier = cellTier(bt, band);
+            td.className = 'cell ' + tier;
+            td.dataset.bt = bt.key;
+            td.dataset.band = band.key;
+            td.dataset.testid = 'cell-' + bt.key + '-' + band.key;
+            td.title = bt.code + ' ' + bt.name + '  ×  ' + band.code + ' ' + band.name + '  (' + tier + ')';
+            td.innerHTML = '<span class="cell-mark">' + TIER_MARK[tier] + '</span>';
+            td.addEventListener('click', () => selectCell(bt.key, band.key));
+            tr.appendChild(td);
         });
+        matrixBody.appendChild(tr);
     });
 
-    function renderBandSection(band) {
-        const sec = document.createElement('section');
-        sec.className = 'bld is-band';
-        sec.id = band.key;
-        sec.dataset.testid = 'section-' + band.key;
+    // ============================================================
+    // DETAIL PANE
+    // ============================================================
+    const detailPills    = document.getElementById('detail-pills');
+    const detailBtPill   = document.getElementById('detail-bt-pill');
+    const detailBandPill = document.getElementById('detail-band-pill');
+    const detailTitle    = document.getElementById('detail-title');
+    const detailSubtitle = document.getElementById('detail-subtitle');
+    const detailGrid     = document.getElementById('detail-grid');
 
-        const failuresLi = band.failures.map(f => `
-            <li>
-                <span class="symptom">"${escapeHtml(f.symptom)}"</span>
-                <span class="cause">↳ ${escapeHtml(f.cause)}</span>
-                <span class="ref">${escapeHtml(f.ref)}</span>
-            </li>`).join('');
-
-        // Cross-link: which BTs use this band
-        const usedByLinks = (band.used_by || []).map(k => {
-            const bt = BT_LOOKUP[k];
-            if (!bt) return '';
-            return `<a href="#${bt.key}">${bt.code} ${escapeHtml(bt.name)}</a>`;
-        }).join(' · ');
-
-        const isEcon = (band.key === 'b4' || band.key === 'b5');
-
-        sec.innerHTML = `
-            <h2><span class="b-code">${band.code}</span> ${escapeHtml(band.name)}</h2>
-            <p class="bld-intro">${escapeHtml(band.intro)}</p>
-            <div class="band-meta">
-                <div class="chip"><span class="k">OA condition</span><span class="v">${escapeHtml(band.oa_t)} · ${escapeHtml(band.oa_rh)}</span></div>
-                <div class="chip"><span class="k">SA target</span><span class="v">${escapeHtml(band.sa_t)} · ${escapeHtml(band.sa_rh)}</span></div>
-                <div class="chip ${isEcon ? 'economizer' : ''}"><span class="k">OA damper</span><span class="v">${escapeHtml(band.damper)}</span></div>
-                <div class="chip"><span class="k">Climate mood</span><span class="v">${escapeHtml(band.mood)}</span></div>
-            </div>
-            <div class="compduty" aria-label="Component duty cycle">
-                <div class="cd ${band.duty.heat}"><span class="k">Heat coil</span><span class="v">${escapeHtml(band.duty.heat)}</span></div>
-                <div class="cd ${band.duty.cool}"><span class="k">Cool coil</span><span class="v">${escapeHtml(band.duty.cool)}</span></div>
-                <div class="cd ${band.duty.hum}"><span class="k">Humidify</span><span class="v">${escapeHtml(band.duty.hum)}</span></div>
-                <div class="cd ${band.duty.dehum}"><span class="k">Dehumid</span><span class="v">${escapeHtml(band.duty.dehum)}</span></div>
-                <div class="cd"><span class="k">OA damper</span><span class="v">${escapeHtml(band.duty.damper)}</span></div>
-            </div>
-            <div class="topgrid">
-                <div class="spec-card">
-                    <h3 class="card-title">Why this control strategy</h3>
-                    <p style="font-size:13px;color:var(--text);line-height:1.6;margin:0">${escapeHtml(band.why)}</p>
-                </div>
-                <div class="listcard">
-                    <h3>Common failure modes <span style="font-weight:600;color:var(--text-mute)">(symptom → cause → ref)</span></h3>
-                    <ul>${failuresLi}</ul>
-                </div>
-            </div>
-            ${usedByLinks ? `<div class="usedby"><strong>Building types that lean on ${band.code}:</strong> ${usedByLinks}</div>` : ''}
-            <details class="notes">
-                <summary>📘 Engineer notes — the “why”</summary>
-                <div class="notes-body">${band.notes}</div>
-            </details>
-        `;
-        return sec;
+    function renderBtColumn(bt) {
+        const specRows = bt.spec.map(s =>
+            `<div class="spec-row"><span class="k">${escapeHtml(s.k)}</span><span class="v">${escapeHtml(s.v)}</span></div>`
+        ).join('');
+        const failuresLi = bt.failures.map(f =>
+            `<li><span class="symptom">"${escapeHtml(f.symptom)}"</span><span class="cause">↳ ${escapeHtml(f.cause)}</span><span class="ref">${escapeHtml(f.ref)}</span></li>`
+        ).join('');
+        const checksRows = bt.checks.map(c =>
+            `<div class="check-row"><input type="checkbox" aria-label="${escapeHtml(c.task)}"><span><span class="task">${escapeHtml(c.task)}<span class="freq">${escapeHtml(c.freq)}</span></span><span class="ref">${escapeHtml(c.ref)}</span></span></div>`
+        ).join('');
+        return `
+            <div class="detail-col col-bt">
+                <h3>${escapeHtml(bt.code)} · ${escapeHtml(bt.name)}</h3>
+                <p class="intro">${bt.intro}</p>
+                <h4>Spec sheet</h4>
+                ${specRows}
+                <div class="spec-cite">${escapeHtml(bt.cite)}</div>
+                <h4>Common failure modes</h4>
+                <ul>${failuresLi}</ul>
+                <h4>Maintenance checklist</h4>
+                ${checksRows}
+            </div>`;
     }
 
-    BANDS.forEach(b => main.appendChild(renderBandSection(b)));
-    BUILDINGS.forEach(b => main.appendChild(renderSection(b)));
+    function renderBandColumn(band) {
+        const failuresLi = band.failures.map(f =>
+            `<li><span class="symptom">"${escapeHtml(f.symptom)}"</span><span class="cause">↳ ${escapeHtml(f.cause)}</span><span class="ref">${escapeHtml(f.ref)}</span></li>`
+        ).join('');
+        return `
+            <div class="detail-col col-band">
+                <h3>${escapeHtml(band.code)} · ${escapeHtml(band.name)}</h3>
+                <p class="intro">${escapeHtml(band.intro)}</p>
+                <h4>OA / SA targets</h4>
+                <div class="spec-row"><span class="k">OA condition</span><span class="v">${escapeHtml(band.oa_t)} · ${escapeHtml(band.oa_rh)}</span></div>
+                <div class="spec-row"><span class="k">SA target</span><span class="v">${escapeHtml(band.sa_t)} · ${escapeHtml(band.sa_rh)}</span></div>
+                <div class="spec-row"><span class="k">OA damper</span><span class="v">${escapeHtml(band.damper)}</span></div>
+                <div class="spec-row"><span class="k">Climate mood</span><span class="v">${escapeHtml(band.mood)}</span></div>
+                <h4>Component duty cycle</h4>
+                <div class="compduty-mini">
+                    <div class="cd ${band.duty.heat}"><span class="k">Heat</span><span class="v">${escapeHtml(band.duty.heat)}</span></div>
+                    <div class="cd ${band.duty.cool}"><span class="k">Cool</span><span class="v">${escapeHtml(band.duty.cool)}</span></div>
+                    <div class="cd ${band.duty.hum}"><span class="k">Hum</span><span class="v">${escapeHtml(band.duty.hum)}</span></div>
+                    <div class="cd ${band.duty.dehum}"><span class="k">Dehum</span><span class="v">${escapeHtml(band.duty.dehum)}</span></div>
+                    <div class="cd"><span class="k">Damper</span><span class="v">${escapeHtml(band.duty.damper)}</span></div>
+                </div>
+                <h4>Why this control strategy</h4>
+                <p class="intro">${escapeHtml(band.why)}</p>
+                <h4>Common failure modes</h4>
+                <ul>${failuresLi}</ul>
+            </div>`;
+    }
 
-    // ============================================================
-    // SEASON TOGGLE
-    // ============================================================
-    let currentSeason = 'summer';
-    function setSeason(s) {
-        if (s === currentSeason) return;
-        currentSeason = s;
-        document.querySelectorAll('.season-bar .toggle button').forEach(b => {
-            b.setAttribute('aria-pressed', b.dataset.season === s ? 'true' : 'false');
-        });
-        // Rebuild each diagram for the new season
-        BUILDINGS.forEach(b => {
-            const sec = document.getElementById(b.key);
-            if (!sec) return;
-            const body = sec.querySelector('[data-diag-body]');
-            const lbl  = sec.querySelector('[data-diag-season]');
-            if (body) body.innerHTML = buildDiagram(b, s);
-            if (lbl)  lbl.textContent = s;
-        });
+    function selectCell(btKey, bandKey) {
+        const bt = BT_LOOKUP[btKey];
+        const band = BAND_LOOKUP[bandKey];
+        if (!bt || !band) return;
+
+        const tier = cellTier(bt, band);
+        const tierLabel = { heavy:'Primary band', moderate:'Occasional / scenario-dependent', rare:'Rare / by-code unreachable' }[tier];
+
+        detailBtPill.textContent   = bt.code;
+        detailBandPill.textContent = band.code;
+        detailTitle.textContent    = bt.name + '  ×  ' + band.name;
+        detailSubtitle.innerHTML   = '<strong>' + escapeHtml(tierLabel) + '</strong> for this combination. ' +
+            'Below: the full ' + bt.code + ' building card on the left, full ' + band.code + ' control-band card on the right. ' +
+            'Both views are duplicated for context — when a parameter feels surprising, compare the two columns.';
+        detailGrid.innerHTML = renderBtColumn(bt) + renderBandColumn(band);
+
+        // Visual selection in matrix
+        document.querySelectorAll('table.matrix td.cell').forEach(c => c.classList.remove('selected'));
+        const sel = document.querySelector('td.cell[data-bt="' + btKey + '"][data-band="' + bandKey + '"]');
+        if (sel) sel.classList.add('selected');
+
+        // Smooth-scroll into view
+        document.getElementById('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
         try {
             if (typeof window.umami !== 'undefined' && window.umami.track) {
-                window.umami.track('season_change', { season: s });
+                window.umami.track('cell_select', { bt: btKey, band: bandKey, tier });
             }
         } catch (_) { /* swallow */ }
-    }
-    document.querySelectorAll('.season-bar .toggle button').forEach(b => {
-        b.addEventListener('click', () => setSeason(b.dataset.season));
-    });
-
-    // ============================================================
-    // RAIL ACTIVE-STATE  (IntersectionObserver)
-    // ============================================================
-    const railLinks = Array.from(rail.querySelectorAll('a'));
-    const allSectionKeys = BANDS.map(b => b.key).concat(BUILDINGS.map(b => b.key));
-    const sections  = allSectionKeys.map(k => document.getElementById(k));
-    const setActive = (key) => {
-        railLinks.forEach(a => a.classList.toggle('active', a.dataset.target === key));
-    };
-    if ('IntersectionObserver' in window) {
-        const io = new IntersectionObserver((entries) => {
-            entries.forEach(e => {
-                if (e.isIntersecting) setActive(e.target.id);
-            });
-        }, { rootMargin: '-30% 0px -55% 0px', threshold: 0 });
-        sections.forEach(s => s && io.observe(s));
     }
 
     // ============================================================
     // INIT
     // ============================================================
     document.getElementById('year').textContent = new Date().getFullYear();
-    if (BANDS.length) setActive(BANDS[0].key);
+    // Pre-select BT1 Office × B4 Economizer as the welcome cell -- it's
+    // the most universally recognized combo and showcases the matrix.
+    selectCell('office', 'b4');
 })();
 </script>
 

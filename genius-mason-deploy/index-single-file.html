@@ -530,6 +530,7 @@
         </optgroup>
         <optgroup label="── Storage &amp; Preservation ──">
             <option value="museum">Museum / Archive · 45–55% RH</option>
+            <option value="selfstorage">Self-Storage (Climate-Controlled) · 30–55% RH</option>
         </optgroup>
         <optgroup label="── Cleanrooms &amp; Tech ──">
             <option value="pharmacy">Pharmacy / Cleanroom · 30–50% RH</option>
@@ -1041,6 +1042,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
         hospital:    { lo: 20, hi: 60, label: 'Hospital (OR)',          ref: 'ASHRAE Std 170-2021 §7.1' },
         lab:         { lo: 30, hi: 50, label: 'Lab (Analytical)',       ref: 'ANSI/ASHRAE Std 113 + NIH DRM' },
         museum:      { lo: 45, hi: 55, label: 'Museum / Archive',       ref: 'ASHRAE HVAC Apps 2023 Ch. 24' },
+        selfstorage: { lo: 30, hi: 55, label: 'Self-Storage (Climate-Controlled)', ref: 'SSA best practice; ASHRAE 62.1 (RH ≤ 65%)' },
         pharmacy:    { lo: 30, hi: 50, label: 'Pharmacy / Cleanroom',   ref: 'USP <797> / EU GMP Annex 1' },
         fab:         { lo: 40, hi: 50, label: 'Semiconductor Fab',      ref: 'SEMI E54 / IEST-RP-CC012' },
         mfg_esd:     { lo: 35, hi: 55, label: 'Mfg (Sensitive / ESD)',  ref: 'ANSI/ESD S20.20-2021' },

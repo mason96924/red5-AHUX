@@ -251,6 +251,7 @@ def download_bundle_file(filename):
         'band_csv_generator.py': '/root/data/band_csv_generator.py',
         'equipment_mapper.html': '/root/data/equipment_mapper.html',
         'psy_3d.html': '/root/data/psy_3d.html',
+        'deepdive.html': '/root/data/deepdive.html',
         'configs/collector_config.json': '/root/data/configs/collector_config.json',
         'configs/equipment_types.json': '/root/data/configs/equipment_types.json',
     }
@@ -556,6 +557,8 @@ def api_version():
         ('js/preview-components.js', '/root/data/js/preview-components.js'),
         ('js/schema-config.js', '/root/data/js/schema-config.js'),
         ('js/psy-3d-engine.js', '/root/data/js/psy-3d-engine.js'),
+        ('psy_3d.html', '/root/data/psy_3d.html'),
+        ('deepdive.html', '/root/data/deepdive.html'),
     ):
         try:
             out[label] = int(os.path.getmtime(path))
@@ -1310,6 +1313,24 @@ def serve_control_strategy_insight_ko_md():
     resp = _no_cache(send_from_directory('/root/data', 'control_strategy_insight.ko.md'))
     resp.headers['Content-Type'] = 'text/markdown; charset=utf-8'
     return resp
+
+
+@app.route('/psy_3d.html')
+def serve_psy_3d_html():
+    """Serve the standalone 3-D weather-strip / X-Y Detail psychrometric
+    page directly at /psy_3d.html (also reachable via /assets/psy_3d.html).
+    Having a root route lets the in-page 'Deep Dive' link resolve to
+    /deepdive.html instead of /assets/deepdive.html."""
+    return _no_cache(send_from_directory('/root/data', 'psy_3d.html'))
+
+
+@app.route('/deepdive.html')
+def serve_deepdive_html():
+    """Serve the standalone B1-B10 control-band × building-type matrix.
+    Self-contained (inline CSS/JS, no external deps). Launched from the
+    X-Y Detail overlay's 'Deep Dive ↗' button in psy_3d.html and from
+    the embedded psy-3d-engine widget on the dashboard."""
+    return _no_cache(send_from_directory('/root/data', 'deepdive.html'))
 
 
 # --- TELEMETRY API ENDPOINTS ---

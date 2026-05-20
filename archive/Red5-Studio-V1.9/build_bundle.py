@@ -46,6 +46,7 @@ ROOT_FILES = [
     'landing.html',
     'psy_3d.html',
     'sun_preview.html',
+    'deepdive.html',
 
     # Markdown guides.
     'band_guide.md',

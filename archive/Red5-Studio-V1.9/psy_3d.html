@@ -1297,6 +1297,14 @@ setTimeout(function(){
     }
   }catch(e){}
   fetchData();
+  /* Deep-link support: when navigated here with #xy in the URL hash
+     (e.g. from deepdive.html's "Back to X-Y Detail" link), auto-open
+     the 2D X-Y Detail overlay once weather data has settled. */
+  if(window.location.hash==='#xy'){
+    setTimeout(function(){
+      try{ if(typeof show2D==='function') show2D(); }catch(e){}
+    }, 1200);
+  }
 },500);
 
 })();

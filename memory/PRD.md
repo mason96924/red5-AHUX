@@ -1,5 +1,36 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G — Public Educational Page for `geniusmason.com` (2026-05-20)
+
+**Brief**: User wants to host the psychrometric chart publicly so HVAC engineers, students, building owners, and maintenance teams can understand it, with self-hosted analytics.  No auth, no backend dependency, no Emergent platform lock-in — must run on Netlify and/or a Raspberry Pi.
+
+### Files added
+- `/app/frontend/public/learn.html` — standalone static page (single file, ~600 lines, vanilla JS, ~30 KB).  Reuses `js/psychrometric.js` for the Givoni math so the public page and the operator dashboard never drift apart.
+- `/app/GENIUSMASON_DEPLOY.md` — step-by-step deployment guide covering:
+  - Netlify drag-and-drop
+  - Raspberry Pi + Caddy + Cloudflare Tunnel
+  - Self-hosted Umami (Docker compose + Caddy reverse proxy) for privacy-first analytics
+
+### Features
+- **Audience switcher** (5 tabs): Everyone, HVAC Engineer, Student, Building Owner, Maintenance — each swaps the explainer copy to match the reader.
+- **Interactive psychrometric chart** rendered as inline SVG: saturation curve, RH grid (20/40/60/80/100%), Givoni comfort zone, 40-60% RH sweet-spot strip, axis labels, region anchors.
+- **Draggable yellow indicator** (mouse + touch) — live readout of T, RH, humidity ratio, enthalpy, and current Givoni tier badge with color matching the operator dashboard.
+- **Four region cards** (A/B/C+/C-) summarizing the control playbook.
+- **Umami analytics stub** in the `<head>` — commented out with placeholder URLs; uncomment after Pi-hosted Umami is up.  Custom `audience_switch` event fires when a tab is clicked so the operator can see which audience their visitors identify as.
+- Fully responsive: 2-column desktop, 1-column mobile.
+
+### Smoke-tested via Playwright
+- Initial render at `/learn.html` ✓
+- Tab switch to HVAC Engineer swaps explainer copy ✓
+- Mouse-drag from comfort (24/50) to hot-humid (37/53) → tier badge correctly switches to "Hot / Humid" with orange color ✓
+- Live readout values update on drag ✓
+- Mobile viewport (414×896) renders without horizontal scroll ✓
+
+### What's NOT done (Phase H, deferred)
+- "Pro View" link at the bottom of `/learn.html` currently points at `/dashboard.html`, which still requires auth.  When the user is ready, we'll port the full multi-AHU + Markov-drift simulator into a JS-only `pro.html` so the Pro View is also fully static — eliminating the backend dependency for the public deploy entirely.  Estimate: 3-4 hours.
+
+
+
 ## V2.0 Phase 2f — Emergency password sign-in (2026-05-20)
 **Brief**: Cloudflare WAF in front of the preview URL was returning HTTP 403 (`error code: 1010` — browser-fingerprint block) for users signing in via Google OAuth from Linux/Windows browsers, while the operator's Mac browser worked fine.  The root cause is at Emergent's infrastructure (CF challenge), not the app code.
 

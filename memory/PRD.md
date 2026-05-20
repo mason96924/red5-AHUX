@@ -1,5 +1,39 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.1 — Standard 4-quadrant outer classifier + axis scaler + clipped sweet-spot (2026-05-20)
+
+**User feedback** (with annotated screenshot at 17.8 °C / 89% RH labeled "Cold/Dry" — wrong; and the 40–60% RH sweet-spot strip visibly protruding above the Givoni envelope):
+1. The inner sweet-spot polygon protrudes outside the Givoni comfort zone at high T.
+2. The dot at 17.8 °C / 89% RH should be **Cool/Wet** per the standard psychrometric classification, not "Cold/Dry."
+3. The dry-bulb axis range should be user-scalable.
+
+### Root causes
+1. The sweet-spot polygon was built as a flat rectangle (20–27 °C × 40–60% RH). The Givoni CZ's top edge drops from 80% RH at T=25 °C to 50% RH at T=27 °C, so a flat 60% strip pokes out around T ≈ 26.3 °C.
+2. `getGivoniTier()` was splitting the outer region by **temperature only** (T ≥ 23.5 → "Hot/Humid", else "Cold/Dry"). Per ASHRAE Handbook Fundamentals + Givoni's bioclimatic chart, the standard convention is a **4-quadrant split** using BOTH temperature *and* humidity ratio W.
+
+### Fixes (single source of truth in `/app/frontend/public/js/psychrometric.js`)
+- **`GIVONI_COLORS`** gained four explicit tier colors (`HOT_HUMID`, `HOT_DRY`, `COOL_WET`, `COLD_DRY`) plus backward-compat aliases for the two old names.
+- **`WET_DRY_SPLIT_W = 0.00926 kg/kg`** — the humidity ratio at the CZ centroid (23.5 °C / 50% RH), used to split the outer ring into wet vs dry per ASHRAE Handbook Ch. 1.
+- **`getGivoniTier()` rewrite**: outer region now returns one of four tier codes — `C+H` (Hot/Humid → cool + dehumidify), `C+D` (Hot/Dry → cool + humidify, evaporative-cooling regime), `C-H` (Cool/Wet → heat + dehumidify, shoulder-season / basement), `C-D` (Cold/Dry → heat + humidify, classic winter).
+
+### Learn page (`/app/frontend/public/learn.html`)
+- **Sweet-spot polygon** rebuilt with explicit top-edge clipping using `czTopRH(t)` so it can never protrude above the outer envelope.
+- **Axis range controls**: two number inputs (`Dry-bulb min` / `Dry-bulb max`) + 4 buttons (Reset / Arctic / Temperate / Tropical). Triggers `rebuildChart()` which clears the SVG and re-renders at the new scale; the indicator dot is clamped into the new visible range so it never falls off-canvas.
+- **Region cards** expanded from 4 to 6 (A, B, C+H, C+D, C-H, C-D) in a 3×2 grid with the proper border colors.
+- **Region anchors** on the chart: 4 ghost labels (HOT / HUMID, HOT / DRY, COOL / WET, COLD / DRY) in their proper quadrants.
+- Custom Umami events: `audience_switch` (existing) + `axis_range_change` (new).
+
+### Smoke-tested via Playwright
+- User-reported case 17.7 °C / 90% RH / 11.43 g/kg → tier badge correctly reads **"Cool / Wet"** in cyan ✓
+- Sweet-spot stays inside the envelope at the high-T transition ✓
+- Arctic preset rescales the chart to -30…20 °C and keeps the indicator inside the visible region ✓
+- Reset returns to default -10…45 °C ✓
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{index.html, index-single-file.html, js/psychrometric.js}` — ready to drag onto Netlify.
+
+
+
 ## Phase G — Public Educational Page for `geniusmason.com` (2026-05-20)
 
 **Brief**: User wants to host the psychrometric chart publicly so HVAC engineers, students, building owners, and maintenance teams can understand it, with self-hosted analytics.  No auth, no backend dependency, no Emergent platform lock-in — must run on Netlify and/or a Raspberry Pi.

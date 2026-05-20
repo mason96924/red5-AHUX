@@ -175,12 +175,20 @@ const getEnergyMetrics = (ahu) => {
 //   CZ_*    : outer Givoni Comfort Zone (looser ASHRAE 55 envelope)
 //   SWEET_* : operator-defined inner RH sweet-spot (default 40-60% RH)
 const GIVONI_COLORS = {
-    CZ_STROKE:    '#10b981',  // outer CZ stroke / Tier B dot fill
+    CZ_STROKE:    '#10b981',  // outer CZ polygon stroke
     CZ_FILL:      '#10b981',  // outer CZ polygon fill (used at low opacity)
     SWEET_STROKE: '#047857',  // inner sweet-spot stroke
-    SWEET_FILL:   '#059669',  // inner sweet-spot fill / Tier A dot fill
+    SWEET_FILL:   '#059669',  // inner sweet-spot polygon fill
     HOT_OUTSIDE:  '#f97316',  // Tier C dot — outside CZ on hot/humid side
     COLD_OUTSIDE: '#1d4ed8',  // Tier C dot — outside CZ on cold/dry side
+    // Tier-dot colours (legend pills + per-VAV state indicators).  Decoupled
+    // from the polygon fills so the chart geometry stays emerald while the
+    // legend can offer clearer hue contrast.  Cyan was chosen for Tier B
+    // because it (a) reads as "RH/water" semantically, (b) is far enough
+    // from emerald-500 to pass casual visual scanning, and (c) does not
+    // clash with the hot-orange / cold-blue Tier C dots.
+    TIER_A_DOT:   '#10b981',  // bright emerald — true comfort, hold
+    TIER_B_DOT:   '#06b6d4',  // cyan — comfort zone, RH soft-trim
 };
 
 // Givoni-aware tier classification + control-strategy resolver.
@@ -210,7 +218,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
     if (inCZ && (!_ss || inSS)) {
         return {
             tier: 'A',
-            dotFill: GIVONI_COLORS.SWEET_FILL,
+            dotFill: GIVONI_COLORS.TIER_A_DOT,
             dotOpacity: 1,
             ringStroke: GIVONI_COLORS.SWEET_STROKE,
             strategy: 'HOLD',
@@ -229,7 +237,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
         const subLabel = tooLow ? 'humidify (RH-only)' : 'dehumidify (RH-only)';
         return {
             tier: 'B',
-            dotFill: GIVONI_COLORS.CZ_STROKE,
+            dotFill: GIVONI_COLORS.TIER_B_DOT,
             dotOpacity: 1,
             ringStroke: GIVONI_COLORS.SWEET_STROKE,
             strategy,

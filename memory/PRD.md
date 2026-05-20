@@ -1,5 +1,32 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 + V1.9 — Tier A/B legend contrast (2026-02-19)
+**Brief**: Comfort (A) and Soft trim (B) indicator dots were both emerald greens (`#059669` and `#10b981`) — visually indistinguishable.  Bumped to clear-hue separation: Tier A keeps emerald, Tier B moves to cyan.
+
+### Fix
+- New tokens in `GIVONI_COLORS`:
+  - `TIER_A_DOT: '#10b981'` (bright emerald-500 — true comfort, hold)
+  - `TIER_B_DOT: '#06b6d4'` (cyan-500 — soft trim hum/dehum)
+- Decoupled dot fills from polygon fills (`SWEET_FILL` / `CZ_STROKE` remain emerald — chart geometry unchanged).
+- `getGivoniTier()` now returns `TIER_A_DOT` for Tier A and `TIER_B_DOT` for Tier B.
+- Legend swatches in dashboard.html updated to match.
+- Applied identically to V2.0 (`frontend/public/`) and V1.9 (`archive/Red5-Studio-V1.9/`).
+
+### Verification (live, V2.0)
+- DOM probe: Comfort `rgb(16,185,129)` emerald, Soft trim `rgb(6,182,212)` cyan, Hot/humid `rgb(249,115,22)` orange, Cold/dry `rgb(29,78,216)` blue.
+- Chart polygon remains emerald (not affected by dot-token change).
+- Screenshot confirmed visual contrast.
+
+### V1.9 deployment
+- Upload these two files to the controller via Save-to-Controller:
+  - `dashboard.html`
+  - `js/psychrometric.js`
+- `tests/`, `mockups/`, `__pycache__/` exclusions per `CONTROLLER_UPLOAD_LIST.md` unchanged.
+
+### Files changed
+- `frontend/public/js/psychrometric.js`, `frontend/public/dashboard.html` (V2.0)
+- `archive/Red5-Studio-V1.9/js/psychrometric.js`, `archive/Red5-Studio-V1.9/dashboard.html` (V1.9)
+
 ## V1.9 Backport — Same centrifugal-fan animation fix (2026-02-19)
 **Brief**: User reported the same centrifugal-fan animation issue on the V1.9 controller deployment.  Root cause is identical: the operator's saved schema carries `telemetry_key:"UNKNOWN"` placeholders and the dashboard's `const tKey = a.telemetry_key || ''` treats that as truthy, so the animation looks up a point named "UNKNOWN" and finds nothing.
 

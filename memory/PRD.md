@@ -1,5 +1,38 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 Phase 2f — Emergency password sign-in (2026-05-20)
+**Brief**: Cloudflare WAF in front of the preview URL was returning HTTP 403 (`error code: 1010` — browser-fingerprint block) for users signing in via Google OAuth from Linux/Windows browsers, while the operator's Mac browser worked fine.  The root cause is at Emergent's infrastructure (CF challenge), not the app code.
+
+### Fix: ship a parallel password sign-in that bypasses the OAuth round-trip
+- New file: `/app/backend/password_auth.py` — `POST /api/auth/password-login` endpoint.
+- New file: `/app/frontend/src/pages/AdminLogin.jsx` — hidden form at `/admin-login` route (not advertised from the landing page).
+- New env vars (double-quoted to prevent shell `$` expansion of bcrypt hash):
+  ```
+  ADMIN_PASSWORD_EMAIL=seeker0829@gmail.com
+  ADMIN_PASSWORD_HASH="$2b$12$AofCLjSsou41yF2g3WfiXeaI0m6PxAnIvKhBOAvA.J0qKpSJANRou"
+  ```
+
+### Architecture
+Both auth paths (OAuth + password) issue the SAME `session_token` cookie and write to the SAME `user_sessions` Mongo collection, so:
+- `/api/auth/me`     works unchanged for either path
+- `/api/auth/logout` works unchanged
+- tenant seed + allowlist + admin gating (`ADMIN_EMAILS`) re-used
+
+### Security
+- bcrypt cost factor 12, hash stored only in `.env` (never in DB) so password rotation is a single env edit + supervisor restart.
+- Only `ADMIN_EMAILS`-listed addresses may even attempt password login; non-admin emails get the same 401 as wrong-password (no info leak).
+- Brute-force lockout: 5 failed `(IP, email)` attempts → 15-minute cooldown via `login_attempts` collection.
+
+### Tests
+- `/app/backend/tests/test_v2_phase2f_password_auth.py` — **5/5 pass**:
+  wrong password → 401, non-admin email → 401, correct → 200 + cookie, `/api/auth/me` with cookie → 200 + `is_admin: true`, brute-force → 429 even with correct password.
+- Full backend suite: **112/112 pass**.
+
+### Smoke-tested end-to-end
+Login form at `/admin-login` → cookie issued → redirect to `/dashboard.html` → V1.9 SPA header shows "SIGNED IN: SEEKER0829@GMAIL.COM" with Logout.
+
+
+
 ## V2.0 + V1.9 — VAV chart-dot visual parity with table dots + Markov drift simulator (2026-02-20)
 **Brief**: User reported the VAV dots on the psychrometric chart did not visually match the VAV table circles, and asked to remove mechanical periodicity from the simulator.
 

@@ -67,6 +67,25 @@ app.include_router(auth_router)
 from allowlist import router as allowlist_router  # noqa: E402
 app.include_router(allowlist_router)
 
+# Wire the password-login router (Phase 2 Piece F: emergency admin path).
+# Lives alongside the Google OAuth flow and shares the same session_token
+# cookie + user_sessions collection, so /api/auth/me and logout work for
+# both paths unchanged.
+from password_auth import (  # noqa: E402
+    router as password_auth_router,
+    ensure_password_admin_user,
+)
+app.include_router(password_auth_router)
+
+
+@app.on_event("startup")
+async def _seed_password_admin() -> None:
+    """Idempotent admin-user seed for the password-login path."""
+    try:
+        await ensure_password_admin_user()
+    except Exception as e:  # noqa: BLE001
+        print("[startup] ensure_password_admin_user failed: %s" % e)
+
 # Tenant-aware helpers (Phase 2 Piece B).
 from tenants import (  # noqa: E402
     current_tenant_optional,

@@ -1,5 +1,32 @@
 # Test Credentials
 
+## V2.0 Phase 2f (Emergency Password Login — added 2026-05-20)
+
+**Why**: Cloudflare WAF in front of the preview URL returns HTTP 403 (error code 1010) for certain browser fingerprints, blocking Google OAuth on non-Mac browsers before the request ever reaches the app.  This password path bypasses the Emergent OAuth round-trip entirely while still issuing the *same* `session_token` cookie + tenant seed as the OAuth flow.
+
+**URL**: `https://controller-dashboard-2.preview.emergentagent.com/admin-login` (hidden — not linked from the landing page)
+
+**Credentials**:
+- Email: `seeker0829@gmail.com`
+- Password: `Delta1234!`  (bcrypt hash lives in `backend/.env` as `ADMIN_PASSWORD_HASH`, double-quoted so the shell does not expand the `$` glyphs)
+
+**Endpoint**:
+```bash
+curl -X POST https://controller-dashboard-2.preview.emergentagent.com/api/auth/password-login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"seeker0829@gmail.com","password":"Delta1234!"}' -c cookies.txt
+```
+
+**Brute-force protection**: 5 failed attempts per (IP, email) → 15-minute lockout (`login_attempts` collection).
+Tests: `/app/backend/tests/test_v2_phase2f_password_auth.py` — 5/5 pass.
+
+**Hard gates**:
+- Only emails listed in `ADMIN_EMAILS` are even allowed to attempt password login (prevents this from becoming a general signup oracle).
+- Non-admin attempts return the same 401 "Invalid credentials" message as wrong-password (no info leak about who is admin-listed).
+
+---
+
+
 ## V2.0 Phase 2c (Admin Allowlist)
 
 **Admin roster**: `ADMIN_EMAILS` in `/app/backend/.env` (comma-separated).

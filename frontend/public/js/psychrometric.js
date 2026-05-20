@@ -313,15 +313,15 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
             tooltip: ('Outside CZ - cool + moist (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | heat + dehumidify'),
         };
     }
-    // !hotSide && !wetSide -- classic cold/dry winter
+    // !hotSide && !wetSide -- classic cool + arid (heated indoor air, winter)
     return {
         tier: 'C-D',
         dotFill: GIVONI_COLORS.COLD_DRY,
         dotOpacity: 1,
         ringStroke: '#1e3a8a',
         strategy: 'HEAT_HUMIDIFY',
-        label: 'Cold/dry',
+        label: 'Cool/dry',
         subLabel: 'heat + humidify',
-        tooltip: ('Outside CZ - cold + arid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | heat + humidify'),
+        tooltip: ('Outside CZ - cool + arid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | heat + humidify'),
     };
 };

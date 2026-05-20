@@ -1,5 +1,37 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.2 — Make the classification thresholds VISIBLE + terminology fix (2026-05-20)
+
+**User feedback** (with annotated screenshot at 13.1 °C / 69% RH labeled "Cold / Dry"):
+The previous fix used proper humidity-ratio thresholds but the *visual* was self-contradictory — the "COOL / WET" anchor at (12 °C, 75% RH) was placed in what is technically the "Dry" quadrant (W < 9.26 g/kg) per my own classifier.  So the dot's halo overlapped a "COOL / WET" label while the badge correctly read "Cool / Dry".  Visually contradictory → user frustration justified.
+
+### Root cause
+Classification boundaries (T = 23.5 °C, W = 9.26 g/kg) were INVISIBLE — visitors had to take the badge on faith.  Anchor labels were placed by eyeball, not by quadrant centroid, so they wandered into the wrong region at low T.
+
+### Fixes (all in `/app/frontend/public/learn.html` + shared `psychrometric.js`)
+1. **Threshold lines drawn ON the chart** (subtle dashed gray, drawn BEFORE the CZ polygon so the green envelope covers the intersection at the CZ centroid):
+   - Vertical line at T = 23.5 °C labeled `23.5 °C  warm / cool split`
+   - Horizontal line at W = 9.26 g/kg labeled `9.3 g/kg  wet / dry split`
+   Visitors can now SEE the boundary the dot is being measured against.
+2. **Anchor labels repositioned deep into quadrant centroids**:
+   - HOT / HUMID at (33 °C, 75% RH) → W ≈ 24 g/kg, deep upper-right
+   - HOT / DRY at (38 °C, 12% RH) → W ≈ 5 g/kg, deep lower-right
+   - COOL / WET at (19 °C, 92% RH) → W ≈ 12.5 g/kg, just left of CZ above the wet split
+   - COOL / DRY at (0 °C, 55% RH) → W ≈ 2 g/kg, deep lower-left
+3. **Terminology fix**: "Cold / Dry" → "**Cool / Dry**" everywhere (badge, hint, chart anchor, region card).  Calling 13 °C "cold" was wrong by any normal interpretation; "cool" covers the full T < 23.5 range without overclaiming.
+4. **Hint copy** rewritten to reference the actual threshold numbers ("Below 23.5 °C and below 9.3 g/kg humidity ratio") so the visitor learns the rule, not the slogan.
+
+### Smoke-tested via Playwright
+User-reported case 13.1 °C / 70% RH / 6.55 g/kg now reads **"Cool / Dry"** with the dot positioned visibly below the dashed "9.3 g/kg wet / dry split" line and to the left of the vertical "23.5 °C warm / cool split" line.  Visual + badge + hint all consistent.
+
+### Lesson
+When introducing a classification with hard numeric thresholds, **draw the threshold on the chart**.  Otherwise the user is forced to back-derive the rule from anchor placement, and any anchor placed inside the wrong quadrant breaks trust.
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{index.html, index-single-file.html, js/psychrometric.js}`.
+
+
+
 ## Phase G.1 — Standard 4-quadrant outer classifier + axis scaler + clipped sweet-spot (2026-05-20)
 
 **User feedback** (with annotated screenshot at 17.8 °C / 89% RH labeled "Cold/Dry" — wrong; and the 40–60% RH sweet-spot strip visibly protruding above the Givoni envelope):

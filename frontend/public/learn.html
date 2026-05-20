@@ -402,8 +402,8 @@
         <p>Cool but clammy (shoulder seasons, basements, marine climates). <strong>Heat + dehumidify.</strong></p>
     </div>
     <div class="region-card CmD">
-        <h4>C−D · Cold / Dry</h4>
-        <p>Classic winter (Chicago in January). <strong>Heat + humidify</strong> — both are needed.</p>
+        <h4>C−D · Cool / Dry</h4>
+        <p>Below 23.5 °C with low absolute moisture — typical of heated indoor air in winter. <strong>Heat + humidify</strong> if RH drops below ~30%.</p>
     </div>
 </section>
 
@@ -569,6 +569,40 @@
             transform: `rotate(90, ${W - 14}, ${H / 2})`
         }, 'Humidity ratio  (g / kg)'));
 
+        // Quadrant threshold lines — make the wet/dry and warm/cool
+        // boundaries VISIBLE so visitors can see exactly which side of
+        // each axis the dot sits on.  Drawn BEFORE the CZ polygon so the
+        // green envelope covers them in the comfort area (the threshold
+        // intersection sits inside the CZ centroid by design).
+        const WET_W = 0.00926;   // matches WET_DRY_SPLIT_W in psychrometric.js
+        const WARM_T = 23.5;     // matches getGivoniTier T threshold
+        if (T_MIN <= WARM_T && WARM_T <= T_MAX) {
+            svg.appendChild(el('line', {
+                x1: tToX(WARM_T), y1: PAD.top,
+                x2: tToX(WARM_T), y2: H - PAD.bottom,
+                stroke: '#64748b', 'stroke-width': 0.7,
+                'stroke-dasharray': '2 4', opacity: 0.55
+            }));
+            svg.appendChild(el('text', {
+                x: tToX(WARM_T) + 4, y: PAD.top + 11,
+                fill: '#64748b', 'font-size': 9, 'font-family': 'monospace',
+                'font-style': 'italic'
+            }, '23.5 °C  warm / cool split'));
+        }
+        if (WET_W <= W_MAX) {
+            svg.appendChild(el('line', {
+                x1: PAD.left, y1: wToY(WET_W),
+                x2: W - PAD.right, y2: wToY(WET_W),
+                stroke: '#64748b', 'stroke-width': 0.7,
+                'stroke-dasharray': '2 4', opacity: 0.55
+            }));
+            svg.appendChild(el('text', {
+                x: PAD.left + 6, y: wToY(WET_W) - 5,
+                fill: '#64748b', 'font-size': 9, 'font-family': 'monospace',
+                'font-style': 'italic'
+            }, '9.3 g/kg  wet / dry split'));
+        }
+
         // Givoni Comfort Zone polygon (outer envelope, emerald)
         const cz = buildComfortZonePoly();
         const czPath = cz.map(p => `${tToX(p[0])},${wToY(p[1])}`).join(' ');
@@ -616,11 +650,15 @@
                 'font-family': 'monospace'
             }, label));
         };
-        // 4-quadrant outer labels using ASHRAE/Givoni standard names
-        anchor(34, 65,  'HOT / HUMID',  GIVONI_COLORS.HOT_HUMID);
-        anchor(38, 15,  'HOT / DRY',    GIVONI_COLORS.HOT_DRY);
-        anchor(12, 75,  'COOL / WET',   GIVONI_COLORS.COOL_WET);
-        anchor(5,  25,  'COLD / DRY',   GIVONI_COLORS.COLD_DRY);
+        // 4-quadrant outer labels using ASHRAE/Givoni standard names.
+        // Anchors deliberately placed DEEP in each quadrant centroid so
+        // the dot's halo never overlaps a label from a different quadrant
+        // (the previous placement had COOL/WET sitting in what is
+        // technically the dry quadrant at low T).
+        anchor(33, 75,  'HOT / HUMID',  GIVONI_COLORS.HOT_HUMID);
+        anchor(38, 12,  'HOT / DRY',    GIVONI_COLORS.HOT_DRY);
+        anchor(19, 92,  'COOL / WET',   GIVONI_COLORS.COOL_WET);
+        anchor(0,  55,  'COOL / DRY',   GIVONI_COLORS.COLD_DRY);
     }
 
     // ---------------- INDICATOR (DRAGGABLE DOT) ----------------
@@ -649,7 +687,7 @@
         'C+H': { color: GIVONI_COLORS.HOT_HUMID,  label: 'Hot / Humid', hint: 'Warm and moist — cool and dehumidify (summer in the South).' },
         'C+D': { color: GIVONI_COLORS.HOT_DRY,    label: 'Hot / Dry',   hint: 'Warm and arid — evaporative cooling shines here (desert summer).' },
         'C-H': { color: GIVONI_COLORS.COOL_WET,   label: 'Cool / Wet',  hint: 'Cool and clammy — heat and dehumidify (shoulder seasons, basements).' },
-        'C-D': { color: GIVONI_COLORS.COLD_DRY,   label: 'Cold / Dry',  hint: 'Cold and arid — heat and humidify (classic winter).' }
+        'C-D': { color: GIVONI_COLORS.COLD_DRY,   label: 'Cool / Dry',  hint: 'Below 23.5 °C and below 9.3 g/kg humidity ratio. Heat is the main fix; add humidify if RH drops below ~30%.' }
     };
 
     function updateReadout(t, rh, w) {

@@ -107,24 +107,31 @@
 <body>
     <!-- V2.0 Phase 2a/c: auth banner identical to equipment_mapper.html's so
          operators see their sign-in state and can persist clamps/locations
-         from the live dashboard. -->
-    <div id="v2-auth-banner" style="position:fixed;top:0;right:0;z-index:99999;
+         from the live dashboard.  Collapsed pill by default so it doesn't
+         cover the dashboard's top-right controls (theme toggle, etc.);
+         expands on hover/focus to reveal email + Logout. -->
+    <div id="v2-auth-banner" style="position:fixed;top:6px;right:6px;z-index:99999;
         font-family: 'Inter', system-ui, sans-serif; font-size: 11px;
-        padding: 6px 10px; display: none; align-items: center; gap: 8px;
-        background: rgba(15,23,42,0.92); border-bottom-left-radius: 8px;
-        border: 1px solid #1e293b; border-top: none; border-right: none;
-        color: #e2e8f0;" data-testid="dashboard-auth-banner">
+        padding: 3px 7px; display: none; align-items: center; gap: 6px;
+        background: rgba(15,23,42,0.78); border-radius: 999px;
+        border: 1px solid rgba(51,65,85,0.6);
+        color: #e2e8f0; opacity: 0.55;
+        transition: opacity .18s, padding .18s, background .18s, border-radius .18s;
+        cursor: default;" data-testid="dashboard-auth-banner"
+        onmouseenter="this.style.opacity='1';this.style.padding='6px 10px';this.style.background='rgba(15,23,42,0.95)';this.style.borderRadius='8px';"
+        onmouseleave="this.style.opacity='0.55';this.style.padding='3px 7px';this.style.background='rgba(15,23,42,0.78)';this.style.borderRadius='999px';">
+        <span id="v2-auth-dot" aria-hidden="true" style="width:8px;height:8px;border-radius:50%;background:#64748b;flex-shrink:0;box-shadow:0 0 0 2px rgba(15,23,42,0.6)"></span>
         <span id="v2-auth-state" style="font-family: 'JetBrains Mono', monospace;
             text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px;
-            color: #94a3b8;" data-testid="dashboard-auth-state">checking...</span>
+            color: #94a3b8; white-space: nowrap;" data-testid="dashboard-auth-state">checking...</span>
         <button id="v2-auth-signin" data-testid="dashboard-signin-btn"
             style="display: none; background:#fbbf24; color:#0f172a;
-            border: none; border-radius: 4px; padding: 5px 10px;
+            border: none; border-radius: 4px; padding: 4px 8px;
             font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
-            font-size: 10px; cursor: pointer;">Sign in with Google</button>
+            font-size: 9px; cursor: pointer;">Sign in with Google</button>
         <button id="v2-auth-logout" data-testid="dashboard-logout-btn"
             style="display: none; background: transparent; color: #94a3b8;
-            border: 1px solid #334155; border-radius: 4px; padding: 4px 8px;
+            border: 1px solid #334155; border-radius: 4px; padding: 3px 7px;
             font-size: 9px; cursor: pointer; text-transform: uppercase;
             letter-spacing: 0.08em;">Logout</button>
     </div>
@@ -132,10 +139,26 @@
         (function () {
             var apiUrl = window.API_BASE_URL || window.location.origin;
             var banner = document.getElementById('v2-auth-banner');
+            var dot    = document.getElementById('v2-auth-dot');
             var state  = document.getElementById('v2-auth-state');
             var btnIn  = document.getElementById('v2-auth-signin');
             var btnOut = document.getElementById('v2-auth-logout');
             banner.style.display = 'flex';
+            // Track hover so we can show the full email when expanded and a
+            // short label when collapsed — avoids the pill obscuring the
+            // dashboard buttons sitting underneath it in the top-right.
+            var _shortLabel = 'checking...';
+            var _fullLabel  = 'checking...';
+            var _hovered = false;
+            function applyLabel(){
+              state.textContent = _hovered ? _fullLabel : _shortLabel;
+              // Hide the inline Sign-in / Logout button in collapsed state so
+              // the pill stays tiny — they reveal on hover.
+              if (btnIn.dataset.allowed === '1')  btnIn.style.display  = _hovered ? 'inline-block' : 'none';
+              if (btnOut.dataset.allowed === '1') btnOut.style.display = _hovered ? 'inline-block' : 'none';
+            }
+            banner.addEventListener('mouseenter', function(){ _hovered = true;  applyLabel(); });
+            banner.addEventListener('mouseleave', function(){ _hovered = false; applyLabel(); });
             btnIn.addEventListener('click', function () {
                 try { localStorage.setItem('r5_post_login_redirect', '/dashboard.html'); } catch (e) {}
                 var redirectUrl = window.location.origin + '/dashboard';
@@ -149,21 +172,32 @@
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (me) {
                     if (me && me.email) {
-                        state.textContent = 'Signed in: ' + me.email;
+                        var first = (me.email.split('@')[0] || '').split('.')[0];
+                        _shortLabel = first ? first.toUpperCase() : 'OK';
+                        _fullLabel  = 'Signed in: ' + me.email;
+                        dot.style.background = '#10b981';
+                        dot.style.boxShadow = '0 0 6px rgba(16,185,129,.6), 0 0 0 2px rgba(15,23,42,0.6)';
                         state.style.color = '#a3e635';
-                        btnOut.style.display = 'inline-block';
+                        btnOut.dataset.allowed = '1';
                         window.__v2_signed_in = true;
                     } else {
-                        state.textContent = 'Anonymous (preview only)';
+                        _shortLabel = 'GUEST';
+                        _fullLabel  = 'Anonymous (preview only)';
+                        dot.style.background = '#fbbf24';
+                        dot.style.boxShadow = '0 0 6px rgba(251,191,36,.5), 0 0 0 2px rgba(15,23,42,0.6)';
                         state.style.color = '#fbbf24';
-                        btnIn.style.display = 'inline-block';
+                        btnIn.dataset.allowed = '1';
                         window.__v2_signed_in = false;
                     }
+                    applyLabel();
                 })
                 .catch(function () {
-                    state.textContent = 'Auth check failed';
+                    _shortLabel = 'ERR';
+                    _fullLabel  = 'Auth check failed';
+                    dot.style.background = '#f87171';
                     state.style.color = '#f87171';
-                    btnIn.style.display = 'inline-block';
+                    btnIn.dataset.allowed = '1';
+                    applyLabel();
                 });
         })();
     </script>

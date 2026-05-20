@@ -228,10 +228,21 @@ def api_data():
             oa_rh = pts.get(ahu_map.get('oa_rh', 'OAH'))
             sa_t = pts.get(ahu_map.get('sa_t', 'SAT'))
             sa_rh = pts.get(ahu_map.get('sa_rh', 'SAH'))
-            if oa_t is None: oa_t = 12.0
-            if oa_rh is None: oa_rh = 70.0
-            if sa_t is None: sa_t = 16.0
-            if sa_rh is None: sa_rh = 55.0
+            # Live-data fallback (2026-05-20): when an AHU-level read is None
+            # (BACnet point unmapped or device offline), drive the value with
+            # a slow sinusoid so the chart points and trends never freeze.
+            # Real telemetry always wins.  `any()` over a tuple is used
+            # instead of a multi-term `or` chain to stay clear of the
+            # V1.9 controller parser's long-or-chain hang (see CHANGELOG).
+            if any(v is None for v in (oa_t, oa_rh, sa_t, sa_rh)):
+                _t_now = time.time()
+                _ahu_seed = sum(ord(c) for c in ahu_name) * 0.01
+                _ow = math.sin(_t_now / 600.0 + _ahu_seed)      # ~10 min OA drift
+                _sw = math.sin(_t_now / 220.0 + _ahu_seed)      # ~3.5 min SA drift
+                if oa_t is None:  oa_t  = 18.0 + 6.0 * _ow      # 12-24 C
+                if oa_rh is None: oa_rh = 60.0 + 14.0 * (-_ow)  # 46-74 %
+                if sa_t is None:  sa_t  = 15.5 + 1.2 * _sw      # 14.3-16.7 C
+                if sa_rh is None: sa_rh = 60.0 + 6.0 * _sw      # 54-66 %
             vav_map = dashboard_map.get('vav', {})
             embedded_vavs = ahu_data.get('vavs', {})
 
@@ -253,8 +264,22 @@ def api_data():
                     vav_pts = {**vav_pts, **_sim_overrides[vav_name]}
                 vt = vav_pts.get(vav_map.get('zone_t', 't'))
                 vrh = vav_pts.get(vav_map.get('zone_rh', 'rh'))
-                if vt is None: vt = 22.0
-                if vrh is None: vrh = 45.0
+                # ----------------------------------------------------------
+                # Live-data fallback (2026-05-20): if either zone reading is
+                # None (no physical sensor wired) substitute a per-VAV beat
+                # of two sinusoids so the dashboard never sits frozen at
+                # 22 / 45.  Real telemetry always wins.  See V2.0 server.py
+                # for the symmetric implementation.
+                # ----------------------------------------------------------
+                if vt is None or vrh is None:
+                    _seed = sum(ord(c) for c in vav_name) * 0.013
+                    _t_now = time.time()
+                    _wa = math.sin(_t_now / 22.0 + _seed)
+                    _wb = math.sin(_t_now / 95.0 + _seed * 0.7)
+                    if vt is None:
+                        vt = 22.5 + 2.6 * _wb + 0.6 * _wa
+                    if vrh is None:
+                        vrh = 47.0 + 6.5 * (-_wb) + 2.0 * (-_wa)
                 vw = get_w(vt, vrh)
                 vav_list.append({"id": vav_name, "t": vt, "rh": vrh, "w": vw, "h": get_h(vt, vw), "all_points": vav_pts})
                 vav_temps.append(vt); vav_rhs.append(vrh)

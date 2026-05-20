@@ -176,17 +176,46 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
     """Build a V1.9-shaped AHU entry (array element of /api/data response)."""
     sa_t = float(band["SA_T_Delivery"]) + offset_deg
     sa_rh = float(band["SA_RH_Delivery"])
-    # Synthesize per-VAV zone temps/RHs (small dither so chart shows spread)
+    # Synthesize per-VAV state.  Each VAV gets its own phase offset + driver
+    # frequency so the terminal hub graphic shows clearly different waveforms
+    # rather than a uniform-looking grid.  Amplitudes are tuned to be obvious
+    # on a 5-8 second poll without breaking the per-zone realism (zone temps
+    # stay 18-27 C, RH stays 25-65%).
     vav_list = []
+    t_now = time.time()
     for i, vn in enumerate(vav_names):
-        wave = math.sin(time.time() / 90.0 + i * 0.7)
-        vt = 22.0 + 1.5 * wave
-        vrh = 45.0 + 4.0 * (-wave)
-        vw = _humidity_ratio(vt, vrh)
+        # Two-period beat (~22s and ~95s) so the waveform never looks like
+        # a static sine.  Each VAV has its own seed-based offset so adjacent
+        # VAVs differ visibly.
+        seed   = (i * 1.7 + hash(vn) % 100 * 0.013)
+        wave_a = math.sin(t_now / 22.0 + seed)
+        wave_b = math.sin(t_now / 95.0 + seed * 0.7)
+        vt  = 22.5 + 2.6 * wave_b + 0.6 * wave_a            # zone temp 19.9-25.1
+        vrh = 47.0 + 6.5 * (-wave_b) + 2.0 * (-wave_a)      # zone RH 38.5-55.5
+        vw  = _humidity_ratio(vt, vrh)
+        # VAV-level driver points: damper position (DPR), supply temp (VST),
+        # setpoint (ZSP), occupancy (OCC).  Drive the terminal-hub graphic.
+        dpr = max(0.0, min(100.0, 45.0 + 25.0 * wave_b + 10.0 * wave_a))
+        vst = 14.0 + 1.5 * wave_a                            # supply ~12.5-15.5
+        zsp = 23.0 + 0.5 * math.sin(t_now / 600.0 + seed)    # slow setpoint drift
+        afm = max(0.0, min(1.0, 1.0 if dpr > 5.0 else 0.0))  # airflow status
+        afs = afm
         vav_list.append({
-            "id": vn, "t": round(vt, 2), "rh": round(vrh, 1),
-            "w": round(vw, 5), "h": round(_enthalpy(vt, vw), 2),
-            "all_points": {"t": round(vt, 2), "rh": round(vrh, 1)},
+            "id": vn,
+            "t":  round(vt, 2),
+            "rh": round(vrh, 1),
+            "w":  round(vw, 5),
+            "h":  round(_enthalpy(vt, vw), 2),
+            "all_points": {
+                "t":   round(vt, 2),
+                "rh":  round(vrh, 1),
+                "DPR": round(dpr, 1),    # damper position
+                "VST": round(vst, 2),    # supply temp
+                "ZSP": round(zsp, 2),    # zone setpoint
+                "AFM": afm,              # airflow manual command
+                "AFS": afs,              # airflow status
+                "OCC": 1.0,              # occupancy (always on in demo)
+            },
         })
     ra_t = sum(v["t"] for v in vav_list) / len(vav_list) if vav_list else 24.0
     ra_rh = sum(v["rh"] for v in vav_list) / len(vav_list) if vav_list else 50.0

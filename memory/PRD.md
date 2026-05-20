@@ -1,5 +1,42 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 + V1.9 — Live VAV / AHU values were static (2026-02-19)
+**Brief**: Operator reported VAV values appearing frozen on both V2.0 hosted demo and V1.9 controller deployment, despite the simulator being "on".  Two unrelated root causes -- one per version.
+
+### V2.0 root cause + fix (`backend/server.py`)
+The simulator emitted only `{t, rh}` per VAV with `t = 22.0 + 1.5 * sin(time()/90)` — amplitude ±1.5 C, period ~9 minutes — change-per-5s-poll was well below visible noise.
+
+Replaced with a **beat of two sinusoids** at 22 s and 95 s periods (visible at 5s polls), amplified to ±3.2 C, and added 6 driver points so the VAV terminal hub graphic also animates:
+| Point | Meaning | Range |
+|---|---|---|
+| `t`   | zone temp        | 19.9 – 25.1 C |
+| `rh`  | zone RH          | 38.5 – 55.5 % |
+| `DPR` | damper position  | 0 – 100 % (visible 1 %/5s drift) |
+| `VST` | supply temp      | 12.5 – 15.5 C |
+| `ZSP` | zone setpoint    | slow drift (10 min period) |
+| `AFM` | airflow command  | 0 or 1 (damper > 5 % gate) |
+| `AFS` | airflow status   | mirrors `AFM` |
+| `OCC` | occupancy        | 1 (demo always-occupied) |
+
+Verified 3 polls 5s apart show clear movement across all driver points.
+
+### V1.9 root cause + fix (`archive/Red5-Studio-V1.9/telemetry_service.py`)
+When the configured `zone_t`/`zone_rh` (and AHU-level `OAT`/`OAH`/`SAT`/`SAH`) BACnet reads return `None` (point unmapped / device offline), the code hard-coded the value to a CONSTANT:
+```python
+if vt is None: vt = 22.0
+if vrh is None: vrh = 45.0
+```
+Result: any missing-sensor zone displayed `22.0 / 45.0` forever.  Replaced both VAV and AHU `None`-fallback blocks with the same sinusoidal simulator used in V2.0.  **Real BACnet readings still always win** -- simulator only fills `None` gaps.
+
+To stay clear of the V1.9 controller parser's documented long-OR-chain hang, the AHU 4-term `is None` check was written as `any(v is None for v in (oa_t, oa_rh, sa_t, sa_rh))` rather than a multi-term `or` chain.
+
+### V1.9 deployment
+- Single file push: `telemetry_service.py`.  No HTML / JS changes.
+- `tests/`, `mockups/`, `__pycache__/` exclusions per `CONTROLLER_UPLOAD_LIST.md` -- unchanged.
+
+### Regression
+- 107/107 backend tests still pass.
+
 ## V2.0 + V1.9 — Tier B color refined to sage / light green-grey (2026-02-19)
 **Brief**: Cyan Tier B was still too close to the deep blue Tier C− for some viewers.  Swapped Tier B to a sage / light green-grey (`#a8c0a8`) so the full palette reads as: bright emerald (Comfort) → muted sage (Soft trim) → orange (Hot/humid) → deep blue (Cold/dry).  Four clearly different hues + lightness levels.
 

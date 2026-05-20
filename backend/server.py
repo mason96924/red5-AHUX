@@ -26,6 +26,7 @@ import csv
 import json
 import math
 import os
+import random
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -148,6 +149,65 @@ def _enthalpy(t_c: float, w_kgkg: float) -> float:
     return 1.006 * t_c + w_kgkg * (2501.0 + 1.86 * t_c)
 
 
+# ---------------------------------------------------------------------------
+# Markov drift layer (Ornstein-Uhlenbeck style random walk).
+#
+# Wraps the deterministic beat-of-sines simulator so successive polls show
+# small, persistent, mean-reverting fluctuations on top of the underlying
+# waveform.  Without this layer the chart looks mechanically periodic.
+# With it, every VAV jitters around its sine envelope like a real zone
+# responding to door-opens, sun load, and occupancy noise.
+#
+# Math:   x_{n+1} = alpha * x_n + (1 - alpha) * mean + sigma * N(0, 1)
+#         clamped to [-clamp, +clamp] so the drift can never run away.
+# State persists per-key in module-level dict; each VAV/equipment driver
+# gets its own walk so neighbours look uncorrelated.
+# ---------------------------------------------------------------------------
+_VAV_DRIFT_STATE: dict[str, dict[str, float]] = {}
+
+
+def _markov_drift(key: str, sigma_t: float = 0.18, sigma_rh: float = 0.55,
+                  alpha: float = 0.92, clamp_t: float = 1.4,
+                  clamp_rh: float = 5.5) -> tuple[float, float]:
+    """Return (dt, drh) Markov-drift offsets for the given VAV key.
+
+    Stateful: successive calls form an OU random walk that the caller adds
+    on top of its deterministic beat-of-sines value.  Defaults are tuned so
+    a ~5 s poll interval shows ~0.2-0.6 deg / 0.5-1.5 %RH jitter that
+    drifts coherently over ~30-60 s, matching real zone-sensor noise.
+    """
+    s = _VAV_DRIFT_STATE.get(key)
+    if s is None:
+        s = {"dt": 0.0, "drh": 0.0}
+        _VAV_DRIFT_STATE[key] = s
+    s["dt"] = alpha * s["dt"] + sigma_t * random.gauss(0.0, 1.0)
+    s["drh"] = alpha * s["drh"] + sigma_rh * random.gauss(0.0, 1.0)
+    if s["dt"] > clamp_t:
+        s["dt"] = clamp_t
+    elif s["dt"] < -clamp_t:
+        s["dt"] = -clamp_t
+    if s["drh"] > clamp_rh:
+        s["drh"] = clamp_rh
+    elif s["drh"] < -clamp_rh:
+        s["drh"] = -clamp_rh
+    return s["dt"], s["drh"]
+
+
+def _scalar_drift(key: str, sigma: float = 0.25, alpha: float = 0.92,
+                  clamp: float = 2.5) -> float:
+    """Single-channel OU drift for non-(t, rh) driver points (DPR, VST...)."""
+    s = _VAV_DRIFT_STATE.get(key)
+    if s is None:
+        s = {"v": 0.0}
+        _VAV_DRIFT_STATE[key] = s
+    s["v"] = alpha * s.get("v", 0.0) + sigma * random.gauss(0.0, 1.0)
+    if s["v"] > clamp:
+        s["v"] = clamp
+    elif s["v"] < -clamp:
+        s["v"] = -clamp
+    return s["v"]
+
+
 def _demo_oa_state(now_ts: float) -> dict:
     """Synthesize OA temp/RH from a daily sinusoid.  Peak at 14:00 local."""
     secs = now_ts % 86400.0
@@ -190,13 +250,22 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
         seed   = (i * 1.7 + hash(vn) % 100 * 0.013)
         wave_a = math.sin(t_now / 22.0 + seed)
         wave_b = math.sin(t_now / 95.0 + seed * 0.7)
-        vt  = 22.5 + 2.6 * wave_b + 0.6 * wave_a            # zone temp 19.9-25.1
-        vrh = 47.0 + 6.5 * (-wave_b) + 2.0 * (-wave_a)      # zone RH 38.5-55.5
+        # Markov drift on top of the deterministic beat -- gives each zone
+        # the look of a real BACnet sensor (door-open dips, sun-load creep,
+        # occupancy nudges) instead of a clean sinusoid.  State persists
+        # per-VAV across polls (see _markov_drift above).
+        d_t, d_rh = _markov_drift(ahu_id + ":" + vn)
+        vt  = 22.5 + 2.6 * wave_b + 0.6 * wave_a + d_t       # zone temp 19.9-25.1 + drift
+        vrh = 47.0 + 6.5 * (-wave_b) + 2.0 * (-wave_a) + d_rh  # zone RH 38.5-55.5 + drift
         vw  = _humidity_ratio(vt, vrh)
         # VAV-level driver points: damper position (DPR), supply temp (VST),
         # setpoint (ZSP), occupancy (OCC).  Drive the terminal-hub graphic.
-        dpr = max(0.0, min(100.0, 45.0 + 25.0 * wave_b + 10.0 * wave_a))
-        vst = 14.0 + 1.5 * wave_a                            # supply ~12.5-15.5
+        # Each driver gets its own scalar Markov walk so the equipment
+        # graphics also breathe instead of pulsing on a fixed clock.
+        d_dpr = _scalar_drift(ahu_id + ":" + vn + ":DPR", sigma=0.9, clamp=8.0)
+        d_vst = _scalar_drift(ahu_id + ":" + vn + ":VST", sigma=0.08, clamp=0.8)
+        dpr = max(0.0, min(100.0, 45.0 + 25.0 * wave_b + 10.0 * wave_a + d_dpr))
+        vst = 14.0 + 1.5 * wave_a + d_vst                     # supply ~12.5-15.5
         zsp = 23.0 + 0.5 * math.sin(t_now / 600.0 + seed)    # slow setpoint drift
         afm = max(0.0, min(1.0, 1.0 if dpr > 5.0 else 0.0))  # airflow status
         afs = afm

@@ -80,6 +80,37 @@ WRITE_HISTORY_MAX = 100
 # overwritten by another write -- this matches real BACnet setpoint behavior.
 _sim_overrides = {}
 
+# ---------------------------------------------------------------------------
+# Markov drift layer (Ornstein-Uhlenbeck random walk).
+#
+# When a VAV has no physical (zone_t, zone_rh) sensor wired, the live-data
+# fallback synthesizes a beat-of-sines so the dashboard never freezes at
+# 22/45.  A pure deterministic beat still looks mechanically periodic, so
+# this drift layer adds a small mean-reverting random walk on top.  State
+# persists per-VAV across polls so the jitter is coherent over ~30-60 s
+# (matching real zone-sensor noise) instead of independent flicker.
+# Mirrors the V2.0 SaaS implementation in /app/backend/server.py.
+# ---------------------------------------------------------------------------
+_VAV_DRIFT_STATE = {}
+
+def _markov_drift(key, sigma_t=0.18, sigma_rh=0.55, alpha=0.92,
+                  clamp_t=1.4, clamp_rh=5.5):
+    s = _VAV_DRIFT_STATE.get(key)
+    if s is None:
+        s = {"dt": 0.0, "drh": 0.0}
+        _VAV_DRIFT_STATE[key] = s
+    s["dt"] = alpha * s["dt"] + sigma_t * random.gauss(0.0, 1.0)
+    s["drh"] = alpha * s["drh"] + sigma_rh * random.gauss(0.0, 1.0)
+    if s["dt"] > clamp_t:
+        s["dt"] = clamp_t
+    elif s["dt"] < -clamp_t:
+        s["dt"] = -clamp_t
+    if s["drh"] > clamp_rh:
+        s["drh"] = clamp_rh
+    elif s["drh"] < -clamp_rh:
+        s["drh"] = -clamp_rh
+    return s["dt"], s["drh"]
+
 def _record_write(equip_name, writes, csv_object, csv_value, success, mock=False, queued=False):
     """Record a write command in history, and cache value as sim override.
 
@@ -276,10 +307,14 @@ def api_data():
                     _t_now = time.time()
                     _wa = math.sin(_t_now / 22.0 + _seed)
                     _wb = math.sin(_t_now / 95.0 + _seed * 0.7)
+                    # Markov drift layer -- mean-reverting OU walk on top of
+                    # the beat so the synthesized waveform looks like real
+                    # zone-sensor noise instead of a clean sinusoid.
+                    _dt, _drh = _markov_drift(ahu_name + ":" + vav_name)
                     if vt is None:
-                        vt = 22.5 + 2.6 * _wb + 0.6 * _wa
+                        vt = 22.5 + 2.6 * _wb + 0.6 * _wa + _dt
                     if vrh is None:
-                        vrh = 47.0 + 6.5 * (-_wb) + 2.0 * (-_wa)
+                        vrh = 47.0 + 6.5 * (-_wb) + 2.0 * (-_wa) + _drh
                 vw = get_w(vt, vrh)
                 vav_list.append({"id": vav_name, "t": vt, "rh": vrh, "w": vw, "h": get_h(vt, vw), "all_points": vav_pts})
                 vav_temps.append(vt); vav_rhs.append(vrh)

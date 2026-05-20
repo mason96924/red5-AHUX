@@ -1,5 +1,32 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 + V1.9 — VAV chart-dot visual parity with table dots + Markov drift simulator (2026-02-20)
+**Brief**: User reported the VAV dots on the psychrometric chart did not visually match the VAV table circles, and asked to remove mechanical periodicity from the simulator.
+
+### VAV chart-dot visual parity fix (`frontend/public/dashboard.html`, mirrored in `archive/Red5-Studio-V1.9/dashboard.html`)
+Both the chart dot and the table dot already pulled `gv.dotFill` from the same `getGivoniTier()` resolver, so hex values were identical. They *looked* different because:
+- Table dot: 10×10 px solid `<div>` with `box-shadow: 0 0 5px <color>80` glow halo.
+- Chart dot: 3.5 px SVG `<circle>` with a *dark slate* stroke (`#0f172a`, 1.2 px) that visually muted the fill.
+
+**Fix**: Removed the dark stroke on chart VAV dots in favor of a same-color thin ring + `drop-shadow(0 0 3px <color>)` glow. Bumped radius from 3.5 to 4 for parity with the table chip's visual weight. Locked state still uses a white stroke + larger glow for selection feedback.
+
+### Markov drift layer for simulator (`backend/server.py`, mirrored in `archive/Red5-Studio-V1.9/telemetry_service.py`)
+The existing beat-of-two-sines simulator still looked mechanically periodic after enough polls. Added an Ornstein-Uhlenbeck-style mean-reverting random walk on top:
+```python
+x_{n+1} = alpha * x_n + sigma * N(0, 1)   # clamped to ±clamp
+```
+- Defaults tuned per channel: `sigma_t=0.18`, `sigma_rh=0.55`, `alpha=0.92`, clamps ±1.4 °C / ±5.5 % RH.
+- Per-VAV state persists in module-level `_VAV_DRIFT_STATE` so successive polls form a coherent random walk (~30–60 s autocorrelation), matching real zone-sensor noise.
+- Drift applied to: zone `t`, zone `rh`, damper position `DPR` (σ=0.9, clamp=8.0), supply temp `VST` (σ=0.08, clamp=0.8). `ZSP`, `AFM`, `AFS` left deterministic.
+- V1.9 mirror: applied to the live-data `None`-fallback path so real BACnet readings still always win — only synthesized values jitter.
+
+### Regression
+- 107/107 backend tests still pass.
+- Verified successive `_simulate_ahu` calls show realistic 0.02–0.2 °C / 0.1–1.2 % RH jitter between polls.
+- Chart dots now render with vibrant fill + matching glow halo — visual parity with table chips confirmed via screenshot.
+
+
+
 ## V2.0 + V1.9 — Live VAV / AHU values were static (2026-02-19)
 **Brief**: Operator reported VAV values appearing frozen on both V2.0 hosted demo and V1.9 controller deployment, despite the simulator being "on".  Two unrelated root causes -- one per version.
 

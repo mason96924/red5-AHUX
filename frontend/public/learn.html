@@ -114,6 +114,54 @@
             border-color: var(--accent);
         }
 
+        /* ---------- BUILDING TYPE SELECTOR ---------- */
+        .building-type-row {
+            max-width: 1180px;
+            margin: 8px auto 0;
+            padding: 0 32px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 11px;
+        }
+        .building-type-row .bt-label {
+            color: var(--text-mute);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            font-weight: 800;
+        }
+        .building-type-row select {
+            background: var(--bg-soft);
+            border: 1px solid var(--line);
+            color: var(--text);
+            padding: 8px 32px 8px 12px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round'/></svg>");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            min-width: 220px;
+        }
+        .building-type-row select:hover { border-color: var(--text-mute); }
+        .building-type-row select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .building-type-row .bt-ref {
+            color: var(--text-dim);
+            font-family: monospace;
+            font-size: 10px;
+            font-style: italic;
+            opacity: 0.85;
+        }
+
         /* ---------- EXPLAINER PANEL ---------- */
         .explainer {
             max-width: 1180px;
@@ -395,6 +443,20 @@
     <button data-audience="maintenance" aria-pressed="false" data-testid="audience-maintenance">Maintenance</button>
 </nav>
 
+<nav class="building-type-row" data-testid="building-type-row">
+    <span class="bt-label">Building type</span>
+    <select id="building-type" data-testid="building-type-select" aria-label="Building type preset">
+        <option value="office" selected>Office · 40–60% RH</option>
+        <option value="residential">Residential · 30–60% RH</option>
+        <option value="hospital">Hospital (OR) · 20–60% RH</option>
+        <option value="museum">Museum / Archive · 45–55% RH</option>
+        <option value="fab">Semiconductor Fab · 40–50% RH</option>
+        <option value="datacenter">Data Center · 40–60% RH</option>
+        <option value="pharmacy">Pharmacy / Cleanroom · 30–50% RH</option>
+    </select>
+    <span id="building-type-reference" class="bt-ref">ASHRAE Std 55-2020 §5.2.3</span>
+</nav>
+
 <section class="explainer" data-testid="explainer">
     <div class="explainer-body" id="explainer-body">
         <!-- Filled by JS based on selected audience -->
@@ -528,6 +590,35 @@
                 <p>This chart turns complaints into <strong>which piece of equipment to look at first</strong>. The four region cards below summarize the playbook.</p>`
         }
     };
+
+    // ---------------- BUILDING TYPES ----------------
+    // Each preset shifts the inner sweet-spot RH band to match the
+    // industry standard for that building type.  References cited in
+    // the bt-ref span next to the dropdown so any engineer can verify.
+    //
+    //   Office       40-60%   ASHRAE Std 55-2020 §5.2.3
+    //   Residential  30-60%   ASHRAE Std 55-2020 (residential adoption)
+    //   Hospital OR  20-60%   ASHRAE Std 170-2021 §7.1 (Anesthetizing locations)
+    //   Museum       45-55%   ASHRAE HVAC Apps 2023 Ch. 24 (mixed collections)
+    //   Fab          40-50%   SEMI E54 / IEST-RP-CC012  (photolithography)
+    //   Data Center  40-60%   ASHRAE TC 9.9 (Class A1 recommended envelope)
+    //   Pharmacy     30-50%   USP <797> / EU GMP Annex 1
+    const BUILDING_TYPES = {
+        office:      { lo: 40, hi: 60, label: 'Office',                 ref: 'ASHRAE Std 55-2020 §5.2.3' },
+        residential: { lo: 30, hi: 60, label: 'Residential',            ref: 'ASHRAE Std 55-2020 (residential)' },
+        hospital:    { lo: 20, hi: 60, label: 'Hospital (OR)',          ref: 'ASHRAE Std 170-2021 §7.1' },
+        museum:      { lo: 45, hi: 55, label: 'Museum / Archive',       ref: 'ASHRAE HVAC Apps 2023 Ch. 24' },
+        fab:         { lo: 40, hi: 50, label: 'Semiconductor Fab',      ref: 'SEMI E54 / IEST-RP-CC012' },
+        datacenter:  { lo: 40, hi: 60, label: 'Data Center',            ref: 'ASHRAE TC 9.9 Class A1 (recommended)' },
+        pharmacy:    { lo: 30, hi: 50, label: 'Pharmacy / Cleanroom',   ref: 'USP <797> / EU GMP Annex 1' }
+    };
+
+    // Live sweet-spot band (lo, hi) -- starts at the office default and
+    // mutates when the user picks a building type.  Used both by the
+    // sweet-spot polygon construction AND by getGivoniTier in the
+    // readout so tier A/B classification stays in lock-step.
+    let sweetSpotRange = { lo: BUILDING_TYPES.office.lo, hi: BUILDING_TYPES.office.hi };
+    let currentBuildingType = 'office';
 
     // ---------------- CHART CONSTANTS ----------------
     const W = 1100;          // viewBox width
@@ -704,16 +795,16 @@
             'font-family': 'monospace'
         }, 'COMFORT'));
 
-        // Inner sweet-spot polygon (40–60% RH) — clipped to the CZ top
-        // so the 60% RH line never protrudes above the Givoni envelope
-        // at high T (the CZ top drops from 80% RH at 25 °C to 50% RH
-        // at 27 °C, so a flat 60% strip would poke out around 26.3 °C).
+        // Inner sweet-spot polygon — bounded by the live sweetSpotRange
+        // (set by the Building Type selector).  Top edge is clipped to
+        // the CZ envelope so the band never protrudes outside the
+        // Givoni comfort zone at any T.
         const sweet = [];
-        // Bottom edge: walk left -> right at 40% RH
-        for (let t = 20; t <= 27; t += 0.5) sweet.push([t, getW(t, 40)]);
-        // Top edge: walk right -> left at min(60%, CZ top RH at t)
+        const _ssLo = sweetSpotRange.lo;
+        const _ssHi = sweetSpotRange.hi;
+        for (let t = 20; t <= 27; t += 0.5) sweet.push([t, getW(t, _ssLo)]);
         for (let t = 27; t >= 20; t -= 0.5) {
-            const topRH = Math.min(60, czTopRH(t));
+            const topRH = Math.min(_ssHi, czTopRH(t));
             sweet.push([t, getW(t, topRH)]);
         }
         const sweetPath = sweet.map(p => `${tToX(p[0])},${wToY(p[1])}`).join(' ');
@@ -818,19 +909,26 @@
     // Classification per ASHRAE Standard 55-2020 + 62.1-2022:
     //   wet/dry  split = 50% RH (midpoint of 40-60% comfort band)
     //   warm/cool split = 23.5 C  (CZ centroid)
-    const REGION_META = {
-        'A':   { color: GIVONI_COLORS.TIER_A_DOT, label: 'Comfort',      hint: 'Inside the comfort zone AND in the 40-60% RH sweet spot (ASHRAE 55-2020). Hold setpoints.' },
-        'B':   { color: GIVONI_COLORS.TIER_B_DOT, label: 'Soft Trim',    hint: 'Inside the comfort zone but RH is outside the 40-60% band. Light humidify or dehumidify, no temperature change.' },
-        'C+H': { color: GIVONI_COLORS.HOT_HUMID,  label: 'Hot / Humid',  hint: 'Above 23.5 °C and above 50% RH. Cool and dehumidify (ASHRAE 62.1: keep RH below 65% to limit mold risk).' },
-        'C+D': { color: GIVONI_COLORS.HOT_DRY,    label: 'Hot / Dry',    hint: 'Above 23.5 °C and below 50% RH. Evaporative cooling shines here.' },
-        'C-H': { color: GIVONI_COLORS.COOL_WET,   label: 'Cool / Humid', hint: 'Below 23.5 °C and above 50% RH — air feels clammy. Heat and dehumidify.' },
-        'C-D': { color: GIVONI_COLORS.COLD_DRY,   label: 'Cool / Dry',   hint: 'Below 23.5 °C and below 50% RH — typical of heated indoor air in winter. Heat is the main fix; humidify if RH drops below 30%.' }
-    };
+    // The "A" and "B" hints reference the LIVE sweet-spot range (set by
+    // the Building Type selector) so a museum visitor doesn't see the
+    // office 40-60% number quoted at them.
+    function _ss() { return sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH'; }
+    function _btLabel() { return (BUILDING_TYPES[currentBuildingType] || BUILDING_TYPES.office).label; }
+    function regionMeta() {
+        return {
+            'A':   { color: GIVONI_COLORS.TIER_A_DOT, label: 'Comfort',      hint: 'Inside the comfort zone AND in the ' + _ss() + ' sweet spot for ' + _btLabel() + '. Hold setpoints.' },
+            'B':   { color: GIVONI_COLORS.TIER_B_DOT, label: 'Soft Trim',    hint: 'Inside the comfort zone but RH is outside the ' + _ss() + ' band for ' + _btLabel() + '. Light humidify or dehumidify, no temperature change.' },
+            'C+H': { color: GIVONI_COLORS.HOT_HUMID,  label: 'Hot / Humid',  hint: 'Above 23.5 °C and above 50% RH. Cool and dehumidify (ASHRAE 62.1: keep RH below 65% to limit mold risk).' },
+            'C+D': { color: GIVONI_COLORS.HOT_DRY,    label: 'Hot / Dry',    hint: 'Above 23.5 °C and below 50% RH. Evaporative cooling shines here.' },
+            'C-H': { color: GIVONI_COLORS.COOL_WET,   label: 'Cool / Humid', hint: 'Below 23.5 °C and above 50% RH — air feels clammy. Heat and dehumidify.' },
+            'C-D': { color: GIVONI_COLORS.COLD_DRY,   label: 'Cool / Dry',   hint: 'Below 23.5 °C and below 50% RH — typical of heated indoor air in winter. Heat is the main fix; humidify if RH drops below 30%.' }
+        };
+    }
 
     function updateReadout(t, rh, w) {
         const h = getH(t, w);
-        const tier = getGivoniTier(t, w, rh, cz, { lo: 40, hi: 60 }, true);
-        const meta = REGION_META[tier.tier] || REGION_META['A'];
+        const tier = getGivoniTier(t, w, rh, cz, sweetSpotRange, true);
+        const meta = regionMeta()[tier.tier] || regionMeta()['A'];
         document.getElementById('r-t').textContent  = t.toFixed(1) + ' °C';
         document.getElementById('r-rh').textContent = rh.toFixed(0) + ' %';
         document.getElementById('r-w').textContent  = (w * 1000).toFixed(2) + ' g/kg';
@@ -921,6 +1019,28 @@
 
     document.querySelectorAll('.audience-switcher button').forEach(b => {
         b.addEventListener('click', () => setAudience(b.dataset.audience));
+    });
+
+    // ---------------- BUILDING TYPE SELECTOR ----------------
+    function setBuildingType(name) {
+        const bt = BUILDING_TYPES[name];
+        if (!bt) return;
+        currentBuildingType = name;
+        sweetSpotRange = { lo: bt.lo, hi: bt.hi };
+        document.getElementById('building-type-reference').textContent = bt.ref;
+        // Rebuild chart so the inner sweet-spot polygon re-renders at
+        // the new RH band, then re-render the indicator so the badge
+        // hint reflects the new context.
+        rebuildChart();
+        try {
+            if (typeof window.umami !== 'undefined' && window.umami.track) {
+                window.umami.track('building_type_change', { type: name });
+            }
+        } catch (_) { /* swallow */ }
+    }
+
+    document.getElementById('building-type').addEventListener('change', (e) => {
+        setBuildingType(e.target.value);
     });
 
     // ---------------- AXIS RANGE CONTROLS ----------------

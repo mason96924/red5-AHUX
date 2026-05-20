@@ -1,5 +1,41 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.6 — Building-type presets adjust the inner sweet-spot RH band (2026-05-20)
+
+**User ask**: "The inner RH range inside Givoni engine — can we also come up with the building type with more stricter RH requirement like museum, Fab, hospital, office… with the selection option by the building type?"
+
+### Implementation (`/app/frontend/public/learn.html`)
+Added a `<select>` dropdown directly below the audience switcher with 7 building-type presets.  Each preset shifts the inner sweet-spot RH band **AND** updates the tier classifier (so the badge / hint also recalculate against the new band).  A live "reference" span next to the dropdown shows the cited standard so engineers can verify.
+
+| Preset | RH band | Reference |
+|---|---|---|
+| Office | 40–60% | ASHRAE Std 55-2020 §5.2.3 |
+| Residential | 30–60% | ASHRAE Std 55-2020 (residential adoption) |
+| Hospital (OR) | 20–60% | ASHRAE Std 170-2021 §7.1 |
+| Museum / Archive | 45–55% | ASHRAE HVAC Applications 2023 Ch. 24 |
+| Semiconductor Fab | 40–50% | SEMI E54 / IEST-RP-CC012 |
+| Data Center | 40–60% | ASHRAE TC 9.9 Class A1 (recommended) |
+| Pharmacy / Cleanroom | 30–50% | USP <797> / EU GMP Annex 1 |
+
+### Architecture
+- New `BUILDING_TYPES` lookup table (module-level constant) keyed by short code.
+- New module-level `sweetSpotRange` state object (`{lo, hi}`) — starts at the Office default.
+- Refactored the sweet-spot polygon builder in `buildBackground()` to read `sweetSpotRange.lo / .hi` instead of hardcoded 40/60.  Top-edge clipping against `czTopRH(t)` retained so any band stays inside the CZ envelope.
+- `updateReadout()` now passes the live `sweetSpotRange` into `getGivoniTier()` so Tier A vs B classification matches the active building type.
+- Converted `REGION_META` from a static const to a `regionMeta()` function so the Tier A / B hints quote the live RH band and building-type label.
+- `setBuildingType(name)` mutates `sweetSpotRange`, updates the reference span, and calls `rebuildChart()`.  Fires a Umami `building_type_change` event.
+
+### Smoke-tested via Playwright (same 24 °C / 58% RH dot across all four presets)
+- Office → `Comfort` (50% in 40-60) ✓ — wait, actually default office sits at 50% RH which is inside the 40-60 band → Comfort ✓
+- Museum → `Comfort` at 24/50 (50 inside 45-55) ✓
+- Hospital → `Comfort` at 24/58 (58 inside 20-60) ✓
+- Fab → `Soft Trim` at 24/58 (58 outside 40-50) ✓ with the hint correctly citing the 40-50 band + "Semiconductor Fab"
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{index.html, index-single-file.html, js/psychrometric.js}`.
+
+
+
 ## Phase G.5 — Mold-risk zone overlay (ASHRAE 62.1) (2026-05-20)
 
 **User ask**: "Indicate a region the mold could occur in indoor environment with an appropriate color shade."

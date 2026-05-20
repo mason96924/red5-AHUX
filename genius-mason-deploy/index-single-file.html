@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understand Your Building's Air — Genius Mason</title>
+    <meta name="description" content="An interactive psychrometric chart that explains how temperature and humidity shape comfort. For HVAC engineers, students, building owners and maintenance teams.">
+    <meta property="og:title" content="Understand Your Building's Air">
+    <meta property="og:description" content="Drag the dot. See why your building feels the way it does.">
+
+    <!-- ============================================================
+         UMAMI SELF-HOSTED ANALYTICS (Pi-hosted, privacy-first).
+         After you deploy Umami on the Raspberry Pi:
+           1. Spin up Umami via Docker (instructions in README.md).
+           2. Create a website in the Umami UI, copy its UUID.
+           3. Replace YOUR_PI_DOMAIN + YOUR_WEBSITE_ID below.
+           4. Uncomment the script tag.
+         No cookie banner required — Umami is GDPR/CCPA compliant out of
+         the box (no personal data, no fingerprinting, no cross-site).
+         ============================================================ -->
+    <!--
+    <script defer
+            src="https://YOUR_PI_DOMAIN/script.js"
+            data-website-id="YOUR_WEBSITE_ID"></script>
+    -->
+
+    <style>
+        :root {
+            --bg-deep:   #0b1220;
+            --bg-card:   #111a2e;
+            --bg-soft:   #1a2440;
+            --line:      #243056;
+            --text:      #e2e8f0;
+            --text-dim:  #94a3b8;
+            --text-mute: #64748b;
+            --accent:    #fbbf24;
+            --emerald:   #10b981;
+            --rose:      #f43f5e;
+            --blue:      #3b82f6;
+            --sage:      #a8c0a8;
+            --orange:    #f97316;
+            --deep-blue: #1d4ed8;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0;
+            background: var(--bg-deep);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.55;
+            min-height: 100vh;
+        }
+        .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 56px 32px 24px;
+            text-align: left;
+        }
+        .brand {
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: 0.32em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin: 0 0 18px 0;
+        }
+        .hero h1 {
+            font-size: clamp(28px, 4.2vw, 52px);
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin: 0 0 14px 0;
+            line-height: 1.1;
+        }
+        .hero h1 .em { color: var(--accent); }
+        .hero .lead {
+            font-size: clamp(15px, 1.4vw, 18px);
+            color: var(--text-dim);
+            max-width: 720px;
+            margin: 0;
+        }
+
+        /* ---------- AUDIENCE SWITCHER ---------- */
+        .audience-switcher {
+            max-width: 1180px;
+            margin: 32px auto 14px;
+            padding: 0 32px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .audience-switcher button {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--text-dim);
+            padding: 9px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 160ms ease;
+        }
+        .audience-switcher button:hover {
+            color: var(--text);
+            border-color: var(--text-mute);
+        }
+        .audience-switcher button[aria-pressed="true"] {
+            background: var(--accent);
+            color: #0b1220;
+            border-color: var(--accent);
+        }
+
+        /* ---------- EXPLAINER PANEL ---------- */
+        .explainer {
+            max-width: 1180px;
+            margin: 0 auto 32px;
+            padding: 0 32px;
+        }
+        .explainer-body {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            padding: 22px 26px;
+            font-size: 15px;
+            color: var(--text);
+        }
+        .explainer-body p { margin: 0 0 10px 0; }
+        .explainer-body p:last-child { margin-bottom: 0; }
+        .explainer-body strong { color: var(--accent); }
+
+        /* ---------- CHART ---------- */
+        .chart-wrapper {
+            max-width: 1180px;
+            margin: 0 auto 32px;
+            padding: 0 32px;
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            gap: 24px;
+        }
+        @media (max-width: 900px) {
+            .chart-wrapper { grid-template-columns: 1fr; }
+        }
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 18px;
+            overflow: hidden;
+        }
+        .chart-card h2 {
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            margin: 0 0 8px 0;
+        }
+        #chart {
+            width: 100%;
+            height: auto;
+            display: block;
+            touch-action: none;
+            user-select: none;
+        }
+        .indicator { cursor: grab; }
+        .indicator.dragging { cursor: grabbing; }
+
+        /* ---------- READOUT ---------- */
+        .readout {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 20px;
+            font-size: 14px;
+            align-self: start;
+        }
+        .readout h3 {
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            margin: 0 0 14px 0;
+        }
+        .row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--bg-soft);
+        }
+        .row:last-of-type { border-bottom: 0; }
+        .row .label { color: var(--text-dim); font-size: 12px; }
+        .row .value { font-weight: 700; font-variant-numeric: tabular-nums; }
+        .tier-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 14px;
+            padding: 8px 12px;
+            background: var(--bg-soft);
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .tier-badge .dot {
+            width: 10px; height: 10px; border-radius: 50%;
+        }
+        .tier-hint {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
+        /* ---------- REGION CARDS ---------- */
+        .region-cards {
+            max-width: 1180px;
+            margin: 0 auto 40px;
+            padding: 0 32px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        @media (max-width: 900px) { .region-cards { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 540px) { .region-cards { grid-template-columns: 1fr; } }
+        .region-card {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-top: 3px solid;
+            border-radius: 8px;
+            padding: 14px 16px;
+        }
+        .region-card.A  { border-top-color: var(--emerald); }
+        .region-card.B  { border-top-color: var(--sage); }
+        .region-card.Cp { border-top-color: var(--orange); }
+        .region-card.Cm { border-top-color: var(--deep-blue); }
+        .region-card h4 {
+            margin: 0 0 4px 0;
+            font-size: 13px;
+            font-weight: 800;
+        }
+        .region-card p {
+            margin: 0;
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.55;
+        }
+
+        /* ---------- FOOTER ---------- */
+        footer {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 24px 32px 40px;
+            border-top: 1px solid var(--bg-soft);
+            font-size: 12px;
+            color: var(--text-mute);
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 700;
+        }
+        footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<header class="hero">
+    <div class="brand">Genius Mason · Comfort Decoded</div>
+    <h1>Why does your building feel <span class="em">hot, cold, sticky or just right?</span></h1>
+    <p class="lead">Every comfortable room sits inside a small box of temperature and humidity. Drag the yellow dot below to see exactly where that box is — and what your building has to do to put the air <em>inside</em> it.</p>
+</header>
+
+<nav class="audience-switcher" role="tablist" aria-label="Choose your background">
+    <button data-audience="everyone"   aria-pressed="true"  data-testid="audience-everyone">Everyone</button>
+    <button data-audience="engineer"   aria-pressed="false" data-testid="audience-engineer">HVAC Engineer</button>
+    <button data-audience="student"    aria-pressed="false" data-testid="audience-student">Student</button>
+    <button data-audience="owner"      aria-pressed="false" data-testid="audience-owner">Building Owner</button>
+    <button data-audience="maintenance" aria-pressed="false" data-testid="audience-maintenance">Maintenance</button>
+</nav>
+
+<section class="explainer" data-testid="explainer">
+    <div class="explainer-body" id="explainer-body">
+        <!-- Filled by JS based on selected audience -->
+    </div>
+</section>
+
+<section class="chart-wrapper">
+    <div class="chart-card">
+        <h2>Psychrometric Chart · Dry-bulb °C ↔ Humidity Ratio (g / kg)</h2>
+        <svg id="chart" viewBox="0 0 1100 640" data-testid="chart-svg" aria-label="Interactive psychrometric chart"></svg>
+    </div>
+
+    <aside class="readout" data-testid="readout">
+        <h3>Where the dot is</h3>
+        <div class="row"><span class="label">Temperature</span><span class="value mono" id="r-t">–</span></div>
+        <div class="row"><span class="label">Relative humidity</span><span class="value mono" id="r-rh">–</span></div>
+        <div class="row"><span class="label">Humidity ratio</span><span class="value mono" id="r-w">–</span></div>
+        <div class="row"><span class="label">Enthalpy (energy)</span><span class="value mono" id="r-h">–</span></div>
+
+        <div class="tier-badge" id="tier-badge">
+            <span class="dot" id="tier-dot" style="background:#10b981"></span>
+            <span id="tier-label">Comfort</span>
+        </div>
+        <div class="tier-hint" id="tier-hint">Drag the yellow dot on the chart to explore.</div>
+    </aside>
+</section>
+
+<section class="region-cards" aria-label="Comfort regions">
+    <div class="region-card A">
+        <h4>A · Comfort</h4>
+        <p>Sweet spot. Inside the comfort zone <em>and</em> in the 40–60% RH band. Hold the setpoints — nothing to do.</p>
+    </div>
+    <div class="region-card B">
+        <h4>B · Soft Trim</h4>
+        <p>Temperature is fine, humidity is drifting. A light humidify or dehumidify — no temperature change needed.</p>
+    </div>
+    <div class="region-card Cp">
+        <h4>C+ · Hot / Humid</h4>
+        <p>Outside the box on the warm side. Cooling and/or dehumidifying is the right move.</p>
+    </div>
+    <div class="region-card Cm">
+        <h4>C− · Cold / Dry</h4>
+        <p>Outside on the cool side. Heat the air, and humidify it if winter dryness is in play.</p>
+    </div>
+</section>
+
+<footer>
+    <div>© <span id="year"></span> Genius Mason · Built to make psychrometrics make sense.</div>
+    <div>
+        <a href="/dashboard.html" data-testid="pro-view-link">Open the Pro View →</a>
+    </div>
+</footer>
+
+<!-- Reuse the same Givoni math that drives the operator dashboard so this
+     page and the Pro View never drift apart. -->
+<script>
+// AHU Diagnostic HUB — Psychrometric Engine
+// Pure math functions for psychrometric calculations, comfort zone analysis,
+// and demand-driven diagnostics. No React state dependencies.
+
+const P_ATM = 101.325;
+const safe = (val) => (typeof val === 'number' && Number.isFinite(val)) ? val : 0;
+
+const getPsat = (T) => {
+    const TK = safe(T) + 273.15;
+    if (TK <= 173.15) return 0.0001; 
+    let lp;
+    if (TK < 273.15) { 
+        const c = [-5.6745359e3, 6.3925247, -9.677843e-3, 6.2215701e-7, 2.0747825e-9, -9.484024e-13, 4.1635019];
+        lp = c[0]/TK + c[1] + c[2]*TK + c[3]*Math.pow(TK, 2) + c[4]*Math.pow(TK, 3) + c[5]*Math.pow(TK, 4) + c[6]*Math.log(TK);
+    } else { 
+        const c = [-5.8002206e3, 1.3914993, -4.8640239e-2, 4.1764768e-5, -1.4452093e-8, 6.5459673];
+        lp = c[0]/TK + c[1] + c[2]*TK + c[3]*Math.pow(TK, 2) + c[4]*Math.pow(TK, 3) + c[5]*Math.log(TK);
+    }
+    return safe(Math.exp(lp) / 1000);
+};
+
+const getW = (T, RH) => {
+    const ps = getPsat(T);
+    const pw = (safe(RH) / 100) * ps;
+    return safe((0.621945 * pw) / (P_ATM - pw));
+};
+
+const getH = (T, W) => safe(1.006 * T + W * (2501 + 1.86 * T));
+
+// Build the Givoni Comfort Zone polygon vertices [t, w]
+const buildComfortZonePoly = () => {
+    const pts = [];
+    for (let t = 20; t <= 25; t += 0.5) pts.push([t, getW(t, 80)]);
+    pts.push([27, getW(27, 50)]);
+    pts.push([27, getW(27, 20)]);
+    for (let t = 27; t >= 20; t -= 0.5) pts.push([t, getW(t, 20)]);
+    return pts;
+};
+
+// Point-in-polygon (ray casting) — requires comfort zone polygon
+const isInComfortZone = (t, w, poly) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1];
+        const xj = poly[j][0], yj = poly[j][1];
+        if ((yi > w) !== (yj > w) && t < (xj - xi) * (w - yi) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+    }
+    return inside;
+};
+
+// Psychrometric distance (T/W space, W scaled to g/kg)
+const getPsyDistance = (t1, w1, t2, w2) => {
+    const dT = t1 - t2;
+    const dW = (w1 - w2) * 1000;
+    return Math.sqrt(dT * dT + dW * dW);
+};
+
+// Demand calculation: delta-H to nearest CZ boundary
+const getZoneDemand = (t, w, comfortPoly) => {
+    const inCZ = isInComfortZone(t, w, comfortPoly);
+    const h = getH(t, w);
+    if (inCZ) return { inCZ: true, heatingDemand: 0, coolingDemand: 0, demandType: 'none' };
+    
+    if (t < 20) {
+        const boundaryH = getH(20, w);
+        return { inCZ: false, heatingDemand: boundaryH - h, coolingDemand: 0, demandType: 'heating' };
+    } else if (t > 27) {
+        const boundaryH = getH(27, w);
+        return { inCZ: false, heatingDemand: 0, coolingDemand: h - boundaryH, demandType: 'cooling' };
+    } else {
+        return { inCZ: false, heatingDemand: 0, coolingDemand: 0, demandType: 'humidity' };
+    }
+};
+
+// Full VAV diagnostic — demand-driven, no setpoints
+// Geometric containment helper: is the (T, RH) point inside the
+// operator-defined sweet-spot strip?  The strip is bounded by:
+//   T in [20, 27] degC  (same as CZ)
+//   RH in [lo, hi]      (operator-defined; default 40-60%)
+// We additionally clip to the CZ via demand.inCZ in the callers so a
+// VAV that happens to be at 23 C / 50% RH but somehow outside the CZ
+// (impossible by geometry but a safety net) won't be counted.
+const inSweetSpot = (t, rh, sweetSpot) => {
+    if (!sweetSpot) return true;   // no filter -> always-in
+    if (t < 20 || t > 27) return false;
+    return rh >= sweetSpot.lo && rh <= sweetSpot.hi;
+};
+
+const getVavDiagnostic = (vav, saPoint, comfortPoly, sweetSpot) => {
+    const demand = getZoneDemand(vav.t, vav.w, comfortPoly);
+    const distSA = saPoint ? getPsyDistance(vav.t, vav.w, saPoint.t, saPoint.w) : 0;
+    const deltaH = saPoint ? (vav.h - getH(saPoint.t, saPoint.w)) : 0;
+
+    // When a sweet-spot filter is active, a VAV only counts as "in CZ"
+    // for downstream metrics if it's inside BOTH the Givoni CZ polygon
+    // AND the operator-defined RH strip.  The intersection is what the
+    // operator is actually targeting on the dashboard, so the comfort
+    // percentage should reflect that, not the looser CZ-only count.
+    const inCZ_and_sweet = demand.inCZ && inSweetSpot(vav.t, vav.rh, sweetSpot);
+
+    let status;
+    if (inCZ_and_sweet && distSA < 3) status = 'optimal';
+    else if (inCZ_and_sweet) status = 'comfort';
+    else if (Math.abs(vav.t - 23.5) < 5.5) status = 'warning';
+    else status = 'alarm';
+
+    const totalDemand = demand.heatingDemand + demand.coolingDemand;
+
+    // We deliberately overwrite `inCZ` on the returned object so any
+    // callers downstream of this point (notably getAhuDiagnostic) see
+    // the AND-narrowed value.  If you need the wider CZ-only result,
+    // omit the sweetSpot argument.
+    return { ...demand, inCZ: inCZ_and_sweet, distSA, deltaH, status, totalDemand };
+};
+
+// AHU-level aggregate demand diagnostic
+const getAhuDiagnostic = (ahu, comfortPoly, sweetSpot) => {
+    if (!ahu || !ahu.points || !ahu.vavs) return null;
+    const oa = ahu.points[0], sa = ahu.points[1], ra = ahu.points[2];
+    if (!oa || !sa || !ra) return null;
+
+    const vavDiags = ahu.vavs.map(v => getVavDiagnostic(v, sa, comfortPoly, sweetSpot));
+    const inCZCount = vavDiags.filter(d => d.inCZ).length;
+    const totalVavs = ahu.vavs.length;
+    const totalHeating = vavDiags.reduce((s, d) => s + d.heatingDemand, 0);
+    const totalCooling = vavDiags.reduce((s, d) => s + d.coolingDemand, 0);
+    const avgDistSA = vavDiags.reduce((s, d) => s + d.distSA, 0) / totalVavs;
+
+    let process;
+    if (totalHeating === 0 && totalCooling === 0) process = 'idle';
+    else if (totalHeating > totalCooling) process = 'heating';
+    else process = 'cooling';
+
+    const recs = [];
+    const oaH = getH(oa.t, oa.w);
+    const raH = getH(ra.t, ra.w);
+
+    if (process === 'cooling' && oaH < raH) {
+        recs.push('Economizer: free cooling available');
+    }
+    if (process === 'heating' && oa.t < 5) {
+        recs.push('Minimize OA damper (freeze risk)');
+    }
+    if (sa.rh > 75) recs.push('SA humidity high');
+    if (sa.rh < 25) recs.push('SA humidity low');
+    if (inCZCount === totalVavs) {
+        recs.push(sweetSpot ? 'All zones in sweet-spot' : 'All zones in CZ');
+    }
+
+    return {
+        process, inCZCount, totalVavs,
+        totalHeating, totalCooling, avgDistSA,
+        comfortPct: Math.round((inCZCount / totalVavs) * 100),
+        // Annotate so the dashboard's CZ% chip can show whether the
+        // figure reflects CZ-only or CZ-and-sweet-spot.
+        comfortMode: sweetSpot ? 'sweet' : 'cz',
+        sweetSpot: sweetSpot || null,
+        recommendations: recs
+    };
+};
+
+// Energy metrics for AHU card
+const getEnergyMetrics = (ahu) => {
+    if (!ahu || !ahu.points) return { exchange: 0, absorption: 0 };
+    const sa = ahu.points[1], oa = ahu.points[0], ra = ahu.points[2];
+    if (!ra || !oa || !sa) return { exchange: 0, absorption: 0 };
+    return { exchange: getH(sa.t, sa.w) - getH(oa.t, oa.w), absorption: getH(ra.t, ra.w) - getH(sa.t, sa.w) };
+};
+
+// Givoni-region color tokens.  Single source of truth shared by the chart
+// polygon fills AND the VAV-table tier dots, so re-skinning the chart
+// automatically re-skins the dot legend (auto-derive contract).
+//   CZ_*    : outer Givoni Comfort Zone (looser ASHRAE 55 envelope)
+//   SWEET_* : operator-defined inner RH sweet-spot (default 40-60% RH)
+const GIVONI_COLORS = {
+    CZ_STROKE:    '#10b981',  // outer CZ polygon stroke
+    CZ_FILL:      '#10b981',  // outer CZ polygon fill (used at low opacity)
+    SWEET_STROKE: '#047857',  // inner sweet-spot stroke
+    SWEET_FILL:   '#059669',  // inner sweet-spot polygon fill
+    HOT_OUTSIDE:  '#f97316',  // Tier C dot — outside CZ on hot/humid side
+    COLD_OUTSIDE: '#1d4ed8',  // Tier C dot — outside CZ on cold/dry side
+    // Tier-dot colours (legend pills + per-VAV state indicators).  Decoupled
+    // from the polygon fills so the chart geometry stays emerald while the
+    // legend can offer clearer hue contrast.  Cyan was chosen for Tier B
+    // because it (a) reads as "RH/water" semantically, (b) is far enough
+    // from emerald-500 to pass casual visual scanning, and (c) does not
+    // clash with the hot-orange / cold-blue Tier C dots.
+    TIER_A_DOT:   '#10b981',  // bright emerald — true comfort, hold
+    TIER_B_DOT:   '#a8c0a8',  // sage / light green-grey — comfort zone, RH soft-trim
+};
+
+// Givoni-aware tier classification + control-strategy resolver.
+// Returns a single object describing where the (T, RH, W) point sits
+// relative to the Givoni overlay AND what the controller should do
+// about it.  Tiers:
+//   A   - inside CZ AND inside operator-defined sweet-spot RH strip
+//         -> HOLD setpoints (true comfort)
+//   B   - inside CZ but outside sweet-spot strip
+//         -> SOFT TRIM (RH-only humidify or dehumidify; no temp change)
+//   C+  - outside CZ on hot/humid side  (T >= 23.5 by chart-centroid split)
+//         -> mechanical cooling (or dehumidify if T in [20,27] but RH high)
+//   C-  - outside CZ on cold/dry side   (T <  23.5)
+//         -> mechanical heating (or humidify if T in [20,27] but RH low)
+//
+// All callers (VAV-table row dot, chart indicator tooltip, AHU strategy
+// banner) MUST use this resolver so the colour + recommendation stay
+// in lock-step across the UI.
+const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
+    const _enabled = enabled !== false;  // default ON
+    const demand = getZoneDemand(t, w, comfortPoly);
+    const inCZ = demand.inCZ;
+    const _ss = (_enabled && sweetSpot) ? sweetSpot : null;
+    const inSS = _ss ? (t >= 20 && t <= 27 && rh >= _ss.lo && rh <= _ss.hi) : inCZ;
+
+    // Tier A — inner comfort band (CZ AND sweet-spot)
+    if (inCZ && (!_ss || inSS)) {
+        return {
+            tier: 'A',
+            dotFill: GIVONI_COLORS.TIER_A_DOT,
+            dotOpacity: 1,
+            ringStroke: GIVONI_COLORS.SWEET_STROKE,
+            strategy: 'HOLD',
+            label: 'Comfort',
+            subLabel: 'hold setpoints',
+            tooltip: _ss
+                ? ('In sweet-spot band (' + _ss.lo + '-' + _ss.hi + '% RH) | HOLD setpoints')
+                : 'In Givoni CZ | HOLD setpoints',
+        };
+    }
+
+    // Tier B — outer Givoni band (CZ but outside sweet-spot)
+    if (inCZ && _ss) {
+        const tooLow  = rh < _ss.lo;
+        const strategy = tooLow ? 'TRIM_HUMIDIFY' : 'TRIM_DEHUMIDIFY';
+        const subLabel = tooLow ? 'humidify (RH-only)' : 'dehumidify (RH-only)';
+        return {
+            tier: 'B',
+            dotFill: GIVONI_COLORS.TIER_B_DOT,
+            dotOpacity: 1,
+            ringStroke: GIVONI_COLORS.SWEET_STROKE,
+            strategy,
+            label: 'Soft trim',
+            subLabel,
+            tooltip: ('In Givoni CZ but outside ' + _ss.lo + '-' + _ss.hi + '% RH | Soft trim ' + (tooLow ? 'humidify' : 'dehumidify')),
+        };
+    }
+
+    // Tier C — outside Givoni
+    const hotSide = t >= 23.5;
+    if (hotSide) {
+        // Hot side: pure mech cool when over 27 C, else dehumidify only
+        const strategy = (t > 27) ? 'COOL' : 'DEHUMIDIFY';
+        const subLabel = (t > 27) ? 'mechanical cool' : 'dehumidify';
+        return {
+            tier: 'C+',
+            dotFill: GIVONI_COLORS.HOT_OUTSIDE,
+            dotOpacity: 1,
+            ringStroke: '#9a3412',
+            strategy,
+            label: 'Hot/humid',
+            subLabel,
+            tooltip: ('Outside CZ - hot/humid side (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | ' + subLabel),
+        };
+    }
+    // Cold side
+    const strategy = (t < 20) ? 'HEAT' : 'HUMIDIFY';
+    const subLabel = (t < 20) ? 'mechanical heat' : 'humidify';
+    return {
+        tier: 'C-',
+        dotFill: GIVONI_COLORS.COLD_OUTSIDE,
+        dotOpacity: 1,
+        ringStroke: '#1e3a8a',
+        strategy,
+        label: 'Cold/dry',
+        subLabel,
+        tooltip: ('Outside CZ - cold/dry side (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | ' + subLabel),
+    };
+};
+
+</script>
+
+<script>
+(function () {
+    'use strict';
+
+    // ---------------- AUDIENCE COPY ----------------
+    // Five voices for the same content.  Each is ~3 short sentences so the
+    // page stays scannable on mobile.
+    const COPY = {
+        everyone: {
+            html: `
+                <p><strong>Comfort is a small box on this chart.</strong> When the air's temperature and humidity fall inside the green zone, people feel "just right." Step outside the box and the room feels hot, cold, sticky or dry.</p>
+                <p>Buildings spend almost all their energy moving the air from <em>where it is</em> on this chart to <em>where it should be</em>. The bigger the move, the bigger the energy bill.</p>
+                <p><strong>Drag the yellow dot.</strong> Watch the badge to the right tell you what kind of room you've just built — and what the building's HVAC system would need to do about it.</p>`
+        },
+        engineer: {
+            html: `
+                <p><strong>The Givoni comfort zone</strong> overlays a 20–27 °C / 20–80% RH envelope clipped to ASHRAE 55's enthalpy band, with the inner 40–60% RH strip marked as the operator sweet spot.</p>
+                <p>The tier resolver (single source of truth in <code class="mono">psychrometric.js</code>) maps any (T, RH) coordinate to one of four control strategies: <strong>HOLD</strong>, <strong>TRIM</strong>, <strong>COOL / DEHUMIDIFY</strong>, or <strong>HEAT / HUMIDIFY</strong> — the same logic the operator dashboard runs to colour VAV terminals.</p>
+                <p>This page is the explainer-mode fork. The full multi-AHU live diagnostic with Markov-drift simulation lives at <code class="mono">/dashboard.html</code>.</p>`
+        },
+        student: {
+            html: `
+                <p><strong>This chart is the language of HVAC.</strong> The X-axis is dry-bulb temperature; the Y-axis is humidity ratio (grams of water per kg of dry air). The curved line on the left is the <em>saturation curve</em> — air at 100% relative humidity.</p>
+                <p>Lines of constant <strong>enthalpy</strong> (total energy) tilt down from upper-left to lower-right. Lines of constant <strong>relative humidity</strong> fan out from the bottom-right corner. The Givoni "comfort zone" is the green polygon — that's where most people feel comfortable.</p>
+                <p>Drag the dot to feel how temperature and humidity trade off. A hot, dry desert and a warm, muggy jungle can have the <em>same enthalpy</em> — the energy cost to condition them is similar even though they feel completely different.</p>`
+        },
+        owner: {
+            html: `
+                <p><strong>Comfort is a business asset.</strong> Tenants notice the room well before they notice the thermostat. The green box on this chart is what they actually want — everything outside it is a complaint waiting to happen.</p>
+                <p>Your HVAC system burns energy in exact proportion to how far <em>outside the box</em> your building's air starts. Tighter setpoints, smarter dehumidification, and reduced over-cooling all show up directly on the utility bill.</p>
+                <p>Drag the dot to see what a typical office at 9 a.m. (cool, slightly humid) costs to fix versus a packed conference room at 2 p.m. (warm, muggy). The chart is doing the math no operator can do in their head.</p>`
+        },
+        maintenance: {
+            html: `
+                <p><strong>If a tenant says "it's stuffy in here,"</strong> drag the dot to the upper-right of the comfort box and read the badge: <em>Hot / Humid</em>. That's a cooling coil or dehumidifier asking for attention — not a thermostat.</p>
+                <p>If they say "it's freezing," push the dot left. The badge will read <em>Cold / Dry</em>: check the heating valve position, freeze-stat trips, and OA damper.</p>
+                <p>This chart turns complaints into <strong>which piece of equipment to look at first</strong>. The four region cards below summarize the playbook.</p>`
+        }
+    };
+
+    // ---------------- CHART CONSTANTS ----------------
+    const W = 1100;          // viewBox width
+    const H = 640;           // viewBox height
+    const PAD = { top: 30, right: 110, bottom: 60, left: 60 };
+    const T_MIN = -10, T_MAX = 45;
+    const W_MIN = 0,   W_MAX = 0.030;     // kg/kg (3% mass humidity ratio max)
+
+    const tToX = (t) => PAD.left + ((t - T_MIN) / (T_MAX - T_MIN)) * (W - PAD.left - PAD.right);
+    const wToY = (w) => H - PAD.bottom - ((w - W_MIN) / (W_MAX - W_MIN)) * (H - PAD.top - PAD.bottom);
+    const xToT = (x) => T_MIN + ((x - PAD.left) / (W - PAD.left - PAD.right)) * (T_MAX - T_MIN);
+    const yToW = (y) => W_MIN + ((H - PAD.bottom - y) / (H - PAD.top - PAD.bottom)) * (W_MAX - W_MIN);
+
+    // ---------------- CHART RENDERING ----------------
+    const svg = document.getElementById('chart');
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs = {}, text) => {
+        const e = document.createElementNS(ns, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        if (text !== undefined) e.textContent = text;
+        return e;
+    };
+
+    function buildBackground() {
+        // Chart panel background
+        svg.appendChild(el('rect', {
+            x: PAD.left, y: PAD.top,
+            width: W - PAD.left - PAD.right,
+            height: H - PAD.top - PAD.bottom,
+            fill: '#0d1426', rx: 4
+        }));
+
+        // RH curves at 20/40/60/80/100%
+        const rhLevels = [20, 40, 60, 80, 100];
+        rhLevels.forEach(rh => {
+            const pts = [];
+            for (let t = T_MIN; t <= T_MAX; t += 0.5) {
+                const w = getW(t, rh);
+                if (w >= W_MIN && w <= W_MAX) pts.push(`${tToX(t)},${wToY(w)}`);
+            }
+            const stroke = rh === 100 ? '#475569' : '#243056';
+            svg.appendChild(el('polyline', {
+                points: pts.join(' '),
+                fill: 'none', stroke, 'stroke-width': rh === 100 ? 1.6 : 0.8,
+                'stroke-dasharray': rh === 100 ? '' : '4 5'
+            }));
+            // Label at the warm end
+            const labT = T_MAX - 1.5;
+            const labW = getW(labT, rh);
+            if (labW <= W_MAX) {
+                svg.appendChild(el('text', {
+                    x: tToX(labT) + 4, y: wToY(labW) + 4,
+                    fill: '#64748b', 'font-size': 10, 'font-family': 'monospace'
+                }, rh + '% RH'));
+            }
+        });
+
+        // Vertical temperature grid every 5 °C
+        for (let t = T_MIN; t <= T_MAX; t += 5) {
+            svg.appendChild(el('line', {
+                x1: tToX(t), y1: PAD.top,
+                x2: tToX(t), y2: H - PAD.bottom,
+                stroke: '#1a2440', 'stroke-width': 0.6
+            }));
+        }
+        // X axis labels
+        for (let t = T_MIN; t <= T_MAX; t += 5) {
+            svg.appendChild(el('text', {
+                x: tToX(t), y: H - PAD.bottom + 18,
+                fill: '#94a3b8', 'font-size': 11,
+                'text-anchor': 'middle', 'font-family': 'monospace'
+            }, t));
+        }
+        svg.appendChild(el('text', {
+            x: (W - PAD.right + PAD.left) / 2, y: H - 14,
+            fill: '#cbd5e1', 'font-size': 13, 'text-anchor': 'middle',
+            'font-weight': '700'
+        }, 'Dry-bulb temperature  (°C)'));
+
+        // Right Y axis: humidity ratio in g/kg
+        for (let g = 0; g <= 30; g += 5) {
+            const w = g / 1000;
+            if (w > W_MAX) continue;
+            svg.appendChild(el('text', {
+                x: W - PAD.right + 10, y: wToY(w) + 4,
+                fill: '#94a3b8', 'font-size': 11,
+                'font-family': 'monospace'
+            }, g));
+        }
+        svg.appendChild(el('text', {
+            x: W - 14, y: H / 2,
+            fill: '#cbd5e1', 'font-size': 13, 'font-weight': '700',
+            'text-anchor': 'middle',
+            transform: `rotate(90, ${W - 14}, ${H / 2})`
+        }, 'Humidity ratio  (g / kg)'));
+
+        // Givoni Comfort Zone polygon (outer envelope, emerald)
+        const cz = buildComfortZonePoly();
+        const czPath = cz.map(p => `${tToX(p[0])},${wToY(p[1])}`).join(' ');
+        svg.appendChild(el('polygon', {
+            points: czPath,
+            fill: GIVONI_COLORS.CZ_FILL, 'fill-opacity': 0.10,
+            stroke: GIVONI_COLORS.CZ_STROKE, 'stroke-width': 1.4
+        }));
+        // CZ label
+        svg.appendChild(el('text', {
+            x: tToX(23.5), y: wToY(getW(23.5, 50)),
+            fill: GIVONI_COLORS.CZ_STROKE,
+            'font-size': 13, 'font-weight': '800', 'text-anchor': 'middle',
+            'font-family': 'monospace'
+        }, 'COMFORT'));
+
+        // Inner sweet-spot polygon (40–60% RH, 20–27 °C)
+        const sweet = [];
+        for (let t = 20; t <= 27; t += 0.5) sweet.push([t, getW(t, 60)]);
+        for (let t = 27; t >= 20; t -= 0.5) sweet.push([t, getW(t, 40)]);
+        const sweetPath = sweet.map(p => `${tToX(p[0])},${wToY(p[1])}`).join(' ');
+        svg.appendChild(el('polygon', {
+            points: sweetPath,
+            fill: GIVONI_COLORS.SWEET_FILL, 'fill-opacity': 0.18,
+            stroke: GIVONI_COLORS.SWEET_STROKE, 'stroke-width': 0.8,
+            'stroke-dasharray': '3 3'
+        }));
+
+        // Region region anchors (small ghost labels)
+        const anchor = (t, rh, label, color) => {
+            const w = getW(t, rh);
+            svg.appendChild(el('text', {
+                x: tToX(t), y: wToY(w),
+                fill: color, 'fill-opacity': 0.7,
+                'font-size': 11, 'font-weight': '800', 'text-anchor': 'middle',
+                'font-family': 'monospace'
+            }, label));
+        };
+        anchor(34, 70, 'HOT / HUMID',  GIVONI_COLORS.HOT_OUTSIDE);
+        anchor(5,  35, 'COLD / DRY',   GIVONI_COLORS.COLD_OUTSIDE);
+    }
+
+    // ---------------- INDICATOR (DRAGGABLE DOT) ----------------
+    let state = { t: 24, rh: 50 };
+    const cz = buildComfortZonePoly();
+
+    const indicatorGroup = el('g', { class: 'indicator', 'data-testid': 'chart-indicator' });
+    const halo = el('circle', { r: 18, fill: '#fbbf24', 'fill-opacity': 0.18 });
+    const core = el('circle', { r: 8,  fill: '#fbbf24', stroke: '#0b1220', 'stroke-width': 2 });
+    indicatorGroup.appendChild(halo);
+    indicatorGroup.appendChild(core);
+
+    function renderIndicator() {
+        const w = getW(state.t, state.rh);
+        const x = tToX(state.t);
+        const y = wToY(w);
+        halo.setAttribute('cx', x); halo.setAttribute('cy', y);
+        core.setAttribute('cx', x); core.setAttribute('cy', y);
+        updateReadout(state.t, state.rh, w);
+    }
+
+    // ---------------- READOUT + TIER ----------------
+    const REGION_META = {
+        'A':  { color: GIVONI_COLORS.TIER_A_DOT,   label: 'Comfort',     hint: 'In the green box. Hold setpoints — the building has nothing to do.' },
+        'B':  { color: GIVONI_COLORS.TIER_B_DOT,   label: 'Soft Trim',   hint: 'Temperature is fine; humidity is drifting. Light humidify or dehumidify.' },
+        'C+': { color: GIVONI_COLORS.HOT_OUTSIDE,  label: 'Hot / Humid', hint: 'Outside on the warm side. Cool and/or dehumidify.' },
+        'C-': { color: GIVONI_COLORS.COLD_OUTSIDE, label: 'Cold / Dry',  hint: 'Outside on the cool side. Heat and/or humidify.' }
+    };
+
+    function updateReadout(t, rh, w) {
+        const h = getH(t, w);
+        const tier = getGivoniTier(t, w, rh, cz, { lo: 40, hi: 60 }, true);
+        const meta = REGION_META[tier.tier] || REGION_META['A'];
+        document.getElementById('r-t').textContent  = t.toFixed(1) + ' °C';
+        document.getElementById('r-rh').textContent = rh.toFixed(0) + ' %';
+        document.getElementById('r-w').textContent  = (w * 1000).toFixed(2) + ' g/kg';
+        document.getElementById('r-h').textContent  = h.toFixed(1) + ' kJ/kg';
+        document.getElementById('tier-dot').style.background = meta.color;
+        document.getElementById('tier-label').textContent = meta.label;
+        document.getElementById('tier-hint').textContent  = meta.hint;
+    }
+
+    // ---------------- DRAG LOGIC ----------------
+    let dragging = false;
+
+    function svgPoint(evt) {
+        const pt = svg.createSVGPoint();
+        const touch = evt.touches ? evt.touches[0] : evt;
+        pt.x = touch.clientX;
+        pt.y = touch.clientY;
+        const ctm = svg.getScreenCTM();
+        if (!ctm) return null;
+        return pt.matrixTransform(ctm.inverse());
+    }
+
+    function moveTo(evt) {
+        const p = svgPoint(evt);
+        if (!p) return;
+        let t = xToT(p.x);
+        // Snap to range
+        t = Math.max(T_MIN + 1, Math.min(T_MAX - 1, t));
+        // Snap RH from Y by inverting getW (approx): we use the dot's y to
+        // derive a humidity ratio, then compute the RH from that + T.
+        let w = yToW(p.y);
+        w = Math.max(0.0005, Math.min(W_MAX - 0.0005, w));
+        // Pressure-aware RH from W (Pa-shape ratio; matches getW inversion)
+        const ps = getPsat(t);
+        if (!ps || ps <= 0) return;
+        let rh = ((101.325 * w) / ((0.621945 + w) * ps)) * 100;
+        rh = Math.max(2, Math.min(99, rh));
+        state.t = t;
+        state.rh = rh;
+        renderIndicator();
+    }
+
+    svg.addEventListener('mousedown', (e) => {
+        dragging = true;
+        indicatorGroup.classList.add('dragging');
+        moveTo(e);
+        e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => { if (dragging) moveTo(e); });
+    window.addEventListener('mouseup', () => {
+        dragging = false;
+        indicatorGroup.classList.remove('dragging');
+    });
+    // Touch
+    svg.addEventListener('touchstart', (e) => { dragging = true; moveTo(e); e.preventDefault(); }, { passive: false });
+    svg.addEventListener('touchmove',  (e) => { if (dragging) { moveTo(e); e.preventDefault(); } }, { passive: false });
+    svg.addEventListener('touchend',   () => { dragging = false; });
+
+    // ---------------- AUDIENCE SWITCHER ----------------
+    function setAudience(name) {
+        document.querySelectorAll('.audience-switcher button').forEach(b => {
+            b.setAttribute('aria-pressed', b.dataset.audience === name ? 'true' : 'false');
+        });
+        const html = (COPY[name] || COPY.everyone).html;
+        document.getElementById('explainer-body').innerHTML = html;
+        // Stash for analytics — once Umami is wired this fires a custom event.
+        try {
+            if (typeof window.umami !== 'undefined' && window.umami.track) {
+                window.umami.track('audience_switch', { audience: name });
+            }
+        } catch (_) { /* swallow */ }
+    }
+
+    document.querySelectorAll('.audience-switcher button').forEach(b => {
+        b.addEventListener('click', () => setAudience(b.dataset.audience));
+    });
+
+    // ---------------- INIT ----------------
+    document.getElementById('year').textContent = new Date().getFullYear();
+    buildBackground();
+    svg.appendChild(indicatorGroup);   // append LAST so the dot is on top
+    renderIndicator();
+    setAudience('everyone');
+})();
+</script>
+</body>
+</html>

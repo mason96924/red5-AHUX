@@ -1,5 +1,34 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.4 — Dual-handle dry-bulb range slider (parity with Pro View) (2026-05-20)
+
+**User ask**: "Make the dry-bulb axis adjustable like the pro-view."
+
+The G.1 implementation used two `<input type="number">` boxes which was clunky.  Replaced with the same **dual-handle range slider** the operator dashboard ships at `dashboard.html:2589-2645`.
+
+### Implementation (`/app/frontend/public/learn.html`)
+- Dual-handle slider bounded to `[-15, 50] °C` with `MIN_GAP = 15 °C` enforced (operator dashboard uses 5 °C — tightened to 15 for the public page so the chart stays readable at min zoom).
+- Each handle has a pill label above it showing the live value (`-10°C`, `45°C`).
+- Amber fill bar between the two handles visually represents the selected range.
+- Drag behaviour matches the operator pattern:
+  - Click anywhere on the track → nearest handle snaps to that position
+  - Click+drag a handle → only that handle moves
+  - `mousedown` + `touchstart` both wired for mobile
+- Three quick presets retained beside the slider: **Arctic** (-15…20), **Temperate** (-10…35), **Tropical** (10…50), plus **Reset** (-10…45 default).
+- `syncAxisHandles()` keeps the slider DOM in sync with the live `T_MIN`/`T_MAX` state — called on every `applyRange()` so preset clicks update the slider and slider drags update the chart.
+
+### Verified via Playwright
+- Initial render: handles at -10°C / 45°C with fill bar between them.
+- Tropical preset → handles snap to 10°C / 50°C; chart re-renders to show only the warm side.
+- Arctic preset → -15°C / 20°C; chart zooms to cold range.
+- Drag min handle right by 200px → 5°C / 20°C; indicator dot clamped into new visible range.
+- 15°C minimum gap holds — fill bar never collapses.
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{index.html, index-single-file.html, js/psychrometric.js}`.
+
+
+
 ## Phase G.3 — Switched wet/dry threshold from humidity ratio to RH (perception-aligned, ASHRAE-cited) (2026-05-20)
 
 **User feedback** (screenshot at 16.2 °C / 77% RH labeled "Cool / Dry"):

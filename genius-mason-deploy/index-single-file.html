@@ -137,37 +137,88 @@
         .axis-controls {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 18px;
             flex-wrap: wrap;
-            margin: 0 0 12px 0;
+            margin: 0 0 18px 0;
             font-size: 11px;
             color: var(--text-dim);
             letter-spacing: 0.06em;
         }
-        .axis-controls label {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
+        .axis-controls .axis-label {
+            font-size: 10px;
             text-transform: uppercase;
-            font-weight: 700;
+            letter-spacing: 0.18em;
+            font-weight: 800;
+            color: var(--text-mute);
         }
-        .axis-controls input[type="number"] {
-            width: 64px;
-            padding: 4px 6px;
+        .axis-track-wrapper {
+            position: relative;
+            flex: 1 1 320px;
+            min-width: 240px;
+            max-width: 460px;
+            padding-top: 28px;
+            padding-bottom: 22px;
+        }
+        .axis-track {
+            position: relative;
+            height: 6px;
             background: var(--bg-soft);
-            border: 1px solid var(--line);
-            color: var(--text);
+            border-radius: 999px;
+            cursor: pointer;
+        }
+        .axis-track-fill {
+            position: absolute;
+            height: 6px;
+            background: var(--accent);
+            border-radius: 999px;
+            opacity: 0.7;
+        }
+        .axis-handle {
+            position: absolute;
+            top: -7px;
+            width: 20px;
+            height: 20px;
+            margin-left: -10px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 0 2px var(--bg-deep), 0 2px 6px rgba(0,0,0,0.5);
+            cursor: grab;
+            transition: transform 120ms ease;
+        }
+        .axis-handle:hover { transform: scale(1.15); }
+        .axis-handle:active { cursor: grabbing; transform: scale(1.05); }
+        .axis-handle-label {
+            position: absolute;
+            top: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-deep);
+            color: var(--accent);
+            border: 1px solid var(--accent);
+            padding: 2px 6px;
             border-radius: 4px;
             font-family: monospace;
-            font-size: 12px;
-            text-align: center;
+            font-size: 10px;
+            font-weight: 700;
+            white-space: nowrap;
+            pointer-events: none;
         }
-        .axis-controls input[type="number"]:focus {
-            outline: none;
-            border-color: var(--accent);
+        .axis-bounds {
+            display: flex;
+            justify-content: space-between;
+            font-family: monospace;
+            font-size: 9px;
+            color: var(--text-mute);
+            margin-top: 6px;
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
         }
-        .axis-controls button {
-            padding: 4px 10px;
+        .axis-presets {
+            display: flex;
+            gap: 6px;
+        }
+        .axis-presets button {
+            padding: 5px 10px;
             background: transparent;
             border: 1px solid var(--line);
             color: var(--text-dim);
@@ -177,8 +228,9 @@
             text-transform: uppercase;
             letter-spacing: 0.08em;
             cursor: pointer;
+            transition: all 140ms ease;
         }
-        .axis-controls button:hover {
+        .axis-presets button:hover {
             color: var(--accent);
             border-color: var(--accent);
         }
@@ -349,18 +401,28 @@
     <div class="chart-card">
         <h2>Psychrometric Chart · Dry-bulb °C ↔ Humidity Ratio (g / kg)</h2>
         <div class="axis-controls" data-testid="axis-controls">
-            <label>Dry-bulb min
-                <input type="number" id="t-min-input" value="-10" min="-40" max="20" step="5" data-testid="t-min-input">
-                °C
-            </label>
-            <label>Dry-bulb max
-                <input type="number" id="t-max-input" value="45" min="25" max="80" step="5" data-testid="t-max-input">
-                °C
-            </label>
-            <button id="axis-reset" data-testid="axis-reset">Reset</button>
-            <button id="preset-arctic"   data-testid="preset-arctic">Arctic</button>
-            <button id="preset-temperate" data-testid="preset-temperate">Temperate</button>
-            <button id="preset-tropical" data-testid="preset-tropical">Tropical</button>
+            <span class="axis-label">Dry-bulb °C</span>
+            <div class="axis-track-wrapper">
+                <div class="axis-track" id="axis-track" data-testid="axis-range-track">
+                    <div class="axis-track-fill" id="axis-track-fill"></div>
+                    <div class="axis-handle" id="axis-min-handle" data-testid="axis-min-handle">
+                        <span class="axis-handle-label" id="axis-min-label">-10°C</span>
+                    </div>
+                    <div class="axis-handle" id="axis-max-handle" data-testid="axis-max-handle">
+                        <span class="axis-handle-label" id="axis-max-label">45°C</span>
+                    </div>
+                </div>
+                <div class="axis-bounds">
+                    <span>-15°C</span>
+                    <span>50°C</span>
+                </div>
+            </div>
+            <div class="axis-presets">
+                <button id="axis-reset" data-testid="axis-reset">Reset</button>
+                <button id="preset-arctic" data-testid="preset-arctic">Arctic</button>
+                <button id="preset-temperate" data-testid="preset-temperate">Temperate</button>
+                <button id="preset-tropical" data-testid="preset-tropical">Tropical</button>
+            </div>
         </div>
         <svg id="chart" viewBox="0 0 1100 640" data-testid="chart-svg" aria-label="Interactive psychrometric chart"></svg>
     </div>
@@ -1152,8 +1214,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
         if (tmax - tmin < 15) return;            // sanity: keep at least 15 °C visible
         T_MIN = tmin;
         T_MAX = tmax;
-        document.getElementById('t-min-input').value = T_MIN;
-        document.getElementById('t-max-input').value = T_MAX;
+        syncAxisHandles();
         rebuildChart();
         try {
             if (typeof window.umami !== 'undefined' && window.umami.track) {
@@ -1162,16 +1223,75 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
         } catch (_) { /* swallow */ }
     }
 
-    document.getElementById('t-min-input').addEventListener('change', (e) => {
-        const v = parseFloat(e.target.value);
-        applyRange(v, T_MAX);
-    });
-    document.getElementById('t-max-input').addEventListener('change', (e) => {
-        const v = parseFloat(e.target.value);
-        applyRange(T_MIN, v);
-    });
+    // ---------- DUAL-HANDLE RANGE SLIDER ----------
+    // Mirrors the operator dashboard's axis-range pattern: bounded to
+    // [ABS_MIN, ABS_MAX], minimum 15 °C visible window, both handles
+    // independently draggable plus a click-anywhere-on-track action that
+    // picks the nearest handle.
+    const ABS_MIN = -15, ABS_MAX = 50, MIN_GAP = 15;
+    const trackEl    = document.getElementById('axis-track');
+    const fillEl     = document.getElementById('axis-track-fill');
+    const minHandle  = document.getElementById('axis-min-handle');
+    const maxHandle  = document.getElementById('axis-max-handle');
+    const minLabel   = document.getElementById('axis-min-label');
+    const maxLabel   = document.getElementById('axis-max-label');
+
+    function pct(v) { return ((v - ABS_MIN) / (ABS_MAX - ABS_MIN)) * 100; }
+
+    function syncAxisHandles() {
+        minHandle.style.left = pct(T_MIN) + '%';
+        maxHandle.style.left = pct(T_MAX) + '%';
+        fillEl.style.left    = pct(T_MIN) + '%';
+        fillEl.style.width   = (pct(T_MAX) - pct(T_MIN)) + '%';
+        minLabel.textContent = T_MIN + '°C';
+        maxLabel.textContent = T_MAX + '°C';
+    }
+
+    function clientXToT(clientX) {
+        const r = trackEl.getBoundingClientRect();
+        const raw = ABS_MIN + ((clientX - r.left) / r.width) * (ABS_MAX - ABS_MIN);
+        return Math.round(Math.max(ABS_MIN, Math.min(ABS_MAX, raw)));
+    }
+
+    function startDrag(initialClientX, which) {
+        // 'which' may be 'min', 'max', or null (auto-pick nearest)
+        const r = trackEl.getBoundingClientRect();
+        if (!which) {
+            const v = ABS_MIN + ((initialClientX - r.left) / r.width) * (ABS_MAX - ABS_MIN);
+            which = Math.abs(v - T_MIN) <= Math.abs(v - T_MAX) ? 'min' : 'max';
+        }
+        // Apply the initial position immediately so a single click moves the handle.
+        const apply = (cx) => {
+            const v = clientXToT(cx);
+            if (which === 'min') {
+                applyRange(Math.min(v, T_MAX - MIN_GAP), T_MAX);
+            } else {
+                applyRange(T_MIN, Math.max(v, T_MIN + MIN_GAP));
+            }
+        };
+        apply(initialClientX);
+        const onMove = (ev) => apply(ev.touches ? ev.touches[0].clientX : ev.clientX);
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onUp);
+    }
+
+    trackEl.addEventListener('mousedown', (e) => { startDrag(e.clientX, null); e.preventDefault(); });
+    minHandle.addEventListener('mousedown', (e) => { e.stopPropagation(); startDrag(e.clientX, 'min'); e.preventDefault(); });
+    maxHandle.addEventListener('mousedown', (e) => { e.stopPropagation(); startDrag(e.clientX, 'max'); e.preventDefault(); });
+    trackEl.addEventListener('touchstart', (e) => { startDrag(e.touches[0].clientX, null); e.preventDefault(); }, { passive: false });
+    minHandle.addEventListener('touchstart', (e) => { e.stopPropagation(); startDrag(e.touches[0].clientX, 'min'); e.preventDefault(); }, { passive: false });
+    maxHandle.addEventListener('touchstart', (e) => { e.stopPropagation(); startDrag(e.touches[0].clientX, 'max'); e.preventDefault(); }, { passive: false });
+
     document.getElementById('axis-reset').addEventListener('click', () => applyRange(-10, 45));
-    document.getElementById('preset-arctic').addEventListener('click', () => applyRange(-30, 20));
+    document.getElementById('preset-arctic').addEventListener('click', () => applyRange(-15, 20));
     document.getElementById('preset-temperate').addEventListener('click', () => applyRange(-10, 35));
     document.getElementById('preset-tropical').addEventListener('click', () => applyRange(10, 50));
 
@@ -1181,6 +1301,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
     svg.appendChild(indicatorGroup);   // append LAST so the dot is on top
     renderIndicator();
     setAudience('everyone');
+    syncAxisHandles();
 })();
 </script>
 </body>

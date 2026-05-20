@@ -1,5 +1,29 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.9 — B1-B10 Control Bands added to Deep Dive page (2026-05-20)
+
+**User clarification**: B1-B10 = the ten climate-band control strategies in `band_guide.md` + `psy-3d-engine.js` (NOT building types).  Previous G.8 build (B1-B12 building types) was a misinterpretation.
+
+### What changed in `/app/frontend/public/deepdive.html`
+- **Added `BANDS` array** (10 entries) mirroring the controller's band table.  Each band: OA range, SA target, damper position, climate mood, component duty-cycle (heat/cool/hum/dehum/damper), control rationale, 3 failure modes with refs, conversational notes with formal callout, and `used_by[]` array of BT keys.
+- **Renamed all 12 existing buildings B1-B12 → BT1-BT12** so the B-prefix can host the bands.  Done in-place with a regex over the BUILDINGS array.
+- **Rail split into 2 groups** ("Control bands" first, then "Building types") with distinct accent colors (rose for B-bands, amber for BT-buildings).
+- **New `renderBandSection()`** builds each B-band section: band-meta chips + duty-cycle mini-table + rationale card + failures + `used_by` cross-link block + collapsible notes.
+- **Two-way cross-linking**: each B-band lists which BTs lean on it ("Building types that lean on B4: BT1 Office · BT2 Residential · …"); each BT lists its primary bands ("Primary control bands for BT1: B3 · B4 · B5 · B6").  Built from a derived `BT_PRIMARY_BANDS` reverse map.
+- **IntersectionObserver** now tracks both B + BT sections for rail active-state.
+- **Hero re-written** to introduce both halves ("ten climate bands AND twelve building types, in one page").
+
+### Verified via Playwright
+- 10 band sections + 12 BT sections rendered ✓
+- 22 rail links across 2 groups ✓
+- 22 usedby blocks (one per section, both directions) ✓
+- B1 layout correct: B1 chip rose, duty row reads HEAT MAX / COOL OFF / HUMIDIFY HIGH / DEHUMID OFF / OA 15 % MIN, all OA/SA chips render, failure modes show refs ✓
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/deepdive.html`.
+
+
+
 ## Phase G.8 — Deep Dive page (B1-B12 HVAC playbook) (2026-05-20)
 
 **User ask**: "Could be another landing page, deep dive on B1-B10 detail. Complete process that makes it easy for HVAC engineer/maintenance people/student to understand."

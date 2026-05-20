@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delta Red5 · Deep Dive — Building-Type HVAC Playbook (B1–B12)</title>
-    <meta name="description" content="A practical, citation-backed deep dive into the HVAC story for 12 building types — for engineers, maintenance teams, and students.">
-    <meta property="og:title" content="Delta Red5 · Deep Dive (B1–B12)">
+    <title>Delta Red5 · Deep Dive — B1–B10 Control Bands + BT1–BT12 Building Playbook</title>
+    <meta name="description" content="A practical, citation-backed deep dive into the 10 climate-band control strategies (B1–B10) and the HVAC story for 12 building types (BT1–BT12). For engineers, maintenance teams, and students.">
+    <meta property="og:title" content="Delta Red5 · Deep Dive — B1–B10 Bands + BT1–BT12 Buildings">
 
     <!-- ============================================================
          UMAMI SELF-HOSTED ANALYTICS (matches /learn.html setup).
@@ -468,6 +468,120 @@
         }
         footer a { color: var(--accent); text-decoration: none; font-weight: 700; }
         footer a:hover { text-decoration: underline; }
+        /* rail group headers (separate B-bands vs BT-buildings) */
+        aside.rail .rail-group {
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            margin: 16px 0 6px;
+            padding-left: 10px;
+            border-left: 2px solid var(--bg-soft);
+        }
+        aside.rail .rail-group:first-child { margin-top: 0; }
+
+        /* B-band sections use rose accent to distinguish from amber BTs */
+        section.bld.is-band h2 .b-code {
+            background: var(--accent-2);
+            color: #fff;
+        }
+        section.bld.is-band {
+            border-left: 2px solid transparent;
+        }
+        aside.rail a.is-band {
+            color: var(--text-dim);
+        }
+        aside.rail a.is-band.active {
+            color: var(--accent-2);
+            border-left-color: var(--accent-2);
+            background: rgba(244, 63, 94, 0.06);
+        }
+        aside.rail a.is-band.active .b-code { color: var(--accent-2); }
+
+        /* Band-only mini info grid */
+        .band-meta {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .band-meta .chip {
+            background: var(--bg-soft);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 11px;
+        }
+        .band-meta .chip .k {
+            color: var(--text-mute);
+            font-size: 9px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            display: block;
+        }
+        .band-meta .chip .v {
+            color: var(--text);
+            font-family: monospace;
+            font-weight: 700;
+            font-size: 12px;
+        }
+        .band-meta .chip.economizer { border-color: var(--emerald); }
+        .band-meta .chip.economizer .v { color: var(--emerald); }
+
+        /* Component-duty mini-table */
+        .compduty {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+            margin: 10px 0;
+        }
+        .compduty .cd {
+            background: var(--bg-soft);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 8px 4px;
+            text-align: center;
+            font-size: 10px;
+        }
+        .compduty .cd .k {
+            color: var(--text-mute);
+            font-size: 9px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 4px;
+        }
+        .compduty .cd .v {
+            font-family: monospace;
+            font-weight: 800;
+        }
+        .compduty .cd.off    { color: var(--text-mute); }
+        .compduty .cd.low    .v { color: #06b6d4; }
+        .compduty .cd.med    .v { color: var(--accent); }
+        .compduty .cd.high   .v { color: var(--orange); }
+        .compduty .cd.max    .v { color: var(--accent-2); }
+
+        /* "Used by" cross-links */
+        .usedby {
+            margin-top: 16px;
+            padding: 12px 14px;
+            background: var(--bg-soft);
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+        .usedby strong { color: var(--text); }
+        .usedby a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 700;
+            border-bottom: 1px dashed var(--line);
+        }
+        .usedby a:hover { border-bottom-color: var(--accent); }
+        .usedby.is-bands a {
+            color: var(--accent-2);
+        }
     </style>
 </head>
 <body>
@@ -481,8 +595,8 @@
             <span class="brand-name">Delta Red5</span>
             <span class="brand-tag">· Deep Dive</span>
         </div>
-        <h1>The HVAC story for <em>twelve building types</em> — read it like a maintenance manual.</h1>
-        <p class="lead">Every building type comes with its own RH band, failure modes, and maintenance rhythm. This page walks you through all 12 — what the standards say, what goes wrong, what to check, and why.</p>
+        <h1>The Red5 playbook — <em>ten climate bands</em> and <em>twelve building types</em>, in one page.</h1>
+        <p class="lead">B1–B10 are the ten climate-band control strategies the Red5 controller switches between as outside conditions change. BT1–BT12 are the building types you actually run. This page tells you what each band does, which buildings lean on which bands, and the failure modes / maintenance rhythm for each.</p>
         <p class="crumb">← Back to <a href="/learn.html" data-testid="back-to-learn">Comfort Decoded (interactive chart)</a></p>
     </header>
 
@@ -522,6 +636,266 @@
     'use strict';
 
     // ============================================================
+    // BAND DATA  (B1-B10 climate control strategies)
+    //
+    // Mirrors band_guide.md and the BANDS table in psy-3d-engine.js --
+    // single source of truth for the Red5 controller.  Do not edit
+    // values here without updating those.
+    //
+    // Each entry:
+    //   code, key, name
+    //   oa_t, oa_rh     descriptive OA range
+    //   sa_t, sa_rh     SA target
+    //   damper          OA damper position (string for display)
+    //   mood            short climate-mood label
+    //   intro           one-paragraph context
+    //   duty            { heat, cool, hum, dehum, damper } cycle codes
+    //   why             one-paragraph control rationale
+    //   failures        [{symptom, cause, ref}]
+    //   notes           HTML with conversational + <q> formal callout
+    //   used_by         array of BT keys that lean on this band
+    //
+    // Duty cycle codes used by the .compduty mini-table:
+    //   off · low · med · high · max
+    // ============================================================
+    const BANDS = [
+        {
+            code:'B1', key:'b1', name:'Very cold & dry',
+            intro:'The dead of winter. The AHU pulls in the bare legal minimum of fresh air, recirculates the warm return air, and pushes the heating coil and humidifier hard.',
+            oa_t:'-50 to 5 °C', oa_rh:'0 – 30 %',
+            sa_t:'21.0 °C', sa_rh:'40 % RH', damper:'15 %',
+            mood:'❄ very cold & dry',
+            duty: { heat:'max', cool:'off', hum:'high', dehum:'off', damper:'15 % min' },
+            why:'Outside air carries almost no moisture and is far below SA. Bringing in more than the 62.1 ventilation minimum (typically 15 %) is paying to heat air you don\'t need. Recirculation reuses occupant heat; the humidifier replaces winter dryness.',
+            failures:[
+                { symptom:'OA damper frozen open at 100 %',
+                  cause:'Damper actuator failed in cold weather; freeze-stat may trip next. Replace actuator immediately and verify min-OA setpoint.',
+                  ref:'ASHRAE 62.1-2022 §6.2.5 (min OA) + ASHRAE 90.1 §6.5.1' },
+                { symptom:'Coil freeze alarm tripping at 4 a.m.',
+                  cause:'Preheat coil cycling on/off — staged controller missing or freeze-stat too close to coil face. Add preheat coil staging or relocate sensor.',
+                  ref:'ASHRAE Guideline 36-2021 §5.6 (preheat sequence)' },
+                { symptom:'RH below 25 % at zones',
+                  cause:'Steam humidifier overdue for descaling, or boiler tripped on low-water. Run weekly blowdown.',
+                  ref:'ASHRAE HVAC Apps 2023 Ch. 22' }
+            ],
+            used_by:['hospital','lab','pharmacy','mfg_esd','auditorium'],
+            notes:`<p>B1 is where the biggest annual heating bill lives. A single percent improvement in <strong>recirculation efficiency</strong> here is worth more than a 20 % improvement in any summer band, because the OA-vs-RA enthalpy gap is largest in winter.</p>
+                <q class="spec-quote">band_guide.md: "Heating coil: HIGH — biggest annual lift. Humidifier: ON (steam / evaporative)."</q>
+                <p>The classic B1 commissioning mistake: leaving the economizer high-limit configured for summer. Some BMS templates ship with economizer enabled below 18 °C OA — which is great until February when -10 °C OA gets pulled through a wide damper and the preheat coil can\'t keep up.</p>`
+        },
+        {
+            code:'B2', key:'b2', name:'Cool & dry',
+            intro:'Shoulder-season cold. Same recirculation logic as B1 but the lift is smaller, so the heating coil modulates rather than running flat-out.',
+            oa_t:'5 – 15 °C', oa_rh:'30 – 60 %',
+            sa_t:'19.5 °C', sa_rh:'35 % RH', damper:'15 %',
+            mood:'❄ cool & dry',
+            duty: { heat:'med', cool:'off', hum:'low', dehum:'off', damper:'15 % min' },
+            why:'OA is closer to SA so the heating coil tapers off. RH still drifts low when OA-dewpoint is dry, so the humidifier runs at low duty.',
+            failures:[
+                { symptom:'Cycling between B1 and B2 every 15 min',
+                  cause:'Band-classifier deadband too narrow — controller jittering at the threshold. Add 1 °C / 5 % hysteresis.',
+                  ref:'ASHRAE Guideline 36-2021 §5.4' },
+                { symptom:'Zone reheat valves wide-open in mild weather',
+                  cause:'SA setpoint too low for the actual zone load — VAV minimums dragging cold air into low-load zones. Reset SA upward.',
+                  ref:'ASHRAE 90.1-2022 §6.5.3.4 (SAT reset)' },
+                { symptom:'Outdoor-air sensor reading 8 °C while site is -2 °C',
+                  cause:'OAT sensor mounted on south wall in direct sun. Relocate to north-facing shaded position.',
+                  ref:'NEBB Procedural Std §7.4' }
+            ],
+            used_by:['office','residential','theatre','auditorium','museum','mfg_esd'],
+            notes:`<p>Many temperate-climate buildings spend more hours in B2 than in B1 — this is the shoulder season grind. <strong>Heat-recovery wheels</strong> shine here: at OA 8 °C and RA 22 °C, the wheel can recover 70 % of the heat <em>and</em> humidity before the air ever hits the preheat coil.</p>
+                <q class="spec-quote">band_guide.md: "same min-OA logic as B1, milder lift."</q>
+                <p>The economizer is still locked out in B2 because mixing 50 % of 10 °C OA with 50 % of 22 °C RA gives 16 °C — well below SA setpoint, forcing heating-coil work.</p>`
+        },
+        {
+            code:'B3', key:'b3', name:'Mild & dry',
+            intro:'Spring/autumn dry stretch. OA is close to SA temperature, but the air is parched.',
+            oa_t:'15 – 20 °C', oa_rh:'0 – 30 %',
+            sa_t:'19.0 °C', sa_rh:'45 % RH', damper:'30 %',
+            mood:'🌤️ mild & dry',
+            duty: { heat:'low', cool:'off', hum:'med', dehum:'off', damper:'30 %' },
+            why:'OA already near SA — barely any coil work. The damper opens a touch above min to flush out CO₂, but the humidifier carries most of the lift to bring RH back up to the comfort band.',
+            failures:[
+                { symptom:'Wood floor planks shrinking / cupping',
+                  cause:'RH dropped below 30 % during a dry spell. Set humidifier to RH-track instead of temperature-track.',
+                  ref:'ASHRAE 55-2020 §5.2.3 + Apps Ch. 24' },
+                { symptom:'Humidifier overflowing condensate pan',
+                  cause:'Drain trap dry-evaporated during prior dehumidify season. Re-prime trap; install auto-prime if applicable.',
+                  ref:'ASHRAE 180-2018 Tbl 6.1' },
+                { symptom:'Static-discharge complaints in retail spaces',
+                  cause:'Carpet + low RH building dangerous static. Boost humidifier capacity by ~30 %.',
+                  ref:'ANSI/ESD S20.20-2021 §6.5' }
+            ],
+            used_by:['office','residential','museum','auditorium','mfg_esd'],
+            notes:`<p>B3 is the band engineers often forget exists. It's "free heating" weather but it needs <strong>active humidification</strong> — and many BMS sequences turn the humidifier off when the heating coil turns off, which is exactly wrong here.</p>
+                <q class="spec-quote">band_guide.md: "OA already near SA — barely any coil work; humidifier compensates for low OA moisture."</q>`
+        },
+        {
+            code:'B4', key:'b4', name:'Mild & moderate — economizer ⭐',
+            intro:'The magic band. Outside air is so close to the desired supply that the AHU bypasses every coil and runs on 100 % outside air. Chiller off. Boiler off. Humidifier off.',
+            oa_t:'18 – 22 °C', oa_rh:'30 – 50 %',
+            sa_t:'20.0 °C', sa_rh:'40 % RH', damper:'100 %',
+            mood:'⭐ free cooling',
+            duty: { heat:'off', cool:'off', hum:'off', dehum:'off', damper:'100 %' },
+            why:'When OA enthalpy ≤ RA enthalpy AND OA T is below the cooling setpoint, the AHU just opens fully to outside. The building exhales 100 % of its return air. Fan power is the only energy consumed by the AHU.',
+            failures:[
+                { symptom:'Economizer never engages even when conditions are perfect',
+                  cause:'Enthalpy sensor failed open at high value, or changeover deadband too wide. Run a manual changeover test seasonally.',
+                  ref:'ASHRAE 90.1-2022 §6.5.1 + Guideline 36 §5.16' },
+                { symptom:'IAQ alarm during 100 % OA mode',
+                  cause:'OA inlet near a loading dock or exhaust stack — high CO/NOx pulled in. Add IAQ override or relocate intake.',
+                  ref:'ASHRAE 62.1-2022 §5.5 (OA intake)' },
+                { symptom:'Building pressurization swing on changeover',
+                  cause:'Return-air damper and OA damper not synchronized. Add lead/lag scheduling between them.',
+                  ref:'ASHRAE Guideline 36-2021 §5.16' }
+            ],
+            used_by:['office','residential','datacenter','theatre','auditorium','mfg_esd'],
+            notes:`<p>B4 is the lever that turns a "good" AHU into a "great" one. In a temperate climate B4+B5 can cover <strong>25–30 % of annual hours</strong> — and during those hours the chiller never starts. Hot-aisle data centers ride B4 even harder.</p>
+                <q class="spec-quote">band_guide.md: "outside air ≈ desired SA. Bypass coils entirely; building breathes straight outside air. Chiller + boiler both off → biggest savings."</q>
+                <p>The reason hospitals (BT5) and pharmacies (BT9) can\'t use B4 is the 100 % OA + cleanroom-pressurization conflict — they\'re already at 100 % OA all year by code, so the economizer is a no-op for them.</p>`
+        },
+        {
+            code:'B5', key:'b5', name:'Warm & medium humidity — economizer',
+            intro:'Late spring / early summer. OA is warmer than ideal but enthalpy is still below the building\'s return enthalpy, so 100 % OA + light coil trim still beats mechanical cooling with recirculation.',
+            oa_t:'22 – 25 °C', oa_rh:'40 – 60 %',
+            sa_t:'23.5 °C', sa_rh:'50 % RH', damper:'100 %',
+            mood:'🌞 warm — still economizer',
+            duty: { heat:'off', cool:'low', hum:'off', dehum:'low', damper:'100 %' },
+            why:'OA is above SA setpoint but below return-air setpoint. Coil takes 1–2 °C off, which is way cheaper than cooling the recirc + makeup mix from scratch.',
+            failures:[
+                { symptom:'Cooling coil leaving wet but SA still 24 °C',
+                  cause:'Coil partially fouled — heat-transfer dropped, sensible capacity gone but latent still working. Schedule coil cleaning.',
+                  ref:'ASHRAE 180-2018 Tbl 6.1' },
+                { symptom:'Building pressurization positive at full economizer',
+                  cause:'Return / exhaust fan not modulating with supply fan in B5. Add VFD tracking.',
+                  ref:'ASHRAE Guideline 36-2021 §5.16' },
+                { symptom:'High-limit changeover dropping out near 25 °C',
+                  cause:'High-limit setpoint hard-coded too low for the climate. Reset to 26 °C or use enthalpy-based changeover.',
+                  ref:'ASHRAE 90.1-2022 §6.5.1.3 (high-limit shutoff)' }
+            ],
+            used_by:['office','residential','theatre','auditorium','museum','datacenter','mfg_esd'],
+            notes:`<p>B5 is the secret economizer band — most engineers think the economizer only works below 18 °C OA. In reality, an <strong>enthalpy-based</strong> changeover keeps the economizer running up to ~25 °C OA in dry climates, because dry warm OA still carries less total enthalpy than humid return air.</p>
+                <q class="spec-quote">band_guide.md: "still in economizer range — 100 % OA cheaper than mechanical cooling with recirculation. Coil does final small trim."</q>`
+        },
+        {
+            code:'B6', key:'b6', name:'Warmer (mixed)',
+            intro:'OA crosses the economizer high limit. The AHU drops to a 50/50 mix and starts running real cooling.',
+            oa_t:'25 – 27 °C', oa_rh:'50 – 70 %',
+            sa_t:'25.0 °C', sa_rh:'55 % RH', damper:'50 %',
+            mood:'🌞 warmer',
+            duty: { heat:'off', cool:'med', hum:'off', dehum:'med', damper:'50 %' },
+            why:'OA enthalpy is now above RA enthalpy — economizer is locked out. Damper drops to 50 % (still above ventilation min). Coil does real work but the mixed load is half what 100 % OA would demand.',
+            failures:[
+                { symptom:'Hot complaints in afternoon sun-side zones',
+                  cause:'Coil approach widening — coil leaving 14 °C instead of 12 °C. Check CHW flow + coil cleanliness.',
+                  ref:'ASHRAE 180-2018 Tbl 6.1' },
+                { symptom:'Latent load climbing — RH up at zones',
+                  cause:'Coil running too dry — leaving-air dewpoint above target. Lower CHW supply temp by 1 °C.',
+                  ref:'ASHRAE 90.1-2022 §6.5.4 (CHW reset)' },
+                { symptom:'AHU short-cycling on cooling',
+                  cause:'Cooling-stage minimum runtime too short. Add 5-min minimum-on timer.',
+                  ref:'ASHRAE Guideline 36-2021 §5.10' }
+            ],
+            used_by:['office','residential','theatre','museum','datacenter','mfg_esd'],
+            notes:`<p>B6 is where the chiller earns its keep. Up to here the building has been mostly free-running; from B6 onward chiller efficiency dominates the operating cost. <strong>Variable-primary chilled-water flow</strong> + low-load chiller staging are the two upgrades with the biggest B6/B7/B8 payback.</p>
+                <q class="spec-quote">band_guide.md: "OA now warmer than SA. Mix 50/50 with cooler return air to lower coil load."</q>`
+        },
+        {
+            code:'B7', key:'b7', name:'Hot & humid',
+            intro:'Summer humid afternoons. The AHU pulls in the legal minimum of outside air and drags the supply across the saturation curve to wring out moisture before re-heating to comfort.',
+            oa_t:'27 – 32 °C', oa_rh:'60 – 80 %',
+            sa_t:'12.0 °C', sa_rh:'95 % RH', damper:'15 %',
+            mood:'☀ hot & humid',
+            duty: { heat:'low', cool:'high', hum:'off', dehum:'high', damper:'15 % min' },
+            why:'Min-OA brings in only the ventilation requirement. The cooling coil cools <em>below</em> SA target dewpoint (~12 °C), condensing latent load. Reheat coil bumps sensible temperature back to comfort without re-adding moisture.',
+            failures:[
+                { symptom:'Indoor RH climbing past 60 %',
+                  cause:'Coil approach insufficient or chilled-water supply temp too warm. Drop CHW setpoint or stage chiller.',
+                  ref:'ASHRAE 62.1-2022 §5.10 (RH ≤ 65 %)' },
+                { symptom:'Condensate overflow at AHU drain pan',
+                  cause:'Drain trap clogged or P-trap dry. Snake the line, refill the trap.',
+                  ref:'ASHRAE 180-2018 Tbl 6.1' },
+                { symptom:'Reheat coil running flat-out (energy waste)',
+                  cause:'Coil leaving-air too cold — sub-cool / dehumidify / reheat strategy doing too much work. Consider runaround coil + DOAS retrofit.',
+                  ref:'ASHRAE 90.1-2022 §6.5.2.3 (reheat limits)' }
+            ],
+            used_by:['hospital','lab','pharmacy','fab','datacenter','theatre','office','residential'],
+            notes:`<p>B7 is the band that tests the coil. The latent load can easily exceed sensible — sometimes 60 % of the total cooling kWh in B7 is condensate, not air-side cooling. <strong>Decoupled latent</strong> systems (DOAS with dedicated dehumidification + sensible-only terminal units) reduce reheat waste dramatically in B7/B8.</p>
+                <q class="spec-quote">band_guide.md: "coil drags air down across the saturation curve to wring out moisture. SA leaves coil near-saturation. Reheat coil may bump sensible temperature back up to comfort."</q>`
+        },
+        {
+            code:'B8', key:'b8', name:'Hot & very humid',
+            intro:'B7 dialed up. Tropical / monsoon afternoons. Same playbook — sub-cool, dehumidify, reheat — but the coil runs at max.',
+            oa_t:'32 – 38 °C', oa_rh:'70 – 100 %',
+            sa_t:'13.0 °C', sa_rh:'95 % RH', damper:'15 %',
+            mood:'☀ hot & very humid',
+            duty: { heat:'med', cool:'max', hum:'off', dehum:'max', damper:'15 % min' },
+            why:'Most coil-heavy band of the year. CHW supply at design temp, full chiller load, reheat coil active to manage the sub-cool overshoot.',
+            failures:[
+                { symptom:'Chiller approaching mechanical capacity limit',
+                  cause:'Sub-cooling load + reheat reheat overshoot piling onto chiller. Investigate desiccant pre-treatment or upsize chiller.',
+                  ref:'ASHRAE Apps 2023 Ch. 30 (industrial DH)' },
+                { symptom:'Cold air dumping in low-load zones (gooseflesh complaints)',
+                  cause:'VAV box minimum too high; cold 13 °C SA dumping into perimeter at min flow. Stage reheat or raise min-flow.',
+                  ref:'ASHRAE 62.1-2022 §6.2.6 (VAV min)' },
+                { symptom:'Condensate pan corrosion',
+                  cause:'Year after year of high B8 hours pitting the stainless. Coat with epoxy or upgrade to titanium pan.',
+                  ref:'ASHRAE 180-2018 §6.2' }
+            ],
+            used_by:['hospital','lab','pharmacy','fab','datacenter','theatre','office'],
+            notes:`<p>B8 is when desiccant pre-treatment pays for itself. A solid-desiccant wheel can pre-dry the OA stream from 30 g/kg to 12 g/kg <em>without</em> a single watt of compressor cooling, leaving the chiller only the sensible job.</p>
+                <q class="spec-quote">band_guide.md: "same strategy as B7, scaled up. Most coil-heavy band of the year."</q>`
+        },
+        {
+            code:'B9', key:'b9', name:'Hot & dry',
+            intro:'Desert summer. Hot but dry — no dehumidification needed, just sensible cooling. Evaporative pre-cooling is a game-changer here.',
+            oa_t:'35 – 50 °C', oa_rh:'0 – 30 %',
+            sa_t:'15.0 °C', sa_rh:'40 % RH', damper:'15 %',
+            mood:'🏜️ hot & dry',
+            duty: { heat:'off', cool:'high', hum:'off', dehum:'off', damper:'15 % min' },
+            why:'Cooling coil runs heavy SENSIBLE-only (dry coil — no condensate). An indirect evaporative pre-cooler can drop OA from 42 °C to 22 °C before the coil sees it, slashing chiller load by 50 % +.',
+            failures:[
+                { symptom:'Latent capacity wasted — coil too cold',
+                  cause:'Coil controlled to leaving-DPT instead of leaving-DBT. Switch the loop to sensible-only DBT control in B9.',
+                  ref:'ASHRAE 90.1-2022 §6.5.4' },
+                { symptom:'Evap pre-cooler scaling fast',
+                  cause:'Hard water + high evaporation rate. Add water softener or blowdown more often.',
+                  ref:'ASHRAE Apps 2023 Ch. 22 (evap. cooling)' },
+                { symptom:'Static-discharge IT incidents',
+                  cause:'B9 indoor RH dropping to 15 % when humidifier is off. Run humidifier off the same evap. system\'s sump.',
+                  ref:'ANSI/ESD S20.20-2021 + ASHRAE TC 9.9' }
+            ],
+            used_by:['datacenter','office','residential','selfstorage','mfg_esd'],
+            notes:`<p>B9 is the band where <strong>climate-specific HVAC</strong> matters most. A B8-tuned coil in a B9 climate wastes 30–40 % of its cooling capacity on latent dehumidification that isn\'t needed. Phoenix and Riyadh data centers run B9 for ~50 % of summer hours; their best operators add evaporative pre-coolers.</p>
+                <q class="spec-quote">band_guide.md: "Coil only sheds sensible heat. Arid-climate retrofits should add evaporative pre-cooling."</q>`
+        },
+        {
+            code:'B10', key:'b10', name:'Extreme hot & humid (monsoon)',
+            intro:'The worst case. Monsoon climate or industrial process load combined with peak summer. The AHU drops SA to ~11 °C to wring every drop of moisture, then reheats hard.',
+            oa_t:'30 – 50 °C', oa_rh:'85 – 100 %',
+            sa_t:'11.0 °C', sa_rh:'95 % RH', damper:'15 %',
+            mood:'🌧️ monsoon',
+            duty: { heat:'high', cool:'max', hum:'off', dehum:'max', damper:'15 % min' },
+            why:'Coil drops to absolute minimum SA temp (~11 °C) to maximize condensate drop. Reheat coil warms the dehumidified air back up to comfort without re-adding moisture (reheat is non-negotiable here).',
+            failures:[
+                { symptom:'Building never reaches RH setpoint regardless of SA temp',
+                  cause:'OA dewpoint exceeds coil leaving-DPT — the coil cannot wring more moisture than its own leaving-DPT. Desiccant pre-treatment required.',
+                  ref:'ASHRAE Apps 2023 Ch. 30' },
+                { symptom:'Mold growth on ductwork insulation',
+                  cause:'Cold-duct surface temp below ambient dewpoint — vapor barrier compromised. Re-wrap ducts; check vapor barrier continuity.',
+                  ref:'ASHRAE 62.1-2022 §5.10' },
+                { symptom:'Reheat valve full-open all season',
+                  cause:'SA setpoint too aggressive — coil over-dehumidifying. Implement night-setback or raise SA dewpoint setpoint.',
+                  ref:'ASHRAE 90.1-2022 §6.5.2.3 (reheat limits)' }
+            ],
+            used_by:['hospital','lab','pharmacy','fab','selfstorage','datacenter'],
+            notes:`<p>B10 is rare but devastating. Mumbai monsoon, Singapore peak summer, and inland-Florida July all hit B10. Buildings designed for B7/B8 fail in B10 because their coils <em>can\'t</em> reach an 11 °C leaving-DPT — the chiller can\'t go cold enough.</p>
+                <q class="spec-quote">band_guide.md: "worst case. Coil drops air to ~11 °C to wring moisture; reheat warms the dehumidified air back up to comfort without re-adding moisture."</q>
+                <p>The fix for B10 buildings is almost always <strong>desiccant pre-treatment</strong> — a solid-desiccant wheel uses regeneration heat (often waste heat from the chiller condenser) to dry the OA stream before the cooling coil sees it.</p>`
+        }
+    ];
+
+    // ============================================================
     // BUILDING DATA  -- single source of truth.
     // Each entry maps directly to one B-section.  Adding a new
     // building type is one entry here, nothing else changes.
@@ -543,7 +917,7 @@
     // ============================================================
     const BUILDINGS = [
         {
-            code: 'B1', key: 'office', name: 'Office',
+            code: 'BT1', key: 'office', name: 'Office',
             intro: 'A typical office juggles three things: occupant comfort, indoor air quality (CO₂ ventilation), and energy. ASHRAE 90.1 polices the energy side, 62.1 the IAQ side, 55 the comfort side.',
             spec: [
                 {k:'RH band',          v:'40 – 60 %'},
@@ -579,7 +953,7 @@
                 <p>Pro tip: in mild climates, the cheapest way to drop summer RH isn't more cooling — it's <em>less</em> outside air at the peak humid hour (re-tune the economizer high-limit), as long as you stay above the 62.1 minimum Vbz.</p>`
         },
         {
-            code: 'B2', key: 'residential', name: 'Residential',
+            code: 'BT2', key: 'residential', name: 'Residential',
             intro: 'Houses run wider RH bands than offices because the load is dominated by latent moisture (people, showers, cooking) and the equipment is small — a heat pump or furnace plus a bath/range exhaust. ASHRAE 62.2 governs whole-house ventilation.',
             spec: [
                 {k:'RH band',         v:'30 – 60 %'},
@@ -615,7 +989,7 @@
                 <p>If your house feels muggy in summer even with AC running, the AC is probably <em>oversized</em> — short cycles cool the air without running long enough to wring out the moisture. Right-sizing per Manual J is more useful than upsizing.</p>`
         },
         {
-            code: 'B3', key: 'theatre', name: 'Theatre',
+            code: 'BT3', key: 'theatre', name: 'Theatre',
             intro: 'Theatres are a "places of assembly" load: very high occupant density for short periods, then empty for hours. The HVAC has to ramp ventilation and cooling fast at curtain-up and back down at intermission.',
             spec: [
                 {k:'RH band',          v:'30 – 60 %'},
@@ -651,7 +1025,7 @@
                 <p>Acoustics matters as much as comfort here — a noisy diffuser ruins a violin solo. Aim for NC-25 (very quiet); duct silencers are usually worth their price.</p>`
         },
         {
-            code: 'B4', key: 'auditorium', name: 'Music Auditorium',
+            code: 'BT4', key: 'auditorium', name: 'Music Auditorium',
             intro: 'Concert halls are theatres with one extra constraint: the instruments. Wood (violins, pianos, harpsichords) shrink and crack outside 45–55 % RH. The acoustic absorption of the air itself also changes with RH at low frequencies.',
             spec: [
                 {k:'RH band',          v:'45 – 55 %  (tighter than theatre)'},
@@ -687,7 +1061,7 @@
                 <p>Old halls often retrofit a separate <strong>backstage / piano room HVAC zone</strong> tighter than the audience hall, because the audience can tolerate 10 % RH swing and the piano cannot.</p>`
         },
         {
-            code: 'B5', key: 'hospital', name: 'Hospital (Operating Room)',
+            code: 'BT5', key: 'hospital', name: 'Hospital (Operating Room)',
             intro: 'The OR is the most regulated HVAC space in any building. It runs 20–60 % RH (wider than office to let surgeons control electrostatic flame risk), 20–24 °C, and ≥ 20 ACH of HEPA-filtered air with the room held at positive pressure.',
             spec: [
                 {k:'RH band',          v:'20 – 60 %  (anesthetizing)'},
@@ -723,7 +1097,7 @@
                 <p>The "trump card" failure mode in an OR is <em>negative pressure</em>. Every other parameter can drift 5–10 % without surgery stopping. Negative pressure shuts the room down — and the alarm thresholds are tight (≤ +1 Pa for >2 minutes typically triggers the building automation alert).</p>`
         },
         {
-            code: 'B6', key: 'lab', name: 'Lab (Analytical / Research)',
+            code: 'BT6', key: 'lab', name: 'Lab (Analytical / Research)',
             intro: 'Analytical labs prioritize <em>stability</em> over comfort: temperature within ±1 °C, RH within ±5 %, so balances, spectrometers, and PCR thermal cyclers behave repeatably. Many labs also have 100 % once-through ventilation because of fume hoods.',
             spec: [
                 {k:'RH band',          v:'30 – 50 %'},
@@ -759,7 +1133,7 @@
                 <p>A common rookie mistake: sizing the AHU for max-hood-airflow without sizing the <strong>reheat</strong> for max-hood-airflow. In winter, every sash-open hood is dumping a few kW of cooling into the lab and the reheat coil has to undo it. Undersized reheat = cold complaints all winter.</p>`
         },
         {
-            code: 'B7', key: 'museum', name: 'Museum / Archive',
+            code: 'BT7', key: 'museum', name: 'Museum / Archive',
             intro: 'Collections beat people when there is a conflict. ASHRAE Applications Ch. 24 lays out five "control classes" (AA, A, B, C, D) trading climate strictness against energy cost. Most general-collection museums run class A or B: ~50 % RH ±5 %, slow daily drift, slow seasonal drift.',
             spec: [
                 {k:'RH band',          v:'45 – 55 %  (class A)'},
@@ -795,7 +1169,7 @@
                 <p>Free pro tip from collection care: if you can only invest in one thing, invest in <strong>tighter envelope</strong> before tighter HVAC. A leaky building lets weekend humidity events in faster than any reasonable AHU can pull it out.</p>`
         },
         {
-            code: 'B8', key: 'selfstorage', name: 'Self-Storage (Climate-Controlled)',
+            code: 'BT8', key: 'selfstorage', name: 'Self-Storage (Climate-Controlled)',
             intro: 'Climate-controlled self-storage is the new growth segment of the industry. The point isn\'t fine-grained comfort — it\'s preventing mildew and condensation on stored furniture, electronics, documents, and seasonal clothing. The bar is "no mold, no swings."',
             spec: [
                 {k:'RH band',          v:'30 – 55 %  (mold ceiling)'},
@@ -831,7 +1205,7 @@
                 <p>Watch what climate-controlled means in marketing copy. Some operators sell "climate-controlled" with just a thermostat and no dedicated dehumidifier — RH is whatever it wants to be. Real climate-controlled has a <strong>standalone dehumidifier</strong> or a DX system with discrete dehumidify mode, plus continuous RH monitoring at unit level.</p>`
         },
         {
-            code: 'B9', key: 'pharmacy', name: 'Pharmacy / Cleanroom',
+            code: 'BT9', key: 'pharmacy', name: 'Pharmacy / Cleanroom',
             intro: 'A compounding pharmacy (USP &lt;797&gt; sterile) or a GMP cleanroom is regulated by environmental monitoring more than by comfort. RH, temperature, particulate counts, and pressurization are all controlled and logged.',
             spec: [
                 {k:'RH band',          v:'30 – 50 %'},
@@ -867,7 +1241,7 @@
                 <p>The pressurization cascade is the soul of a cleanroom: <strong>ISO-5 LAF hood &gt; buffer (ISO 7) &gt; anteroom &gt; corridor</strong>. Air always falls "downhill" toward dirtier zones. If a pressure differential is lost, the whole certification is suspect until re-verified.</p>`
         },
         {
-            code: 'B10', key: 'fab', name: 'Semiconductor Fab',
+            code: 'BT10', key: 'fab', name: 'Semiconductor Fab',
             intro: 'A photolithography bay is the strictest HVAC space outside aerospace. Temperature within ±0.1 °C, RH within ±1 %, ISO 1–3 cleanliness — the air is closer in spec than the wafer being printed on it.',
             spec: [
                 {k:'RH band',          v:'40 – 50 %  (±1 % typical)'},
@@ -903,7 +1277,7 @@
                 <p>The most expensive equipment in a fab is usually NOT the steppers — it's the makeup-air units (MAUs) and the ULPA wall that delivers laminar flow. Touch those without proper change-control and the next wafer lot is at risk.</p>`
         },
         {
-            code: 'B11', key: 'mfg_esd', name: 'Manufacturing (Sensitive / ESD)',
+            code: 'BT11', key: 'mfg_esd', name: 'Manufacturing (Sensitive / ESD)',
             intro: 'ESD-sensitive electronics assembly is governed by ANSI/ESD S20.20. The RH band trades off two failure modes: too low (≤ 30 %) and electrostatic discharge fries components; too high (≥ 60 %) and solder paste absorbs moisture, causing re-flow defects.',
             spec: [
                 {k:'RH band',          v:'35 – 55 %  (ESD-protective)'},
@@ -939,7 +1313,7 @@
                 <p>Counterintuitive but proven: in an ESD line, increasing RH from 35 % to 50 % can <em>reduce</em> rework rates more than upgrading from a MERV-13 to a HEPA filter. Static, not particles, is the dominant cause of finished-goods failures in most assembly lines.</p>`
         },
         {
-            code: 'B12', key: 'datacenter', name: 'Data Center',
+            code: 'BT12', key: 'datacenter', name: 'Data Center',
             intro: 'Data centers care about IT equipment, not people. ASHRAE TC 9.9 publishes "thermal envelopes" (Class A1 through A4) defining how cool and dry the air at the server inlet must be. The current trend is <em>widening</em> the envelope — A1 18–27 °C used to be 20–25 °C — to save chiller energy.',
             spec: [
                 {k:'RH band (A1)',       v:'8 – 80 %  allowable · 40–60 % recommended'},
@@ -977,16 +1351,28 @@
     ];
 
     // ============================================================
-    // RENDER NAV
+    // RENDER NAV  (two groups: B-bands then BT-buildings)
     // ============================================================
     const rail = document.getElementById('rail');
-    BUILDINGS.forEach(b => {
-        const a = document.createElement('a');
-        a.href = '#' + b.key;
-        a.dataset.target = b.key;
-        a.innerHTML = '<span class="b-code">' + b.code + '</span>' + b.name;
-        rail.appendChild(a);
-    });
+    // remove the seed rail-label that hard-codes "Jump to building"
+    while (rail.firstChild) rail.removeChild(rail.firstChild);
+
+    function _addRailGroup(title, items, isBand) {
+        const hdr = document.createElement('div');
+        hdr.className = 'rail-group';
+        hdr.textContent = title;
+        rail.appendChild(hdr);
+        items.forEach(it => {
+            const a = document.createElement('a');
+            a.href = '#' + it.key;
+            a.dataset.target = it.key;
+            if (isBand) a.classList.add('is-band');
+            a.innerHTML = '<span class="b-code">' + it.code + '</span>' + it.name;
+            rail.appendChild(a);
+        });
+    }
+    _addRailGroup('Control bands', BANDS, true);
+    _addRailGroup('Building types', BUILDINGS, false);
 
     // ============================================================
     // RENDER SECTIONS
@@ -1094,6 +1480,14 @@
                 </span>
             </li>`).join('');
 
+        // Cross-link: which control bands this BT leans on
+        const primaryBandKeys = BT_PRIMARY_BANDS[bld.key] || [];
+        const bandsLine = primaryBandKeys.map(k => {
+            const b = BAND_LOOKUP[k];
+            if (!b) return '';
+            return `<a href="#${b.key}">${b.code} ${escapeHtml(b.name)}</a>`;
+        }).join(' · ');
+
         sec.innerHTML = `
             <h2><span class="b-code">${bld.code}</span> ${escapeHtml(bld.name)}</h2>
             <p class="bld-intro">${bld.intro}</p>
@@ -1118,6 +1512,7 @@
                     <ul>${checksLi}</ul>
                 </div>
             </div>
+            ${bandsLine ? `<div class="usedby is-bands"><strong>Primary control bands for ${bld.code}:</strong> ${bandsLine}</div>` : ''}
             <details class="notes">
                 <summary>📘 Student / Engineer notes — the “why”</summary>
                 <div class="notes-body">${bld.notes}</div>
@@ -1128,6 +1523,79 @@
         return sec;
     }
 
+    // ----- Build a name lookup for BT cross-link rendering -----
+    const BT_LOOKUP = {};
+    BUILDINGS.forEach(b => { BT_LOOKUP[b.key] = b; });
+    const BAND_LOOKUP = {};
+    BANDS.forEach(b => { BAND_LOOKUP[b.key] = b; });
+
+    // ----- Reverse mapping: which bands each BT relies on -----
+    const BT_PRIMARY_BANDS = {};
+    BANDS.forEach(band => {
+        (band.used_by || []).forEach(btKey => {
+            if (!BT_PRIMARY_BANDS[btKey]) BT_PRIMARY_BANDS[btKey] = [];
+            BT_PRIMARY_BANDS[btKey].push(band.key);
+        });
+    });
+
+    function renderBandSection(band) {
+        const sec = document.createElement('section');
+        sec.className = 'bld is-band';
+        sec.id = band.key;
+        sec.dataset.testid = 'section-' + band.key;
+
+        const failuresLi = band.failures.map(f => `
+            <li>
+                <span class="symptom">"${escapeHtml(f.symptom)}"</span>
+                <span class="cause">↳ ${escapeHtml(f.cause)}</span>
+                <span class="ref">${escapeHtml(f.ref)}</span>
+            </li>`).join('');
+
+        // Cross-link: which BTs use this band
+        const usedByLinks = (band.used_by || []).map(k => {
+            const bt = BT_LOOKUP[k];
+            if (!bt) return '';
+            return `<a href="#${bt.key}">${bt.code} ${escapeHtml(bt.name)}</a>`;
+        }).join(' · ');
+
+        const isEcon = (band.key === 'b4' || band.key === 'b5');
+
+        sec.innerHTML = `
+            <h2><span class="b-code">${band.code}</span> ${escapeHtml(band.name)}</h2>
+            <p class="bld-intro">${escapeHtml(band.intro)}</p>
+            <div class="band-meta">
+                <div class="chip"><span class="k">OA condition</span><span class="v">${escapeHtml(band.oa_t)} · ${escapeHtml(band.oa_rh)}</span></div>
+                <div class="chip"><span class="k">SA target</span><span class="v">${escapeHtml(band.sa_t)} · ${escapeHtml(band.sa_rh)}</span></div>
+                <div class="chip ${isEcon ? 'economizer' : ''}"><span class="k">OA damper</span><span class="v">${escapeHtml(band.damper)}</span></div>
+                <div class="chip"><span class="k">Climate mood</span><span class="v">${escapeHtml(band.mood)}</span></div>
+            </div>
+            <div class="compduty" aria-label="Component duty cycle">
+                <div class="cd ${band.duty.heat}"><span class="k">Heat coil</span><span class="v">${escapeHtml(band.duty.heat)}</span></div>
+                <div class="cd ${band.duty.cool}"><span class="k">Cool coil</span><span class="v">${escapeHtml(band.duty.cool)}</span></div>
+                <div class="cd ${band.duty.hum}"><span class="k">Humidify</span><span class="v">${escapeHtml(band.duty.hum)}</span></div>
+                <div class="cd ${band.duty.dehum}"><span class="k">Dehumid</span><span class="v">${escapeHtml(band.duty.dehum)}</span></div>
+                <div class="cd"><span class="k">OA damper</span><span class="v">${escapeHtml(band.duty.damper)}</span></div>
+            </div>
+            <div class="topgrid">
+                <div class="spec-card">
+                    <h3 class="card-title">Why this control strategy</h3>
+                    <p style="font-size:13px;color:var(--text);line-height:1.6;margin:0">${escapeHtml(band.why)}</p>
+                </div>
+                <div class="listcard">
+                    <h3>Common failure modes <span style="font-weight:600;color:var(--text-mute)">(symptom → cause → ref)</span></h3>
+                    <ul>${failuresLi}</ul>
+                </div>
+            </div>
+            ${usedByLinks ? `<div class="usedby"><strong>Building types that lean on ${band.code}:</strong> ${usedByLinks}</div>` : ''}
+            <details class="notes">
+                <summary>📘 Engineer notes — the “why”</summary>
+                <div class="notes-body">${band.notes}</div>
+            </details>
+        `;
+        return sec;
+    }
+
+    BANDS.forEach(b => main.appendChild(renderBandSection(b)));
     BUILDINGS.forEach(b => main.appendChild(renderSection(b)));
 
     // ============================================================
@@ -1163,7 +1631,8 @@
     // RAIL ACTIVE-STATE  (IntersectionObserver)
     // ============================================================
     const railLinks = Array.from(rail.querySelectorAll('a'));
-    const sections  = BUILDINGS.map(b => document.getElementById(b.key));
+    const allSectionKeys = BANDS.map(b => b.key).concat(BUILDINGS.map(b => b.key));
+    const sections  = allSectionKeys.map(k => document.getElementById(k));
     const setActive = (key) => {
         railLinks.forEach(a => a.classList.toggle('active', a.dataset.target === key));
     };
@@ -1180,7 +1649,7 @@
     // INIT
     // ============================================================
     document.getElementById('year').textContent = new Date().getFullYear();
-    if (BUILDINGS.length) setActive(BUILDINGS[0].key);
+    if (BANDS.length) setActive(BANDS[0].key);
 })();
 </script>
 

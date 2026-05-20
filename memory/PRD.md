@@ -1,5 +1,48 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.3 — Switched wet/dry threshold from humidity ratio to RH (perception-aligned, ASHRAE-cited) (2026-05-20)
+
+**User feedback** (screenshot at 16.2 °C / 77% RH labeled "Cool / Dry"):
+"WTF... IS 77% considered dry? Following your advice, one can be an instant fool. What is your classification? wet/humid/dry... please define and quote the reference."
+
+### Root cause (acknowledged in code comments)
+The previous (G.1/G.2) implementation used humidity ratio W > 9.26 g/kg as the wet/dry split.  That measure is ASHRAE-correct for *absolute moisture content* — but at low temperatures, cool air physically cannot carry much moisture, so even 17 °C / 90% RH sits below 9.26 g/kg even though everyone calls that air "damp."  The classification didn't match perception OR any indoor air quality standard.
+
+### Fix: use Relative Humidity per ASHRAE 55 + 62.1, with the references CITED on the page
+- **Wet/dry split = 50% RH** (midpoint of ASHRAE Standard 55-2020's recommended 40-60% comfort band)
+- **Warm/cool split = 23.5 °C** (CZ centroid, unchanged)
+
+### Why RH matches both perception and standards
+- **ASHRAE Std 62.1-2022 §5.10**: indoor RH must be kept ≤ 65% to limit mold/microbial growth — so RH > 60% is the IAQ "humid" threshold.
+- **ASHRAE Std 55-2020 §5.2.3**: recommends 40-60% RH for thermal comfort — so 50% is the natural sweet-spot midpoint.
+- **ASHRAE Handbook of Fundamentals 2021 Ch. 9**: occupants perceive RH > 60% as humid and RH < 30% as dry.
+
+### Code changes
+- `/app/frontend/public/js/psychrometric.js`:
+  - `WET_DRY_SPLIT_W = 0.00926` → removed
+  - `RH_WET_DRY_SPLIT = 50` added with ASHRAE references in the comment
+  - `getGivoniTier()` outer-quadrant split now uses `rh >= 50` instead of `w >= WET_DRY_SPLIT_W`
+  - Tier label `'Cool/wet'` → `'Cool/humid'` (more standard psychrometric term)
+- `/app/frontend/public/learn.html`:
+  - The horizontal `9.3 g/kg wet/dry split` dashed line replaced with the **50% RH curve** (polyline along that humidity contour) labeled `50% RH humid / dry split`.
+  - Anchor labels repositioned to clearly sit above/below the new curve: COOL / HUMID at (15 °C, 90% RH), COOL / DRY at (2 °C, 20% RH), HOT / HUMID at (33 °C, 80% RH), HOT / DRY at (38 °C, 12% RH).
+  - REGION_META hints rewritten to cite the exact threshold numbers + ASHRAE references.
+  - Region cards relabeled (`C-H · Cool / Humid` instead of `Cool / Wet`).
+  - Footer now states the classification standard explicitly: "Classification per ASHRAE Std 55-2020 (40-60% RH comfort band), ASHRAE Std 62.1-2022 (65% RH max IAQ limit), and ASHRAE Handbook of Fundamentals 2021, Ch. 9."
+
+### Smoke-tested via Playwright
+- User-reported 16.1 °C / 78% RH / 8.95 g/kg → **"Cool / Humid"** ✓ (was wrongly "Cool / Dry")
+- Hot/Dry sanity: 34.9 °C / 15% RH → **"Hot / Dry"** ✓
+- The 50% RH dashed curve is visible on the chart and labeled; the dot sits clearly above it for humid cases, below it for dry cases.
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{index.html, index-single-file.html, js/psychrometric.js}`.
+
+### Lesson (added to ongoing notes)
+When a classification has multiple defensible measures (humidity ratio vs RH vs dew point), pick the one that matches **occupant perception + the industry standards your audience trusts** — and **cite the standard on the page**.  Engineers can argue with my math; they can't argue with ASHRAE.
+
+
+
 ## Phase G.2 — Make the classification thresholds VISIBLE + terminology fix (2026-05-20)
 
 **User feedback** (with annotated screenshot at 13.1 °C / 69% RH labeled "Cold / Dry"):

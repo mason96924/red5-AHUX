@@ -2103,18 +2103,23 @@ global.initPsy3D = function(container, opts){
 
     /* Deep Dive launcher — opens the standalone B1-B10 control-band ×
        building-type matrix in a new tab.  Sits to the left of the Mode
-       button in the X-Y Detail overlay header. */
+       button in the X-Y Detail overlay header. Implemented as a real
+       <a target="_blank"> so it bypasses popup-blockers, supports
+       middle-click / right-click, and never falls into the "no entry"
+       cursor state some browsers show for headless window.open buttons. */
     var ddBtn=root.querySelector('#p3-btn-deepdive');
     if(!ddBtn){
-      ddBtn=document.createElement('button');
+      ddBtn=document.createElement('a');
       ddBtn.id='p3-btn-deepdive';
       ddBtn.setAttribute('data-testid','psy3d-xy-deepdive-btn');
+      ddBtn.href='deepdive.html';
+      ddBtn.target='_blank';
+      ddBtn.rel='noopener';
       ddBtn.innerHTML='Deep Dive \u2197';
       ddBtn.title='B1\u2013B10 control bands \u00d7 building types';
       var ov2=$('#p3-overlay2d'); if(ov2) ov2.appendChild(ddBtn);
     }
-    ddBtn.style.cssText='position:absolute;top:12px;right:312px;z-index:51;background:rgba(15,23,42,.92);border:1px solid #22d3ee;color:#22d3ee;padding:6px 16px;border-radius:6px;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;backdrop-filter:blur(14px);display:none';
-    ddBtn.onclick=function(){ window.open('/deepdive.html','_blank','noopener'); };
+    ddBtn.style.cssText='position:absolute;top:12px;right:312px;z-index:60;background:rgba(15,23,42,.92);border:1px solid #22d3ee;color:#22d3ee;padding:6px 16px;border-radius:6px;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;backdrop-filter:blur(14px);text-decoration:none;display:none;box-sizing:border-box;line-height:16px';
 
     /* Band-source toggle chip — sits next to the Mode button.  Toggles
        whether B1-B10 bucketing uses raw OA (default) or post-wheel OA'

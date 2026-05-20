@@ -1,5 +1,28 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.5 — Mold-risk zone overlay (ASHRAE 62.1) (2026-05-20)
+
+**User ask**: "Indicate a region the mold could occur in indoor environment with an appropriate color shade."
+
+### Implementation (`/app/frontend/public/learn.html`)
+- **Translucent amber polygon** bounded below by the 65% RH curve and above by the saturation curve (100% RH), spanning the visible T range.  Fill `#ca8a04` at 10% opacity, dashed `#a16207` stroke at 75% opacity.
+- Drawn AFTER the comfort zone + sweet-spot so the amber tint visibly overlays the upper-right corner of the CZ — that's the educational point: a room can be inside the thermal-comfort zone AND in the mold-risk zone simultaneously.
+- **Label inside the band**: `MOLD RISK · RH > 65%` with subtitle `ASHRAE 62.1-2022 §5.10`.
+- **Dynamic badge accent**: when the dot's RH > 65%, the tier badge gets an amber outline + background tint regardless of which tier (A/B/C+H/etc.) it falls in.  The hint string appends `⚠ Mold-risk zone (RH > 65%, ASHRAE 62.1-2022 §5.10).` so the warning is unmissable.
+- **7th region card** added with amber top-border and gradient background explaining the amber shade.  Region cards now display in a 4-column / 2×3 / 1-column responsive grid.
+
+### Reference
+- **ASHRAE Standard 62.1-2022 Sec. 5.10** *Indoor Air Quality*: "Mechanical dehumidification shall be provided to limit indoor relative humidity to 65% or less."
+
+### Smoke-tested via Playwright
+- Dot at 21.9 °C / 76% RH / 12.6 g/kg → tier badge reads **"Soft Trim"** (correctly inside CZ) but with **amber outline + amber tint** indicating mold risk overlay.  Hint appends the ASHRAE warning.
+- Amber band visibly spans the upper portion of the chart with the labels readable at default zoom.
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{index.html, index-single-file.html, js/psychrometric.js}`.
+
+
+
 ## Phase G.4 — Dual-handle dry-bulb range slider (parity with Pro View) (2026-05-20)
 
 **User ask**: "Make the dry-bulb axis adjustable like the pro-view."

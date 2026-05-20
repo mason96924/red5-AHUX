@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Understand Your Building's Air — Genius Mason</title>
-    <meta name="description" content="An interactive psychrometric chart that explains how temperature and humidity shape comfort. For HVAC engineers, students, building owners and maintenance teams.">
-    <meta property="og:title" content="Understand Your Building's Air">
+    <title>Delta Red5 · Comfort Decoded — Understand Your Building's Air</title>
+    <meta name="description" content="Delta Red5 · Comfort Decoded — an interactive psychrometric chart that explains how temperature and humidity shape comfort. For HVAC engineers, students, building owners and maintenance teams.">
+    <meta property="og:title" content="Delta Red5 · Comfort Decoded">
     <meta property="og:description" content="Drag the dot. See why your building feels the way it does.">
 
     <!-- ============================================================
@@ -33,7 +33,10 @@
             --text:      #e2e8f0;
             --text-dim:  #94a3b8;
             --text-mute: #64748b;
-            --accent:    #fbbf24;
+            /* Red5 Studio brand: amber-500 → rose-500 gradient
+               (matches the LandingPage R5 logo + hero gradient). */
+            --accent:    #fbbf24;   /* amber-400 — primary */
+            --accent-2:  #f43f5e;   /* rose-500  — secondary */
             --emerald:   #10b981;
             --rose:      #f43f5e;
             --blue:      #3b82f6;
@@ -60,12 +63,55 @@
             text-align: left;
         }
         .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin: 0 0 18px 0;
             font-size: 12px;
             font-weight: 900;
             letter-spacing: 0.32em;
             text-transform: uppercase;
-            color: var(--accent);
-            margin: 0 0 18px 0;
+        }
+        .brand-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: 0;
+            color: #0b1220;
+            box-shadow: 0 2px 8px rgba(244, 63, 94, 0.25);
+        }
+        .brand-name {
+            background: linear-gradient(90deg, #fbbf24 0%, #f43f5e 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+        .brand-sep {
+            color: var(--text-mute);
+            opacity: 0.6;
+        }
+        .brand-tag {
+            color: var(--text-dim);
+        }
+        .brand-delta {
+            font-family: serif;
+            font-style: italic;
+            font-weight: 700;
+            font-size: 16px;
+            background: linear-gradient(90deg, #fbbf24 0%, #f43f5e 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+            letter-spacing: 0;
+            margin-right: -2px;
         }
         .hero h1 {
             font-size: clamp(28px, 4.2vw, 52px);
@@ -74,7 +120,13 @@
             margin: 0 0 14px 0;
             line-height: 1.1;
         }
-        .hero h1 .em { color: var(--accent); }
+        .hero h1 .em {
+            background: linear-gradient(90deg, #fbbf24 0%, #fb923c 50%, #f43f5e 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
         .hero .lead {
             font-size: clamp(15px, 1.4vw, 18px);
             color: var(--text-dim);
@@ -444,7 +496,13 @@
 <body>
 
 <header class="hero">
-    <div class="brand">Genius Mason · Comfort Decoded</div>
+    <div class="brand" data-testid="brand">
+        <span class="brand-badge" aria-hidden="true">R5</span>
+        <span class="brand-delta" aria-hidden="true">Δ</span>
+        <span class="brand-name">Delta Red5</span>
+        <span class="brand-sep">·</span>
+        <span class="brand-tag">Comfort Decoded</span>
+    </div>
     <h1>Why does your building feel <span class="em">hot, cold, sticky or just right?</span></h1>
     <p class="lead">Every comfortable room sits inside a small box of temperature and humidity. Drag the yellow dot below to see exactly where that box is — and what your building has to do to put the air <em>inside</em> it.</p>
 </header>
@@ -566,7 +624,7 @@
 </section>
 
 <footer>
-    <div>© <span id="year"></span> Genius Mason · Built to make psychrometrics make sense.<br>
+    <div>© <span id="year"></span> Delta Red5 · Built to make psychrometrics make sense. Part of <strong>Red5 Studio</strong>.<br>
     <span style="opacity:0.7; font-size:11px;">Classification per ASHRAE Std 55-2020 (40-60% RH comfort band), ASHRAE Std 62.1-2022 (65% RH max IAQ limit), and ASHRAE Handbook of Fundamentals 2021, Ch. 9. Wet/dry threshold = 50% RH (midpoint of the 40-60 band); warm/cool threshold = 23.5 °C (CZ centroid).</span></div>
     <div>
         <a href="/dashboard.html" data-testid="pro-view-link">Open the Pro View →</a>

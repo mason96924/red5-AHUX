@@ -1,5 +1,14 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## V2.0 + V1.9 — Tier B color refined to sage / light green-grey (2026-02-19)
+**Brief**: Cyan Tier B was still too close to the deep blue Tier C− for some viewers.  Swapped Tier B to a sage / light green-grey (`#a8c0a8`) so the full palette reads as: bright emerald (Comfort) → muted sage (Soft trim) → orange (Hot/humid) → deep blue (Cold/dry).  Four clearly different hues + lightness levels.
+
+### Live verified
+- DOM probe: Comfort `rgb(16,185,129)`, Soft trim `rgb(168,192,168)`, Hot/humid `rgb(249,115,22)`, Cold/dry `rgb(29,78,216)`.
+
+### V1.9 deployment
+- Only `js/psychrometric.js` changed (single file push).
+
 ## V2.0 + V1.9 — Tier A/B legend contrast (2026-02-19)
 **Brief**: Comfort (A) and Soft trim (B) indicator dots were both emerald greens (`#059669` and `#10b981`) — visually indistinguishable.  Bumped to clear-hue separation: Tier A keeps emerald, Tier B moves to cyan.
 

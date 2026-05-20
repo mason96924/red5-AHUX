@@ -185,7 +185,7 @@ const GIVONI_COLORS = {
     // from the polygon fills so the chart geometry stays emerald while the
     // legend offers clearer hue contrast between Tier A and Tier B.
     TIER_A_DOT:   '#10b981',  // bright emerald — true comfort, hold
-    TIER_B_DOT:   '#06b6d4',  // cyan — comfort zone, RH soft-trim
+    TIER_B_DOT:   '#a8c0a8',  // sage / light green-grey — comfort zone, RH soft-trim
 };
 
 // Givoni-aware tier classification + control-strategy resolver.

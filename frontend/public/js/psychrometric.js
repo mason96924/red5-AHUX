@@ -188,7 +188,7 @@ const GIVONI_COLORS = {
     // from emerald-500 to pass casual visual scanning, and (c) does not
     // clash with the hot-orange / cold-blue Tier C dots.
     TIER_A_DOT:   '#10b981',  // bright emerald — true comfort, hold
-    TIER_B_DOT:   '#06b6d4',  // cyan — comfort zone, RH soft-trim
+    TIER_B_DOT:   '#a8c0a8',  // sage / light green-grey — comfort zone, RH soft-trim
 };
 
 // Givoni-aware tier classification + control-strategy resolver.

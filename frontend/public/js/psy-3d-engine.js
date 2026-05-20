@@ -2002,6 +2002,7 @@ global.initPsy3D = function(container, opts){
           // Hide the projection-mode toggle in time-series modes — it's
           // psychrometric-chart specific (OA→SA lines, Landing Zones, VAV).
           var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='none';
+          var ddBtnHide=$('#p3-btn-deepdive'); if(ddBtnHide) ddBtnHide.style.display='none';
           // Band-strategy toggle is only meaningful in T×Time (the green
           // cumulative curve + its band markers + ramp legend).
           var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display = (c[0]==='front') ? 'block' : 'none';
@@ -2045,6 +2046,7 @@ global.initPsy3D = function(container, opts){
     b2d.onclick=function(){
       chart2DMode='psy';
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
+      var ddBtnSh=$('#p3-btn-deepdive'); if(ddBtnSh) ddBtnSh.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
       var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='block';
@@ -2072,6 +2074,7 @@ global.initPsy3D = function(container, opts){
       chart2DMode='psy';
       root.classList.remove('p3-2d-cfg');
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
+      var ddBtnB=$('#p3-btn-deepdive'); if(ddBtnB) ddBtnB.style.display='none';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
       var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='none';
@@ -2097,6 +2100,21 @@ global.initPsy3D = function(container, opts){
       pmBtn.textContent='Mode: '+labels[projMode];
       render2DChart();
     };
+
+    /* Deep Dive launcher — opens the standalone B1-B10 control-band ×
+       building-type matrix in a new tab.  Sits to the left of the Mode
+       button in the X-Y Detail overlay header. */
+    var ddBtn=root.querySelector('#p3-btn-deepdive');
+    if(!ddBtn){
+      ddBtn=document.createElement('button');
+      ddBtn.id='p3-btn-deepdive';
+      ddBtn.setAttribute('data-testid','psy3d-xy-deepdive-btn');
+      ddBtn.innerHTML='Deep Dive \u2197';
+      ddBtn.title='B1\u2013B10 control bands \u00d7 building types';
+      var ov2=$('#p3-overlay2d'); if(ov2) ov2.appendChild(ddBtn);
+    }
+    ddBtn.style.cssText='position:absolute;top:12px;right:312px;z-index:51;background:rgba(15,23,42,.92);border:1px solid #22d3ee;color:#22d3ee;padding:6px 16px;border-radius:6px;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;backdrop-filter:blur(14px);display:none';
+    ddBtn.onclick=function(){ window.open('/deepdive.html','_blank','noopener'); };
 
     /* Band-source toggle chip — sits next to the Mode button.  Toggles
        whether B1-B10 bucketing uses raw OA (default) or post-wheel OA'

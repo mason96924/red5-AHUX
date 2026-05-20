@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta Red5 · Deep Dive — Building-Type HVAC Playbook (B1–B12)</title>
+    <meta name="description" content="A practical, citation-backed deep dive into the HVAC story for 12 building types — for engineers, maintenance teams, and students.">
+    <meta property="og:title" content="Delta Red5 · Deep Dive (B1–B12)">
+
+    <!-- ============================================================
+         UMAMI SELF-HOSTED ANALYTICS (matches /learn.html setup).
+         Uncomment + fill once your Pi-hosted Umami is up.
+         ============================================================ -->
+    <!--
+    <script defer
+            src="https://YOUR_PI_DOMAIN/script.js"
+            data-website-id="YOUR_WEBSITE_ID"></script>
+    -->
+
+    <style>
+        :root {
+            --bg-deep:   #0b1220;
+            --bg-card:   #111a2e;
+            --bg-soft:   #1a2440;
+            --line:      #243056;
+            --text:      #e2e8f0;
+            --text-dim:  #94a3b8;
+            --text-mute: #64748b;
+            --accent:    #fbbf24;
+            --accent-2:  #f43f5e;
+            --emerald:   #10b981;
+            --rose:      #f43f5e;
+            --blue:      #3b82f6;
+            --orange:    #f97316;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0;
+            background: var(--bg-deep);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .mono { font-family: "SFMono-Regular", Consolas, Menlo, monospace; }
+
+        /* ---------- LAYOUT ---------- */
+        .shell {
+            display: grid;
+            grid-template-columns: 220px minmax(0, 1fr);
+            max-width: 1400px;
+            margin: 0 auto;
+            gap: 32px;
+        }
+        @media (max-width: 900px) {
+            .shell { grid-template-columns: 1fr; }
+            aside.rail { display: none; }
+        }
+
+        /* ---------- HERO ---------- */
+        .hero {
+            grid-column: 1 / -1;
+            padding: 48px 32px 24px;
+        }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 0.32em;
+            text-transform: uppercase;
+            margin-bottom: 18px;
+        }
+        .brand-badge {
+            width: 26px; height: 26px;
+            border-radius: 5px;
+            background: linear-gradient(135deg, #f59e0b 0%, #f43f5e 100%);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #0b1220;
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .brand-name {
+            background: linear-gradient(90deg, #fbbf24 0%, #f43f5e 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+        .brand-tag { color: var(--text-dim); }
+        .brand-delta { color: var(--accent-2); font-style: italic; font-family: serif; font-size: 14px; }
+        .hero h1 {
+            font-size: clamp(26px, 3.6vw, 44px);
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin: 0 0 12px;
+            line-height: 1.1;
+        }
+        .hero h1 em {
+            background: linear-gradient(90deg, #fbbf24, #f97316, #f43f5e);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+            font-style: normal;
+        }
+        .hero p.lead {
+            color: var(--text-dim);
+            font-size: 15px;
+            max-width: 760px;
+            margin: 0;
+        }
+        .hero .crumb {
+            margin-top: 18px;
+            font-size: 11px;
+            color: var(--text-mute);
+        }
+        .hero .crumb a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 700;
+        }
+        .hero .crumb a:hover { text-decoration: underline; }
+
+        /* ---------- SEASON TOGGLE (sticky) ---------- */
+        .season-bar {
+            grid-column: 1 / -1;
+            margin: 0 32px 24px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            backdrop-filter: blur(8px);
+        }
+        .season-bar .label {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+        }
+        .season-bar .toggle {
+            display: inline-flex;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .season-bar .toggle button {
+            background: transparent;
+            border: 0;
+            color: var(--text-dim);
+            padding: 7px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 160ms ease;
+        }
+        .season-bar .toggle button:hover { color: var(--text); }
+        .season-bar .toggle button[aria-pressed="true"] {
+            background: var(--accent);
+            color: #0b1220;
+        }
+        .season-bar .toggle button[data-season="winter"][aria-pressed="true"] {
+            background: var(--blue);
+            color: #fff;
+        }
+        .season-bar .hint {
+            color: var(--text-dim);
+            font-size: 11px;
+            font-style: italic;
+        }
+
+        /* ---------- LEFT RAIL ---------- */
+        aside.rail {
+            padding: 0 0 0 32px;
+        }
+        aside.rail-inner {
+            position: sticky;
+            top: 80px;
+            font-size: 12px;
+        }
+        aside.rail .rail-label {
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            margin-bottom: 10px;
+        }
+        aside.rail a {
+            display: block;
+            padding: 6px 10px;
+            margin: 1px 0;
+            border-left: 2px solid var(--bg-soft);
+            color: var(--text-dim);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 12px;
+            transition: all 120ms ease;
+        }
+        aside.rail a:hover {
+            color: var(--text);
+            border-left-color: var(--text-mute);
+        }
+        aside.rail a.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+            background: rgba(251, 191, 36, 0.06);
+        }
+        aside.rail a .b-code {
+            font-family: monospace;
+            color: var(--text-mute);
+            margin-right: 6px;
+        }
+        aside.rail a.active .b-code { color: var(--accent); }
+
+        /* ---------- MAIN ---------- */
+        main {
+            padding: 0 32px 80px;
+            min-width: 0;
+        }
+        section.bld {
+            margin-bottom: 64px;
+            padding-top: 16px;
+            scroll-margin-top: 80px;
+        }
+        section.bld h2 {
+            font-size: 26px;
+            font-weight: 900;
+            letter-spacing: -0.01em;
+            margin: 0 0 4px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        section.bld h2 .b-code {
+            font-family: monospace;
+            font-size: 14px;
+            color: #0b1220;
+            background: var(--accent);
+            padding: 3px 8px;
+            border-radius: 4px;
+            letter-spacing: 0.08em;
+        }
+        section.bld p.bld-intro {
+            color: var(--text-dim);
+            font-size: 14px;
+            margin: 0 0 22px;
+            max-width: 760px;
+        }
+
+        /* spec + diagram top row */
+        .topgrid {
+            display: grid;
+            grid-template-columns: 1fr 1.4fr;
+            gap: 18px;
+            margin-bottom: 22px;
+        }
+        @media (max-width: 1100px) {
+            .topgrid { grid-template-columns: 1fr; }
+        }
+        .spec-card, .diag-card {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 18px;
+        }
+        .card-title {
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            margin: 0 0 14px;
+        }
+        .spec-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--bg-soft);
+            font-size: 13px;
+        }
+        .spec-row:last-of-type { border-bottom: 0; }
+        .spec-row .k { color: var(--text-dim); }
+        .spec-row .v {
+            font-family: monospace;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .spec-cite {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--line);
+            font-size: 11px;
+            color: var(--text-dim);
+            font-style: italic;
+            font-family: monospace;
+        }
+
+        /* HVAC process diagram */
+        .diag-svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .diag-legend {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+        .diag-legend .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .diag-legend .chip .dot {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* failure + checklist */
+        .bottomgrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+        }
+        @media (max-width: 1100px) {
+            .bottomgrid { grid-template-columns: 1fr; }
+        }
+        .listcard {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 18px;
+        }
+        .listcard h3 {
+            font-size: 12px;
+            margin: 0 0 12px;
+            font-weight: 800;
+            color: var(--text);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .listcard ul {
+            margin: 0;
+            padding-left: 0;
+            list-style: none;
+        }
+        .listcard li {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--bg-soft);
+            font-size: 13px;
+        }
+        .listcard li:last-child { border-bottom: 0; }
+        .listcard li .symptom {
+            font-weight: 700;
+            color: var(--text);
+            display: block;
+            margin-bottom: 3px;
+        }
+        .listcard li .cause {
+            color: var(--text-dim);
+            font-size: 12px;
+            line-height: 1.5;
+            display: block;
+        }
+        .listcard li .ref {
+            color: var(--text-mute);
+            font-family: monospace;
+            font-size: 10px;
+            font-style: italic;
+            margin-top: 4px;
+            display: inline-block;
+        }
+        .check-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .check-item input[type="checkbox"] {
+            margin-top: 3px;
+            accent-color: var(--accent);
+        }
+        .check-item .check-body {
+            flex: 1;
+        }
+        .check-item .check-task {
+            font-weight: 600;
+            color: var(--text);
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .check-item .check-freq {
+            color: var(--accent);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }
+
+        /* Notes */
+        .notes {
+            margin-top: 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--accent);
+            border-radius: 10px;
+            padding: 16px 20px;
+        }
+        .notes summary {
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+        .notes summary::-webkit-details-marker { color: var(--accent); }
+        .notes-body {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text);
+            line-height: 1.65;
+        }
+        .notes-body p { margin: 0 0 10px; }
+        .notes-body p:last-child { margin-bottom: 0; }
+        .notes-body .spec-quote {
+            display: block;
+            margin: 10px 0;
+            padding: 10px 14px;
+            background: var(--bg-soft);
+            border-left: 2px solid var(--accent-2);
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        /* footer */
+        footer {
+            grid-column: 1 / -1;
+            border-top: 1px solid var(--bg-soft);
+            margin: 0 32px;
+            padding: 22px 0 40px;
+            font-size: 11px;
+            color: var(--text-mute);
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        footer a { color: var(--accent); text-decoration: none; font-weight: 700; }
+        footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="shell">
+
+    <header class="hero">
+        <div class="brand">
+            <span class="brand-badge">R5</span>
+            <span class="brand-delta">Δ</span>
+            <span class="brand-name">Delta Red5</span>
+            <span class="brand-tag">· Deep Dive</span>
+        </div>
+        <h1>The HVAC story for <em>twelve building types</em> — read it like a maintenance manual.</h1>
+        <p class="lead">Every building type comes with its own RH band, failure modes, and maintenance rhythm. This page walks you through all 12 — what the standards say, what goes wrong, what to check, and why.</p>
+        <p class="crumb">← Back to <a href="/learn.html" data-testid="back-to-learn">Comfort Decoded (interactive chart)</a></p>
+    </header>
+
+    <div class="season-bar" data-testid="season-bar">
+        <span class="label">Season view</span>
+        <div class="toggle" role="tablist" aria-label="HVAC season mode">
+            <button data-season="summer" aria-pressed="true"  data-testid="season-summer">☀ Summer</button>
+            <button data-season="winter" aria-pressed="false" data-testid="season-winter">❄ Winter</button>
+        </div>
+        <span class="hint">Toggle changes the HVAC process diagrams in every section below — cooling vs heating, damper positions, supply-air temps.</span>
+    </div>
+
+    <aside class="rail">
+        <div class="rail-inner" id="rail" data-testid="rail">
+            <div class="rail-label">Jump to building</div>
+            <!-- nav links injected by JS -->
+        </div>
+    </aside>
+
+    <main id="main" data-testid="main">
+        <!-- sections injected by JS -->
+    </main>
+
+    <footer>
+        <div>© <span id="year"></span> Delta Red5 · Deep Dive · Part of <strong>Red5 Studio</strong>.<br>
+        <span style="opacity:.7;font-size:10px">All claims cited to ASHRAE, SEMI, USP, NEBB, ACCA, RESNET, SSA, or equivalent industry standards. Cross-check the cited section before acting on critical equipment.</span></div>
+        <div>
+            <a href="/learn.html">↩ Interactive Chart</a>
+            &nbsp;·&nbsp;
+            <a href="/dashboard.html">Pro View →</a>
+        </div>
+    </footer>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    // ============================================================
+    // BUILDING DATA  -- single source of truth.
+    // Each entry maps directly to one B-section.  Adding a new
+    // building type is one entry here, nothing else changes.
+    //
+    // Field guide:
+    //   spec     [{k,v}]            spec-table rows
+    //   cite     string             one-line standard reference
+    //   intro    string             one-paragraph context
+    //   summer   {coil, sa_c, ma_pct, oa_pct, note}
+    //   winter   {coil, sa_c, ma_pct, oa_pct, note}
+    //              coil   = 'cool' | 'heat'  (which coil is active)
+    //              sa_c   = supply-air temp in C
+    //              oa_pct = outdoor-air fraction at MAD
+    //              note   = ~12-word hint shown under the diagram
+    //   failures [{symptom, cause, ref}]
+    //   checks   [{task, freq, ref}]
+    //   notes    string              conversational student notes; may embed
+    //                                <q>standard excerpt</q> for the formal callout
+    // ============================================================
+    const BUILDINGS = [
+        {
+            code: 'B1', key: 'office', name: 'Office',
+            intro: 'A typical office juggles three things: occupant comfort, indoor air quality (CO₂ ventilation), and energy. ASHRAE 90.1 polices the energy side, 62.1 the IAQ side, 55 the comfort side.',
+            spec: [
+                {k:'RH band',          v:'40 – 60 %'},
+                {k:'Temp (occupied)',  v:'20 – 26 °C'},
+                {k:'Ventilation (Vbz)', v:'2.5 L/s/person + 0.3 L/s/m²'},
+                {k:'Filtration',       v:'MERV 8 min · MERV 13 recommended'},
+                {k:'Air changes',      v:'4 – 6 ACH typical'}
+            ],
+            cite: 'ASHRAE Std 55-2020 §5.2.3 · 62.1-2022 Tbl 6.2.2.1 · 90.1-2022 §6',
+            summer: { coil:'cool', sa_c:13, oa_pct:20, ma_pct:80, note:'Cool the mix to 13 °C, reheat only where humidity demands it.' },
+            winter: { coil:'heat', sa_c:21, oa_pct:15, ma_pct:85, note:'Min OA for economizer lockout; coil supplies ~21 °C neutral air.' },
+            failures: [
+                { symptom:'Stuffy at peak occupancy',
+                  cause:'CO₂ above 1000 ppm — OA damper stuck at minimum or DCV controller drift. Check actuator stroke + CO₂ sensor calibration.',
+                  ref:'ASHRAE 62.1-2022 §6.2.7 (DCV)' },
+                { symptom:'Cold complaints, winter mornings',
+                  cause:'Cooling coil leak-through during morning warm-up — three-way valve not seating, or chilled-water pump not staged off.',
+                  ref:'ASHRAE 90.1-2022 §6.5.2.3 (reheat limits)' },
+                { symptom:'Hot complaints, summer afternoons',
+                  cause:'SA temp drift — coil approach widening from fouling, low refrigerant charge, or low CHW flow.',
+                  ref:'ASHRAE 180-2018 §6.2 (coil inspection)' }
+            ],
+            checks: [
+                { task:'Replace MERV-13 filters', freq:'3 mo', ref:'ASHRAE 62.1-2022 §5.9' },
+                { task:'OA damper actuator stroke + seal check', freq:'Semi-annual', ref:'NEBB Procedural Std §7.4' },
+                { task:'CO₂ sensor calibration (single-point)', freq:'Annual', ref:'ASHRAE 62.1-2022 §6.2.7.1' },
+                { task:'Cooling-coil clean & approach measurement', freq:'Annual', ref:'ASHRAE 180-2018 Tbl 6.1' },
+                { task:'VAV box airflow calibration (TAB sample)', freq:'Annual', ref:'NEBB TAB Procedural Std §6' },
+                { task:'Reheat valve stroke + leak-by test', freq:'Annual', ref:'ASHRAE 90.1-2022 §6.5.2.3' }
+            ],
+            notes: `<p>Why <strong>40–60 %</strong>? Below ~30 % people complain of dry eyes and static; above ~60 % the building stops drying the cooling coil's condensate fast enough and mold risk rises. The 40–60 band is the sweet middle, and it's also the band where most people <em>can't feel</em> a 10 % RH change — which is what the operator wants.</p>
+                <q class="spec-quote">ASHRAE 55-2020 §5.2.3: "Occupants shall not be exposed to humidity ratios below 0.012 kg_water / kg_dry_air for thermal comfort." (≈ 60 % RH at 23 °C)</q>
+                <p>Pro tip: in mild climates, the cheapest way to drop summer RH isn't more cooling — it's <em>less</em> outside air at the peak humid hour (re-tune the economizer high-limit), as long as you stay above the 62.1 minimum Vbz.</p>`
+        },
+        {
+            code: 'B2', key: 'residential', name: 'Residential',
+            intro: 'Houses run wider RH bands than offices because the load is dominated by latent moisture (people, showers, cooking) and the equipment is small — a heat pump or furnace plus a bath/range exhaust. ASHRAE 62.2 governs whole-house ventilation.',
+            spec: [
+                {k:'RH band',         v:'30 – 60 %'},
+                {k:'Temp (occupied)', v:'20 – 26 °C'},
+                {k:'Whole-house vent', v:'7.5 L/s + 1.0 L/s per bedroom'},
+                {k:'Filtration',      v:'MERV 11+ recommended'},
+                {k:'Bath exhaust',    v:'25 L/s (50 cfm) intermittent'}
+            ],
+            cite: 'ASHRAE Std 55-2020 · 62.2-2022 §4 (vent rates) §5 (local exhaust)',
+            summer: { coil:'cool', sa_c:13, oa_pct:0, ma_pct:100, note:'Recirc with no economizer; AC drops SA to 13 °C, condensate handles latent.' },
+            winter: { coil:'heat', sa_c:32, oa_pct:0, ma_pct:100, note:'Furnace or heat pump pushes ~32 °C SA; humidify if RH falls below 30 %.' },
+            failures: [
+                { symptom:'Mildew on shower wall / window frames',
+                  cause:'Bath exhaust undersized or duct kinked. RH > 60 % lingering after shower drives condensation on cold surfaces.',
+                  ref:'ASHRAE 62.2-2022 §5.3.1 (local exhaust)' },
+                { symptom:'Dry winter sinuses, static shocks',
+                  cause:'RH drops below 25 % — heating air has very little moisture, no humidifier or one with empty pad.',
+                  ref:'ASHRAE 55-2020 §5.2.3 (lower comfort bound)' },
+                { symptom:'Allergy / asthma flare-ups',
+                  cause:'Filter loaded or rated too low for occupant sensitivity. MERV 4 panel cannot catch pollen, dander, or mold spores.',
+                  ref:'EPA IAQ "A Brief Guide to Mold" + ASHRAE 52.2-2017' }
+            ],
+            checks: [
+                { task:'Furnace / AC filter change', freq:'3 mo', ref:'ACCA Manual D §3 · ASHRAE 62.2 §6.7' },
+                { task:'Bath fan flow check (handheld meter)', freq:'Annual', ref:'ASHRAE 62.2-2022 §5.3.1' },
+                { task:'Heat-pump coil rinse + condensate trap', freq:'Annual', ref:'ACCA QI §4.2' },
+                { task:'HRV / ERV core wash + filter swap', freq:'Annual', ref:'HVI Product Performance §A' },
+                { task:'Duct leakage test (Manual D verification)', freq:'5 yr', ref:'RESNET 380-2019 §4' },
+                { task:'Smoke / CO detector test', freq:'Annual', ref:'NFPA 72 §14.4' }
+            ],
+            notes: `<p>The single biggest residential lever for RH control is <strong>bath / kitchen exhaust</strong>, not the furnace. A 50 cfm bath fan removes ~3 kg of moisture per shower; without it, that moisture has nowhere to go but your drywall and window frames.</p>
+                <q class="spec-quote">ASHRAE 62.2-2022 §5.3.1: "Continuous-operating local exhaust shall provide at least 25 L/s (50 cfm) for bathrooms..."</q>
+                <p>If your house feels muggy in summer even with AC running, the AC is probably <em>oversized</em> — short cycles cool the air without running long enough to wring out the moisture. Right-sizing per Manual J is more useful than upsizing.</p>`
+        },
+        {
+            code: 'B3', key: 'theatre', name: 'Theatre',
+            intro: 'Theatres are a "places of assembly" load: very high occupant density for short periods, then empty for hours. The HVAC has to ramp ventilation and cooling fast at curtain-up and back down at intermission.',
+            spec: [
+                {k:'RH band',          v:'30 – 60 %'},
+                {k:'Temp (occupied)',  v:'20 – 25 °C'},
+                {k:'Ventilation (Vbz)', v:'2.5 L/s/person + 0.3 L/s/m² (similar to office)'},
+                {k:'Occupant density', v:'~0.7 m² / person (very high)'},
+                {k:'Filtration',       v:'MERV 13 typical'}
+            ],
+            cite: 'ASHRAE 62.1-2022 Tbl 6.2.2.1 · HVAC Apps 2023 Ch. 5',
+            summer: { coil:'cool', sa_c:13, oa_pct:25, ma_pct:75, note:'High latent load from packed seats; SA dewpoint must be low.' },
+            winter: { coil:'heat', sa_c:20, oa_pct:15, ma_pct:85, note:'Body heat covers much of the load; coil is mainly for OA temper.' },
+            failures: [
+                { symptom:'Audience sweats by Act 2',
+                  cause:'Sensible cooling capacity hit, but latent (humidity) capacity not. Coil approach insufficient, or DCV not staging up enough OA fast enough.',
+                  ref:'ASHRAE 90.1-2022 §6.5.3.2 (latent load)' },
+                { symptom:'Lobby feels cold before curtain',
+                  cause:'AHU pre-cooling started too early — empty seats give no internal load, so the system over-cools.',
+                  ref:'ASHRAE Guideline 36-2021 §5.16 (occupied/unoccupied scheduling)' },
+                { symptom:'HVAC noise audible during quiet passages',
+                  cause:'VAV box turndown ratio too low — fan never gets below 40 %. Recheck min-flow setpoint or upgrade to fan-powered box.',
+                  ref:'ASHRAE HVAC Apps 2023 Ch. 49 (sound & vib)' }
+            ],
+            checks: [
+                { task:'Pre-show pre-cool / pre-heat schedule verify', freq:'Pre-season', ref:'ASHRAE Guideline 36 §5.16' },
+                { task:'NC sound level check (NC-25 target)', freq:'Annual', ref:'ASHRAE HVAC Apps 2023 Ch. 49' },
+                { task:'Filter change (MERV-13)', freq:'3 mo', ref:'ASHRAE 62.1-2022 §5.9' },
+                { task:'OA airflow + CO₂ calibration', freq:'Annual', ref:'ASHRAE 62.1-2022 §6.2.7' },
+                { task:'Cooling tower / CHW system test', freq:'Annual', ref:'ASHRAE 188-2021 §7 (Legionella)' },
+                { task:'Damper actuator + linkage inspection', freq:'Semi-annual', ref:'NEBB Procedural Std §7' }
+            ],
+            notes: `<p>The HVAC challenge in a theatre isn't the average load — it's the <em>step change</em> at curtain-up. Going from 5 % to 95 % occupancy in 15 minutes can dump 200+ people-worth of latent and sensible load on the AHU instantly. Modern best-practice is <strong>scheduled pre-conditioning</strong> + <strong>demand-controlled ventilation (DCV)</strong> with CO₂ sensors.</p>
+                <q class="spec-quote">ASHRAE HVAC Apps 2023 Ch. 5: "Places of assembly are characterized by short, sharp peaks in occupancy load. Pre-conditioning and demand-controlled ventilation reduce energy without sacrificing IAQ."</q>
+                <p>Acoustics matters as much as comfort here — a noisy diffuser ruins a violin solo. Aim for NC-25 (very quiet); duct silencers are usually worth their price.</p>`
+        },
+        {
+            code: 'B4', key: 'auditorium', name: 'Music Auditorium',
+            intro: 'Concert halls are theatres with one extra constraint: the instruments. Wood (violins, pianos, harpsichords) shrink and crack outside 45–55 % RH. The acoustic absorption of the air itself also changes with RH at low frequencies.',
+            spec: [
+                {k:'RH band',          v:'45 – 55 %  (tighter than theatre)'},
+                {k:'Temp (occupied)',  v:'20 – 24 °C'},
+                {k:'Daily RH drift',   v:'≤ ±5 % preferred'},
+                {k:'Sound (NC)',       v:'NC-15 to NC-20 (very quiet)'},
+                {k:'Filtration',       v:'MERV 13 — protects organ pipes from dust'}
+            ],
+            cite: 'ASHRAE HVAC Apps 2023 Ch. 5 (Places of Assembly) + Ch. 24 notes on hygroscopic materials',
+            summer: { coil:'cool', sa_c:14, oa_pct:20, ma_pct:80, note:'Slightly warmer SA than theatre — protects RH stability over performance.' },
+            winter: { coil:'heat', sa_c:21, oa_pct:15, ma_pct:85, note:'Active steam or evaporative humidifier required to hold 45 % at OA 0 °C.' },
+            failures: [
+                { symptom:'Piano goes flat by intermission',
+                  cause:'RH dropped below 40 % — wooden soundboard contracted. Hall has heat but no humidifier, or humidifier pad dry.',
+                  ref:'ASHRAE HVAC Apps 2023 Ch. 24 (hygroscopic mat.)' },
+                { symptom:'Cracking sounds from stage flooring',
+                  cause:'Daily RH swing > 10 % stressing the wood. AHU setback at night dropping RH too far.',
+                  ref:'CCI Technical Bulletin 5 (humidity for wood)' },
+                { symptom:'String section "muffled" in upper balcony',
+                  cause:'Air absorption rises sharply above 4 kHz when RH < 30 %. The hall is too dry for its acoustic design point (typically 50 % RH).',
+                  ref:'ISO 9613-1 (atmospheric absorption)' }
+            ],
+            checks: [
+                { task:'Steam humidifier descale + tank flush', freq:'Quarterly', ref:'ASHRAE HVAC Apps Ch. 22 (humidifiers)' },
+                { task:'RH datalogger calibration (multiple zones)', freq:'Semi-annual', ref:'ASHRAE Guideline 11-2018' },
+                { task:'NC sound level survey (audience areas)', freq:'Annual', ref:'ASHRAE HVAC Apps Ch. 49' },
+                { task:'Stage / under-stage temp & RH verify', freq:'Pre-event', ref:'Hall operations SOP' },
+                { task:'MERV-13 filter change', freq:'3 mo', ref:'ASHRAE 62.1-2022 §5.9' },
+                { task:'Backup humidifier transfer test', freq:'Annual', ref:'ASHRAE 90.1-2022 §6.4 (redundancy)' }
+            ],
+            notes: `<p>An auditorium's HVAC is judged by what you <em>don't</em> hear and don't see. You don't hear the diffuser. You don't see the piano going out of tune. The RH band is tighter than a regular theatre because wooden instruments and structural wood members both react to moisture changes — and a Steinway is an expensive teaching aid for ASHRAE Ch. 24.</p>
+                <q class="spec-quote">ASHRAE HVAC Apps 2023 Ch. 5: "For performance spaces housing hygroscopic items, RH should be controlled within ±5 % of a setpoint typically 50 %."</q>
+                <p>Old halls often retrofit a separate <strong>backstage / piano room HVAC zone</strong> tighter than the audience hall, because the audience can tolerate 10 % RH swing and the piano cannot.</p>`
+        },
+        {
+            code: 'B5', key: 'hospital', name: 'Hospital (Operating Room)',
+            intro: 'The OR is the most regulated HVAC space in any building. It runs 20–60 % RH (wider than office to let surgeons control electrostatic flame risk), 20–24 °C, and ≥ 20 ACH of HEPA-filtered air with the room held at positive pressure.',
+            spec: [
+                {k:'RH band',          v:'20 – 60 %  (anesthetizing)'},
+                {k:'Temp (occupied)',  v:'20 – 24 °C'},
+                {k:'Air changes',      v:'≥ 20 ACH total · ≥ 4 ACH OA'},
+                {k:'Pressure',         v:'Positive +2.5 Pa min vs corridor'},
+                {k:'Filtration',       v:'MERV 14 prefilter + HEPA final'}
+            ],
+            cite: 'ANSI/ASHRAE/ASHE Std 170-2021 Tbl 7.1 (Anesthetizing locations)',
+            summer: { coil:'cool', sa_c:13, oa_pct:100, ma_pct:0, note:'100 % OA — no recirculation, surgeon dictates room RH/T live.' },
+            winter: { coil:'heat', sa_c:22, oa_pct:100, ma_pct:0, note:'Steam humidifier holds 30 %+ to suppress static; reheat trims temp.' },
+            failures: [
+                { symptom:'OR pressurization alarm — going negative',
+                  cause:'Adjacent room exhaust just turned on, or supply fan losing belt slip. Verify differential-pressure sensor calibration + fan VFD ramp.',
+                  ref:'ASHRAE Std 170-2021 §7.1 + §8.4' },
+                { symptom:'Static-discharge near electrosurgical unit',
+                  cause:'RH dropped below 20 % — humidifier failure during winter. Old guidance was 35 % min; current 170 allows 20 % but trend is to hold ≥ 30 %.',
+                  ref:'ASHRAE Std 170-2021 §7.1 + APSF 2020 humidity statement' },
+                { symptom:'HEPA filter DOP test fails post-replacement',
+                  cause:'Gasket pinched or filter installed with wrong airflow direction. Retest after a 24-hr stabilization run.',
+                  ref:'IEST-RP-CC034 (HEPA leak test)' }
+            ],
+            checks: [
+                { task:'HEPA filter DOP / PAO leak test', freq:'Annual + after change', ref:'IEST-RP-CC034' },
+                { task:'Room pressurization verify (all directions)', freq:'Monthly', ref:'ASHRAE 170-2021 §8.4' },
+                { task:'Humidifier descale + RH verify at room', freq:'Quarterly', ref:'ASHRAE Std 170 + 188 (Legionella)' },
+                { task:'OR temperature uniformity check (4-corner)', freq:'Annual', ref:'NEBB Cleanroom §5' },
+                { task:'ACH airflow measurement (TAB sample)', freq:'Annual', ref:'NEBB TAB §6 + ASHRAE 170 Tbl 7.1' },
+                { task:'AHU coil + condensate pan disinfect', freq:'Quarterly', ref:'ASHRAE 188-2021 §7 (Legionella mgmt)' }
+            ],
+            notes: `<p>The 20 % RH floor surprised a lot of clinicians when ASHRAE 170 relaxed it from 35 %. Why? Because the historical 35 % rule (from 1970s flammable anesthetic agents) didn't apply once those gases were replaced. The new floor balances <strong>infection control</strong> (low-RH air has less microbial transport) against <strong>static-discharge risk near electronics</strong>. Many surgeons still target 30–50 %.</p>
+                <q class="spec-quote">ASHRAE Std 170-2021 Table 7.1: "Operating room / Surgical: 20–60 % RH; 20–24 °C; 20 ACH min (4 OA); +2.5 Pa positive."</q>
+                <p>The "trump card" failure mode in an OR is <em>negative pressure</em>. Every other parameter can drift 5–10 % without surgery stopping. Negative pressure shuts the room down — and the alarm thresholds are tight (≤ +1 Pa for >2 minutes typically triggers the building automation alert).</p>`
+        },
+        {
+            code: 'B6', key: 'lab', name: 'Lab (Analytical / Research)',
+            intro: 'Analytical labs prioritize <em>stability</em> over comfort: temperature within ±1 °C, RH within ±5 %, so balances, spectrometers, and PCR thermal cyclers behave repeatably. Many labs also have 100 % once-through ventilation because of fume hoods.',
+            spec: [
+                {k:'RH band',          v:'30 – 50 %'},
+                {k:'Temp (occupied)',  v:'20 – 23 °C  (±1 °C)'},
+                {k:'Air changes',      v:'6 – 12 ACH (lab-dependent)'},
+                {k:'Pressure',         v:'Negative (relative to corridor)'},
+                {k:'Filtration',       v:'MERV 14 — HEPA at point-of-use only'}
+            ],
+            cite: 'ANSI/ASHRAE Std 113-2013 (lab vent test) · NIH Design Req Manual',
+            summer: { coil:'cool', sa_c:13, oa_pct:100, ma_pct:0, note:'100 % OA once-through — fume hood exhaust dictates makeup rate.' },
+            winter: { coil:'heat', sa_c:22, oa_pct:100, ma_pct:0, note:'Run-around glycol loop on exhaust recovers ~40 % of heating energy.' },
+            failures: [
+                { symptom:'Analytical balance drifts during reading',
+                  cause:'Bench RH swinging > 5 % per hour. Lab AHU oversized or sash position changes whipsawing the VAV makeup.',
+                  ref:'ASTM E898 (balance environment)' },
+                { symptom:'Fume hood face velocity drops below 0.5 m/s',
+                  cause:'Filter loading, blocked exhaust duct, or VAV box not tracking sash. Containment fails — chemical exposure risk.',
+                  ref:'ANSI/AIHA Z9.5-2022 §3.3' },
+                { symptom:'Cold spots near a sash-open hood',
+                  cause:'Make-up air entering at 13 °C from a ceiling diffuser too close to the hood. Need terminal reheat on the hood-zone VAV.',
+                  ref:'ASHRAE HVAC Apps 2023 Ch. 17 (labs)' }
+            ],
+            checks: [
+                { task:'Fume hood face velocity (every hood)', freq:'Annual + after move', ref:'ANSI/AIHA Z9.5-2022 §6' },
+                { task:'Lab T & RH datalogger calibration', freq:'Semi-annual', ref:'ASHRAE Guideline 11-2018' },
+                { task:'Room pressurization verify (smoke pencil)', freq:'Quarterly', ref:'NIH DRM Sec. 6.3' },
+                { task:'Run-around glycol loop balance + glycol QC', freq:'Annual', ref:'ASHRAE 90.1-2022 §6.5.6 (heat recovery)' },
+                { task:'MERV-14 prefilter change', freq:'3 mo', ref:'ASHRAE 62.1-2022 §5.9' },
+                { task:'AHU coil + drain-pan disinfect', freq:'Quarterly', ref:'ASHRAE 180-2018 Tbl 6.1' }
+            ],
+            notes: `<p>The reason labs run negative pressure is the same reason hospitals run positive: contain the bad thing. In a hospital, you keep <em>outside germs out</em> of the OR. In a lab, you keep <em>inside chemicals in</em>. Pressure cascades are designed so corridor → lab is always a one-way street.</p>
+                <q class="spec-quote">ANSI/AIHA Z9.5-2022 §3.3: "Fume hood face velocity shall be 0.4–0.6 m/s (80–120 fpm) for traditional hoods... Hoods shall be operated such that the user's breathing zone is never downstream of the contaminant source."</q>
+                <p>A common rookie mistake: sizing the AHU for max-hood-airflow without sizing the <strong>reheat</strong> for max-hood-airflow. In winter, every sash-open hood is dumping a few kW of cooling into the lab and the reheat coil has to undo it. Undersized reheat = cold complaints all winter.</p>`
+        },
+        {
+            code: 'B7', key: 'museum', name: 'Museum / Archive',
+            intro: 'Collections beat people when there is a conflict. ASHRAE Applications Ch. 24 lays out five "control classes" (AA, A, B, C, D) trading climate strictness against energy cost. Most general-collection museums run class A or B: ~50 % RH ±5 %, slow daily drift, slow seasonal drift.',
+            spec: [
+                {k:'RH band',          v:'45 – 55 %  (class A)'},
+                {k:'Temp (occupied)',  v:'18 – 22 °C'},
+                {k:'Daily RH drift',   v:'≤ ±5 %'},
+                {k:'Seasonal RH drift', v:'≤ ±10 % allowed'},
+                {k:'Filtration',       v:'MERV 14 + gaseous (SO₂/NO₂) where outdoor pollution high'}
+            ],
+            cite: 'ASHRAE HVAC Apps 2023 Ch. 24 (Museums, Galleries, Archives, Libraries)',
+            summer: { coil:'cool', sa_c:13, oa_pct:10, ma_pct:90, note:'Tight recirc to maintain dewpoint; coil leaving air at 11 °C dewpoint.' },
+            winter: { coil:'heat', sa_c:21, oa_pct:10, ma_pct:90, note:'Steam humidifier carries the latent load; T setpoint can drop to 18 °C.' },
+            failures: [
+                { symptom:'Wooden panel painting cracking',
+                  cause:'Cycling RH (overnight setback) is more damaging than a steady non-optimal RH. Eliminate setback or implement slow ramps.',
+                  ref:'ASHRAE HVAC Apps 2023 Ch. 24 (class A fluct. limits)' },
+                { symptom:'Foxing / red spots on paper',
+                  cause:'RH crept above 60 % during a humid weekend with HVAC on weekend-off schedule. Iron impurities oxidize at high RH.',
+                  ref:'Library of Congress IRIS 3.0 (paper preservation)' },
+                { symptom:'Salt efflorescence on stone artifacts',
+                  cause:'Dewpoint crossing the deliquescence point of soluble salts. Tighten dewpoint, not just RH — same RH at 25 °C vs 18 °C is a different dewpoint.',
+                  ref:'Getty Conservation Institute (env. guidelines)' }
+            ],
+            checks: [
+                { task:'RH datalogger calibration (each gallery)', freq:'Semi-annual', ref:'ASHRAE Guideline 11-2018' },
+                { task:'Steam humidifier blowdown + descale', freq:'Quarterly', ref:'ASHRAE HVAC Apps Ch. 22' },
+                { task:'AHU coil dewpoint verification', freq:'Seasonal', ref:'ASHRAE HVAC Apps Ch. 24' },
+                { task:'Pollutant filter (gaseous) change', freq:'Annual (or per ΔP)', ref:'ANSI/CCI 2014 (museum air quality)' },
+                { task:'Sealed display case RH check + silica gel swap', freq:'Annual', ref:'CCI Technical Bulletin 24' },
+                { task:'Weekend / holiday setback schedule audit', freq:'Quarterly', ref:'Getty Conservation guidelines' }
+            ],
+            notes: `<p>The deepest insight from ASHRAE Ch. 24 is that <strong>stability matters more than the setpoint</strong>. A collection at a steady 55 % RH lasts longer than the same collection cycling between 45 and 60 % every day. Most old museums fail not because their HVAC is wrong on average but because their HVAC is cycled aggressively for energy reasons.</p>
+                <q class="spec-quote">ASHRAE HVAC Apps 2023 Ch. 24: "Allowable short-term RH fluctuations for Class A control: ±5 % daily, ±10 % seasonal."</q>
+                <p>Free pro tip from collection care: if you can only invest in one thing, invest in <strong>tighter envelope</strong> before tighter HVAC. A leaky building lets weekend humidity events in faster than any reasonable AHU can pull it out.</p>`
+        },
+        {
+            code: 'B8', key: 'selfstorage', name: 'Self-Storage (Climate-Controlled)',
+            intro: 'Climate-controlled self-storage is the new growth segment of the industry. The point isn\'t fine-grained comfort — it\'s preventing mildew and condensation on stored furniture, electronics, documents, and seasonal clothing. The bar is "no mold, no swings."',
+            spec: [
+                {k:'RH band',          v:'30 – 55 %  (mold ceiling)'},
+                {k:'Temp range',       v:'10 – 30 °C  (climate-controlled tier)'},
+                {k:'Ventilation',      v:'Low — unoccupied much of the day'},
+                {k:'Filtration',       v:'MERV 8 typical (mostly dust)'},
+                {k:'Lighting / load',  v:'LED only — minimal internal load'}
+            ],
+            cite: 'Self Storage Association best practice + ASHRAE 62.1-2022 (RH ≤ 65 % ceiling) + ASHRAE 90.1-2022 §6.4 (warehouse)',
+            summer: { coil:'cool', sa_c:15, oa_pct:5, ma_pct:95, note:'DX rooftop runs in dehumidify mode; only minimal OA when door-open.' },
+            winter: { coil:'heat', sa_c:18, oa_pct:5, ma_pct:95, note:'Hold ~13 °C minimum to keep building above dewpoint of stored items.' },
+            failures: [
+                { symptom:'Mildew on cardboard at floor level',
+                  cause:'Concrete slab acting as a cold sink, RH locally hits 65 %+ near the floor. Add insulation under slab edge or run dehumidifier continuously.',
+                  ref:'ASHRAE 62.1-2022 §5.10 (RH ≤ 65 %)' },
+                { symptom:'Tenant complaint of musty smell',
+                  cause:'Bulk air RH stable but unit-level RH rising — no ventilation between units lets locker air stagnate.',
+                  ref:'ASHRAE 62.1-2022 Tbl 6.2.2.1 (warehouse / storage)' },
+                { symptom:'Rust on metal furniture',
+                  cause:'Dewpoint of indoor air exceeds metal surface temp — usually winter when poorly insulated walls drop interior surface below dewpoint.',
+                  ref:'ASHRAE Handbook Fund. 2021 Ch. 25 (cond. control)' }
+            ],
+            checks: [
+                { task:'Dehumidifier coil clean + drain trap check', freq:'Quarterly', ref:'ASHRAE 180-2018 Tbl 6.1' },
+                { task:'RH datalogger sweep (random units)', freq:'Quarterly', ref:'SSA Operations Best Practices' },
+                { task:'MERV-8 filter change', freq:'Semi-annual', ref:'ASHRAE 62.1-2022 §5.9' },
+                { task:'Door seal + weatherstrip audit', freq:'Annual', ref:'ASHRAE 90.1-2022 §5.4 (envelope)' },
+                { task:'Slab vapor barrier inspection (perimeter)', freq:'Annual', ref:'ACI 302.2R (slab moisture)' },
+                { task:'Backup-dehumidifier test', freq:'Annual', ref:'SSA Operations Best Practices' }
+            ],
+            notes: `<p>Self-storage HVAC is unusual: <strong>almost no people, almost no internal load, lots of envelope</strong>. That changes the design point. The dominant loss isn't through air leaks at the building level — it's through the concrete slab and the front-door seals on each unit.</p>
+                <q class="spec-quote">ASHRAE 62.1-2022 §5.10: "Mechanical dehumidification shall be provided to limit indoor RH to 65 % or less under design conditions." (the universal "no mold" ceiling)</q>
+                <p>Watch what climate-controlled means in marketing copy. Some operators sell "climate-controlled" with just a thermostat and no dedicated dehumidifier — RH is whatever it wants to be. Real climate-controlled has a <strong>standalone dehumidifier</strong> or a DX system with discrete dehumidify mode, plus continuous RH monitoring at unit level.</p>`
+        },
+        {
+            code: 'B9', key: 'pharmacy', name: 'Pharmacy / Cleanroom',
+            intro: 'A compounding pharmacy (USP &lt;797&gt; sterile) or a GMP cleanroom is regulated by environmental monitoring more than by comfort. RH, temperature, particulate counts, and pressurization are all controlled and logged.',
+            spec: [
+                {k:'RH band',          v:'30 – 50 %'},
+                {k:'Temp (occupied)',  v:'18 – 23 °C'},
+                {k:'Pressure',         v:'+5 Pa (positive) typical for sterile'},
+                {k:'Cleanliness',      v:'ISO 7 (10,000) buffer · ISO 5 LAF hood'},
+                {k:'Filtration',       v:'HEPA at supply (ISO 7+)'}
+            ],
+            cite: 'USP <797>-2023 · EU GMP Annex 1 (2022 revision) · ISO 14644-1',
+            summer: { coil:'cool', sa_c:12, oa_pct:30, ma_pct:70, note:'Tight dewpoint control feeds HEPA via dedicated terminal HEPA boxes.' },
+            winter: { coil:'heat', sa_c:21, oa_pct:30, ma_pct:70, note:'Steam humidifier holds 30 %+ even at OA -10 °C / 60 % RH outside.' },
+            failures: [
+                { symptom:'Particle count excursion in buffer room',
+                  cause:'HEPA leak or pressurization loss letting unfiltered air in from anteroom. Re-DOP-test HEPA + verify cascade pressurization.',
+                  ref:'USP <797>-2023 §3 (environmental quality)' },
+                { symptom:'RH drifts below 30 % winter',
+                  cause:'Steam humidifier overdue for service or supply boiler dropped to maintenance min. Add backup electric steam unit.',
+                  ref:'USP <797>-2023 §3.4 (T/RH limits)' },
+                { symptom:'Pressure cascade fails on door-open event',
+                  cause:'Doors not interlocked (gowning/anteroom/buffer). Add 30-sec airlock delay or magnetic interlock.',
+                  ref:'EU GMP Annex 1 §4.16 (airlocks)' }
+            ],
+            checks: [
+                { task:'HEPA filter DOP/PAO test', freq:'Semi-annual + after change', ref:'IEST-RP-CC034' },
+                { task:'Particle counter calibration', freq:'Annual', ref:'ISO 21501-4' },
+                { task:'Pressurization verify (all anteroom doors)', freq:'Monthly', ref:'USP <797>-2023 §3' },
+                { task:'Steam humidifier blowdown + descale', freq:'Quarterly', ref:'ASHRAE HVAC Apps Ch. 22' },
+                { task:'T / RH datalogger calibration', freq:'Semi-annual', ref:'ASHRAE Guideline 11-2018' },
+                { task:'Environmental monitoring plate sample audit', freq:'Per SOP', ref:'USP <797>-2023 §6' }
+            ],
+            notes: `<p>USP &lt;797&gt; rewrote the rulebook for sterile compounding in 2023. The biggest practical change: <strong>continuous environmental monitoring</strong> is now expected, not just spot sampling. That means temperature and RH dataloggers in every classified room, with alarms and audit trails.</p>
+                <q class="spec-quote">USP &lt;797&gt;-2023 §3.4: "Areas where sterile preparations are compounded shall maintain temperature ≤ 20 °C and RH ≤ 60 %, with continuous monitoring and documentation."</q>
+                <p>The pressurization cascade is the soul of a cleanroom: <strong>ISO-5 LAF hood &gt; buffer (ISO 7) &gt; anteroom &gt; corridor</strong>. Air always falls "downhill" toward dirtier zones. If a pressure differential is lost, the whole certification is suspect until re-verified.</p>`
+        },
+        {
+            code: 'B10', key: 'fab', name: 'Semiconductor Fab',
+            intro: 'A photolithography bay is the strictest HVAC space outside aerospace. Temperature within ±0.1 °C, RH within ±1 %, ISO 1–3 cleanliness — the air is closer in spec than the wafer being printed on it.',
+            spec: [
+                {k:'RH band',          v:'40 – 50 %  (±1 % typical)'},
+                {k:'Temp (occupied)',  v:'21 – 23 °C  (±0.1 °C at tool)'},
+                {k:'Cleanliness',      v:'ISO 1 – ISO 3 in photo bay'},
+                {k:'Pressure',         v:'+12 Pa stepped cascade'},
+                {k:'Air changes',      v:'400 – 600 ACH (with FFUs)'}
+            ],
+            cite: 'SEMI E54-2024 · IEST-RP-CC012 · ISO 14644-1',
+            summer: { coil:'cool', sa_c:12, oa_pct:5, ma_pct:95, note:'Sub-cooling DX + reheat trim — single-DP control via dewpoint sensor.' },
+            winter: { coil:'heat', sa_c:21, oa_pct:5, ma_pct:95, note:'Latent load from people negligible; humidifier holds ±1 % RH.' },
+            failures: [
+                { symptom:'CD (critical dimension) drift on litho overlay',
+                  cause:'Stepper bay T variation > 0.1 °C — coil leaving-air-temp sensor drift, or PID loop gain too low.',
+                  ref:'SEMI E54-2024 §6 (env. uniformity)' },
+                { symptom:'Wafer chuck condensation event',
+                  cause:'Chiller / wafer-stage temp dropped below room dewpoint. Either chiller too cold or room dewpoint crept up — interlock.',
+                  ref:'SEMI S2-2024 (safety / environmental)' },
+                { symptom:'Particle excursion in litho bay',
+                  cause:'FFU motor fan blade out of balance throwing particles, or HEPA-gel seal compromised after a renovation.',
+                  ref:'IEST-RP-CC012 (cleanroom design)' }
+            ],
+            checks: [
+                { task:'FFU airflow + RPM verify (every FFU)', freq:'Quarterly', ref:'IEST-RP-CC012' },
+                { task:'HEPA / ULPA leak scan', freq:'Annual', ref:'IEST-RP-CC034' },
+                { task:'Dewpoint sensor cal (NIST traceable)', freq:'Quarterly', ref:'SEMI E54-2024' },
+                { task:'Particle counter calibration', freq:'Annual', ref:'ISO 21501-4' },
+                { task:'AHU coil approach + LAT trend audit', freq:'Monthly', ref:'ASHRAE 180-2018 + fab SOP' },
+                { task:'Subfab / chase pressure differential check', freq:'Weekly', ref:'IEST-RP-CC012 §6' }
+            ],
+            notes: `<p>What makes a fab different from a hospital cleanroom isn't just the cleanliness number — it's the <strong>tolerance band</strong>. A hospital OR can wobble ±2 °C all day. A litho bay drifts ±0.2 °C and the stepper overlay error goes outside spec by lunch. That's why fab HVAC uses <strong>dewpoint control</strong> not RH control: dewpoint is decoupled from temperature, RH is not.</p>
+                <q class="spec-quote">SEMI E54-2024 §6: "Photolithography bay temperature uniformity ±0.1 °C, RH ±1 %, controlled by leaving-coil dewpoint feedback."</q>
+                <p>The most expensive equipment in a fab is usually NOT the steppers — it's the makeup-air units (MAUs) and the ULPA wall that delivers laminar flow. Touch those without proper change-control and the next wafer lot is at risk.</p>`
+        },
+        {
+            code: 'B11', key: 'mfg_esd', name: 'Manufacturing (Sensitive / ESD)',
+            intro: 'ESD-sensitive electronics assembly is governed by ANSI/ESD S20.20. The RH band trades off two failure modes: too low (≤ 30 %) and electrostatic discharge fries components; too high (≥ 60 %) and solder paste absorbs moisture, causing re-flow defects.',
+            spec: [
+                {k:'RH band',          v:'35 – 55 %  (ESD-protective)'},
+                {k:'Temp (occupied)',  v:'20 – 24 °C'},
+                {k:'ESD floor',        v:'< 35 % RH triggers grounding-mat alarm'},
+                {k:'Filtration',       v:'MERV 13 + ionizer at line'},
+                {k:'Ventilation',      v:'Per 62.1 Tbl 6.2.2.1 (mfg)'}
+            ],
+            cite: 'ANSI/ESD S20.20-2021 · IPC-A-610H · ASHRAE 62.1-2022',
+            summer: { coil:'cool', sa_c:14, oa_pct:15, ma_pct:85, note:'Standard mech cooling; dewpoint control keeps RH stable on line.' },
+            winter: { coil:'heat', sa_c:21, oa_pct:15, ma_pct:85, note:'Steam or evaporative humidifier holds 35 % min — ionizers help too.' },
+            failures: [
+                { symptom:'Random component failure post-assembly',
+                  cause:'RH dipped below 30 % during a cold/dry shift — operator wristband strap wasn\'t enough, no humidifier on the line.',
+                  ref:'ANSI/ESD S20.20-2021 §6.5' },
+                { symptom:'Solder paste tackiness loss / pad lifting',
+                  cause:'RH exceeded 55 % overnight; paste absorbed moisture and lost its rheology.',
+                  ref:'IPC-A-610H §6.3 (solderability)' },
+                { symptom:'Static-discharge sparks at operator hand',
+                  cause:'Wristband resistance drift outside 1–10 MΩ band, OR ESD floor mat ground bond lost.',
+                  ref:'ANSI/ESD S20.20-2021 Tbl 2' }
+            ],
+            checks: [
+                { task:'ESD wristband resistance test (per operator)', freq:'Daily start-of-shift', ref:'ANSI/ESD S20.20-2021 §7' },
+                { task:'ESD floor / bench mat ground bond audit', freq:'Quarterly', ref:'ANSI/ESD S20.20-2021 Tbl 3' },
+                { task:'Line RH datalogger calibration', freq:'Semi-annual', ref:'ASHRAE Guideline 11-2018' },
+                { task:'Ionizer balance / discharge time check', freq:'Quarterly', ref:'ANSI/ESD STM3.1' },
+                { task:'Solder paste cold-storage log audit', freq:'Quarterly', ref:'IPC-A-610H §6.3' },
+                { task:'Humidifier descale + flow verify', freq:'Quarterly', ref:'ASHRAE HVAC Apps Ch. 22' }
+            ],
+            notes: `<p>The trick of an ESD line is that the air itself is part of the protection scheme — alongside straps, mats, ionizers, and ESD-safe packaging. Drop one leg and the whole stool falls. The 35 % floor isn\'t a comfort number; it\'s the point at which static buildup on the human body becomes the dominant failure mechanism.</p>
+                <q class="spec-quote">ANSI/ESD S20.20-2021 §6.5: "Areas where ESDS items are handled shall maintain RH ≥ 30 % whenever practical. Where lower RH is unavoidable, additional protective measures (e.g., ionizers, mat grounding) shall be deployed."</q>
+                <p>Counterintuitive but proven: in an ESD line, increasing RH from 35 % to 50 % can <em>reduce</em> rework rates more than upgrading from a MERV-13 to a HEPA filter. Static, not particles, is the dominant cause of finished-goods failures in most assembly lines.</p>`
+        },
+        {
+            code: 'B12', key: 'datacenter', name: 'Data Center',
+            intro: 'Data centers care about IT equipment, not people. ASHRAE TC 9.9 publishes "thermal envelopes" (Class A1 through A4) defining how cool and dry the air at the server inlet must be. The current trend is <em>widening</em> the envelope — A1 18–27 °C used to be 20–25 °C — to save chiller energy.',
+            spec: [
+                {k:'RH band (A1)',       v:'8 – 80 %  allowable · 40–60 % recommended'},
+                {k:'Temp at server inlet', v:'18 – 27 °C  recommended'},
+                {k:'Dewpoint',           v:'≤ 17 °C  (mold/condensation ceiling)'},
+                {k:'Filtration',          v:'MERV 11 minimum'},
+                {k:'Air management',      v:'Hot-aisle / cold-aisle, blanking panels'}
+            ],
+            cite: 'ASHRAE TC 9.9 Thermal Guidelines for Data Processing Environments, 5th ed. (2021)',
+            summer: { coil:'cool', sa_c:22, oa_pct:0, ma_pct:100, note:'Free-cooling economizer when OA < 18 °C; chillers handle the rest.' },
+            winter: { coil:'heat', sa_c:24, oa_pct:30, ma_pct:70, note:'Likely fully on economizer — cold OA is free cooling, no chillers run.' },
+            failures: [
+                { symptom:'CRAC tripped on high return temp',
+                  cause:'Bypass air between hot/cold aisles — missing blanking panels or curtain seal failed. Hot air recirculating to server inlet.',
+                  ref:'ASHRAE TC 9.9 §4 (air management)' },
+                { symptom:'Server inlet RH dropped below 8 %',
+                  cause:'Free-cooling economizer pulling very dry winter OA without humidification. Add adiabatic humidifier or restrict economizer min RH.',
+                  ref:'ASHRAE TC 9.9 Class A1 envelope' },
+                { symptom:'Condensation on CRAC piping during low-load weekend',
+                  cause:'CHW setpoint too cold — coil surface below room dewpoint. Reset CHW setpoint upward at low load.',
+                  ref:'ASHRAE 90.1-2022 §6.5.4 (CHW reset)' }
+            ],
+            checks: [
+                { task:'Hot-aisle / cold-aisle blanking panel audit', freq:'Quarterly', ref:'ASHRAE TC 9.9 §4' },
+                { task:'CRAC return-air T + ΔT verify', freq:'Monthly', ref:'TC 9.9 best practice' },
+                { task:'Economizer changeover test', freq:'Semi-annual', ref:'ASHRAE 90.1-2022 §6.5.1' },
+                { task:'UPS battery + DRUPS run test', freq:'Quarterly', ref:'NFPA 110' },
+                { task:'Humidifier + dewpoint sensor calibration', freq:'Semi-annual', ref:'ASHRAE Guideline 11-2018' },
+                { task:'PUE (Power Usage Effectiveness) calculation', freq:'Monthly', ref:'Green Grid PUE 2.0' }
+            ],
+            notes: `<p>The big TC 9.9 reframe: data center comfort is <strong>server inlet temperature</strong>, not room temperature. Air management — blanking panels, hot-aisle containment, removing bypass air — usually saves more chiller energy than any HVAC upgrade. A well-managed hall can run a 27 °C setpoint with zero performance hit.</p>
+                <q class="spec-quote">ASHRAE TC 9.9 5th ed.: "Class A1 recommended envelope: 18–27 °C and 8–60 % RH at the IT-equipment inlet. Wider allowable envelopes (A2–A4) permit higher-efficiency operation."</q>
+                <p>Why bother with the 8 % RH floor? <strong>Static.</strong> A technician with rubber-soled shoes walking on a raised floor can build 10+ kV at low RH — enough to fry an exposed motherboard during a board swap. Modern A1 racks tolerate it, but live maintenance gets riskier.</p>`
+        }
+    ];
+
+    // ============================================================
+    // RENDER NAV
+    // ============================================================
+    const rail = document.getElementById('rail');
+    BUILDINGS.forEach(b => {
+        const a = document.createElement('a');
+        a.href = '#' + b.key;
+        a.dataset.target = b.key;
+        a.innerHTML = '<span class="b-code">' + b.code + '</span>' + b.name;
+        rail.appendChild(a);
+    });
+
+    // ============================================================
+    // RENDER SECTIONS
+    // ============================================================
+    const main = document.getElementById('main');
+    const FREQ_ORDER = ['Daily start-of-shift', 'Weekly', 'Monthly', 'Quarterly', 'Semi-annual', 'Annual', 'Annual + after change', 'Annual + after move', 'Per SOP', 'Pre-event', 'Pre-season', '3 mo', '5 yr', 'Seasonal'];
+
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Build a single HVAC process SVG for a building, given the active season.
+    function buildDiagram(bld, season) {
+        const sn = bld[season];
+        const isWarm = season === 'summer';
+        const flowColor = isWarm ? '#3b82f6' : '#f97316';  // blue cool, orange warm
+        const coilColor = sn.coil === 'cool' ? '#0ea5e9' : '#f43f5e';
+        const coilLabel = sn.coil === 'cool' ? 'COOL' : 'HEAT';
+
+        // Stage positions
+        // OA -> MAD -> coil -> fan -> SA -> ZONE -> RA -> back to MAD
+        return `
+        <svg class="diag-svg" viewBox="0 0 720 220" aria-label="HVAC process diagram">
+            <defs>
+                <marker id="arr-${bld.key}-${season}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M0,0 L10,5 L0,10 z" fill="${flowColor}"/>
+                </marker>
+            </defs>
+            <!-- Stage boxes -->
+            <g font-family="monospace" font-size="10" font-weight="700">
+                <!-- OA -->
+                <rect x="10"  y="60" width="70" height="50" rx="6" fill="${isWarm ? '#1e293b' : '#0c1424'}" stroke="${flowColor}" stroke-width="1.4"/>
+                <text x="45" y="80" text-anchor="middle" fill="${flowColor}">OA</text>
+                <text x="45" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">${sn.oa_pct}%</text>
+
+                <!-- MAD (mixing damper) -->
+                <rect x="120" y="60" width="70" height="50" rx="6" fill="#0c1424" stroke="#94a3b8" stroke-width="1.2"/>
+                <text x="155" y="80" text-anchor="middle" fill="#e2e8f0">MIX</text>
+                <text x="155" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">${sn.oa_pct}/${sn.ma_pct}</text>
+
+                <!-- Coil -->
+                <rect x="230" y="60" width="80" height="50" rx="6" fill="${coilColor}" fill-opacity="0.18" stroke="${coilColor}" stroke-width="1.6"/>
+                <text x="270" y="80" text-anchor="middle" fill="${coilColor}" font-weight="900">${coilLabel} COIL</text>
+                <text x="270" y="98" text-anchor="middle" fill="#94a3b8" font-size="9">active</text>
+
+                <!-- Fan -->
+                <circle cx="365" cy="85" r="22" fill="#0c1424" stroke="#94a3b8" stroke-width="1.2"/>
+                <text x="365" y="89" text-anchor="middle" fill="#e2e8f0">FAN</text>
+
+                <!-- SA label -->
+                <text x="430" y="78" text-anchor="middle" fill="${flowColor}" font-size="11" font-weight="900">SA</text>
+                <text x="430" y="94" text-anchor="middle" fill="#94a3b8" font-size="10">${sn.sa_c} °C</text>
+
+                <!-- Zone -->
+                <rect x="490" y="40" width="110" height="90" rx="6" fill="#0c1424" stroke="#94a3b8" stroke-width="1.4"/>
+                <text x="545" y="70" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="900">ZONE</text>
+                <text x="545" y="88" text-anchor="middle" fill="#94a3b8" font-size="9">${bld.spec[1].v}</text>
+                <text x="545" y="102" text-anchor="middle" fill="#94a3b8" font-size="9">${bld.spec[0].v}</text>
+
+                <!-- RA back -->
+                <text x="650" y="78" text-anchor="middle" fill="#94a3b8" font-size="10">RA</text>
+            </g>
+
+            <!-- Flow arrows -->
+            <g stroke="${flowColor}" stroke-width="2" fill="none" marker-end="url(#arr-${bld.key}-${season})">
+                <line x1="80"  y1="85" x2="115" y2="85"/>
+                <line x1="190" y1="85" x2="225" y2="85"/>
+                <line x1="310" y1="85" x2="338" y2="85"/>
+                <line x1="392" y1="85" x2="455" y2="85"/>
+                <line x1="475" y1="85" x2="490" y2="85"/>
+            </g>
+            <!-- Return loop -->
+            <g stroke="${flowColor}" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arr-${bld.key}-${season})">
+                <path d="M600 85 L660 85 L660 175 L155 175 L155 115"/>
+            </g>
+            <text x="660" y="100" fill="#94a3b8" font-size="9" font-family="monospace" font-style="italic">RA</text>
+        </svg>
+        <div class="diag-legend">
+            <span class="chip"><span class="dot" style="background:${flowColor}"></span>Air flow (${season})</span>
+            <span class="chip"><span class="dot" style="background:${coilColor}"></span>${coilLabel} coil active</span>
+            <span class="chip" style="color:var(--text-mute);font-style:italic">${escapeHtml(sn.note)}</span>
+        </div>
+        `;
+    }
+
+    function renderSection(bld) {
+        const sec = document.createElement('section');
+        sec.className = 'bld';
+        sec.id = bld.key;
+        sec.dataset.testid = 'section-' + bld.key;
+
+        const specRows = bld.spec.map(s => `<div class="spec-row"><span class="k">${escapeHtml(s.k)}</span><span class="v">${escapeHtml(s.v)}</span></div>`).join('');
+        const failuresLi = bld.failures.map(f => `
+            <li>
+                <span class="symptom">"${escapeHtml(f.symptom)}"</span>
+                <span class="cause">↳ ${escapeHtml(f.cause)}</span>
+                <span class="ref">${escapeHtml(f.ref)}</span>
+            </li>`).join('');
+        const checksLi = bld.checks.map(c => `
+            <li class="check-item">
+                <input type="checkbox" aria-label="Mark ${escapeHtml(c.task)} done">
+                <span class="check-body">
+                    <span class="check-task">${escapeHtml(c.task)}<span class="check-freq">${escapeHtml(c.freq)}</span></span>
+                    <span class="ref">${escapeHtml(c.ref)}</span>
+                </span>
+            </li>`).join('');
+
+        sec.innerHTML = `
+            <h2><span class="b-code">${bld.code}</span> ${escapeHtml(bld.name)}</h2>
+            <p class="bld-intro">${bld.intro}</p>
+            <div class="topgrid">
+                <div class="spec-card">
+                    <h3 class="card-title">Spec sheet</h3>
+                    ${specRows}
+                    <div class="spec-cite">${escapeHtml(bld.cite)}</div>
+                </div>
+                <div class="diag-card" data-diag-host>
+                    <h3 class="card-title">HVAC process — <span data-diag-season>summer</span> mode</h3>
+                    <div data-diag-body>${buildDiagram(bld, 'summer')}</div>
+                </div>
+            </div>
+            <div class="bottomgrid">
+                <div class="listcard">
+                    <h3>Common failure modes <span style="font-weight:600;color:var(--text-mute)">(symptom → cause → ref)</span></h3>
+                    <ul>${failuresLi}</ul>
+                </div>
+                <div class="listcard">
+                    <h3>Maintenance checklist <span style="font-weight:600;color:var(--text-mute)">(printable)</span></h3>
+                    <ul>${checksLi}</ul>
+                </div>
+            </div>
+            <details class="notes">
+                <summary>📘 Student / Engineer notes — the “why”</summary>
+                <div class="notes-body">${bld.notes}</div>
+            </details>
+        `;
+        // store the bld key so the season toggle can find it
+        sec.dataset.bldKey = bld.key;
+        return sec;
+    }
+
+    BUILDINGS.forEach(b => main.appendChild(renderSection(b)));
+
+    // ============================================================
+    // SEASON TOGGLE
+    // ============================================================
+    let currentSeason = 'summer';
+    function setSeason(s) {
+        if (s === currentSeason) return;
+        currentSeason = s;
+        document.querySelectorAll('.season-bar .toggle button').forEach(b => {
+            b.setAttribute('aria-pressed', b.dataset.season === s ? 'true' : 'false');
+        });
+        // Rebuild each diagram for the new season
+        BUILDINGS.forEach(b => {
+            const sec = document.getElementById(b.key);
+            if (!sec) return;
+            const body = sec.querySelector('[data-diag-body]');
+            const lbl  = sec.querySelector('[data-diag-season]');
+            if (body) body.innerHTML = buildDiagram(b, s);
+            if (lbl)  lbl.textContent = s;
+        });
+        try {
+            if (typeof window.umami !== 'undefined' && window.umami.track) {
+                window.umami.track('season_change', { season: s });
+            }
+        } catch (_) { /* swallow */ }
+    }
+    document.querySelectorAll('.season-bar .toggle button').forEach(b => {
+        b.addEventListener('click', () => setSeason(b.dataset.season));
+    });
+
+    // ============================================================
+    // RAIL ACTIVE-STATE  (IntersectionObserver)
+    // ============================================================
+    const railLinks = Array.from(rail.querySelectorAll('a'));
+    const sections  = BUILDINGS.map(b => document.getElementById(b.key));
+    const setActive = (key) => {
+        railLinks.forEach(a => a.classList.toggle('active', a.dataset.target === key));
+    };
+    if ('IntersectionObserver' in window) {
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach(e => {
+                if (e.isIntersecting) setActive(e.target.id);
+            });
+        }, { rootMargin: '-30% 0px -55% 0px', threshold: 0 });
+        sections.forEach(s => s && io.observe(s));
+    }
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    document.getElementById('year').textContent = new Date().getFullYear();
+    if (BUILDINGS.length) setActive(BUILDINGS[0].key);
+})();
+</script>
+
+</body>
+</html>

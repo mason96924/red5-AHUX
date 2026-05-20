@@ -1,5 +1,47 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.8 — Deep Dive page (B1-B12 HVAC playbook) (2026-05-20)
+
+**User ask**: "Could be another landing page, deep dive on B1-B10 detail. Complete process that makes it easy for HVAC engineer/maintenance people/student to understand."
+
+### Files added
+- `/app/frontend/public/deepdive.html` — main page, fully static, single-file (~70 KB inline CSS/JS, JS data-driven).
+- `/app/frontend/public/buildings.html` — alias redirect to `/deepdive.html`.
+- `/app/frontend/public/B1-B12.html` — alias redirect to `/deepdive.html`.
+
+### Architecture
+- Single `BUILDINGS` array (12 entries) is the source of truth. Each entry carries: `code`, `key`, `name`, `intro`, `spec[]`, `cite`, `summer{}`, `winter{}`, `failures[]`, `checks[]`, `notes` (HTML).
+- One template function (`renderSection`) builds each `<section.bld>` from a building entry.
+- One SVG builder (`buildDiagram`) constructs the HVAC process flow per (building × season) on demand.
+- Sticky **left rail** with `IntersectionObserver`-driven active-state highlighting as the visitor scrolls.
+- Sticky **season-toggle bar** at top (☀ Summer / ❄ Winter) rebuilds all 12 diagrams when toggled — flow-arrow color, coil color, SA temp, MIX % all change per season per building.
+
+### Content depth (per section)
+1. **Spec sheet** — 5 rows of T/RH/ACH/filtration/pressure, with the cited standard at the bottom of the card.
+2. **HVAC process diagram** — SVG flow: OA → MIX → coil → FAN → SA → ZONE → RA-loop, with summer/winter visual states and a ~12-word note.
+3. **Failure modes** — 3 per section, each is `symptom + cause + standard reference` in italic monospace.
+4. **Maintenance checklist** — 6 items per section, each with `task + frequency chip + standard reference`. Printable with `<input type=checkbox>`.
+5. **Student / Engineer notes** — collapsible `<details>` with conversational explanation embedding a formal `<q class="spec-quote">` callout from the cited standard.
+
+### Building types covered (B1-B12)
+B1 Office · B2 Residential · B3 Theatre · B4 Music Auditorium · B5 Hospital (OR) · B6 Lab (Analytical) · B7 Museum / Archive · B8 Self-Storage · B9 Pharmacy / Cleanroom · B10 Semi Fab · B11 Mfg (Sensitive / ESD) · B12 Data Center.
+
+### Standards cited (per-claim, not per-section)
+ASHRAE 55-2020, 62.1-2022, 62.2-2022, 90.1-2022, 170-2021, 180-2018, 188-2021, Guideline 11-2018, Guideline 36-2021, HVAC Applications 2023 (Ch. 5, 17, 22, 24, 49), Handbook Fundamentals 2021 (Ch. 25), TC 9.9 (5th ed.), Standard 113-2013 · SEMI E54-2024, S2-2024 · USP <797>-2023 · EU GMP Annex 1 · NEBB Procedural Std, TAB Procedural Std, Cleanroom Std · ANSI/AIHA Z9.5-2022 · ANSI/ESD S20.20-2021, STM3.1 · IEST-RP-CC012, CC034 · IPC-A-610H · ISO 14644-1, 21501-4, 9613-1 · NFPA 72, 110 · RESNET 380-2019 · ACCA Manual D, J, Manual N, QI · HVI Product Performance · ASTM E898 · ACI 302.2R · APSF 2020 · CCI Technical Bulletins · Library of Congress IRIS · Getty Conservation Institute · Green Grid PUE 2.0 · NIH Design Requirements Manual · Self Storage Association.
+
+### Verified via Playwright
+- 12 sections rendered ✓
+- 12 rail links + active-state updates on scroll ✓
+- Season toggle swaps all 12 diagrams (B1 Office HEAT COIL → COOL COIL, etc.) ✓
+- Diagram per-building per-season values (SA temp, MIX %, note) correct ✓
+- Per-claim citations visible in failure rows + checklist items ✓
+- Conversational notes panel collapsible with formal `<q>` callout ✓
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{deepdive.html, buildings.html, B1-B12.html}`.
+
+
+
 ## Phase G.7 — Added 4 more building-type presets + optgroup organization (2026-05-20)
 
 **User ask**: "Include lab, data center, manufacturing plant for sensitive machinery, music auditorium, theatre…"

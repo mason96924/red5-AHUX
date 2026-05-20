@@ -1,5 +1,35 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase G.7 — Added 4 more building-type presets + optgroup organization (2026-05-20)
+
+**User ask**: "Include lab, data center, manufacturing plant for sensitive machinery, music auditorium, theatre…"
+
+### New presets added to `BUILDING_TYPES`
+| Type | RH band | Reference |
+|---|---|---|
+| Theatre | 30–60% | ASHRAE HVAC Apps 2023 Ch. 5 (Places of Assembly) |
+| Music Auditorium | 45–55% | ASHRAE HVAC Apps 2023 Ch. 5 (instr. preservation) |
+| Lab (Analytical / Research) | 30–50% | ANSI/ASHRAE Std 113 + NIH Design Requirements Manual |
+| Manufacturing (Sensitive / ESD) | 35–55% | ANSI/ESD S20.20-2021 |
+
+Data center was already present (40–60%, ASHRAE TC 9.9) — kept unchanged.
+
+### Dropdown re-organized into 4 `<optgroup>` sections
+- **Habitable / Comfort**: Office, Residential, Theatre, Music Auditorium
+- **Healthcare & Lab**: Hospital (OR), Lab (Analytical / Research)
+- **Storage & Preservation**: Museum / Archive
+- **Cleanrooms & Tech**: Pharmacy / Cleanroom, Semiconductor Fab, Manufacturing (Sensitive / ESD), Data Center
+
+Added optgroup styling so the group headers appear in amber on dark, distinguishing them from selectable items.
+
+### Verified via Playwright
+All 4 new types load the correct RH band + reference, and the tier-classifier hint correctly cites the live band and building-type label.
+
+### Deploy folder refreshed
+`/app/genius-mason-deploy/{index.html, index-single-file.html, js/psychrometric.js}`.
+
+
+
 ## Phase G.6 — Building-type presets adjust the inner sweet-spot RH band (2026-05-20)
 
 **User ask**: "The inner RH range inside Givoni engine — can we also come up with the building type with more stricter RH requirement like museum, Fab, hospital, office… with the selection option by the building type?"

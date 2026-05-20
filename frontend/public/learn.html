@@ -154,6 +154,20 @@
             outline: none;
             border-color: var(--accent);
         }
+        .building-type-row select optgroup {
+            background: var(--bg-deep);
+            color: var(--accent);
+            font-style: normal;
+            font-weight: 700;
+            font-size: 10px;
+            letter-spacing: 0.1em;
+        }
+        .building-type-row select option {
+            background: var(--bg-soft);
+            color: var(--text);
+            font-weight: 600;
+            padding: 6px 8px;
+        }
         .building-type-row .bt-ref {
             color: var(--text-dim);
             font-family: monospace;
@@ -446,13 +460,25 @@
 <nav class="building-type-row" data-testid="building-type-row">
     <span class="bt-label">Building type</span>
     <select id="building-type" data-testid="building-type-select" aria-label="Building type preset">
-        <option value="office" selected>Office · 40–60% RH</option>
-        <option value="residential">Residential · 30–60% RH</option>
-        <option value="hospital">Hospital (OR) · 20–60% RH</option>
-        <option value="museum">Museum / Archive · 45–55% RH</option>
-        <option value="fab">Semiconductor Fab · 40–50% RH</option>
-        <option value="datacenter">Data Center · 40–60% RH</option>
-        <option value="pharmacy">Pharmacy / Cleanroom · 30–50% RH</option>
+        <optgroup label="── Habitable / Comfort ──">
+            <option value="office" selected>Office · 40–60% RH</option>
+            <option value="residential">Residential · 30–60% RH</option>
+            <option value="theatre">Theatre · 30–60% RH</option>
+            <option value="auditorium">Music Auditorium · 45–55% RH</option>
+        </optgroup>
+        <optgroup label="── Healthcare &amp; Lab ──">
+            <option value="hospital">Hospital (OR) · 20–60% RH</option>
+            <option value="lab">Lab (Analytical / Research) · 30–50% RH</option>
+        </optgroup>
+        <optgroup label="── Storage &amp; Preservation ──">
+            <option value="museum">Museum / Archive · 45–55% RH</option>
+        </optgroup>
+        <optgroup label="── Cleanrooms &amp; Tech ──">
+            <option value="pharmacy">Pharmacy / Cleanroom · 30–50% RH</option>
+            <option value="fab">Semiconductor Fab · 40–50% RH</option>
+            <option value="mfg_esd">Manufacturing (Sensitive / ESD) · 35–55% RH</option>
+            <option value="datacenter">Data Center · 40–60% RH</option>
+        </optgroup>
     </select>
     <span id="building-type-reference" class="bt-ref">ASHRAE Std 55-2020 §5.2.3</span>
 </nav>
@@ -598,19 +624,27 @@
     //
     //   Office       40-60%   ASHRAE Std 55-2020 §5.2.3
     //   Residential  30-60%   ASHRAE Std 55-2020 (residential adoption)
+    //   Theatre      30-60%   ASHRAE HVAC Apps 2023 Ch. 5 (Places of Assembly)
+    //   Auditorium   45-55%   ASHRAE HVAC Apps 2023 Ch. 5 (instrument preservation)
     //   Hospital OR  20-60%   ASHRAE Std 170-2021 §7.1 (Anesthetizing locations)
+    //   Lab          30-50%   ANSI/ASHRAE Std 113 + NIH Design Req Manual
     //   Museum       45-55%   ASHRAE HVAC Apps 2023 Ch. 24 (mixed collections)
-    //   Fab          40-50%   SEMI E54 / IEST-RP-CC012  (photolithography)
-    //   Data Center  40-60%   ASHRAE TC 9.9 (Class A1 recommended envelope)
     //   Pharmacy     30-50%   USP <797> / EU GMP Annex 1
+    //   Fab          40-50%   SEMI E54 / IEST-RP-CC012  (photolithography)
+    //   Mfg ESD      35-55%   ANSI/ESD S20.20-2021 (ESD-sensitive electronics)
+    //   Data Center  40-60%   ASHRAE TC 9.9 (Class A1 recommended envelope)
     const BUILDING_TYPES = {
         office:      { lo: 40, hi: 60, label: 'Office',                 ref: 'ASHRAE Std 55-2020 §5.2.3' },
         residential: { lo: 30, hi: 60, label: 'Residential',            ref: 'ASHRAE Std 55-2020 (residential)' },
+        theatre:     { lo: 30, hi: 60, label: 'Theatre',                ref: 'ASHRAE HVAC Apps 2023 Ch. 5' },
+        auditorium:  { lo: 45, hi: 55, label: 'Music Auditorium',       ref: 'ASHRAE HVAC Apps 2023 Ch. 5 (instr. preservation)' },
         hospital:    { lo: 20, hi: 60, label: 'Hospital (OR)',          ref: 'ASHRAE Std 170-2021 §7.1' },
+        lab:         { lo: 30, hi: 50, label: 'Lab (Analytical)',       ref: 'ANSI/ASHRAE Std 113 + NIH DRM' },
         museum:      { lo: 45, hi: 55, label: 'Museum / Archive',       ref: 'ASHRAE HVAC Apps 2023 Ch. 24' },
+        pharmacy:    { lo: 30, hi: 50, label: 'Pharmacy / Cleanroom',   ref: 'USP <797> / EU GMP Annex 1' },
         fab:         { lo: 40, hi: 50, label: 'Semiconductor Fab',      ref: 'SEMI E54 / IEST-RP-CC012' },
-        datacenter:  { lo: 40, hi: 60, label: 'Data Center',            ref: 'ASHRAE TC 9.9 Class A1 (recommended)' },
-        pharmacy:    { lo: 30, hi: 50, label: 'Pharmacy / Cleanroom',   ref: 'USP <797> / EU GMP Annex 1' }
+        mfg_esd:     { lo: 35, hi: 55, label: 'Mfg (Sensitive / ESD)',  ref: 'ANSI/ESD S20.20-2021' },
+        datacenter:  { lo: 40, hi: 60, label: 'Data Center',            ref: 'ASHRAE TC 9.9 Class A1 (recommended)' }
     };
 
     // Live sweet-spot band (lo, hi) -- starts at the office default and

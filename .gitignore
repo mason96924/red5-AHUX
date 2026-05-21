@@ -95,3 +95,6 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Internal memory files (contain plaintext test credentials)
+memory/test_credentials.md

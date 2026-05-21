@@ -113,13 +113,18 @@ Pick whichever fits your comfort level.
 
 ```bash
 cd build/
-python3 -m http.server 8080
+python3 -m http.server 8080 --bind 0.0.0.0
 ```
 
-Open **http://localhost:8080** → V2.0 landing page.
-Open **http://localhost:8080/learn.html** → educational chart.
+Open **http://127.0.0.1:8080** → V2.0 landing page.
+Open **http://127.0.0.1:8080/learn.html** → educational chart.
 
 Press `Ctrl+C` to stop.
+
+> ⚠️ Use `127.0.0.1` not `localhost`. On many Linux distros `localhost`
+> resolves to IPv6 `::1` first; if `http.server` binds IPv4 only,
+> connections fail with "Connection refused". `--bind 0.0.0.0` + the
+> explicit IPv4 address sidesteps the issue entirely.
 
 > ⚠️ Python's `http.server` is single-threaded and not suitable for
 > more than ~5 concurrent users. Fine for personal use; use Caddy or

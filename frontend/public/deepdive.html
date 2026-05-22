@@ -301,7 +301,7 @@
             color: var(--text);
             text-align: right;
         }
-        /* RH-band comparison bar (30 - 70 % scale) shown to the right
+        /* RH-band comparison bar (10 - 90 % scale) shown to the right
            of each Building Type's "RH band" spec value.  Provides a
            visual reference for cross-BT humidity-window comparison. */
         .spec-row.spec-rh { gap: 12px; }
@@ -325,13 +325,13 @@
             border: 1px solid var(--line);
             overflow: hidden;
         }
-        /* Mold-risk shading: scale 30-70, threshold at 65 % RH.
-           65 % maps to (65-30)/(70-30) = 87.5 % across the track. */
+        /* Mold-risk shading: scale 10-90, threshold at 65 % RH.
+           65 % maps to (65-10)/(90-10) = 68.75 % across the track. */
         .rh-bar-track::after {
             content: '';
             position: absolute;
             top: 0; bottom: 0;
-            left: 87.5%; right: 0;
+            left: 68.75%; right: 0;
             background: repeating-linear-gradient(
                 45deg,
                 rgba(244,63,94,.25) 0 4px,
@@ -360,9 +360,9 @@
             top: 0;
             transform: translateX(-50%);
         }
-        .rh-bar-axis span.at-30  { left: 0;     transform: none; }
-        .rh-bar-axis span.at-50  { left: 50%; }
-        .rh-bar-axis span.at-70  { left: 100%;  transform: translateX(-100%); }
+        .rh-bar-axis span.at-lo  { left: 0;     transform: none; }
+        .rh-bar-axis span.at-mid { left: 50%; }
+        .rh-bar-axis span.at-hi  { left: 100%;  transform: translateX(-100%); }
         .rh-bar-clamped {
             position: absolute;
             top: -2px; bottom: -2px;
@@ -1842,14 +1842,14 @@
         return { min: a, max: b };
     }
 
-    /* Build a 30-70 % scale bar with the BT's range highlighted.  Out-of-
+    /* Build a 10-90 % scale bar with the BT's range highlighted.  Out-of-
        scale values are clamped + flagged with a small amber notch so users
        can see the actual numeric value in the spec text and understand
        the bar is truncated. */
     function renderRhBar(rangeStr) {
         const r = parseRhRange(rangeStr);
         if (!r) return '';
-        const SCALE_MIN = 30, SCALE_MAX = 70, SPAN = SCALE_MAX - SCALE_MIN;
+        const SCALE_MIN = 10, SCALE_MAX = 90, SPAN = SCALE_MAX - SCALE_MIN;
         const clampMin = r.min < SCALE_MIN, clampMax = r.max > SCALE_MAX;
         const lo = Math.max(SCALE_MIN, Math.min(SCALE_MAX, r.min));
         const hi = Math.max(SCALE_MIN, Math.min(SCALE_MAX, r.max));
@@ -1859,15 +1859,15 @@
             (clampMin ? '<span class="rh-bar-clamped" style="left:0"></span>'   : '') +
             (clampMax ? '<span class="rh-bar-clamped" style="right:0"></span>' : '');
         return `
-            <div class="rh-bar-wrap" title="RH range ${escapeHtml(rangeStr)} on a 30-70 % scale (red hatching = mold risk &gt; 65 %)">
+            <div class="rh-bar-wrap" title="RH range ${escapeHtml(rangeStr)} on a 10-90 % scale (red hatching = mold risk &gt; 65 %)">
                 <div class="rh-bar-track" aria-hidden="true">
                     <div class="rh-bar-range" style="left:${leftPct.toFixed(1)}%;width:${widthPct.toFixed(1)}%"></div>
                     ${notches}
                 </div>
                 <div class="rh-bar-axis" aria-hidden="true">
-                    <span class="at-30">30%</span>
-                    <span class="at-50">50%</span>
-                    <span class="at-70">70%</span>
+                    <span class="at-lo">10%</span>
+                    <span class="at-mid">50%</span>
+                    <span class="at-hi">90%</span>
                 </div>
             </div>`;
     }

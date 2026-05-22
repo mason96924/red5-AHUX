@@ -100,6 +100,7 @@ from tenants import (  # noqa: E402
     list_tenant_assets,
     delete_tenant_asset,
     delete_tenant_directory,
+    create_tenant_directory,
     move_tenant_asset,
     read_collector_config,
     write_collector_config,
@@ -1134,8 +1135,8 @@ async def save_map_config_alias(payload: dict,
 @app.post("/api/create-directory")
 async def create_directory(payload: dict,
                            tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Virtual-FS no-op: directories are derived from filename prefixes in
-    `tenant_assets`, so 'creating' one is a success unless the name is bogus."""
+    """Persist an empty-directory marker so the folder shows up in the
+    image-picker even before a file lives in it.  Idempotent."""
     dirname = (payload or {}).get("dirname", "") or ""
     root = (payload or {}).get("root", "data") or "data"
     if not dirname or ".." in dirname:
@@ -1143,8 +1144,10 @@ async def create_directory(payload: dict,
     if not tenant:
         return {"success": False, "error": "Sign in to manage your virtual controller filesystem.",
                 "warning": "Anonymous demo -- mapper can browse but not mutate."}
-    return {"success": True, "message": f"Directory ready: {dirname}", "root": root,
-            "path": f"virtual-controller://{tenant['tenant_id']}/{root}/{dirname.strip('/')}"}
+    res = await create_tenant_directory(tenant, dirname, root=root)
+    if res.get("success"):
+        res["message"] = f"Directory ready: {dirname}"
+    return res
 
 
 @app.post("/api/delete-directory")

@@ -254,29 +254,39 @@ async def list_tenant_assets(tenant: dict, path_prefix: str = "",
                              root: str = "data") -> list[dict]:
     """Browse-style listing for the image-picker modal.
 
-    Returns directory entries (synthetic, derived from filename prefixes)
-    and image files under `path_prefix` within the given virtual `root`
-    (`data` or `scripts`).  Matches the V1.9 /api/files response shape:
+    Returns directory entries (synthetic, derived from filename prefixes
+    plus persisted empty-directory markers) and image files under
+    `path_prefix` within the given virtual `root` (`data` or `scripts`).
+    Matches the V1.9 /api/files response shape:
     { name, type: 'image'|'directory', size?, full_path? }.
     """
     safe_prefix = path_prefix.strip("/").replace("\\", "/")
     root = (root or "data").strip() or "data"
     cursor = ten_asset_col.find(
         {"tenant_id": tenant["tenant_id"], "root": root},
-        {"_id": 0, "filename": 1, "size_bytes": 1, "content_type": 1},
+        {"_id": 0, "filename": 1, "size_bytes": 1, "content_type": 1,
+         "is_directory": 1},
     )
-    all_files = await cursor.to_list(length=10000)
+    all_docs = await cursor.to_list(length=10000)
     dirs: set[str] = set()
     files: list[dict] = []
-    for d in all_files:
+    for d in all_docs:
         fname = d["filename"]
-        # Only consider files that live under the requested prefix.
+        # Only consider entries that live under the requested prefix.
         if safe_prefix:
             if not fname.startswith(safe_prefix + "/"):
                 continue
             rest = fname[len(safe_prefix) + 1:]
         else:
             rest = fname
+        # Empty-directory markers (created by /api/create-directory) are
+        # stored as filename ending in "/" with is_directory=true and no
+        # data_bytes.  Surface them as immediate-child directories.
+        if d.get("is_directory") and rest.endswith("/"):
+            dir_name = rest.rstrip("/").split("/", 1)[0]
+            if dir_name:
+                dirs.add(dir_name)
+            continue
         if "/" in rest:
             dirs.add(rest.split("/", 1)[0])
         else:
@@ -289,6 +299,33 @@ async def list_tenant_assets(tenant: dict, path_prefix: str = "",
     out = [{"name": d, "type": "directory"} for d in sorted(dirs)]
     out.extend(sorted(files, key=lambda x: x["name"]))
     return out
+
+
+async def create_tenant_directory(tenant: dict, dirname: str,
+                                  root: str = "data") -> dict:
+    """Persist an empty-directory marker so the folder shows up in the
+    image-picker even before any file lives in it.  Idempotent — re-creating
+    the same directory just touches `updated_at`."""
+    safe = dirname.strip("/").replace("\\", "/")
+    root = (root or "data").strip() or "data"
+    if not safe:
+        return {"success": False, "error": "Empty directory name"}
+    marker = safe + "/"   # trailing slash distinguishes the marker
+    now = datetime.now(timezone.utc)
+    await ten_asset_col.update_one(
+        {"tenant_id": tenant["tenant_id"], "root": root, "filename": marker},
+        {"$set": {
+            "tenant_id":    tenant["tenant_id"],
+            "root":         root,
+            "filename":     marker,
+            "is_directory": True,
+            "size_bytes":   0,
+            "updated_at":   now,
+        }},
+        upsert=True,
+    )
+    return {"success": True, "dirname": safe, "root": root,
+            "path": f"virtual-controller://{tenant['tenant_id']}/{root}/{safe}"}
 
 
 class WeatherLocationUpdate(BaseModel):

@@ -214,16 +214,21 @@ ten_map_col   = _db["tenant_map_config"]
 
 
 async def save_tenant_asset(tenant: dict, filename: str,
-                            content_type: str, data_bytes: bytes) -> dict:
-    """Upsert image bytes for (tenant, filename).  Returns the relative path
-    the V1.9 mapper writes into the schema's `visual_assets.base_graphic`."""
+                            content_type: str, data_bytes: bytes,
+                            root: str = "data") -> dict:
+    """Upsert image bytes for (tenant, root, filename).  `root` is the
+    virtual top-level folder (`data` or `scripts`), keeping the two
+    namespaces independent so deleting from one does not touch the
+    other."""
     now = datetime.now(timezone.utc)
+    root = (root or "data").strip() or "data"
     # Normalize the filename so the schema field round-trips cleanly.
     safe = filename.lstrip("/").replace("\\", "/")
     await ten_asset_col.update_one(
-        {"tenant_id": tenant["tenant_id"], "filename": safe},
+        {"tenant_id": tenant["tenant_id"], "root": root, "filename": safe},
         {"$set": {
             "tenant_id": tenant["tenant_id"],
+            "root": root,
             "filename": safe,
             "content_type": content_type,
             "data_bytes": data_bytes,
@@ -232,27 +237,32 @@ async def save_tenant_asset(tenant: dict, filename: str,
         }},
         upsert=True,
     )
-    return {"ok": True, "relative_path": safe, "size_bytes": len(data_bytes)}
+    return {"ok": True, "relative_path": safe, "size_bytes": len(data_bytes), "root": root}
 
 
-async def read_tenant_asset(tenant: dict, filename: str) -> Optional[dict]:
+async def read_tenant_asset(tenant: dict, filename: str,
+                            root: str = "data") -> Optional[dict]:
     safe = filename.lstrip("/").replace("\\", "/")
+    root = (root or "data").strip() or "data"
     return await ten_asset_col.find_one(
-        {"tenant_id": tenant["tenant_id"], "filename": safe},
+        {"tenant_id": tenant["tenant_id"], "root": root, "filename": safe},
         {"_id": 0},
     )
 
 
-async def list_tenant_assets(tenant: dict, path_prefix: str = "") -> list[dict]:
+async def list_tenant_assets(tenant: dict, path_prefix: str = "",
+                             root: str = "data") -> list[dict]:
     """Browse-style listing for the image-picker modal.
 
     Returns directory entries (synthetic, derived from filename prefixes)
-    and image files under `path_prefix`.  Matches the V1.9 /api/files
-    response shape: { name, type: 'image'|'directory', size?, full_path? }.
+    and image files under `path_prefix` within the given virtual `root`
+    (`data` or `scripts`).  Matches the V1.9 /api/files response shape:
+    { name, type: 'image'|'directory', size?, full_path? }.
     """
     safe_prefix = path_prefix.strip("/").replace("\\", "/")
+    root = (root or "data").strip() or "data"
     cursor = ten_asset_col.find(
-        {"tenant_id": tenant["tenant_id"]},
+        {"tenant_id": tenant["tenant_id"], "root": root},
         {"_id": 0, "filename": 1, "size_bytes": 1, "content_type": 1},
     )
     all_files = await cursor.to_list(length=10000)
@@ -370,31 +380,40 @@ async def write_weather_location(tenant: dict, update: WeatherLocationUpdate) ->
 # ---------------------------------------------------------------------------
 
 
-async def delete_tenant_asset(tenant: dict, filename: str) -> dict:
+async def delete_tenant_asset(tenant: dict, filename: str,
+                              root: str = "data") -> dict:
     safe = filename.lstrip("/").replace("\\", "/")
-    r = await ten_asset_col.delete_one({"tenant_id": tenant["tenant_id"], "filename": safe})
+    root = (root or "data").strip() or "data"
+    r = await ten_asset_col.delete_one(
+        {"tenant_id": tenant["tenant_id"], "root": root, "filename": safe})
     return {"success": r.deleted_count > 0,
             "deleted_count": r.deleted_count,
-            "filename": safe}
+            "filename": safe,
+            "root": root}
 
 
-async def delete_tenant_directory(tenant: dict, dirname: str) -> dict:
+async def delete_tenant_directory(tenant: dict, dirname: str,
+                                  root: str = "data") -> dict:
     safe = dirname.strip("/").replace("\\", "/")
+    root = (root or "data").strip() or "data"
     if not safe:
         return {"success": False, "error": "Cannot delete root directory"}
     prefix = safe + "/"
     r = await ten_asset_col.delete_many(
-        {"tenant_id": tenant["tenant_id"],
+        {"tenant_id": tenant["tenant_id"], "root": root,
          "filename": {"$regex": "^" + _re_escape(prefix)}},
     )
-    return {"success": True, "deleted_count": r.deleted_count, "dirname": safe}
+    return {"success": True, "deleted_count": r.deleted_count,
+            "dirname": safe, "root": root}
 
 
-async def move_tenant_asset(tenant: dict, src: str, dest_dir: str) -> dict:
+async def move_tenant_asset(tenant: dict, src: str, dest_dir: str,
+                            root: str = "data") -> dict:
     src_safe  = src.lstrip("/").replace("\\", "/")
     dest_safe = dest_dir.strip("/").replace("\\", "/")
+    root = (root or "data").strip() or "data"
     doc = await ten_asset_col.find_one(
-        {"tenant_id": tenant["tenant_id"], "filename": src_safe})
+        {"tenant_id": tenant["tenant_id"], "root": root, "filename": src_safe})
     if not doc:
         return {"success": False, "error": f"Source not found: {src_safe}"}
     basename = src_safe.rsplit("/", 1)[-1]

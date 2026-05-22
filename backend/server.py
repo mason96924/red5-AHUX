@@ -1043,17 +1043,19 @@ async def save_equipment_schema(payload: dict,
 
 @app.get("/api/files")
 async def list_files(path: str = Query(""),
+                     root: str = Query("data"),
                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """V1.9-compatible file-browser response shape used by the image picker.
 
     Anonymous callers get an empty list (so the picker simply shows nothing
-    instead of crashing).  Signed-in callers get their tenant_assets,
-    grouped by prefix into synthetic directories.
+    instead of crashing).  Signed-in callers get their tenant_assets within
+    the requested virtual root (`data` or `scripts`).
     """
     if not tenant:
         return {"success": True, "files": [],
                 "warning": "Sign in to browse your uploaded assets."}
-    return {"success": True, "files": await list_tenant_assets(tenant, path)}
+    return {"success": True, "files": await list_tenant_assets(tenant, path, root=root),
+            "root": root}
 
 
 @app.post("/api/save-image")
@@ -1092,11 +1094,13 @@ async def save_image(payload: dict,
         data_bytes = base64.b64decode(b64)
     except Exception as e:  # noqa: BLE001
         return {"success": False, "error": f"base64 decode failed: {e}"}
-    res = await save_tenant_asset(tenant, filename, content_type, data_bytes)
+    res = await save_tenant_asset(tenant, filename, content_type, data_bytes,
+                                  root=(payload or {}).get("root", "data") or "data")
     return {
         "success": True,
         "relative_path": res["relative_path"],
         "size_bytes": res["size_bytes"],
+        "root": res["root"],
         "tenant_id": tenant["tenant_id"],
     }
 
@@ -1133,35 +1137,38 @@ async def create_directory(payload: dict,
     """Virtual-FS no-op: directories are derived from filename prefixes in
     `tenant_assets`, so 'creating' one is a success unless the name is bogus."""
     dirname = (payload or {}).get("dirname", "") or ""
+    root = (payload or {}).get("root", "data") or "data"
     if not dirname or ".." in dirname:
         return {"success": False, "error": "Invalid directory name"}
     if not tenant:
         return {"success": False, "error": "Sign in to manage your virtual controller filesystem.",
                 "warning": "Anonymous demo -- mapper can browse but not mutate."}
-    return {"success": True, "message": f"Directory ready: {dirname}",
-            "path": f"virtual-controller://{tenant['tenant_id']}/{dirname.strip('/')}"}
+    return {"success": True, "message": f"Directory ready: {dirname}", "root": root,
+            "path": f"virtual-controller://{tenant['tenant_id']}/{root}/{dirname.strip('/')}"}
 
 
 @app.post("/api/delete-directory")
 async def delete_directory(payload: dict,
                            tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     dirname = (payload or {}).get("dirname", "") or ""
+    root = (payload or {}).get("root", "data") or "data"
     if not dirname or ".." in dirname:
         return {"success": False, "error": "Invalid directory name"}
     if not tenant:
         return {"success": False, "error": "Sign in to delete from your virtual controller."}
-    return await delete_tenant_directory(tenant, dirname)
+    return await delete_tenant_directory(tenant, dirname, root=root)
 
 
 @app.post("/api/delete-file")
 async def delete_file(payload: dict,
                       tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     filename = (payload or {}).get("filename", "") or ""
+    root = (payload or {}).get("root", "data") or "data"
     if not filename or ".." in filename:
         return {"success": False, "error": "Invalid filename"}
     if not tenant:
         return {"success": False, "error": "Sign in to delete from your virtual controller."}
-    return await delete_tenant_asset(tenant, filename)
+    return await delete_tenant_asset(tenant, filename, root=root)
 
 
 @app.post("/api/move-file")
@@ -1169,11 +1176,12 @@ async def move_file(payload: dict,
                     tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     src      = (payload or {}).get("src", "") or ""
     dest_dir = (payload or {}).get("dest_dir", "") or ""
+    root     = (payload or {}).get("root", "data") or "data"
     if not src or ".." in src or ".." in dest_dir:
         return {"success": False, "error": "Invalid path"}
     if not tenant:
         return {"success": False, "error": "Sign in to manage your virtual controller filesystem."}
-    return await move_tenant_asset(tenant, src, dest_dir)
+    return await move_tenant_asset(tenant, src, dest_dir, root=root)
 
 
 @app.post("/api/upload-file")
@@ -1203,9 +1211,11 @@ async def upload_file(payload: dict,
         data_bytes = base64.b64decode(b64)
     except Exception as e:  # noqa: BLE001
         return {"success": False, "error": f"base64 decode failed: {e}"}
-    res = await save_tenant_asset(tenant, filename, content_type, data_bytes)
+    res = await save_tenant_asset(tenant, filename, content_type, data_bytes,
+                                  root=(payload or {}).get("root", "data") or "data")
     return {"success": True, "message": f"Uploaded: {filename}",
             "file": res["relative_path"], "size": res["size_bytes"],
+            "root": res["root"],
             "tenant_id": tenant["tenant_id"]}
 
 

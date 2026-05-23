@@ -671,6 +671,86 @@ async def set_weather_location(update: WeatherLocationUpdate,
     return await write_weather_location(tenant, update)
 
 
+def _v2_weatherapi_key():
+    """Read the weatherapi.com API key from a server-local file.
+    Place a single-line `weatherapi_key.txt` next to backend/.env on the
+    self-host machine.  Returns None when the key is missing."""
+    import os as _os
+    for candidate in ("/app/backend/weatherapi_key.txt",
+                      _os.path.join(_os.path.dirname(__file__), "weatherapi_key.txt")):
+        try:
+            with open(candidate, "r") as f:
+                key = f.read().strip()
+            if key:
+                return key
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _weatherapi_to_openmeteo(wapi_json: dict, requested_lat: float, requested_lon: float) -> dict:
+    """weatherapi.com history.json -> open-meteo /v1/archive shape."""
+    fc = (wapi_json or {}).get("forecast", {}) or {}
+    days = fc.get("forecastday", []) or []
+    times, temps, rhs = [], [], []
+    daily_dates, daily_codes = [], []
+    for day in days:
+        date_str = day.get("date", "")
+        if date_str:
+            daily_dates.append(date_str)
+            daily_codes.append(((day.get("day") or {}).get("condition") or {}).get("code"))
+        for h in day.get("hour", []) or []:
+            t = h.get("time", "")
+            if t and " " in t:
+                t = t.replace(" ", "T")
+            times.append(t)
+            temps.append(h.get("temp_c"))
+            rhs.append(h.get("humidity"))
+    loc = (wapi_json or {}).get("location", {}) or {}
+    return {
+        "latitude":  loc.get("lat",  requested_lat),
+        "longitude": loc.get("lon",  requested_lon),
+        "timezone":  loc.get("tz_id", "auto"),
+        "source":    "weatherapi.com",
+        "hourly": {
+            "time":                 times,
+            "temperature_2m":       temps,
+            "relative_humidity_2m": rhs,
+        },
+        "daily": {
+            "time":         daily_dates,
+            "weather_code": daily_codes,
+        },
+    }
+
+
+def _nasa_power_to_openmeteo(power_json: dict, requested_lat: float, requested_lon: float) -> dict:
+    """NASA POWER hourly -> open-meteo /v1/archive shape."""
+    params = (((power_json or {}).get("properties") or {}).get("parameter")) or {}
+    t2m  = params.get("T2M")  or {}
+    rh2m = params.get("RH2M") or {}
+    keys = sorted(set(t2m.keys()) | set(rh2m.keys()))
+    times, temps, rhs = [], [], []
+    for k in keys:
+        if len(k) != 10:
+            continue
+        iso = k[0:4] + "-" + k[4:6] + "-" + k[6:8] + "T" + k[8:10] + ":00"
+        times.append(iso)
+        tv = t2m.get(k);  temps.append(None if (tv is None or tv <= -900) else tv)
+        rv = rh2m.get(k); rhs.append(None if (rv is None or rv <= -900) else rv)
+    return {
+        "latitude":  requested_lat,
+        "longitude": requested_lon,
+        "timezone":  "UTC",
+        "source":    "nasa-power",
+        "hourly": {
+            "time":                 times,
+            "temperature_2m":       temps,
+            "relative_humidity_2m": rhs,
+        },
+    }
+
+
 @app.get("/api/weather-proxy")
 async def weather_proxy(
     latitude: float = Query(...),
@@ -680,16 +760,19 @@ async def weather_proxy(
     hourly: str = Query("temperature_2m,relative_humidity_2m"),
     timezone_q: str = Query("auto", alias="timezone"),
 ) -> Any:
-    """Server-side proxy for the open-meteo archive API used by the 3-D
-    Weather-Strip page.  Browsers on some home networks get their TLS/HTTP-2
-    connection reset by middleboxes when talking to open-meteo directly;
-    the FastAPI host on the same network can usually reach the same URL
-    over plain HTTPS without issues, so we relay through the backend.
+    """3-tier weather-history proxy used by the psy_3d.html page.
 
-    Returns the upstream JSON untouched on success, or a small
-    `{success:false, error:...}` payload the front-end can show as a
-    toast instead of crashing the 3-D scene."""
-    params = {
+    Order:
+      1. open-meteo /v1/archive  (free, no key, ideal; blocked on some Korean ISPs)
+      2. weatherapi.com history.json (free key, last 7 days only)
+      3. NASA POWER hourly point   (free, no key, unlimited history)
+
+    The front-end always sees the open-meteo response shape.  The `source`
+    field in the body tells you which tier served the data."""
+    om_error = wa_error = np_error = None
+
+    # ---- 1) open-meteo
+    om_params = {
         "latitude":   latitude,
         "longitude":  longitude,
         "start_date": start_date,
@@ -698,18 +781,70 @@ async def weather_proxy(
         "timezone":   timezone_q,
     }
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=8) as client:
             r = await client.get("https://archive-api.open-meteo.com/v1/archive",
-                                 params=params)
-        if r.status_code != 200:
-            return {"success": False,
-                    "error":   f"open-meteo returned HTTP {r.status_code}",
-                    "details": r.text[:300]}
-        return r.json()
+                                 params=om_params)
+        if r.status_code == 200:
+            return r.json()
+        om_error = f"HTTP {r.status_code}"
     except Exception as e:  # noqa: BLE001
-        return {"success": False,
-                "error":   "open-meteo unreachable from backend",
-                "details": str(e)}
+        om_error = str(e)
+
+    # ---- 2) weatherapi.com
+    key = _v2_weatherapi_key()
+    if key:
+        wa_params = {
+            "key":    key,
+            "q":      f"{latitude},{longitude}",
+            "dt":     start_date,
+            "end_dt": end_date,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get("https://api.weatherapi.com/v1/history.json",
+                                     params=wa_params)
+            if r.status_code == 200:
+                payload = _weatherapi_to_openmeteo(r.json(), latitude, longitude)
+                if payload.get("hourly", {}).get("time"):
+                    return payload
+                wa_error = "empty payload (range likely older than 7-day free-tier window)"
+            else:
+                wa_error = f"HTTP {r.status_code}"
+        except Exception as e:  # noqa: BLE001
+            wa_error = str(e)
+    else:
+        wa_error = "no API key configured"
+
+    # ---- 3) NASA POWER
+    np_params = {
+        "parameters":    "T2M,RH2M",
+        "community":     "RE",
+        "longitude":     longitude,
+        "latitude":      latitude,
+        "start":         start_date.replace("-", ""),
+        "end":           end_date.replace("-", ""),
+        "format":        "JSON",
+        "time-standard": "UTC",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get("https://power.larc.nasa.gov/api/temporal/hourly/point",
+                                 params=np_params)
+        if r.status_code == 200:
+            payload = _nasa_power_to_openmeteo(r.json(), latitude, longitude)
+            if payload.get("hourly", {}).get("time"):
+                return payload
+            np_error = "empty payload from NASA POWER"
+        else:
+            np_error = f"HTTP {r.status_code}"
+    except Exception as e:  # noqa: BLE001
+        np_error = str(e)
+
+    return {"success": False,
+            "error":  "all weather sources failed",
+            "open_meteo_error": om_error,
+            "weatherapi_error": wa_error,
+            "nasa_power_error": np_error}
 
 
 @app.get("/api/weather-history")

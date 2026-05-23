@@ -769,6 +769,7 @@ async def weather_proxy(
 
     The front-end always sees the open-meteo response shape.  The `source`
     field in the body tells you which tier served the data."""
+    import httpx  # local import keeps cold-start fast
     om_error = wa_error = np_error = None
 
     # ---- 1) open-meteo

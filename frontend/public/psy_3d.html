@@ -538,13 +538,31 @@ window.fetchData=async function(){
 
   fetchBtn.disabled=true;statusEl.textContent='Fetching from Open-Meteo...';
 
+  /* Try the local FastAPI backend proxy first (works on Linux PC self-host
+     where the browser's direct HTTPS to open-meteo is blocked / reset by
+     a local middlebox).  Fall back to the direct open-meteo URL when no
+     proxy is reachable (e.g. when this HTML is loaded from a static
+     hosting site without a backend). */
+  var directUrl='https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+
+    '&start_date='+fromD+'&end_date='+toD+
+    '&hourly=temperature_2m,relative_humidity_2m&timezone=auto';
+  var proxyUrl='/api/weather-proxy?latitude='+lat+'&longitude='+lon+
+    '&start_date='+fromD+'&end_date='+toD+
+    '&hourly=temperature_2m,relative_humidity_2m&timezone=auto';
+
   try{
-    var url='https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+
-      '&start_date='+fromD+'&end_date='+toD+
-      '&hourly=temperature_2m,relative_humidity_2m&timezone=auto';
-    var resp=await fetch(url);
-    if(!resp.ok)throw new Error('HTTP '+resp.status);
-    var json=await resp.json();
+    var resp,json,used='proxy';
+    try{
+      resp=await fetch(proxyUrl);
+      if(!resp.ok)throw new Error('proxy HTTP '+resp.status);
+      json=await resp.json();
+      if(json && json.success===false)throw new Error(json.error||'proxy error');
+    }catch(proxyErr){
+      used='direct';
+      resp=await fetch(directUrl);
+      if(!resp.ok)throw new Error('HTTP '+resp.status);
+      json=await resp.json();
+    }
     if(json.error)throw new Error(json.reason||json.error);
 
     var times=json.hourly.time;

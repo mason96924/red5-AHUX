@@ -671,6 +671,47 @@ async def set_weather_location(update: WeatherLocationUpdate,
     return await write_weather_location(tenant, update)
 
 
+@app.get("/api/weather-proxy")
+async def weather_proxy(
+    latitude: float = Query(...),
+    longitude: float = Query(...),
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    hourly: str = Query("temperature_2m,relative_humidity_2m"),
+    timezone_q: str = Query("auto", alias="timezone"),
+) -> Any:
+    """Server-side proxy for the open-meteo archive API used by the 3-D
+    Weather-Strip page.  Browsers on some home networks get their TLS/HTTP-2
+    connection reset by middleboxes when talking to open-meteo directly;
+    the FastAPI host on the same network can usually reach the same URL
+    over plain HTTPS without issues, so we relay through the backend.
+
+    Returns the upstream JSON untouched on success, or a small
+    `{success:false, error:...}` payload the front-end can show as a
+    toast instead of crashing the 3-D scene."""
+    params = {
+        "latitude":   latitude,
+        "longitude":  longitude,
+        "start_date": start_date,
+        "end_date":   end_date,
+        "hourly":     hourly,
+        "timezone":   timezone_q,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get("https://archive-api.open-meteo.com/v1/archive",
+                                 params=params)
+        if r.status_code != 200:
+            return {"success": False,
+                    "error":   f"open-meteo returned HTTP {r.status_code}",
+                    "details": r.text[:300]}
+        return r.json()
+    except Exception as e:  # noqa: BLE001
+        return {"success": False,
+                "error":   "open-meteo unreachable from backend",
+                "details": str(e)}
+
+
 @app.get("/api/weather-history")
 async def weather_history(lat: float = Query(ACTIVE_LOCATION["lat"]),
                           lon: float = Query(ACTIVE_LOCATION["lon"]),

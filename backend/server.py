@@ -726,7 +726,6 @@ def _weatherapi_to_openmeteo(wapi_json: dict, requested_lat: float, requested_lo
 
 def _nasa_power_to_openmeteo(power_json: dict, requested_lat: float, requested_lon: float) -> dict:
     """NASA POWER hourly -> open-meteo /v1/archive shape."""
-    params = (((power_json or {}).get("properties") or {}).get("parameter")) or {}
     t2m  = params.get("T2M")  or {}
     rh2m = params.get("RH2M") or {}
     keys = sorted(set(t2m.keys()) | set(rh2m.keys()))
@@ -770,6 +769,7 @@ async def weather_proxy(
     The front-end always sees the open-meteo response shape.  The `source`
     field in the body tells you which tier served the data."""
     import httpx  # local import keeps cold-start fast
+    global _LAST_WEATHER_SOURCE  # noqa: PLW0603
     om_error = wa_error = np_error = None
 
     # ---- 1) open-meteo

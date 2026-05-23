@@ -1333,6 +1333,141 @@ def serve_deepdive_html():
     return _no_cache(send_from_directory('/root/data', 'deepdive.html'))
 
 
+def _weatherapi_key():
+    """Read the weatherapi.com API key from a controller-local file.
+    Upload the key (single line, no quotes) to /root/data/weatherapi_key.txt
+    via the mapper's ASSET upload button.  Returns None if missing."""
+    try:
+        with open('/root/data/weatherapi_key.txt', 'r') as f:
+            key = f.read().strip()
+        return key or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _weatherapi_to_openmeteo(wapi_json, requested_lat, requested_lon):
+    """Translate weatherapi.com history.json response into the
+    open-meteo /v1/archive response shape the dashboard expects.
+
+    weatherapi.com -> { location, forecast: { forecastday: [ { hour: [ ... ] } ] } }
+    open-meteo    -> { latitude, longitude, hourly: { time: [...], temperature_2m: [...],
+                       relative_humidity_2m: [...] }, daily: { time: [...], weather_code: [...] } }
+    """
+    fc = (wapi_json or {}).get('forecast', {}) or {}
+    days = fc.get('forecastday', []) or []
+    times, temps, rhs = [], [], []
+    daily_dates, daily_codes = [], []
+    for day in days:
+        date_str = day.get('date', '')
+        if date_str:
+            daily_dates.append(date_str)
+            daily_codes.append(((day.get('day') or {}).get('condition') or {}).get('code'))
+        for h in day.get('hour', []) or []:
+            t = h.get('time', '')           # "2026-05-15 14:00"
+            if t and ' ' in t:
+                t = t.replace(' ', 'T')      # "2026-05-15T14:00"
+            times.append(t)
+            temps.append(h.get('temp_c'))
+            rhs.append(h.get('humidity'))
+    loc = (wapi_json or {}).get('location', {}) or {}
+    return {
+        'latitude':           loc.get('lat',  requested_lat),
+        'longitude':          loc.get('lon',  requested_lon),
+        'timezone':           loc.get('tz_id', 'auto'),
+        'source':             'weatherapi.com',
+        'hourly': {
+            'time':                  times,
+            'temperature_2m':        temps,
+            'relative_humidity_2m':  rhs,
+        },
+        'daily': {
+            'time':         daily_dates,
+            'weather_code': daily_codes,
+        },
+    }
+
+
+@app.route('/api/weather-proxy')
+def api_weather_proxy():
+    """Server-side proxy used by psy_3d.html to fetch historical weather.
+
+    Strategy:
+      1. Try open-meteo (free, no key, primary).  Short 8 s timeout so a
+         broken route doesn't stall the dashboard.
+      2. On any failure, fall back to weatherapi.com if a key is configured
+         at /root/data/weatherapi_key.txt.  Translate the response shape
+         so the front-end sees the same {hourly:{time,temperature_2m,
+         relative_humidity_2m}} contract open-meteo provides.
+      3. If both fail, return a JSON error the front-end can toast.
+    """
+    lat       = request.args.get('latitude', '')
+    lon       = request.args.get('longitude', '')
+    start_d   = request.args.get('start_date', '')
+    end_d     = request.args.get('end_date', '')
+    hourly_q  = request.args.get('hourly', 'temperature_2m,relative_humidity_2m')
+    tz_q      = request.args.get('timezone', 'auto')
+
+    # ------ 1) open-meteo (primary) ------
+    om_qs = urllib.parse.urlencode({
+        'latitude':   lat,
+        'longitude':  lon,
+        'start_date': start_d,
+        'end_date':   end_d,
+        'hourly':     hourly_q,
+        'timezone':   tz_q,
+    })
+    om_url = 'https://archive-api.open-meteo.com/v1/archive?' + om_qs
+    om_error = None
+    try:
+        om_req = urllib.request.Request(om_url, headers={'User-Agent': 'Red5-Studio-V1.9'})
+        with urllib.request.urlopen(om_req, timeout=8) as resp:
+            body = resp.read()
+        return Response(body, status=200, content_type='application/json')
+    except urllib.error.HTTPError as e:
+        om_error = 'HTTP ' + str(e.code)
+    except Exception as e:  # noqa: BLE001
+        om_error = str(e)
+
+    # ------ 2) weatherapi.com fallback ------
+    key = _weatherapi_key()
+    if key:
+        wa_qs = urllib.parse.urlencode({
+            'key': key,
+            'q':   str(lat) + ',' + str(lon),
+            'dt':  start_d,
+            'end_dt': end_d,
+        })
+        wa_url = 'https://api.weatherapi.com/v1/history.json?' + wa_qs
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(wa_url, headers={'User-Agent': 'Red5-Studio-V1.9'}),
+                timeout=15,
+            ) as resp:
+                wapi_json = json.loads(resp.read().decode('utf-8'))
+            try:
+                lat_f, lon_f = float(lat), float(lon)
+            except (TypeError, ValueError):
+                lat_f, lon_f = 0.0, 0.0
+            payload = _weatherapi_to_openmeteo(wapi_json, lat_f, lon_f)
+            return jsonify(payload)
+        except urllib.error.HTTPError as e:
+            return jsonify({'success': False,
+                            'error': 'weatherapi.com returned HTTP ' + str(e.code),
+                            'details': (e.read() or b'').decode('utf-8', 'replace')[:300],
+                            'open_meteo_error': om_error}), 502
+        except Exception as e:  # noqa: BLE001
+            return jsonify({'success': False,
+                            'error': 'weatherapi.com unreachable',
+                            'details': str(e),
+                            'open_meteo_error': om_error}), 502
+
+    # ------ 3) both failed ------
+    return jsonify({'success': False,
+                    'error': 'open-meteo unreachable and no weatherapi.com key configured',
+                    'open_meteo_error': om_error,
+                    'hint': 'Upload weatherapi_key.txt to /root/data via the mapper ASSET button.'}), 502
+
+
 # --- TELEMETRY API ENDPOINTS ---
 
 # Telemetry diagnostic + write routes moved to telemetry_service.py.

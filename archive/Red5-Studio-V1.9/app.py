@@ -1345,6 +1345,43 @@ def _weatherapi_key():
         return None
 
 
+def _nasa_power_to_openmeteo(power_json, requested_lat, requested_lon):
+    """Translate NASA POWER hourly API into the open-meteo /v1/archive
+    response shape the dashboard expects.
+
+    POWER -> { properties: { parameter: { T2M: {YYYYMMDDHH: value, ...},
+                                          RH2M: {YYYYMMDDHH: value, ...} } } }
+    open-meteo -> { latitude, longitude, hourly: { time, temperature_2m,
+                    relative_humidity_2m } }
+    """
+    params = (((power_json or {}).get('properties') or {}).get('parameter')) or {}
+    t2m  = params.get('T2M') or {}
+    rh2m = params.get('RH2M') or {}
+    # Sort by timestamp key (YYYYMMDDHH) so the arrays come out in order.
+    keys = sorted(set(t2m.keys()) | set(rh2m.keys()))
+    times, temps, rhs = [], [], []
+    for k in keys:
+        if len(k) != 10:
+            continue
+        # YYYYMMDDHH  ->  YYYY-MM-DDTHH:00
+        iso = (k[0:4] + '-' + k[4:6] + '-' + k[6:8] + 'T' + k[8:10] + ':00')
+        times.append(iso)
+        # POWER uses -999 as missing-data sentinel; convert to None.
+        tv = t2m.get(k);  temps.append(None if (tv is None or tv <= -900) else tv)
+        rv = rh2m.get(k); rhs.append(None if (rv is None or rv <= -900) else rv)
+    return {
+        'latitude':           requested_lat,
+        'longitude':          requested_lon,
+        'timezone':           'UTC',
+        'source':             'nasa-power',
+        'hourly': {
+            'time':                  times,
+            'temperature_2m':        temps,
+            'relative_humidity_2m':  rhs,
+        },
+    }
+
+
 def _weatherapi_to_openmeteo(wapi_json, requested_lat, requested_lon):
     """Translate weatherapi.com history.json response into the
     open-meteo /v1/archive response shape the dashboard expects.
@@ -1428,8 +1465,13 @@ def api_weather_proxy():
     except Exception as e:  # noqa: BLE001
         om_error = str(e)
 
-    # ------ 2) weatherapi.com fallback ------
+    # ------ 2) weatherapi.com fallback (last 7 days only on free tier) ------
+    try:
+        lat_f, lon_f = float(lat), float(lon)
+    except (TypeError, ValueError):
+        lat_f, lon_f = 0.0, 0.0
     key = _weatherapi_key()
+    wa_error = None
     if key:
         wa_qs = urllib.parse.urlencode({
             'key': key,
@@ -1444,28 +1486,57 @@ def api_weather_proxy():
                 timeout=15,
             ) as resp:
                 wapi_json = json.loads(resp.read().decode('utf-8'))
-            try:
-                lat_f, lon_f = float(lat), float(lon)
-            except (TypeError, ValueError):
-                lat_f, lon_f = 0.0, 0.0
             payload = _weatherapi_to_openmeteo(wapi_json, lat_f, lon_f)
-            return jsonify(payload)
+            # weatherapi free tier returns empty for date ranges > 7 days ago;
+            # treat empty hourly as a failure so we fall through to NASA POWER.
+            if payload.get('hourly', {}).get('time'):
+                return jsonify(payload)
+            wa_error = 'empty payload (range likely older than 7-day free-tier window)'
         except urllib.error.HTTPError as e:
-            return jsonify({'success': False,
-                            'error': 'weatherapi.com returned HTTP ' + str(e.code),
-                            'details': (e.read() or b'').decode('utf-8', 'replace')[:300],
-                            'open_meteo_error': om_error}), 502
+            wa_error = 'HTTP ' + str(e.code)
         except Exception as e:  # noqa: BLE001
-            return jsonify({'success': False,
-                            'error': 'weatherapi.com unreachable',
-                            'details': str(e),
-                            'open_meteo_error': om_error}), 502
+            wa_error = str(e)
+    else:
+        wa_error = 'no API key configured'
 
-    # ------ 3) both failed ------
+    # ------ 3) NASA POWER fallback (free, no key, unlimited history) ------
+    # POWER uses YYYYMMDD dates and returns hourly arrays for the entire
+    # requested span.  Reanalysis data, ±1-2 C accuracy vs station readings.
+    np_error = None
+    try:
+        np_start = start_d.replace('-', '')
+        np_end   = end_d.replace('-', '')
+        np_qs = urllib.parse.urlencode({
+            'parameters': 'T2M,RH2M',
+            'community':  'RE',
+            'longitude':  lon,
+            'latitude':   lat,
+            'start':      np_start,
+            'end':        np_end,
+            'format':     'JSON',
+            'time-standard': 'UTC',
+        })
+        np_url = 'https://power.larc.nasa.gov/api/temporal/hourly/point?' + np_qs
+        with urllib.request.urlopen(
+            urllib.request.Request(np_url, headers={'User-Agent': 'Red5-Studio-V1.9'}),
+            timeout=30,
+        ) as resp:
+            power_json = json.loads(resp.read().decode('utf-8'))
+        payload = _nasa_power_to_openmeteo(power_json, lat_f, lon_f)
+        if payload.get('hourly', {}).get('time'):
+            return jsonify(payload)
+        np_error = 'empty payload from NASA POWER'
+    except urllib.error.HTTPError as e:
+        np_error = 'HTTP ' + str(e.code)
+    except Exception as e:  # noqa: BLE001
+        np_error = str(e)
+
+    # ------ 4) all sources failed ------
     return jsonify({'success': False,
-                    'error': 'open-meteo unreachable and no weatherapi.com key configured',
-                    'open_meteo_error': om_error,
-                    'hint': 'Upload weatherapi_key.txt to /root/data via the mapper ASSET button.'}), 502
+                    'error': 'all weather sources failed',
+                    'open_meteo_error':   om_error,
+                    'weatherapi_error':   wa_error,
+                    'nasa_power_error':   np_error}), 502
 
 
 # --- TELEMETRY API ENDPOINTS ---

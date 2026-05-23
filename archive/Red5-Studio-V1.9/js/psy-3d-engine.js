@@ -1,6 +1,32 @@
 (function(global){
 'use strict';
 
+/* ----------------------------------------------------------------
+   Weather URL helper.  On some Korean home networks the browser can
+   no longer reach archive-api.open-meteo.com directly (HTTPS reset
+   by ISP middlebox), but the Flask/FastAPI backend on the same LAN
+   can still reach it via Python urllib / httpx.  When the page is
+   served by the controller, we route the fetch through
+   /api/weather-proxy which also adds NASA POWER as a final fallback.
+   On static-hosted pages (no backend), `useProxy` is false and the
+   call goes direct to open-meteo as before. */
+var __psy3d_useProxy = (function(){
+  try {
+    var loc = (typeof global !== 'undefined' && global.location) ? global.location : null;
+    if (!loc) return false;
+    // Only use the proxy when the page is served from a real HTTP origin
+    // (not file://, not chrome-extension://, etc.).
+    return loc.protocol === 'http:' || loc.protocol === 'https:';
+  } catch(e) { return false; }
+})();
+function __psy3d_archiveUrl(lat, lon, fromD, toD) {
+  var params = 'latitude=' + lat + '&longitude=' + lon +
+               '&start_date=' + fromD + '&end_date=' + toD +
+               '&hourly=temperature_2m,relative_humidity_2m&timezone=auto';
+  if (__psy3d_useProxy) return '/api/weather-proxy?' + params;
+  return 'https://archive-api.open-meteo.com/v1/archive?' + params;
+}
+
 /* ================================================================
    initPsy3D(container, opts)
    Mounts the 3D psychrometric weather strip into any DOM element.
@@ -270,8 +296,7 @@ global.initPsy3D = function(container, opts){
     Promise.all(years.map(function(yb){
       var f = _shiftYearISO(fromD, yb);
       var t = _shiftYearISO(toD,   yb);
-      return fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+
-                   '&start_date='+f+'&end_date='+t+'&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+      return fetch(__psy3d_archiveUrl(lat, lon, f, t))
         .then(function(r){return r.ok ? r.json() : Promise.reject(r.status);})
         .then(function(j){
           if (j.error) throw new Error(j.reason||j.error);
@@ -3602,9 +3627,7 @@ global.initPsy3D = function(container, opts){
             render2DChart();
             var y=new Date().getFullYear()-1;
             var fromD=y+'-01-01', toD=y+'-12-31';
-            fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+site.lat+'&longitude='+site.lon+
-              '&start_date='+fromD+'&end_date='+toD+
-              '&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+            fetch(__psy3d_archiveUrl(site.lat, site.lon, fromD, toD))
               .then(function(r){if(!r.ok) throw new Error('HTTP '+r.status); return r.json();})
               .then(function(j){
                 if(!j || !j.hourly || !j.hourly.time || !j.hourly.time.length) throw new Error('empty payload');
@@ -3711,7 +3734,7 @@ global.initPsy3D = function(container, opts){
     if(toD>yStr)toD=yStr;if(fromD>toD){$('#p3-status').textContent='From>To';return;}
     $('#p3-fetch').disabled=true;$('#p3-status').textContent='Fetching...';
 
-    fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+'&start_date='+fromD+'&end_date='+toD+'&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+    fetch(__psy3d_archiveUrl(lat, lon, fromD, toD))
     .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .then(function(json){
       if(json.error)throw new Error(json.reason||json.error);
@@ -5137,9 +5160,7 @@ global.initPsy3D = function(container, opts){
             });
         }
         function _doFetchOpenMeteo(s){
-          return fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+s.lat+'&longitude='+s.lon+
-            '&start_date='+fromD+'&end_date='+toD+
-            '&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+          return fetch(__psy3d_archiveUrl(s.lat, s.lon, fromD, toD))
             .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
             .then(function(j){
               if(!j || !j.hourly || !j.hourly.time || !j.hourly.time.length){

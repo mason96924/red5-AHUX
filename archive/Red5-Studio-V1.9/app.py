@@ -12,6 +12,7 @@ import hashlib
 import hmac as hmac_mod
 import urllib.request
 import urllib.parse
+import datetime
 from flask import Flask, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
 
@@ -1345,6 +1346,33 @@ def _weatherapi_key():
         return None
 
 
+# ----------------------------------------------------------------------------
+# Weather-proxy health tracking (V1.9 parity with V2.0 server.py)
+# ----------------------------------------------------------------------------
+# Tracks which upstream satisfied the most recent /api/weather-proxy call
+# so the dashboard's auth pill can render a colored dot.  Process-local;
+# no persistence -- this is a live-status indicator, not an audit log.
+_LAST_WEATHER_SOURCE = {
+    'source':     None,         # 'open-meteo' | 'weatherapi.com' | 'nasa-power' | 'error'
+    'status':     'unknown',    # 'ok' | 'error' | 'unknown'
+    'updated_at': None,         # ISO-8601 UTC timestamp of the last call
+    'detail':     None,         # short human-readable note (errors etc.)
+}
+
+
+def _mark_weather_source(source, status, detail=None):
+    _LAST_WEATHER_SOURCE['source']     = source
+    _LAST_WEATHER_SOURCE['status']     = status
+    _LAST_WEATHER_SOURCE['updated_at'] = datetime.datetime.utcnow().isoformat() + 'Z'
+    _LAST_WEATHER_SOURCE['detail']     = detail
+
+
+@app.route('/api/weather-health')
+def api_weather_health():
+    """Live-status endpoint for the dashboard's source dot."""
+    return jsonify(_LAST_WEATHER_SOURCE)
+
+
 def _nasa_power_to_openmeteo(power_json, requested_lat, requested_lon):
     """Translate NASA POWER hourly API into the open-meteo /v1/archive
     response shape the dashboard expects.
@@ -1459,6 +1487,7 @@ def api_weather_proxy():
         om_req = urllib.request.Request(om_url, headers={'User-Agent': 'Red5-Studio-V1.9'})
         with urllib.request.urlopen(om_req, timeout=8) as resp:
             body = resp.read()
+        _mark_weather_source('open-meteo', 'ok')
         return Response(body, status=200, content_type='application/json')
     except urllib.error.HTTPError as e:
         om_error = 'HTTP ' + str(e.code)
@@ -1490,6 +1519,7 @@ def api_weather_proxy():
             # weatherapi free tier returns empty for date ranges > 7 days ago;
             # treat empty hourly as a failure so we fall through to NASA POWER.
             if payload.get('hourly', {}).get('time'):
+                _mark_weather_source('weatherapi.com', 'ok')
                 return jsonify(payload)
             wa_error = 'empty payload (range likely older than 7-day free-tier window)'
         except urllib.error.HTTPError as e:
@@ -1524,6 +1554,7 @@ def api_weather_proxy():
             power_json = json.loads(resp.read().decode('utf-8'))
         payload = _nasa_power_to_openmeteo(power_json, lat_f, lon_f)
         if payload.get('hourly', {}).get('time'):
+            _mark_weather_source('nasa-power', 'ok')
             return jsonify(payload)
         np_error = 'empty payload from NASA POWER'
     except urllib.error.HTTPError as e:
@@ -1532,6 +1563,10 @@ def api_weather_proxy():
         np_error = str(e)
 
     # ------ 4) all sources failed ------
+    _mark_weather_source(
+        'error', 'error',
+        detail='open-meteo=' + str(om_error) + '; weatherapi=' + str(wa_error) + '; nasa-power=' + str(np_error),
+    )
     return jsonify({'success': False,
                     'error': 'all weather sources failed',
                     'open_meteo_error':   om_error,

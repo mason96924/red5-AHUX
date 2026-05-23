@@ -29,7 +29,7 @@ import os
 import random
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from dotenv import load_dotenv
 load_dotenv()  # MONGO_URL + DB_NAME live in backend/.env
@@ -671,6 +671,33 @@ async def set_weather_location(update: WeatherLocationUpdate,
     return await write_weather_location(tenant, update)
 
 
+# ----------------------------------------------------------------------------
+# Weather-proxy health tracking
+# ----------------------------------------------------------------------------
+# `_LAST_WEATHER_SOURCE` is updated on every /api/weather-proxy call so the
+# dashboard's auth pill can render a colored dot showing which upstream
+# satisfied the most recent request:
+#   "open-meteo"     -> emerald  (primary, free, no key)
+#   "weatherapi.com" -> cyan     (fallback, ≤ 7-day window, requires key)
+#   "nasa-power"     -> amber    (last-resort, unlimited history, slower)
+#   "error"          -> red      (all three failed)
+# Exposed via GET /api/weather-health.  Process-local; intentionally no
+# persistence — this is a live-status indicator, not an audit log.
+_LAST_WEATHER_SOURCE: Dict[str, Any] = {
+    "source":     None,         # "open-meteo" | "weatherapi.com" | "nasa-power" | "error"
+    "status":     "unknown",    # "ok" | "error" | "unknown"
+    "updated_at": None,         # ISO-8601 UTC timestamp of the last call
+    "detail":     None,         # short human-readable note (errors etc.)
+}
+
+
+def _mark_weather_source(source: Optional[str], status: str, detail: Optional[str] = None) -> None:
+    _LAST_WEATHER_SOURCE["source"]     = source
+    _LAST_WEATHER_SOURCE["status"]     = status
+    _LAST_WEATHER_SOURCE["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _LAST_WEATHER_SOURCE["detail"]     = detail
+
+
 def _v2_weatherapi_key():
     """Read the weatherapi.com API key from a server-local file.
     Place a single-line `weatherapi_key.txt` next to backend/.env on the
@@ -726,8 +753,9 @@ def _weatherapi_to_openmeteo(wapi_json: dict, requested_lat: float, requested_lo
 
 def _nasa_power_to_openmeteo(power_json: dict, requested_lat: float, requested_lon: float) -> dict:
     """NASA POWER hourly -> open-meteo /v1/archive shape."""
-    t2m  = params.get("T2M")  or {}
-    rh2m = params.get("RH2M") or {}
+    params_dict = (((power_json or {}).get("properties") or {}).get("parameter")) or {}
+    t2m  = params_dict.get("T2M")  or {}
+    rh2m = params_dict.get("RH2M") or {}
     keys = sorted(set(t2m.keys()) | set(rh2m.keys()))
     times, temps, rhs = [], [], []
     for k in keys:
@@ -769,7 +797,6 @@ async def weather_proxy(
     The front-end always sees the open-meteo response shape.  The `source`
     field in the body tells you which tier served the data."""
     import httpx  # local import keeps cold-start fast
-    global _LAST_WEATHER_SOURCE  # noqa: PLW0603
     om_error = wa_error = np_error = None
 
     # ---- 1) open-meteo
@@ -786,6 +813,7 @@ async def weather_proxy(
             r = await client.get("https://archive-api.open-meteo.com/v1/archive",
                                  params=om_params)
         if r.status_code == 200:
+            _mark_weather_source("open-meteo", "ok")
             return r.json()
         om_error = f"HTTP {r.status_code}"
     except Exception as e:  # noqa: BLE001
@@ -807,6 +835,7 @@ async def weather_proxy(
             if r.status_code == 200:
                 payload = _weatherapi_to_openmeteo(r.json(), latitude, longitude)
                 if payload.get("hourly", {}).get("time"):
+                    _mark_weather_source("weatherapi.com", "ok")
                     return payload
                 wa_error = "empty payload (range likely older than 7-day free-tier window)"
             else:
@@ -834,6 +863,7 @@ async def weather_proxy(
         if r.status_code == 200:
             payload = _nasa_power_to_openmeteo(r.json(), latitude, longitude)
             if payload.get("hourly", {}).get("time"):
+                _mark_weather_source("nasa-power", "ok")
                 return payload
             np_error = "empty payload from NASA POWER"
         else:
@@ -841,11 +871,25 @@ async def weather_proxy(
     except Exception as e:  # noqa: BLE001
         np_error = str(e)
 
+    _mark_weather_source(
+        "error", "error",
+        detail=f"open-meteo={om_error}; weatherapi={wa_error}; nasa-power={np_error}",
+    )
     return {"success": False,
             "error":  "all weather sources failed",
             "open_meteo_error": om_error,
             "weatherapi_error": wa_error,
             "nasa_power_error": np_error}
+
+
+@app.get("/api/weather-health")
+async def weather_health() -> Any:
+    """Lightweight live-status endpoint for the dashboard's source dot.
+
+    Returns the upstream that satisfied the most recent /api/weather-proxy
+    call so operators get instant visual feedback when Open-Meteo is
+    blocked and the proxy has cascaded to WeatherAPI or NASA POWER."""
+    return dict(_LAST_WEATHER_SOURCE)
 
 
 @app.get("/api/weather-history")

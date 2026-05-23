@@ -1,5 +1,81 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.5 — Linux self-host hardening + 3-tier weather proxy + health dot (2026-05-23)
+
+**Brief**: Wrap-up of a hard day spent stabilizing the V2.0 app for local self-hosting on a Linux PC.  Three deliverables: (A) checkpoint everything in this PRD, (B) ship `scripts/smoke.sh` so every redeploy is verifiable in 5 s, (C) add a weather-source health dot in the dashboard's auth pill so the operator can SEE which upstream is serving data when Open-Meteo is blocked.
+
+### Why today was hard
+Open-Meteo blocked the operator's Korean ISP IP (HTTP 429 / connection refused), which silently broke the WEEK / YEAR weather presets on `psy_3d.html` for both V1.9 (Flask, on-device) and V2.0 (FastAPI, hosted).  A single-upstream design is fragile by definition; the proxy now cascades through three independently-hosted free services so any one of them being blocked, rate-limited, or down still serves the dashboard.
+
+### Architectural resilience added
+
+**3-tier weather-history proxy** (`/api/weather-proxy`) — implemented in both V1.9 (`/app/archive/Red5-Studio-V1.9/app.py`) and V2.0 (`/app/backend/server.py`):
+
+| Tier | Source | Notes |
+|---|---|---|
+| 1 | **Open-Meteo `/v1/archive`** | Free, no key, ideal accuracy; primary path.  8 s timeout so a blocked route doesn't stall the dashboard. |
+| 2 | **WeatherAPI.com `history.json`** | Free tier limited to last 7 days; requires API key at `weatherapi_key.txt`.  15 s timeout. |
+| 3 | **NASA POWER hourly point** | Free, no key, unlimited history; reanalysis (±1-2 °C accuracy).  30 s timeout. |
+| 4 | HTTP 502 with full error breadcrumbs | Only reached when all three fail. |
+
+All three convert into the open-meteo response shape so the front-end is oblivious to which tier served the request.  The `source` field on the body identifies the upstream for debugging.
+
+### Weather-source health dot (NEW)
+- Backend tracks `_LAST_WEATHER_SOURCE` (process-local, in-memory) and exposes it via **`GET /api/weather-health`** → `{source, status, updated_at, detail}`.
+- V2.0 `dashboard.html`: tiny 6 px dot rendered next to the auth dot in the top-right pill.  Polls `/api/weather-health` every 30 s.  Palette:
+  - 🟢 emerald = `open-meteo` (primary)
+  - 🔵 cyan = `weatherapi.com` (fallback)
+  - 🟠 amber = `nasa-power` (last-resort)
+  - 🔴 red = `error` (all three failed)
+  - ⚫ slate = idle (no `/api/weather-proxy` call observed yet)
+- V1.9 `dashboard.html`: standalone floating pill `[● WX NP]` in top-right with the same palette + title-attribute tooltip showing the human-readable upstream name + last-updated timestamp.
+- Hover the dot to see the full label + last-updated ISO timestamp + any error detail.
+
+### Bugs fixed alongside
+- **`_nasa_power_to_openmeteo()` referenced undefined `params`** — the V2.0 port from V1.9 dropped the `params = power_json.get('properties',{}).get('parameter',{})` line, so the NASA POWER fallback would crash if reached.  V1.9 was correct already.
+- **`smoke.sh` case-sensitive doctype check** — React build emits `<!doctype html>` (lowercase) while V1.9 emits `<!DOCTYPE html>`.  Helper now lowercases both body and pattern.
+- **`smoke.sh` 8 s timeout was too tight** for NASA POWER cold starts — bumped to 30 s.
+
+### `/app/scripts/smoke.sh`
+End-to-end smoke test, safe to run anytime, no writes, no auth required.  Hits **14 critical endpoints** and reports pass/fail with the upstream that served weather.  Used after every `git pull` on the local Linux box.
+
+```bash
+~/red5-studio/scripts/smoke.sh                      # local
+BASE_URL=http://192.168.1.158 ~/red5-studio/scripts/smoke.sh   # remote
+```
+
+### Earlier today (same session, same architectural theme)
+- Built `/app/PC_LINUX_DEPLOY.md` and `/app/PC_LINUX_BACKEND_DEPLOY.md` — full step-by-step guides covering Nginx config, systemd unit, `client_max_body_size 50M` for directory uploads, Tailscale auth-cookie relaxation (`secure=False`, `samesite=lax` over HTTP), and `weatherapi_key.txt` provisioning.
+- Refactored `tenants.py` + `server.py` to isolate `data` vs `scripts` virtual-FS namespaces — uploads to `/data` no longer collide with `/scripts`.
+- Virtual filesystem now persists empty directories (`tenant_assets.is_directory:true` marker rows).
+- Linked `deepdive.html` from the X-Y detail page with relative paths to defeat popup-blockers.
+- Collapsed the bulky top-right auth banner on `dashboard.html` into a discrete hover-expandable pill so it no longer obscures the SIM / WIN / POP controls underneath.
+- Hid Google Sign-in conditionally on self-hosted builds (`REACT_APP_SELF_HOSTED=true`).
+
+### Verification (today's session)
+- `scripts/smoke.sh`: **14 / 14 pass** against the preview URL.  Weather served by `nasa-power` (Open-Meteo blocked from the sandbox IP — exactly the failure mode that motivated the cascade).
+- `/api/weather-health` returns `{source:"nasa-power", status:"ok", updated_at:"2026-05-23T10:...Z"}` after a fresh `/api/weather-proxy` call.
+- Live browser screenshot: dashboard auth pill renders a 6 px amber dot next to the auth dot; tooltip reads `Weather source: NASA POWER (last-resort) (updated ...)`.
+- V1.9 `app.py` byte-compiles cleanly (`ast.parse OK`).
+- Backend regression suites: Phase 1 (26/26), Phase 2a (12/12), Phase 2b (31/31), Phase 2c (25/25), Phase 2d (13/13), Phase 2f (4/5 — pre-existing brute-force lockout flake, state-dependent on `login_attempts` collection, unrelated to weather work).
+
+### Files changed
+- `backend/server.py` — +50 lines: `_LAST_WEATHER_SOURCE` dict + `_mark_weather_source()` + `_nasa_power_to_openmeteo` bug fix + `GET /api/weather-health` endpoint + `_mark_weather_source(...)` calls in each tier.
+- `archive/Red5-Studio-V1.9/app.py` — mirrors V2.0: +35 lines (`datetime` import, `_LAST_WEATHER_SOURCE`, `_mark_weather_source`, `/api/weather-health` route, calls in each tier).
+- `frontend/public/dashboard.html` — +50 lines: `v2-weather-dot` span in the auth pill + polling IIFE.
+- `archive/Red5-Studio-V1.9/dashboard.html` — +60 lines: standalone `v19-weather-pill` floating top-right + polling IIFE.
+- `scripts/smoke.sh` — +15 lines: case-insensitive substring match, 30 s timeout, new `weather-health` check.
+
+### Operator playbook for the new dot
+- If you see emerald → everything's fine, Open-Meteo serving you.
+- Cyan → your ISP / route to Open-Meteo broke; WeatherAPI.com is covering for it (≤ 7 days only).  Investigate when convenient.
+- Amber → BOTH primary upstreams failed.  NASA POWER is the safety net — slower and ±1-2 °C less accurate than Open-Meteo, but never blocked.  Check ISP / firewall.
+- Red → all three failed.  Check `weatherapi_key.txt`, outbound HTTPS access, and the title-attribute tooltip's `detail` field.
+
+
+
+
+
 ## Phase G.9 — B1-B10 Control Bands added to Deep Dive page (2026-05-20)
 
 **User clarification**: B1-B10 = the ten climate-band control strategies in `band_guide.md` + `psy-3d-engine.js` (NOT building types).  Previous G.8 build (B1-B12 building types) was a misinterpretation.

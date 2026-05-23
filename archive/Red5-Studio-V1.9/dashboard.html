@@ -104,6 +104,71 @@
     </style>
 </head>
 <body>
+    <!-- V1.9 weather-source health dot (mirrors V2.0 dashboard's auth-pill dot).
+         Polls /api/weather-health every 30 s and renders a tiny floating dot
+         in the top-right corner showing which upstream weather source is
+         currently serving the dashboard:
+            emerald = open-meteo (primary)
+            cyan    = weatherapi.com (fallback)
+            amber   = nasa-power (last-resort)
+            red     = all sources failed
+            slate   = no /api/weather-proxy call observed yet -->
+    <div id="v19-weather-pill" style="position:fixed; top:6px; right:6px; z-index:99999;
+        font-family: 'Inter', system-ui, sans-serif; font-size: 9px;
+        padding: 4px 8px; display: flex; align-items: center; gap: 6px;
+        background: rgba(15,23,42,0.78); border-radius: 999px;
+        border: 1px solid rgba(51,65,85,0.6);
+        color: #94a3b8; opacity: 0.55;
+        text-transform: uppercase; letter-spacing: 0.08em;
+        transition: opacity .18s; cursor: help;"
+        title="Weather source: checking..."
+        data-testid="v19-weather-source-pill"
+        onmouseenter="this.style.opacity='1'"
+        onmouseleave="this.style.opacity='0.55'">
+        <span id="v19-weather-dot" aria-hidden="true"
+            style="width:7px;height:7px;border-radius:50%;background:#475569;
+                   box-shadow:0 0 0 1px rgba(15,23,42,0.6); flex-shrink:0"></span>
+        <span id="v19-weather-label" style="font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;">wx ...</span>
+    </div>
+    <script>
+        (function () {
+            var pill  = document.getElementById('v19-weather-pill');
+            var wdot  = document.getElementById('v19-weather-dot');
+            var wlbl  = document.getElementById('v19-weather-label');
+            if (!pill || !wdot || !wlbl) return;
+            var PALETTE = {
+                'open-meteo':     { color: '#10b981', glow: 'rgba(16,185,129,.55)',  short: 'OM',  label: 'Open-Meteo (primary)' },
+                'weatherapi.com': { color: '#06b6d4', glow: 'rgba(6,182,212,.55)',   short: 'WA',  label: 'WeatherAPI.com (fallback)' },
+                'nasa-power':     { color: '#fbbf24', glow: 'rgba(251,191,36,.55)',  short: 'NP',  label: 'NASA POWER (last-resort)' },
+                'error':          { color: '#f87171', glow: 'rgba(248,113,113,.55)', short: 'ERR', label: 'All weather sources failed' }
+            };
+            function refresh() {
+                fetch('/api/weather-health')
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (d) {
+                        if (!d) return;
+                        var p = PALETTE[d.source || ''];
+                        if (p) {
+                            wdot.style.background = p.color;
+                            wdot.style.boxShadow  = '0 0 4px ' + p.glow + ', 0 0 0 1px rgba(15,23,42,0.6)';
+                            wlbl.textContent = 'WX ' + p.short;
+                            pill.title = 'Weather source: ' + p.label +
+                                         (d.updated_at ? ' (updated ' + d.updated_at + ')' : '') +
+                                         (d.detail ? '\n' + d.detail : '');
+                        } else {
+                            wdot.style.background = '#475569';
+                            wdot.style.boxShadow  = '0 0 0 1px rgba(15,23,42,0.6)';
+                            wlbl.textContent = 'WX IDLE';
+                            pill.title = 'Weather source: idle (no /api/weather-proxy call yet)';
+                        }
+                    })
+                    .catch(function () { /* offline -> leave slate */ });
+            }
+            refresh();
+            setInterval(refresh, 30000);
+        })();
+    </script>
     <div id="root"></div>
     <script type="text/plain" id="main-source">
         const { useState, useEffect, useMemo, useRef, useCallback } = React;

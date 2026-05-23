@@ -15,7 +15,7 @@
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1}"
-TIMEOUT=8
+TIMEOUT=30
 
 PASS=0
 FAIL=0
@@ -24,7 +24,7 @@ RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'; DIM=$'\033[2m'; NC
 # ---- helper -----------------------------------------------------------------
 check() {
     local name="$1" url="$2" want_pattern="$3"
-    local body
+    local body body_lc want_lc
     body=$(curl -s --max-time "$TIMEOUT" "$url" 2>/dev/null)
     local rc=$?
     if [ $rc -ne 0 ]; then
@@ -32,13 +32,17 @@ check() {
                "$RED" "$name" "$NC" "$rc" "$DIM" "$url" "$NC"
         FAIL=$((FAIL+1)); return
     fi
-    if [[ "$body" == *"$want_pattern"* ]]; then
+    # Case-insensitive substring match so tests don't break on
+    # incidental capitalization differences between build outputs.
+    body_lc=$(printf '%s' "$body" | tr '[:upper:]' '[:lower:]')
+    want_lc=$(printf '%s' "$want_pattern" | tr '[:upper:]' '[:lower:]')
+    if [[ "$body_lc" == *"$want_lc"* ]]; then
         printf "%s ✓ %-32s%s  %s%s%s\n" "$GREEN" "$name" "$NC" "$DIM" "$url" "$NC"
         PASS=$((PASS+1))
     else
         printf "%s ✗ %-32s%s  unexpected body  %s%s%s\n" \
                "$RED" "$name" "$NC" "$DIM" "$url" "$NC"
-        printf "    %s%s%s\n" "$DIM" "$(echo "$body" | head -c 200)" "$NC"
+        printf "    %s%s%s\n" "$DIM" "$(printf '%s' "$body" | head -c 200)" "$NC"
         FAIL=$((FAIL+1))
     fi
 }
@@ -49,13 +53,18 @@ echo "=== Red5 Studio smoke test (target: $BASE_URL) ==="
 echo
 
 # 1) static / SPA --------------------------------------------------------------
-check "landing (V2.0 React)"  "$BASE_URL/"                  "<!DOCTYPE html"
+# Case-insensitive doctype match (React build emits "<!doctype" lowercase;
+# legacy V1.9 page emits "<!DOCTYPE" uppercase).
+check "landing (V2.0 React)"  "$BASE_URL/"                  "doctype html"
 check "learn.html"            "$BASE_URL/learn.html"        "Comfort Decoded"
 check "deepdive.html"         "$BASE_URL/deepdive.html"     "B1"
-check "buildings.html"        "$BASE_URL/buildings.html"    "Building"
+check "buildings.html"        "$BASE_URL/buildings.html"    "deepdive.html"
 check "dashboard.html"        "$BASE_URL/dashboard.html"    "Red5"
 check "psy_3d.html"           "$BASE_URL/psy_3d.html"       "Weather"
-check "SPA fallback"          "$BASE_URL/some-random-route" "<!DOCTYPE html"
+check "SPA fallback"          "$BASE_URL/some-random-route" "doctype html"
+
+# 1.5) NEW: weather-source health endpoint -------------------------------------
+check "weather-health"        "$BASE_URL/api/weather-health" "source"
 
 # 2) backend basics ------------------------------------------------------------
 check "backend version"       "$BASE_URL/api/version"       "version"

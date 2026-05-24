@@ -2323,19 +2323,11 @@
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}
+                                {/* Standards / Docs button — single entry point. */}
                                 <button
                                     onClick={() => window.red5DocsIndex && window.red5DocsIndex.open()}
-                                    data-testid="docs-index-btn"
-                                    title={window.t ? (window.t('docs_index') || 'Open Docs Index — band-shift insight, design workflow, and more') : 'Open Docs Index'}
-                                    className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-blue-400 hover:bg-slate-700 hover:border-blue-400':'bg-slate-100 border-slate-300 text-blue-600 hover:bg-blue-50'}`}>
-                                    📚 Docs
-                                </button>
-                                {/* Standards button — opens the same Docs Index popup
-                                    but jumps straight to the G36 cross-walk tab. */}
-                                <button
-                                    onClick={() => window.red5DocsIndex && window.red5DocsIndex.open('g36-reset')}
                                     data-testid="standards-btn"
-                                    title="Open Standards — ASHRAE Guideline 36 Trim-and-Respond cross-walk, Band Guide, Control Algorithms"
+                                    title="Open Standards — ASHRAE Guideline 36 cross-walk, Band Guide, Control Algorithms, B-Shift Insight, Psych Design Workflow"
                                     className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
                                     📘 Standards
                                 </button>

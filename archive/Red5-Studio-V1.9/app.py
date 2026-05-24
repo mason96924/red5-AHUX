@@ -273,7 +273,30 @@ def download_bundle_file(filename):
 
 @app.route('/assets/<path:filename>')
 def serve_asset(filename):
-    resp = send_from_directory('/root/data', filename)
+    """Serve a static asset from /root/data/, falling back to /root/data/docs/.
+
+    The flat /root/data/ layout was the original convention.  Operators
+    who prefer to keep the standards markdowns organized in /root/data/docs/
+    (which is also what the V2.0 sibling does) shouldn't have to teach the
+    front-end about that — the front-end always requests /assets/<file>.md
+    and we transparently resolve to either location, /root/data/ first.
+
+    Why this isn't a security hole:  send_from_directory() is the one that
+    enforces "no .. escape outside the base dir", and we call it with the
+    same logic for both candidates.  An attacker can't request
+    /assets/../../etc/passwd because Flask rejects that at the route level
+    before this function runs, AND send_from_directory normalizes the path
+    again before opening the file.
+    """
+    import os as _os
+    flat_path = _os.path.join('/root/data', filename)
+    if _os.path.isfile(flat_path):
+        resp = send_from_directory('/root/data', filename)
+    else:
+        # Fallback: try /root/data/docs/<filename>.  If THAT doesn't exist
+        # either, send_from_directory raises 404 with the same shape as
+        # the original route did, so we don't change the error contract.
+        resp = send_from_directory('/root/data/docs', filename)
     lower = filename.lower()
     # JS/HTML/MD must never be heuristically cached — they carry app logic
     # or documentation that changes between deploys. Static graphics

@@ -2877,6 +2877,45 @@
                                 <div key={ahu.id} onClick={() => { setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(null); }} className={`p-3 rounded-xl border transition-all cursor-pointer ${isSelected ? ui.itemSelected : ui.border + ' bg-opacity-50 hover:bg-opacity-40'}`}>
                                     <div className="flex justify-between items-center mb-1 font-black uppercase text-xs shadow-black">{ahu.id}<div className="flex gap-1.5"><MetricBar theme={theme} val={m.exchange} color="#3b82f6" height="h-5" max={20}/><MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-5" max={20}/></div></div>
                                     <div className="space-y-0.5">{ahu.points?.map(p => ( <div key={p.label} className={`flex items-center justify-between font-mono text-[9px] opacity-90 border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5`}><span style={{ color: p.color }} className="font-black uppercase tracking-tighter shadow-black">{p.label}</span><span className={`${ui.text} font-bold font-mono tracking-tighter`}>{p.t.toFixed(1)}° / {p.rh.toFixed(0)}% / {getH(p.t, p.w).toFixed(1)}h</span></div> ))}</div>
+                                    {ahu.g36 && (() => {
+                                        /* G36 chip — operating mode + request counts + reset values.
+                                           Color picked from the mode so a glance tells you what's
+                                           happening: green=occupied, amber=warm/cool-down,
+                                           cyan=pre_cooling, slate=unoccupied/setback/setup,
+                                           red=freeze. */
+                                        const modeColors = {
+                                            occupied:          '#10b981',
+                                            warm_up:           '#f59e0b',
+                                            cool_down:         '#22d3ee',
+                                            setback:           '#64748b',
+                                            setup:             '#64748b',
+                                            freeze_protection: '#ef4444',
+                                            unoccupied:        '#475569',
+                                            pre_cooling:       '#06b6d4',
+                                        };
+                                        const c = modeColors[ahu.g36.mode] || '#94a3b8';
+                                        const satTxt = (typeof ahu.g36.sat_reset_c === 'number') ? ahu.g36.sat_reset_c.toFixed(1) + '°' : '--';
+                                        const dspTxt = (typeof ahu.g36.dsp_reset_pa === 'number') ? Math.round(ahu.g36.dsp_reset_pa) + 'Pa' : '--';
+                                        return (
+                                            <div data-testid={`g36-chip-${ahu.id}`}
+                                                 title={'G36 mode: ' + (ahu.g36.mode || '?') + '\n' + (ahu.g36.mode_reason || '') +
+                                                        '\nCool req: ' + (ahu.g36.cooling_requests || 0) +
+                                                        '   Heat req: ' + (ahu.g36.heating_requests || 0) +
+                                                        '   Press req: ' + (ahu.g36.pressure_requests || 0)}
+                                                 className={`mt-1.5 px-2 py-1 rounded border flex items-center justify-between gap-2 font-mono text-[8px] ${theme==='dark' ? 'bg-slate-900/60 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span style={{background: c, boxShadow: `0 0 6px ${c}`}} className="inline-block w-2 h-2 rounded-full" />
+                                                    <span style={{color: c}} className="font-black uppercase tracking-wider">G36 · {ahu.g36.mode || '?'}</span>
+                                                </div>
+                                                <div className={`flex gap-1.5 ${theme==='dark' ? 'text-slate-400' : 'text-slate-600'} tracking-tighter`}>
+                                                    <span>SAT {satTxt}</span>
+                                                    <span>DSP {dspTxt}</span>
+                                                    <span className={ahu.g36.cooling_requests > 0 ? 'text-cyan-400' : ''}>C{ahu.g36.cooling_requests || 0}</span>
+                                                    <span className={ahu.g36.pressure_requests > 0 ? 'text-amber-400' : ''}>P{ahu.g36.pressure_requests || 0}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
                                 </div> 
                             ); 
                         })}</div>

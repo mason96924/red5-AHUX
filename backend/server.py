@@ -82,7 +82,7 @@ from audit_log import router as audit_router, record_audit  # noqa: E402
 app.include_router(audit_router)
 
 # Wire the G36 router (Phase 3a: ASHRAE Guideline 36 controller).
-from g36_service import router as g36_router  # noqa: E402
+from g36_service import router as g36_router, auto_tick_from_ahu_dict  # noqa: E402
 app.include_router(g36_router)
 
 
@@ -504,6 +504,12 @@ async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) ->
 
     `mock_mode:false` + non-empty `ahu_groups` -> snapshot built from those
     AHU/VAV names.  Otherwise -> the bundled `_DEMO_AHUS` template.
+
+    Per-AHU enrichment: each entry is decorated with a `g36` block
+    (operating mode + request counts + SAT/DSP reset values) computed
+    from the synthesized telemetry.  Mode + request counts refresh on
+    every poll; the T&R reset values walk on the canonical 2-minute
+    ASHRAE-36 Td cadence (throttled inside `auto_tick_from_ahu_dict`).
     """
     if tenant:
         cfg = await read_collector_config(tenant)
@@ -514,8 +520,33 @@ async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) ->
     if not cfg.get("mock_mode", True):
         ahus = _ahus_from_config(cfg)
         if ahus:
-            return _build_snapshot(ahus)
-    return _build_snapshot()
+            snapshot = _build_snapshot(ahus)
+        else:
+            snapshot = _build_snapshot()
+    else:
+        snapshot = _build_snapshot()
+
+    # Decorate each AHU with G36 state.  Runs all ticks in parallel so
+    # the /api/data response stays under ~50 ms even with 10+ AHUs.
+    import asyncio
+    g36_results = await asyncio.gather(
+        *[auto_tick_from_ahu_dict(a["id"], a) for a in snapshot],
+        return_exceptions=True,
+    )
+    for ahu, g36 in zip(snapshot, g36_results):
+        if isinstance(g36, dict):
+            # Shrink the payload to just what the dashboard chip needs.
+            ahu["g36"] = {
+                "mode":             g36.get("mode"),
+                "mode_reason":      g36.get("mode_reason"),
+                "cooling_requests": g36.get("cooling_requests", 0),
+                "heating_requests": g36.get("heating_requests", 0),
+                "pressure_requests": g36.get("pressure_requests", 0),
+                "sat_reset_c":      g36.get("sat_reset_c"),
+                "dsp_reset_pa":     g36.get("dsp_reset_pa"),
+                "last_tick_at":     g36.get("last_tick_at"),
+            }
+    return snapshot
 
 
 @app.post("/api/data-mode")

@@ -4556,3 +4556,19 @@ reload (same behaviour as the V1.9 controller).
 - G36 heating-coil reset (counter exposed, T&R not yet driven).
 
 
+
+
+## G36 live wiring (auto-tick on /api/data) — 2026-02-13
+
+- Added `g36_service.auto_tick_from_ahu_dict(ahu_id, ahu_dict)` helper that builds an `AhuTick` from the synthesized simulator state and runs the G36 state machine without going through the HTTP tick endpoint.
+- Hooked into `/api/data` via `asyncio.gather` so all AHU ticks run concurrently and the response stays under ~50 ms even with 10+ AHUs.
+- Trim-&-Respond throttled to the ASHRAE-36 Td cadence (120 s default) by reading `last_tick_at` from the persisted doc; mode + request counts still refresh on every poll.
+- Each `/api/data` AHU entry now carries a `g36` block:
+  `{mode, mode_reason, cooling_requests, heating_requests, pressure_requests, sat_reset_c, dsp_reset_pa, last_tick_at}`.
+- Dashboard sidebar (`dashboard.html` AHU pill) now renders a colored G36 chip under each AHU's points list:
+  - Mode dot color: green=occupied, amber=warm_up, cyan=cool_down/pre_cooling, slate=setback/setup/unoccupied, red=freeze_protection.
+  - Inline readouts: `SAT 12.7°`, `DSP 240Pa`, `C3` (cooling requests), `P0` (pressure requests).
+  - Hover tooltip shows the full mode reason + all 3 counters.
+  - `data-testid="g36-chip-{ahu_id}"` for automated checks.
+- Mirrored to V1.9 + V2.0 dashboard.html copies.
+

@@ -482,3 +482,110 @@ async def post_g36_tick(ahu_id: str, tick: AhuTick) -> dict:
 async def list_modes() -> dict:
     """Static list of the 8 operating modes for the UI legend."""
     return {"modes": list(ALL_MODES)}
+
+
+# ---------------------------------------------------------------------------
+# Auto-tick hook for the /api/data simulator pipeline.
+# ---------------------------------------------------------------------------
+async def auto_tick_from_ahu_dict(
+    ahu_id: str,
+    ahu_dict: dict,
+    *,
+    throttle_seconds: int = 120,
+) -> Optional[dict]:
+    """Process one G36 evaluation tick directly from a synthesized AHU
+    dict (the kind the /api/data simulator emits).  Returns the persisted
+    state, or None on any error -- callers MUST NOT depend on the return
+    value, and a G36 failure must NEVER block the /api/data response.
+
+    Mode + request counts refresh on every call so the dashboard chip is
+    always current.  Trim-&-Respond is throttled to one step per
+    `throttle_seconds` (default 120 s = ASHRAE 36 Td) so the SAT/DSP
+    resets walk on the canonical 2-minute cadence even though /api/data
+    is polled every 5-8 seconds by the dashboard.
+    """
+    try:
+        prev = await _load(ahu_id)
+        sp_dict = prev.get("setpoints") or {}
+        sp = G36Setpoints(**sp_dict) if sp_dict else G36Setpoints()
+
+        ap = ahu_dict.get("all_points") or {}
+        vavs = ahu_dict.get("vavs") or []
+        zones: List[ZoneTelemetry] = []
+        for v in vavs:
+            vp = v.get("all_points") or {}
+            zat = float(v.get("t", 22.0))
+            zsp = float(vp.get("ZSP", 23.0))
+            # Derive cooling/heating loop pct from the zone-temp deviation
+            # from setpoint.  ASHRAE-style PI loops would land near these
+            # values in steady state given a 0.3-0.4 °C/% gain.
+            cooling_pct = max(0.0, min(100.0, (zat - zsp) * 35.0))
+            heating_pct = max(0.0, min(100.0, (zsp - zat) * 35.0))
+            dpr = float(vp.get("DPR", 50.0))
+            af_sp = 1000.0
+            af_actual = max(0.0, min(1200.0, dpr * 12.0))
+            zones.append(ZoneTelemetry(
+                zone_id=str(v.get("id", "?")),
+                zat_c=zat,
+                cooling_loop_pct=cooling_pct,
+                heating_loop_pct=heating_pct,
+                damper_pct=dpr,
+                airflow_setpoint_cfm=af_sp,
+                airflow_actual_cfm=af_actual,
+            ))
+
+        tick = AhuTick(
+            oat_c=float(ap.get("OAT", 20.0)),
+            sat_c=float(ap.get("SAT", 14.0)),
+            sa_static_pa=float(ap.get("SADSP", 250.0)),
+            zones=zones,
+        )
+
+        mode, reason = compute_operating_mode(tick, sp)
+        cooling  = count_cooling_requests(tick.zones)
+        heating  = count_heating_requests(tick.zones)
+        pressure = count_pressure_requests(tick.zones)
+
+        sat_prev = float(prev.get("sat_reset_c", sp.sat_current_c))
+        dsp_prev = float(prev.get("dsp_reset_pa", sp.dsp_current_pa))
+
+        # Throttle T&R updates to the ASHRAE-36 Td cadence.
+        last = prev.get("last_tick_at")
+        if isinstance(last, str):
+            try:
+                last = datetime.fromisoformat(last.replace("Z", "+00:00"))
+            except ValueError:
+                last = None
+        if isinstance(last, datetime) and last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        elapsed = (now - last).total_seconds() if isinstance(last, datetime) else None
+        do_tr = (elapsed is None) or (elapsed >= throttle_seconds)
+
+        sat_new = sat_prev
+        dsp_new = dsp_prev
+        if do_tr:
+            if mode in ("occupied", "cool_down", "pre_cooling", "setup"):
+                sat_new = trim_and_respond(
+                    sat_prev, cooling,
+                    sp_min=sp.sat_min_c, sp_max=sp.sat_max_c,
+                    sp_trim=0.1, sp_response_step=0.1, sp_response_max=0.6,
+                    importance=2, direction="decrease_on_request",
+                )
+            if mode not in ("unoccupied", "freeze_protection"):
+                dsp_new = trim_and_respond(
+                    dsp_prev, pressure,
+                    sp_min=sp.dsp_min_pa, sp_max=sp.dsp_max_pa,
+                    sp_trim=10.0, sp_response_step=15.0, sp_response_max=60.0,
+                    importance=2, direction="increase_on_request",
+                )
+
+        return await _save(
+            ahu_id, mode=mode, mode_reason=reason,
+            cooling=cooling, heating=heating, pressure=pressure,
+            sat=sat_new, dsp=dsp_new, setpoints=sp.model_dump(),
+        )
+    except Exception:  # noqa: BLE001
+        # Never let a G36 failure block /api/data.  The dashboard will
+        # simply not render the chip on that AHU until the next tick.
+        return None

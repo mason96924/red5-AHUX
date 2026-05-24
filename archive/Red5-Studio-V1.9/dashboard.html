@@ -17,7 +17,9 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="js/i18n.js"></script>
+    <script src="js/toast.js"></script>
     <script src="js/docs_index.js"></script>
+    <script src="js/audit_log.js"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
@@ -104,63 +106,170 @@
     </style>
 </head>
 <body>
-    <!-- V1.9 weather-source health dot (mirrors V2.0 dashboard's auth-pill dot).
-         Polls /api/weather-health every 30 s and renders a tiny floating dot
-         in the top-right corner showing which upstream weather source is
-         currently serving the dashboard:
-            emerald = open-meteo (primary)
-            cyan    = weatherapi.com (fallback)
-            amber   = nasa-power (last-resort)
-            red     = all sources failed
-            slate   = no /api/weather-proxy call observed yet -->
-    <div id="v19-weather-pill" style="position:fixed; top:6px; right:6px; z-index:99999;
-        font-family: 'Inter', system-ui, sans-serif; font-size: 9px;
-        padding: 4px 8px; display: flex; align-items: center; gap: 6px;
+    <!-- V2.0 Phase 2a/c: auth banner identical to equipment_mapper.html's so
+         operators see their sign-in state and can persist clamps/locations
+         from the live dashboard.  Collapsed pill by default so it doesn't
+         cover the dashboard's top-right controls (theme toggle, etc.);
+         expands on hover/focus to reveal email + Logout. -->
+    <div id="v2-auth-banner" style="position:fixed;top:6px;right:6px;z-index:99999;
+        font-family: 'Inter', system-ui, sans-serif; font-size: 11px;
+        padding: 3px 7px; display: none; align-items: center; gap: 6px;
         background: rgba(15,23,42,0.78); border-radius: 999px;
         border: 1px solid rgba(51,65,85,0.6);
-        color: #94a3b8; opacity: 0.55;
-        text-transform: uppercase; letter-spacing: 0.08em;
-        transition: opacity .18s; cursor: help;"
-        title="Weather source: checking..."
-        data-testid="v19-weather-source-pill"
-        onmouseenter="this.style.opacity='1'"
-        onmouseleave="this.style.opacity='0.55'">
-        <span id="v19-weather-dot" aria-hidden="true"
-            style="width:7px;height:7px;border-radius:50%;background:#475569;
-                   box-shadow:0 0 0 1px rgba(15,23,42,0.6); flex-shrink:0"></span>
-        <span id="v19-weather-label" style="font-family: 'JetBrains Mono', monospace;
-            white-space: nowrap;">wx ...</span>
+        color: #e2e8f0; opacity: 0.55;
+        transition: opacity .18s, padding .18s, background .18s, border-radius .18s;
+        cursor: default;" data-testid="dashboard-auth-banner"
+        onmouseenter="this.style.opacity='1';this.style.padding='6px 10px';this.style.background='rgba(15,23,42,0.95)';this.style.borderRadius='8px';"
+        onmouseleave="this.style.opacity='0.55';this.style.padding='3px 7px';this.style.background='rgba(15,23,42,0.78)';this.style.borderRadius='999px';">
+        <span id="v2-auth-dot" aria-hidden="true" style="width:8px;height:8px;border-radius:50%;background:#64748b;flex-shrink:0;box-shadow:0 0 0 2px rgba(15,23,42,0.6)"></span>
+        <span id="v2-weather-dot" aria-hidden="true"
+            title="Weather source: checking..."
+            data-testid="dashboard-weather-source-dot"
+            style="width:6px;height:6px;border-radius:50%;background:#475569;flex-shrink:0;
+                   box-shadow:0 0 0 1px rgba(15,23,42,0.6); cursor:help;"></span>
+        <span id="v2-auth-state" style="font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px;
+            color: #94a3b8; white-space: nowrap;" data-testid="dashboard-auth-state">checking...</span>
+        <button id="v2-auth-signin" data-testid="dashboard-signin-btn"
+            style="display: none; background:#fbbf24; color:#0f172a;
+            border: none; border-radius: 4px; padding: 4px 8px;
+            font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
+            font-size: 9px; cursor: pointer;">Sign in with Google</button>
+        <button id="v2-auth-logout" data-testid="dashboard-logout-btn"
+            style="display: none; background: transparent; color: #94a3b8;
+            border: 1px solid #334155; border-radius: 4px; padding: 3px 7px;
+            font-size: 9px; cursor: pointer; text-transform: uppercase;
+            letter-spacing: 0.08em;">Logout</button>
+        <a id="v2-back-to-learn" href="/learn.html" data-testid="dashboard-back-to-learn"
+            title="Back to Comfort Decoded (public site)"
+            style="display: none; color: #22d3ee; text-decoration: none;
+            border: 1px solid rgba(34,211,238,.55); border-radius: 4px;
+            padding: 3px 7px; font-size: 9px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            white-space: nowrap; cursor: pointer;">&#8629; Comfort Decoded</a>
     </div>
     <script>
         (function () {
-            var pill  = document.getElementById('v19-weather-pill');
-            var wdot  = document.getElementById('v19-weather-dot');
-            var wlbl  = document.getElementById('v19-weather-label');
-            if (!pill || !wdot || !wlbl) return;
+            var apiUrl = window.API_BASE_URL || window.location.origin;
+            var banner = document.getElementById('v2-auth-banner');
+            var dot    = document.getElementById('v2-auth-dot');
+            var state  = document.getElementById('v2-auth-state');
+            var btnIn  = document.getElementById('v2-auth-signin');
+            var btnOut = document.getElementById('v2-auth-logout');
+            var lnkLearn = document.getElementById('v2-back-to-learn');
+            banner.style.display = 'flex';
+            // Track hover so we can show the full email when expanded and a
+            // short label when collapsed — avoids the pill obscuring the
+            // dashboard buttons sitting underneath it in the top-right.
+            var _shortLabel = 'checking...';
+            var _fullLabel  = 'checking...';
+            var _hovered = false;
+            function applyLabel(){
+              state.textContent = _hovered ? _fullLabel : _shortLabel;
+              // Hide the inline Sign-in / Logout button in collapsed state so
+              // the pill stays tiny — they reveal on hover.
+              if (btnIn.dataset.allowed === '1')  btnIn.style.display  = _hovered ? 'inline-block' : 'none';
+              if (btnOut.dataset.allowed === '1') btnOut.style.display = _hovered ? 'inline-block' : 'none';
+              // Back-to-Learn link always available, hidden until hover.
+              lnkLearn.style.display = _hovered ? 'inline-block' : 'none';
+            }
+            banner.addEventListener('mouseenter', function(){ _hovered = true;  applyLabel(); });
+            banner.addEventListener('mouseleave', function(){ _hovered = false; applyLabel(); });
+            btnIn.addEventListener('click', function () {
+                try { localStorage.setItem('r5_post_login_redirect', '/dashboard.html'); } catch (e) {}
+                var redirectUrl = window.location.origin + '/dashboard';
+                window.location.href = 'https://auth.emergentagent.com/?redirect=' + encodeURIComponent(redirectUrl);
+            });
+            btnOut.addEventListener('click', function () {
+                fetch(apiUrl + '/api/auth/logout', { method: 'POST', credentials: 'include' })
+                    .finally(function () { window.location.reload(); });
+            });
+            fetch(apiUrl + '/api/auth/me', { credentials: 'include' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (me) {
+                    if (me && me.email) {
+                        var first = (me.email.split('@')[0] || '').split('.')[0];
+                        _shortLabel = first ? first.toUpperCase() : 'OK';
+                        _fullLabel  = 'Signed in: ' + me.email;
+                        dot.style.background = '#10b981';
+                        dot.style.boxShadow = '0 0 6px rgba(16,185,129,.6), 0 0 0 2px rgba(15,23,42,0.6)';
+                        state.style.color = '#a3e635';
+                        btnOut.dataset.allowed = '1';
+                        window.__v2_signed_in = true;
+                        window.__v2_is_admin  = !!me.is_admin;
+                        window.__v2_user_email = me.email;
+                    } else {
+                        _shortLabel = 'GUEST';
+                        _fullLabel  = 'Anonymous (preview only)';
+                        dot.style.background = '#fbbf24';
+                        dot.style.boxShadow = '0 0 6px rgba(251,191,36,.5), 0 0 0 2px rgba(15,23,42,0.6)';
+                        state.style.color = '#fbbf24';
+                        btnIn.dataset.allowed = '1';
+                        window.__v2_signed_in = false;
+                        window.__v2_is_admin  = false;
+                    }
+                    /* Let interested UI islands react to the auth resolve
+                       so admin-only chips (Audit Log) can mount as soon as
+                       the GET /api/auth/me round-trip completes, without
+                       having to poll. */
+                    try { window.dispatchEvent(new CustomEvent('red5-auth-resolved',
+                            { detail: { signedIn: window.__v2_signed_in,
+                                        isAdmin: window.__v2_is_admin,
+                                        email: window.__v2_user_email || null } })); } catch(_) {}
+                    applyLabel();
+                })
+                .catch(function () {
+                    _shortLabel = 'ERR';
+                    _fullLabel  = 'Auth check failed';
+                    dot.style.background = '#f87171';
+                    state.style.color = '#f87171';
+                    btnIn.dataset.allowed = '1';
+                    applyLabel();
+                });
+        })();
+    </script>
+    <script>
+        // ---------------------------------------------------------------
+        // Weather-source health dot
+        // ---------------------------------------------------------------
+        // Renders a small colored dot inside the auth pill that mirrors
+        // /api/weather-health.  Lets the operator see which weather
+        // upstream is currently serving the dashboard's psy_3d page
+        // without having to open DevTools:
+        //   emerald = open-meteo (primary, free, no key)
+        //   cyan    = weatherapi.com (fallback, ≤ 7-day window)
+        //   amber   = nasa-power (last-resort, slower)
+        //   red     = all three failed
+        //   slate   = no /api/weather-proxy call observed yet
+        // Polls every 30 s so toggling weather presets in psy_3d.html
+        // reflects in the dashboard pill within roughly half a minute.
+        (function () {
+            var apiUrl = window.API_BASE_URL || window.location.origin;
+            var wdot   = document.getElementById('v2-weather-dot');
+            if (!wdot) return;
             var PALETTE = {
-                'open-meteo':     { color: '#10b981', glow: 'rgba(16,185,129,.55)',  short: 'OM',  label: 'Open-Meteo (primary)' },
-                'weatherapi.com': { color: '#06b6d4', glow: 'rgba(6,182,212,.55)',   short: 'WA',  label: 'WeatherAPI.com (fallback)' },
-                'nasa-power':     { color: '#fbbf24', glow: 'rgba(251,191,36,.55)',  short: 'NP',  label: 'NASA POWER (last-resort)' },
-                'error':          { color: '#f87171', glow: 'rgba(248,113,113,.55)', short: 'ERR', label: 'All weather sources failed' }
+                'open-meteo':     { color: '#10b981', glow: 'rgba(16,185,129,.55)',  label: 'Open-Meteo (primary)' },
+                'weatherapi.com': { color: '#06b6d4', glow: 'rgba(6,182,212,.55)',   label: 'WeatherAPI.com (fallback)' },
+                'nasa-power':     { color: '#fbbf24', glow: 'rgba(251,191,36,.55)',  label: 'NASA POWER (last-resort)' },
+                'error':          { color: '#f87171', glow: 'rgba(248,113,113,.55)', label: 'All weather sources failed' }
             };
             function refresh() {
-                fetch('/api/weather-health')
+                fetch(apiUrl + '/api/weather-health', { credentials: 'include' })
                     .then(function (r) { return r.ok ? r.json() : null; })
                     .then(function (d) {
                         if (!d) return;
-                        var p = PALETTE[d.source || ''];
+                        var src = d.source || '';
+                        var p   = PALETTE[src];
                         if (p) {
                             wdot.style.background = p.color;
                             wdot.style.boxShadow  = '0 0 4px ' + p.glow + ', 0 0 0 1px rgba(15,23,42,0.6)';
-                            wlbl.textContent = 'WX ' + p.short;
-                            pill.title = 'Weather source: ' + p.label +
+                            wdot.title = 'Weather source: ' + p.label +
                                          (d.updated_at ? ' (updated ' + d.updated_at + ')' : '') +
                                          (d.detail ? '\n' + d.detail : '');
                         } else {
                             wdot.style.background = '#475569';
                             wdot.style.boxShadow  = '0 0 0 1px rgba(15,23,42,0.6)';
-                            wlbl.textContent = 'WX IDLE';
-                            pill.title = 'Weather source: idle (no /api/weather-proxy call yet)';
+                            wdot.title = 'Weather source: idle (no /api/weather-proxy call yet)';
                         }
                     })
                     .catch(function () { /* offline -> leave slate */ });
@@ -336,7 +445,7 @@
                 if (sidebarPopoutWin && !sidebarPopoutWin.closed) { sidebarPopoutWin.focus(); return; }
                 const result = red5OpenPopupWindow('sidebar', 'Red5 Sidebar (popped out)', 420, 950);
                 if (!result) {
-                    alert('Popup window blocked. Please allow popups for this site, then click the WIN button again.');
+                    toast('Popup window blocked. Please allow popups for this site, then click the WIN button again.');
                     return;
                 }
                 // Mutually exclusive with in-page floating mode.
@@ -730,7 +839,7 @@
                 if (currentWin && !currentWin.closed) { currentWin.focus(); return; }
                 const result = red5OpenPopupWindow(label, title, 1600, 1000);
                 if (!result) {
-                    alert('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
+                    toast('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
                     return;
                 }
                 setterPair[0](result.win);
@@ -926,8 +1035,8 @@
                 try { return JSON.parse(localStorage.getItem('savedWeatherLocations')) || []; } catch { return []; }
             });
             // Pinned default location (★) — loaded on every fresh session
-            // before the operator picks an explicit `active`.  Source of
-            // truth lives on the controller (`weather_location.json:default`);
+            // before the operator picks an explicit `active`.  Single source
+            // of truth lives on the server (`tenant_weather_location.default`);
             // local mirror lets the modal render stars without flicker.
             const [defaultLocation, setDefaultLocation] = useState(() => {
                 try { return JSON.parse(localStorage.getItem('defaultWeatherLocation')) || null; } catch { return null; }
@@ -956,6 +1065,9 @@
                         }
                         setSavedWeatherLocations(saved);
                         setDefaultLocation(pinned);
+                        // Active is only adopted from the server on first mount —
+                        // i.e. when local state has no active yet. Otherwise the
+                        // operator's just-clicked selection could be reverted.
                         // Fresh-session precedence: pinned default > stored active
                         // > nothing — so the operator's "★" choice always wins
                         // on first open of the day.
@@ -1021,8 +1133,8 @@
             }, []);
 
             // ----------------------------------------------------------------
-            // Pin / unpin a default location.  Persists to the controller's
-            // `weather_location.json:default` field so the dashboard
+            // Pin / unpin a default location.  Persists to the server's
+            // `tenant_weather_location.default` field so the dashboard
             // auto-loads this hospital on every fresh session, regardless
             // of what was last active.  Pass `null` to clear the pin.
             // ----------------------------------------------------------------
@@ -1086,7 +1198,7 @@
                     const cached = (window._equipTypesCache && Object.keys(window._equipTypesCache).length)
                         ? window._equipTypesCache : null;
                     if (cached) {
-                        const cfgRes = await fetch(API_URL + '/api/collector-config');
+                        const cfgRes = await fetch(API_URL + '/api/collector-config', { credentials: 'include' });
                         const cfgData = await cfgRes.json();
                         setCcConfig(cfgData.config || cfgData);
                         setCcEquipTypes(cached);
@@ -1094,8 +1206,8 @@
                         return;
                     }
                     const [cfgRes, etRes] = await Promise.all([
-                        fetch(API_URL + '/api/collector-config'),
-                        fetch(API_URL + '/api/equipment-types')
+                        fetch(API_URL + '/api/collector-config', { credentials: 'include' }),
+                        fetch(API_URL + '/api/equipment-types', { credentials: 'include' })
                     ]);
                     const cfgData = await cfgRes.json();
                     const etData = await etRes.json();
@@ -1110,12 +1222,20 @@
                 setCcSaving(true); setCcMsg('');
                 try {
                     const r = await fetch(API_URL + '/api/collector-config', {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {'Content-Type':'application/json'},
                         body: JSON.stringify(cfg)
                     });
                     const d = await r.json();
-                    if (d.success) { setCcConfig(cfg); setCcMsg('Saved.'); }
-                    else setCcMsg('Error: ' + (d.error || 'Unknown'));
+                    if (d.success) {
+                        setCcConfig(cfg);
+                        setCcMsg(d.persisted === false
+                            ? (d.warning || 'Saved (preview only -- sign in to persist).')
+                            : 'Saved.');
+                    } else {
+                        setCcMsg('Error: ' + (d.error || d.detail || 'Unknown'));
+                    }
                 } catch (e) { setCcMsg('Save failed: ' + e.message); }
                 setCcSaving(false);
             };
@@ -1124,12 +1244,22 @@
                 setCcSaving(true); setCcMsg('');
                 try {
                     const r = await fetch(API_URL + '/api/save-equipment-schema', {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {'Content-Type':'application/json'},
                         body: JSON.stringify({ equipment_schema: et })
                     });
                     const d = await r.json();
-                    if (d.success) { setCcEquipTypes(et); setCcMsg('Equipment types saved.'); }
-                    else setCcMsg('Error: ' + (d.error || 'Unknown'));
+                    if (d.success) {
+                        setCcEquipTypes(et);
+                        setCcMsg(d.persisted === false
+                            ? (d.warning || 'Saved (preview only -- sign in to persist).')
+                            : 'Equipment types saved.');
+                    } else {
+                        setCcMsg(d.warning
+                            ? d.warning
+                            : 'Error: ' + (d.error || d.detail || 'Unknown'));
+                    }
                 } catch (e) { setCcMsg('Save failed: ' + e.message); }
                 setCcSaving(false);
             };
@@ -1203,7 +1333,7 @@
                                 const types = [...Object.values(et.ahu_types || {}), ...Object.values(et.vav_types || {})];
                                 types.forEach(tdef => {
                                     const p = tdef && tdef.visual_assets && tdef.visual_assets.base_graphic;
-                                    if (p) { const im = new Image(); im.src = `${API_URL}/assets/${p}`; }
+                                    if (p) { const im = new Image(); im.src = `${API_URL}/api/assets/${p}`; }
                                 });
                             } catch (e) {}
                         }).catch(() => {});
@@ -1215,9 +1345,15 @@
             // Fetch map_config.json for floor plan layout
             useEffect(() => {
                 const API_URL = window.API_BASE_URL || window.location.origin;
-                fetch(`${API_URL}/api/map-config`)
+                fetch(`${API_URL}/api/map-config`, { credentials: 'include' })
                     .then(r => { if (!r.ok) throw new Error('No map_config.json'); return r.json(); })
-                    .then(data => setMapConfig(data))
+                    .then(data => {
+                        // Backend may return a wrapper with `{floors:..., mode:'demo'}`
+                        // when nothing is saved; treat that as "no map" so the
+                        // fallback layout renders instead of an empty grid.
+                        if (data && Array.isArray(data.floors) && data.floors.length > 0) setMapConfig(data);
+                        else setMapConfig(null);
+                    })
                     .catch(() => setMapConfig(null));
             }, []);
 
@@ -1446,7 +1582,7 @@
             const fetchTelemetry = React.useCallback(async (signal) => {
                 try {
                     const API_URL = window.API_BASE_URL || window.location.origin;
-                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal } : undefined);
+                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal, credentials: 'include' } : { credentials: 'include' });
                     if (!response.ok) return;
                     const data = await response.json();
                     if (!Array.isArray(data)) return;
@@ -1505,7 +1641,7 @@
             // Load initial data mode from backend
             useEffect(() => {
                 const API_URL = window.API_BASE_URL || window.location.origin;
-                fetch(API_URL + '/api/data-mode').then(r => r.json()).then(d => {
+                fetch(API_URL + '/api/data-mode', { credentials: 'include' }).then(r => r.json()).then(d => {
                     if (d.success && d.mode) setDataMode(d.mode);
                 }).catch(() => {});
             }, []);
@@ -1515,7 +1651,7 @@
                 const checkStatus = async () => {
                     try {
                         const API_URL = window.API_BASE_URL || window.location.origin;
-                        const r = await fetch(`${API_URL}/api/telemetry-status`);
+                        const r = await fetch(`${API_URL}/api/telemetry-status`, { credentials: 'include' });
                         if (r.ok) setTelemetryStatus(await r.json());
                     } catch (e) { }
                 };
@@ -1620,6 +1756,7 @@
                 const handler = (ev) => {
                     const loc = ev && ev.detail;
                     if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+                    // Guard against echo: only update if it's actually different.
                     if (weatherLocation
                         && Math.abs(weatherLocation.lat - loc.lat) < 1e-4
                         && Math.abs(weatherLocation.lon - loc.lon) < 1e-4) return;
@@ -2277,7 +2414,7 @@
                                             data-testid="plugin-health-chip"
                                             data-state={h.state}
                                             title={tip}
-                                            onClick={() => alert(tip)}
+                                            onClick={() => toast(tip)}
                                             className={`flex-shrink-0 px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${cls}`}
                                         >
                                             {dot} {isOk ? 'OK' : (isWarn ? 'WARN' : (h.missing && h.missing.length ? 'PLUGIN' : 'ERR'))}
@@ -2323,7 +2460,11 @@
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}
-                                {/* Standards / Docs button — single entry point. */}
+                                {/* Standards / Docs button — single entry point.
+                                    Opens the docs popup at whichever tab the
+                                    operator was last reading (G36 cross-walk on
+                                    first ever open, since that's the default
+                                    activeId in localStorage). */}
                                 <button
                                     onClick={() => window.red5DocsIndex && window.red5DocsIndex.open()}
                                     data-testid="standards-btn"
@@ -2515,10 +2656,10 @@
                                                     if (j.status === 'ok') {
                                                         setBandClampModal({ lo: sweetSpotRange.lo, hi: sweetSpotRange.hi, preview: j.preview });
                                                     } else {
-                                                        alert('Preview failed: ' + (j.message || 'unknown'));
+                                                        toast('Preview failed: ' + (j.message || 'unknown'));
                                                     }
                                                 } catch (e) {
-                                                    alert(e.message);
+                                                    toast(e.message);
                                                 }
                                             };
                                             const onReset = async () => {
@@ -2530,10 +2671,10 @@
                                                     if (j.status === 'ok') {
                                                         setBandClampApplied(null);
                                                     } else {
-                                                        alert('Reset failed: ' + (j.message || 'unknown'));
+                                                        toast('Reset failed: ' + (j.message || 'unknown'));
                                                     }
                                                 } catch (e) {
-                                                    alert(e.message);
+                                                    toast(e.message);
                                                 } finally {
                                                     setBandClampBusy(false);
                                                 }
@@ -3397,10 +3538,10 @@
                                     setBandClampApplied({ lo, hi });
                                     setBandClampModal(null);
                                 } else {
-                                    alert('Apply failed: ' + (j.message || 'unknown'));
+                                    toast('Apply failed: ' + (j.message || 'unknown'));
                                 }
                             } catch (e) {
-                                alert(e.message);
+                                toast(e.message);
                             } finally {
                                 setBandClampBusy(false);
                             }
@@ -3471,8 +3612,8 @@
                             const name = document.getElementById('wl-new-name').value.trim();
                             const lat = parseFloat(document.getElementById('wl-new-lat').value);
                             const lon = parseFloat(document.getElementById('wl-new-lon').value);
-                            if (!name) { alert('Enter a location name.'); return; }
-                            if (isNaN(lat) || isNaN(lon)) { alert('Enter valid coordinates.'); return; }
+                            if (!name) { toast('Enter a location name.'); return; }
+                            if (isNaN(lat) || isNaN(lon)) { toast('Enter valid coordinates.'); return; }
                             const loc = { name, lat, lon };
                             selectLocation(loc);
                         };
@@ -3601,7 +3742,7 @@
                         }
                         const vavSchema = ccEquipTypes && ccEquipTypes.vav_types ? ccEquipTypes.vav_types[vavTypeId] : null;
                         const schemaVavImage = (vavSchema && vavSchema.visual_assets && vavSchema.visual_assets.base_graphic)
-                            ? `${API_URL}/assets/${vavSchema.visual_assets.base_graphic}`
+                            ? `${API_URL}/api/assets/${vavSchema.visual_assets.base_graphic}`
                             : null;
                         const effectiveVavImage = schemaVavImage || vavImage;
                         const vavSchemaPoints = (vavSchema && vavSchema.points) || [];
@@ -3661,7 +3802,9 @@
                                     : v)
                             })));
                             fetch(`${API_URL}/api/write-point`, {
-                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {'Content-Type':'application/json'},
                                 body: JSON.stringify({ equipment_name: vavEquipId, writes: { [label]: num } })
                             }).then(r => r.json()).then(d => {
                                 if (!d.success) console.warn('VAV Write failed:', d.error);
@@ -3816,27 +3959,7 @@
                                                     const vavImgScale = (vavImgDims.dispW && vavImgDims.natW) ? (vavImgDims.dispW / vavImgDims.natW) : 1;
                                                     return vavSchemaAnimations.map((a, ai) => {
                                                         if (a.x == null || a.y == null) return null;
-                                                        // Per-type defaults so an animation lights up even
-                                                        // when the operator hasn't bound (or wrote 'UNKNOWN')
-                                                        // as the telemetry_key in the mapper.  Bound key wins.
-                                                        const _atype0v = a.animation_type;
-                                                        const _defaultKey = (
-                                                            _atype0v === 'centrifugal_fan'        ? 'SAFP' :
-                                                            _atype0v === 'rectangular_fan'        ? 'EAFP' :
-                                                            _atype0v === 'rectangular_fan_aligner'? 'EAFP' :
-                                                            _atype0v === 'damper'                 ? 'OAD'  :
-                                                            _atype0v === 'circular_damper'        ? 'OAD'  :
-                                                            _atype0v === 'neon_pipe_coil'         ? (a.element_id && /heat/i.test(a.element_id) ? 'HCV' : 'CCV') :
-                                                            _atype0v === 'hydration_valve'        ? 'HUM'  :
-                                                            _atype0v === 'hydration_valve_aligner'? 'HUM'  :
-                                                            _atype0v === 'antifreeze_coil_valve'  ? 'HCV'  :
-                                                            _atype0v === 'antifreeze_coil'        ? 'HCV'  :
-                                                            _atype0v === 'diff_pressure_switch'   ? 'FDPS' :
-                                                            _atype0v === 'differential_pressure_switch_aligner' ? 'FDPS' :
-                                                            _atype0v === 'vfd_aligner'            ? 'SAFP' :
-                                                            _atype0v === 'air_flow_path'          ? 'SAFP' : ''
-                                                        );
-                                                        const tKey = (a.telemetry_key && a.telemetry_key !== 'UNKNOWN') ? a.telemetry_key : _defaultKey;
+                                                        const tKey = a.telemetry_key || '';
                                                         const tVal = vavVn(tKey);
                                                         const isAlarm = vavIsBool(tKey + '_ALM');
                                                         const isRunning = vavIsBool(tKey + '_STATUS') || tVal > 0;
@@ -3971,7 +4094,7 @@
                                         
                                         if (floorData && floorData.floor.image_path) {
                                             // === MAP_CONFIG DRIVEN FLOOR PLAN ===
-                                            const imgSrc = `${API_URL}/assets/${floorData.floor.image_path}`;
+                                            const imgSrc = `${API_URL}/api/assets/${floorData.floor.image_path}`;
                                             return (
                                                 <div className="relative inline-block">
                                                     <img 
@@ -4298,7 +4421,7 @@
                             if (firstKey) ahuTypeId = firstKey;
                         }
                         const schemaType = ccEquipTypes && ccEquipTypes.ahu_types ? ccEquipTypes.ahu_types[ahuTypeId] : null;
-                        const currentAhuImage = (schemaType && schemaType.visual_assets && schemaType.visual_assets.base_graphic && `${API_URL}/assets/${schemaType.visual_assets.base_graphic}`) || (ahuTypeId && ahuTypeImages[ahuTypeId]) || ahuTypeImages['generic'] || ahuImage;
+                        const currentAhuImage = (schemaType && schemaType.visual_assets && schemaType.visual_assets.base_graphic && `${API_URL}/api/assets/${schemaType.visual_assets.base_graphic}`) || (ahuTypeId && ahuTypeImages[ahuTypeId]) || ahuTypeImages['generic'] || ahuImage;
 
                         const v = (k) => { const val = ap[k]; return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(1) : String(val)) : '0.0'; };
                         const vn = (k) => { const val = ap[k]; return typeof val === 'number' ? val : 0; };
@@ -4373,7 +4496,9 @@
                                 return { ...a, all_points: { ...(a.all_points || {}), [label]: num } };
                             }));
                             fetch(`${API_URL}/api/write-point`, {
-                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {'Content-Type':'application/json'},
                                 body: JSON.stringify({ equipment_name: showAhuModalFor, writes: { [label]: num } })
                             }).then(r => r.json()).then(d => {
                                 if (!d.success) console.warn('Write failed:', d.error);
@@ -4673,9 +4798,10 @@
                                         <div className="absolute inset-0 pointer-events-none" style={{perspective:'1500px'}}>
                                         {schemaAnimations.map((a, ai) => {
                                             if (a.x == null || a.y == null) return null;
-                                            // Per-type defaults so an animation lights up even when the
-                                            // operator hasn't bound (or wrote 'UNKNOWN') as the
-                                            // telemetry_key in the mapper.  Bound key always wins.
+                                            // Sensible per-type defaults so an animation lights up
+                                            // even when the operator hasn't bound a telemetry_key
+                                            // yet in the mapper.  The bound `a.telemetry_key`
+                                            // always wins; this only fires when it is empty/missing.
                                             const _atype0 = a.animation_type;
                                             const _defaultKey = (
                                                 _atype0 === 'centrifugal_fan'        ? 'SAFP' :
@@ -4937,8 +5063,8 @@
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
                                             <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>{window.t ? window.t("data_source_mode") : "Data Source Mode"}</label>
                                             <div className="flex gap-2">
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('simulator'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('mock'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('simulator'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = false; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Simulator (preview only -- sign in to persist).' : 'Switched to Simulator.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('mock'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = true; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Mock (preview only -- sign in to persist).' : 'Switched to Mock.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
                                             </div>
                                             <p className={`text-[8px] mt-2 ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>Simulator reads from collector_config.json. Mock generates 14 random demo AHUs.</p>
                                         </div>
@@ -4984,7 +5110,7 @@
                                 type="password" 
                                 value={configPwInput} 
                                 onChange={e => { setConfigPwInput(e.target.value); setConfigPwError(''); }}
-                                onKeyDown={e => { if (e.key === 'Enter') { const MASTER_KEY = 'b%9P$MdeQP]['; const pw = configPwInput; if (!pw || !pw.trim()) return; const hashPw = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h = h & h; } const hex = Math.abs(h).toString(16).padStart(8, '0'); let h2 = 0; const salted = s + hex; for (let i = 0; i < salted.length; i++) { h2 = ((h2 << 5) - h2) + salted.charCodeAt(i); h2 = h2 & h2; } return hex + Math.abs(h2).toString(16).padStart(8, '0'); }; const storedHash = localStorage.getItem('configPasswordHash') || ''; if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) { sessionStorage.setItem('engineerAuthenticated', 'true'); window.location.href = window.location.origin + '/mapper'; } else if (!storedHash) { setConfigPwError('No password set. Use landing page first.'); } else { setConfigPwError('Incorrect password.'); setConfigPwInput(''); } } }}
+                                onKeyDown={e => { if (e.key === 'Enter') { const MASTER_KEY = 'b%9P$MdeQP]['; const pw = configPwInput; if (!pw || !pw.trim()) return; const hashPw = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h = h & h; } const hex = Math.abs(h).toString(16).padStart(8, '0'); let h2 = 0; const salted = s + hex; for (let i = 0; i < salted.length; i++) { h2 = ((h2 << 5) - h2) + salted.charCodeAt(i); h2 = h2 & h2; } return hex + Math.abs(h2).toString(16).padStart(8, '0'); }; const storedHash = localStorage.getItem('configPasswordHash') || ''; if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) { sessionStorage.setItem('engineerAuthenticated', 'true'); window.location.href = window.location.origin + '/config-tool'; } else if (!storedHash) { setConfigPwError('No password set. Use landing page first.'); } else { setConfigPwError('Incorrect password.'); setConfigPwInput(''); } } }}
                                 autoFocus
                                 placeholder={window.t ? window.t("enter_password_ph") : "Enter password"}
                                 className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500 font-mono"
@@ -5000,7 +5126,7 @@
                                         const storedHash = localStorage.getItem('configPasswordHash') || '';
                                         if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) {
                                             sessionStorage.setItem('engineerAuthenticated', 'true');
-                                            window.location.href = window.location.origin + '/mapper';
+                                            window.location.href = window.location.origin + '/config-tool';
                                         } else if (!storedHash) {
                                             setConfigPwError('No password set. Use landing page first.');
                                         } else {

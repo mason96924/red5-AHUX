@@ -4490,3 +4490,69 @@ Both steps are required for a full persistence cycle.  Skipping step 2
 leaves an orphan image in storage and an outdated `base_graphic` field on
 reload (same behaviour as the V1.9 controller).
 
+
+---
+
+# Phase 3a — G36 controller + audit log (2026-05-24)
+
+## Translations + popup
+- Added JA / ZH-CN / ZH-TW translations for `erv_band_shift_insight.md` and `psychrometric_design_workflow.md` (6 new files).  Live in `/app/frontend/public/assets/` and mirrored to `/app/archive/Red5-Studio-V1.9/` (both root + `docs/`).
+- Refactored the X-Y Detail `?` insight popups (`_createInsightPopup` callers in `js/psy-3d-engine.js`) from legacy `docEN`/`docKO` to the unified `docBase` + 5-language `titles` map.  All five languages (EN/KO/JA/ZH-CN/ZH-TW) now resolve via the same naming convention as the Standards popup, with EN-fallback banner when a translation is missing.
+- Mirrored psy-3d-engine.js change to V1.9 and V2.0 archive snapshots.
+
+## Brute-force lockout flakiness — FIXED
+- Root cause: Kubernetes ingress with multiple replicas exposed different `request.client.host` values across requests, so the `(ip, email)` lockout key bucketed failures under different IPs and the count never reached MAX_ATTEMPTS reliably.
+- Fix: `password_auth._client_ip()` now honors `X-Forwarded-For` (left-most entry) and `X-Real-IP` headers before falling back to `request.client.host`.
+- Verified: 5/5 consecutive `tests/test_v2_phase2f_password_auth.py` runs pass (was flaking ~20% before).
+
+## G36 backend service (`/app/backend/g36_service.py`)
+- 8 operating modes: `occupied`, `warm_up`, `cool_down`, `setback`, `setup`, `freeze_protection`, `unoccupied`, `pre_cooling`.
+- `compute_operating_mode(tick, sp)` → returns `(mode, reason)` with documented precedence (freeze > pre-cooling > occupied branch > unoccupied branch).
+- `count_cooling_requests`, `count_heating_requests`, `count_pressure_requests`: per-zone weighted voting per ASHRAE 36 §5.16.
+- `trim_and_respond(...)`: pure-function reset with `decrease_on_request` (SAT) and `increase_on_request` (DSP) polarity; clamped to `[sp_min, sp_max]`.
+- Endpoints:
+  - `GET  /api/g36/modes`               → 8 modes (UI legend)
+  - `GET  /api/g36/state/{ahu_id}`      → latest mode + reset values + requests
+  - `GET  /api/g36/setpoints/{ahu_id}`  → operator-tunable defaults
+  - `POST /api/g36/setpoints/{ahu_id}`  → mutate (admin gated + audited)
+  - `POST /api/g36/tick/{ahu_id}`       → drive one telemetry tick (simulator/test)
+- Mongo: per-AHU document in `g36_state` collection.
+
+## Audit log (`/app/backend/audit_log.py`)
+- Mongo collection `audit_log` with 90-day TTL index on `ts`.
+- `record_audit(request, user, tenant, *, action, resource, before, after)` helper, best-effort (never raises).
+- Wired into mutating endpoints:
+  - `POST /api/write-point`                  (action: `write-point`)
+  - `POST /api/band-overrides/sa-rh-clamp`   (action: `sa-rh-clamp`)
+  - `POST /api/g36/setpoints/{ahu_id}`       (action: `g36-setpoint`)
+- Endpoints (admin only):
+  - `GET /api/audit-log?limit=N&action=...&user_email=...&since=...`
+  - `GET /api/audit-log/summary`  → 24h + 7d action histogram + TTL_DAYS
+- IP resolution honors `X-Forwarded-For` / `X-Real-IP`.
+
+## Audit log UI (`/app/frontend/public/js/audit_log.js`)
+- Self-contained IIFE.  Mounts a green **📋 AUDIT** button next to **📘 STANDARDS** in the dashboard toolbar — but only when `/api/auth/me` reports `is_admin: true` (listens to the new `red5-auth-resolved` window event).
+- Draggable popup with action filter dropdown, summary chip, before/after diff column, refresh button.
+- Position persisted in `localStorage` under `red5AuditPopupState`.
+- Verified: signed-in admin sees the chip, popup opens, summary + rows render correctly.
+
+## Backend test suite: `tests/test_v2_phase3a_g36_audit.py`
+- 16/16 pass.  Covers mode transitions (warm_up / occupied+cooling / freeze_protection), T&R polarity, request voting math, admin-gated setpoint POST, audit row creation, log filter + summary.
+
+## Files of reference
+- `/app/backend/g36_service.py`           — controller + 8-mode + T&R + voting
+- `/app/backend/audit_log.py`             — log helper + read endpoints
+- `/app/backend/server.py`                — wiring + audit on write-point / sa-rh-clamp
+- `/app/backend/password_auth.py`         — XFF-aware IP resolution
+- `/app/frontend/public/js/audit_log.js`  — audit popup UI
+- `/app/frontend/public/dashboard.html`   — auth-resolved event + script include
+- `/app/frontend/public/js/psy-3d-engine.js` — docBase + 5-lang title map
+
+## Roadmap remaining (P0/P1)
+- **Quality** translation pass on `control_algorithms.md` → KO/JA/ZH-CN/ZH-TW (deferred per user; current fallback banner stays).
+- WebSocket live telemetry → G36 mode/state transitions push.
+- Per-AHU performance dashboard.
+- Mobile-responsive view for field engineers.
+- G36 heating-coil reset (counter exposed, T&R not yet driven).
+
+

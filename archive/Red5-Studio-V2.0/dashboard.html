@@ -17,7 +17,9 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="js/i18n.js"></script>
+    <script src="js/toast.js"></script>
     <script src="js/docs_index.js"></script>
+    <script src="js/audit_log.js"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
@@ -104,6 +106,178 @@
     </style>
 </head>
 <body>
+    <!-- V2.0 Phase 2a/c: auth banner identical to equipment_mapper.html's so
+         operators see their sign-in state and can persist clamps/locations
+         from the live dashboard.  Collapsed pill by default so it doesn't
+         cover the dashboard's top-right controls (theme toggle, etc.);
+         expands on hover/focus to reveal email + Logout. -->
+    <div id="v2-auth-banner" style="position:fixed;top:6px;right:6px;z-index:99999;
+        font-family: 'Inter', system-ui, sans-serif; font-size: 11px;
+        padding: 3px 7px; display: none; align-items: center; gap: 6px;
+        background: rgba(15,23,42,0.78); border-radius: 999px;
+        border: 1px solid rgba(51,65,85,0.6);
+        color: #e2e8f0; opacity: 0.55;
+        transition: opacity .18s, padding .18s, background .18s, border-radius .18s;
+        cursor: default;" data-testid="dashboard-auth-banner"
+        onmouseenter="this.style.opacity='1';this.style.padding='6px 10px';this.style.background='rgba(15,23,42,0.95)';this.style.borderRadius='8px';"
+        onmouseleave="this.style.opacity='0.55';this.style.padding='3px 7px';this.style.background='rgba(15,23,42,0.78)';this.style.borderRadius='999px';">
+        <span id="v2-auth-dot" aria-hidden="true" style="width:8px;height:8px;border-radius:50%;background:#64748b;flex-shrink:0;box-shadow:0 0 0 2px rgba(15,23,42,0.6)"></span>
+        <span id="v2-weather-dot" aria-hidden="true"
+            title="Weather source: checking..."
+            data-testid="dashboard-weather-source-dot"
+            style="width:6px;height:6px;border-radius:50%;background:#475569;flex-shrink:0;
+                   box-shadow:0 0 0 1px rgba(15,23,42,0.6); cursor:help;"></span>
+        <span id="v2-auth-state" style="font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px;
+            color: #94a3b8; white-space: nowrap;" data-testid="dashboard-auth-state">checking...</span>
+        <button id="v2-auth-signin" data-testid="dashboard-signin-btn"
+            style="display: none; background:#fbbf24; color:#0f172a;
+            border: none; border-radius: 4px; padding: 4px 8px;
+            font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
+            font-size: 9px; cursor: pointer;">Sign in with Google</button>
+        <button id="v2-auth-logout" data-testid="dashboard-logout-btn"
+            style="display: none; background: transparent; color: #94a3b8;
+            border: 1px solid #334155; border-radius: 4px; padding: 3px 7px;
+            font-size: 9px; cursor: pointer; text-transform: uppercase;
+            letter-spacing: 0.08em;">Logout</button>
+        <a id="v2-back-to-learn" href="/learn.html" data-testid="dashboard-back-to-learn"
+            title="Back to Comfort Decoded (public site)"
+            style="display: none; color: #22d3ee; text-decoration: none;
+            border: 1px solid rgba(34,211,238,.55); border-radius: 4px;
+            padding: 3px 7px; font-size: 9px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            white-space: nowrap; cursor: pointer;">&#8629; Comfort Decoded</a>
+    </div>
+    <script>
+        (function () {
+            var apiUrl = window.API_BASE_URL || window.location.origin;
+            var banner = document.getElementById('v2-auth-banner');
+            var dot    = document.getElementById('v2-auth-dot');
+            var state  = document.getElementById('v2-auth-state');
+            var btnIn  = document.getElementById('v2-auth-signin');
+            var btnOut = document.getElementById('v2-auth-logout');
+            var lnkLearn = document.getElementById('v2-back-to-learn');
+            banner.style.display = 'flex';
+            // Track hover so we can show the full email when expanded and a
+            // short label when collapsed — avoids the pill obscuring the
+            // dashboard buttons sitting underneath it in the top-right.
+            var _shortLabel = 'checking...';
+            var _fullLabel  = 'checking...';
+            var _hovered = false;
+            function applyLabel(){
+              state.textContent = _hovered ? _fullLabel : _shortLabel;
+              // Hide the inline Sign-in / Logout button in collapsed state so
+              // the pill stays tiny — they reveal on hover.
+              if (btnIn.dataset.allowed === '1')  btnIn.style.display  = _hovered ? 'inline-block' : 'none';
+              if (btnOut.dataset.allowed === '1') btnOut.style.display = _hovered ? 'inline-block' : 'none';
+              // Back-to-Learn link always available, hidden until hover.
+              lnkLearn.style.display = _hovered ? 'inline-block' : 'none';
+            }
+            banner.addEventListener('mouseenter', function(){ _hovered = true;  applyLabel(); });
+            banner.addEventListener('mouseleave', function(){ _hovered = false; applyLabel(); });
+            btnIn.addEventListener('click', function () {
+                try { localStorage.setItem('r5_post_login_redirect', '/dashboard.html'); } catch (e) {}
+                var redirectUrl = window.location.origin + '/dashboard';
+                window.location.href = 'https://auth.emergentagent.com/?redirect=' + encodeURIComponent(redirectUrl);
+            });
+            btnOut.addEventListener('click', function () {
+                fetch(apiUrl + '/api/auth/logout', { method: 'POST', credentials: 'include' })
+                    .finally(function () { window.location.reload(); });
+            });
+            fetch(apiUrl + '/api/auth/me', { credentials: 'include' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (me) {
+                    if (me && me.email) {
+                        var first = (me.email.split('@')[0] || '').split('.')[0];
+                        _shortLabel = first ? first.toUpperCase() : 'OK';
+                        _fullLabel  = 'Signed in: ' + me.email;
+                        dot.style.background = '#10b981';
+                        dot.style.boxShadow = '0 0 6px rgba(16,185,129,.6), 0 0 0 2px rgba(15,23,42,0.6)';
+                        state.style.color = '#a3e635';
+                        btnOut.dataset.allowed = '1';
+                        window.__v2_signed_in = true;
+                        window.__v2_is_admin  = !!me.is_admin;
+                        window.__v2_user_email = me.email;
+                    } else {
+                        _shortLabel = 'GUEST';
+                        _fullLabel  = 'Anonymous (preview only)';
+                        dot.style.background = '#fbbf24';
+                        dot.style.boxShadow = '0 0 6px rgba(251,191,36,.5), 0 0 0 2px rgba(15,23,42,0.6)';
+                        state.style.color = '#fbbf24';
+                        btnIn.dataset.allowed = '1';
+                        window.__v2_signed_in = false;
+                        window.__v2_is_admin  = false;
+                    }
+                    /* Let interested UI islands react to the auth resolve
+                       so admin-only chips (Audit Log) can mount as soon as
+                       the GET /api/auth/me round-trip completes, without
+                       having to poll. */
+                    try { window.dispatchEvent(new CustomEvent('red5-auth-resolved',
+                            { detail: { signedIn: window.__v2_signed_in,
+                                        isAdmin: window.__v2_is_admin,
+                                        email: window.__v2_user_email || null } })); } catch(_) {}
+                    applyLabel();
+                })
+                .catch(function () {
+                    _shortLabel = 'ERR';
+                    _fullLabel  = 'Auth check failed';
+                    dot.style.background = '#f87171';
+                    state.style.color = '#f87171';
+                    btnIn.dataset.allowed = '1';
+                    applyLabel();
+                });
+        })();
+    </script>
+    <script>
+        // ---------------------------------------------------------------
+        // Weather-source health dot
+        // ---------------------------------------------------------------
+        // Renders a small colored dot inside the auth pill that mirrors
+        // /api/weather-health.  Lets the operator see which weather
+        // upstream is currently serving the dashboard's psy_3d page
+        // without having to open DevTools:
+        //   emerald = open-meteo (primary, free, no key)
+        //   cyan    = weatherapi.com (fallback, ≤ 7-day window)
+        //   amber   = nasa-power (last-resort, slower)
+        //   red     = all three failed
+        //   slate   = no /api/weather-proxy call observed yet
+        // Polls every 30 s so toggling weather presets in psy_3d.html
+        // reflects in the dashboard pill within roughly half a minute.
+        (function () {
+            var apiUrl = window.API_BASE_URL || window.location.origin;
+            var wdot   = document.getElementById('v2-weather-dot');
+            if (!wdot) return;
+            var PALETTE = {
+                'open-meteo':     { color: '#10b981', glow: 'rgba(16,185,129,.55)',  label: 'Open-Meteo (primary)' },
+                'weatherapi.com': { color: '#06b6d4', glow: 'rgba(6,182,212,.55)',   label: 'WeatherAPI.com (fallback)' },
+                'nasa-power':     { color: '#fbbf24', glow: 'rgba(251,191,36,.55)',  label: 'NASA POWER (last-resort)' },
+                'error':          { color: '#f87171', glow: 'rgba(248,113,113,.55)', label: 'All weather sources failed' }
+            };
+            function refresh() {
+                fetch(apiUrl + '/api/weather-health', { credentials: 'include' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (d) {
+                        if (!d) return;
+                        var src = d.source || '';
+                        var p   = PALETTE[src];
+                        if (p) {
+                            wdot.style.background = p.color;
+                            wdot.style.boxShadow  = '0 0 4px ' + p.glow + ', 0 0 0 1px rgba(15,23,42,0.6)';
+                            wdot.title = 'Weather source: ' + p.label +
+                                         (d.updated_at ? ' (updated ' + d.updated_at + ')' : '') +
+                                         (d.detail ? '\n' + d.detail : '');
+                        } else {
+                            wdot.style.background = '#475569';
+                            wdot.style.boxShadow  = '0 0 0 1px rgba(15,23,42,0.6)';
+                            wdot.title = 'Weather source: idle (no /api/weather-proxy call yet)';
+                        }
+                    })
+                    .catch(function () { /* offline -> leave slate */ });
+            }
+            refresh();
+            setInterval(refresh, 30000);
+        })();
+    </script>
     <div id="root"></div>
     <script type="text/plain" id="main-source">
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
@@ -174,10 +348,132 @@
             // ("AHU DIAGNOSTIC HUB" + theme toggle) keeps a small gap at min,
             // and the original baseline (320 px) stays the comfortable max.
             const [sidebarWidth, setSidebarWidth] = useState(() => {
-                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(250, Math.min(320, v)); } catch (e) {}
+                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(250, Math.min(400, v)); } catch (e) {}
                 return 320;
             });
             const API_URL = window.API_BASE_URL || window.location.origin;
+
+            // ---- Left sidebar in-page floating mode ----
+            // Previously this was a cross-window window.open + ReactDOM.createPortal
+            // popup.  That had two latent bugs:
+            //   1) Range-slider drags inside the popup did not work because their
+            //      onMouseDown attached mousemove/mouseup to `window` (the parent),
+            //      not the popup window -- events fired in the popup never reached
+            //      the listener.
+            //   2) On re-attach, queued slider mousemove events fired in a rush
+            //      because the portal teardown moved the slider DOM node back
+            //      under the parent window's listener mid-drag.
+            // Switching to an in-page absolutely-positioned floating panel keeps
+            // every DOM event inside a single document, so window-level mousemove
+            // listeners (used by the temp slider, the resize handle, etc.) work
+            // unchanged.  Position + size persist to localStorage so the operator
+            // does not have to re-position the panel after each refresh.
+            const [sidebarFloating, setSidebarFloating] = useState(false);
+            const [sidebarFloatPos, setSidebarFloatPos] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.sidebarFloatPos')); if (v && typeof v.x === 'number') return v; } catch (e) {}
+                return { x: 24, y: 24 };
+            });
+            const [sidebarFloatSize, setSidebarFloatSize] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.sidebarFloatSize')); if (v && typeof v.w === 'number') return v; } catch (e) {}
+                return { w: 380, h: 800 };
+            });
+            const sidebarDragRef = useRef({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 });
+            const sidebarResizeRef = useRef({ active: false, startX: 0, startY: 0, baseW: 0, baseH: 0 });
+
+            // Drag handle mousedown -> follow mousemove via window listener so
+            // dragging stays smooth even if the cursor leaves the title bar
+            // (same pattern used by VAV / Floor Plan modals in this file).
+            const onSidebarTitleMouseDown = useCallback((e) => {
+                // Ignore clicks on the title bar's buttons (pop-out/attach, close).
+                if (e.target.closest('[data-no-drag]')) return;
+                e.preventDefault();
+                sidebarDragRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseX: sidebarFloatPos.x, baseY: sidebarFloatPos.y };
+                const onMove = (mv) => {
+                    if (!sidebarDragRef.current.active) return;
+                    const nx = Math.max(0, Math.min(window.innerWidth - 80,
+                        sidebarDragRef.current.baseX + (mv.clientX - sidebarDragRef.current.startX)));
+                    const ny = Math.max(0, Math.min(window.innerHeight - 40,
+                        sidebarDragRef.current.baseY + (mv.clientY - sidebarDragRef.current.startY)));
+                    setSidebarFloatPos({ x: nx, y: ny });
+                };
+                const onUp = () => {
+                    sidebarDragRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setSidebarFloatPos(p => { try { localStorage.setItem('red5.sidebarFloatPos', JSON.stringify(p)); } catch (e) {} return p; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [sidebarFloatPos]);
+
+            // Resize handle (bottom-right corner) mousedown.
+            const onSidebarResizeMouseDown = useCallback((e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                sidebarResizeRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseW: sidebarFloatSize.w, baseH: sidebarFloatSize.h };
+                const onMove = (mv) => {
+                    if (!sidebarResizeRef.current.active) return;
+                    const nw = Math.max(280, Math.min(window.innerWidth - 40,
+                        sidebarResizeRef.current.baseW + (mv.clientX - sidebarResizeRef.current.startX)));
+                    const nh = Math.max(360, Math.min(window.innerHeight - 40,
+                        sidebarResizeRef.current.baseH + (mv.clientY - sidebarResizeRef.current.startY)));
+                    setSidebarFloatSize({ w: nw, h: nh });
+                };
+                const onUp = () => {
+                    sidebarResizeRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setSidebarFloatSize(s => { try { localStorage.setItem('red5.sidebarFloatSize', JSON.stringify(s)); } catch (e) {} return s; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [sidebarFloatSize]);
+
+            // ---- Left sidebar cross-window pop-out (extended-display) ----
+            // Mirrors the AHU / VAV / Floor-Plan modal pattern in this file:
+            // `red5OpenPopupWindow` spawns a fresh OS-level browser window with
+            // the same Tailwind + stylesheets, then we portal the sidebar JSX
+            // into it via ReactDOM.createPortal so React state stays wired to
+            // the original component instance.  In-page floating mode and
+            // window pop-out mode are MUTUALLY EXCLUSIVE -- opening one closes
+            // the other so the operator never has two copies of the sidebar
+            // fighting for the same state.  The window auto-closes when the
+            // parent tab unloads (registered in a useEffect below).
+            const [sidebarPopoutWin,  setSidebarPopoutWin]  = useState(null);
+            const [sidebarPopoutHost, setSidebarPopoutHost] = useState(null);
+            const popOutSidebarToWindow = useCallback(() => {
+                if (sidebarPopoutWin && !sidebarPopoutWin.closed) { sidebarPopoutWin.focus(); return; }
+                const result = red5OpenPopupWindow('sidebar', 'Red5 Sidebar (popped out)', 420, 950);
+                if (!result) {
+                    toast('Popup window blocked. Please allow popups for this site, then click the WIN button again.');
+                    return;
+                }
+                // Mutually exclusive with in-page floating mode.
+                setSidebarFloating(false);
+                setSidebarPopoutWin(result.win);
+                setSidebarPopoutHost(result.host);
+                const watcher = setInterval(() => {
+                    if (result.win.closed) {
+                        clearInterval(watcher);
+                        setSidebarPopoutWin(null);
+                        setSidebarPopoutHost(null);
+                    }
+                }, 400);
+            }, [sidebarPopoutWin]);
+
+            // Close orphan sidebar popup when the parent tab navigates away.
+            // (AHU/VAV/Floor-Plan popups have their own equivalent useEffect;
+            // we register a dedicated one for the sidebar so it stays
+            // independent of the modal lifecycle.)
+            useEffect(() => {
+                const onUnload = () => {
+                    if (sidebarPopoutWin && !sidebarPopoutWin.closed) {
+                        try { sidebarPopoutWin.close(); } catch (e) {}
+                    }
+                };
+                window.addEventListener('beforeunload', onUnload);
+                return () => window.removeEventListener('beforeunload', onUnload);
+            }, [sidebarPopoutWin]);
 
             // === Stale-cache detector ===
             // Flask injects window.__BUILD_MTIME__ at HTTP response time. We compare it
@@ -261,6 +557,147 @@
             useEffect(() => {
                 try { localStorage.setItem('red5_sweet_spot_range', JSON.stringify(sweetSpotRange)); } catch (e) {}
             }, [sweetSpotRange]);
+
+            // Robust JSON fetch that catches the common controller-side
+            // failure mode where an unregistered route gets handled by the
+            // SPA fallback and returns HTML instead of JSON.  Without this
+            // helper the caller sees a cryptic "Unexpected token '<'" from
+            // r.json() and assumes the controller is offline -- when in
+            // reality band_overrides_service.py just was not uploaded to
+            // /root/data/pgpy/ yet, or Flask was not restarted after the
+            // upload.  We detect HTML in the response and surface a
+            // controller-side deploy hint that the operator can act on.
+            const fetchJSON = async (url, options) => {
+                let r;
+                try {
+                    r = await fetch(url, options);
+                } catch (netErr) {
+                    const err = new Error('Controller unreachable: ' + netErr.message);
+                    err.code = 'NETWORK';
+                    throw err;
+                }
+                const ct = (r.headers.get('content-type') || '').toLowerCase();
+                if (!ct.includes('application/json')) {
+                    const head = (await r.text()).slice(0, 60).replace(/\s+/g, ' ').trim();
+                    if (r.status === 404 || /<!doctype/i.test(head) || /<html/i.test(head)) {
+                        const err = new Error(
+                            'Band-overrides service not found on the controller. '
+                          + 'Upload band_overrides_service.py to /root/data/pgpy/ '
+                          + 'and restart Flask, then try again.\n\n'
+                          + '(HTTP ' + r.status + ', response began with: ' + head + ')'
+                        );
+                        err.code = 'PLUGIN_MISSING';
+                        throw err;
+                    }
+                    const err = new Error('Unexpected non-JSON response (HTTP ' + r.status + '): ' + head);
+                    err.code = 'BAD_RESPONSE';
+                    throw err;
+                }
+                return r.json();
+            };
+
+            // ---- Plugin health (auto-discovered Flask services) ----
+            // Polls /api/services once on mount.  Compares the live status
+            // against an "expected" set so we can warn the operator when a
+            // required plug-in is missing (e.g. the band_overrides_service
+            // bug operators hit when they forget to upload it to
+            // /root/data/pgpy/).  Same chip serves as a green-light "all
+            // good" indicator when nothing is wrong.
+            const PLUGIN_EXPECTED = ['band_service', 'telemetry_service',
+                                     'weather_service', 'upload_service',
+                                     'band_overrides_service'];
+            const [pluginHealth, setPluginHealth] = useState({ state: 'unknown', missing: [], failed: [], total: 0 });
+            useEffect(() => {
+                let cancelled = false;
+                (async () => {
+                    try {
+                        const j = await fetchJSON('/api/services');
+                        if (cancelled) return;
+                        const svc = (j && j.services) || [];
+                        const seen = new Set(svc.map(s => s.name));
+                        const missing = PLUGIN_EXPECTED.filter(n => !seen.has(n));
+                        const failed  = svc.filter(s => s.state === 'FAILED' || s.state === 'SKIPPED' || s.state === 'WARNING');
+                        let state = 'ok';
+                        if (missing.length || failed.some(s => s.state === 'FAILED')) state = 'error';
+                        else if (failed.length) state = 'warn';
+                        setPluginHealth({ state, missing, failed, total: svc.length });
+                    } catch (e) {
+                        if (cancelled) return;
+                        setPluginHealth({ state: 'error', missing: [], failed: [], total: 0, detail: e.message });
+                    }
+                })();
+                return () => { cancelled = true; };
+            }, []);
+
+            // Operator SA-RH clamp - the SLIDER (sweetSpotRange) is hypothetical
+            // until the operator presses "Apply to Controller", at which point
+            // we POST to /api/band-overrides/sa-rh-clamp and the value here
+            // (bandClampApplied) gets updated.  Dirty state = slider differs
+            // from applied = Apply button highlighted amber.
+            //   null    -> no clamp on controller (factory bands)
+            //   {lo,hi} -> clamp currently enforced on controller
+            const [bandClampApplied, setBandClampApplied] = useState(null);
+            const [bandClampModal,   setBandClampModal]   = useState(null);  // { lo, hi, preview }
+            const [bandClampBusy,    setBandClampBusy]    = useState(false);
+            useEffect(() => {
+                let cancelled = false;
+                (async () => {
+                    try {
+                        const j = await fetchJSON('/api/band-overrides/sa-rh-clamp');
+                        if (cancelled) return;
+                        if (j.status === 'ok' && j.sa_rh_clamp && j.sa_rh_clamp.enabled) {
+                            setBandClampApplied({ lo: j.sa_rh_clamp.lo, hi: j.sa_rh_clamp.hi });
+                        }
+                    } catch (e) {
+                        // Silent on initial mount -- the operator gets a
+                        // clear error message later when they actually
+                        // click Apply / Reset.  fetchJSON already classified
+                        // the failure (PLUGIN_MISSING, NETWORK, etc.).
+                        if (typeof console !== 'undefined') console.warn('[band-overrides initial GET]', e.message);
+                    }
+                })();
+                return () => { cancelled = true; };
+            }, []);
+
+            // Clamp-effectiveness sparkline (P2 mockup):
+            // Rolling buffer of mean SA-RH (across all AHUs) sampled from the
+            // existing /api/data polling loop.  Pure client-side -- zero new
+            // BACnet writes, zero new backend routes.  30 samples @ ~30s
+            // cadence = a 15-min rolling window.  Persisted to localStorage so
+            // the chart survives page reloads instead of starting empty.
+            const SPARK_MAX        = 30;
+            const SPARK_INTERVAL_MS = 30 * 1000;
+            const [clampSpark, setClampSpark] = useState(() => {
+                try {
+                    const v = JSON.parse(localStorage.getItem('red5.clampSpark') || '[]');
+                    if (Array.isArray(v)) return v.slice(-SPARK_MAX);
+                } catch (e) {}
+                return [];
+            });
+            useEffect(() => {
+                if (!Array.isArray(ahuData) || ahuData.length === 0) return;
+                // Collect SA-RH per AHU.  Skip equipment that does not expose
+                // an SA point or whose rh is non-finite (mock mode w/ NaN).
+                const perAhu = [];
+                ahuData.forEach(a => {
+                    const sa = (a.points || []).find(p => p.label === 'SA');
+                    if (!sa) return;
+                    const rh = Number(sa.rh);
+                    if (!Number.isFinite(rh)) return;
+                    perAhu.push({ id: a.id, rh });
+                });
+                if (perAhu.length === 0) return;
+                const meanRh = perAhu.reduce((s, x) => s + x.rh, 0) / perAhu.length;
+                const ts = Date.now();
+                setClampSpark(prev => {
+                    if (prev.length > 0 && (ts - prev[prev.length - 1].ts) < SPARK_INTERVAL_MS) {
+                        return prev;
+                    }
+                    const next = [...prev, { ts, meanRh, perAhu }].slice(-SPARK_MAX);
+                    try { localStorage.setItem('red5.clampSpark', JSON.stringify(next)); } catch (e) {}
+                    return next;
+                });
+            }, [ahuData]);
             const [showPath, setShowPath] = useState(true);
             const [vecVis, setVecVis] = useState({ enthalpy: true, sensible: true, latent: true, diagnostic: true });
             const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true });
@@ -402,7 +839,7 @@
                 if (currentWin && !currentWin.closed) { currentWin.focus(); return; }
                 const result = red5OpenPopupWindow(label, title, 1600, 1000);
                 if (!result) {
-                    alert('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
+                    toast('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
                     return;
                 }
                 setterPair[0](result.win);
@@ -597,6 +1034,13 @@
             const [savedWeatherLocations, setSavedWeatherLocations] = useState(() => {
                 try { return JSON.parse(localStorage.getItem('savedWeatherLocations')) || []; } catch { return []; }
             });
+            // Pinned default location (★) — loaded on every fresh session
+            // before the operator picks an explicit `active`.  Single source
+            // of truth lives on the server (`tenant_weather_location.default`);
+            // local mirror lets the modal render stars without flicker.
+            const [defaultLocation, setDefaultLocation] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('defaultWeatherLocation')) || null; } catch { return null; }
+            });
             const [weatherSaveError, setWeatherSaveError] = useState('');
             // Hydrate weather state (active + saved list) from controller. Run on
             // mount and whenever the operator opens the location modal — that's
@@ -612,14 +1056,24 @@
                         if (!state) return;
                         const active = state.active && typeof state.active.lat === 'number' && typeof state.active.lon === 'number' ? state.active : null;
                         const saved = Array.isArray(state.saved) ? state.saved.filter(s => s && typeof s.lat === 'number' && typeof s.lon === 'number') : [];
+                        const pinned = state.default && typeof state.default.lat === 'number' && typeof state.default.lon === 'number' ? state.default : null;
                         try { localStorage.setItem('savedWeatherLocations', JSON.stringify(saved)); } catch (e) {}
+                        if (pinned) {
+                            try { localStorage.setItem('defaultWeatherLocation', JSON.stringify(pinned)); } catch (e) {}
+                        } else {
+                            try { localStorage.removeItem('defaultWeatherLocation'); } catch (e) {}
+                        }
                         setSavedWeatherLocations(saved);
+                        setDefaultLocation(pinned);
                         // Active is only adopted from the server on first mount —
                         // i.e. when local state has no active yet. Otherwise the
                         // operator's just-clicked selection could be reverted.
+                        // Fresh-session precedence: pinned default > stored active
+                        // > nothing — so the operator's "★" choice always wins
+                        // on first open of the day.
                         setWeatherLocation(prev => {
                             if (prev) return prev;
-                            return active || prev;
+                            return pinned || active || prev;
                         });
                     })
                     .catch(() => {});
@@ -677,6 +1131,30 @@
                     clearTimeout(timer);
                 });
             }, []);
+
+            // ----------------------------------------------------------------
+            // Pin / unpin a default location.  Persists to the server's
+            // `tenant_weather_location.default` field so the dashboard
+            // auto-loads this hospital on every fresh session, regardless
+            // of what was last active.  Pass `null` to clear the pin.
+            // ----------------------------------------------------------------
+            const pinLocation = useCallback((loc) => {
+                const body = (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number')
+                    ? { default: { lat: loc.lat, lon: loc.lon, name: loc.name || '' } }
+                    : { default: null };
+                if (body.default) {
+                    try { localStorage.setItem('defaultWeatherLocation', JSON.stringify(body.default)); } catch (e) {}
+                } else {
+                    try { localStorage.removeItem('defaultWeatherLocation'); } catch (e) {}
+                }
+                setDefaultLocation(body.default);
+                return fetch(`${API_URL}/api/weather-location`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify(body)
+                }).catch(e => console.warn('pin failed:', e));
+            }, []);
             const [weatherZoom, setWeatherZoom] = useState(null);
             const [weatherDragStart, setWeatherDragStart] = useState(null);
             const [weatherDragCurrent, setWeatherDragCurrent] = useState(null);
@@ -720,7 +1198,7 @@
                     const cached = (window._equipTypesCache && Object.keys(window._equipTypesCache).length)
                         ? window._equipTypesCache : null;
                     if (cached) {
-                        const cfgRes = await fetch(API_URL + '/api/collector-config');
+                        const cfgRes = await fetch(API_URL + '/api/collector-config', { credentials: 'include' });
                         const cfgData = await cfgRes.json();
                         setCcConfig(cfgData.config || cfgData);
                         setCcEquipTypes(cached);
@@ -728,8 +1206,8 @@
                         return;
                     }
                     const [cfgRes, etRes] = await Promise.all([
-                        fetch(API_URL + '/api/collector-config'),
-                        fetch(API_URL + '/api/equipment-types')
+                        fetch(API_URL + '/api/collector-config', { credentials: 'include' }),
+                        fetch(API_URL + '/api/equipment-types', { credentials: 'include' })
                     ]);
                     const cfgData = await cfgRes.json();
                     const etData = await etRes.json();
@@ -744,12 +1222,20 @@
                 setCcSaving(true); setCcMsg('');
                 try {
                     const r = await fetch(API_URL + '/api/collector-config', {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {'Content-Type':'application/json'},
                         body: JSON.stringify(cfg)
                     });
                     const d = await r.json();
-                    if (d.success) { setCcConfig(cfg); setCcMsg('Saved.'); }
-                    else setCcMsg('Error: ' + (d.error || 'Unknown'));
+                    if (d.success) {
+                        setCcConfig(cfg);
+                        setCcMsg(d.persisted === false
+                            ? (d.warning || 'Saved (preview only -- sign in to persist).')
+                            : 'Saved.');
+                    } else {
+                        setCcMsg('Error: ' + (d.error || d.detail || 'Unknown'));
+                    }
                 } catch (e) { setCcMsg('Save failed: ' + e.message); }
                 setCcSaving(false);
             };
@@ -758,12 +1244,22 @@
                 setCcSaving(true); setCcMsg('');
                 try {
                     const r = await fetch(API_URL + '/api/save-equipment-schema', {
-                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {'Content-Type':'application/json'},
                         body: JSON.stringify({ equipment_schema: et })
                     });
                     const d = await r.json();
-                    if (d.success) { setCcEquipTypes(et); setCcMsg('Equipment types saved.'); }
-                    else setCcMsg('Error: ' + (d.error || 'Unknown'));
+                    if (d.success) {
+                        setCcEquipTypes(et);
+                        setCcMsg(d.persisted === false
+                            ? (d.warning || 'Saved (preview only -- sign in to persist).')
+                            : 'Equipment types saved.');
+                    } else {
+                        setCcMsg(d.warning
+                            ? d.warning
+                            : 'Error: ' + (d.error || d.detail || 'Unknown'));
+                    }
                 } catch (e) { setCcMsg('Save failed: ' + e.message); }
                 setCcSaving(false);
             };
@@ -837,7 +1333,7 @@
                                 const types = [...Object.values(et.ahu_types || {}), ...Object.values(et.vav_types || {})];
                                 types.forEach(tdef => {
                                     const p = tdef && tdef.visual_assets && tdef.visual_assets.base_graphic;
-                                    if (p) { const im = new Image(); im.src = `${API_URL}/assets/${p}`; }
+                                    if (p) { const im = new Image(); im.src = `${API_URL}/api/assets/${p}`; }
                                 });
                             } catch (e) {}
                         }).catch(() => {});
@@ -849,9 +1345,15 @@
             // Fetch map_config.json for floor plan layout
             useEffect(() => {
                 const API_URL = window.API_BASE_URL || window.location.origin;
-                fetch(`${API_URL}/api/map-config`)
+                fetch(`${API_URL}/api/map-config`, { credentials: 'include' })
                     .then(r => { if (!r.ok) throw new Error('No map_config.json'); return r.json(); })
-                    .then(data => setMapConfig(data))
+                    .then(data => {
+                        // Backend may return a wrapper with `{floors:..., mode:'demo'}`
+                        // when nothing is saved; treat that as "no map" so the
+                        // fallback layout renders instead of an empty grid.
+                        if (data && Array.isArray(data.floors) && data.floors.length > 0) setMapConfig(data);
+                        else setMapConfig(null);
+                    })
                     .catch(() => setMapConfig(null));
             }, []);
 
@@ -1080,7 +1582,7 @@
             const fetchTelemetry = React.useCallback(async (signal) => {
                 try {
                     const API_URL = window.API_BASE_URL || window.location.origin;
-                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal } : undefined);
+                    const response = await fetch(`${API_URL}/api/data`, signal ? { signal, credentials: 'include' } : { credentials: 'include' });
                     if (!response.ok) return;
                     const data = await response.json();
                     if (!Array.isArray(data)) return;
@@ -1139,7 +1641,7 @@
             // Load initial data mode from backend
             useEffect(() => {
                 const API_URL = window.API_BASE_URL || window.location.origin;
-                fetch(API_URL + '/api/data-mode').then(r => r.json()).then(d => {
+                fetch(API_URL + '/api/data-mode', { credentials: 'include' }).then(r => r.json()).then(d => {
                     if (d.success && d.mode) setDataMode(d.mode);
                 }).catch(() => {});
             }, []);
@@ -1149,7 +1651,7 @@
                 const checkStatus = async () => {
                     try {
                         const API_URL = window.API_BASE_URL || window.location.origin;
-                        const r = await fetch(`${API_URL}/api/telemetry-status`);
+                        const r = await fetch(`${API_URL}/api/telemetry-status`, { credentials: 'include' });
                         if (r.ok) setTelemetryStatus(await r.json());
                     } catch (e) { }
                 };
@@ -1226,6 +1728,44 @@
                 try { wl = JSON.parse(localStorage.getItem('weatherLocation')); } catch(e) {}
                 initPsy3D(psy3dRef.current, { weatherLocation: wl || weatherLocation });
             }, [activeView]);
+
+            // ----------------------------------------------------------------
+            // Bidirectional location sync: PSYCH tab <-> 3D WX tab.
+            // ----------------------------------------------------------------
+            // Bug fixed: previously the 3D WX engine read `weatherLocation`
+            // ONCE at mount and kept rendering the original city's scatter
+            // cloud even after the operator picked a new location in the
+            // dashboard's weather modal.  Now:
+            //
+            //   PSYCH -> 3D WX: when `weatherLocation` changes AND the engine
+            //   is already mounted, call its public `setPsy3DLocation()` so
+            //   the form fields update and the scatter cloud re-fetches.
+            //
+            //   3D WX -> PSYCH: the engine fires a `r5-location-change`
+            //   CustomEvent whenever its internal dropdown picks a new
+            //   location; we mirror it into React state + localStorage so
+            //   the bottom weather strip flips to the same city.
+            useEffect(() => {
+                if (!weatherLocation) return;
+                if (typeof window.setPsy3DLocation === 'function') {
+                    window.setPsy3DLocation(weatherLocation);
+                }
+            }, [weatherLocation && weatherLocation.lat, weatherLocation && weatherLocation.lon]);
+
+            useEffect(() => {
+                const handler = (ev) => {
+                    const loc = ev && ev.detail;
+                    if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+                    // Guard against echo: only update if it's actually different.
+                    if (weatherLocation
+                        && Math.abs(weatherLocation.lat - loc.lat) < 1e-4
+                        && Math.abs(weatherLocation.lon - loc.lon) < 1e-4) return;
+                    setWeatherLocation(loc);
+                    try { localStorage.setItem('weatherLocation', JSON.stringify(loc)); } catch (e) {}
+                };
+                window.addEventListener('r5-location-change', handler);
+                return () => window.removeEventListener('r5-location-change', handler);
+            }, [weatherLocation]);
 
             // Comfort zone and diagnostics loaded from js/psychrometric.js
             // Functions: getEnergyMetrics, buildComfortZonePoly, isInComfortZone,
@@ -1557,31 +2097,59 @@
                 const currentAhu = ahuData.find(a => a.id === selectedAhuId);
                 if (!currentAhu && !indicatorPos) return null;
                 
-                let tVal, rhVal, hVal, title;
+                let tVal, rhVal, hVal, wVal, title;
                 if (lockedVavId && currentAhu) {
                     const lockedVav = currentAhu.vavs?.find(v => v.id === lockedVavId);
                     if (!lockedVav) return null;
-                    tVal = lockedVav.t; rhVal = lockedVav.rh; hVal = lockedVav.h; title = lockedVav.id;
+                    tVal = lockedVav.t; rhVal = lockedVav.rh; hVal = lockedVav.h;
+                    wVal = lockedVav.w != null ? lockedVav.w : getW(lockedVav.t, lockedVav.rh);
+                    title = lockedVav.id;
                 } else {
                     if (!indicatorPos) return null;
                     tVal = indicatorPos.t;
                     const pw = (indicatorPos.w * P_ATM) / (0.621945 + indicatorPos.w);
                     rhVal = Math.min(100, Math.max(0, (pw / getPsat(tVal)) * 100));
-                    hVal = getH(indicatorPos.t, indicatorPos.w); title = null;
+                    hVal = getH(indicatorPos.t, indicatorPos.w);
+                    wVal = indicatorPos.w;
+                    title = null;
                 }
                 
                 const saP = currentAhu?.points?.find(p => p.label === 'SA');
                 const saH = saP ? getH(saP.t, saP.w) : 0; 
                 const diffH = hVal - saH;
                 
+                // Givoni-tier strategy hint -- mirrors the VAV-table dot
+                // logic so the operator sees the same recommendation in
+                // both places (the row tooltip AND this on-chart callout).
+                const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                const gv = getGivoniTier(tVal, wVal, rhVal, comfortZonePoly, _gvSweet, showGivoni);
+                const showTier = showGivoni;
+                const tooltipH = (title ? 42 : 32) + (showTier ? 14 : 0);
+                const tooltipW = 96;
+
                 return (
                     <g transform={`translate(8, ${title ? -45 : -35})`} className="pointer-events-none drop-shadow-lg shadow-black">
-                        <rect x="0" y="0" width="85" height={title ? "42" : "32"} 
+                        <rect x="0" y="0" width={tooltipW} height={tooltipH} 
                               fill={theme==='dark' ? "rgba(15, 23, 42, 0.6)" : "rgba(255, 255, 255, 0.6)"} 
                               stroke={theme==='dark' ? "#6366f1" : "#818cf8"} strokeWidth="1.5" rx="6" />
-                        {title && <text x="42.5" y="12" textAnchor="middle" fill="#818cf8" fontSize="8" fontWeight="900" className="uppercase tracking-widest">{title}</text>}
-                        <text x="42.5" y={title ? "24" : "14"} textAnchor="middle" fill={theme==='dark' ? "#f8fafc" : "#0f172a"} fontSize="9" fontWeight="900" className="font-mono">{tVal.toFixed(1)}° / {rhVal.toFixed(0)}%</text>
-                        <text x="42.5" y={title ? "36" : "26"} textAnchor="middle" fill={theme==='dark' ? "#f472b6" : "#db2777"} fontSize="9" fontWeight="900" className="font-mono">ΔH: {diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</text>
+                        {title && <text x={tooltipW/2} y="12" textAnchor="middle" fill="#818cf8" fontSize="8" fontWeight="900" className="uppercase tracking-widest">{title}</text>}
+                        <text x={tooltipW/2} y={title ? "24" : "14"} textAnchor="middle" fill={theme==='dark' ? "#f8fafc" : "#0f172a"} fontSize="9" fontWeight="900" className="font-mono">{tVal.toFixed(1)}° / {rhVal.toFixed(0)}%</text>
+                        <text x={tooltipW/2} y={title ? "36" : "26"} textAnchor="middle" fill={theme==='dark' ? "#f472b6" : "#db2777"} fontSize="9" fontWeight="900" className="font-mono">ΔH: {diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</text>
+                        {showTier && (
+                            <g data-testid="givoni-tier-hint">
+                                <circle cx="7" cy={title ? 50 : 40} r="3" fill={gv.dotFill} stroke={gv.ringStroke} strokeWidth="0.8" />
+                                <text x="13" y={title ? 53 : 43} textAnchor="start"
+                                      fill={gv.dotFill}
+                                      fontSize="8" fontWeight="900" className="font-mono uppercase tracking-wider">
+                                    {gv.tier} · {gv.label}
+                                </text>
+                                <text x="13" y={title ? 61 : 51} textAnchor="start"
+                                      fill={theme==='dark' ? "#94a3b8" : "#475569"}
+                                      fontSize="7" fontWeight="700" className="font-mono lowercase">
+                                    {gv.subLabel}
+                                </text>
+                            </g>
+                        )}
                     </g>
                 );
             };
@@ -1729,15 +2297,27 @@
                     }
                 }} onMouseUp={() => {setIsDraggingIndicator(false); setIsCardDragging(false); setIsVavDragging(false); setIsVavModalDragging(false); setIsAhuModalDragging(false); setIsFloorPlanDragging(false);}}>
                     
-                    {/* LEFT SIDEBAR — resizable */}
+                    {/* LEFT SIDEBAR — three render modes:
+                          docked      : original in-flow column.
+                          floating    : in-page draggable+resizable shell
+                                        (same document, mouse events stable).
+                          cross-window: portaled into a separate OS-level
+                                        browser window for extended displays
+                                        (mirrors AHU/VAV modal pattern). */}
+                    {(() => {
+                        const isPoppedToWin   = !!sidebarPopoutWin;
+                        const isPoppedFloat   = sidebarFloating && !isPoppedToWin;
+                        const isPopped        = isPoppedFloat || isPoppedToWin;
+                        const sidebarTree = (
                     <div
-                        className={`${ui.sidebar} border-r ${ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
-                        style={{ width: `${sidebarWidth}px` }}
-                        data-testid="left-sidebar"
+                        className={`${ui.sidebar} ${ui.text} ${isPopped ? '' : 'border-r ' + ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
+                        style={isPopped ? {width:'100%',height:'100%',minHeight:0} : { width: `${sidebarWidth}px` }}
+                        data-testid={isPoppedToWin ? "left-sidebar-popped-window" : (isPoppedFloat ? "left-sidebar-popped" : "left-sidebar")}
                     >
-                        {/* Drag handle on the right edge to resize the sidebar.
-                            Min width = 250px (tested: AHU title + theme toggle keep
-                            a small gap). Max width = 320px (original baseline). */}
+                        {/* Inline resize handle only used when docked.  Float
+                            mode has the floating-shell corner grip; cross-window
+                            mode has the OS window border. */}
+                        {!isPopped && (
                         <div
                             data-testid="sidebar-resize-handle"
                             onMouseDown={(e) => {
@@ -1745,7 +2325,7 @@
                                 const startX = e.clientX;
                                 const startW = sidebarWidth;
                                 const onMove = (mv) => {
-                                    const next = Math.max(250, Math.min(320, startW + (mv.clientX - startX)));
+                                    const next = Math.max(250, Math.min(400, startW + (mv.clientX - startX)));
                                     setSidebarWidth(next);
                                     try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
                                 };
@@ -1759,6 +2339,7 @@
                             className="absolute top-0 right-0 h-full w-1 cursor-col-resize z-30 hover:bg-indigo-500/40"
                             title={window.t ? window.t("drag_to_resize") : "Drag to resize"}
                         />
+                        )}
                         <div className="p-4 pb-3 border-b border-slate-800 font-black" style={{overflow:'visible'}}>
                             <div className="flex justify-between items-start">
                                 <div>
@@ -1786,16 +2367,110 @@
                                         })()}
                                     </div>
                                 </div>
+                                <div className="flex items-center gap-1 flex-wrap justify-end">
                                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
+                                {/* Plugin-health chip - polls /api/services once on
+                                    mount.  Surfaces missing or failed plugins at a
+                                    glance so the operator does not discover them
+                                    only by clicking a feature and getting a
+                                    PLUGIN_MISSING error (e.g. the band-overrides
+                                    case). */}
+                                {(() => {
+                                    const h = pluginHealth;
+                                    if (h.state === 'unknown') return null;
+                                    const isOk    = h.state === 'ok';
+                                    const isWarn  = h.state === 'warn';
+                                    // Tailwind JIT only picks up CLASS NAMES that appear as
+                                    // complete literal strings in the source -- dynamic
+                                    // interpolation like `bg-${color}-900/40` would compile
+                                    // to runtime bytes that JIT never sees, so the chip
+                                    // would render unstyled.  Enumerate every variant.
+                                    const cls = isOk
+                                        ? (theme === 'dark'
+                                            ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300 hover:bg-emerald-900/60'
+                                            : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100')
+                                        : (isWarn
+                                            ? (theme === 'dark'
+                                                ? 'bg-amber-900/40 border-amber-700/50 text-amber-300 hover:bg-amber-900/60'
+                                                : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100')
+                                            : (theme === 'dark'
+                                                ? 'bg-rose-900/40 border-rose-700/50 text-rose-300 hover:bg-rose-900/60'
+                                                : 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100'));
+                                    const dot   = isOk ? '\u25CF' : (isWarn ? '\u25B2' : '\u2716');
+                                    const lines = [];
+                                    if (h.missing && h.missing.length) {
+                                        lines.push('Missing (' + h.missing.length + '):');
+                                        for (const m of h.missing) lines.push('  - ' + m + ' (upload to /root/data/pgpy/ + restart Flask)');
+                                    }
+                                    if (h.failed && h.failed.length) {
+                                        lines.push('Loaded but not OK (' + h.failed.length + '):');
+                                        for (const f of h.failed) lines.push('  - ' + f.name + ' [' + f.state + '] ' + (f.detail || ''));
+                                    }
+                                    if (h.detail) lines.push('Probe error: ' + h.detail);
+                                    if (!lines.length) lines.push('All ' + h.total + ' Flask plug-ins registered OK');
+                                    const tip = lines.join('\n');
+                                    return (
+                                        <button
+                                            data-testid="plugin-health-chip"
+                                            data-state={h.state}
+                                            title={tip}
+                                            onClick={() => toast(tip)}
+                                            className={`flex-shrink-0 px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${cls}`}
+                                        >
+                                            {dot} {isOk ? 'OK' : (isWarn ? 'WARN' : (h.missing && h.missing.length ? 'PLUGIN' : 'ERR'))}
+                                        </button>
+                                    );
+                                })()}
+                                {/* Pop-out toggle - turns the docked sidebar into
+                                    a floating, draggable in-page panel.  Only
+                                    rendered when the sidebar is DOCKED -- once
+                                    the panel is floating, the title bar inside
+                                    the floating shell already has its own
+                                    ATTACH button, so rendering this header copy
+                                    would produce two identical buttons stacked
+                                    vertically (operator-reported bug). */}
+                                {!sidebarFloating && !sidebarPopoutWin && (
+                                <button
+                                    onClick={() => setSidebarFloating(true)}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700'}`}
+                                    title="Float the sidebar into a draggable, resizable in-page panel"
+                                    data-testid="popout-sidebar-btn"
+                                >
+                                    {'\u2197 POP'}
+                                </button>
+                                )}
+                                {/* Cross-window pop-out - opens a separate
+                                    browser window the operator can drag to an
+                                    extended display.  Mirrors the AHU / VAV /
+                                    Floor-Plan modal pattern.  Hidden when the
+                                    sidebar is already in a popout window
+                                    (operator brings it back via the "Bring
+                                    Back" button in the docked placeholder). */}
+                                {!sidebarPopoutWin && (
+                                <button
+                                    onClick={popOutSidebarToWindow}
+                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-violet-500 hover:text-violet-700'}`}
+                                    title="Pop the sidebar out to a separate browser window (extended display)"
+                                    data-testid="popout-sidebar-window-btn"
+                                >
+                                    {'\u29C9 WIN'}
+                                </button>
+                                )}
+                                </div>
                             </div>
-                            <div className="flex items-center gap-1.5 mt-2">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}
+                                {/* Standards / Docs button — single entry point.
+                                    Opens the docs popup at whichever tab the
+                                    operator was last reading (G36 cross-walk on
+                                    first ever open, since that's the default
+                                    activeId in localStorage). */}
                                 <button
                                     onClick={() => window.red5DocsIndex && window.red5DocsIndex.open()}
-                                    data-testid="docs-index-btn"
-                                    title={window.t ? (window.t('docs_index') || 'Open Docs Index — band-shift insight, design workflow, and more') : 'Open Docs Index'}
-                                    className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-blue-400 hover:bg-slate-700 hover:border-blue-400':'bg-slate-100 border-slate-300 text-blue-600 hover:bg-blue-50'}`}>
-                                    📚 Docs
+                                    data-testid="standards-btn"
+                                    title="Open Standards — ASHRAE Guideline 36 cross-walk, Band Guide, Control Algorithms, B-Shift Insight, Psych Design Workflow"
+                                    className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
+                                    📘 Standards
                                 </button>
                                 <button onClick={openCollectorCfg} className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"}>Collector</button>
                                 <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded text-[8px] font-black uppercase tracking-wider transition-all`}>{t('config')}</button>
@@ -1872,6 +2547,35 @@
                                     className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-white shadow-lg' : ui.btnToggle)}`}
                                 >{sweetSpotRange.lo}-{sweetSpotRange.hi}% RH</button>
                             </div>
+                            {/* Tier legend chip - colour-codes the VAV-table dots so
+                                the operator can map "circle colour -> chart region"
+                                without hovering each row.  Colours come from the
+                                same GIVONI_COLORS token map the chart polygons use
+                                (single source of truth in psychrometric.js). */}
+                            {showGivoni && (() => {
+                                const swatches = [
+                                    { tier: 'A',  fill: GIVONI_COLORS.TIER_A_DOT,   label: 'Comfort',   sub: 'hold' },
+                                    { tier: 'B',  fill: GIVONI_COLORS.TIER_B_DOT,   label: 'Soft trim', sub: 'hum/dehum' },
+                                    { tier: 'C+', fill: GIVONI_COLORS.HOT_OUTSIDE,  label: 'Hot/humid', sub: 'cool' },
+                                    { tier: 'C-', fill: GIVONI_COLORS.COLD_OUTSIDE, label: 'Cold/dry',  sub: 'heat' },
+                                ];
+                                return (
+                                    <div className={`mt-2.5 grid grid-cols-4 gap-1 px-0.5`} data-testid="givoni-tier-legend">
+                                        {swatches.map(s => (
+                                            <div key={s.tier}
+                                                 title={`Tier ${s.tier} — ${s.label} (${s.sub})`}
+                                                 data-testid={`givoni-tier-legend-${s.tier}`}
+                                                 className={`flex flex-col items-center gap-0.5 py-1.5 rounded-md border ${theme==='dark'?'bg-slate-950/60 border-slate-800':'bg-slate-50 border-slate-200'}`}>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="w-2 h-2 rounded-full" style={{ background: s.fill, boxShadow: '0 0 4px ' + s.fill + '99' }} />
+                                                    <span className="font-black text-[9px] font-mono tracking-wider" style={{ color: s.fill }}>{s.tier}</span>
+                                                </div>
+                                                <span className={`text-[7px] font-mono font-bold uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>{s.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
                             {showGivoni && showSweetSpot && (() => {
                                 // Dual-handle RH range slider matching the
                                 // dry-bulb axis-settings widget below.  Track
@@ -1935,6 +2639,143 @@
                                                 className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black tracking-wider transition-all ${theme==='dark'?'text-slate-500 hover:text-emerald-300 hover:bg-slate-800':'text-slate-500 hover:text-emerald-700 hover:bg-slate-100'}`}>Reset</button>
                                             <span>70% RH</span>
                                         </div>
+                                        {/* Apply-to-Controller row.  The slider above is hypothetical
+                                            until pressed; the small chip on the left shows what is
+                                            currently enforced on the BACnet side. */}
+                                        {(() => {
+                                            const applied = bandClampApplied;
+                                            const dirty = applied
+                                                ? (applied.lo !== sweetSpotRange.lo || applied.hi !== sweetSpotRange.hi)
+                                                : true;
+                                            const appliedLabel = applied
+                                                ? `Live: ${applied.lo}-${applied.hi}% RH`
+                                                : 'Live: factory bands';
+                                            const onApply = async () => {
+                                                try {
+                                                    const j = await fetchJSON('/api/band-overrides/preview?lo=' + sweetSpotRange.lo + '&hi=' + sweetSpotRange.hi);
+                                                    if (j.status === 'ok') {
+                                                        setBandClampModal({ lo: sweetSpotRange.lo, hi: sweetSpotRange.hi, preview: j.preview });
+                                                    } else {
+                                                        toast('Preview failed: ' + (j.message || 'unknown'));
+                                                    }
+                                                } catch (e) {
+                                                    toast(e.message);
+                                                }
+                                            };
+                                            const onReset = async () => {
+                                                if (!applied) return;
+                                                if (!window.confirm('Reset to factory bands?  This removes the SA-RH clamp from the controller.')) return;
+                                                setBandClampBusy(true);
+                                                try {
+                                                    const j = await fetchJSON('/api/band-overrides/sa-rh-clamp', { method: 'DELETE' });
+                                                    if (j.status === 'ok') {
+                                                        setBandClampApplied(null);
+                                                    } else {
+                                                        toast('Reset failed: ' + (j.message || 'unknown'));
+                                                    }
+                                                } catch (e) {
+                                                    toast(e.message);
+                                                } finally {
+                                                    setBandClampBusy(false);
+                                                }
+                                            };
+                                            return (
+                                                <div className="mt-2 flex items-center gap-2" data-testid="band-clamp-row">
+                                                    <span className={`text-[8px] font-mono font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${applied ? (theme==='dark'?'bg-emerald-900/40 text-emerald-300 border border-emerald-700/40':'bg-emerald-50 text-emerald-700 border border-emerald-200') : (theme==='dark'?'bg-slate-800 text-slate-400 border border-slate-700':'bg-slate-100 text-slate-500 border border-slate-300')}`}
+                                                          data-testid="band-clamp-live">{appliedLabel}</span>
+                                                    {/* Clamp-effectiveness sparkline -- "is the equipment honouring the target?"
+                                                        Inline 64x22 SVG plotted from clampSpark (mean SA-RH across all AHUs over
+                                                        the last ~15 min, sampled every 30s).  Pure client-side, no new BACnet
+                                                        writes.  Three color states: emerald inside band, rose drifting outside,
+                                                        slate baseline when no clamp is applied. */}
+                                                    {clampSpark.length >= 2 && (() => {
+                                                        const W = 64, H = 22, PADX = 2;
+                                                        const lastN = clampSpark.slice(-12);
+                                                        const last = lastN[lastN.length - 1];
+                                                        const meanRh = last.meanRh;
+                                                        // Y-domain: prefer the clamp window with a 5-pt cushion,
+                                                        // else fall back to the actual sample min/max with padding.
+                                                        let yMin, yMax;
+                                                        if (applied) {
+                                                            yMin = Math.min(applied.lo - 5, Math.min(...lastN.map(s => s.meanRh)) - 2);
+                                                            yMax = Math.max(applied.hi + 5, Math.max(...lastN.map(s => s.meanRh)) + 2);
+                                                        } else {
+                                                            const vs = lastN.map(s => s.meanRh);
+                                                            yMin = Math.min(...vs) - 3;
+                                                            yMax = Math.max(...vs) + 3;
+                                                        }
+                                                        if (yMax - yMin < 10) { const c = (yMin + yMax) / 2; yMin = c - 5; yMax = c + 5; }
+                                                        const yOf = (rh) => H - ((rh - yMin) / (yMax - yMin)) * H;
+                                                        const xOf = (i) => PADX + (i * (W - 2 * PADX)) / Math.max(1, lastN.length - 1);
+                                                        // Honored = mean inside band at each sample (only meaningful when clamp applied)
+                                                        const honored = applied
+                                                            ? lastN.filter(s => s.meanRh >= applied.lo && s.meanRh <= applied.hi).length
+                                                            : null;
+                                                        const insideBand = applied && meanRh >= applied.lo && meanRh <= applied.hi;
+                                                        const driftAbove = applied && meanRh > applied.hi;
+                                                        const stroke   = !applied ? '#94a3b8' : (insideBand ? '#34d399' : '#fb7185');
+                                                        const dotFill  = stroke;
+                                                        const dotEdge  = !applied ? '#0f172a' : (insideBand ? '#022c22' : '#7f1d1d');
+                                                        const borderC  = !applied ? 'rgba(100,116,139,0.35)'
+                                                                            : (insideBand ? 'rgba(16,185,129,0.3)' : 'rgba(251,113,133,0.5)');
+                                                        const textCls  = !applied ? 'text-slate-400' : (insideBand ? 'text-emerald-300' : 'text-rose-300');
+                                                        const points   = lastN.map((s, i) => `${xOf(i).toFixed(1)},${yOf(s.meanRh).toFixed(1)}`).join(' ');
+                                                        // Per-AHU tooltip line
+                                                        const perAhuStr = (last.perAhu || []).map(p => `${p.id}:${p.rh.toFixed(0)}%`).join(', ');
+                                                        const tipParts = [
+                                                            `Mean SA-RH: ${meanRh.toFixed(1)}%`,
+                                                            applied ? `Window: ${applied.lo}-${applied.hi}% RH` : 'No clamp applied (factory bands)',
+                                                            applied ? `Honored: ${honored}/${lastN.length} samples` : null,
+                                                            `Sources: ${perAhuStr}`,
+                                                            `Window: ~${Math.round((last.ts - lastN[0].ts) / 60000)} min`,
+                                                        ].filter(Boolean);
+                                                        return (
+                                                            <div className="flex items-center gap-1.5"
+                                                                 data-testid="clamp-spark"
+                                                                 title={tipParts.join('\n')}>
+                                                                <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${borderC}`, borderRadius: 3 }}>
+                                                                    {applied && (
+                                                                        <React.Fragment>
+                                                                            <rect x="0" y={yOf(applied.hi)} width={W} height={Math.max(0, yOf(applied.lo) - yOf(applied.hi))} fill="rgba(16,185,129,0.18)"/>
+                                                                            <line x1="0" y1={yOf(applied.hi)} x2={W} y2={yOf(applied.hi)} stroke="#10b981" strokeWidth="0.5" strokeDasharray="2,1.5" opacity="0.7"/>
+                                                                            <line x1="0" y1={yOf(applied.lo)} x2={W} y2={yOf(applied.lo)} stroke="#10b981" strokeWidth="0.5" strokeDasharray="2,1.5" opacity="0.7"/>
+                                                                        </React.Fragment>
+                                                                    )}
+                                                                    <polyline fill="none" stroke={stroke} strokeWidth="1.4" points={points}/>
+                                                                    <circle cx={xOf(lastN.length - 1)} cy={yOf(meanRh)} r="1.7" fill={dotFill} stroke={dotEdge} strokeWidth="0.5"/>
+                                                                    {applied && !insideBand && (
+                                                                        <text x={W - 9} y={H - 1} fontSize="9" fontWeight="900" fill="#fb7185" fontFamily="ui-monospace,Menlo,monospace">!</text>
+                                                                    )}
+                                                                </svg>
+                                                                <span className={`text-[9px] font-mono font-black ${textCls}`} data-testid="clamp-spark-mean">
+                                                                    {meanRh.toFixed(1)}%{driftAbove ? '\u2191' : ''}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                    <button
+                                                        data-testid="band-clamp-apply"
+                                                        onClick={onApply}
+                                                        disabled={!dirty || bandClampBusy}
+                                                        title={dirty ? 'Apply slider window to controller (clamps every band SA-RH target)' : 'Slider matches controller - nothing to apply'}
+                                                        className={`flex-1 py-1.5 rounded text-[9px] font-black uppercase tracking-wider border transition-all ${
+                                                            !dirty
+                                                                ? (theme==='dark' ? 'bg-slate-800/60 border-slate-700 text-slate-600 cursor-not-allowed' : 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed')
+                                                                : (theme==='dark' ? 'bg-amber-600 border-amber-400 text-white hover:bg-amber-500 shadow-md shadow-amber-600/30' : 'bg-amber-500 border-amber-600 text-white hover:bg-amber-600 shadow-md')
+                                                        }`}>
+                                                        {bandClampBusy ? '...' : (dirty ? 'Apply to Controller' : 'Applied')}
+                                                    </button>
+                                                    {applied && (
+                                                        <button
+                                                            data-testid="band-clamp-reset"
+                                                            onClick={onReset}
+                                                            disabled={bandClampBusy}
+                                                            title="Remove the SA-RH clamp from the controller (revert to factory bands)"
+                                                            className={`px-2 py-1.5 rounded text-[9px] font-black uppercase tracking-wider border transition-all ${theme==='dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-rose-900/30 hover:border-rose-600 hover:text-rose-300' : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-700'}`}>Reset</button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 );
                             })()}
@@ -2040,6 +2881,99 @@
                             ); 
                         })}</div>
                     </div>
+                        );
+                        if (isPoppedToWin && sidebarPopoutHost) {
+                            // Cross-window mode: portal the sidebar React tree
+                            // into the popup window's host div + render a THIN
+                            // vertical rail (~36 px) in place of the old docked
+                            // column so the chart claims the freed real estate.
+                            // The rail itself is clickable -- click anywhere on
+                            // it to close the popup and bring the sidebar back.
+                            const placeholder = (
+                                <button
+                                    type="button"
+                                    data-testid="sidebar-window-attach"
+                                    onClick={() => { try { sidebarPopoutWin.close(); } catch (e) {} }}
+                                    title="Sidebar is on the extended display.  Click to bring it back."
+                                    className={`flex flex-col items-center justify-center py-2 z-20 flex-shrink-0 cursor-pointer transition-all border-r ${theme==='dark' ? 'bg-slate-950 border-indigo-500/30 hover:bg-indigo-900/20 text-indigo-300' : 'bg-slate-50 border-slate-300 hover:bg-indigo-50 text-indigo-600'}`}
+                                    style={{ width: '32px' }}
+                                >
+                                    <span className="text-[11px] font-black mb-1">{'\u29C9'}</span>
+                                    {/* Vertical "SIDEBAR \u2192 EXT DISPLAY \u00B7 CLICK TO BRING BACK"
+                                        rotated so it reads upward along the rail. */}
+                                    <span
+                                        className="text-[8px] font-black uppercase tracking-widest whitespace-nowrap"
+                                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', letterSpacing: '0.2em' }}
+                                        data-testid="sidebar-window-placeholder"
+                                    >
+                                        {'\u21A9 Click to bring back \u00B7 Sidebar on extended display'}
+                                    </span>
+                                </button>
+                            );
+                            return (
+                                <React.Fragment>
+                                    {placeholder}
+                                    {ReactDOM.createPortal(sidebarTree, sidebarPopoutHost)}
+                                </React.Fragment>
+                            );
+                        }
+                        if (isPoppedFloat) {
+                            // In-page floating shell.  Same document, so mouse
+                            // events for every existing drag-handler (including
+                            // the psychart temp slider) work unchanged.
+                            return (
+                                <div
+                                    className={`fixed z-[80] rounded-xl shadow-2xl overflow-hidden ${theme==='dark' ? 'border border-indigo-500/40 bg-slate-900' : 'border border-slate-300 bg-white'}`}
+                                    style={{
+                                        left: sidebarFloatPos.x + 'px',
+                                        top:  sidebarFloatPos.y + 'px',
+                                        width:  sidebarFloatSize.w + 'px',
+                                        height: sidebarFloatSize.h + 'px',
+                                    }}
+                                    data-testid="sidebar-floating-shell"
+                                >
+                                    <div
+                                        onMouseDown={onSidebarTitleMouseDown}
+                                        className={`cursor-grab active:cursor-grabbing flex items-center justify-between px-3 py-1.5 border-b ${theme==='dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}
+                                        data-testid="sidebar-floating-titlebar"
+                                    >
+                                        <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                                            {'\u2725 Sidebar \u2014 drag to move'}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            {/* Escalation: send the floating panel out to a separate window
+                                                without losing position state.  Float -> window. */}
+                                            <button
+                                                data-no-drag
+                                                data-testid="sidebar-floating-to-window"
+                                                onClick={popOutSidebarToWindow}
+                                                className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border transition-all ${theme==='dark' ? 'bg-slate-700 border-slate-500 text-slate-200 hover:bg-cyan-700 hover:border-cyan-400' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-cyan-100 hover:border-cyan-400'}`}
+                                                title="Send the sidebar to a separate browser window (extended display)"
+                                            >{'\u29C9 To Window'}</button>
+                                            <button
+                                                data-no-drag
+                                                data-testid="sidebar-floating-attach"
+                                                onClick={() => setSidebarFloating(false)}
+                                                className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600 transition-all"
+                                                title="Re-attach sidebar to the docked position"
+                                            >{'\u21A9 Attach'}</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col" style={{ height: 'calc(100% - 30px)' }}>
+                                        {sidebarTree}
+                                    </div>
+                                    <div
+                                        onMouseDown={onSidebarResizeMouseDown}
+                                        title="Drag to resize"
+                                        data-testid="sidebar-floating-resize"
+                                        className={`absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-[81] ${theme==='dark' ? 'bg-indigo-500/40 hover:bg-indigo-500/80' : 'bg-indigo-300 hover:bg-indigo-500'}`}
+                                        style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
+                                    />
+                                </div>
+                            );
+                        }
+                        return sidebarTree;
+                    })()}
 
                     {activeView === 'diagnostics' && React.createElement(DiagnosticsConsole)}
                     {activeView === 'dynamics' && (
@@ -2147,47 +3081,22 @@
                                                     // sweet" will downgrade from optimal/comfort to
                                                     // warning here too, matching the badge count.
                                                     const diag = getVavDiagnostic(v, saP, comfortZonePoly, activeSweet);
-                                                    // Four-state chip palette that visually samples the
-                                                    // Givoni chart's own polygon fills, so the operator's
-                                                    // eye can map "circle colour -> chart region" without
-                                                    // a legend lookup:
-                                                    //   1. Inside operator-defined sweet-spot strip
-                                                    //      -> DARK EMERALD #059669 (matches strip fill)
-                                                    //   2. Inside CZ but outside sweet-spot
-                                                    //      -> LIGHT EMERALD #10b981 (matches CZ fill)
-                                                    //   3. Outside CZ on the hot/humid side  (T >= 23.5)
-                                                    //      -> ORANGE #f97316
-                                                    //   4. Outside CZ on the cold/dry side   (T <  23.5)
-                                                    //      -> DARK BLUE #1d4ed8
-                                                    //
-                                                    // We use the geometric CZ-centroid temperature 23.5
-                                                    // as the hot/cold discriminator -- matches how an
-                                                    // operator describes the chart ("right side = warm,
-                                                    // left side = cool").
-                                                    const inSweet = showGivoni && showSweetSpot
-                                                        && v.t >= 20 && v.t <= 27
-                                                        && v.rh >= sweetSpotRange.lo && v.rh <= sweetSpotRange.hi;
-                                                    // Use the original CZ-only inCZ (not the AND-narrowed
-                                                    // value returned by getVavDiagnostic) so we can fall
-                                                    // through to the CZ tier even when a sweet-spot is set.
-                                                    const inCZRaw = getZoneDemand(v.t, v.w, comfortZonePoly).inCZ;
-                                                    let statusStyle = null;
-                                                    let statusTitle = '';
-                                                    if (inSweet) {
-                                                        statusStyle = { backgroundColor: '#059669', boxShadow: '0 0 6px rgba(5,150,105,0.55)' };
-                                                        statusTitle = 'In sweet-spot band (' + sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH)';
-                                                    } else if (inCZRaw) {
-                                                        statusStyle = { backgroundColor: '#10b981', opacity: 0.7, boxShadow: '0 0 4px rgba(16,185,129,0.4)' };
-                                                        statusTitle = showGivoni && showSweetSpot
-                                                            ? ('In Givoni CZ (outside ' + sweetSpotRange.lo + '-' + sweetSpotRange.hi + '% RH sweet-spot)')
-                                                            : 'In Givoni CZ';
-                                                    } else if (v.t >= 23.5) {
-                                                        statusStyle = { backgroundColor: '#f97316', boxShadow: '0 0 5px rgba(249,115,22,0.5)' };
-                                                        statusTitle = 'Outside CZ -- hot/humid side (' + v.t.toFixed(1) + ' deg C, ' + v.rh.toFixed(0) + '% RH)';
-                                                    } else {
-                                                        statusStyle = { backgroundColor: '#1d4ed8', boxShadow: '0 0 5px rgba(29,78,216,0.5)' };
-                                                        statusTitle = 'Outside CZ -- cold/dry side (' + v.t.toFixed(1) + ' deg C, ' + v.rh.toFixed(0) + '% RH)';
-                                                    }
+                                                    // Givoni-aware tier classification.  Single resolver in
+                                                    // psychrometric.js owns BOTH the dot colour (auto-derived
+                                                    // from the same hex tokens the chart polygons use) AND the
+                                                    // control-strategy hint shown in the tooltip + chart
+                                                    // callout, so visual + recommendation stay in lock-step.
+                                                    //   Tier A -> SWEET_FILL    + HOLD setpoints
+                                                    //   Tier B -> CZ_STROKE     + Soft trim humidify/dehumidify
+                                                    //   Tier C+ -> HOT_OUTSIDE  + mech cool / dehumidify
+                                                    //   Tier C- -> COLD_OUTSIDE + mech heat / humidify
+                                                    const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                                                    const gv = getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, _gvSweet, showGivoni);
+                                                    const statusStyle = {
+                                                        backgroundColor: gv.dotFill,
+                                                        boxShadow: '0 0 5px ' + gv.dotFill + '80',
+                                                    };
+                                                    const statusTitle = gv.tooltip;
                                                     return (
                                                         <tr key={v.id} className={`rounded-lg transition-colors shadow-black ${lockedVavId === v.id ? 'bg-indigo-500/30' : (theme==='dark'?'bg-slate-950/40 hover:bg-indigo-500/10':'bg-slate-100 hover:bg-indigo-100')}`}>
                                                             <td className="px-1 py-2" title={statusTitle} data-testid={`vav-cz-status-${v.id}`}>
@@ -2225,7 +3134,7 @@
                             </defs>
                             <rect x={pad.left} y={pad.top} width={gridWidth} height={gridHeight} fill={ui.chartBg} className="transition-all duration-500 shadow-black shadow-black" />
                             {renderGrid()}{renderGivoniOverlay()}
-                            {ahuData.map(ahu => { const isFocused = selectedAhuId === ahu.id; return ( <g key={ahu.id} opacity={selectedAhuId && !isFocused ? 0.12 : 1}> {isFocused && showPath && ( <g>{(pointVisibility.OA && pointVisibility.SA) && <line x1={safe(x(ahu.points[0].t))} y1={safe(y(ahu.points[0].w))} x2={safe(x(ahu.points[1].t))} y2={safe(y(ahu.points[1].w))} stroke={ahu.procColor} strokeWidth={isFocused ? 3.5 : 1.5} strokeDasharray={isFocused ? "" : "5,4"} />}{(pointVisibility.SA && pointVisibility.RA) && <line x1={safe(x(ahu.points[1].t))} y1={safe(y(ahu.points[1].w))} x2={safe(x(ahu.points[2].t))} y2={safe(y(ahu.points[2].w))} stroke={ahu.procColor} strokeWidth={isFocused ? 3.5 : 1.5} strokeDasharray={isFocused ? "" : "5,4"} />}</g> )} {ahu.points && ahu.points.map(p => { if (pointVisibility[p.label] === false) return null; return ( <g key={p.label}><circle cx={safe(x(p.t))} cy={safe(y(p.w))} r={isFocused ? 6.5 : 4} fill={p.color} stroke={theme==='dark'?'white':'#334155'} strokeWidth="2" className="shadow-lg shadow-black" />{isFocused && p.label === 'SA' && ( <text x={safe(x(p.t))} y={safe(y(p.w) - 15)} textAnchor="middle" fill={theme==='dark'?'white':'#000'} fontSize="12" fontWeight="900" style={{ filter: theme==='dark'?'drop-shadow(0px 0px 4px rgba(0,0,0,0.8))':'' }} className="uppercase tracking-widest font-black tracking-tighter font-mono shadow-black">{ahu.id}</text> )}</g> ); })} {isFocused && ahu.vavs && ahu.vavs.map(v => { const isThisLocked = lockedVavId === v.id; return ( <g key={v.id} onMouseDown={(e) => { e.stopPropagation(); setLockedVavId(isThisLocked ? null : v.id); setIsLockedToSA(false); }} className="cursor-pointer shadow-black shadow-black"><circle cx={safe(x(v.t))} cy={safe(y(v.w))} r={isThisLocked ? "5" : "3"} fill={isThisLocked ? "#818cf8" : "#a78bfa"} stroke={isThisLocked ? "#fff" : "#312e81"} strokeWidth={isThisLocked ? "2" : "1"} className="transition-all shadow-black shadow-black" /></g> ); })} </g> ); })}
+                            {ahuData.map(ahu => { const isFocused = selectedAhuId === ahu.id; return ( <g key={ahu.id} opacity={selectedAhuId && !isFocused ? 0.12 : 1}> {isFocused && showPath && ( <g>{(pointVisibility.OA && pointVisibility.SA) && <line x1={safe(x(ahu.points[0].t))} y1={safe(y(ahu.points[0].w))} x2={safe(x(ahu.points[1].t))} y2={safe(y(ahu.points[1].w))} stroke={ahu.procColor} strokeWidth={isFocused ? 3.5 : 1.5} strokeDasharray={isFocused ? "" : "5,4"} />}{(pointVisibility.SA && pointVisibility.RA) && <line x1={safe(x(ahu.points[1].t))} y1={safe(y(ahu.points[1].w))} x2={safe(x(ahu.points[2].t))} y2={safe(y(ahu.points[2].w))} stroke={ahu.procColor} strokeWidth={isFocused ? 3.5 : 1.5} strokeDasharray={isFocused ? "" : "5,4"} />}</g> )} {ahu.points && ahu.points.map(p => { if (pointVisibility[p.label] === false) return null; return ( <g key={p.label}><circle cx={safe(x(p.t))} cy={safe(y(p.w))} r={isFocused ? 6.5 : 4} fill={p.color} stroke={theme==='dark'?'white':'#334155'} strokeWidth="2" className="shadow-lg shadow-black" />{isFocused && p.label === 'SA' && ( <text x={safe(x(p.t))} y={safe(y(p.w) - 15)} textAnchor="middle" fill={theme==='dark'?'white':'#000'} fontSize="12" fontWeight="900" style={{ filter: theme==='dark'?'drop-shadow(0px 0px 4px rgba(0,0,0,0.8))':'' }} className="uppercase tracking-widest font-black tracking-tighter font-mono shadow-black">{ahu.id}</text> )}</g> ); })} {isFocused && ahu.vavs && ahu.vavs.map(v => { const isThisLocked = lockedVavId === v.id; const _vavSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null; const _vavGv = getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, _vavSweet, showGivoni); const _vavDotFill = _vavGv.dotFill; return ( <g key={v.id} onMouseDown={(e) => { e.stopPropagation(); setLockedVavId(isThisLocked ? null : v.id); setIsLockedToSA(false); }} className="cursor-pointer shadow-black shadow-black"><title>{v.id} -- {_vavGv.label}</title><circle cx={safe(x(v.t))} cy={safe(y(v.w))} r={isThisLocked ? "5.5" : "4"} fill={_vavDotFill} stroke={isThisLocked ? "#fff" : _vavDotFill} strokeWidth={isThisLocked ? "2" : "0.5"} className="transition-all shadow-black shadow-black" style={{ filter: `drop-shadow(0 0 ${isThisLocked ? '6' : '3'}px ${_vavDotFill})` }} /></g> ); })} </g> ); })}
                             {isProcessVisible && renderVectors()}
                             <g onMouseDown={() => { setIsDraggingIndicator(true); setIsProcessVisible(true); setIsLockedToSA(false); setLockedVavId(null); }} className="cursor-move shadow-black shadow-black"><g transform={"translate(" + safe(x(indicatorPos.t)) + ", " + safe(y(indicatorPos.w)) + ")"}>
                                 <circle cx="0" cy="0" r="4" fill="white" stroke="#6366f1" strokeWidth="2.5" className="shadow-xl shadow-black" />
@@ -2612,6 +3521,74 @@
                     )}
                     </div>
                     
+                    {/* Band SA-RH Clamp Confirm Modal */}
+                    {bandClampModal && (() => {
+                        const { lo, hi, preview } = bandClampModal;
+                        const changed = preview.filter(p => p.changed);
+                        const onCancel = () => setBandClampModal(null);
+                        const onConfirm = async () => {
+                            setBandClampBusy(true);
+                            try {
+                                const j = await fetchJSON('/api/band-overrides/sa-rh-clamp', {
+                                    method: 'POST',
+                                    headers: {'Content-Type':'application/json'},
+                                    body: JSON.stringify({ lo, hi, enabled: true, applied_by: 'dashboard' })
+                                });
+                                if (j.status === 'ok') {
+                                    setBandClampApplied({ lo, hi });
+                                    setBandClampModal(null);
+                                } else {
+                                    toast('Apply failed: ' + (j.message || 'unknown'));
+                                }
+                            } catch (e) {
+                                toast(e.message);
+                            } finally {
+                                setBandClampBusy(false);
+                            }
+                        };
+                        return (
+                            <div onClick={onCancel} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-testid="band-clamp-modal">
+                                <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-amber-500/60':'bg-white border-amber-400'} border-2 rounded-2xl p-5 shadow-2xl`} style={{width:'480px', maxHeight:'80vh', overflow:'hidden', display:'flex', flexDirection:'column'}}>
+                                    <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-amber-400':'text-amber-700'} mb-2`}>Confirm SA-RH Clamp</h3>
+                                    <p className={`text-[10px] font-mono mb-3 leading-relaxed ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>
+                                        Applying <span className="font-black text-amber-500">{lo}-{hi}% RH</span> will clamp every band SA-RH target into this window and force the hum mode where needed.  This rewrites <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>band_guide.csv</code> and every AHU <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>CSV.Description</code> string on the controller.
+                                    </p>
+                                    <div className={`text-[9px] font-mono mb-2 px-2 py-1.5 rounded ${theme==='dark'?'bg-amber-900/30 border border-amber-700/40 text-amber-300':'bg-amber-50 border border-amber-300 text-amber-800'}`} data-testid="band-clamp-warning">
+                                        <span className="font-black uppercase tracking-wider">Warning:</span> {changed.length} of {preview.length} bands will change.  The clamped SA-RH value is written to each AHU humidity setpoint BACnet point (default: <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>AV&lt;n&gt;</code> where <code>n</code> is the AHU number; override via <code>humidity_sp</code> in <code>collector_config.json</code>).  This DRIVES the humidifier coil mechanically -- confirm only if your AHU has a humidity loop wired to that point.
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar -mx-1 px-1" data-testid="band-clamp-preview">
+                                        <table className="w-full text-left border-separate border-spacing-y-1 text-[10px] font-mono">
+                                            <thead>
+                                                <tr className={`text-[8px] font-black uppercase ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>
+                                                    <th>Band</th><th>SA-RH Before</th><th>After</th><th>Hum Before</th><th>After</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {preview.map(p => (
+                                                    <tr key={p.id} className={`${p.changed ? (theme==='dark'?'bg-amber-900/20':'bg-amber-50') : (theme==='dark'?'bg-slate-950/40':'bg-slate-100/50')} rounded`}>
+                                                        <td className={`px-2 py-1 font-black ${theme==='dark'?'text-indigo-400':'text-indigo-600'}`}>{p.id}</td>
+                                                        <td className="px-2 py-1">{p.before.sa_rh}%</td>
+                                                        <td className={`px-2 py-1 font-black ${p.changed ? (p.direction === 'down' ? 'text-cyan-400' : 'text-rose-400') : (theme==='dark'?'text-slate-500':'text-slate-400')}`}>
+                                                            {p.after.sa_rh}%{p.changed ? (p.direction === 'down' ? ' \u2193' : ' \u2191') : ''}
+                                                        </td>
+                                                        <td className={`px-2 py-1 text-[9px] ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>{p.before.hum}</td>
+                                                        <td className={`px-2 py-1 text-[9px] font-black ${p.changed ? (theme==='dark'?'text-amber-400':'text-amber-700') : (theme==='dark'?'text-slate-500':'text-slate-400')}`}>{p.after.hum}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="mt-3 flex gap-2 justify-end">
+                                        <button data-testid="band-clamp-cancel" onClick={onCancel} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700':'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'}`}>Cancel</button>
+                                        <button data-testid="band-clamp-confirm" onClick={onConfirm} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-amber-600 border-amber-400 text-white hover:bg-amber-500':'bg-amber-500 border-amber-600 text-white hover:bg-amber-600'} shadow-md`}>
+                                            {bandClampBusy ? 'Applying...' : 'Confirm & Apply'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {/* Weather Location Settings Modal */}
                     {showWeatherSettings && (() => {
                         const savedLocs = savedWeatherLocations;
@@ -2635,8 +3612,8 @@
                             const name = document.getElementById('wl-new-name').value.trim();
                             const lat = parseFloat(document.getElementById('wl-new-lat').value);
                             const lon = parseFloat(document.getElementById('wl-new-lon').value);
-                            if (!name) { alert('Enter a location name.'); return; }
-                            if (isNaN(lat) || isNaN(lon)) { alert('Enter valid coordinates.'); return; }
+                            if (!name) { toast('Enter a location name.'); return; }
+                            if (isNaN(lat) || isNaN(lon)) { toast('Enter valid coordinates.'); return; }
                             const loc = { name, lat, lon };
                             selectLocation(loc);
                         };
@@ -2691,11 +3668,19 @@
                                         {savedLocs.map((loc, i) => {
                                             const key = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
                                             const isActive = key === currentKey;
+                                            const defKey = defaultLocation ? (defaultLocation.lat.toFixed(4)+','+defaultLocation.lon.toFixed(4)) : '';
+                                            const isPinned = key === defKey;
                                             return (
                                                 <div key={i} className={`flex items-center px-3 py-2 text-[11px] font-mono ${theme==='dark'?'border-b border-slate-800 last:border-0':'border-b border-slate-100 last:border-0'} ${isActive ? (theme==='dark'?'bg-indigo-600/20 text-indigo-300':'bg-indigo-50 text-indigo-700') : (theme==='dark'?'text-slate-300 hover:bg-slate-800':'text-slate-700 hover:bg-slate-50')} transition-all`}>
                                                     <div onClick={() => { document.getElementById('wl-dropdown-list').style.display='none'; selectLocation(loc); }} className="flex-1 cursor-pointer truncate font-bold">
                                                         {loc.name || 'Unnamed'} <span className={`text-[8px] font-normal ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>({loc.lat.toFixed(2)}, {loc.lon.toFixed(2)})</span>
                                                     </div>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); pinLocation(isPinned ? null : loc); }}
+                                                        title={isPinned ? 'Unpin (no auto-load default)' : 'Pin as default — auto-load this on every fresh session'}
+                                                        data-testid={`pin-location-${i}`}
+                                                        className={`ml-1 w-5 h-5 flex items-center justify-center rounded text-sm flex-shrink-0 transition-all ${isPinned ? (theme==='dark'?'text-amber-300 hover:bg-amber-500/20':'text-amber-500 hover:bg-amber-50') : (theme==='dark'?'text-slate-600 hover:text-amber-300 hover:bg-amber-500/10':'text-slate-300 hover:text-amber-500 hover:bg-amber-50')}`}
+                                                    >{isPinned ? '★' : '☆'}</button>
                                                     <button onClick={(e) => { e.stopPropagation(); document.getElementById('wl-dropdown-list').style.display='none'; removeLocation(i, e); }} className={`ml-2 w-5 h-5 flex items-center justify-center rounded text-xs flex-shrink-0 ${theme==='dark'?'text-red-400 hover:bg-red-500/20':'text-red-500 hover:bg-red-50'} transition-all`} title="Delete">&times;</button>
                                                 </div>
                                             );
@@ -2757,7 +3742,7 @@
                         }
                         const vavSchema = ccEquipTypes && ccEquipTypes.vav_types ? ccEquipTypes.vav_types[vavTypeId] : null;
                         const schemaVavImage = (vavSchema && vavSchema.visual_assets && vavSchema.visual_assets.base_graphic)
-                            ? `${API_URL}/assets/${vavSchema.visual_assets.base_graphic}`
+                            ? `${API_URL}/api/assets/${vavSchema.visual_assets.base_graphic}`
                             : null;
                         const effectiveVavImage = schemaVavImage || vavImage;
                         const vavSchemaPoints = (vavSchema && vavSchema.points) || [];
@@ -2817,7 +3802,9 @@
                                     : v)
                             })));
                             fetch(`${API_URL}/api/write-point`, {
-                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {'Content-Type':'application/json'},
                                 body: JSON.stringify({ equipment_name: vavEquipId, writes: { [label]: num } })
                             }).then(r => r.json()).then(d => {
                                 if (!d.success) console.warn('VAV Write failed:', d.error);
@@ -3107,7 +4094,7 @@
                                         
                                         if (floorData && floorData.floor.image_path) {
                                             // === MAP_CONFIG DRIVEN FLOOR PLAN ===
-                                            const imgSrc = `${API_URL}/assets/${floorData.floor.image_path}`;
+                                            const imgSrc = `${API_URL}/api/assets/${floorData.floor.image_path}`;
                                             return (
                                                 <div className="relative inline-block">
                                                     <img 
@@ -3434,7 +4421,7 @@
                             if (firstKey) ahuTypeId = firstKey;
                         }
                         const schemaType = ccEquipTypes && ccEquipTypes.ahu_types ? ccEquipTypes.ahu_types[ahuTypeId] : null;
-                        const currentAhuImage = (schemaType && schemaType.visual_assets && schemaType.visual_assets.base_graphic && `${API_URL}/assets/${schemaType.visual_assets.base_graphic}`) || (ahuTypeId && ahuTypeImages[ahuTypeId]) || ahuTypeImages['generic'] || ahuImage;
+                        const currentAhuImage = (schemaType && schemaType.visual_assets && schemaType.visual_assets.base_graphic && `${API_URL}/api/assets/${schemaType.visual_assets.base_graphic}`) || (ahuTypeId && ahuTypeImages[ahuTypeId]) || ahuTypeImages['generic'] || ahuImage;
 
                         const v = (k) => { const val = ap[k]; return val !== undefined && val !== null ? (typeof val === 'number' ? val.toFixed(1) : String(val)) : '0.0'; };
                         const vn = (k) => { const val = ap[k]; return typeof val === 'number' ? val : 0; };
@@ -3509,7 +4496,9 @@
                                 return { ...a, all_points: { ...(a.all_points || {}), [label]: num } };
                             }));
                             fetch(`${API_URL}/api/write-point`, {
-                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {'Content-Type':'application/json'},
                                 body: JSON.stringify({ equipment_name: showAhuModalFor, writes: { [label]: num } })
                             }).then(r => r.json()).then(d => {
                                 if (!d.success) console.warn('Write failed:', d.error);
@@ -3809,7 +4798,28 @@
                                         <div className="absolute inset-0 pointer-events-none" style={{perspective:'1500px'}}>
                                         {schemaAnimations.map((a, ai) => {
                                             if (a.x == null || a.y == null) return null;
-                                            const tKey = a.telemetry_key || '';
+                                            // Sensible per-type defaults so an animation lights up
+                                            // even when the operator hasn't bound a telemetry_key
+                                            // yet in the mapper.  The bound `a.telemetry_key`
+                                            // always wins; this only fires when it is empty/missing.
+                                            const _atype0 = a.animation_type;
+                                            const _defaultKey = (
+                                                _atype0 === 'centrifugal_fan'        ? 'SAFP' :
+                                                _atype0 === 'rectangular_fan'        ? 'EAFP' :
+                                                _atype0 === 'rectangular_fan_aligner'? 'EAFP' :
+                                                _atype0 === 'damper'                 ? 'OAD'  :
+                                                _atype0 === 'circular_damper'        ? 'OAD'  :
+                                                _atype0 === 'neon_pipe_coil'         ? (a.element_id && /heat/i.test(a.element_id) ? 'HCV' : 'CCV') :
+                                                _atype0 === 'hydration_valve'        ? 'HUM'  :
+                                                _atype0 === 'hydration_valve_aligner'? 'HUM'  :
+                                                _atype0 === 'antifreeze_coil_valve'  ? 'HCV'  :
+                                                _atype0 === 'antifreeze_coil'        ? 'HCV'  :
+                                                _atype0 === 'diff_pressure_switch'   ? 'FDPS' :
+                                                _atype0 === 'differential_pressure_switch_aligner' ? 'FDPS' :
+                                                _atype0 === 'vfd_aligner'            ? 'SAFP' :
+                                                _atype0 === 'air_flow_path'          ? 'SAFP' : ''
+                                            );
+                                            const tKey = (a.telemetry_key && a.telemetry_key !== 'UNKNOWN') ? a.telemetry_key : _defaultKey;
                                             const tVal = vn(tKey);
                                             const isAlarm = isBool(tKey + '_ALM');
                                             const isRunning = isBool(tKey + '_STATUS') || tVal > 0;
@@ -4053,8 +5063,8 @@
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
                                             <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>{window.t ? window.t("data_source_mode") : "Data Source Mode"}</label>
                                             <div className="flex gap-2">
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('simulator'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) setDataMode('mock'); }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('simulator'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = false; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Simulator (preview only -- sign in to persist).' : 'Switched to Simulator.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('mock'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = true; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Mock (preview only -- sign in to persist).' : 'Switched to Mock.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
                                             </div>
                                             <p className={`text-[8px] mt-2 ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>Simulator reads from collector_config.json. Mock generates 14 random demo AHUs.</p>
                                         </div>
@@ -4100,7 +5110,7 @@
                                 type="password" 
                                 value={configPwInput} 
                                 onChange={e => { setConfigPwInput(e.target.value); setConfigPwError(''); }}
-                                onKeyDown={e => { if (e.key === 'Enter') { const MASTER_KEY = 'b%9P$MdeQP]['; const pw = configPwInput; if (!pw || !pw.trim()) return; const hashPw = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h = h & h; } const hex = Math.abs(h).toString(16).padStart(8, '0'); let h2 = 0; const salted = s + hex; for (let i = 0; i < salted.length; i++) { h2 = ((h2 << 5) - h2) + salted.charCodeAt(i); h2 = h2 & h2; } return hex + Math.abs(h2).toString(16).padStart(8, '0'); }; const storedHash = localStorage.getItem('configPasswordHash') || ''; if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) { sessionStorage.setItem('engineerAuthenticated', 'true'); window.location.href = window.location.origin + '/mapper'; } else if (!storedHash) { setConfigPwError('No password set. Use landing page first.'); } else { setConfigPwError('Incorrect password.'); setConfigPwInput(''); } } }}
+                                onKeyDown={e => { if (e.key === 'Enter') { const MASTER_KEY = 'b%9P$MdeQP]['; const pw = configPwInput; if (!pw || !pw.trim()) return; const hashPw = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h = h & h; } const hex = Math.abs(h).toString(16).padStart(8, '0'); let h2 = 0; const salted = s + hex; for (let i = 0; i < salted.length; i++) { h2 = ((h2 << 5) - h2) + salted.charCodeAt(i); h2 = h2 & h2; } return hex + Math.abs(h2).toString(16).padStart(8, '0'); }; const storedHash = localStorage.getItem('configPasswordHash') || ''; if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) { sessionStorage.setItem('engineerAuthenticated', 'true'); window.location.href = window.location.origin + '/config-tool'; } else if (!storedHash) { setConfigPwError('No password set. Use landing page first.'); } else { setConfigPwError('Incorrect password.'); setConfigPwInput(''); } } }}
                                 autoFocus
                                 placeholder={window.t ? window.t("enter_password_ph") : "Enter password"}
                                 className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500 font-mono"
@@ -4116,7 +5126,7 @@
                                         const storedHash = localStorage.getItem('configPasswordHash') || '';
                                         if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) {
                                             sessionStorage.setItem('engineerAuthenticated', 'true');
-                                            window.location.href = window.location.origin + '/mapper';
+                                            window.location.href = window.location.origin + '/config-tool';
                                         } else if (!storedHash) {
                                             setConfigPwError('No password set. Use landing page first.');
                                         } else {

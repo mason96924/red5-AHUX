@@ -19,6 +19,7 @@
     <script src="js/i18n.js"></script>
     <script src="js/toast.js"></script>
     <script src="js/docs_index.js"></script>
+    <script src="js/audit_log.js"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
@@ -195,6 +196,8 @@
                         state.style.color = '#a3e635';
                         btnOut.dataset.allowed = '1';
                         window.__v2_signed_in = true;
+                        window.__v2_is_admin  = !!me.is_admin;
+                        window.__v2_user_email = me.email;
                     } else {
                         _shortLabel = 'GUEST';
                         _fullLabel  = 'Anonymous (preview only)';
@@ -203,7 +206,16 @@
                         state.style.color = '#fbbf24';
                         btnIn.dataset.allowed = '1';
                         window.__v2_signed_in = false;
+                        window.__v2_is_admin  = false;
                     }
+                    /* Let interested UI islands react to the auth resolve
+                       so admin-only chips (Audit Log) can mount as soon as
+                       the GET /api/auth/me round-trip completes, without
+                       having to poll. */
+                    try { window.dispatchEvent(new CustomEvent('red5-auth-resolved',
+                            { detail: { signedIn: window.__v2_signed_in,
+                                        isAdmin: window.__v2_is_admin,
+                                        email: window.__v2_user_email || null } })); } catch(_) {}
                     applyLabel();
                 })
                 .catch(function () {

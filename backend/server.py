@@ -77,6 +77,14 @@ from password_auth import (  # noqa: E402
 )
 app.include_router(password_auth_router)
 
+# Wire the audit-log router (Phase 2 Piece G: append-only mutation trail).
+from audit_log import router as audit_router, record_audit  # noqa: E402
+app.include_router(audit_router)
+
+# Wire the G36 router (Phase 3a: ASHRAE Guideline 36 controller).
+from g36_service import router as g36_router  # noqa: E402
+app.include_router(g36_router)
+
 
 @app.on_event("startup")
 async def _seed_password_admin() -> None:
@@ -1114,6 +1122,7 @@ async def get_sa_rh_clamp(tenant: Optional[dict] = Depends(current_tenant_option
 
 @app.post("/api/band-overrides/sa-rh-clamp")
 async def set_sa_rh_clamp(payload: dict,
+                          request: Request,
                           tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     if not tenant:
         return {
@@ -1122,10 +1131,28 @@ async def set_sa_rh_clamp(payload: dict,
             "applied": False,
             "warning": "Demo mode -- sign in to persist clamp settings.",
         }
-    await write_sa_rh_clamp(tenant, payload.get("sa_rh_clamp"))
+    # Snapshot the previous value for the audit before we overwrite it.
+    prev_clamp = await read_sa_rh_clamp(tenant)
+    new_clamp  = payload.get("sa_rh_clamp")
+    await write_sa_rh_clamp(tenant, new_clamp)
+    # Resolve the acting user from the cookie for the audit row (lazy
+    # import to avoid an import-cycle bootstrapping audit_log first).
+    try:
+        from auth import _resolve_session_token  # noqa: WPS433
+        token = request.cookies.get("session_token")
+        user = await _resolve_session_token(token) if token else None
+    except Exception:  # noqa: BLE001
+        user = None
+    await record_audit(
+        request, user, tenant,
+        action="sa-rh-clamp",
+        resource=f"tenant:{tenant['tenant_id']}",
+        before={"sa_rh_clamp": prev_clamp},
+        after={"sa_rh_clamp": new_clamp},
+    )
     return {
         "status": "ok",
-        "sa_rh_clamp": payload.get("sa_rh_clamp"),
+        "sa_rh_clamp": new_clamp,
         "applied": True,
         "tenant_id": tenant["tenant_id"],
     }
@@ -1476,6 +1503,7 @@ async def directory_scaffold() -> dict:
 
 @app.post("/api/write-point")
 async def write_point(payload: dict,
+                      request: Request,
                       tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """V1.9 BACnet RW write via dibt.Write().  In SaaS there is no real
     BACnet target -- we accept the write and reflect it back as 'applied'
@@ -1485,6 +1513,11 @@ async def write_point(payload: dict,
     writes = (payload or {}).get("writes") or {}
     if not equip or not isinstance(writes, dict) or not writes:
         return {"success": False, "error": "equipment_name and writes required"}
+    # Snapshot the previous override values for the audit row so the UI
+    # can render a clean before/after diff.
+    prev_overrides = {
+        k: _MANUAL_OVERRIDES.get(f"{equip}:{k}") for k in writes.keys()
+    }
     # Update the in-memory simulator overrides so the very next /api/data
     # poll reflects the operator's pill toggle.  Anonymous demo state --
     # process-lifetime only.
@@ -1506,6 +1539,21 @@ async def write_point(payload: dict,
         await _mc[os.environ["DB_NAME"]]["virtual_write_log"].insert_one(log_doc)
     except Exception:  # noqa: BLE001
         pass  # best-effort; never fail the operator's write
+    # Audit the write so admins can see who flipped which pill / SA-RH
+    # clamp / band override and when.  Best-effort; never fails the call.
+    try:
+        from auth import _resolve_session_token  # noqa: WPS433
+        token = request.cookies.get("session_token")
+        user = await _resolve_session_token(token) if token else None
+    except Exception:  # noqa: BLE001
+        user = None
+    await record_audit(
+        request, user, tenant,
+        action="write-point",
+        resource=equip,
+        before=prev_overrides,
+        after=writes,
+    )
     return {
         "success": True,
         "equipment_name": equip,

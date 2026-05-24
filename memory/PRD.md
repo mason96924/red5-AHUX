@@ -1,5 +1,65 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.6 — Bidirectional location sync: PSYCH ⇄ 3D WX (2026-05-24)
+
+**Brief**: Operator reported a stale-state bug present in both V1.9 and V2.0: select location "Hanyang Univ Hospital" in the dashboard's psy-chart weather strip → open 3D WX tab → it correctly shows Hanyang.  Return to PSYCH tab → switch to "Seattle Children's" → bottom weather strip updates → return to 3D WX tab → it STILL shows Hanyang's scatter cloud.  The two views were reading independent state and the 3D engine read `localStorage.weatherLocation` only once at mount.
+
+### Two changes, both versions
+
+**1. Bidirectional location sync (dashboard `weatherLocation` ⇄ 3D engine inputs)**
+- New public API on the engine: `window.setPsy3DLocation({lat, lon, name})` — updates form fields, syncs the dropdown selection, and triggers `doFetch()` so the scatter cloud re-renders for the new city.
+- New CustomEvent emitted by the engine: `r5-location-change` with `detail:{lat,lon,name}` — fires whenever the operator changes location from inside the 3D WX panel (via dropdown or preset button).
+- New `useEffect` in `dashboard.html` watches `weatherLocation` (lat,lon) and pipes changes into `setPsy3DLocation()` so 3D WX re-fetches automatically.
+- Second `useEffect` listens for `r5-location-change` and mirrors the new location into the dashboard's React state + `localStorage` so the bottom weather strip flips to the same city.
+- Echo guard: each direction guards against re-triggering the other when the lat/lon delta is < 1e-4.
+
+**2. Location dropdown inside the 3D WX panel**
+- New `<select id="p3-loc-select">` directly above the existing preset buttons.
+- Populated from `GET /api/weather-location` with two `<optgroup>` sections:
+  - **Saved locations** (operator's NRAH, Perth, Hanyang, Beijing, Seattle Children's, …) — listed first so the user sees their own sites before reference presets.
+  - **City presets** (NYC, LON, SIN, TYO, DXB, SYD) — deduped against saved.
+- `onchange` POSTs `{active: {...}}` to `/api/weather-location` and broadcasts `r5-location-change`, so picking a city here updates EVERYTHING: 3D scatter cloud, dashboard weather strip, server-side active location, and localStorage — single source of truth.
+- The preset buttons (NYC/LON/…) were rewired to route through the same `applyLocation()` funnel so they also persist + broadcast (previously they only updated the local fields silently).
+
+**3. Standalone `psy_3d.html` upgraded too**
+- Same dropdown added under "Location" row.
+- Auto-load on page open now fetches `/api/weather-location` first (server is authoritative), falls back to `localStorage` when the API is unreachable (offline / static-hosted deploy).
+- Dropdown picks POST + broadcast + re-fetch, identical contract to the engine.
+
+### Files changed
+- `frontend/public/js/psy-3d-engine.js` — added `<select>` to scaffold, replaced ad-hoc preset-click handlers with `applyLocation()` funnel, exposed `window.setPsy3DLocation`, wired CustomEvent dispatch.
+- `frontend/public/dashboard.html` — two new `useEffect` hooks for bidirectional sync (PSYCH→3D and 3D→PSYCH).
+- `frontend/public/psy_3d.html` — added dropdown row + replaced auto-load IIFE with API-first bootstrap.
+- `archive/Red5-Studio-V1.9/js/psy-3d-engine.js` — identical mirror.
+- `archive/Red5-Studio-V1.9/dashboard.html` — identical mirror.
+- `archive/Red5-Studio-V1.9/psy_3d.html` — identical mirror.
+
+### Verification (live browser via Playwright)
+- Engine dropdown shows 11 options (5 saved + 6 presets) in 2 optgroups ✓
+- `window.setPsy3DLocation` resolves to `function` ✓
+- Pick Tokyo from dropdown → lat=35.68, lon=139.69, name="Tokyo" ✓
+- Call `setPsy3DLocation({lat:51.51, lon:-0.13, name:'London'})` → fields update + re-fetch ✓
+- Pick Dubai → `r5-location-change` CustomEvent fires with `{lat:25.2, lon:55.27, name:'Dubai'}` ✓
+- All 14/14 smoke tests still pass ✓
+- ESLint clean on both engine files ✓
+- Standalone `psy_3d.html` script blocks parse cleanly (V2.0 + V1.9) ✓
+
+### Architectural note
+The whole sync now hinges on **one funnel**: every location change goes through `applyLocation(loc, {persist, fetch})` in the engine.  Whether the trigger is a dropdown pick, a preset button, the dashboard's `setPsy3DLocation()` call, or the standalone page's auto-load, the inputs, the select, the HUD label, the server, and the dashboard all see the same final state.  This is the kind of code organization where "the bug doesn't have anywhere to hide" — adding a new trigger source (e.g., a future keyboard shortcut or BACnet binding) automatically inherits correct sync behavior.
+
+### Operator playbook
+- Open Dashboard → click 3D WX tab → the new **Location** dropdown sits at the top of the panel.
+- Picking any saved hospital or city preset:
+  - Re-fetches the 3D scatter cloud for that location.
+  - Updates the dashboard's bottom weather strip to the same location (return to PSYCH tab to verify).
+  - Saves the choice on the server (signed-in tenants) so it persists across reloads.
+- Reverse direction: change location in the dashboard's WEATHER LOCATION modal → switch to 3D WX → cloud has already re-fetched for the new city before you arrive.
+- The dropdown auto-deduplicates: if your saved list already includes Seattle (47.6, -122.3), the city preset for Seattle is hidden.
+
+
+
+
+
 ## Phase L.5 — Linux self-host hardening + 3-tier weather proxy + health dot (2026-05-23)
 
 **Brief**: Wrap-up of a hard day spent stabilizing the V2.0 app for local self-hosting on a Linux PC.  Three deliverables: (A) checkpoint everything in this PRD, (B) ship `scripts/smoke.sh` so every redeploy is verifiable in 5 s, (C) add a weather-source health dot in the dashboard's auth pill so the operator can SEE which upstream is serving data when Open-Meteo is blocked.

@@ -569,6 +569,8 @@ global.initPsy3D = function(container, opts){
       <div style="flex:1"><div class="p3-lbl">Latitude</div><input class="p3-inp" id="p3-lat" type="number" step="0.01" value="40.71"></div>\
       <div style="flex:1"><div class="p3-lbl">Longitude</div><input class="p3-inp" id="p3-lon" type="number" step="0.01" value="-74.01"></div>\
     </div>\
+    <div class="p3-row"><div class="p3-lbl">Location</div>\
+      <select class="p3-inp" id="p3-loc-select" data-testid="psy3d-location-select" style="cursor:pointer"></select></div>\
     <div class="p3-row"><div class="p3-lbl">Presets</div>\
       <div class="p3-presets" id="p3-loc-presets"></div></div>\
     <div class="p3-row"><div class="p3-lbl">Duration</div><div class="p3-dur" id="p3-dur-btns"></div></div>\
@@ -1488,7 +1490,109 @@ global.initPsy3D = function(container, opts){
     /* location presets */
     var locs=[['NYC',40.71,-74.01,'New York'],['LON',51.51,-0.13,'London'],['SIN',1.35,103.82,'Singapore'],['TYO',35.68,139.69,'Tokyo'],['DXB',25.20,55.27,'Dubai'],['SYD',-33.87,151.21,'Sydney']];
     var lpEl=$('#p3-loc-presets');
-    locs.forEach(function(l){var b=document.createElement('button');b.textContent=l[0];b.onclick=function(){$('#p3-lat').value=l[1];$('#p3-lon').value=l[2];$('#p3-name').value=l[3];};lpEl.appendChild(b);});
+    locs.forEach(function(l){var b=document.createElement('button');b.textContent=l[0];b.onclick=function(){applyLocation({lat:l[1],lon:l[2],name:l[3]},{persist:true,fetch:true});};lpEl.appendChild(b);});
+
+    /* ---------- Unified location dropdown (V1.9 parity with V2.0) ----------
+       Combines the operator's saved locations (POST /api/weather-location)
+       with the 6 hardcoded presets so the user can switch from inside the
+       3D WX panel without bouncing back to the dashboard.  Selection is
+       bidirectional: changing it here POSTs to /api/weather-location AND
+       fires `r5-location-change` so the dashboard's React state stays in
+       sync with the new active location. */
+    function _buildLocSelect(saved){
+      var sel = $('#p3-loc-select');
+      if (!sel) return;
+      var seen = {};
+      sel.innerHTML = '';
+      if (Array.isArray(saved) && saved.length){
+        var og1 = document.createElement('optgroup');
+        og1.label = 'Saved locations';
+        saved.forEach(function(loc){
+          if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+          var k = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
+          if (seen[k]) return; seen[k] = true;
+          var opt = document.createElement('option');
+          opt.value = k;
+          opt.dataset.lat = loc.lat;
+          opt.dataset.lon = loc.lon;
+          opt.dataset.name = loc.name || (loc.lat+','+loc.lon);
+          opt.textContent = loc.name || (loc.lat+', '+loc.lon);
+          og1.appendChild(opt);
+        });
+        if (og1.children.length) sel.appendChild(og1);
+      }
+      var og2 = document.createElement('optgroup');
+      og2.label = 'City presets';
+      locs.forEach(function(l){
+        var k = l[1].toFixed(4)+','+l[2].toFixed(4);
+        if (seen[k]) return; seen[k] = true;
+        var opt = document.createElement('option');
+        opt.value = k;
+        opt.dataset.lat = l[1];
+        opt.dataset.lon = l[2];
+        opt.dataset.name = l[3];
+        opt.textContent = l[3] + ' ('+l[0]+')';
+        og2.appendChild(opt);
+      });
+      sel.appendChild(og2);
+      _syncLocSelectToInputs();
+    }
+    function _syncLocSelectToInputs(){
+      var sel = $('#p3-loc-select');
+      if (!sel) return;
+      var la = parseFloat($('#p3-lat').value), lo = parseFloat($('#p3-lon').value);
+      if (isNaN(la) || isNaN(lo)) return;
+      var k = la.toFixed(4)+','+lo.toFixed(4);
+      for (var i=0;i<sel.options.length;i++){
+        if (sel.options[i].value === k){ sel.selectedIndex = i; return; }
+      }
+    }
+
+    function applyLocation(loc, flags){
+      if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+      flags = flags || {};
+      $('#p3-lat').value  = loc.lat;
+      $('#p3-lon').value  = loc.lon;
+      $('#p3-name').value = loc.name || ('Lat '+loc.lat+' / Lon '+loc.lon);
+      _syncLocSelectToInputs();
+      if (flags.persist){
+        try {
+          fetch('/api/weather-location', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            credentials: 'include',
+            body: JSON.stringify({ active: {lat: loc.lat, lon: loc.lon, name: loc.name||''} })
+          }).catch(function(){});
+        } catch(e){}
+        try {
+          window.dispatchEvent(new CustomEvent('r5-location-change', {
+            detail: { lat: loc.lat, lon: loc.lon, name: loc.name || '' }
+          }));
+        } catch(e){}
+        try { localStorage.setItem('weatherLocation', JSON.stringify({lat:loc.lat,lon:loc.lon,name:loc.name||''})); } catch(e){}
+      }
+      if (flags.fetch && typeof doFetch === 'function') doFetch();
+    }
+
+    window.setPsy3DLocation = function(loc){
+      if (!loc) return;
+      applyLocation({lat:loc.lat, lon:loc.lon, name:loc.name}, {persist:false, fetch:true});
+    };
+
+    $('#p3-loc-select').onchange = function(){
+      var opt = this.options[this.selectedIndex];
+      if (!opt) return;
+      applyLocation({
+        lat:  parseFloat(opt.dataset.lat),
+        lon:  parseFloat(opt.dataset.lon),
+        name: opt.dataset.name || opt.textContent
+      }, {persist:true, fetch:true});
+    };
+
+    fetch('/api/weather-location', { credentials:'include' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){ if (j) _buildLocSelect(j.saved || []); })
+      .catch(function(){ _buildLocSelect([]); });
 
     /* duration buttons */
     var durEl=$('#p3-dur-btns');

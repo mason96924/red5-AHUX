@@ -1676,6 +1676,44 @@
                 initPsy3D(psy3dRef.current, { weatherLocation: wl || weatherLocation });
             }, [activeView]);
 
+            // ----------------------------------------------------------------
+            // Bidirectional location sync: PSYCH tab <-> 3D WX tab.
+            // ----------------------------------------------------------------
+            // Bug fixed: previously the 3D WX engine read `weatherLocation`
+            // ONCE at mount and kept rendering the original city's scatter
+            // cloud even after the operator picked a new location in the
+            // dashboard's weather modal.  Now:
+            //
+            //   PSYCH -> 3D WX: when `weatherLocation` changes AND the engine
+            //   is already mounted, call its public `setPsy3DLocation()` so
+            //   the form fields update and the scatter cloud re-fetches.
+            //
+            //   3D WX -> PSYCH: the engine fires a `r5-location-change`
+            //   CustomEvent whenever its internal dropdown picks a new
+            //   location; we mirror it into React state + localStorage so
+            //   the bottom weather strip flips to the same city.
+            useEffect(() => {
+                if (!weatherLocation) return;
+                if (typeof window.setPsy3DLocation === 'function') {
+                    window.setPsy3DLocation(weatherLocation);
+                }
+            }, [weatherLocation && weatherLocation.lat, weatherLocation && weatherLocation.lon]);
+
+            useEffect(() => {
+                const handler = (ev) => {
+                    const loc = ev && ev.detail;
+                    if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+                    // Guard against echo: only update if it's actually different.
+                    if (weatherLocation
+                        && Math.abs(weatherLocation.lat - loc.lat) < 1e-4
+                        && Math.abs(weatherLocation.lon - loc.lon) < 1e-4) return;
+                    setWeatherLocation(loc);
+                    try { localStorage.setItem('weatherLocation', JSON.stringify(loc)); } catch (e) {}
+                };
+                window.addEventListener('r5-location-change', handler);
+                return () => window.removeEventListener('r5-location-change', handler);
+            }, [weatherLocation]);
+
             // Comfort zone and diagnostics loaded from js/psychrometric.js
             // Functions: getEnergyMetrics, buildComfortZonePoly, isInComfortZone,
             //            getZoneDemand, getVavDiagnostic, getAhuDiagnostic

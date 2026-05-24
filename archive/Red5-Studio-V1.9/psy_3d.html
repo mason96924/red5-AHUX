@@ -108,6 +108,9 @@ canvas{display:block}
         <div style="flex:1"><div class="plbl">Latitude</div><input class="pinp" id="in-lat" type="number" step="0.01" value="40.71"></div>
         <div style="flex:1"><div class="plbl">Longitude</div><input class="pinp" id="in-lon" type="number" step="0.01" value="-74.01"></div>
       </div>
+      <div class="prow"><div class="plbl">Location</div>
+        <select class="pinp" id="in-loc-select" data-testid="psy3d-standalone-location-select" style="cursor:pointer;width:100%"></select>
+      </div>
       <div class="prow"><div class="plbl">Presets</div>
         <div class="presets">
           <button onclick="setLoc(40.71,-74.01,'New York')">NYC</button>
@@ -1302,27 +1305,124 @@ window.hide2D=function(){
 })();
 
 /* ================================================================
-   AUTO-LOAD — inherit location from dashboard's weatherLocation in localStorage
+   AUTO-LOAD — inherit location from dashboard's /api/weather-location
+   ----------------------------------------------------------------
+   Bug fixed: standalone page used to read ONLY localStorage which can
+   go stale if the operator changed location in another browser/tab.
+   Server endpoint is the single source of truth — falls back to
+   localStorage when the API is unreachable.
    ================================================================ */
-setTimeout(function(){
-  try{
-    var stored=JSON.parse(localStorage.getItem('weatherLocation'));
-    if(stored&&stored.lat&&stored.lon){
-      document.getElementById('in-lat').value=stored.lat;
-      document.getElementById('in-lon').value=stored.lon;
-      document.getElementById('in-name').value=stored.name||'Dashboard Location';
+(function(){
+  var PRESETS = [
+    {code:'NYC', lat:40.71, lon:-74.01, name:'New York'},
+    {code:'LON', lat:51.51, lon:-0.13,  name:'London'},
+    {code:'SIN', lat:1.35,  lon:103.82, name:'Singapore'},
+    {code:'TYO', lat:35.68, lon:139.69, name:'Tokyo'},
+    {code:'DXB', lat:25.20, lon:55.27,  name:'Dubai'},
+    {code:'SYD', lat:-33.87,lon:151.21, name:'Sydney'}
+  ];
+  function buildLocSelect(saved){
+    var sel = document.getElementById('in-loc-select');
+    if (!sel) return;
+    var seen = {};
+    sel.innerHTML = '';
+    if (Array.isArray(saved) && saved.length){
+      var og1 = document.createElement('optgroup');
+      og1.label = 'Saved locations';
+      saved.forEach(function(loc){
+        if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+        var k = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
+        if (seen[k]) return; seen[k] = true;
+        var opt = document.createElement('option');
+        opt.value = k;
+        opt.dataset.lat  = loc.lat;
+        opt.dataset.lon  = loc.lon;
+        opt.dataset.name = loc.name || (loc.lat+','+loc.lon);
+        opt.textContent = loc.name || (loc.lat+', '+loc.lon);
+        og1.appendChild(opt);
+      });
+      if (og1.children.length) sel.appendChild(og1);
     }
-  }catch(e){}
-  fetchData();
-  /* Deep-link support: when navigated here with #xy in the URL hash
-     (e.g. from deepdive.html's "Back to X-Y Detail" link), auto-open
-     the 2D X-Y Detail overlay once weather data has settled. */
-  if(window.location.hash==='#xy'){
-    setTimeout(function(){
-      try{ if(typeof show2D==='function') show2D(); }catch(e){}
-    }, 1200);
+    var og2 = document.createElement('optgroup');
+    og2.label = 'City presets';
+    PRESETS.forEach(function(p){
+      var k = p.lat.toFixed(4)+','+p.lon.toFixed(4);
+      if (seen[k]) return; seen[k] = true;
+      var opt = document.createElement('option');
+      opt.value = k;
+      opt.dataset.lat  = p.lat;
+      opt.dataset.lon  = p.lon;
+      opt.dataset.name = p.name;
+      opt.textContent = p.name + ' ('+p.code+')';
+      og2.appendChild(opt);
+    });
+    sel.appendChild(og2);
+    syncSelectToInputs();
   }
-},500);
+  function syncSelectToInputs(){
+    var sel = document.getElementById('in-loc-select');
+    if (!sel) return;
+    var la = parseFloat(document.getElementById('in-lat').value);
+    var lo = parseFloat(document.getElementById('in-lon').value);
+    if (isNaN(la) || isNaN(lo)) return;
+    var k = la.toFixed(4)+','+lo.toFixed(4);
+    for (var i=0;i<sel.options.length;i++){
+      if (sel.options[i].value === k){ sel.selectedIndex = i; return; }
+    }
+  }
+  function bootstrap(){
+    fetch('/api/weather-location', { credentials:'include' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .catch(function(){ return null; })
+      .then(function(state){
+        var saved = (state && Array.isArray(state.saved)) ? state.saved : [];
+        var active = state && state.active ? state.active : null;
+        if (!active){
+          try {
+            var stored = JSON.parse(localStorage.getItem('weatherLocation'));
+            if (stored && stored.lat && stored.lon) active = stored;
+          } catch(e) {}
+        }
+        if (active && active.lat && active.lon){
+          document.getElementById('in-lat').value  = active.lat;
+          document.getElementById('in-lon').value  = active.lon;
+          document.getElementById('in-name').value = active.name || 'Dashboard Location';
+        }
+        buildLocSelect(saved);
+        fetchData();
+      });
+  }
+  document.getElementById('in-loc-select').onchange = function(){
+    var opt = this.options[this.selectedIndex];
+    if (!opt) return;
+    var loc = {
+      lat:  parseFloat(opt.dataset.lat),
+      lon:  parseFloat(opt.dataset.lon),
+      name: opt.dataset.name || opt.textContent
+    };
+    document.getElementById('in-lat').value  = loc.lat;
+    document.getElementById('in-lon').value  = loc.lon;
+    document.getElementById('in-name').value = loc.name;
+    try {
+      fetch('/api/weather-location', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'include',
+        body: JSON.stringify({ active: loc })
+      }).catch(function(){});
+    } catch(e){}
+    try { localStorage.setItem('weatherLocation', JSON.stringify(loc)); } catch(e){}
+    fetchData();
+  };
+  setTimeout(function(){
+    bootstrap();
+    if(window.location.hash==='#xy'){
+      setTimeout(function(){
+        try{ if(typeof show2D==='function') show2D(); }catch(e){}
+      }, 1200);
+    }
+  }, 500);
+})();
 
 })();
 </script>

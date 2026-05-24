@@ -570,7 +570,12 @@ global.initPsy3D = function(container, opts){
       <div style="flex:1"><div class="p3-lbl">Longitude</div><input class="p3-inp" id="p3-lon" type="number" step="0.01" value="-74.01"></div>\
     </div>\
     <div class="p3-row"><div class="p3-lbl">Location</div>\
-      <select class="p3-inp" id="p3-loc-select" data-testid="psy3d-location-select" style="cursor:pointer"></select></div>\
+      <div style="display:flex;gap:4px;align-items:center">\
+        <select class="p3-inp" id="p3-loc-select" data-testid="psy3d-location-select" style="cursor:pointer;flex:1"></select>\
+        <button id="p3-loc-pin" type="button" data-testid="psy3d-location-pin"\
+          title="Pin as default \u2014 auto-load this on every fresh session"\
+          style="background:transparent;border:1px solid #475569;color:#64748b;border-radius:4px;width:28px;height:24px;cursor:pointer;font-size:14px;line-height:1;padding:0;flex-shrink:0;transition:all .15s">\u2606</button>\
+      </div></div>\
     <div class="p3-row"><div class="p3-lbl">Presets</div>\
       <div class="p3-presets" id="p3-loc-presets"></div></div>\
     <div class="p3-row"><div class="p3-lbl">Duration</div><div class="p3-dur" id="p3-dur-btns"></div></div>\
@@ -1566,6 +1571,8 @@ global.initPsy3D = function(container, opts){
       $('#p3-lon').value  = loc.lon;
       $('#p3-name').value = loc.name || ('Lat '+loc.lat+' / Lon '+loc.lon);
       _syncLocSelectToInputs();
+      // Refresh pin star (★ if this location is the pinned default, ☆ otherwise).
+      try { _refreshPinButtonState(); } catch(e){}
       if (flags.persist){
         // Fire-and-forget POST so the dashboard's weather-strip picks the
         // same active location on its next poll.  Anonymous requests get
@@ -1618,10 +1625,54 @@ global.initPsy3D = function(container, opts){
        the dropdown.  Refreshing the saved list later (after the operator
        adds a new city in the dashboard modal) happens automatically on
        the next visit. */
+    var _pinnedKey = '';  // "lat.toFixed(4),lon.toFixed(4)" of the pinned default
+    function _refreshPinButtonState(){
+      var btn = $('#p3-loc-pin'); if (!btn) return;
+      var la = parseFloat($('#p3-lat').value), lo = parseFloat($('#p3-lon').value);
+      var key = (isNaN(la)||isNaN(lo)) ? '' : la.toFixed(4)+','+lo.toFixed(4);
+      var isPinned = key && key === _pinnedKey;
+      btn.textContent = isPinned ? '\u2605' : '\u2606';   // ★ vs ☆
+      btn.style.color       = isPinned ? '#fbbf24' : '#64748b';
+      btn.style.borderColor = isPinned ? '#fbbf24' : '#475569';
+      btn.title = isPinned
+        ? 'Pinned as default \u2014 click to unpin'
+        : 'Pin as default \u2014 auto-load this on every fresh session';
+    }
+    $('#p3-loc-pin').onclick = function(){
+      var la = parseFloat($('#p3-lat').value), lo = parseFloat($('#p3-lon').value);
+      if (isNaN(la) || isNaN(lo)) return;
+      var key = la.toFixed(4)+','+lo.toFixed(4);
+      var nowPinned = (key !== _pinnedKey);
+      var body = nowPinned
+        ? { default: { lat: la, lon: lo, name: $('#p3-name').value || '' } }
+        : { default: null };
+      _pinnedKey = nowPinned ? key : '';
+      _refreshPinButtonState();
+      try {
+        fetch('/api/weather-location', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          credentials: 'include',
+          body: JSON.stringify(body)
+        }).catch(function(){});
+      } catch(e){}
+      // Mirror to localStorage so the dashboard sees the pin without a refetch.
+      try {
+        if (nowPinned) localStorage.setItem('defaultWeatherLocation', JSON.stringify(body.default));
+        else localStorage.removeItem('defaultWeatherLocation');
+      } catch(e){}
+    };
+
     fetch('/api/weather-location', { credentials:'include' })
       .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(j){ if (j) _buildLocSelect(j.saved || []); })
-      .catch(function(){ _buildLocSelect([]); });
+      .then(function(j){
+        if (j) _buildLocSelect(j.saved || []);
+        if (j && j.default && typeof j.default.lat === 'number'){
+          _pinnedKey = j.default.lat.toFixed(4)+','+j.default.lon.toFixed(4);
+        }
+        _refreshPinButtonState();
+      })
+      .catch(function(){ _buildLocSelect([]); _refreshPinButtonState(); });
 
     /* duration buttons */
     var durEl=$('#p3-dur-btns');

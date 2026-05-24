@@ -925,6 +925,13 @@
             const [savedWeatherLocations, setSavedWeatherLocations] = useState(() => {
                 try { return JSON.parse(localStorage.getItem('savedWeatherLocations')) || []; } catch { return []; }
             });
+            // Pinned default location (★) — loaded on every fresh session
+            // before the operator picks an explicit `active`.  Source of
+            // truth lives on the controller (`weather_location.json:default`);
+            // local mirror lets the modal render stars without flicker.
+            const [defaultLocation, setDefaultLocation] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('defaultWeatherLocation')) || null; } catch { return null; }
+            });
             const [weatherSaveError, setWeatherSaveError] = useState('');
             // Hydrate weather state (active + saved list) from controller. Run on
             // mount and whenever the operator opens the location modal — that's
@@ -940,14 +947,21 @@
                         if (!state) return;
                         const active = state.active && typeof state.active.lat === 'number' && typeof state.active.lon === 'number' ? state.active : null;
                         const saved = Array.isArray(state.saved) ? state.saved.filter(s => s && typeof s.lat === 'number' && typeof s.lon === 'number') : [];
+                        const pinned = state.default && typeof state.default.lat === 'number' && typeof state.default.lon === 'number' ? state.default : null;
                         try { localStorage.setItem('savedWeatherLocations', JSON.stringify(saved)); } catch (e) {}
+                        if (pinned) {
+                            try { localStorage.setItem('defaultWeatherLocation', JSON.stringify(pinned)); } catch (e) {}
+                        } else {
+                            try { localStorage.removeItem('defaultWeatherLocation'); } catch (e) {}
+                        }
                         setSavedWeatherLocations(saved);
-                        // Active is only adopted from the server on first mount —
-                        // i.e. when local state has no active yet. Otherwise the
-                        // operator's just-clicked selection could be reverted.
+                        setDefaultLocation(pinned);
+                        // Fresh-session precedence: pinned default > stored active
+                        // > nothing — so the operator's "★" choice always wins
+                        // on first open of the day.
                         setWeatherLocation(prev => {
                             if (prev) return prev;
-                            return active || prev;
+                            return pinned || active || prev;
                         });
                     })
                     .catch(() => {});
@@ -1004,6 +1018,30 @@
                 .finally(() => {
                     clearTimeout(timer);
                 });
+            }, []);
+
+            // ----------------------------------------------------------------
+            // Pin / unpin a default location.  Persists to the controller's
+            // `weather_location.json:default` field so the dashboard
+            // auto-loads this hospital on every fresh session, regardless
+            // of what was last active.  Pass `null` to clear the pin.
+            // ----------------------------------------------------------------
+            const pinLocation = useCallback((loc) => {
+                const body = (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number')
+                    ? { default: { lat: loc.lat, lon: loc.lon, name: loc.name || '' } }
+                    : { default: null };
+                if (body.default) {
+                    try { localStorage.setItem('defaultWeatherLocation', JSON.stringify(body.default)); } catch (e) {}
+                } else {
+                    try { localStorage.removeItem('defaultWeatherLocation'); } catch (e) {}
+                }
+                setDefaultLocation(body.default);
+                return fetch(`${API_URL}/api/weather-location`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify(body)
+                }).catch(e => console.warn('pin failed:', e));
             }, []);
             const [weatherZoom, setWeatherZoom] = useState(null);
             const [weatherDragStart, setWeatherDragStart] = useState(null);
@@ -3488,11 +3526,19 @@
                                         {savedLocs.map((loc, i) => {
                                             const key = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
                                             const isActive = key === currentKey;
+                                            const defKey = defaultLocation ? (defaultLocation.lat.toFixed(4)+','+defaultLocation.lon.toFixed(4)) : '';
+                                            const isPinned = key === defKey;
                                             return (
                                                 <div key={i} className={`flex items-center px-3 py-2 text-[11px] font-mono ${theme==='dark'?'border-b border-slate-800 last:border-0':'border-b border-slate-100 last:border-0'} ${isActive ? (theme==='dark'?'bg-indigo-600/20 text-indigo-300':'bg-indigo-50 text-indigo-700') : (theme==='dark'?'text-slate-300 hover:bg-slate-800':'text-slate-700 hover:bg-slate-50')} transition-all`}>
                                                     <div onClick={() => { document.getElementById('wl-dropdown-list').style.display='none'; selectLocation(loc); }} className="flex-1 cursor-pointer truncate font-bold">
                                                         {loc.name || 'Unnamed'} <span className={`text-[8px] font-normal ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>({loc.lat.toFixed(2)}, {loc.lon.toFixed(2)})</span>
                                                     </div>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); pinLocation(isPinned ? null : loc); }}
+                                                        title={isPinned ? 'Unpin (no auto-load default)' : 'Pin as default — auto-load this on every fresh session'}
+                                                        data-testid={`pin-location-${i}`}
+                                                        className={`ml-1 w-5 h-5 flex items-center justify-center rounded text-sm flex-shrink-0 transition-all ${isPinned ? (theme==='dark'?'text-amber-300 hover:bg-amber-500/20':'text-amber-500 hover:bg-amber-50') : (theme==='dark'?'text-slate-600 hover:text-amber-300 hover:bg-amber-500/10':'text-slate-300 hover:text-amber-500 hover:bg-amber-50')}`}
+                                                    >{isPinned ? '★' : '☆'}</button>
                                                     <button onClick={(e) => { e.stopPropagation(); document.getElementById('wl-dropdown-list').style.display='none'; removeLocation(i, e); }} className={`ml-2 w-5 h-5 flex items-center justify-center rounded text-xs flex-shrink-0 ${theme==='dark'?'text-red-400 hover:bg-red-500/20':'text-red-500 hover:bg-red-50'} transition-all`} title="Delete">&times;</button>
                                                 </div>
                                             );

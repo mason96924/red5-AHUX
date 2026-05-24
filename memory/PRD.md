@@ -1,5 +1,80 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.7 — ★ Pin default location + G36 cross-walk doc (2026-05-24, evening)
+
+**Two deliverables this session**:
+
+### 1 · Pin a default weather location (★ on both surfaces)
+
+**Backend (V2.0 `tenants.py` + V1.9 `weather_service.py`)**
+- New `default` field added to `tenant_weather_location` (V2.0 Mongo) and `weather_location.json` (V1.9 file).  Stores a single pinned location `{lat, lon, name}` per tenant / per controller.
+- `POST /api/weather-location` now accepts `{default: {lat,lon,name}}` to pin and `{default: null}` to clear.  Other fields (`active`, `saved`) are untouched when not present — operator can pin from anywhere without losing their saved list.
+- `GET /api/weather-location` returns the new `default` field verbatim AND falls back to it when no `active` is stored (defensive — covers the standalone `psy_3d.html` page which doesn't have access to localStorage from another tab).
+- Pydantic v2 `model_fields_set` is used to distinguish "operator sent `default:null`" from "operator omitted the field" — the latter preserves the existing pin.
+- V1.9 Flask handler `set_weather_location()` does the equivalent by checking key presence in `request.get_json()`.
+
+**Front-end UI on TWO surfaces (both V1.9 and V2.0, both implementations identical)**
+
+1. **Dashboard's WEATHER LOCATION modal — star button per saved row**
+   - Each row in the saved-locations list now shows ☆ (outline, slate) or ★ (filled, amber).
+   - Click toggles pin: amber if this row is the default, slate otherwise.
+   - Tooltip explains: "Pin as default — auto-load this on every fresh session" / "Unpin (no auto-load default)".
+   - Calls new `pinLocation(loc | null)` callback which POSTs `{default: …}` and mirrors into React state + localStorage instantly.
+
+2. **3D WX panel — single ★ button next to the new location dropdown**
+   - Pins whatever is currently selected.  Visual state mirrors the modal: amber-filled ★ when this location is the pinned default, slate outline ☆ otherwise.
+   - Refresh logic: `_refreshPinButtonState()` runs after every `applyLocation()` call, so switching cities updates the star without a fetch.
+   - State is loaded from the engine's initial `/api/weather-location` fetch (`_pinnedKey` = `lat.toFixed(4)+","+lon.toFixed(4)`).
+
+**Fresh-session precedence rule**
+The dashboard's `hydrateWeatherState` IIFE now uses this order: `localStorage > pinned default > server active`.  Translation: if the operator pins Hanyang and closes the browser, the next morning the dashboard auto-loads Hanyang regardless of what was last clicked.  If they clicked Tokyo mid-session, Tokyo stays during that session (localStorage wins).
+
+### 2 · `g36_reset.md` — ASHRAE Guideline 36 cross-walk
+
+Comprehensive 275-line technical document at `/app/g36_reset.md` (mirrored to `/app/archive/Red5-Studio-V1.9/g36_reset.md`) covering:
+
+- **§2 Parameter cross-walk** — every Red5 `dyn-reset` knob ↔ G36 Trim-and-Respond parameter with G36-2021 defaults (SAT, SP, and OA economizer).
+- **§2.4 Drop-in `trim_and_respond()` pseudocode** — the single function that swaps Red5's exponential decay for G36-compliant T&R.
+- **§2.5 Cooling-request definition** — how G36 §5.16.5 counts "is this zone calling for help?" and what code Red5 needs to add to aggregate that.
+- **§3 The 8 operating modes** — Occupied, Warm-up, Cool-down, Setback heating, Setup cooling, Unoccupied, Freeze-protection, Smoke/Shutdown — with transition rules.
+- **§4 G36 mandatory points list** — 40 per AHU, 20 per VAV — formatted as audit-ready tables.
+- **§5 9 commissioning trends (CT-1 through CT-9)** — what to trend, why, at what resolution.
+- **§6 Alarm class matrix (A/B/C)** — response-time tiers G36 §5.1.16 requires.
+- **§7 Path-to-compliance gap analysis** — 12-row table grading Red5 against each G36 requirement (`OK` / `PARTIAL` / `GAP`) with effort estimates: ≈ 3–4 dev-weeks to close all gaps, ≈ 1 week for "G36-aware" minimum.
+- **§8 "But I just want to say G36 in our spec sheet"** — pragmatic minimum-viable-compliance for marketing parity.
+- **§9 References** — ASHRAE GL 36-2021, ASHRAE 62.1-2022, ASHRAE 90.1-2022, Hydeman/Stein 2003 PG&E VAV design guide, LBNL FlexLab Modelica reference implementation.
+
+### Files changed
+- `backend/tenants.py` — `default` field in schema; `model_fields_set` clearing logic.
+- `backend/server.py` — fresh-session fallback in `/api/weather-location` GET.
+- `frontend/public/dashboard.html` — `defaultLocation` state, `pinLocation` callback, ★ buttons in modal rows, pinned > active precedence.
+- `frontend/public/js/psy-3d-engine.js` — ★ button next to dropdown, `_refreshPinButtonState()` wired into `applyLocation()`.
+- `archive/Red5-Studio-V1.9/weather_service.py` — mirror of `default` schema + clearing logic.
+- `archive/Red5-Studio-V1.9/dashboard.html` — identical mirror of pin UI.
+- `archive/Red5-Studio-V1.9/js/psy-3d-engine.js` — identical mirror of pin button.
+- `g36_reset.md` (new) — V2.0 root.
+- `archive/Red5-Studio-V1.9/g36_reset.md` (new) — V1.9 controller copy.
+
+### Verification (live, Playwright)
+- 3D WX pin button initial: ☆ outline ✓
+- Click pin: ★ filled, amber color `rgb(251, 191, 36)` ✓
+- Tooltip text changes between "Pin as default" / "Pinned as default — click to unpin" ✓
+- Backend `POST /api/weather-location {default: {…}}` → `persisted:true` ✓
+- Backend `POST /api/weather-location {default: null}` → field $unset from doc ✓
+- 14/14 smoke tests still pass ✓
+- ESLint clean ✓
+- V1.9 `app.py` + `weather_service.py` byte-compile cleanly ✓
+
+### Operator playbook
+- Open the dashboard's **WEATHER LOCATION** modal → next to each saved hospital is a ☆ — click to pin (turns amber ★).  Only one location is the default at a time.
+- Or, open **3D WX tab** → next to the location dropdown is the same ☆ — click to pin whatever is currently shown.
+- The pinned hospital auto-loads on **every fresh browser session** (no localStorage active).  Mid-session selections still take precedence so you can switch around freely.
+- Multi-site managers: pin your primary hospital, treat the others as drop-down picks.  Pin survives logout/login (server-side).
+
+
+
+
+
 ## Phase L.6 — Bidirectional location sync: PSYCH ⇄ 3D WX (2026-05-24)
 
 **Brief**: Operator reported a stale-state bug present in both V1.9 and V2.0: select location "Hanyang Univ Hospital" in the dashboard's psy-chart weather strip → open 3D WX tab → it correctly shows Hanyang.  Return to PSYCH tab → switch to "Seattle Children's" → bottom weather strip updates → return to 3D WX tab → it STILL shows Hanyang's scatter cloud.  The two views were reading independent state and the 3D engine read `localStorage.weatherLocation` only once at mount.

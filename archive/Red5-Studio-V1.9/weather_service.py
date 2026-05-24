@@ -64,19 +64,20 @@ def _coerce_loc(d):
 def _read_weather_state():
     """Load the on-controller weather state, migrating any legacy single-loc file."""
     if not os.path.isfile(WEATHER_LOC_PATH):
-        return {'active': None, 'saved': []}
+        return {'active': None, 'saved': [], 'default': None}
     try:
         with open(WEATHER_LOC_PATH, 'r') as f:
             data = json.load(f)
     except Exception:
-        return {'active': None, 'saved': []}
+        return {'active': None, 'saved': [], 'default': None}
     # Legacy format: bare {lat, lon, name}
     if isinstance(data, dict) and 'lat' in data and 'lon' in data and 'active' not in data and 'saved' not in data:
         active = _coerce_loc(data)
-        return {'active': active, 'saved': [active] if active else []}
+        return {'active': active, 'saved': [active] if active else [], 'default': None}
     if not isinstance(data, dict):
-        return {'active': None, 'saved': []}
+        return {'active': None, 'saved': [], 'default': None}
     active = _coerce_loc(data.get('active')) if data.get('active') is not None else None
+    default = _coerce_loc(data.get('default')) if data.get('default') is not None else None
     raw_saved = data.get('saved') or []
     saved = []
     seen = set()
@@ -90,7 +91,11 @@ def _read_weather_state():
                 continue
             seen.add(key)
             saved.append(loc)
-    return {'active': active, 'saved': saved}
+    # Fresh-session fallback: when no `active` has been picked yet but the
+    # operator has pinned a `default`, surface that as the active location.
+    if not active and default:
+        active = default
+    return {'active': active, 'saved': saved, 'default': default}
 
 def _write_weather_state(state):
     try:
@@ -126,28 +131,47 @@ def get_weather_location():
 
 def set_weather_location():
     """Accepts either:
-      • Legacy: {lat, lon, name}                       → updates active, adds to saved
-      • Full:   {active: {...}|null, saved: [...]}     → replaces full state
+      • Legacy: {lat, lon, name}                                  → updates active, adds to saved
+      • Full:   {active: {...}|null, saved: [...], default: ...}  → replaces full state.
+        - `default` is the operator's pinned-on-fresh-session location.
+        - Send `default: {lat, lon, name}` to pin, `null` to clear.
+        - When `default` key is omitted, the existing pin is preserved.
     Returns the resulting persisted state.
     """
     try:
         body = request.get_json(silent=True) or {}
         # Detect format
-        is_full = ('active' in body) or ('saved' in body)
+        is_full = ('active' in body) or ('saved' in body) or ('default' in body)
         if is_full:
-            active = _coerce_loc(body.get('active')) if body.get('active') is not None else None
-            saved = []
-            seen = set()
-            for item in (body.get('saved') or []):
-                loc = _coerce_loc(item)
-                if not loc:
-                    continue
-                key = (round(loc['lat'], 4), round(loc['lon'], 4))
-                if key in seen:
-                    continue
-                seen.add(key)
-                saved.append(loc)
-            state = {'active': active, 'saved': saved}
+            existing = _read_weather_state()
+            # Active + saved replace whatever is currently stored; default is
+            # merged so a caller can update just one field without losing the
+            # others (e.g., pinning a default from the 3D WX panel shouldn't
+            # wipe the user's saved list).
+            if 'active' in body:
+                active = _coerce_loc(body.get('active')) if body.get('active') is not None else None
+            else:
+                active = existing.get('active')
+            if 'saved' in body:
+                saved = []
+                seen = set()
+                for item in (body.get('saved') or []):
+                    loc = _coerce_loc(item)
+                    if not loc:
+                        continue
+                    key = (round(loc['lat'], 4), round(loc['lon'], 4))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    saved.append(loc)
+            else:
+                saved = list(existing.get('saved') or [])
+            if 'default' in body:
+                # null / empty dict / non-dict -> clear; {lat,lon,name} -> pin.
+                default = _coerce_loc(body.get('default')) if body.get('default') else None
+            else:
+                default = existing.get('default')
+            state = {'active': active, 'saved': saved, 'default': default}
         else:
             loc = _coerce_loc(body)
             if not loc:
@@ -157,7 +181,7 @@ def set_weather_location():
             key = (round(loc['lat'], 4), round(loc['lon'], 4))
             saved = [s for s in saved if (round(s['lat'], 4), round(s['lon'], 4)) != key]
             saved.insert(0, loc)
-            state = {'active': loc, 'saved': saved[:20]}
+            state = {'active': loc, 'saved': saved[:20], 'default': existing.get('default')}
         _write_weather_state(state)
         return jsonify({'success': True, 'state': state})
     except Exception as e:

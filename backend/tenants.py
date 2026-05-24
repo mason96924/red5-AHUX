@@ -199,7 +199,11 @@ async def read_weather_location(tenant: Optional[dict]) -> Optional[dict]:
     doc = await ten_loc_col.find_one({"tenant_id": tenant["tenant_id"]}, {"_id": 0})
     if not doc:
         return None
-    return {"active": doc.get("active"), "saved": doc.get("saved", [])}
+    return {
+        "active":  doc.get("active"),
+        "saved":   doc.get("saved", []),
+        "default": doc.get("default"),   # pinned-on-fresh-session location
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -329,8 +333,13 @@ async def create_tenant_directory(tenant: dict, dirname: str,
 
 
 class WeatherLocationUpdate(BaseModel):
-    active: Optional[dict] = None
-    saved:  Optional[list] = None
+    active:  Optional[dict] = None
+    saved:   Optional[list] = None
+    # Pinned default location -- when set, the dashboard auto-loads this on
+    # any fresh session where no `active` has been explicitly chosen yet.
+    # Pass `{}` (empty dict) or `null` to clear the pin.  Shape:
+    #   {"lat": <float>, "lon": <float>, "name": <str>}
+    default: Optional[dict] = None
 
 
 async def read_collector_config(tenant: Optional[dict]) -> Optional[dict]:
@@ -394,13 +403,33 @@ async def write_map_config(tenant: dict, map_config: dict,
 async def write_weather_location(tenant: dict, update: WeatherLocationUpdate) -> dict:
     now = datetime.now(timezone.utc)
     set_doc: dict[str, Any] = {"updated_at": now}
+    unset_doc: dict[str, Any] = {}
+    # `model_fields_set` (pydantic v2) tells us which fields were actually
+    # present in the request body, distinguishing "didn't send" from
+    # "explicitly sent null".  Without this we can't tell whether the
+    # operator meant to clear a pinned default or just omitted the field.
+    sent = update.model_fields_set
     if update.active is not None:
         set_doc["active"] = update.active
     if update.saved is not None:
         set_doc["saved"] = update.saved
+    if "default" in sent:
+        # Sending `{lat, lon, name}` pins; sending `null` (or `{}` after
+        # the strip below) clears.
+        if isinstance(update.default, dict) and update.default.get("lat") is not None:
+            set_doc["default"] = {
+                "lat":  update.default.get("lat"),
+                "lon":  update.default.get("lon"),
+                "name": update.default.get("name") or "",
+            }
+        else:
+            unset_doc["default"] = ""
+    ops: dict[str, Any] = {"$set": set_doc}
+    if unset_doc:
+        ops["$unset"] = unset_doc
     await ten_loc_col.update_one(
         {"tenant_id": tenant["tenant_id"]},
-        {"$set": set_doc},
+        ops,
         upsert=True,
     )
     return {"ok": True, "persisted": True, "tenant_id": tenant["tenant_id"]}

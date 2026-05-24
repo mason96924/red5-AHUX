@@ -657,8 +657,16 @@ async def weather_location(tenant: Optional[dict] = Depends(current_tenant_optio
     if tenant:
         loc = await read_weather_location(tenant)
         if loc:
+            # Fresh-session fallback: when no `active` has been picked yet
+            # but the operator has pinned a default, surface that as the
+            # active location so the dashboard auto-loads it on first open
+            # instead of stranding the user on the bundled "Seattle Children's"
+            # baseline.  `default` itself is also returned verbatim so the
+            # UI can render the star indicator.
+            if not loc.get("active") and loc.get("default"):
+                loc["active"] = loc["default"]
             return loc
-    return {"active": ACTIVE_LOCATION, "saved": SAVED_LOCATIONS}
+    return {"active": ACTIVE_LOCATION, "saved": SAVED_LOCATIONS, "default": None}
 
 
 @app.post("/api/weather-location")

@@ -85,6 +85,97 @@
   /* Markdown cache: {docId: {en:'', ko:''}} */
   var cache = {};
 
+  /* Inject the @media print stylesheet once.  Kept lazy so a page that
+     never opens the docs popup pays zero cost.  The stylesheet does
+     three things:
+       1. Hide everything in the document that ISN'T inside the popup so
+          the dashboard chrome, charts, sidebar, etc. don't get printed.
+       2. Reset the popup's fixed positioning + glass-morphism so it
+          flows naturally down printable pages without scrollbars.
+       3. Restyle the body content into a print-friendly serif typography
+          with a small Red5 footer caption on every page.
+     `data-printing="1"` on the popup acts as the activation switch so
+     the print rules don't apply when window.print() is triggered by
+     anything else (e.g., browser Ctrl+P on the dashboard itself). */
+  function _ensurePrintCss(){
+    if (document.getElementById('red5-docs-print-css')) return;
+    var css = ''
+      + '@media print {\n'
+      + '  /* Hide ALL siblings of the popup but keep ancestors visible. */\n'
+      + '  body * { visibility: hidden !important; }\n'
+      + '  #red5-docs-index[data-printing="1"],\n'
+      + '  #red5-docs-index[data-printing="1"] * { visibility: visible !important; }\n'
+      + '  /* Un-position so it flows down full printable width. */\n'
+      + '  #red5-docs-index[data-printing="1"] {\n'
+      + '    position: absolute !important;\n'
+      + '    left: 0 !important; top: 0 !important;\n'
+      + '    width: 100% !important; height: auto !important;\n'
+      + '    background: #ffffff !important; color: #0f172a !important;\n'
+      + '    border: none !important; box-shadow: none !important;\n'
+      + '    backdrop-filter: none !important; overflow: visible !important;\n'
+      + '    font-family: Georgia, "Times New Roman", serif !important;\n'
+      + '  }\n'
+      + '  /* Hide the header + tab bar — engineers don\'t want the chrome\n'
+      + '     in their printed copy, just the body content. */\n'
+      + '  #red5-docs-index[data-printing="1"] [data-hdr],\n'
+      + '  #red5-docs-index[data-printing="1"] [data-tabs] { display: none !important; }\n'
+      + '  /* Body styling — print-friendly typography. */\n'
+      + '  #red5-docs-index[data-printing="1"] > div:last-child {\n'
+      + '    overflow: visible !important;\n'
+      + '    color: #0f172a !important;\n'
+      + '    padding: 0 !important;\n'
+      + '    font-size: 11pt !important;\n'
+      + '    line-height: 1.55 !important;\n'
+      + '  }\n'
+      + '  #red5-docs-index[data-printing="1"] h1,\n'
+      + '  #red5-docs-index[data-printing="1"] h2,\n'
+      + '  #red5-docs-index[data-printing="1"] h3,\n'
+      + '  #red5-docs-index[data-printing="1"] b,\n'
+      + '  #red5-docs-index[data-printing="1"] strong { color: #0f172a !important; }\n'
+      + '  #red5-docs-index[data-printing="1"] code,\n'
+      + '  #red5-docs-index[data-printing="1"] pre {\n'
+      + '    background: #f1f5f9 !important;\n'
+      + '    color: #0f172a !important;\n'
+      + '    border-color: #cbd5e1 !important;\n'
+      + '    page-break-inside: avoid;\n'
+      + '  }\n'
+      + '  #red5-docs-index[data-printing="1"] table {\n'
+      + '    page-break-inside: avoid;\n'
+      + '    border-collapse: collapse;\n'
+      + '  }\n'
+      + '  /* Red5 footer on every printed page. */\n'
+      + '  @page {\n'
+      + '    margin: 20mm 15mm 18mm 15mm;\n'
+      + '    size: A4 portrait;\n'
+      + '  }\n'
+      + '  @page :first { margin-top: 22mm; }\n'
+      + '  /* "Red5 Studio" caption rendered at the top of every page via\n'
+      + '     a fixed-position div the browser places under @page margin.\n'
+      + '     Works in Chrome/Edge; Firefox falls back to its own header. */\n'
+      + '  #red5-print-caption {\n'
+      + '    position: fixed; top: 0; left: 0; right: 0;\n'
+      + '    font: 700 9pt Georgia, serif; color: #64748b;\n'
+      + '    border-bottom: 1px solid #cbd5e1;\n'
+      + '    padding: 4mm 0 2mm; text-align: center;\n'
+      + '    visibility: visible !important;\n'
+      + '  }\n'
+      + '}\n'
+      + '@media screen { #red5-print-caption { display: none; } }\n';
+    var style = document.createElement('style');
+    style.id = 'red5-docs-print-css';
+    style.textContent = css;
+    document.head.appendChild(style);
+    /* Add a tiny caption element to body so the @page header is consistent
+       across browsers.  Browsers that ignore fixed-position-in-print fall
+       back to their own URL/timestamp header — still readable. */
+    if (!document.getElementById('red5-print-caption')) {
+      var cap = document.createElement('div');
+      cap.id = 'red5-print-caption';
+      cap.textContent = 'Red5 Studio \u2014 AHU Diagnostic Hub \u2014 Standards Reference';
+      document.body.appendChild(cap);
+    }
+  }
+
   /* Tiny markdown -> HTML renderer (mirrors the one in psy-3d-engine.js;
      kept inline to keep this file standalone and loadable from any page). */
   function _renderMd(md){
@@ -174,14 +265,25 @@
       var label = _state.lang === 'ko' ? d.title_ko : d.title_en;
       return '<button data-tab="'+d.id+'" style="background:'+(on?d.color:'transparent')+';border:1px solid '+d.color+';color:'+(on?'#0f172a':d.color)+';padding:4px 10px;font:900 9px Courier New;cursor:pointer;border-radius:4px 4px 0 0;letter-spacing:.05em;text-transform:uppercase;border-bottom:none">'+label+'</button>';
     }).join('');
-    popup.innerHTML =
+    var hdrHTML =
       '<div data-hdr="1" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div style="color:#60a5fa;font-weight:900;font-size:11px;letter-spacing:.10em;text-transform:uppercase">\ud83d\udcda '+titleLabel+'</div>'+
           langChip+
         '</div>'+
-        '<button data-close="1" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 7px;font:900 12px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
-      '</div>'+
+        '<div style="display:flex;align-items:center;gap:6px">'+
+          /* Print button — uses the @media print stylesheet injected below
+             so engineers can save / pin a clean copy of any standards doc.
+             window.print() is safer than a manual PDF render because it
+             respects the operator's browser printer settings (paper size,
+             margins, headers/footers) and offers "Save as PDF" on every
+             modern browser without any extra deps. */
+          '<button data-print="1" title="Print or Save as PDF" style="background:transparent;border:1px solid #475569;color:#cbd5e1;padding:0 7px;font:900 11px Courier New;cursor:pointer;border-radius:2px;line-height:1.6">\ud83d\udda8\ufe0f Print</button>'+
+          '<button data-close="1" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 7px;font:900 12px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
+        '</div>'+
+      '</div>';
+    popup.innerHTML =
+      hdrHTML+
       '<div data-tabs="1" style="display:flex;flex-wrap:wrap;gap:2px;padding:6px 10px 0;background:rgba(15,23,42,.4);flex-shrink:0;border-bottom:1px solid #1e3a8a">'+tabs+'</div>'+
       '<div style="flex:1;overflow-y:auto;padding:10px 16px;color:#cbd5e1">'+body+'</div>';
     /* Wire drag (header) */
@@ -210,6 +312,27 @@
     /* Close */
     var closeBtn = popup.querySelector('[data-close]');
     if (closeBtn) closeBtn.addEventListener('click', function(){ popup.style.display = 'none'; });
+    /* Print / Save as PDF.  We mark the popup so the @media print
+       stylesheet (_ensurePrintCss) knows to (a) hide everything else on
+       the page, (b) un-position the popup so it flows down a full page,
+       (c) restyle into a print-friendly serif typography with a Red5
+       footer.  The marker is removed in the afterprint event so the
+       on-screen layout snaps right back. */
+    var printBtn = popup.querySelector('[data-print]');
+    if (printBtn) printBtn.addEventListener('click', function(){
+      _ensurePrintCss();
+      var docTitle = (_state.lang === 'ko' ? active.title_ko : active.title_en) || 'Red5 Standards';
+      var originalTitle = document.title;
+      document.title = 'Red5 \u2014 ' + docTitle;   /* shows up in PDF header */
+      popup.setAttribute('data-printing', '1');
+      function afterPrint(){
+        popup.removeAttribute('data-printing');
+        document.title = originalTitle;
+        window.removeEventListener('afterprint', afterPrint);
+      }
+      window.addEventListener('afterprint', afterPrint);
+      window.print();
+    });
     /* Tab switching */
     popup.querySelectorAll('[data-tab]').forEach(function(b){
       b.addEventListener('click', function(){

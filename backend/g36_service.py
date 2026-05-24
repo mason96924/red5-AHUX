@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -333,7 +333,12 @@ async def _load(ahu_id: str) -> dict:
 async def _save(ahu_id: str, *, mode: OperatingMode, mode_reason: str,
                 cooling: int, heating: int, pressure: int,
                 sat: float, dsp: float, setpoints: dict) -> dict:
-    """Upsert the AHU state row.  Returns the persisted doc minus _id."""
+    """Upsert the AHU state row.  Returns the persisted doc minus _id.
+
+    Also appends a transition row to `history` whenever the mode changes
+    relative to the most recent history entry.  History is capped at the
+    last 50 transitions so a 24-hour run still fits in a kB-sized doc.
+    """
     now = datetime.now(timezone.utc)
     update = {
         "ahu_id": ahu_id,
@@ -347,6 +352,18 @@ async def _save(ahu_id: str, *, mode: OperatingMode, mode_reason: str,
         "last_tick_at": now,
         "setpoints": setpoints,
     }
+
+    # Resolve last-transition mode + maintain capped history array.
+    prev = await g36_col.find_one({"ahu_id": ahu_id},
+                                  {"_id": 0, "history": 1}) or {}
+    history = list(prev.get("history") or [])
+    last_mode = history[-1].get("mode") if history else None
+    if mode != last_mode:
+        history.append({"ts": now, "mode": mode})
+        if len(history) > 50:
+            history = history[-50:]
+        update["history"] = history
+
     await g36_col.update_one({"ahu_id": ahu_id}, {"$set": update}, upsert=True)
     update["last_tick_at"] = now.isoformat()
     return update
@@ -482,6 +499,72 @@ async def post_g36_tick(ahu_id: str, tick: AhuTick) -> dict:
 async def list_modes() -> dict:
     """Static list of the 8 operating modes for the UI legend."""
     return {"modes": list(ALL_MODES)}
+
+
+@router.get("/history/{ahu_id}")
+async def get_g36_history(ahu_id: str, minutes: int = 60) -> dict:
+    """Return mode-transition history for the last `minutes` minutes
+    (default 60).  Powers the bottom-of-PSYCH timeline ribbon.
+
+    Returns:
+        {
+          "ahu_id":      "...",
+          "now":         ISO ts,
+          "window_min":  N,
+          "current_mode": str | None,
+          "transitions": [
+            {"ts": ISO, "mode": "occupied"},
+            {"ts": ISO, "mode": "cool_down"},
+            ...
+          ]
+        }
+
+    `transitions` is sorted ascending by ts and ALWAYS includes the
+    earliest transition that is still active within the window even if
+    its `ts` predates the window start — this lets the UI render the
+    leading colored segment without an undefined gap.
+    """
+    minutes = max(5, min(720, int(minutes)))  # clamp 5 min .. 12 h
+    doc = await g36_col.find_one({"ahu_id": ahu_id},
+                                 {"_id": 0, "history": 1, "mode": 1}) or {}
+    raw = list(doc.get("history") or [])
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=minutes)
+
+    # Normalize each row's ts to UTC datetime + ISO.
+    out: list[dict] = []
+    for h in raw:
+        ts = h.get("ts")
+        if isinstance(ts, str):
+            try:
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+        if not isinstance(ts, datetime):
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        out.append({"ts": ts, "mode": h.get("mode")})
+
+    out.sort(key=lambda r: r["ts"])
+
+    # Pick rows inside the window, plus the latest row whose ts is BEFORE
+    # the window so the leading segment has a known color.
+    inside  = [r for r in out if r["ts"] >= cutoff]
+    leading = [r for r in out if r["ts"]  < cutoff]
+    if leading:
+        leading = [leading[-1]]
+    merged = leading + inside
+
+    return {
+        "ahu_id":       ahu_id,
+        "now":          now.isoformat(),
+        "window_min":   minutes,
+        "current_mode": doc.get("mode"),
+        "transitions": [
+            {"ts": r["ts"].isoformat(), "mode": r["mode"]} for r in merged
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

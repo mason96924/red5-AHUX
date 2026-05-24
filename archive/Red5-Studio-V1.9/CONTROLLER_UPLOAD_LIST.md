@@ -31,6 +31,7 @@ Auto-discovered from `/root/data/pgpy/`. Hot-reloadable via `/api/repair/reload-
 | `band_service.py` | `/root/data/pgpy/` | YES |
 | `band_overrides_service.py` | `/root/data/pgpy/` | NO -- bundle only |
 | `bridges_admin_service.py` | `/root/data/pgpy/` | YES |
+| `g36_service.py` | `/root/data/pgpy/` | YES |
 | `modbus_bridge_service.py` | `/root/data/pgpy/` | YES |
 | `mqtt_bridge_service.py` | `/root/data/pgpy/` | YES |
 | `telemetry_service.py` | `/root/data/pgpy/` | YES |

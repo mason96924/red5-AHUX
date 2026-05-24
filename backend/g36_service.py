@@ -338,6 +338,12 @@ async def _save(ahu_id: str, *, mode: OperatingMode, mode_reason: str,
     Also appends a transition row to `history` whenever the mode changes
     relative to the most recent history entry.  History is capped at the
     last 50 transitions so a 24-hour run still fits in a kB-sized doc.
+
+    First-tick demo seed: when an AHU has no prior history, backfill a
+    realistic 24-hour mode walk (overnight unoccupied -> warm-up at 6 AM
+    -> occupied -> midday cool-down -> evening setup -> night unoccupied
+    -> current real mode at `now`) so the timeline ribbon shows
+    something meaningful immediately instead of an empty slab.
     """
     now = datetime.now(timezone.utc)
     update = {
@@ -353,20 +359,60 @@ async def _save(ahu_id: str, *, mode: OperatingMode, mode_reason: str,
         "setpoints": setpoints,
     }
 
-    # Resolve last-transition mode + maintain capped history array.
     prev = await g36_col.find_one({"ahu_id": ahu_id},
                                   {"_id": 0, "history": 1}) or {}
     history = list(prev.get("history") or [])
-    last_mode = history[-1].get("mode") if history else None
-    if mode != last_mode:
-        history.append({"ts": now, "mode": mode})
-        if len(history) > 50:
-            history = history[-50:]
+
+    if not history:
+        # First persisted tick for this AHU -- backfill demo pattern.
+        history = _seed_24h_pattern(mode, now)
         update["history"] = history
+    else:
+        last_mode = history[-1].get("mode") if history else None
+        if mode != last_mode:
+            history.append({"ts": now, "mode": mode})
+            if len(history) > 50:
+                history = history[-50:]
+            update["history"] = history
 
     await g36_col.update_one({"ahu_id": ahu_id}, {"$set": update}, upsert=True)
     update["last_tick_at"] = now.isoformat()
     return update
+
+
+def _seed_24h_pattern(mode_now: OperatingMode, now: datetime) -> list[dict]:
+    """Generate a realistic 24-hour mode walk ending at `now` with
+    `mode_now` as the active mode.  Pure function -- no I/O.  Used by
+    `_save` to backfill `history` on the very first persisted tick so
+    the timeline ribbon doesn't render as a flat slab on demo load.
+
+    Pattern (hours ago -> mode), expressed as the *start* of each
+    segment.  The last entry is `now` anchored to `mode_now` so the
+    simulator's first real tick doesn't create a phantom transition:
+
+        24h   unoccupied        (deep night)
+        18h   warm_up           (6 AM ramp)
+        17.5h occupied          (morning steady)
+        12h   cool_down         (midday solar gain)
+        10.5h occupied          (afternoon)
+         6h   setup             (post-occupancy lingering heat)
+         4.5h unoccupied        (evening)
+         0h   <mode_now>        (current real mode at `now`)
+    """
+    pattern: list[tuple[float, OperatingMode]] = [
+        (24.0, "unoccupied"),
+        (18.0, "warm_up"),
+        (17.5, "occupied"),
+        (12.0, "cool_down"),
+        (10.5, "occupied"),
+        (6.0,  "setup"),
+        (4.5,  "unoccupied"),
+        (0.0,  mode_now),
+    ]
+    return [
+        {"ts": now - timedelta(hours=h), "mode": m}
+        for h, m in pattern
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -30,7 +30,19 @@
     return window.location.origin;
   })();
 
-  var WINDOW_MIN = 60;
+  var WINDOW_OPTS = [
+    { key: '60m', minutes: 60,    label: '60m' },
+    { key: '4h',  minutes: 240,   label: '4h'  },
+    { key: '24h', minutes: 1440,  label: '24h' },
+  ];
+  var _windowKey = (function () {
+    try { return localStorage.getItem('red5G36TimelineWindow') || '4h'; }
+    catch (_) { return '4h'; }
+  })();
+  function _windowMin() {
+    var hit = WINDOW_OPTS.find(function (o) { return o.key === _windowKey; });
+    return hit ? hit.minutes : 240;
+  }
   var REFRESH_MS = 30 * 1000;
 
   var MODE_COLORS = {
@@ -108,7 +120,7 @@
     if (!_ahuIds.length) return Promise.resolve();
     return Promise.all(_ahuIds.map(function (id) {
       return fetch(API_BASE + '/api/g36/history/' + encodeURIComponent(id) +
-                   '?minutes=' + WINDOW_MIN, { credentials: 'include' })
+                   '?minutes=' + _windowMin(), { credentials: 'include' })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) { if (d && d.ahu_id) _historyByAhu[d.ahu_id] = d; })
         .catch(function () {});
@@ -127,7 +139,7 @@
   }
   function _renderRow(d) {
     var now      = new Date(d.now).getTime();
-    var winStart = now - WINDOW_MIN * 60 * 1000;
+    var winStart = now - _windowMin() * 60 * 1000;
     var trans    = d.transitions || [];
     if (!trans.length) {
       return (
@@ -135,7 +147,7 @@
           '<div style="width:78px;font-size:9px;color:#94a3b8;font-weight:900;text-align:right">' + _esc(d.ahu_id) + '</div>' +
           '<div style="flex:1;height:16px;background:#0f172a;border:1px solid #1e293b;border-radius:3px;' +
                       'display:flex;align-items:center;justify-content:center;font-size:8.5px;color:#475569">' +
-            'no transitions in last ' + WINDOW_MIN + 'm' +
+            'no transitions in last ' + _windowMin() + 'm' +
           '</div>' +
         '</div>'
       );
@@ -222,15 +234,42 @@
       box.style.display = 'none';
       return;
     }
+    var wLabel = (WINDOW_OPTS.find(function (o) { return o.key === _windowKey; }) || {}).label || _windowKey;
+    var winChips = WINDOW_OPTS.map(function (o) {
+      var active = o.key === _windowKey;
+      return (
+        '<button data-win="' + o.key + '" ' +
+                'style="background:' + (active ? 'rgba(16,185,129,.16)' : 'transparent') + ';' +
+                       'border:1px solid ' + (active ? '#10b981' : '#334155') + ';' +
+                       'color:' + (active ? '#34d399' : '#94a3b8') + ';' +
+                       'border-radius:3px;padding:1px 6px;font:900 8px Courier New;' +
+                       'letter-spacing:.05em;cursor:pointer;margin-left:3px">' +
+          _esc(o.label) +
+        '</button>'
+      );
+    }).join('');
+
     box.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
-        '<div style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#10b981;font-weight:900">' +
-          '◷ G36 Mode Timeline · last ' + WINDOW_MIN + ' min' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:10px">' +
+        '<div style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#10b981;font-weight:900;display:flex;align-items:center;gap:8px">' +
+          '<span>◷ G36 Mode Timeline · last ' + _esc(wLabel) + '</span>' +
+          '<span>' + winChips + '</span>' +
         '</div>' +
         '<div style="font-size:8px;letter-spacing:.04em">' + _renderLegend() + '</div>' +
       '</div>' +
       '<div style="display:flex;flex-direction:column;gap:1px">' + rows + '</div>';
     box.style.display = 'block';
+
+    /* Wire up the window-selector chips. */
+    Array.from(box.querySelectorAll('button[data-win]')).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = b.getAttribute('data-win');
+        if (k === _windowKey) return;
+        _windowKey = k;
+        try { localStorage.setItem('red5G36TimelineWindow', k); } catch (_) {}
+        _tick();
+      });
+    });
   }
 
   function _tick() {

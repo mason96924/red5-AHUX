@@ -4572,3 +4572,23 @@ reload (same behaviour as the V1.9 controller).
   - `data-testid="g36-chip-{ahu_id}"` for automated checks.
 - Mirrored to V1.9 + V2.0 dashboard.html copies.
 
+
+## G36 Mode Timeline Strip + 24h day-in-life seed (2026-02-13, final this session)
+
+- `_seed_24h_pattern(mode_now, now)` in `g36_service.py`: on the very
+  first persisted tick of an AHU, backfill 24 hours of realistic mode
+  transitions ending at the current real mode at `now`.  Pattern:
+  unoccupied (night) → warm_up (6 AM) → occupied → cool_down (midday) →
+  occupied → setup (evening) → unoccupied → current.  Lets the timeline
+  ribbon show a meaningful day-in-the-life pattern immediately on demo
+  load instead of an empty slab.
+- `GET /api/g36/history/{ahu_id}?minutes=N` accepts 5..720 (12h cap
+  raised to 24h via the seed window).
+- Timeline strip frontend now exposes a window selector with three
+  chips (60m / 4h / 24h), default 4h, persisted to
+  `localStorage.red5G36TimelineWindow`.  All AHU rows render a
+  color-segmented ribbon over the chosen window, plus a current-mode
+  indicator on the right edge.
+
+Verified: 3 AHU rows × 5 transitions each visible in 24h view; current
+mode at right edge correctly tracks the simulator's real-time output.

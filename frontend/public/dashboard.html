@@ -336,7 +336,7 @@
             // ("AHU DIAGNOSTIC HUB" + theme toggle) keeps a small gap at min,
             // and the original baseline (320 px) stays the comfortable max.
             const [sidebarWidth, setSidebarWidth] = useState(() => {
-                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(250, Math.min(320, v)); } catch (e) {}
+                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(250, Math.min(400, v)); } catch (e) {}
                 return 320;
             });
             const API_URL = window.API_BASE_URL || window.location.origin;
@@ -2313,7 +2313,7 @@
                                 const startX = e.clientX;
                                 const startW = sidebarWidth;
                                 const onMove = (mv) => {
-                                    const next = Math.max(250, Math.min(320, startW + (mv.clientX - startX)));
+                                    const next = Math.max(250, Math.min(400, startW + (mv.clientX - startX)));
                                     setSidebarWidth(next);
                                     try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
                                 };
@@ -2446,7 +2446,7 @@
                                 )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1.5 mt-2">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                 {i18nReady && window.LangSelector && <LangSelector />}
                                 <button
                                     onClick={() => window.red5DocsIndex && window.red5DocsIndex.open()}

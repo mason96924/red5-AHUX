@@ -2759,16 +2759,22 @@ global.initPsy3D = function(container, opts){
       return { button: btn, popup: popup, show: show };
     }
 
-    /* Band-shift insight `?` button (top-right of overlay, near B-shift strip). */
+    /* Band-shift insight `?` button (top-right of overlay, near B-shift strip).
+       Uses docBase so all 5 languages (EN/KO/JA/ZH-CN/ZH-TW) resolve via the
+       same naming convention as the Standards popup. */
     _createInsightPopup({
       btnId:       'p3-band-help',
       btnTitle:    'Open the B-shift insight walkthrough (explains what "losing hours" means).',
       btnStyle:    'position:absolute;top:22px;right:8px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #60a5fa;color:#60a5fa;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px',
       popupId:     'p3-band-help-popup',
-      docEN:       '/assets/erv_band_shift_insight.md',
-      docKO:       '/assets/erv_band_shift_insight.ko.md',
-      titleEN:     'B-Shift Insight',
-      titleKO:     'B-\uc2dc\ud504\ud2b8 \ud1b5\ucc30',
+      docBase:     '/assets/erv_band_shift_insight',
+      titles: {
+        en:      'B-Shift Insight',
+        ko:      'B-\uc2dc\ud504\ud2b8 \ud1b5\ucc30',
+        ja:      'B-\u30b7\u30d5\u30c8\u306e\u6d1e\u5bdf',
+        'zh-CN': 'B-\u5e26\u79fb\u6d1e\u5bdf',
+        'zh-TW': 'B-\u5e36\u79fb\u6d1e\u5bdf'
+      },
       storageKey:  'red5BandInsightState',
       storageLang: 'red5BandInsightLang'
     });
@@ -2781,10 +2787,14 @@ global.initPsy3D = function(container, opts){
       btnTitle:    'Open the psychrometric-design workflow walkthrough.',
       btnStyle:    'position:absolute;top:46px;left:435px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #f59e0b;color:#f59e0b;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px;display:none',
       popupId:     'p3-design-help-popup',
-      docEN:       '/assets/psychrometric_design_workflow.md',
-      docKO:       '/assets/psychrometric_design_workflow.ko.md',
-      titleEN:     'Psych Design Workflow',
-      titleKO:     '\uc2b5\uacf5\uae30\uc120\ub3c4 \uc124\uacc4 \uc6cc\ud06c\ud50c\ub85c',
+      docBase:     '/assets/psychrometric_design_workflow',
+      titles: {
+        en:      'Psych Design Workflow',
+        ko:      '\uc2b5\uacf5\uae30\uc120\ub3c4 \uc124\uacc4 \uc6cc\ud06c\ud50c\ub85c',
+        ja:      '\u6e7f\u308a\u7a7a\u6c17\u7dda\u56f3 \u8a2d\u8a08\u30ef\u30fc\u30af\u30d5\u30ed\u30fc',
+        'zh-CN': '\u7115\u6e7f\u56fe \u8bbe\u8ba1\u5de5\u4f5c\u6d41',
+        'zh-TW': '\u7124\u6fd5\u5716 \u8a2d\u8a08\u5de5\u4f5c\u6d41'
+      },
       storageKey:  'red5DesignInsightState',
       storageLang: 'red5DesignInsightLang'
     });

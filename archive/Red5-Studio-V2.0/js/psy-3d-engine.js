@@ -1,6 +1,32 @@
 (function(global){
 'use strict';
 
+/* ----------------------------------------------------------------
+   Weather URL helper.  On some Korean home networks the browser can
+   no longer reach archive-api.open-meteo.com directly (HTTPS reset
+   by ISP middlebox), but the Flask/FastAPI backend on the same LAN
+   can still reach it via Python urllib / httpx.  When the page is
+   served by the controller, we route the fetch through
+   /api/weather-proxy which also adds NASA POWER as a final fallback.
+   On static-hosted pages (no backend), `useProxy` is false and the
+   call goes direct to open-meteo as before. */
+var __psy3d_useProxy = (function(){
+  try {
+    var loc = (typeof global !== 'undefined' && global.location) ? global.location : null;
+    if (!loc) return false;
+    // Only use the proxy when the page is served from a real HTTP origin
+    // (not file://, not chrome-extension://, etc.).
+    return loc.protocol === 'http:' || loc.protocol === 'https:';
+  } catch(e) { return false; }
+})();
+function __psy3d_archiveUrl(lat, lon, fromD, toD) {
+  var params = 'latitude=' + lat + '&longitude=' + lon +
+               '&start_date=' + fromD + '&end_date=' + toD +
+               '&hourly=temperature_2m,relative_humidity_2m&timezone=auto';
+  if (__psy3d_useProxy) return '/api/weather-proxy?' + params;
+  return 'https://archive-api.open-meteo.com/v1/archive?' + params;
+}
+
 /* ================================================================
    initPsy3D(container, opts)
    Mounts the 3D psychrometric weather strip into any DOM element.
@@ -270,8 +296,7 @@ global.initPsy3D = function(container, opts){
     Promise.all(years.map(function(yb){
       var f = _shiftYearISO(fromD, yb);
       var t = _shiftYearISO(toD,   yb);
-      return fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+
-                   '&start_date='+f+'&end_date='+t+'&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+      return fetch(__psy3d_archiveUrl(lat, lon, f, t))
         .then(function(r){return r.ok ? r.json() : Promise.reject(r.status);})
         .then(function(j){
           if (j.error) throw new Error(j.reason||j.error);
@@ -544,6 +569,13 @@ global.initPsy3D = function(container, opts){
       <div style="flex:1"><div class="p3-lbl">Latitude</div><input class="p3-inp" id="p3-lat" type="number" step="0.01" value="40.71"></div>\
       <div style="flex:1"><div class="p3-lbl">Longitude</div><input class="p3-inp" id="p3-lon" type="number" step="0.01" value="-74.01"></div>\
     </div>\
+    <div class="p3-row"><div class="p3-lbl">Location</div>\
+      <div style="display:flex;gap:4px;align-items:center">\
+        <select class="p3-inp" id="p3-loc-select" data-testid="psy3d-location-select" style="cursor:pointer;flex:1"></select>\
+        <button id="p3-loc-pin" type="button" data-testid="psy3d-location-pin"\
+          title="Pin as default \u2014 auto-load this on every fresh session"\
+          style="background:transparent;border:1px solid #475569;color:#64748b;border-radius:4px;width:28px;height:24px;cursor:pointer;font-size:14px;line-height:1;padding:0;flex-shrink:0;transition:all .15s">\u2606</button>\
+      </div></div>\
     <div class="p3-row"><div class="p3-lbl">Presets</div>\
       <div class="p3-presets" id="p3-loc-presets"></div></div>\
     <div class="p3-row"><div class="p3-lbl">Duration</div><div class="p3-dur" id="p3-dur-btns"></div></div>\
@@ -1463,7 +1495,184 @@ global.initPsy3D = function(container, opts){
     /* location presets */
     var locs=[['NYC',40.71,-74.01,'New York'],['LON',51.51,-0.13,'London'],['SIN',1.35,103.82,'Singapore'],['TYO',35.68,139.69,'Tokyo'],['DXB',25.20,55.27,'Dubai'],['SYD',-33.87,151.21,'Sydney']];
     var lpEl=$('#p3-loc-presets');
-    locs.forEach(function(l){var b=document.createElement('button');b.textContent=l[0];b.onclick=function(){$('#p3-lat').value=l[1];$('#p3-lon').value=l[2];$('#p3-name').value=l[3];};lpEl.appendChild(b);});
+    locs.forEach(function(l){var b=document.createElement('button');b.textContent=l[0];b.onclick=function(){applyLocation({lat:l[1],lon:l[2],name:l[3]},{persist:true,fetch:true});};lpEl.appendChild(b);});
+
+    /* ---------- Unified location dropdown ----------
+       Combines the operator's saved locations (POST /api/weather-location)
+       with the 6 hardcoded presets so the user can switch from inside the
+       3D WX panel without bouncing back to the dashboard.  Selection is
+       bidirectional: changing it here POSTs to /api/weather-location AND
+       fires `r5-location-change` so the dashboard's React state stays in
+       sync with the new active location (one source of truth across the
+       psy-chart strip and the 3D WX scatter cloud). */
+    function _buildLocSelect(saved){
+      var sel = $('#p3-loc-select');
+      if (!sel) return;
+      var seen = {};
+      sel.innerHTML = '';
+      // Group 1 — operator's own saved locations (first so user sees their sites first).
+      if (Array.isArray(saved) && saved.length){
+        var og1 = document.createElement('optgroup');
+        og1.label = 'Saved locations';
+        saved.forEach(function(loc){
+          if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+          var k = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
+          if (seen[k]) return; seen[k] = true;
+          var opt = document.createElement('option');
+          opt.value = k;
+          opt.dataset.lat = loc.lat;
+          opt.dataset.lon = loc.lon;
+          opt.dataset.name = loc.name || (loc.lat+','+loc.lon);
+          opt.textContent = loc.name || (loc.lat+', '+loc.lon);
+          og1.appendChild(opt);
+        });
+        if (og1.children.length) sel.appendChild(og1);
+      }
+      // Group 2 — 6 city presets, skipping any already covered by a saved row.
+      var og2 = document.createElement('optgroup');
+      og2.label = 'City presets';
+      locs.forEach(function(l){
+        var k = l[1].toFixed(4)+','+l[2].toFixed(4);
+        if (seen[k]) return; seen[k] = true;
+        var opt = document.createElement('option');
+        opt.value = k;
+        opt.dataset.lat = l[1];
+        opt.dataset.lon = l[2];
+        opt.dataset.name = l[3];
+        opt.textContent = l[3] + ' ('+l[0]+')';
+        og2.appendChild(opt);
+      });
+      sel.appendChild(og2);
+      // Pre-select whatever the lat/lon inputs are currently showing.
+      _syncLocSelectToInputs();
+    }
+    function _syncLocSelectToInputs(){
+      var sel = $('#p3-loc-select');
+      if (!sel) return;
+      var la = parseFloat($('#p3-lat').value), lo = parseFloat($('#p3-lon').value);
+      if (isNaN(la) || isNaN(lo)) return;
+      var k = la.toFixed(4)+','+lo.toFixed(4);
+      for (var i=0;i<sel.options.length;i++){
+        if (sel.options[i].value === k){ sel.selectedIndex = i; return; }
+      }
+      // No match — leave dropdown on its existing value (custom lat/lon typed manually).
+    }
+
+    /* applyLocation({lat, lon, name}, {persist, fetch})
+       Single funnel for every location change inside the engine.  Whether
+       the trigger is a dropdown pick, a preset button, a public API call,
+       or a dashboard sync, we always go through this so the inputs, the
+       dropdown selection, the HUD label, the server, and the dashboard
+       all see the same final state. */
+    function applyLocation(loc, flags){
+      if (!loc || typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
+      flags = flags || {};
+      $('#p3-lat').value  = loc.lat;
+      $('#p3-lon').value  = loc.lon;
+      $('#p3-name').value = loc.name || ('Lat '+loc.lat+' / Lon '+loc.lon);
+      _syncLocSelectToInputs();
+      // Refresh pin star (★ if this location is the pinned default, ☆ otherwise).
+      try { _refreshPinButtonState(); } catch(e){}
+      if (flags.persist){
+        // Fire-and-forget POST so the dashboard's weather-strip picks the
+        // same active location on its next poll.  Anonymous requests get
+        // a {persisted:false} response which we silently ignore.
+        try {
+          fetch('/api/weather-location', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            credentials: 'include',
+            body: JSON.stringify({ active: {lat: loc.lat, lon: loc.lon, name: loc.name||''} })
+          }).catch(function(){});
+        } catch(e){}
+        // Also broadcast to the dashboard's React state so the bottom
+        // weather-strip flips instantly (without waiting for the POST
+        // round-trip or the next /api/weather-location GET).
+        try {
+          window.dispatchEvent(new CustomEvent('r5-location-change', {
+            detail: { lat: loc.lat, lon: loc.lon, name: loc.name || '' }
+          }));
+        } catch(e){}
+        try { localStorage.setItem('weatherLocation', JSON.stringify({lat:loc.lat,lon:loc.lon,name:loc.name||''})); } catch(e){}
+      }
+      if (flags.fetch && typeof doFetch === 'function') doFetch();
+    }
+
+    /* Public API used by dashboard.html so a location change on the
+       psy-chart's weather strip immediately re-fetches the 3D scatter
+       cloud for the new lat/lon.  Avoids the stale-state bug where the
+       3D WX tab kept showing the previous city's data until the user
+       manually clicked Fetch Weather Data. */
+    window.setPsy3DLocation = function(loc){
+      if (!loc) return;
+      // persist=false because the dashboard is the one telling us, so
+      // posting back would echo into a feedback loop.
+      applyLocation({lat:loc.lat, lon:loc.lon, name:loc.name}, {persist:false, fetch:true});
+    };
+
+    /* Dropdown change handler — push the picked location everywhere. */
+    $('#p3-loc-select').onchange = function(){
+      var opt = this.options[this.selectedIndex];
+      if (!opt) return;
+      applyLocation({
+        lat:  parseFloat(opt.dataset.lat),
+        lon:  parseFloat(opt.dataset.lon),
+        name: opt.dataset.name || opt.textContent
+      }, {persist:true, fetch:true});
+    };
+
+    /* Initial population — fetch /api/weather-location once, then rebuild
+       the dropdown.  Refreshing the saved list later (after the operator
+       adds a new city in the dashboard modal) happens automatically on
+       the next visit. */
+    var _pinnedKey = '';  // "lat.toFixed(4),lon.toFixed(4)" of the pinned default
+    function _refreshPinButtonState(){
+      var btn = $('#p3-loc-pin'); if (!btn) return;
+      var la = parseFloat($('#p3-lat').value), lo = parseFloat($('#p3-lon').value);
+      var key = (isNaN(la)||isNaN(lo)) ? '' : la.toFixed(4)+','+lo.toFixed(4);
+      var isPinned = key && key === _pinnedKey;
+      btn.textContent = isPinned ? '\u2605' : '\u2606';   // ★ vs ☆
+      btn.style.color       = isPinned ? '#fbbf24' : '#64748b';
+      btn.style.borderColor = isPinned ? '#fbbf24' : '#475569';
+      btn.title = isPinned
+        ? 'Pinned as default \u2014 click to unpin'
+        : 'Pin as default \u2014 auto-load this on every fresh session';
+    }
+    $('#p3-loc-pin').onclick = function(){
+      var la = parseFloat($('#p3-lat').value), lo = parseFloat($('#p3-lon').value);
+      if (isNaN(la) || isNaN(lo)) return;
+      var key = la.toFixed(4)+','+lo.toFixed(4);
+      var nowPinned = (key !== _pinnedKey);
+      var body = nowPinned
+        ? { default: { lat: la, lon: lo, name: $('#p3-name').value || '' } }
+        : { default: null };
+      _pinnedKey = nowPinned ? key : '';
+      _refreshPinButtonState();
+      try {
+        fetch('/api/weather-location', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          credentials: 'include',
+          body: JSON.stringify(body)
+        }).catch(function(){});
+      } catch(e){}
+      // Mirror to localStorage so the dashboard sees the pin without a refetch.
+      try {
+        if (nowPinned) localStorage.setItem('defaultWeatherLocation', JSON.stringify(body.default));
+        else localStorage.removeItem('defaultWeatherLocation');
+      } catch(e){}
+    };
+
+    fetch('/api/weather-location', { credentials:'include' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){
+        if (j) _buildLocSelect(j.saved || []);
+        if (j && j.default && typeof j.default.lat === 'number'){
+          _pinnedKey = j.default.lat.toFixed(4)+','+j.default.lon.toFixed(4);
+        }
+        _refreshPinButtonState();
+      })
+      .catch(function(){ _buildLocSelect([]); _refreshPinButtonState(); });
 
     /* duration buttons */
     var durEl=$('#p3-dur-btns');
@@ -2002,6 +2211,7 @@ global.initPsy3D = function(container, opts){
           // Hide the projection-mode toggle in time-series modes — it's
           // psychrometric-chart specific (OA→SA lines, Landing Zones, VAV).
           var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='none';
+          var ddBtnHide=$('#p3-btn-deepdive'); if(ddBtnHide) ddBtnHide.style.display='none';
           // Band-strategy toggle is only meaningful in T×Time (the green
           // cumulative curve + its band markers + ramp legend).
           var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display = (c[0]==='front') ? 'block' : 'none';
@@ -2045,6 +2255,7 @@ global.initPsy3D = function(container, opts){
     b2d.onclick=function(){
       chart2DMode='psy';
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
+      var ddBtnSh=$('#p3-btn-deepdive'); if(ddBtnSh) ddBtnSh.style.display='block';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
       var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='block';
@@ -2072,6 +2283,7 @@ global.initPsy3D = function(container, opts){
       chart2DMode='psy';
       root.classList.remove('p3-2d-cfg');
       var pmBtn=$('#p3-btn-proj-mode'); if(pmBtn) pmBtn.style.display='block';
+      var ddBtnB=$('#p3-btn-deepdive'); if(ddBtnB) ddBtnB.style.display='none';
       var bsBtn=$('#p3-btn-band-strategy'); if(bsBtn) bsBtn.style.display='none';
       var msBtn=$('#p3-btn-monthly-sites'); if(msBtn) msBtn.style.display='none';
       var dmBtnSh=$('#p3-btn-designer'); if(dmBtnSh) dmBtnSh.style.display='none';
@@ -2097,6 +2309,26 @@ global.initPsy3D = function(container, opts){
       pmBtn.textContent='Mode: '+labels[projMode];
       render2DChart();
     };
+
+    /* Deep Dive launcher — opens the standalone B1-B10 control-band ×
+       building-type matrix in a new tab.  Sits to the left of the Mode
+       button in the X-Y Detail overlay header. Implemented as a real
+       <a target="_blank"> so it bypasses popup-blockers, supports
+       middle-click / right-click, and never falls into the "no entry"
+       cursor state some browsers show for headless window.open buttons. */
+    var ddBtn=root.querySelector('#p3-btn-deepdive');
+    if(!ddBtn){
+      ddBtn=document.createElement('a');
+      ddBtn.id='p3-btn-deepdive';
+      ddBtn.setAttribute('data-testid','psy3d-xy-deepdive-btn');
+      ddBtn.href='deepdive.html';
+      ddBtn.target='_blank';
+      ddBtn.rel='noopener';
+      ddBtn.innerHTML='Deep Dive \u2197';
+      ddBtn.title='B1\u2013B10 control bands \u00d7 building types';
+      var ov2=$('#p3-overlay2d'); if(ov2) ov2.appendChild(ddBtn);
+    }
+    ddBtn.style.cssText='position:absolute;top:12px;right:312px;z-index:60;background:rgba(15,23,42,.92);border:1px solid #22d3ee;color:#22d3ee;padding:6px 16px;border-radius:6px;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;backdrop-filter:blur(14px);text-decoration:none;display:none;box-sizing:border-box;line-height:16px';
 
     /* Band-source toggle chip — sits next to the Mode button.  Toggles
        whether B1-B10 bucketing uses raw OA (default) or post-wheel OA'
@@ -2164,9 +2396,58 @@ global.initPsy3D = function(container, opts){
       BANDS.forEach(function(b){ maxH = Math.max(maxH, hist[b].oa, hist[b].oap); });
       /* Include history extremes in maxH so ghost outlines aren't clipped. */
       if (_bandHistoryHist) BANDS.forEach(function(b){ maxH = Math.max(maxH, _bandHistoryHist[b].oa, _bandHistoryHist[b].oap); });
-      deltaStrip.style.display = 'flex';
-      deltaStrip.style.gap = '4px';
-      deltaStrip.style.alignItems = 'flex-end';
+      /* Climate-drift headline: when comparison mode is on, compute the
+         top movers (current year minus historical baseline, by raw OA
+         hour-count) and surface the 3 biggest absolute changes in a
+         single tooltip-able line above the per-band cells.  Lets the
+         operator answer "did my climate actually change?" without
+         eyeballing 10 ghost-outline bars.  Sign convention:
+           delta > 0  -> current year has MORE hours in this band
+                         (climate moving INTO the band) -> up arrow + green
+           delta < 0  -> current year has FEWER hours
+                         (climate moving OUT of the band) -> down arrow + amber
+      */
+      var headlineHtml = '';
+      if (_bandHistoryHist && _bandHistoryMode !== 'off' && !_bandHistoryLoading) {
+        var drifts = BANDS.map(function(b){
+          var d = (hist[b].oa || 0) - (_bandHistoryHist[b].oa || 0);
+          return { band: b, drift: d, abs: Math.abs(d) };
+        }).filter(function(x){ return x.abs >= 2; });
+        drifts.sort(function(a,b){ return b.abs - a.abs; });
+        var top = drifts.slice(0, 3);
+        if (top.length) {
+          var basisLabel = _bandHistoryMode === '1y' ? 'vs prior year' : 'vs 5\u2011year avg';
+          var fullTooltip = 'Climate drift ' + basisLabel + ': '
+            + drifts.map(function(t){
+                var sign = t.drift > 0 ? '+' : '';
+                return t.band + ' ' + sign + t.drift + 'h';
+              }).join(', ')
+            + '. Positive = current year has more hours in that band than the historical baseline.';
+          var pillsHtml = top.map(function(t){
+            var up = t.drift > 0;
+            var arrow = up ? '\u2191' : '\u2193';
+            var dCol  = up ? '#a3e635' : '#fb7185';
+            var sign  = up ? '+' : '';
+            return '<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 4px;border-radius:3px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25)">'
+              + '<span style="color:'+COLOR[t.band]+';font-weight:900">'+t.band+'</span>'
+              + '<span style="color:'+dCol+';font-weight:900">'+arrow+sign+t.drift+'h</span>'
+              + '</span>';
+          }).join(' ');
+          headlineHtml =
+            '<div data-erv-headline="climate-drift" title="' + fullTooltip.replace(/"/g, '&quot;') + '" '
+              + 'style="display:flex;align-items:center;gap:6px;padding:3px 4px 4px 4px;margin:-2px -4px 2px -4px;'
+              + 'border-bottom:1px dashed rgba(168,85,247,0.35);font-size:8px;line-height:1.1">'
+              + '<span style="color:#a855f7;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;font-size:7px;white-space:nowrap">Climate drift</span>'
+              + '<span style="display:flex;gap:3px;flex-wrap:wrap">' + pillsHtml + '</span>'
+              + '<span style="color:#64748b;font-size:7px;margin-left:auto;white-space:nowrap;font-style:italic">' + basisLabel + '</span>'
+            + '</div>';
+        }
+      }
+      /* Switch the strip to a column layout so the headline can sit on
+         top and the existing bands row stays as a flex row underneath. */
+      deltaStrip.style.flexDirection = 'column';
+      deltaStrip.style.gap = '0';
+      deltaStrip.style.alignItems = 'stretch';
       /* Comparison-mode toggle button: cycles off -> 1y -> 5y -> off. */
       var histLabel = (_bandHistoryMode === 'off')
         ? 'vs prior'
@@ -2227,7 +2508,9 @@ global.initPsy3D = function(container, opts){
           '<div style="font-size:7px;color:#64748b;line-height:1">'+(hist['?'].oap-hist['?'].oa)+'</div>'+
         '</div>';
       }
-      deltaStrip.innerHTML = html;
+      deltaStrip.innerHTML =
+        headlineHtml +
+        '<div data-erv-row="bands" style="display:flex;gap:4px;align-items:flex-end">' + html + '</div>';
       /* Wire the history toggle button. */
       var hBtn = deltaStrip.querySelector('[data-erv-btn=band-history]');
       if (hBtn) hBtn.addEventListener('click', function(){
@@ -2263,12 +2546,60 @@ global.initPsy3D = function(container, opts){
     function _createInsightPopup(opts){
       /* opts: {
            btnId, btnTitle, btnStyle, popupId,
-           docEN, docKO,
-           titleEN, titleKO,
+           docEN, docKO,            (legacy: kept for backwards compat with
+                                     band-help / design-help below.  When
+                                     docBase is supplied, it wins.)
+           docBase,                 (new: '/assets/foo' — engine appends
+                                     '.<lang>.md' for non-en, '.md' for en.
+                                     Single-file convention matches the
+                                     docs popup so the same EN-fallback
+                                     resolution works everywhere.)
+           titleEN, titleKO,        (legacy)
+           titles,                  (new: {en,ko,ja,zh-CN,zh-TW} map; EN
+                                     fallback if missing.  Used in the
+                                     popup's title bar AND PDF print title.)
            storageKey  (for pos+closed),
            storageLang (for explicit language),
            anchorEl    (where to attach the ? button; defaults to overlayEl)
          } */
+      /* ---- supported languages (mirrors docs_index.js so both popups
+              feel identical to the operator) ---- */
+      var LANGS = [
+        { code: 'en',    native: 'English'         },
+        { code: 'ko',    native: '\ud55c\uad6d\uc5b4' },
+        { code: 'ja',    native: '\u65e5\u672c\u8a9e' },
+        { code: 'zh-CN', native: '\u7b80\u4f53\u4e2d\u6587' },
+        { code: 'zh-TW', native: '\u7e41\u9ad4\u4e2d\u6587' }
+      ];
+      function _isValidLang(c){ return LANGS.some(function(L){ return L.code === c; }); }
+      function _titleFor(lang){
+        if (opts.titles && opts.titles[lang]) return opts.titles[lang];
+        if (opts.titles && opts.titles.en)    return opts.titles.en;
+        return (lang === 'ko' && opts.titleKO) ? opts.titleKO : opts.titleEN;
+      }
+      function _urlFor(lang){
+        if (opts.docBase) {
+          return (lang === 'en') ? (opts.docBase + '.md')
+                                 : (opts.docBase + '.' + lang + '.md');
+        }
+        /* Legacy fallback for callers still using docEN/docKO. */
+        if (lang === 'ko' && opts.docKO) return opts.docKO;
+        return opts.docEN;
+      }
+      function _enUrl(){
+        if (opts.docBase) return opts.docBase + '.md';
+        return opts.docEN;
+      }
+      function _fallbackBanner(){
+        var bag = {
+          en:      '(English fallback \u2014 translation pending)',
+          ko:      '(\uc601\uc5b4\ub85c \ud45c\uc2dc \u2014 \ubc88\uc5ed \uc900\ube44 \uc911)',
+          ja:      '(\u82f1\u8a9e\u3067\u8868\u793a\u2014\u7ffb\u8a33\u6e96\u5099\u4e2d)',
+          'zh-CN': '(\u663e\u793a\u82f1\u6587\u2014\u7ffb\u8bd1\u51c6\u5907\u4e2d)',
+          'zh-TW': '(\u986f\u793a\u82f1\u6587\u2014\u7ffb\u8b6f\u6e96\u5099\u4e2d)'
+        };
+        return bag[_lang] || bag.en;
+      }
       var anchor = opts.anchorEl || overlayEl;
       if (!anchor) return { button: null, popup: null, show: function(){} };
       var _pos = null, _closed = true;
@@ -2276,13 +2607,13 @@ global.initPsy3D = function(container, opts){
         var _s = JSON.parse(localStorage.getItem(opts.storageKey) || '{}');
         if (_s && _s.pos && typeof _s.pos.x === 'number') _pos = _s.pos;
       } catch(_) {}
-      var _loaded = {};   /* {en, ko} markdown text cache */
+      var _loaded = {};   /* {<lang>: markdown, <lang>__fallback: true} */
       var _lang = (function(){
-        try { var l = window.getLang ? window.getLang() : 'en'; return l === 'ko' ? 'ko' : 'en'; } catch(_) { return 'en'; }
+        try { var l = window.getLang ? window.getLang() : 'en'; return _isValidLang(l) ? l : 'en'; } catch(_) { return 'en'; }
       })();
       try {
         var _il = localStorage.getItem(opts.storageLang);
-        if (_il === 'ko' || _il === 'en') _lang = _il;
+        if (_isValidLang(_il)) _lang = _il;
       } catch(_) {}
 
       var btn = document.createElement('button');
@@ -2308,15 +2639,28 @@ global.initPsy3D = function(container, opts){
       }
       function paint(){
         var md = _loaded[_lang];
-        var loadingLabel = _lang === 'ko' ? '\ub85c\ub529 \uc911\u2026' : 'Loading\u2026';
-        var titleLabel   = _lang === 'ko' ? opts.titleKO : opts.titleEN;
-        var body = md ? _renderMd(md) :
-          '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
+        var fellBack = _loaded[_lang + '__fallback'];
+        var loadingBag = { en: 'Loading\u2026', ko: '\ub85c\ub529 \uc911\u2026', ja: '\u8aad\u307f\u8fbc\u307f\u4e2d\u2026', 'zh-CN': '\u52a0\u8f7d\u4e2d\u2026', 'zh-TW': '\u8f09\u5165\u4e2d\u2026' };
+        var loadingLabel = loadingBag[_lang] || loadingBag.en;
+        var titleLabel   = _titleFor(_lang);
+        var fallbackBanner = fellBack
+          ? '<div style="background:rgba(251,191,36,.10);border:1px dashed #fbbf24;color:#fbbf24;padding:6px 10px;margin:0 0 8px;font-size:9px;border-radius:3px">\u26a0\ufe0f '+_fallbackBanner()+'</div>'
+          : '';
+        var body = md
+          ? (fallbackBanner + _renderMd(md))
+          : '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
+        /* Same 5-language <select> as docs_index.js so both popups have
+           identical chrome.  Avoids the operator wondering why some
+           help popups expose more languages than others. */
+        var langOpts = LANGS.map(function(L){
+          var sel = (L.code === _lang) ? ' selected' : '';
+          return '<option value="'+L.code+'"'+sel+'>'+L.native+'</option>';
+        }).join('');
         var langChip =
-          '<div data-lang-toggle="1" style="display:inline-flex;border:1px solid #475569;border-radius:3px;overflow:hidden;font-size:8px;font-weight:900;letter-spacing:.05em;user-select:none">'+
-            '<span data-set-lang="en" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='en'?'#60a5fa':'transparent')+';color:'+(_lang==='en'?'#0f172a':'#94a3b8')+'">EN</span>'+
-            '<span data-set-lang="ko" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='ko'?'#60a5fa':'transparent')+';color:'+(_lang==='ko'?'#0f172a':'#94a3b8')+'">\ud55c\uad6d\uc5b4</span>'+
-          '</div>';
+          '<select data-lang-select="1" title="Document language" '+
+                  'style="background:#1e293b;border:1px solid #475569;border-radius:3px;'+
+                         'color:#cbd5e1;font:900 9px Courier New;letter-spacing:.05em;'+
+                         'padding:2px 4px;cursor:pointer;outline:none">'+langOpts+'</select>';
         popup.innerHTML =
           '<div data-hdr="1" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
             '<div style="display:flex;align-items:center;gap:10px">'+
@@ -2328,7 +2672,7 @@ global.initPsy3D = function(container, opts){
           '<div style="flex:1;overflow-y:auto;padding:8px 14px;color:#cbd5e1">'+body+'</div>';
         var hdr = popup.querySelector('[data-hdr]');
         if (hdr) hdr.addEventListener('mousedown', function(e){
-          if (e.target.closest('button, [data-lang-toggle], [data-set-lang]')) return;
+          if (e.target.closest('button, select, [data-lang-select]')) return;
           e.preventDefault();
           var startX = e.clientX, startY = e.clientY;
           var rect = popup.getBoundingClientRect();
@@ -2355,39 +2699,54 @@ global.initPsy3D = function(container, opts){
           popup.style.display = 'none';
           try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:true})); } catch(_) {}
         });
-        popup.querySelectorAll('[data-set-lang]').forEach(function(el){
-          el.addEventListener('click', function(){
-            var lang = el.getAttribute('data-set-lang');
-            if (lang === _lang) return;
-            _lang = lang;
-            try { localStorage.setItem(opts.storageLang, lang); } catch(_) {}
-            _fetch();
-          });
+        var langSel = popup.querySelector('[data-lang-select]');
+        if (langSel) langSel.addEventListener('change', function(){
+          var lang = langSel.value;
+          if (!_isValidLang(lang) || lang === _lang) return;
+          _lang = lang;
+          try { localStorage.setItem(opts.storageLang, lang); } catch(_) {}
+          _fetch();
         });
       }
       function _fetch(){
         if (_loaded[_lang]) { paint(); return; }
         paint(); /* loading state */
-        /* Cache-bust to bypass any stale 404 the browser may have
-           cached from an upload race.  Same hardening as docs_index.js. */
-        var base = _lang === 'ko' ? opts.docKO : opts.docEN;
-        var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
-        fetch(url, {cache:'no-store'})
-          .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
-          .then(function(txt){ _loaded[_lang] = txt; paint(); })
+        /* Same EN-fallback chain as docs_index.js: try requested lang
+           first, fall back to English on 404 with a banner.  Keeps the
+           ? popups feeling identical to the Standards popup. */
+        var primaryUrl = _urlFor(_lang);
+        var enUrl      = _enUrl();
+        var cb = (primaryUrl.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
+        fetch(primaryUrl + cb, {cache:'no-store'})
+          .then(function(r){
+            if (r.ok) return r.text().then(function(txt){
+              _loaded[_lang] = txt;
+              delete _loaded[_lang + '__fallback'];
+              paint();
+            });
+            if (primaryUrl === enUrl) return Promise.reject(r.status);
+            return fetch(enUrl + (enUrl.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now(), {cache:'no-store'})
+              .then(function(r2){
+                if (!r2.ok) return Promise.reject(r2.status);
+                return r2.text();
+              })
+              .then(function(txt){
+                _loaded[_lang] = txt;
+                _loaded[_lang + '__fallback'] = true;
+                paint();
+              });
+          })
           .catch(function(err){
-            /* Don't cache the error; show inline retry hint instead. */
-            var msg_en = '# Unable to load doc\n\nFile fetch failed (' + err + ').\n\n*Reopen the popup or hard-refresh the page (Ctrl+Shift+R) to retry.*';
-            var msg_ko = '# \ubb38\uc11c \ub85c\ub4dc \uc2e4\ud328\n\n\ud30c\uc77c \uac00\uc838\uc624\uae30 \uc2e4\ud328 (' + err + ').\n\n*\ud31d\uc5c5\uc744 \ub2e4\uc2dc \uc5f4\uac70\ub098 \ud558\ub4dc \uc0c8\ub85c\uace0\uce68 (Ctrl+Shift+R) \ud574\uc8fc\uc138\uc694.*';
+            var msg = '# Unable to load doc\n\nFile fetch failed (' + err + ').\n\n*Reopen the popup or hard-refresh the page (Ctrl+Shift+R) to retry.*';
             var bodyEl = popup.querySelector('div[style*="overflow-y:auto"]');
-            if (bodyEl) bodyEl.innerHTML = _renderMd(_lang === 'ko' ? msg_ko : msg_en);
+            if (bodyEl) bodyEl.innerHTML = _renderMd(msg);
           });
       }
       btn.addEventListener('click', show);
       window.addEventListener('langchange', function(){
         try {
           var newLang = window.getLang ? window.getLang() : 'en';
-          newLang = (newLang === 'ko') ? 'ko' : 'en';
+          if (!_isValidLang(newLang)) newLang = 'en';
           var explicit = localStorage.getItem(opts.storageLang);
           if (explicit) return;
           if (newLang === _lang) return;
@@ -2400,16 +2759,22 @@ global.initPsy3D = function(container, opts){
       return { button: btn, popup: popup, show: show };
     }
 
-    /* Band-shift insight `?` button (top-right of overlay, near B-shift strip). */
+    /* Band-shift insight `?` button (top-right of overlay, near B-shift strip).
+       Uses docBase so all 5 languages (EN/KO/JA/ZH-CN/ZH-TW) resolve via the
+       same naming convention as the Standards popup. */
     _createInsightPopup({
       btnId:       'p3-band-help',
       btnTitle:    'Open the B-shift insight walkthrough (explains what "losing hours" means).',
       btnStyle:    'position:absolute;top:22px;right:8px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #60a5fa;color:#60a5fa;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px',
       popupId:     'p3-band-help-popup',
-      docEN:       '/assets/erv_band_shift_insight.md',
-      docKO:       '/assets/erv_band_shift_insight.ko.md',
-      titleEN:     'B-Shift Insight',
-      titleKO:     'B-\uc2dc\ud504\ud2b8 \ud1b5\ucc30',
+      docBase:     '/assets/erv_band_shift_insight',
+      titles: {
+        en:      'B-Shift Insight',
+        ko:      'B-\uc2dc\ud504\ud2b8 \ud1b5\ucc30',
+        ja:      'B-\u30b7\u30d5\u30c8\u306e\u6d1e\u5bdf',
+        'zh-CN': 'B-\u5e26\u79fb\u6d1e\u5bdf',
+        'zh-TW': 'B-\u5e36\u79fb\u6d1e\u5bdf'
+      },
       storageKey:  'red5BandInsightState',
       storageLang: 'red5BandInsightLang'
     });
@@ -2422,10 +2787,14 @@ global.initPsy3D = function(container, opts){
       btnTitle:    'Open the psychrometric-design workflow walkthrough.',
       btnStyle:    'position:absolute;top:46px;left:435px;z-index:53;background:rgba(15,23,42,.92);border:1px solid #f59e0b;color:#f59e0b;width:22px;height:22px;border-radius:50%;font:900 12px Courier New;cursor:pointer;backdrop-filter:blur(14px);padding:0;line-height:18px;display:none',
       popupId:     'p3-design-help-popup',
-      docEN:       '/assets/psychrometric_design_workflow.md',
-      docKO:       '/assets/psychrometric_design_workflow.ko.md',
-      titleEN:     'Psych Design Workflow',
-      titleKO:     '\uc2b5\uacf5\uae30\uc120\ub3c4 \uc124\uacc4 \uc6cc\ud06c\ud50c\ub85c',
+      docBase:     '/assets/psychrometric_design_workflow',
+      titles: {
+        en:      'Psych Design Workflow',
+        ko:      '\uc2b5\uacf5\uae30\uc120\ub3c4 \uc124\uacc4 \uc6cc\ud06c\ud50c\ub85c',
+        ja:      '\u6e7f\u308a\u7a7a\u6c17\u7dda\u56f3 \u8a2d\u8a08\u30ef\u30fc\u30af\u30d5\u30ed\u30fc',
+        'zh-CN': '\u7115\u6e7f\u56fe \u8bbe\u8ba1\u5de5\u4f5c\u6d41',
+        'zh-TW': '\u7124\u6fd5\u5716 \u8a2d\u8a08\u5de5\u4f5c\u6d41'
+      },
       storageKey:  'red5DesignInsightState',
       storageLang: 'red5DesignInsightLang'
     });
@@ -3528,9 +3897,7 @@ global.initPsy3D = function(container, opts){
             render2DChart();
             var y=new Date().getFullYear()-1;
             var fromD=y+'-01-01', toD=y+'-12-31';
-            fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+site.lat+'&longitude='+site.lon+
-              '&start_date='+fromD+'&end_date='+toD+
-              '&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+            fetch(__psy3d_archiveUrl(site.lat, site.lon, fromD, toD))
               .then(function(r){if(!r.ok) throw new Error('HTTP '+r.status); return r.json();})
               .then(function(j){
                 if(!j || !j.hourly || !j.hourly.time || !j.hourly.time.length) throw new Error('empty payload');
@@ -3637,7 +4004,7 @@ global.initPsy3D = function(container, opts){
     if(toD>yStr)toD=yStr;if(fromD>toD){$('#p3-status').textContent='From>To';return;}
     $('#p3-fetch').disabled=true;$('#p3-status').textContent='Fetching...';
 
-    fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+'&start_date='+fromD+'&end_date='+toD+'&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+    fetch(__psy3d_archiveUrl(lat, lon, fromD, toD))
     .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .then(function(json){
       if(json.error)throw new Error(json.reason||json.error);
@@ -5063,9 +5430,7 @@ global.initPsy3D = function(container, opts){
             });
         }
         function _doFetchOpenMeteo(s){
-          return fetch('https://archive-api.open-meteo.com/v1/archive?latitude='+s.lat+'&longitude='+s.lon+
-            '&start_date='+fromD+'&end_date='+toD+
-            '&hourly=temperature_2m,relative_humidity_2m&timezone=auto')
+          return fetch(__psy3d_archiveUrl(s.lat, s.lon, fromD, toD))
             .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
             .then(function(j){
               if(!j || !j.hourly || !j.hourly.time || !j.hourly.time.length){

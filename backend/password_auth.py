@@ -58,6 +58,26 @@ MAX_ATTEMPTS     = 5
 LOCKOUT_WINDOW   = timedelta(minutes=15)
 
 
+def _client_ip(request: Request) -> str:
+    """Resolve the real client IP behind reverse proxies / k8s ingress.
+
+    Honors `X-Forwarded-For` (left-most entry = original client) so that
+    the brute-force counter is keyed by the actual remote IP rather than
+    whichever ingress replica happened to terminate the TCP connection.
+    Without this, requests from the same browser can be bucketed under
+    different upstream IPs and the lockout never trips (flaky test).
+    """
+    xff = request.headers.get("x-forwarded-for", "") or ""
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    real_ip = (request.headers.get("x-real-ip", "") or "").strip()
+    if real_ip:
+        return real_ip
+    return (request.client.host if request.client else "unknown") or "unknown"
+
+
 router = APIRouter(prefix="/api/auth", tags=["auth", "password"])
 
 
@@ -156,7 +176,7 @@ async def password_login(payload: PasswordLoginRequest,
                          request: Request,
                          response: Response):
     email = payload.email.strip().lower()
-    ip = (request.client.host if request.client else "unknown") or "unknown"
+    ip = _client_ip(request)
 
     # Hard gate -- only admin-listed emails can attempt password login.
     # This prevents this endpoint from becoming a general signup oracle.

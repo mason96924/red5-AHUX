@@ -43,6 +43,17 @@
     var hit = WINDOW_OPTS.find(function (o) { return o.key === _windowKey; });
     return hit ? hit.minutes : 240;
   }
+  /* Collapsed state persists across reloads so an operator who wants
+   * the chart's weather strip visible can keep the G36 ribbon hidden. */
+  var _collapsed = (function () {
+    try { return localStorage.getItem('red5G36TimelineCollapsed') === '1'; }
+    catch (_) { return false; }
+  })();
+  function _setCollapsed(v) {
+    _collapsed = !!v;
+    try { localStorage.setItem('red5G36TimelineCollapsed', _collapsed ? '1' : '0'); }
+    catch (_) {}
+  }
   var REFRESH_MS = 30 * 1000;
 
   var MODE_COLORS = {
@@ -226,6 +237,31 @@
       box.style.display = 'none';
       return;
     }
+
+    /* Collapsed mode: render a single small chip in the corner so the
+     * operator can re-open without losing screen real-estate.  This
+     * leaves the chart's native weather strip fully visible. */
+    if (_collapsed) {
+      box.style.width   = 'auto';
+      box.style.padding = '4px 10px';
+      box.innerHTML =
+        '<button data-expand="1" title="Show G36 mode timeline" ' +
+                'style="background:transparent;border:none;color:#10b981;' +
+                       "font:900 9px Courier New;letter-spacing:.08em;" +
+                       'cursor:pointer;padding:0;text-transform:uppercase">' +
+          '◷ G36 Timeline ▴' +
+        '</button>';
+      box.style.display = 'block';
+      var btn = box.querySelector('[data-expand]');
+      if (btn) btn.addEventListener('click', function () {
+        _setCollapsed(false); _tick();
+      });
+      return;
+    }
+    /* Restore expanded sizing on un-collapse. */
+    box.style.width   = 'min(880px, 70vw)';
+    box.style.padding = '8px 12px';
+
     var rows = _ahuIds.map(function (id) {
       var d = _historyByAhu[id];
       return d ? _renderRow(d) : '';
@@ -255,12 +291,19 @@
           '<span>◷ G36 Mode Timeline · last ' + _esc(wLabel) + '</span>' +
           '<span>' + winChips + '</span>' +
         '</div>' +
-        '<div style="font-size:8px;letter-spacing:.04em">' + _renderLegend() + '</div>' +
+        '<div style="font-size:8px;letter-spacing:.04em;display:flex;align-items:center;gap:8px">' +
+          '<span>' + _renderLegend() + '</span>' +
+          '<button data-collapse="1" title="Hide timeline (keeps the chart\'s weather strip visible)" ' +
+                  'style="background:transparent;border:1px solid #334155;color:#94a3b8;' +
+                         'border-radius:3px;padding:1px 6px;font:900 9px Courier New;cursor:pointer">' +
+            '▾ hide' +
+          '</button>' +
+        '</div>' +
       '</div>' +
       '<div style="display:flex;flex-direction:column;gap:1px">' + rows + '</div>';
     box.style.display = 'block';
 
-    /* Wire up the window-selector chips. */
+    /* Window selector chips. */
     Array.from(box.querySelectorAll('button[data-win]')).forEach(function (b) {
       b.addEventListener('click', function () {
         var k = b.getAttribute('data-win');
@@ -269,6 +312,12 @@
         try { localStorage.setItem('red5G36TimelineWindow', k); } catch (_) {}
         _tick();
       });
+    });
+    /* Collapse button. */
+    var hideBtn = box.querySelector('[data-collapse]');
+    if (hideBtn) hideBtn.addEventListener('click', function () {
+      _setCollapsed(true);
+      _render();
     });
   }
 

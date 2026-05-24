@@ -1,5 +1,76 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.7.1 — 📘 Standards button + extended Docs Index (2026-05-24, late evening)
+
+**Brief**: The G36 cross-walk doc (Phase L.7) was sitting in a markdown file on disk with no path to the operator's eyes. Consulting engineers don't poke at a github repo; they expect a button. Shipped that button — and three engineer-credibility docs alongside it — without building any new modal UI from scratch by extending the existing `red5DocsIndex` popup.
+
+### What shipped
+
+**New `📘 STANDARDS` button** in the dashboard header toolbar (right after `📚 DOCS`, before `COLLECTOR`):
+- Violet accent color visually distinguishes "standards / compliance" from "product insight" docs.
+- Clicking opens the existing Docs Index popup pre-focused on the G36 cross-walk tab via a new `open('g36-reset')` API.
+- Tooltip: "Open Standards — ASHRAE Guideline 36 Trim-and-Respond cross-walk, Band Guide, Control Algorithms".
+
+**Three new tabs added to `red5DocsIndex` registry**:
+| Tab | Doc | Color | Category |
+|---|---|---|---|
+| 📘 G36 Cross-Walk | `g36_reset.md` | violet `#a78bfa` | Standards |
+| Band Guide | `band_guide.md` | emerald `#34d399` | Algorithms |
+| Control Algorithms | `control_algorithms.md` | emerald `#34d399` | Algorithms |
+
+Total tabs in the popup: **5** (was 2). With `flex-wrap: wrap` added to the tab strip, they fit nicely inside the 640-px popup without overflow.
+
+**`open(opts)` API extension** in `docs_index.js`:
+- `open()` → opens with last-active tab (unchanged).
+- `open('g36-reset')` → opens and focuses the G36 tab (new).
+- `open({id: 'band-guide'})` → object form (future-proof).
+- Unknown IDs silently fall back to the last-active tab — typos don't dead-end the operator.
+
+**Backend `/api/standards` endpoints** (V2.0 + V1.9 parity):
+- `GET /api/standards` → JSON list of 8 whitelisted docs with `title`, `category`, `available` flag.
+- `GET /api/standards/{slug}` → raw markdown body, `Cache-Control: public, max-age=300`.
+- Whitelist prevents path traversal; unknown slugs return 404.
+- Intended as a clean API for future integrations (third-party CxA tools, AI agents, mobile apps) — the in-dashboard modal still uses the existing `/assets/<file>.md` route which the docs_index was already hardcoded to.
+
+### Files changed
+- `frontend/public/js/docs_index.js` — registry extended (+3 tabs), `flex-wrap` on tabs, `open(opts)` API.
+- `frontend/public/dashboard.html` — new `📘 STANDARDS` button next to DOCS.
+- `frontend/public/assets/g36_reset.md` (new) — engineer-facing copy of the G36 doc.
+- `frontend/public/docs/` (new dir) — full curated mirror of all 9 standards docs.
+- `backend/server.py` — `_STANDARDS_CATALOG` + `/api/standards*` endpoints.
+- `archive/Red5-Studio-V1.9/js/docs_index.js` — identical mirror.
+- `archive/Red5-Studio-V1.9/dashboard.html` — identical mirror.
+- `archive/Red5-Studio-V1.9/g36_reset.md` — already mirrored in L.7.
+- `archive/Red5-Studio-V1.9/docs/` (new dir) — full mirror.
+- `archive/Red5-Studio-V1.9/app.py` — `_STANDARDS_CATALOG` + Flask `/api/standards*` routes.
+
+### Verification (live, Playwright)
+- Both `[data-testid=docs-index-btn]` and `[data-testid=standards-btn]` render in header ✓
+- Click STANDARDS → popup opens with `display:flex`, active tab = `g36-reset` ✓
+- 5 tabs visible: `band-shift, psych-design, g36-reset, band-guide, ctrl-algorithms` ✓
+- G36 markdown rendered: title, audience block, §1 background, parameter cross-walk table ✓
+- `GET /api/standards` returns 8-item catalog ✓
+- `GET /api/standards/g36_reset` returns 200 + markdown body ✓
+- `GET /api/standards/secret_internal` returns 404 ✓
+- 14/14 smoke tests pass; ESLint clean ✓
+- V1.9 `app.py` byte-compiles cleanly ✓
+
+### Deploy notes for the Linux PC
+- The new `g36_reset.md` lives at `/root/data/g36_reset.md` once the operator runs `git pull` and copies the archive's flat-file copy (CONTROLLER_UPLOAD_LIST already includes `*.md` files).
+- V1.9 serves it via the existing `/assets/<filename>` Flask route → no controller-side code change required beyond placing the file.
+- New `/api/standards` endpoint is bonus infrastructure; the dashboard popup doesn't depend on it.
+
+### Operator playbook
+- Press `📘 STANDARDS` (header toolbar, between `📚 DOCS` and `COLLECTOR`).
+- Popup opens centered, G36 tab pre-focused.
+- Toggle EN / 한국어 in the top-right of the popup (when ko translations exist).
+- Drag the popup header to reposition; position persists in `localStorage.red5DocsIndexState`.
+- Hand the building's commissioning agent a tablet pointed at the dashboard. They press `📘`, scroll to §7 (Path-to-G36-compliance gap analysis), and check off what Red5 already does. Audit answered in 5 minutes instead of 5 weeks.
+
+
+
+
+
 ## Phase L.7 — ★ Pin default location + G36 cross-walk doc (2026-05-24, evening)
 
 **Two deliverables this session**:

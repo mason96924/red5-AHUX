@@ -32,6 +32,33 @@
       doc_en:   '/assets/psychrometric_design_workflow.md',
       doc_ko:   '/assets/psychrometric_design_workflow.ko.md',
       color:    '#f59e0b'
+    },
+    /* --- Engineer-credibility / standards docs (added Phase L.7).
+       Korean copy intentionally falls back to the English file when no
+       _ko.md exists — better than rendering a 404 error block. -------- */
+    {
+      id:       'g36-reset',
+      title_en: '\ud83d\udcd8 G36 Cross-Walk',          /* 📘 */
+      title_ko: '\ud83d\udcd8 G36 \ub300\uc870\ud45c',
+      doc_en:   '/assets/g36_reset.md',
+      doc_ko:   '/assets/g36_reset.md',
+      color:    '#a78bfa'                                /* violet — "standards" */
+    },
+    {
+      id:       'band-guide',
+      title_en: 'Band Guide',
+      title_ko: '\ubc34\ub4dc \uac00\uc774\ub4dc',
+      doc_en:   '/assets/band_guide.md',
+      doc_ko:   '/assets/band_guide.md',
+      color:    '#34d399'                                /* emerald — "algorithms" */
+    },
+    {
+      id:       'ctrl-algorithms',
+      title_en: 'Control Algorithms',
+      title_ko: '\uc81c\uc5b4 \uc54c\uace0\ub9ac\uc998',
+      doc_en:   '/assets/control_algorithms.md',
+      doc_ko:   '/assets/control_algorithms.md',
+      color:    '#34d399'
     }
   ];
 
@@ -155,7 +182,7 @@
         '</div>'+
         '<button data-close="1" title="Close" style="background:transparent;border:1px solid #475569;color:#fb7185;padding:0 7px;font:900 12px Courier New;cursor:pointer;border-radius:2px">\u2715</button>'+
       '</div>'+
-      '<div data-tabs="1" style="display:flex;gap:2px;padding:6px 10px 0;background:rgba(15,23,42,.4);flex-shrink:0;border-bottom:1px solid #1e3a8a">'+tabs+'</div>'+
+      '<div data-tabs="1" style="display:flex;flex-wrap:wrap;gap:2px;padding:6px 10px 0;background:rgba(15,23,42,.4);flex-shrink:0;border-bottom:1px solid #1e3a8a">'+tabs+'</div>'+
       '<div style="flex:1;overflow-y:auto;padding:10px 16px;color:#cbd5e1">'+body+'</div>';
     /* Wire drag (header) */
     var hdr = popup.querySelector('[data-hdr]');
@@ -230,7 +257,18 @@
       });
   }
 
-  function open(){
+  function open(opts){
+    /* `opts` may be:
+         - undefined / null       -> open with last-active tab
+         - a string id            -> open and focus that tab (e.g. 'g36-reset')
+         - {id:'…'} object        -> same as string form (lets callers stay future-proof)
+       Unknown ids silently fall back to the last-active tab so a typo never
+       lands the user on an error popup. */
+    var wantId = (typeof opts === 'string') ? opts : (opts && opts.id);
+    if (wantId && docs.some(function(d){ return d.id === wantId; })) {
+      _state.activeId = wantId;
+      _save();
+    }
     var p = _build();
     p.style.display = 'flex';
     if (_state.pos) {

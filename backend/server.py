@@ -1577,6 +1577,54 @@ async def zip_dir(payload: dict,
 
 
 # ---------------------------------------------------------------------------
+# Engineer-facing standards / documentation library
+# ---------------------------------------------------------------------------
+# Surfaces the curated set of *.md files under `frontend/public/docs/` to the
+# dashboard's "Standards" modal so a consulting engineer or commissioning
+# agent can read the band guide, G36 cross-walk, control algorithms, etc.
+# right inside the dashboard.  Whitelist-only — anything not listed in
+# `_STANDARDS_CATALOG` returns 404 to keep the surface tight and prevent
+# accidental exposure of operator-private docs.
+_STANDARDS_CATALOG: list[dict] = [
+    {"slug": "g36_reset",                     "title": "ASHRAE Guideline 36 \u2014 Trim-and-Respond Cross-Walk",  "category": "Standards"},
+    {"slug": "band_guide",                    "title": "Givoni Band Guide (dyn-reset knob reference)",            "category": "Algorithms"},
+    {"slug": "control_algorithms",            "title": "Control Algorithms \u2014 Full Reference",               "category": "Algorithms"},
+    {"slug": "control_strategy_insight",      "title": "Control Strategy Insight",                                "category": "Algorithms"},
+    {"slug": "psychrometric_design_workflow", "title": "Psychrometric Design Workflow",                           "category": "Design"},
+    {"slug": "erv_band_shift_insight",        "title": "ERV Band Shift Insight",                                  "category": "Design"},
+    {"slug": "opt_sa_insight",                "title": "Optimal Supply-Air Setpoint Insight",                     "category": "Design"},
+    {"slug": "data_bridges_guide",            "title": "BACnet / Modbus Data Bridges",                            "category": "Integration"},
+]
+
+
+@app.get("/api/standards")
+async def list_standards() -> dict:
+    """List the available standards documents with title + category."""
+    docs_root = os.path.normpath(os.path.join(ROOT, "..", "frontend", "public", "docs"))
+    items = []
+    for entry in _STANDARDS_CATALOG:
+        full = os.path.join(docs_root, entry["slug"] + ".md")
+        items.append({**entry, "available": os.path.isfile(full)})
+    return {"items": items}
+
+
+@app.get("/api/standards/{slug}")
+async def get_standard(slug: str) -> Any:
+    """Return the raw markdown body for one whitelisted doc."""
+    if not any(d["slug"] == slug for d in _STANDARDS_CATALOG):
+        raise HTTPException(404, "unknown standards slug")
+    docs_root = os.path.normpath(os.path.join(ROOT, "..", "frontend", "public", "docs"))
+    full = os.path.normpath(os.path.join(docs_root, slug + ".md"))
+    if not full.startswith(docs_root) or not os.path.isfile(full):
+        raise HTTPException(404, "doc missing on disk")
+    with open(full, "rb") as f:
+        body = f.read().decode("utf-8")
+    return PlainTextResponse(body,
+                              headers={"Cache-Control": "public, max-age=300",
+                                       "Content-Type": "text/markdown; charset=utf-8"})
+
+
+# ---------------------------------------------------------------------------
 # Static asset passthrough.  V1.9 uses /api/assets/<path> for *.md and *.json
 # under /root/data/configs/.  In demo we serve from /app/frontend/public/.
 # Path traversal blocked.

@@ -1367,6 +1367,59 @@ def _mark_weather_source(source, status, detail=None):
     _LAST_WEATHER_SOURCE['detail']     = detail
 
 
+# ----------------------------------------------------------------------------
+# Engineer-facing standards / documentation library  (V1.9 parity with V2.0)
+# ----------------------------------------------------------------------------
+# Surfaces the curated set of *.md files under /root/data/docs/ to the
+# dashboard's "Standards" modal so a consulting engineer or commissioning
+# agent can read the band guide, G36 cross-walk, control algorithms, etc.
+# right inside the dashboard.  Whitelist-only.
+_STANDARDS_CATALOG = [
+    {'slug': 'g36_reset',                     'title': 'ASHRAE Guideline 36 \u2014 Trim-and-Respond Cross-Walk', 'category': 'Standards'},
+    {'slug': 'band_guide',                    'title': 'Givoni Band Guide (dyn-reset knob reference)',           'category': 'Algorithms'},
+    {'slug': 'control_algorithms',            'title': 'Control Algorithms \u2014 Full Reference',              'category': 'Algorithms'},
+    {'slug': 'control_strategy_insight',      'title': 'Control Strategy Insight',                               'category': 'Algorithms'},
+    {'slug': 'psychrometric_design_workflow', 'title': 'Psychrometric Design Workflow',                          'category': 'Design'},
+    {'slug': 'erv_band_shift_insight',        'title': 'ERV Band Shift Insight',                                 'category': 'Design'},
+    {'slug': 'opt_sa_insight',                'title': 'Optimal Supply-Air Setpoint Insight',                    'category': 'Design'},
+    {'slug': 'data_bridges_guide',            'title': 'BACnet / Modbus Data Bridges',                           'category': 'Integration'},
+]
+_STANDARDS_DIRS = ['/root/data/docs', '/root/data']  # fall back to legacy /root/data location
+
+
+def _find_standards_doc(slug):
+    """Resolve a whitelisted slug to a real path on disk.  Tries the
+    newer /root/data/docs first, then /root/data (legacy single-folder
+    install).  Returns None if the file isn't present in either place."""
+    for d in _STANDARDS_DIRS:
+        p = os.path.join(d, slug + '.md')
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+@app.route('/api/standards')
+def api_list_standards():
+    items = []
+    for entry in _STANDARDS_CATALOG:
+        items.append(dict(entry, available=_find_standards_doc(entry['slug']) is not None))
+    return jsonify({'items': items})
+
+
+@app.route('/api/standards/<slug>')
+def api_get_standard(slug):
+    if not any(d['slug'] == slug for d in _STANDARDS_CATALOG):
+        return jsonify({'error': 'unknown standards slug'}), 404
+    path = _find_standards_doc(slug)
+    if not path:
+        return jsonify({'error': 'doc missing on disk'}), 404
+    with open(path, 'rb') as f:
+        body = f.read()
+    resp = Response(body, status=200, mimetype='text/markdown; charset=utf-8')
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    return resp
+
+
 @app.route('/api/weather-health')
 def api_weather_health():
     """Live-status endpoint for the dashboard's source dot."""

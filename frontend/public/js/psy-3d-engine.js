@@ -2546,12 +2546,60 @@ global.initPsy3D = function(container, opts){
     function _createInsightPopup(opts){
       /* opts: {
            btnId, btnTitle, btnStyle, popupId,
-           docEN, docKO,
-           titleEN, titleKO,
+           docEN, docKO,            (legacy: kept for backwards compat with
+                                     band-help / design-help below.  When
+                                     docBase is supplied, it wins.)
+           docBase,                 (new: '/assets/foo' — engine appends
+                                     '.<lang>.md' for non-en, '.md' for en.
+                                     Single-file convention matches the
+                                     docs popup so the same EN-fallback
+                                     resolution works everywhere.)
+           titleEN, titleKO,        (legacy)
+           titles,                  (new: {en,ko,ja,zh-CN,zh-TW} map; EN
+                                     fallback if missing.  Used in the
+                                     popup's title bar AND PDF print title.)
            storageKey  (for pos+closed),
            storageLang (for explicit language),
            anchorEl    (where to attach the ? button; defaults to overlayEl)
          } */
+      /* ---- supported languages (mirrors docs_index.js so both popups
+              feel identical to the operator) ---- */
+      var LANGS = [
+        { code: 'en',    native: 'English'         },
+        { code: 'ko',    native: '\ud55c\uad6d\uc5b4' },
+        { code: 'ja',    native: '\u65e5\u672c\u8a9e' },
+        { code: 'zh-CN', native: '\u7b80\u4f53\u4e2d\u6587' },
+        { code: 'zh-TW', native: '\u7e41\u9ad4\u4e2d\u6587' }
+      ];
+      function _isValidLang(c){ return LANGS.some(function(L){ return L.code === c; }); }
+      function _titleFor(lang){
+        if (opts.titles && opts.titles[lang]) return opts.titles[lang];
+        if (opts.titles && opts.titles.en)    return opts.titles.en;
+        return (lang === 'ko' && opts.titleKO) ? opts.titleKO : opts.titleEN;
+      }
+      function _urlFor(lang){
+        if (opts.docBase) {
+          return (lang === 'en') ? (opts.docBase + '.md')
+                                 : (opts.docBase + '.' + lang + '.md');
+        }
+        /* Legacy fallback for callers still using docEN/docKO. */
+        if (lang === 'ko' && opts.docKO) return opts.docKO;
+        return opts.docEN;
+      }
+      function _enUrl(){
+        if (opts.docBase) return opts.docBase + '.md';
+        return opts.docEN;
+      }
+      function _fallbackBanner(){
+        var bag = {
+          en:      '(English fallback \u2014 translation pending)',
+          ko:      '(\uc601\uc5b4\ub85c \ud45c\uc2dc \u2014 \ubc88\uc5ed \uc900\ube44 \uc911)',
+          ja:      '(\u82f1\u8a9e\u3067\u8868\u793a\u2014\u7ffb\u8a33\u6e96\u5099\u4e2d)',
+          'zh-CN': '(\u663e\u793a\u82f1\u6587\u2014\u7ffb\u8bd1\u51c6\u5907\u4e2d)',
+          'zh-TW': '(\u986f\u793a\u82f1\u6587\u2014\u7ffb\u8b6f\u6e96\u5099\u4e2d)'
+        };
+        return bag[_lang] || bag.en;
+      }
       var anchor = opts.anchorEl || overlayEl;
       if (!anchor) return { button: null, popup: null, show: function(){} };
       var _pos = null, _closed = true;
@@ -2559,13 +2607,13 @@ global.initPsy3D = function(container, opts){
         var _s = JSON.parse(localStorage.getItem(opts.storageKey) || '{}');
         if (_s && _s.pos && typeof _s.pos.x === 'number') _pos = _s.pos;
       } catch(_) {}
-      var _loaded = {};   /* {en, ko} markdown text cache */
+      var _loaded = {};   /* {<lang>: markdown, <lang>__fallback: true} */
       var _lang = (function(){
-        try { var l = window.getLang ? window.getLang() : 'en'; return l === 'ko' ? 'ko' : 'en'; } catch(_) { return 'en'; }
+        try { var l = window.getLang ? window.getLang() : 'en'; return _isValidLang(l) ? l : 'en'; } catch(_) { return 'en'; }
       })();
       try {
         var _il = localStorage.getItem(opts.storageLang);
-        if (_il === 'ko' || _il === 'en') _lang = _il;
+        if (_isValidLang(_il)) _lang = _il;
       } catch(_) {}
 
       var btn = document.createElement('button');
@@ -2591,15 +2639,28 @@ global.initPsy3D = function(container, opts){
       }
       function paint(){
         var md = _loaded[_lang];
-        var loadingLabel = _lang === 'ko' ? '\ub85c\ub529 \uc911\u2026' : 'Loading\u2026';
-        var titleLabel   = _lang === 'ko' ? opts.titleKO : opts.titleEN;
-        var body = md ? _renderMd(md) :
-          '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
+        var fellBack = _loaded[_lang + '__fallback'];
+        var loadingBag = { en: 'Loading\u2026', ko: '\ub85c\ub529 \uc911\u2026', ja: '\u8aad\u307f\u8fbc\u307f\u4e2d\u2026', 'zh-CN': '\u52a0\u8f7d\u4e2d\u2026', 'zh-TW': '\u8f09\u5165\u4e2d\u2026' };
+        var loadingLabel = loadingBag[_lang] || loadingBag.en;
+        var titleLabel   = _titleFor(_lang);
+        var fallbackBanner = fellBack
+          ? '<div style="background:rgba(251,191,36,.10);border:1px dashed #fbbf24;color:#fbbf24;padding:6px 10px;margin:0 0 8px;font-size:9px;border-radius:3px">\u26a0\ufe0f '+_fallbackBanner()+'</div>'
+          : '';
+        var body = md
+          ? (fallbackBanner + _renderMd(md))
+          : '<div style="color:#94a3b8;padding:14px;font-size:10px">'+loadingLabel+'</div>';
+        /* Same 5-language <select> as docs_index.js so both popups have
+           identical chrome.  Avoids the operator wondering why some
+           help popups expose more languages than others. */
+        var langOpts = LANGS.map(function(L){
+          var sel = (L.code === _lang) ? ' selected' : '';
+          return '<option value="'+L.code+'"'+sel+'>'+L.native+'</option>';
+        }).join('');
         var langChip =
-          '<div data-lang-toggle="1" style="display:inline-flex;border:1px solid #475569;border-radius:3px;overflow:hidden;font-size:8px;font-weight:900;letter-spacing:.05em;user-select:none">'+
-            '<span data-set-lang="en" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='en'?'#60a5fa':'transparent')+';color:'+(_lang==='en'?'#0f172a':'#94a3b8')+'">EN</span>'+
-            '<span data-set-lang="ko" style="padding:1px 6px;cursor:pointer;background:'+(_lang==='ko'?'#60a5fa':'transparent')+';color:'+(_lang==='ko'?'#0f172a':'#94a3b8')+'">\ud55c\uad6d\uc5b4</span>'+
-          '</div>';
+          '<select data-lang-select="1" title="Document language" '+
+                  'style="background:#1e293b;border:1px solid #475569;border-radius:3px;'+
+                         'color:#cbd5e1;font:900 9px Courier New;letter-spacing:.05em;'+
+                         'padding:2px 4px;cursor:pointer;outline:none">'+langOpts+'</select>';
         popup.innerHTML =
           '<div data-hdr="1" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;background:rgba(96,165,250,.10);border-bottom:1px solid #1e3a8a;cursor:move;flex-shrink:0">'+
             '<div style="display:flex;align-items:center;gap:10px">'+
@@ -2611,7 +2672,7 @@ global.initPsy3D = function(container, opts){
           '<div style="flex:1;overflow-y:auto;padding:8px 14px;color:#cbd5e1">'+body+'</div>';
         var hdr = popup.querySelector('[data-hdr]');
         if (hdr) hdr.addEventListener('mousedown', function(e){
-          if (e.target.closest('button, [data-lang-toggle], [data-set-lang]')) return;
+          if (e.target.closest('button, select, [data-lang-select]')) return;
           e.preventDefault();
           var startX = e.clientX, startY = e.clientY;
           var rect = popup.getBoundingClientRect();
@@ -2638,39 +2699,54 @@ global.initPsy3D = function(container, opts){
           popup.style.display = 'none';
           try { localStorage.setItem(opts.storageKey, JSON.stringify({pos:_pos, closed:true})); } catch(_) {}
         });
-        popup.querySelectorAll('[data-set-lang]').forEach(function(el){
-          el.addEventListener('click', function(){
-            var lang = el.getAttribute('data-set-lang');
-            if (lang === _lang) return;
-            _lang = lang;
-            try { localStorage.setItem(opts.storageLang, lang); } catch(_) {}
-            _fetch();
-          });
+        var langSel = popup.querySelector('[data-lang-select]');
+        if (langSel) langSel.addEventListener('change', function(){
+          var lang = langSel.value;
+          if (!_isValidLang(lang) || lang === _lang) return;
+          _lang = lang;
+          try { localStorage.setItem(opts.storageLang, lang); } catch(_) {}
+          _fetch();
         });
       }
       function _fetch(){
         if (_loaded[_lang]) { paint(); return; }
         paint(); /* loading state */
-        /* Cache-bust to bypass any stale 404 the browser may have
-           cached from an upload race.  Same hardening as docs_index.js. */
-        var base = _lang === 'ko' ? opts.docKO : opts.docEN;
-        var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
-        fetch(url, {cache:'no-store'})
-          .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
-          .then(function(txt){ _loaded[_lang] = txt; paint(); })
+        /* Same EN-fallback chain as docs_index.js: try requested lang
+           first, fall back to English on 404 with a banner.  Keeps the
+           ? popups feeling identical to the Standards popup. */
+        var primaryUrl = _urlFor(_lang);
+        var enUrl      = _enUrl();
+        var cb = (primaryUrl.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
+        fetch(primaryUrl + cb, {cache:'no-store'})
+          .then(function(r){
+            if (r.ok) return r.text().then(function(txt){
+              _loaded[_lang] = txt;
+              delete _loaded[_lang + '__fallback'];
+              paint();
+            });
+            if (primaryUrl === enUrl) return Promise.reject(r.status);
+            return fetch(enUrl + (enUrl.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now(), {cache:'no-store'})
+              .then(function(r2){
+                if (!r2.ok) return Promise.reject(r2.status);
+                return r2.text();
+              })
+              .then(function(txt){
+                _loaded[_lang] = txt;
+                _loaded[_lang + '__fallback'] = true;
+                paint();
+              });
+          })
           .catch(function(err){
-            /* Don't cache the error; show inline retry hint instead. */
-            var msg_en = '# Unable to load doc\n\nFile fetch failed (' + err + ').\n\n*Reopen the popup or hard-refresh the page (Ctrl+Shift+R) to retry.*';
-            var msg_ko = '# \ubb38\uc11c \ub85c\ub4dc \uc2e4\ud328\n\n\ud30c\uc77c \uac00\uc838\uc624\uae30 \uc2e4\ud328 (' + err + ').\n\n*\ud31d\uc5c5\uc744 \ub2e4\uc2dc \uc5f4\uac70\ub098 \ud558\ub4dc \uc0c8\ub85c\uace0\uce68 (Ctrl+Shift+R) \ud574\uc8fc\uc138\uc694.*';
+            var msg = '# Unable to load doc\n\nFile fetch failed (' + err + ').\n\n*Reopen the popup or hard-refresh the page (Ctrl+Shift+R) to retry.*';
             var bodyEl = popup.querySelector('div[style*="overflow-y:auto"]');
-            if (bodyEl) bodyEl.innerHTML = _renderMd(_lang === 'ko' ? msg_ko : msg_en);
+            if (bodyEl) bodyEl.innerHTML = _renderMd(msg);
           });
       }
       btn.addEventListener('click', show);
       window.addEventListener('langchange', function(){
         try {
           var newLang = window.getLang ? window.getLang() : 'en';
-          newLang = (newLang === 'ko') ? 'ko' : 'en';
+          if (!_isValidLang(newLang)) newLang = 'en';
           var explicit = localStorage.getItem(opts.storageLang);
           if (explicit) return;
           if (newLang === _lang) return;

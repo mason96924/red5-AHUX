@@ -1745,6 +1745,17 @@ async def assets(path: str, request: Request,
     return PlainTextResponse(body.decode("utf-8", errors="replace"))
 
 
+# Bare `/assets/<path>` alias.  V1.9's Flask backend serves images at
+# /assets/<path>; the shared dashboard.html (one file mirrored to both
+# V1.9 and V2.0) uses that URL form.  Register both spellings on V2.0
+# so the same HTML works in both deployments without diverging the
+# frontend.  Just forwards to the same view function above.
+@app.get("/assets/{path:path}")
+async def assets_alias(path: str, request: Request,
+                       tenant: Optional[dict] = Depends(current_tenant_optional)):
+    return await assets(path, request, tenant)
+
+
 @app.get("/")
 async def root() -> dict:
     return {

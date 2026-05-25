@@ -272,6 +272,7 @@ def download_bundle_file(filename):
 
 
 @app.route('/assets/<path:filename>')
+@app.route('/api/assets/<path:filename>')
 def serve_asset(filename):
     """Serve a static asset from /root/data/, falling back to /root/data/docs/.
 
@@ -280,6 +281,12 @@ def serve_asset(filename):
     (which is also what the V2.0 sibling does) shouldn't have to teach the
     front-end about that — the front-end always requests /assets/<file>.md
     and we transparently resolve to either location, /root/data/ first.
+
+    Dual route: V1.9's historical URL is `/assets/<path>`.  The shared
+    dashboard.html (mirrored to V1.9 + V2.0) requests `/api/assets/<path>`
+    so the same HTML can drive both deployments.  Registering both routes
+    here on one view function means V1.9 serves either URL form -- no
+    frontend divergence between V1.9 and V2.0.
 
     Why this isn't a security hole:  send_from_directory() is the one that
     enforces "no .. escape outside the base dir", and we call it with the

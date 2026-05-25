@@ -19,7 +19,7 @@ Endpoints registered:
   POST /api/upload-bundle-finalize     (chunked, JSON)
   GET  /api/disk-status[?cleanup=1]
 """
-# Required SERVICE_CTX keys — app.py checks these before calling register()
+# Required SERVICE_CTX keys -- app.py checks these before calling register()
 # and skips the module (with a clear SKIPPED log line) if any are missing.
 _service_dependencies = [
     'DATA_ROOT', 'SCRIPTS_ROOT', 'PLUGINS_ROOT', 'ALLOWED_EXTENSIONS', 'MASTER_KEY_CONST',
@@ -41,7 +41,7 @@ from flask import jsonify, request, Response, send_from_directory, make_response
 # Filled in by register(); module-level so helpers can reach them.
 DATA_ROOT = None
 SCRIPTS_ROOT = None
-PLUGINS_ROOT = None        # /root/data/pgpy — firmware-safe home for plug-ins
+PLUGINS_ROOT = None        # /root/data/pgpy -- firmware-safe home for plug-ins
 ALLOWED_EXTENSIONS = None
 MASTER_KEY_CONST = None
 UPLOADS_SCRATCH_DIR = None
@@ -54,12 +54,12 @@ _SERVICE_CTX_REF = None
 
 
 # ----------------------------------------------------------------------
-# Streaming-I/O upload helpers (additive — none of the existing routes
+# Streaming-I/O upload helpers (additive -- none of the existing routes
 # below this block were changed; only the legacy /api/upload-bundle was
 # refactored to spool through disk so memory peak is bounded).
 #
 # Why: the original /api/upload-bundle did
-#     file_bytes = request.files['bundle'].read()      # whole bundle in RAM
+#     file_bytes = request.files[bundle].read()      # whole bundle in RAM
 #     ... decrypt_bundle(file_bytes) ...               # 2nd full copy + giant
 #                                                       # int.from_bytes alloc
 #     ... zipfile.ZipFile(io.BytesIO(zip_bytes)) ...   # 3rd full copy
@@ -138,7 +138,7 @@ def _purge_pycache(roots=None):
                     dirs += 1
                 except OSError:
                     pass
-                # don't recurse into the just-removed dir
+                # do not recurse into the just-removed dir
                 dirnames.remove('__pycache__')
     return dirs, bytes_freed
 
@@ -357,7 +357,7 @@ def _extract_zip_streaming(zip_path):
             else:
                 target_root = DATA_ROOT
                 parts = clean_name.split('/')
-                if len(parts) > 1 and parts[0] not in ('js', 'configs', 'graphics', 'assets'):
+                if len(parts) > 1 and parts[0] not in ('js', 'configs', 'graphics', 'assets', 'docs'):
                     ext0 = os.path.splitext(parts[0])[1]
                     if not ext0:
                         clean_name = '/'.join(parts[1:])
@@ -375,8 +375,8 @@ def _extract_zip_streaming(zip_path):
                 skipped.append({'file': clean_name, 'reason': 'Dev-only test/cache file (not deployed)'})
                 continue
             # Bootloader protection: app.py is explicitly managed by the
-            # operator (it's the plug-in loader) and must NEVER be
-            # auto-replaced by a bundle upload — even if a sloppy zip
+            # operator (it is the plug-in loader) and must NEVER be
+            # auto-replaced by a bundle upload -- even if a sloppy zip
             # happens to contain it.  A botched app.py landing on a live
             # controller could brick the boot loop.  Operators who want
             # to upgrade app.py do so manually (SCP / direct upload) so
@@ -386,8 +386,8 @@ def _extract_zip_streaming(zip_path):
                 continue
             if ext.lower() == '.py':
                 # Plug-in scripts live in PLUGINS_ROOT (/root/data/pgpy/),
-                # NOT /root/scripts/ — the controller firmware deletes any
-                # .py file in /root/scripts/ that isn't a pre-registered
+                # NOT /root/scripts/ -- the controller firmware deletes any
+                # .py file in /root/scripts/ that is not a pre-registered
                 # enteliWEB object.  app.py is the only exception (operator-
                 # managed) and is already filtered out above.
                 target_root = PLUGINS_ROOT
@@ -425,7 +425,7 @@ def _extract_zip_streaming(zip_path):
                     dest_root_label = 'data'
                 extracted.append({'file': dest_label, 'size': size_written, 'root': dest_root_label})
             except OSError as ex:
-                # Disk full mid-write — remove the partial file.
+                # Disk full mid-write -- remove the partial file.
                 try:
                     if os.path.exists(dest_path):
                         os.unlink(dest_path)
@@ -469,7 +469,7 @@ def _finalize_bundle_from_disk(spool_path, password):
 
         # Pre-flight: refuse the deploy if free space is dangerously low.
         # Headroom calibrated to the ACTUAL extraction worst case rather
-        # than a blanket 2× zip-size: _extract_zip_streaming() writes
+        # than a blanket 2x zip-size: _extract_zip_streaming() writes
         # entries one at a time via zf.open() so peak additional disk
         # use is bounded by the LARGEST single member (existing files
         # are overwritten in place; extraction does not duplicate the
@@ -543,7 +543,7 @@ def _finalize_bundle_from_disk(spool_path, password):
                 pass
 
 
-# === ROUTE: /api/upload-bundle-chunk === methods=['POST']
+# === ROUTE: /api/upload-bundle-chunk === methods=[POST]
 def upload_bundle_chunk():
     """Receive ONE chunk of a chunked upload.  Idempotent for the SAME
     chunk_index (will re-write the same offset).
@@ -578,8 +578,8 @@ def upload_bundle_chunk():
         # First chunk: pre-flight free space.  We need room for the
         # spool itself (= total_size) plus a working margin for the
         # eventual extract step.  Using `total_size + 1 MB` is correct
-        # for plain zips — encryption is detected at finalize-time and
-        # decrypt-into-side-file happens lazily; if there's not enough
+        # for plain zips -- encryption is detected at finalize-time and
+        # decrypt-into-side-file happens lazily; if there is not enough
         # room then, the finalize endpoint refuses cleanly with a 507.
         # The old `max(5 MB, total_size * 2)` was way too pessimistic
         # for tiny bundles on a tight controller.  Floor 1 MB.
@@ -628,7 +628,7 @@ def upload_bundle_chunk():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# === ROUTE: /api/upload-bundle-finalize === methods=['POST']
+# === ROUTE: /api/upload-bundle-finalize === methods=[POST]
 def upload_bundle_finalize():
     """Finalize a chunked upload: validate the spooled file matches the
     expected size, then run the same decrypt + extract pipeline as the
@@ -696,7 +696,7 @@ def disk_status():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# === ROUTE: /api/upload-bundle === methods=['POST']
+# === ROUTE: /api/upload-bundle === methods=[POST]
 def upload_bundle():
     """Legacy single-shot upload.  Refactored to spool the multipart
     payload to disk in 64 KB chunks and reuse the same finalize path as
@@ -711,7 +711,7 @@ def upload_bundle():
 
         if request.files and 'bundle' in request.files:
             password = request.form.get('password', '')
-            # Stream-copy from Werkzeug's FileStorage (its .stream is the
+            # Stream-copy from Werkzeugs FileStorage (its .stream is the
             # underlying SpooledTemporaryFile-like object).
             src = request.files['bundle'].stream
             with open(spool, 'wb') as f:
@@ -728,7 +728,7 @@ def upload_bundle():
                 b64 = b64.split(',', 1)[1]
             # base64 decode in chunks to avoid the giant int allocation
             with open(spool, 'wb') as f:
-                # b64decode is O(n) memory in the OUTPUT — for our typical
+                # b64decode is O(n) memory in the OUTPUT -- for our typical
                 # 1-2 MB bundle this is acceptable; we then write the
                 # decoded bytes to disk and free the buffer immediately.
                 decoded = base64.b64decode(b64)
@@ -1062,7 +1062,7 @@ def api_zip_dir():
 
 def serve_update_page():
     # Self-bootstrap: on a fresh controller /root/data/ may be empty (only
-    # app.py has been deployed).  Instead of returning Flask's default 404,
+    # app.py has been deployed).  Instead of returning Flasks default 404,
     # serve a minimal inline HTML form that POSTs the bundle to
     # /api/upload-bundle.  Once the bundle is uploaded the real update.html
     # takes over on the next request.  This makes every fresh controller
@@ -1100,10 +1100,10 @@ def repair_upload_plugin():
         if not name:
             return jsonify({'success': False, 'error': 'Missing filename'}), 400
 
-        # Strip any path components — we only care about the basename.
+        # Strip any path components -- we only care about the basename.
         name = os.path.basename(name)
 
-        # Allow-list — narrow attack surface.  These map to a specific dest root.
+        # Allow-list -- narrow attack surface.  These map to a specific dest root.
         # NOTE: keep in sync with the corresponding lists in repair_download_plugin()
         # and repair_reload_module() below.
         plugin_files = {
@@ -1131,7 +1131,7 @@ def repair_upload_plugin():
             dest_root = PLUGINS_ROOT
             dest_label = 'pgpy'
         elif name in ui_files:
-            # configs/bridges.json lives in DATA_ROOT/configs/ — preserve the subdir.
+            # configs/bridges.json lives in DATA_ROOT/configs/ -- preserve the subdir.
             if name.startswith('configs/'):
                 dest_root  = os.path.join(DATA_ROOT, 'configs')
                 dest_label = 'data/configs'
@@ -1142,7 +1142,7 @@ def repair_upload_plugin():
         else:
             return jsonify({'success': False, 'error': 'Filename not in repair allow-list', 'allowed': sorted(plugin_files | ui_files)}), 403
 
-        # Disk-full guard (very lenient — only refuse if we literally cannot
+        # Disk-full guard (very lenient -- only refuse if we literally cannot
         # write a few KB safely).  No 20 MB / 5 MB floor here: this endpoint
         # exists EXPRESSLY to unblock low-headroom controllers.
         ok_disk, free_b, free_i = _check_free_space(DATA_ROOT, min_bytes=64 * 1024, min_inodes=10)
@@ -1273,7 +1273,7 @@ def _rollback_added_routes(app, endpoints):
             _by_ep[_r.endpoint] = [x for x in _by_ep[_r.endpoint] if x is not _r]
             if not _by_ep[_r.endpoint]:
                 del _by_ep[_r.endpoint]
-    # 3. Rebuild werkzeug's StateMachineMatcher from scratch — it doesn't
+    # 3. Rebuild werkzeugs StateMachineMatcher from scratch -- it does not
     #    expose a "remove rule" API and its internal state-tree keeps
     #    references to deleted rules otherwise.  Re-add every surviving
     #    rule (except build-only rules, which the matcher skips).
@@ -1285,7 +1285,7 @@ def _rollback_added_routes(app, endpoints):
                 fresh_matcher.add(_r)
         app.url_map._matcher = fresh_matcher
     except Exception:
-        # Old werkzeug versions (<2.3) don't have StateMachineMatcher; fall
+        # Old werkzeug versions (<2.3) do not have StateMachineMatcher; fall
         # back to flipping _remap and hoping Map.update() handles it.
         pass
     try:
@@ -1349,7 +1349,7 @@ def _reload_module_core(plugin_name):
     if _FLASK_APP_REF is None or _SERVICE_CTX_REF is None:
         return {'success': False,
                 'error': 'reload context not initialised'}, 500
-    # Capture refs to LOCALS — importlib.reload() re-executes the module body
+    # Capture refs to LOCALS -- importlib.reload() re-executes the module body
     # which resets these globals to None until the new register() runs.
     app = _FLASK_APP_REF
     ctx_snapshot = _SERVICE_CTX_REF
@@ -1360,7 +1360,7 @@ def _reload_module_core(plugin_name):
         if getattr(fn, '__module__', '') == mod_name:
             pre_endpoints.append((ep, fn.__name__))
 
-    # 2a. Fresh-import case — module never imported in this Flask session.
+    # 2a. Fresh-import case -- module never imported in this Flask session.
     if mod is None:
         try:
             mod = importlib.import_module(mod_name)
@@ -1413,7 +1413,7 @@ def _reload_module_core(plugin_name):
                 'note': 'Fresh module imported and registered. Routes are live immediately.',
             }, 200
 
-    # 2b. Reload path — new function objects are created here.
+    # 2b. Reload path -- new function objects are created here.
     else:
         try:
             importlib.reload(mod)
@@ -1593,7 +1593,7 @@ def register(app, ctx):
     _FLASK_APP_REF     = app
     _SERVICE_CTX_REF   = ctx
 
-    # Re-route Python's tempfile module away from the /tmp tmpfs (which is
+    # Re-route Pythons tempfile module away from the /tmp tmpfs (which is
     # RAM-backed on the embedded controller).
     try:
         os.makedirs(UPLOADS_SCRATCH_DIR, exist_ok=True)
@@ -1622,9 +1622,9 @@ def register(app, ctx):
                      repair_reload_module,   methods=['POST'])
     app.add_url_rule('/update',                     'serve_update_page',
                      serve_update_page,      methods=['GET'])
-    # Multi-file / directory zip downloads (called from equipment_mapper's
+    # Multi-file / directory zip downloads (called from equipment_mappers
     # "GET SELECTED" button on the Controller Assets file browser).
-    # Without these two routes the frontend's POST hits a 404 and the
+    # Without these two routes the frontends POST hits a 404 and the
     # operator sees "GET selected failed: 404" in an alert.
     app.add_url_rule('/api/zip-files',              'api_zip_files',
                      api_zip_files,          methods=['POST'])

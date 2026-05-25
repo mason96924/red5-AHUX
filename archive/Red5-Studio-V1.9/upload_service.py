@@ -357,7 +357,7 @@ def _extract_zip_streaming(zip_path):
             else:
                 target_root = DATA_ROOT
                 parts = clean_name.split('/')
-                if len(parts) > 1 and parts[0] not in ('js', 'configs', 'graphics', 'assets'):
+                if len(parts) > 1 and parts[0] not in ('js', 'configs', 'graphics', 'assets', 'docs'):
                     ext0 = os.path.splitext(parts[0])[1]
                     if not ext0:
                         clean_name = '/'.join(parts[1:])

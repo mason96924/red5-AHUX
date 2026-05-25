@@ -1494,8 +1494,13 @@ global.initPsy3D = function(container, opts){
 
     /* location presets */
     var locs=[['NYC',40.71,-74.01,'New York'],['LON',51.51,-0.13,'London'],['SIN',1.35,103.82,'Singapore'],['TYO',35.68,139.69,'Tokyo'],['DXB',25.20,55.27,'Dubai'],['SYD',-33.87,151.21,'Sydney']];
+    /* 2026-05-25: hide the legacy 6-city button row.  These same 6
+       cities are exposed in the "City presets" optgroup of the unified
+       <select id="p3-loc-select"> below, so the button row is purely
+       redundant.  We keep the `locs` array because _buildLocSelect()
+       reads it to populate the dropdown's "City presets" optgroup. */
     var lpEl=$('#p3-loc-presets');
-    locs.forEach(function(l){var b=document.createElement('button');b.textContent=l[0];b.onclick=function(){applyLocation({lat:l[1],lon:l[2],name:l[3]},{persist:true,fetch:true});};lpEl.appendChild(b);});
+    if (lpEl) lpEl.style.display = 'none';
 
     /* ---------- Unified location dropdown ----------
        Combines the operator's saved locations (POST /api/weather-location)

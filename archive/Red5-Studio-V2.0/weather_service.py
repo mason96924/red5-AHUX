@@ -20,7 +20,7 @@ Endpoints registered:
   POST /api/forecast-config
   POST /api/forecast-write-now
 """
-# Required SERVICE_CTX keys — validated by app.py auto-discovery.
+# Required SERVICE_CTX keys -- validated by app.py auto-discovery.
 _service_dependencies = ['DATA_ROOT']
 import os
 import math
@@ -44,7 +44,7 @@ FORECAST_CONFIG_PATH = None
 
 
 # -----------------------------------------------------------------------------
-# Weather location persistence — stored on the controller so the selected city
+# Weather location persistence -- stored on the controller so the selected city
 # survives browser cache clears, different operator devices, etc.
 # -----------------------------------------------------------------------------
 WEATHER_LOC_PATH = os.path.join('/root/data/configs', 'weather_location.json')
@@ -64,19 +64,20 @@ def _coerce_loc(d):
 def _read_weather_state():
     """Load the on-controller weather state, migrating any legacy single-loc file."""
     if not os.path.isfile(WEATHER_LOC_PATH):
-        return {'active': None, 'saved': []}
+        return {'active': None, 'saved': [], 'default': None}
     try:
         with open(WEATHER_LOC_PATH, 'r') as f:
             data = json.load(f)
     except Exception:
-        return {'active': None, 'saved': []}
+        return {'active': None, 'saved': [], 'default': None}
     # Legacy format: bare {lat, lon, name}
     if isinstance(data, dict) and 'lat' in data and 'lon' in data and 'active' not in data and 'saved' not in data:
         active = _coerce_loc(data)
-        return {'active': active, 'saved': [active] if active else []}
+        return {'active': active, 'saved': [active] if active else [], 'default': None}
     if not isinstance(data, dict):
-        return {'active': None, 'saved': []}
+        return {'active': None, 'saved': [], 'default': None}
     active = _coerce_loc(data.get('active')) if data.get('active') is not None else None
+    default = _coerce_loc(data.get('default')) if data.get('default') is not None else None
     raw_saved = data.get('saved') or []
     saved = []
     seen = set()
@@ -90,7 +91,11 @@ def _read_weather_state():
                 continue
             seen.add(key)
             saved.append(loc)
-    return {'active': active, 'saved': saved}
+    # Fresh-session fallback: when no `active` has been picked yet but the
+    # operator has pinned a `default`, surface that as the active location.
+    if not active and default:
+        active = default
+    return {'active': active, 'saved': saved, 'default': default}
 
 def _write_weather_state(state):
     try:
@@ -122,32 +127,70 @@ def _write_weather_state(state):
         pass
 
 def get_weather_location():
-    return jsonify(_read_weather_state())
+    """GET /api/weather-location -- return active / saved / default state.
+
+    When the operator has not yet curated any custom locations
+    (`saved == []`), seed the response with a small set of bundled
+    demo cities so the dashboard + 3D WX modal never render an empty
+    dropdown on a fresh controller.  As soon as the operator saves their
+    first real location and POSTs back, the persisted `saved` array
+    fully replaces these defaults -- the bundled list is a *starter*,
+    not a permanent overlay.
+    """
+    state = _read_weather_state()
+    if not state.get('saved'):
+        state['saved'] = [
+            {'name': 'Seoul, KR',    'lat': 37.5665, 'lon': 126.9780},
+            {'name': 'Tokyo, JP',    'lat': 35.6762, 'lon': 139.6503},
+            {'name': 'Singapore',    'lat':  1.3521, 'lon': 103.8198},
+            {'name': 'New York, US', 'lat': 40.7128, 'lon': -74.0060},
+            {'name': 'Seattle, US',  'lat': 47.6062, 'lon': -122.3321},
+        ]
+    return jsonify(state)
 
 def set_weather_location():
     """Accepts either:
-      • Legacy: {lat, lon, name}                       → updates active, adds to saved
-      • Full:   {active: {...}|null, saved: [...]}     → replaces full state
+      • Legacy: {lat, lon, name}                                  → updates active, adds to saved
+      • Full:   {active: {...}|null, saved: [...], default: ...}  → replaces full state.
+        - `default` is the operator's pinned-on-fresh-session location.
+        - Send `default: {lat, lon, name}` to pin, `null` to clear.
+        - When `default` key is omitted, the existing pin is preserved.
     Returns the resulting persisted state.
     """
     try:
         body = request.get_json(silent=True) or {}
         # Detect format
-        is_full = ('active' in body) or ('saved' in body)
+        is_full = ('active' in body) or ('saved' in body) or ('default' in body)
         if is_full:
-            active = _coerce_loc(body.get('active')) if body.get('active') is not None else None
-            saved = []
-            seen = set()
-            for item in (body.get('saved') or []):
-                loc = _coerce_loc(item)
-                if not loc:
-                    continue
-                key = (round(loc['lat'], 4), round(loc['lon'], 4))
-                if key in seen:
-                    continue
-                seen.add(key)
-                saved.append(loc)
-            state = {'active': active, 'saved': saved}
+            existing = _read_weather_state()
+            # Active + saved replace whatever is currently stored; default is
+            # merged so a caller can update just one field without losing the
+            # others (e.g., pinning a default from the 3D WX panel shouldn't
+            # wipe the user's saved list).
+            if 'active' in body:
+                active = _coerce_loc(body.get('active')) if body.get('active') is not None else None
+            else:
+                active = existing.get('active')
+            if 'saved' in body:
+                saved = []
+                seen = set()
+                for item in (body.get('saved') or []):
+                    loc = _coerce_loc(item)
+                    if not loc:
+                        continue
+                    key = (round(loc['lat'], 4), round(loc['lon'], 4))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    saved.append(loc)
+            else:
+                saved = list(existing.get('saved') or [])
+            if 'default' in body:
+                # null / empty dict / non-dict -> clear; {lat,lon,name} -> pin.
+                default = _coerce_loc(body.get('default')) if body.get('default') else None
+            else:
+                default = existing.get('default')
+            state = {'active': active, 'saved': saved, 'default': default}
         else:
             loc = _coerce_loc(body)
             if not loc:
@@ -157,7 +200,7 @@ def set_weather_location():
             key = (round(loc['lat'], 4), round(loc['lon'], 4))
             saved = [s for s in saved if (round(s['lat'], 4), round(s['lon'], 4)) != key]
             saved.insert(0, loc)
-            state = {'active': loc, 'saved': saved[:20]}
+            state = {'active': loc, 'saved': saved[:20], 'default': existing.get('default')}
         _write_weather_state(state)
         return jsonify({'success': True, 'state': state})
     except Exception as e:
@@ -174,8 +217,8 @@ def weather_history():
     if not lat or not lon:
         return jsonify({'success': False, 'error': 'lat and lon required'}), 400
 
-    # Normalize lat/lon for the cache key. open-meteo's grid resolution is
-    # ~0.1° (~11 km), so 2 decimal places (~1.1 km) is more than enough — and
+    # Normalize lat/lon for the cache key. open-meteos grid resolution is
+    # ~0.1 deg  (~11 km), so 2 decimal places (~1.1 km) is more than enough -- and
     # using a fixed precision means the cache key is stable regardless of
     # how many decimals the caller sends (37.5665 vs 37.57 must hit the
     # same cache entry, otherwise every selection re-downloads from the net).
@@ -244,7 +287,7 @@ def weather_history():
                     try: os.remove(fp)
                     except OSError: pass
                     continue
-                # Keep only if it's a complete payload AND there's no canonical
+                # Keep only if it is a complete payload AND there is no canonical
                 # already covering the same coordinates+year.
                 if (isinstance(d, dict)
                         and d.get('success') is True
@@ -283,13 +326,13 @@ def weather_history():
                     continue
                 core = fn[len('weather_'):-len(f'_{year}.json')]
                 # core is "<lat>_<lon>" (lon may be negative). Lat is always first
-                # and never starts with '-' here for these grids; for safety try
+                # and never starts with - here for these grids; for safety try
                 # both single split orientations.
                 parts = core.split('_')
                 if len(parts) < 2:
                     continue
                 # Reconstruct: if there are 2 parts, lat=parts[0], lon=parts[1]
-                # If 3 parts (negative number using '-'), join accordingly.
+                # If 3 parts (negative number using -), join accordingly.
                 try:
                     if len(parts) == 2:
                         f_lat, f_lon = float(parts[0]), float(parts[1])
@@ -314,8 +357,8 @@ def weather_history():
                         except OSError: pass
                         return cached
                     else:
-                        # Stale / incomplete legacy entry — clean it up so it
-                        # doesn't shadow a future good cache.
+                        # Stale / incomplete legacy entry -- clean it up so it
+                        # does not shadow a future good cache.
                         try: os.remove(candidate)
                         except OSError: pass
         except OSError:
@@ -323,7 +366,7 @@ def weather_history():
         return None
 
     # Decide if the cache is fresh enough to return without a network round-trip.
-    # Past years are immutable → cache forever. Current year grows daily → only
+    # Past years are immutable -> cache forever. Current year grows daily -> only
     # treat the cache as fresh if it was written within the last 24 h.
     import datetime, time
     is_current_year = (str(year) == str(datetime.date.today().year))
@@ -465,7 +508,7 @@ def weather_history():
 
         # Always cache. Past years are immutable; current-year cache is honored
         # for 24 h before being re-fetched (see freshness check above), so we
-        # don't need a year filter here. fsync to flash so it survives a
+        # do not need a year filter here. fsync to flash so it survives a
         # controller power cycle.
         try:
             tmp = cache_file + '.tmp'
@@ -486,7 +529,7 @@ def weather_history():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# --- TOMORROW FORECAST (from past year's same-day data) ---
+# --- TOMORROW FORECAST (from past years same-day data) ---
 import datetime
 import threading
 
@@ -569,7 +612,7 @@ def get_tomorrow_forecast(lat, lon):
             data = {'daily': daily}
 
             # Only write a separate cache here if the weather-history endpoint
-            # hasn't already populated a *complete* canonical cache. Writing a
+            # has not already populated a *complete* canonical cache. Writing a
             # daily-only payload over the top of the rich daily+hourly payload
             # would silently corrupt it, and the orphan sweep would later
             # delete this incomplete file.
@@ -623,7 +666,7 @@ def write_forecast_to_bacnet(forecast, csv_id='CSV1'):
 
     # --- PLACEHOLDER: BACnet write ---
     # from dibt import Write
-    # Write(csv_id, 'Present_Value', csv_value)
+    # Write(csv_id, Present_Value, csv_value)
     print(f'[FORECAST] Would write to {csv_id}: {csv_value}')
     print(f'[FORECAST] For date: {forecast["forecast_date"]} (source: {forecast["source_date"]})')
 
@@ -696,7 +739,7 @@ def _daily_forecast_job():
             threading.Event().wait(60)
 
 # (Background forecast thread is started inside register(), not at
-# module-import time, so the thread doesn't run before app.py is ready.)
+# module-import time, so the thread does not run before app.py is ready.)
 
 
 def tomorrow_forecast():

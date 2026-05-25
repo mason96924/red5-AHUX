@@ -704,6 +704,15 @@ async def weather_location(tenant: Optional[dict] = Depends(current_tenant_optio
             # UI can render the star indicator.
             if not loc.get("active") and loc.get("default"):
                 loc["active"] = loc["default"]
+            # 2026-05-25 fix: when the operator has not saved any custom
+            # locations yet (`saved` is empty/missing), seed the dropdown
+            # with the bundled demo cities so the modal isn't empty.  The
+            # moment the operator adds their first real location and POSTs,
+            # the persisted `saved` array fully replaces this fallback --
+            # we never silently mix user content with bundled defaults
+            # AFTER the user has started curating their own list.
+            if not loc.get("saved"):
+                loc["saved"] = SAVED_LOCATIONS
             return loc
     return {"active": ACTIVE_LOCATION, "saved": SAVED_LOCATIONS, "default": None}
 

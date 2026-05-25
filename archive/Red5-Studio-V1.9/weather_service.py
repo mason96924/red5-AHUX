@@ -127,7 +127,26 @@ def _write_weather_state(state):
         pass
 
 def get_weather_location():
-    return jsonify(_read_weather_state())
+    """GET /api/weather-location -- return active / saved / default state.
+
+    When the operator has not yet curated any custom locations
+    (`saved == []`), seed the response with a small set of bundled
+    demo cities so the dashboard + 3D WX modal never render an empty
+    dropdown on a fresh controller.  As soon as the operator saves their
+    first real location and POSTs back, the persisted `saved` array
+    fully replaces these defaults -- the bundled list is a *starter*,
+    not a permanent overlay.
+    """
+    state = _read_weather_state()
+    if not state.get('saved'):
+        state['saved'] = [
+            {'name': 'Seoul, KR',    'lat': 37.5665, 'lon': 126.9780},
+            {'name': 'Tokyo, JP',    'lat': 35.6762, 'lon': 139.6503},
+            {'name': 'Singapore',    'lat':  1.3521, 'lon': 103.8198},
+            {'name': 'New York, US', 'lat': 40.7128, 'lon': -74.0060},
+            {'name': 'Seattle, US',  'lat': 47.6062, 'lon': -122.3321},
+        ]
+    return jsonify(state)
 
 def set_weather_location():
     """Accepts either:

@@ -146,13 +146,19 @@ def _load_csv(name: str) -> list[dict]:
 # Demo telemetry simulator.
 # ---------------------------------------------------------------------------
 SAVED_LOCATIONS = [
-    {"lat": -34.92, "lon": 138.60, "name": "NRAH (Adelaide)"},
-    {"lat": -31.95, "lon": 115.86, "name": "Perth Children Hospital"},
-    {"lat":  37.56, "lon": 127.04, "name": "Hanyang Univ Hospital (Seoul)"},
-    {"lat":  39.91, "lon": 116.40, "name": "Beijing Geriatric Hospital"},
-    {"lat":  47.60, "lon": -122.30, "name": "Seattle Children's"},
+    {"lat":  47.92, "lon": 106.92, "name": "Ulaanbaatar"},
+    {"lat":  40.71, "lon": -74.01, "name": "New York"},
+    {"lat":  51.51, "lon":  -0.13, "name": "London"},
+    {"lat":  52.52, "lon":  13.40, "name": "Berlin"},
+    {"lat":  49.28, "lon": -123.12, "name": "Vancouver"},
+    {"lat":  35.68, "lon": 139.69, "name": "Tokyo"},
+    {"lat":  39.91, "lon": 116.40, "name": "Beijing"},
+    {"lat":  25.03, "lon": 121.57, "name": "Taipei"},
+    {"lat":  22.32, "lon": 114.17, "name": "Hong Kong"},
+    {"lat":   1.35, "lon": 103.82, "name": "Singapore"},
+    {"lat": -33.87, "lon": 151.21, "name": "Sydney"},
 ]
-ACTIVE_LOCATION = SAVED_LOCATIONS[-1]  # Seattle (full weather year cached)
+ACTIVE_LOCATION = SAVED_LOCATIONS[1]  # New York -- 4 -season climate with reliable Open-Meteo data
 
 _DEMO_START_TS = time.time()
 

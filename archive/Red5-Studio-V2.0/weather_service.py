@@ -140,11 +140,17 @@ def get_weather_location():
     state = _read_weather_state()
     if not state.get('saved'):
         state['saved'] = [
-            {'name': 'Seoul, KR',    'lat': 37.5665, 'lon': 126.9780},
-            {'name': 'Tokyo, JP',    'lat': 35.6762, 'lon': 139.6503},
-            {'name': 'Singapore',    'lat':  1.3521, 'lon': 103.8198},
-            {'name': 'New York, US', 'lat': 40.7128, 'lon': -74.0060},
-            {'name': 'Seattle, US',  'lat': 47.6062, 'lon': -122.3321},
+            {'name': 'Ulaanbaatar', 'lat':  47.9200, 'lon':  106.9200},
+            {'name': 'New York',    'lat':  40.7128, 'lon':  -74.0060},
+            {'name': 'London',      'lat':  51.5074, 'lon':   -0.1278},
+            {'name': 'Berlin',      'lat':  52.5200, 'lon':   13.4050},
+            {'name': 'Vancouver',   'lat':  49.2827, 'lon': -123.1207},
+            {'name': 'Tokyo',       'lat':  35.6762, 'lon':  139.6503},
+            {'name': 'Beijing',     'lat':  39.9042, 'lon':  116.4074},
+            {'name': 'Taipei',      'lat':  25.0330, 'lon':  121.5654},
+            {'name': 'Hong Kong',   'lat':  22.3193, 'lon':  114.1694},
+            {'name': 'Singapore',   'lat':   1.3521, 'lon':  103.8198},
+            {'name': 'Sydney',      'lat': -33.8688, 'lon':  151.2093},
         ]
     return jsonify(state)
 

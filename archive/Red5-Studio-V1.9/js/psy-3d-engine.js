@@ -1493,9 +1493,25 @@ global.initPsy3D = function(container, opts){
     $('#p3-panel-hdr').onclick=function(){panelOpen=!panelOpen;$('#p3-panel-body').style.display=panelOpen?'block':'none';$('#p3-ptgl').textContent=panelOpen?'\u25BC':'\u25B6';};
 
     /* location presets */
-    var locs=[['NYC',40.71,-74.01,'New York'],['LON',51.51,-0.13,'London'],['SIN',1.35,103.82,'Singapore'],['TYO',35.68,139.69,'Tokyo'],['DXB',25.20,55.27,'Dubai'],['SYD',-33.87,151.21,'Sydney']];
-    /* 2026-05-25: hide the legacy 6-city button row.  These same 6
-       cities are exposed in the "City presets" optgroup of the unified
+    /* 2026-05-25: aligned with backend SAVED_LOCATIONS starter list so the
+       "City presets" optgroup in the unified dropdown matches the same 11
+       cities the dashboard's weather strip surfaces.  Single source of
+       truth across the dashboard + 3D WX modal. */
+    var locs=[
+        ['ULN', 47.92,  106.92, 'Ulaanbaatar'],
+        ['NYC', 40.71,  -74.01, 'New York'],
+        ['LON', 51.51,   -0.13, 'London'],
+        ['BER', 52.52,   13.40, 'Berlin'],
+        ['YVR', 49.28, -123.12, 'Vancouver'],
+        ['TYO', 35.68,  139.69, 'Tokyo'],
+        ['PEK', 39.91,  116.40, 'Beijing'],
+        ['TPE', 25.03,  121.57, 'Taipei'],
+        ['HKG', 22.32,  114.17, 'Hong Kong'],
+        ['SIN',  1.35,  103.82, 'Singapore'],
+        ['SYD',-33.87,  151.21, 'Sydney'],
+    ];
+    /* 2026-05-25: hide the legacy preset BUTTON row.  These same cities
+       are exposed in the "City presets" optgroup of the unified
        <select id="p3-loc-select"> below, so the button row is purely
        redundant.  We keep the `locs` array because _buildLocSelect()
        reads it to populate the dropdown's "City presets" optgroup. */

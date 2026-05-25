@@ -30,7 +30,7 @@ Decoration of /api/data:
   every 5-8 seconds.
 
 State persistence:
-  /root/data/g36_state.json   -- single JSON file, atomic write.
+  /root/data/configs/g36_state.json   -- single JSON file, atomic write.
   Schema: { <ahu_id>: { mode, mode_reason, cooling_requests, ...,
                         setpoints: {...}, history: [{ts, mode}, ...] } }
 
@@ -569,7 +569,23 @@ def register(app, ctx):
     """Attach G36 routes + wrap telemetry's /api/data."""
     global DATA_ROOT, _STATE_PATH
     DATA_ROOT = ctx['DATA_ROOT']
-    _STATE_PATH = os.path.join(DATA_ROOT, 'g36_state.json')
+    # Persist into /root/data/configs/ alongside the other long-lived
+    # configuration files (collector_config.json, equipment_types.json,
+    # band_guide.csv).  Migration: if a pre-existing g36_state.json sits
+    # at the legacy root path, move it into configs/ on first boot so we
+    # don't lose seeded history.
+    configs_dir = os.path.join(DATA_ROOT, 'configs')
+    try:
+        os.makedirs(configs_dir, exist_ok=True)
+    except OSError:
+        pass
+    legacy_path = os.path.join(DATA_ROOT, 'g36_state.json')
+    _STATE_PATH = os.path.join(configs_dir, 'g36_state.json')
+    if os.path.exists(legacy_path) and not os.path.exists(_STATE_PATH):
+        try:
+            os.replace(legacy_path, _STATE_PATH)
+        except OSError:
+            pass
 
     app.add_url_rule('/api/g36/modes',                 'g36_modes',
                      _route_modes,           methods=['GET'])

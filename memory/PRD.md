@@ -16,6 +16,23 @@
 - `#p3-btn-monthly-sites` textContent = "Monthly × Sites Comparison", visible in T×Time view.
 - Dropdown still shows "Saved locations" optgroup populated from `/api/weather-location`.
 
+### Follow-up bug: stale Monthly × Sites cache after dashboard adds a new location
+
+Reported workflow (operator): saved "Beijing Geriatric Hospital" as UI #1, opened Monthly × Sites, saw it correctly. Returned to dashboard, added a 2nd user-defined location. Reopened Monthly × Sites — chart still showed only `{11 presets + UI #1}`, missing UI #2.
+
+**Root cause**: the msBtn click handler only triggered `_fetchMonthlyAllSites()` when `_monthlyCache` was empty. Once populated on the first open, subsequent toggles never re-checked whether the saved-locations list had changed.
+
+**Fix** (same `psy-3d-engine.js`, in same Phase L.7.2 commit):
+1. Added `_monthlySitesSig` — a module-level signature of the `{saved+presets}` site list at the time the cache was last populated. Format: sorted `"lat2dp,lon2dp|..."`.
+2. Removed the `!Object.keys(_monthlyCache).length` gate from the msBtn handler; it now calls `_fetchMonthlyAllSites()` whenever monthly-sites mode is entered (guarded by `!_monthlyFetching` to avoid double-runs).
+3. Inside `_fetchMonthlyAllSites()`, right after the `sites` array is merged from saved+presets, we compute `newSig`. If it matches `_monthlySitesSig` AND `_monthlyCache` is hot → short-circuit (no spinner flash). If it differs → wipe `_monthlyCache`, `_monthlyPanelRects`, `_monthlyChipRects`, update the signature, and proceed with the full refetch path.
+4. Per-site Open-Meteo hourly data remains cached in `localStorage` keyed by `lat|lon|year`, so only the *newly added* sites incur a WAN round-trip — existing sites repaint instantly.
+
+**Verification (Playwright, mocked `/api/weather-location`)**:
+- 1st MS open with saved=[Beijing Geriatric] → 10 cached sites (Beijing Geriatric ✓, Shanghai ✗)
+- Mock saved list changes to add Shanghai Children's; toggle MS off→on
+- 2nd MS open → 13 cached sites (Beijing Geriatric ✓, Shanghai ✓) — **PASS**
+
 
 ## Phase L.7.1 — 📘 Standards button + extended Docs Index (2026-05-24, late evening)
 

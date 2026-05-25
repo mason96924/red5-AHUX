@@ -1272,6 +1272,13 @@ global.initPsy3D = function(container, opts){
      we only hit Open-Meteo once per session per site. */
   var _monthlyCache = {};
   var _monthlyFetching = false;
+  /* Signature of the {saved + presets} site list at the time _monthlyCache
+     was last populated.  Used by _fetchMonthlyAllSites() to detect when the
+     user has added or removed a saved location on the dashboard since the
+     last open of the Monthly x Sites view, so we can invalidate the band-
+     result cache and re-fetch instead of silently showing a stale set.
+     Format: sorted "lat2dp,lon2dp|lat2dp,lon2dp|..." string. */
+  var _monthlySitesSig = '';
   /* Order in which panels should be drawn \u2014 saved user locations first, then
      presets.  Populated by _fetchMonthlyAllSites after it queries
      /api/weather-location. */
@@ -2943,7 +2950,7 @@ global.initPsy3D = function(container, opts){
     msBtn.style.cssText='position:absolute;top:12px;right:360px;z-index:51;background:rgba(15,23,42,.92);border:1px solid #60a5fa;color:#60a5fa;padding:6px 16px;border-radius:6px;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;backdrop-filter:blur(14px);display:none';
     msBtn.onclick=function(){
       chart2DMode = (chart2DMode==='monthly-sites') ? 'tt' : 'monthly-sites';
-      if(chart2DMode==='monthly-sites' && !Object.keys(_monthlyCache).length && !_monthlyFetching){
+      if(chart2DMode==='monthly-sites' && !_monthlyFetching){
         _fetchMonthlyAllSites();
       }
       msBtn.style.borderColor = (chart2DMode==='monthly-sites') ? '#60a5fa' : '#475569';

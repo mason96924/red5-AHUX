@@ -1,5 +1,22 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+
+## Phase L.7.2 — 🩹 Weather Strip Regression Fix (2026-05-26)
+
+**Brief**: Previous agent edit hid the legacy preset BUTTON row in the 3D WX modal (`#p3-loc-presets`) when adding the 11-city starter list to the dropdown, mistakenly assuming the dropdown made the row redundant. Operators rely on the one-click buttons for quick site-switching when comparing weather across sites side-by-side. This phase reverts that regression.
+
+### What shipped
+- **Restored preset buttons row** in `js/psy-3d-engine.js` around line 1513-1532 with all 11 starter cities (ULN, NYC, LON, BER, YVR, TYO, PEK, TPE, HKG, SIN, SYD). `.p3-presets` CSS already has `flex-wrap:wrap` so the buttons reflow cleanly.
+- **Synchronized `_fetchMonthlyAllSites()` preset list** with the same 11 cities (was a stale 6-city list including Dubai). Now the Monthly × Sites comparison covers the same set as the dropdown + button row.
+- **Clearer label**: "Monthly × Sites" → "Monthly × Sites Comparison" (both in HTML overlay and the JS toggle text).
+- Mirrored to all three copies: `archive/Red5-Studio-V1.9/`, `archive/Red5-Studio-V2.0/`, `frontend/public/`.
+
+### Verification (Playwright)
+- `#p3-loc-presets` renders 11 buttons.
+- `#p3-btn-monthly-sites` textContent = "Monthly × Sites Comparison", visible in T×Time view.
+- Dropdown still shows "Saved locations" optgroup populated from `/api/weather-location`.
+
+
 ## Phase L.7.1 — 📘 Standards button + extended Docs Index (2026-05-24, late evening)
 
 **Brief**: The G36 cross-walk doc (Phase L.7) was sitting in a markdown file on disk with no path to the operator's eyes. Consulting engineers don't poke at a github repo; they expect a button. Shipped that button — and three engineer-credibility docs alongside it — without building any new modal UI from scratch by extending the existing `red5DocsIndex` popup.

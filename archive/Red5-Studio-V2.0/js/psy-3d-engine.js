@@ -607,7 +607,7 @@ global.initPsy3D = function(container, opts){
 <div id="p3-toggles"></div>\
 <div id="p3-ctrls"></div>\
 <div id="p3-stats"><div>Pts: <span class="p3sv" id="p3-st-pts">0</span></div><div>T: <span class="p3sv" id="p3-st-t"></span></div><div>RH: <span class="p3sv" id="p3-st-rh"></span></div><div>Period: <span class="p3sv" id="p3-st-per"></span></div></div>\
-<div id="p3-overlay2d"><canvas id="p3-cv2d"></canvas><button id="p3-btn-back3d">Back to 3D</button><button id="p3-btn-proj-mode">Mode: OA\u2192SA Lines</button><button id="p3-btn-band-strategy">Show B1-B10 Strategy</button><button id="p3-btn-monthly-sites">Monthly \u00d7 Sites</button><button id="p3-btn-ms-fixed">+ Fixed-SA</button><button id="p3-btn-ms-dyn">+ Dyn-Reset</button><button id="p3-btn-ms-band">+ B1-B10</button><button id="p3-btn-ms-banddyn">+ B1-B10 &amp; Dyn-Reset</button><div id="p3-tip2d"></div></div>\
+<div id="p3-overlay2d"><canvas id="p3-cv2d"></canvas><button id="p3-btn-back3d">Back to 3D</button><button id="p3-btn-proj-mode">Mode: OA\u2192SA Lines</button><button id="p3-btn-band-strategy">Show B1-B10 Strategy</button><button id="p3-btn-monthly-sites">Monthly \u00d7 Sites Comparison</button><button id="p3-btn-ms-fixed">+ Fixed-SA</button><button id="p3-btn-ms-dyn">+ Dyn-Reset</button><button id="p3-btn-ms-band">+ B1-B10</button><button id="p3-btn-ms-banddyn">+ B1-B10 &amp; Dyn-Reset</button><div id="p3-tip2d"></div></div>\
 <div id="p3-tip"></div>\
 </div>';
 
@@ -1510,13 +1510,26 @@ global.initPsy3D = function(container, opts){
         ['SIN',  1.35,  103.82, 'Singapore'],
         ['SYD',-33.87,  151.21, 'Sydney'],
     ];
-    /* 2026-05-25: hide the legacy preset BUTTON row.  These same cities
-       are exposed in the "City presets" optgroup of the unified
-       <select id="p3-loc-select"> below, so the button row is purely
-       redundant.  We keep the `locs` array because _buildLocSelect()
-       reads it to populate the dropdown's "City presets" optgroup. */
+    /* 2026-05-26: restored the legacy preset BUTTON row (regression fix).
+       Even though the same cities appear in the "City presets" optgroup
+       of the dropdown, the button row gives operators one-click access
+       to all 11 starter cities without opening the dropdown -- the user
+       relies on that quick-launch behavior, especially when comparing
+       weather across sites side-by-side.  Wrapping is handled by the
+       .p3-presets CSS (flex-wrap:wrap) so 11 buttons reflow cleanly. */
     var lpEl=$('#p3-loc-presets');
-    if (lpEl) lpEl.style.display = 'none';
+    if (lpEl){
+      lpEl.style.display = '';
+      lpEl.innerHTML = '';
+      locs.forEach(function(l){
+        var b=document.createElement('button');
+        b.type='button';
+        b.textContent=l[0];
+        b.title=l[3];
+        b.onclick=function(){applyLocation({lat:l[1],lon:l[2],name:l[3]},{persist:true,fetch:true});};
+        lpEl.appendChild(b);
+      });
+    }
 
     /* ---------- Unified location dropdown ----------
        Combines the operator's saved locations (POST /api/weather-location)
@@ -2935,7 +2948,7 @@ global.initPsy3D = function(container, opts){
       }
       msBtn.style.borderColor = (chart2DMode==='monthly-sites') ? '#60a5fa' : '#475569';
       msBtn.style.color       = (chart2DMode==='monthly-sites') ? '#60a5fa' : '#94a3b8';
-      msBtn.textContent       = (chart2DMode==='monthly-sites') ? 'Back to T\u00d7Time' : 'Monthly \u00d7 Sites';
+      msBtn.textContent       = (chart2DMode==='monthly-sites') ? 'Back to T\u00d7Time' : 'Monthly \u00d7 Sites Comparison';
       // Show/hide the 3 strategy-overlay toggle buttons + hide the T\u00d7Time
       // band-strategy toggle while in Monthly \u00d7 Sites mode (it doesn't apply
       // to the multi-city panel grid).
@@ -5155,14 +5168,22 @@ global.initPsy3D = function(container, opts){
    *  overlay canvas.  Cached per session so repeat clicks don't re-fetch.
    * ==================================================================== */
   function _fetchMonthlyAllSites(){
-    // Preset site list \u2014 kept in sync with the #p3-loc-presets buttons.
+    // Preset site list -- kept in sync with the #p3-loc-presets buttons
+    // and the backend SAVED_LOCATIONS starter list (11 cities).  Single
+    // source of truth across the dashboard strip, the 3D WX dropdown,
+    // and this Monthly x Sites comparison chart.
     var presets=[
-      {code:'NYC', lat:40.71, lon:-74.01, name:'New York',  source:'preset'},
-      {code:'LON', lat:51.51, lon:-0.13,  name:'London',    source:'preset'},
-      {code:'SIN', lat:1.35,  lon:103.82, name:'Singapore', source:'preset'},
-      {code:'TYO', lat:35.68, lon:139.69, name:'Tokyo',     source:'preset'},
-      {code:'DXB', lat:25.20, lon:55.27,  name:'Dubai',     source:'preset'},
-      {code:'SYD', lat:-33.87,lon:151.21, name:'Sydney',    source:'preset'}
+      {code:'ULN', lat: 47.92, lon: 106.92, name:'Ulaanbaatar', source:'preset'},
+      {code:'NYC', lat: 40.71, lon: -74.01, name:'New York',    source:'preset'},
+      {code:'LON', lat: 51.51, lon:  -0.13, name:'London',      source:'preset'},
+      {code:'BER', lat: 52.52, lon:  13.40, name:'Berlin',      source:'preset'},
+      {code:'YVR', lat: 49.28, lon:-123.12, name:'Vancouver',   source:'preset'},
+      {code:'TYO', lat: 35.68, lon: 139.69, name:'Tokyo',       source:'preset'},
+      {code:'PEK', lat: 39.91, lon: 116.40, name:'Beijing',     source:'preset'},
+      {code:'TPE', lat: 25.03, lon: 121.57, name:'Taipei',      source:'preset'},
+      {code:'HKG', lat: 22.32, lon: 114.17, name:'Hong Kong',   source:'preset'},
+      {code:'SIN', lat:  1.35, lon: 103.82, name:'Singapore',   source:'preset'},
+      {code:'SYD', lat:-33.87, lon: 151.21, name:'Sydney',      source:'preset'}
     ];
     _monthlyFetching=true;
     render2DChart(); // loading placeholder

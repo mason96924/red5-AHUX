@@ -356,11 +356,15 @@ def _extract_zip_streaming(zip_path):
                 clean_name = clean_name[len('scripts/'):]
             else:
                 target_root = DATA_ROOT
-                parts = clean_name.split('/')
-                if len(parts) > 1 and parts[0] not in ('js', 'configs', 'graphics', 'assets', 'docs'):
-                    ext0 = os.path.splitext(parts[0])[1]
-                    if not ext0:
-                        clean_name = '/'.join(parts[1:])
+                # NOTE (2026-05-25): the previous "auto-strip unknown
+                # top-level folder" heuristic was deleted because it
+                # silently broke every custom subfolder a user might
+                # create (docs/, images/, floor_plans/, etc.).  Bundles
+                # created by our own `/api/replicate-bundle` already
+                # store paths relative to DATA_ROOT, so the prefix is
+                # always meaningful.  A hand-rolled zip that contains
+                # an extra wrapper folder is the uploader's
+                # responsibility to flatten before bundling.
 
             _, ext = os.path.splitext(clean_name)
             # Defensive: never deploy test files or pyc cache to the

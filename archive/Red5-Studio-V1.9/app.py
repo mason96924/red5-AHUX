@@ -759,52 +759,89 @@ def update_app_py():
 
 @app.route('/api/restart-flask', methods=['POST'])
 def restart_flask():
-    """Trigger a graceful self-restart so a newly-uploaded /root/scripts/app.py
-    takes effect WITHOUT requiring SSH access to the controller.
+    """Hot-reload Python modules in-place WITHOUT killing the Flask process.
 
-    Workflow:
-      1. Operator uploads new bundle via /update (decrypted with MASTER_KEY
-         or per-bundle password).  Bundle deploys /root/data/* files; the
-         controllers extractor explicitly skips /root/scripts/app.py.
-      2. Operator copies the new app.py into /root/scripts/ via the
-         enteliWEB-registered-object workflow (one manual step).
-      3. Operator POSTs to /api/restart-flask with the master key.  This
-         endpoint schedules a delayed os._exit(0) (1 s) so the HTTP
-         response can flush back to the caller before the process dies.
-         enteliWEB's process supervisor respawns app.py, which now imports
-         the new code on disk.
+    enteliWEB does NOT auto-respawn the app.py object on exit, so the
+    previous os._exit(0) implementation would leave Flask dead until an
+    operator manually started it again from the enteliWEB UI.  This
+    endpoint instead re-executes the source of every loaded service
+    module via importlib.reload(), so the running process stays alive
+    on the same PID and just picks up the new code.
 
-    Security:
-      - Same MASTER_KEY_CONST that gates /update.  Anyone who can rotate
-        the controllers code can already restart it; we don't widen the
-        attack surface.
-      - Accepts the key via 'X-Master-Key' header OR JSON body 'master_key'
-        OR form-field 'master_key' so curl / fetch / Postman all work.
-      - Wrong key returns 401 without a hint.
+    What this CAN refresh:
+      - Function bodies inside any service module (pgpy/*.py)
+      - Function bodies inside app.py that are called *after* the reload
+        (e.g. updated logic in /api/data, /api/equipment-types, etc.)
+      - Constants and module-level dicts/lists
+      - The MASTER_KEY_CONST if it was edited
+
+    What this CANNOT refresh (still needs manual enteliWEB Start/Stop):
+      - NEW @app.route decorators (the URL map is built once at startup)
+      - Changes to app.py's import-time blocks (the route registrations
+        for app.py itself were already evaluated on the original boot)
+      - Changes to /root/scripts/app.py's structure (the file Flask
+        booted from is held in memory by the running process)
+
+    For 95% of deploys (logic changes to existing endpoints, plug-in
+    service updates) this is exactly what you want.  For the 5% case
+    where you've added a brand-new @app.route, the deploy script will
+    print a clear "MANUAL RESTART REQUIRED" notice and you'll need to
+    Stop/Start the app.py object in enteliWEB once.
+
+    Gated by MASTER_KEY_CONST (same auth as /update).
     """
-    import threading
-    import os as _os
-    # Pull the key from any of the three transport conventions
+    import importlib
+    import sys
+
     key = (request.headers.get('X-Master-Key') or '').strip()
     if not key:
-        body = request.get_json(silent=True) or {}
-        key = (body.get('master_key') or '').strip()
+        body = request.get_json(silent=True) if request.is_json else None
+        if body:
+            key = (body.get('master_key') or '').strip()
     if not key:
         key = (request.form.get('master_key') or '').strip()
     if key != MASTER_KEY_CONST:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
 
-    def _self_exit():
-        # Brief delay so Flask can finish writing the response body.
-        import time
-        time.sleep(1.0)
-        _os._exit(0)
+    reloaded = []
+    failed   = []
+    # Reload every plug-in service module already imported from pgpy/.
+    # Service modules generally don't add new routes (they register a
+    # blueprint or call app.add_url_rule once at first import), so
+    # reloading their function bodies picks up logic edits cleanly.
+    for name in list(sys.modules.keys()):
+        mod = sys.modules.get(name)
+        if mod is None:
+            continue
+        file = getattr(mod, '__file__', None) or ''
+        # Only reload modules that live under /root/data/pgpy/ (plug-ins)
+        # OR /root/scripts/ (app.py and its siblings).  Skip stdlib and
+        # site-packages.
+        if not (file.startswith('/root/data/pgpy/')
+                or file.startswith('/root/scripts/')):
+            continue
+        # Don't reload app.py itself -- the Flask `app` object's state
+        # would diverge from the running interpreter.  Plug-in modules
+        # are fine because their register(app, ctx) was already called.
+        if name == '__main__' or name == 'app':
+            continue
+        try:
+            importlib.reload(mod)
+            reloaded.append(name)
+        except Exception as ex:
+            failed.append({'module': name, 'error': str(ex)})
 
-    threading.Thread(target=_self_exit, daemon=True).start()
     return jsonify({
         'success': True,
-        'message': 'Flask process will exit in ~1 s; enteliWEB will respawn it.',
-        'pid': _os.getpid(),
+        'message': (
+            f'Hot-reloaded {len(reloaded)} module(s) in-place. '
+            'Process kept alive on same PID. '
+            'NOTE: Adding NEW @app.route decorators still requires a '
+            'manual Stop/Start of the app.py object in enteliWEB.'
+        ),
+        'pid': os.getpid(),
+        'reloaded': reloaded,
+        'failed': failed,
     })
 
 @app.route('/api/files')

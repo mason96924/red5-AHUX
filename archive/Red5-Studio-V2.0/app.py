@@ -725,33 +725,53 @@ def update_app_py():
 
 @app.route('/api/restart-flask', methods=['POST'])
 def restart_flask():
-    """Trigger a graceful self-restart so a newly-uploaded /root/scripts/app.py
-    takes effect WITHOUT requiring SSH access to the controller.
-
-    Gated by the same MASTER_KEY_CONST that authorises /update.  See the
-    V1.9 sibling for full design notes.
+    """Hot-reload Python modules in-place WITHOUT killing the Flask process.
+    See V1.9 sibling for full design notes.  enteliWEB does NOT auto-respawn
+    the app.py object on exit, so the previous os._exit approach left Flask
+    dead until manual intervention.
     """
-    import threading
-    import os as _os
+    import importlib
+    import sys
+
     key = (request.headers.get('X-Master-Key') or '').strip()
     if not key:
-        body = request.get_json(silent=True) or {}
-        key = (body.get('master_key') or '').strip()
+        body = request.get_json(silent=True) if request.is_json else None
+        if body:
+            key = (body.get('master_key') or '').strip()
     if not key:
         key = (request.form.get('master_key') or '').strip()
     if key != MASTER_KEY_CONST:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
 
-    def _self_exit():
-        import time
-        time.sleep(1.0)
-        _os._exit(0)
+    reloaded = []
+    failed   = []
+    for name in list(sys.modules.keys()):
+        mod = sys.modules.get(name)
+        if mod is None:
+            continue
+        file = getattr(mod, '__file__', None) or ''
+        if not (file.startswith('/root/data/pgpy/')
+                or file.startswith('/root/scripts/')):
+            continue
+        if name == '__main__' or name == 'app':
+            continue
+        try:
+            importlib.reload(mod)
+            reloaded.append(name)
+        except Exception as ex:
+            failed.append({'module': name, 'error': str(ex)})
 
-    threading.Thread(target=_self_exit, daemon=True).start()
     return jsonify({
         'success': True,
-        'message': 'Flask process will exit in ~1 s; supervisor will respawn it.',
-        'pid': _os.getpid(),
+        'message': (
+            f'Hot-reloaded {len(reloaded)} module(s) in-place. '
+            'Process kept alive on same PID. '
+            'NOTE: Adding NEW @app.route decorators still requires a '
+            'manual Stop/Start of the app.py object in enteliWEB.'
+        ),
+        'pid': os.getpid(),
+        'reloaded': reloaded,
+        'failed': failed,
     })
 
 @app.route('/api/files')

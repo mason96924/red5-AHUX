@@ -134,9 +134,9 @@ deploy_one() {
     echo "    [2/3] skipped (--no-app-py)"
   fi
 
-  # 3) Restart Flask
+  # 3) Hot-reload Flask modules (does NOT kill the process)
   if [[ $DO_RESTART -eq 1 ]]; then
-    echo "    [3/3] restarting Flask"
+    echo "    [3/3] hot-reloading Flask modules"
     http=$(curl -sS -o /tmp/red5_restart.json -w "%{http_code}" \
       -X POST \
       -H "X-Master-Key: $MASTER_KEY" \
@@ -144,18 +144,17 @@ deploy_one() {
     if [[ "$http" != "200" ]]; then
       echo "    HTTP $http"; cat /tmp/red5_restart.json; echo; return 1
     fi
-    python3 -c "import json; d=json.load(open('/tmp/red5_restart.json')); print('   ', 'ok' if d.get('success') else 'FAIL', '-', d.get('message') or d.get('error'))"
-    echo "    waiting 3 s for respawn..."
-    sleep 3
-    # Verify the controller is back up by hitting /api/version
+    python3 -c "import json; d=json.load(open('/tmp/red5_restart.json')); print('   ', 'ok' if d.get('success') else 'FAIL', '-', len(d.get('reloaded') or []), 'modules reloaded'); fl=d.get('failed') or []; [print('    !! failed to reload:', f) for f in fl]"
+    # /api/restart-flask reloads in-place (no process exit), so /api/version
+    # should respond immediately -- no wait, no respawn delay.
     http=$(curl -sS -o /tmp/red5_ver.json -w "%{http_code}" "$base/api/version" || echo 000)
     if [[ "$http" == "200" ]]; then
-      echo "    /api/version returns 200 -- controller is back up."
+      echo "    /api/version returns 200 -- modules reloaded, process alive."
     else
-      echo "    WARNING: /api/version returned $http after restart."
-      echo "    If this persists, the new app.py may have an import-time error."
-      echo "    Recover by SSH/console: cp /root/scripts/app.py.bak /root/scripts/app.py"
+      echo "    WARNING: /api/version returned $http after reload."
     fi
+    echo "    NOTE: NEW @app.route decorators (rare) need a manual"
+    echo "          Stop/Start of the app.py object in enteliWEB to register."
   else
     echo "    [3/3] skipped (--no-restart)"
   fi

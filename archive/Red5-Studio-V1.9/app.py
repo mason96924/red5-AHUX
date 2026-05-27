@@ -372,9 +372,39 @@ def get_assets():
                         result['generic'] = f"/assets/{rel}"
         return result
 
+    def find_all_vav_images():
+        """Find every image under graphics/equipments/VAVs/ and key it by
+        filename so the dashboard can resolve `base_graphic` even when the
+        schema stores only the bare filename (parity with AHU discovery).
+
+        Also walks the whole tree as a fallback so older deploys with
+        flat layouts still resolve.  Returns {filename: '/assets/<rel>'}.
+        """
+        base = '/root/data'
+        vav_dir = os.path.join(base, 'graphics', 'equipments', 'VAVs')
+        result = {}
+        exts = ('.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp')
+        if os.path.isdir(vav_dir):
+            for f in os.listdir(vav_dir):
+                if f.lower().endswith(exts):
+                    rel = os.path.relpath(os.path.join(vav_dir, f), base)
+                    result[f] = f"/assets/{rel}"
+                    debug_info.append(f"VAV GRAPHIC: '{f}' at {vav_dir}")
+        # Fallback: any *vav*graphic*.jpg anywhere under /root/data
+        if not result:
+            for dirpath, _dirs, filenames in os.walk(base):
+                for f in filenames:
+                    fl = f.lower()
+                    if fl.endswith(exts) and 'vav' in fl and 'graphic' in fl:
+                        rel = os.path.relpath(os.path.join(dirpath, f), base)
+                        result[f] = f"/assets/{rel}"
+                        debug_info.append(f"VAV GRAPHIC (loose): '{f}' at {dirpath}")
+        return result
+
     vav_file = find_image(['vav_graphic'])
     floor_file = find_image(['floor_plan', 'floorplan'])
     ahu_images = find_all_ahu_images()
+    vav_images = find_all_vav_images()
 
     # Backward compat: also provide single ahu field (generic or type_1)
     ahu_file = None
@@ -386,12 +416,14 @@ def get_assets():
     if not vav_file: debug_info.append("WARNING: vav_graphic not found.")
     if not floor_file: debug_info.append("WARNING: floor_plan not found.")
     if not ahu_images: debug_info.append("WARNING: no ahu_type_N images found. Name files: ahu_type_1.jpg, ahu_type_2.jpg, etc.")
+    if not vav_images: debug_info.append("WARNING: no VAV graphics found under /root/data/graphics/equipments/VAVs/.")
 
     return jsonify({
         "vav": f"/assets/{vav_file}" if vav_file else None,
         "floor": f"/assets/{floor_file}" if floor_file else None,
         "ahu": ahu_file,
         "ahu_types": ahu_images,
+        "vav_types": vav_images,
         "debug": "\n".join(debug_info)
     })
 

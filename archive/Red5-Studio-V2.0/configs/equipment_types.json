@@ -3544,7 +3544,7 @@
         "Sp"
       ],
       "visual_assets": {
-        "base_graphic": "vav_graphic.jpg",
+        "base_graphic": "graphics/equipments/VAVs/vav_graphic.jpg",
         "animations": [
           {
             "element_id": "damper_blade",
@@ -3739,7 +3739,7 @@
         "T_Sp"
       ],
       "visual_assets": {
-        "base_graphic": "vav_fan_graphic.jpg",
+        "base_graphic": "graphics/equipments/VAVs/vav_fan_graphic.jpg",
         "animations": [
           {
             "element_id": "fan_rotor",
@@ -3838,7 +3838,7 @@
         "T_Sp"
       ],
       "visual_assets": {
-        "base_graphic": "vav_lab_graphic.jpg",
+        "base_graphic": "graphics/equipments/VAVs/vav_lab_graphic.jpg",
         "animations": [
           {
             "element_id": "damper_blade",

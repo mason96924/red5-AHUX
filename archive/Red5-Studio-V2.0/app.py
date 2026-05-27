@@ -727,10 +727,12 @@ def upload_file():
         file_data = data.get('file_data', '')
         if not file_data:
             return jsonify({'success': False, 'error': 'No file data'}), 400
-        # Ensure parent directory exists
+        # Auto-create parent directory if missing -- matches /api/save-image
+        # behavior so that operators who wipe /root/data/graphics/ (or any
+        # subtree) and re-upload from scratch don't have to manually
+        # pre-create every subdirectory.
         parent = os.path.dirname(filepath)
-        if not os.path.isdir(parent):
-            return jsonify({'success': False, 'error': f'Directory does not exist: {os.path.dirname(filename)}'}), 400
+        os.makedirs(parent, exist_ok=True)
         if ',' in file_data:
             raw = file_data.split(',', 1)[1]
         else:

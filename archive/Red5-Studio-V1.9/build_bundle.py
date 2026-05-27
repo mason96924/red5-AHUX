@@ -47,20 +47,47 @@ ROOT_FILES = [
     'psy_3d.html',
     'sun_preview.html',
     'deepdive.html',
+    'ahu.html',                 # 2026-05-27: per-AHU performance detail page
+    # NOTE: command-center.html (4-controller fleet view via iframes to
+    # cN.geniusmason.com) is V2.0-only -- it embeds external subdomains
+    # that the controllers themselves don't need to host.  Excluded.
 
     # Markdown guides.
     'band_guide.md',
+    'band_guide.ja.md',
+    'band_guide.ko.md',
+    'band_guide.zh-CN.md',
+    'band_guide.zh-TW.md',
     'data_bridges_guide.md',
     'control_algorithms.md',
     'control_strategy_insight.md',
     'control_strategy_insight.ko.md',
     'opt_sa_insight.md',
+    'erv_band_shift_insight.md',
+    'erv_band_shift_insight.ja.md',
+    'erv_band_shift_insight.ko.md',
+    'erv_band_shift_insight.zh-CN.md',
+    'erv_band_shift_insight.zh-TW.md',
+    'psychrometric_design_workflow.md',
+    'psychrometric_design_workflow.ja.md',
+    'psychrometric_design_workflow.ko.md',
+    'psychrometric_design_workflow.zh-CN.md',
+    'psychrometric_design_workflow.zh-TW.md',
+    'g36_reset.md',
+    'g36_reset.ja.md',
+    'g36_reset.ko.md',
+    'g36_reset.zh-CN.md',
+    'g36_reset.zh-TW.md',
+
+    # G36 service module (ported from V2.0).
+    'g36_service.py',
 ]
 
 # Subdir trees to include verbatim.
 SUBDIR_TREES = [
     'js',
     'configs',
+    'docs',                     # 2026-05-27: docs/ now mirrored from V2.0 (inline-help md, runbooks)
 ]
 
 # Everything in this skip-list (relative to repo root) is excluded even if

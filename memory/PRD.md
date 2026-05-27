@@ -1,6 +1,32 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
 
+## Phase L.8 — 📊 Per-AHU Performance Detail Page (2026-05-27)
+
+**Brief**: New drill-down detail page for any AHU in the fleet. Engineers click `DETAIL ↗` on an AHU card in the main dashboard (or hit a direct URL like `/ahu.html?id=AHU-01-E`) and get a single page with live state, G36 status, request counters, trim-and-respond resets, multi-panel time-series trends, mode timeline ribbon, and a VAV zones table — all polling on a 10 s cadence for live KPIs and 60 s for trend charts.
+
+### Shipped — Phase 1 (P1 of 3-phase delivery)
+- **Backend**: new `GET /api/ahu-history/{ahu_id}?window_min=...&step_s=...` synthesises per-AHU SA/RA temp+RH, OA temp+RH, SA humidity ratio, and airflow-% time series. Window 15 min – 30 days, step 15 s – 15 min. Deterministic seed by `(ahu_id, ts)` so reloads show identical curves; ready to swap to a real Mongo telemetry query in Phase 4 without frontend changes.
+- **Frontend**: new `/app/frontend/public/ahu.html` (vanilla JS, IIFE, ~340 LOC). Sections:
+  - Header: breadcrumb back to fleet, AHU title, zone count, "live · just now" badge that pulses green
+  - KPI row 1: G36 mode badge (color-coded) + reason + Cooling/Heating/Pressure request counts
+  - KPI row 2: SA temp, SA RH, SAT-Reset target, DSP-Reset target
+  - Time-range picker: 1H / 6H / 24H (default) / 7D / 30D / custom minutes
+  - 4 trend charts: SA temp, SA RH, airflow %, RA temp — SVG polylines with min/max labels and a live-edge dot
+  - G36 operating-mode timeline ribbon with color legend
+  - VAV zones table: per-zone temp, RH, setpoint, damper %, supply temp, airflow status, state pill (OK / COOL / HEAT)
+- **Drill-through wire**: each AHU card in `dashboard.html` now renders a `DETAIL ↗` button next to the AHU id; clicks open `/ahu.html?id={ahu_id}` in a new tab with `e.stopPropagation()` so the card-select behaviour is preserved.
+
+### Verification (Playwright)
+- `/ahu.html?id=AHU-01-E` returns: title="AHU AHU-01-E", mode="OCCUPIED", cooling=2, heating=7, SAT-reset=12.0°C, zoneRows=6, chartCount=4, refresh="live · just now", active range="24H".
+- Main dashboard renders 3 DETAIL ↗ buttons (one per AHU), first href = `/ahu.html?id=AHU-01-E`.
+
+### Pending — Phases 2 & 3
+- **P2 next session**: KPI tiles for uptime %, mode-hours-today (e.g. "12.4 h occupied"), Comfort-Zone compliance %; audit log of recent setpoint changes for this AHU.
+- **P3 next session**: 10-band guide CSV table with the current operating band highlighted; equipment-mapper graphic embed showing the AHU's floor-plan markers.
+
+
+
 ## Phase L.7.2 — 🩹 Weather Strip Regression Fix (2026-05-26)
 
 **Brief**: Previous agent edit hid the legacy preset BUTTON row in the 3D WX modal (`#p3-loc-presets`) when adding the 11-city starter list to the dropdown, mistakenly assuming the dropdown made the row redundant. Operators rely on the one-click buttons for quick site-switching when comparing weather across sites side-by-side. This phase reverts that regression.

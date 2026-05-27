@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Per-AHU Performance</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#0b0f1a;color:#e2e8f0;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.4}
+  a{color:#34d399;text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* ===== header ===== */
+  header{padding:.7rem 1rem;background:#070a13;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:1.2rem;font-size:12px;letter-spacing:.12em}
+  header .crumb{color:#94a3b8}
+  header h1{font-size:14px;font-weight:900;color:#34d399;letter-spacing:.22em}
+  header .refresh{margin-left:auto;color:#475569;font-size:11px;display:flex;align-items:center;gap:.5rem}
+  header .refresh .dot{width:8px;height:8px;border-radius:50%;background:#475569;animation:pulse 2s infinite}
+  header .refresh.live .dot{background:#34d399}
+  @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+
+  /* ===== layout ===== */
+  .wrap{padding:1rem;display:flex;flex-direction:column;gap:1rem;max-width:1600px;margin:0 auto}
+  .row{display:grid;gap:1rem}
+  .row.k4{grid-template-columns:repeat(4,1fr)}
+  .row.k2{grid-template-columns:repeat(2,1fr)}
+  @media (max-width:900px){.row.k4,.row.k2{grid-template-columns:1fr 1fr}}
+  @media (max-width:600px){.row.k4,.row.k2{grid-template-columns:1fr}}
+
+  /* ===== panels ===== */
+  .panel{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:1rem}
+  .panel h2{font-size:10px;font-weight:900;letter-spacing:.25em;color:#34d399;margin-bottom:.8rem;text-transform:uppercase}
+  .panel .sub{font-size:10px;color:#64748b;letter-spacing:.15em}
+
+  /* ===== KPI tiles ===== */
+  .kpi .v{font-size:28px;font-weight:900;color:#e2e8f0;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+  .kpi .u{font-size:11px;color:#64748b;letter-spacing:.2em;margin-top:.2rem}
+  .kpi.mode .v{font-size:18px;color:#34d399;text-transform:uppercase;letter-spacing:.18em}
+
+  /* ===== mode chip colors ===== */
+  .mode-occupied{color:#34d399}
+  .mode-warmup,.mode-cooldown{color:#fbbf24}
+  .mode-setback,.mode-setup,.mode-unoccupied{color:#94a3b8}
+  .mode-freezeprotect{color:#60a5fa}
+  .mode-fault{color:#f87171}
+
+  /* ===== time picker ===== */
+  .picker{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center}
+  .picker button{background:#0b0f1a;color:#94a3b8;border:1px solid #334155;padding:.4rem .8rem;font:inherit;font-size:10px;letter-spacing:.15em;cursor:pointer;border-radius:3px;text-transform:uppercase}
+  .picker button:hover{color:#34d399;border-color:#34d399}
+  .picker button.active{background:#064e3b;color:#34d399;border-color:#34d399}
+  .picker .custom{display:flex;gap:.3rem;margin-left:auto;font-size:10px;color:#64748b;align-items:center}
+  .picker input[type=number]{width:5rem;background:#0b0f1a;color:#e2e8f0;border:1px solid #334155;padding:.3rem .5rem;font:inherit;font-size:11px;border-radius:3px}
+
+  /* ===== trend chart ===== */
+  .chart-wrap{position:relative;height:140px;background:#0b0f1a;border:1px solid #1e293b;border-radius:4px;overflow:hidden}
+  .chart-wrap svg{width:100%;height:100%;display:block}
+  .chart-title{font-size:10px;font-weight:900;letter-spacing:.2em;color:#94a3b8;margin-bottom:.4rem;text-transform:uppercase;display:flex;justify-content:space-between;align-items:baseline}
+  .chart-title .min,.chart-title .max{color:#475569;font-size:9px;letter-spacing:.15em}
+
+  /* ===== zones table ===== */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{font-size:9px;font-weight:900;letter-spacing:.2em;color:#475569;text-align:left;padding:.5rem .6rem;border-bottom:1px solid #1e293b;text-transform:uppercase}
+  td{padding:.5rem .6rem;border-bottom:1px solid #1e293b;color:#cbd5e1;font-variant-numeric:tabular-nums}
+  tr:hover td{background:#0b1426}
+  .pill{display:inline-block;padding:.15rem .5rem;border-radius:2px;font-size:9px;font-weight:900;letter-spacing:.15em;text-transform:uppercase}
+  .pill.cool{background:rgba(59,130,246,.15);color:#60a5fa}
+  .pill.heat{background:rgba(251,191,36,.15);color:#fbbf24}
+  .pill.press{background:rgba(168,85,247,.15);color:#c084fc}
+  .pill.ok{background:rgba(52,211,153,.1);color:#34d399}
+
+  /* ===== mode timeline ribbon ===== */
+  .ribbon{height:36px;background:#0b0f1a;border:1px solid #1e293b;border-radius:4px;overflow:hidden;position:relative;display:flex}
+  .ribbon .seg{flex:1;border-right:1px solid #0b0f1a}
+  .ribbon .seg:last-child{border-right:none}
+  .ribbon .legend{display:flex;gap:.8rem;margin-top:.5rem;font-size:9px;letter-spacing:.15em;color:#64748b;flex-wrap:wrap}
+  .ribbon .legend span{display:flex;align-items:center;gap:.3rem}
+  .ribbon .legend i{width:10px;height:10px;display:inline-block;border-radius:2px}
+
+  /* ===== loading / empty ===== */
+  .loading{padding:1rem;color:#64748b;text-align:center;font-size:11px;letter-spacing:.15em;text-transform:uppercase}
+  .empty{padding:1rem;color:#475569;text-align:center;font-size:11px}
+  .err{padding:1rem;color:#f87171;text-align:center;font-size:11px;letter-spacing:.1em}
+
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/dashboard.html" class="crumb" data-testid="ahu-back-link">← FLEET</a>
+  <h1 id="ahu-title" data-testid="ahu-title">AHU —</h1>
+  <span class="crumb" id="ahu-zones-count"></span>
+  <div class="refresh" id="refresh-badge" data-testid="ahu-refresh-badge">
+    <span class="dot"></span><span id="refresh-text">connecting…</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- KPI row: mode + 3 request counters + 2 reset values -->
+  <div class="row k4">
+    <div class="panel kpi mode" data-testid="ahu-kpi-mode">
+      <h2>G36 Mode</h2>
+      <div class="v" id="kpi-mode">—</div>
+      <div class="u" id="kpi-mode-reason">—</div>
+    </div>
+    <div class="panel kpi" data-testid="ahu-kpi-cooling">
+      <h2>Cooling Requests</h2>
+      <div class="v" id="kpi-cooling">—</div>
+      <div class="u">from VAV zones</div>
+    </div>
+    <div class="panel kpi" data-testid="ahu-kpi-heating">
+      <h2>Heating Requests</h2>
+      <div class="v" id="kpi-heating">—</div>
+      <div class="u">from VAV zones</div>
+    </div>
+    <div class="panel kpi" data-testid="ahu-kpi-pressure">
+      <h2>Pressure Requests</h2>
+      <div class="v" id="kpi-pressure">—</div>
+      <div class="u">duct static</div>
+    </div>
+  </div>
+
+  <!-- Live state strip: SA / RA / SAT-reset / DSP-reset -->
+  <div class="row k4">
+    <div class="panel kpi"><h2>Supply Air Temp</h2><div class="v" id="kpi-sa-t">—</div><div class="u">°C</div></div>
+    <div class="panel kpi"><h2>Supply Air RH</h2><div class="v" id="kpi-sa-rh">—</div><div class="u">%</div></div>
+    <div class="panel kpi"><h2>SAT Reset (Trim&Respond)</h2><div class="v" id="kpi-sat-reset">—</div><div class="u">°C target</div></div>
+    <div class="panel kpi"><h2>DSP Reset (Trim&Respond)</h2><div class="v" id="kpi-dsp-reset">—</div><div class="u">Pa target</div></div>
+  </div>
+
+  <!-- Time-range picker -->
+  <div class="panel">
+    <h2>Time Range</h2>
+    <div class="picker">
+      <button data-window="60"    data-testid="ahu-range-1h">1H</button>
+      <button data-window="360"   data-testid="ahu-range-6h">6H</button>
+      <button data-window="1440"  data-testid="ahu-range-24h" class="active">24H</button>
+      <button data-window="10080" data-testid="ahu-range-7d">7D</button>
+      <button data-window="43200" data-testid="ahu-range-30d">30D</button>
+      <div class="custom">
+        Custom: <input type="number" id="custom-min" min="15" max="43200" placeholder="minutes">
+        <button id="custom-apply" data-testid="ahu-range-custom-apply">APPLY</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 trend charts: SA temp, SA RH, airflow -->
+  <div class="row k2">
+    <div class="panel">
+      <div class="chart-title"><span>Supply Air Temperature (°C)</span><span><span class="min" id="ch1-min"></span> · <span class="max" id="ch1-max"></span></span></div>
+      <div class="chart-wrap" data-testid="ahu-chart-sa-temp"><svg id="ch1" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="chart-title"><span>Supply Air Relative Humidity (%)</span><span><span class="min" id="ch2-min"></span> · <span class="max" id="ch2-max"></span></span></div>
+      <div class="chart-wrap" data-testid="ahu-chart-sa-rh"><svg id="ch2" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
+    </div>
+  </div>
+  <div class="row k2">
+    <div class="panel">
+      <div class="chart-title"><span>Airflow (% of design)</span><span><span class="min" id="ch3-min"></span> · <span class="max" id="ch3-max"></span></span></div>
+      <div class="chart-wrap" data-testid="ahu-chart-airflow"><svg id="ch3" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
+    </div>
+    <div class="panel">
+      <div class="chart-title"><span>Return Air Temperature (°C)</span><span><span class="min" id="ch4-min"></span> · <span class="max" id="ch4-max"></span></span></div>
+      <div class="chart-wrap" data-testid="ahu-chart-ra-temp"><svg id="ch4" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
+    </div>
+  </div>
+
+  <!-- G36 Mode Timeline ribbon -->
+  <div class="panel">
+    <h2>Operating Mode Timeline · 24h</h2>
+    <div class="ribbon" id="mode-ribbon" data-testid="ahu-mode-ribbon"></div>
+    <div class="legend">
+      <span><i style="background:#34d399"></i>Occupied</span>
+      <span><i style="background:#fbbf24"></i>Warmup/Cooldown</span>
+      <span><i style="background:#94a3b8"></i>Setback/Unoccupied</span>
+      <span><i style="background:#60a5fa"></i>Freeze-Protect</span>
+      <span><i style="background:#f87171"></i>Fault</span>
+    </div>
+  </div>
+
+  <!-- VAV / zones breakdown table -->
+  <div class="panel">
+    <h2>VAV Zones · <span id="zone-count" style="color:#64748b">—</span> Served by this AHU</h2>
+    <table data-testid="ahu-zones-table">
+      <thead>
+        <tr>
+          <th>Zone</th>
+          <th>Temp</th><th>RH</th><th>Setpoint</th>
+          <th>Damper</th><th>Sup Temp</th><th>Airflow</th>
+          <th>State</th>
+        </tr>
+      </thead>
+      <tbody id="zone-tbody"><tr><td colspan="8" class="loading">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  // ----- helpers -----
+  var $ = function(id){ return document.getElementById(id); };
+  var url = new URL(location.href);
+  var ahuId = url.searchParams.get('id') || '';
+  if(!ahuId){
+    document.body.innerHTML = '<div style="padding:2rem;font-family:monospace;color:#f87171"><h1>Missing ?id=AHU-ID URL parameter</h1><p style="margin-top:1rem"><a href="/dashboard.html" style="color:#34d399">← Back to fleet</a></p></div>';
+    return;
+  }
+  $('ahu-title').textContent = 'AHU ' + ahuId;
+  document.title = ahuId + ' · Performance';
+
+  var windowMin = 1440;          // default 24h
+  var stepS     = 60;            // recompute below based on windowMin
+  var POLL_MS   = 10000;         // 10-second poll for live KPIs
+  var TREND_REFRESH_MS = 60000;  // 60-second refresh for trend charts (cheaper)
+  var lastTrendTs = 0;
+
+  function colorForMode(m){
+    if(!m) return '#475569';
+    if(m==='occupied') return '#34d399';
+    if(m==='warmup'||m==='cooldown') return '#fbbf24';
+    if(m==='setback'||m==='setup'||m==='unoccupied') return '#94a3b8';
+    if(m==='freezeprotect') return '#60a5fa';
+    if(m==='fault') return '#f87171';
+    return '#64748b';
+  }
+
+  // ----- polling logic for /api/data (live state + zones) -----
+  function applyLive(ahu){
+    var g = ahu.g36 || {};
+    $('kpi-mode').textContent = (g.mode||'—').toUpperCase();
+    $('kpi-mode').className = 'v';
+    $('kpi-mode').style.color = colorForMode(g.mode);
+    $('kpi-mode-reason').textContent = g.mode_reason || '—';
+    $('kpi-cooling').textContent  = (g.cooling_requests  != null) ? g.cooling_requests  : '—';
+    $('kpi-heating').textContent  = (g.heating_requests  != null) ? g.heating_requests  : '—';
+    $('kpi-pressure').textContent = (g.pressure_requests != null) ? g.pressure_requests : '—';
+    $('kpi-sat-reset').textContent = (g.sat_reset_c  != null) ? Number(g.sat_reset_c ).toFixed(1) : '—';
+    $('kpi-dsp-reset').textContent = (g.dsp_reset_pa != null) ? Number(g.dsp_reset_pa).toFixed(0) : '—';
+
+    // SA temp/RH come from the AHU points array, point.label === 'SA'
+    var sa = (ahu.points||[]).find(function(p){ return p.label==='SA'; });
+    if(sa){
+      $('kpi-sa-t' ).textContent = (sa.t  != null) ? Number(sa.t ).toFixed(1) : '—';
+      $('kpi-sa-rh').textContent = (sa.rh != null) ? Number(sa.rh).toFixed(0) : '—';
+    }
+
+    // VAV zones table
+    var vavs = ahu.vavs || [];
+    $('zone-count').textContent = vavs.length;
+    $('ahu-zones-count').textContent = '· ' + vavs.length + ' zones';
+    if(vavs.length === 0){
+      $('zone-tbody').innerHTML = '<tr><td colspan="8" class="empty">No VAV zones reported for this AHU</td></tr>';
+    } else {
+      $('zone-tbody').innerHTML = vavs.map(function(v){
+        var state = 'OK', cls = 'ok';
+        // Mirror G36 request-counter rules so the operator sees WHY a zone is contributing.
+        if(v.t < 21){ state = 'HEAT'; cls = 'heat'; }
+        if(v.t > 24){ state = 'COOL'; cls = 'cool'; }
+        return '<tr>'
+          + '<td><b style="color:#e2e8f0">' + v.id + '</b></td>'
+          + '<td>' + (v.t  != null ? Number(v.t ).toFixed(1) + ' °C' : '—') + '</td>'
+          + '<td>' + (v.rh != null ? Number(v.rh).toFixed(0) + ' %'  : '—') + '</td>'
+          + '<td>' + (v.zsp != null ? Number(v.zsp).toFixed(1) + ' °C' : '—') + '</td>'
+          + '<td>' + (v.dpr != null ? Number(v.dpr).toFixed(0) + ' %' : '—') + '</td>'
+          + '<td>' + (v.vst != null ? Number(v.vst).toFixed(1) + ' °C' : '—') + '</td>'
+          + '<td>' + (v.afm != null ? (v.afm > 0 ? 'ON' : 'OFF') : '—') + '</td>'
+          + '<td><span class="pill ' + cls + '">' + state + '</span></td>'
+          + '</tr>';
+      }).join('');
+    }
+  }
+
+  async function pollLive(){
+    try {
+      var r = await fetch('/api/data', {credentials:'include'});
+      var d = await r.json();
+      var ahus = Array.isArray(d) ? d : (d.ahus || []);
+      var ahu = ahus.find(function(a){ return a.id === ahuId; });
+      if(!ahu){
+        $('zone-tbody').innerHTML = '<tr><td colspan="8" class="err">AHU "' + ahuId + '" not found in fleet snapshot</td></tr>';
+        $('refresh-text').textContent = 'AHU not found';
+        $('refresh-badge').classList.remove('live');
+        return;
+      }
+      applyLive(ahu);
+      $('refresh-text').textContent = 'live · just now';
+      $('refresh-badge').classList.add('live');
+      // After "just now" decay the timer until the next poll
+      setTimeout(function(){ $('refresh-text').textContent = 'live · ~5s ago'; }, 5000);
+    } catch(e){
+      $('refresh-text').textContent = 'error: ' + e.message;
+      $('refresh-badge').classList.remove('live');
+    }
+  }
+
+  // ----- trend-history charts -----
+  function drawLine(svgId, samples, accessor, color, lo, hi){
+    var svg = document.getElementById(svgId);
+    if(!svg) return;
+    svg.innerHTML = '';
+    if(!samples.length) return;
+    var w = 600, h = 140, pad = 4;
+    var minY = Infinity, maxY = -Infinity;
+    samples.forEach(function(s){ var v = accessor(s); if(v < minY) minY=v; if(v > maxY) maxY=v; });
+    if(lo != null && lo < minY) minY = lo;
+    if(hi != null && hi > maxY) maxY = hi;
+    if(minY === maxY){ minY -= 1; maxY += 1; }
+    // gridlines
+    for(var g=0; g<4; g++){
+      var gy = pad + (h - 2*pad) * g / 3;
+      svg.insertAdjacentHTML('beforeend',
+        '<line x1="0" x2="' + w + '" y1="' + gy + '" y2="' + gy + '" stroke="#1e293b" stroke-width="0.5"/>');
+    }
+    // line path
+    var pts = samples.map(function(s, i){
+      var x = (i / (samples.length - 1)) * w;
+      var y = h - pad - ((accessor(s) - minY) / (maxY - minY)) * (h - 2*pad);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    svg.insertAdjacentHTML('beforeend',
+      '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.5"/>');
+    // dot at latest sample
+    var last = samples[samples.length - 1];
+    var lx = w;
+    var ly = h - pad - ((accessor(last) - minY) / (maxY - minY)) * (h - 2*pad);
+    svg.insertAdjacentHTML('beforeend',
+      '<circle cx="' + (lx-2) + '" cy="' + ly + '" r="3" fill="' + color + '"/>');
+    return { min: minY, max: maxY };
+  }
+
+  async function fetchTrend(){
+    try {
+      // Auto-pick step: keep total samples reasonable (~120 plot points)
+      var stepS = Math.max(60, Math.round(windowMin * 60 / 120));
+      var r = await fetch('/api/ahu-history/' + encodeURIComponent(ahuId) + '?window_min=' + windowMin + '&step_s=' + stepS, {credentials:'include'});
+      var d = await r.json();
+      var samples = d.samples || [];
+      var c1 = drawLine('ch1', samples, function(s){ return s.sa_t;  }, '#34d399');
+      var c2 = drawLine('ch2', samples, function(s){ return s.sa_rh; }, '#60a5fa');
+      var c3 = drawLine('ch3', samples, function(s){ return s.airflow_pct; }, '#fbbf24');
+      var c4 = drawLine('ch4', samples, function(s){ return s.ra_t;  }, '#a78bfa');
+      if(c1){ $('ch1-min').textContent = c1.min.toFixed(1) + '°C'; $('ch1-max').textContent = c1.max.toFixed(1) + '°C'; }
+      if(c2){ $('ch2-min').textContent = c2.min.toFixed(0) + '%';  $('ch2-max').textContent = c2.max.toFixed(0) + '%'; }
+      if(c3){ $('ch3-min').textContent = c3.min.toFixed(0) + '%';  $('ch3-max').textContent = c3.max.toFixed(0) + '%'; }
+      if(c4){ $('ch4-min').textContent = c4.min.toFixed(1) + '°C'; $('ch4-max').textContent = c4.max.toFixed(1) + '°C'; }
+    } catch(e){
+      console.warn('[ahu] trend fetch failed:', e);
+    }
+  }
+
+  // ----- G36 mode timeline ribbon (24h) -----
+  async function fetchModeRibbon(){
+    try {
+      var r = await fetch('/api/g36/history/' + encodeURIComponent(ahuId) + '?minutes=' + Math.min(windowMin, 1440), {credentials:'include'});
+      var d = await r.json();
+      var trans = d.transitions || [];
+      var ribbon = $('mode-ribbon');
+      if(!trans.length){
+        ribbon.innerHTML = '<div class="empty" style="padding:.7rem">No transitions yet · mode = <b style="color:#34d399">' + (d.current_mode||'—').toUpperCase() + '</b></div>';
+        return;
+      }
+      // Build segments. Each transition entry shape: {ts, mode}
+      // We synthesize block widths in proportion to dwell time.
+      var firstTs = trans[0].ts, lastTs = d.now || (trans[trans.length-1].ts + 60);
+      var span = Math.max(1, lastTs - firstTs);
+      ribbon.innerHTML = trans.map(function(t, i){
+        var next = trans[i+1] ? trans[i+1].ts : lastTs;
+        var pct = ((next - t.ts) / span) * 100;
+        return '<div class="seg" style="flex:' + pct.toFixed(2) + ';background:' + colorForMode(t.mode) + '" title="' + t.mode + ' · ' + new Date(t.ts*1000).toLocaleTimeString() + '"></div>';
+      }).join('');
+    } catch(e){
+      console.warn('[ahu] mode ribbon fetch failed:', e);
+    }
+  }
+
+  // ----- time-range picker -----
+  function setWindow(min){
+    windowMin = min;
+    document.querySelectorAll('.picker button[data-window]').forEach(function(b){
+      b.classList.toggle('active', Number(b.dataset.window) === min);
+    });
+    fetchTrend();
+    fetchModeRibbon();
+  }
+  document.querySelectorAll('.picker button[data-window]').forEach(function(b){
+    b.addEventListener('click', function(){ setWindow(Number(b.dataset.window)); });
+  });
+  $('custom-apply').addEventListener('click', function(){
+    var v = Number($('custom-min').value);
+    if(v >= 15 && v <= 43200){
+      document.querySelectorAll('.picker button[data-window]').forEach(function(b){ b.classList.remove('active'); });
+      windowMin = v;
+      fetchTrend();
+      fetchModeRibbon();
+    }
+  });
+
+  // ----- kickoff -----
+  pollLive();          fetchTrend();          fetchModeRibbon();
+  setInterval(pollLive,        POLL_MS);
+  setInterval(fetchTrend,      TREND_REFRESH_MS);
+  setInterval(fetchModeRibbon, TREND_REFRESH_MS);
+
+})();
+</script>
+
+</body>
+</html>

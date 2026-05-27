@@ -655,6 +655,108 @@ def health_check():
     return jsonify({"status": "healthy"})
 
 
+@app.route('/api/update-app-py', methods=['POST'])
+def update_app_py():
+    """Replace /root/scripts/app.py without SSH access.
+
+    The bundle upload extractor explicitly skips app.py (bootloader
+    protection), so before this endpoint existed the operator had to
+    manually copy app.py via the enteliWEB-registered-object workflow.
+    That manual step was the recurring source of failed deploys today --
+    operators forget it, or do it out of order.
+
+    Safety:
+      - MASTER_KEY_CONST gate (same as /update, /api/restart-flask).
+      - ast.parse() the uploaded content -- refuse anything that isn't
+        syntactically valid Python.
+      - Atomic write via tempfile + os.rename so a partial write can't
+        leave /root/scripts/app.py truncated.
+      - Backup the current file to /root/scripts/app.py.bak before
+        replacing.  If the new app.py crashes on import, the operator
+        can recover by restoring .bak via console.
+
+    Wire format:
+      POST /api/update-app-py
+      Headers: X-Master-Key: <key>
+      multipart/form-data field 'app_py': the new file
+      -- OR --
+      JSON {"master_key": "...", "content": "<full python source>"}
+    """
+    import os as _os
+    import tempfile
+    import ast
+
+    # ---- Auth ----
+    key = (request.headers.get('X-Master-Key') or '').strip()
+    if not key:
+        body = request.get_json(silent=True) if request.is_json else None
+        if body:
+            key = (body.get('master_key') or '').strip()
+    if not key:
+        key = (request.form.get('master_key') or '').strip()
+    if key != MASTER_KEY_CONST:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    # ---- Pull content from either multipart or JSON ----
+    content = None
+    if 'app_py' in request.files:
+        content = request.files['app_py'].read()
+    elif request.is_json:
+        body = request.get_json(silent=True) or {}
+        c = body.get('content')
+        if c is not None:
+            content = c.encode('utf-8') if isinstance(c, str) else c
+    if not content:
+        return jsonify({'success': False, 'error': 'No file content provided'}), 400
+    if len(content) > 2 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'app.py too large (>2 MB)'}), 400
+
+    # ---- Validate it's valid Python ----
+    try:
+        ast.parse(content)
+    except SyntaxError as ex:
+        return jsonify({
+            'success': False,
+            'error': 'Refusing to write: uploaded file is not valid Python',
+            'detail': f'{ex.msg} at line {ex.lineno}',
+        }), 400
+
+    target = '/root/scripts/app.py'
+    target_dir = _os.path.dirname(target)
+    backup  = target + '.bak'
+
+    try:
+        _os.makedirs(target_dir, exist_ok=True)
+        # Backup current file (best-effort -- first deploy has no current)
+        if _os.path.isfile(target):
+            try:
+                with open(target, 'rb') as cur, open(backup, 'wb') as bak:
+                    bak.write(cur.read())
+            except Exception:
+                pass  # backup failure is non-fatal
+
+        # Atomic write: tempfile in same dir + rename
+        fd, tmp = tempfile.mkstemp(prefix='app_py_', suffix='.tmp', dir=target_dir)
+        try:
+            with _os.fdopen(fd, 'wb') as f:
+                f.write(content)
+            _os.replace(tmp, target)
+            tmp = None
+        finally:
+            if tmp and _os.path.exists(tmp):
+                try: _os.unlink(tmp)
+                except Exception: pass
+    except Exception as ex:
+        return jsonify({'success': False, 'error': f'Write failed: {ex}'}), 500
+
+    return jsonify({
+        'success': True,
+        'message': 'app.py written. POST /api/restart-flask to activate.',
+        'bytes': len(content),
+        'backup': backup if _os.path.isfile(backup) else None,
+    })
+
+
 @app.route('/api/restart-flask', methods=['POST'])
 def restart_flask():
     """Trigger a graceful self-restart so a newly-uploaded /root/scripts/app.py

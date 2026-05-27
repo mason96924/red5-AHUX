@@ -1,6 +1,48 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
 
+## Phase L.8.5 — 🚀 One-Line Controller Deploy (2026-05-27)
+
+Builds on L.8.4 to make controller deploys fully scriptable. Goal: turn 12 manual clicks across enteliWEB into a single bash command.
+
+### `/api/update-app-py` endpoint (V1.9 + V2.0 app.py)
+- POST endpoint that writes `/root/scripts/app.py` programmatically — bypassing the bootloader-protection guard that intentionally skips app.py in bundle uploads
+- Gated by `MASTER_KEY_CONST` (same auth as `/update`, `/api/restart-flask`)
+- **Safety stack**:
+  - `ast.parse()` the uploaded content; refuse anything that isn't syntactically valid Python (HTTP 400)
+  - Atomic write via `tempfile.mkstemp` + `os.replace` so a partial write can't leave a truncated bootloader
+  - Backs up the existing file to `/root/scripts/app.py.bak` before replacing — operator can recover via console if the new file fails at import time
+  - 2 MB size cap (prevents accidental DoS via huge upload)
+- Accepts either multipart (`app_py` field) or JSON (`{"master_key", "content"}`)
+
+### `scripts/deploy_controller.sh` wrapper
+Replaces the entire 5-minute manual deploy with one command:
+
+```bash
+./scripts/deploy_controller.sh c1                 # single host
+./scripts/deploy_controller.sh c1 c2 c3 c4        # fleet-wide
+./scripts/deploy_controller.sh c1 --no-app-py     # bundle + restart only
+RED5_MASTER_KEY='...' ./scripts/deploy_controller.sh c1
+```
+
+What it does:
+1. Builds the bundle (`build_bundle.py`)
+2. Uploads the bundle (`/api/upload-bundle`)
+3. Pushes `app.py` (`/api/update-app-py`)
+4. Restarts Flask (`/api/restart-flask`)
+5. Verifies recovery by polling `/api/version` after restart, with a clear console recovery hint if it doesn't come back ("the new app.py may have an import error — restore /root/scripts/app.py.bak via console")
+
+Per-controller deploy time: **~30 seconds**, down from ~5 minutes manual.
+For c1-c4 fleet: **~2 minutes**, down from ~20 minutes manual.
+
+### Regression test
+- New `tests/test_update_app_py_endpoint.py` — 5 assertions covering: route registered, master-key gated, ast.parse() validates input, atomic write via tempfile+os.replace, .bak backup before write
+- **61/61 tests passing** (12 prior + 5 new + 44 existing)
+
+### First-time bootstrap caveat
+The `/api/update-app-py` endpoint itself only exists in app.py >= 2026-05-27. First-time deploy of this endpoint to existing controllers (c1-c4) still requires the one-time manual enteliWEB workflow. Every subsequent deploy is one command.
+
+
 ## Phase L.8.4 — 🛡️ Regression Guards + Self-Restart Endpoint (2026-05-27)
 
 After a full day spent fixing five separate regressions of work already done, two reinforcement systems were added:

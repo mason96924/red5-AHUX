@@ -1,72 +1,14 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
 
-## Phase L.8.5 — 🚀 One-Line Controller Deploy (2026-05-27)
 
-Builds on L.8.4 to make controller deploys fully scriptable. Goal: turn 12 manual clicks across enteliWEB into a single bash command.
+## Phase L.8.4 — 🛡️ Regression Test Suite (2026-05-27)
 
-### `/api/update-app-py` endpoint (V1.9 + V2.0 app.py)
-- POST endpoint that writes `/root/scripts/app.py` programmatically — bypassing the bootloader-protection guard that intentionally skips app.py in bundle uploads
-- Gated by `MASTER_KEY_CONST` (same auth as `/update`, `/api/restart-flask`)
-- **Safety stack**:
-  - `ast.parse()` the uploaded content; refuse anything that isn't syntactically valid Python (HTTP 400)
-  - Atomic write via `tempfile.mkstemp` + `os.replace` so a partial write can't leave a truncated bootloader
-  - Backs up the existing file to `/root/scripts/app.py.bak` before replacing — operator can recover via console if the new file fails at import time
-  - 2 MB size cap (prevents accidental DoS via huge upload)
-- Accepts either multipart (`app_py` field) or JSON (`{"master_key", "content"}`)
+Added `archive/Red5-Studio-V1.9/tests/` with pytest assertions covering each regression hit on 2026-05-27.
 
-### `scripts/deploy_controller.sh` wrapper
-Replaces the entire 5-minute manual deploy with one command:
+**Why**: Today saw a full day of fixing bugs that had been fixed before. A backup-restore commit silently rolled them back; subsequent agents built on the regressed state without noticing. A 10-line test per fix catches the next regression in <1 second.
 
-```bash
-./scripts/deploy_controller.sh c1                 # single host
-./scripts/deploy_controller.sh c1 c2 c3 c4        # fleet-wide
-./scripts/deploy_controller.sh c1 --no-app-py     # bundle + restart only
-RED5_MASTER_KEY='...' ./scripts/deploy_controller.sh c1
-```
-
-What it does:
-1. Builds the bundle (`build_bundle.py`)
-2. Uploads the bundle (`/api/upload-bundle`)
-3. Pushes `app.py` (`/api/update-app-py`)
-4. Restarts Flask (`/api/restart-flask`)
-5. Verifies recovery by polling `/api/version` after restart, with a clear console recovery hint if it doesn't come back ("the new app.py may have an import error — restore /root/scripts/app.py.bak via console")
-
-Per-controller deploy time: **~30 seconds**, down from ~5 minutes manual.
-For c1-c4 fleet: **~2 minutes**, down from ~20 minutes manual.
-
-### Regression test
-- New `tests/test_update_app_py_endpoint.py` — 5 assertions covering: route registered, master-key gated, ast.parse() validates input, atomic write via tempfile+os.replace, .bak backup before write
-- **61/61 tests passing** (12 prior + 5 new + 44 existing)
-
-### First-time bootstrap caveat
-The `/api/update-app-py` endpoint itself only exists in app.py >= 2026-05-27. First-time deploy of this endpoint to existing controllers (c1-c4) still requires the one-time manual enteliWEB workflow. Every subsequent deploy is one command.
-
-
-## Phase L.8.4 — 🛡️ Regression Guards + Self-Restart Endpoint (2026-05-27)
-
-After a full day spent fixing five separate regressions of work already done, two reinforcement systems were added:
-
-### 1. `/api/restart-flask` endpoint (V1.9 + V2.0 app.py)
-- POST to `/api/restart-flask` with master-key (`X-Master-Key` header, JSON body `master_key`, or form-field `master_key`)
-- Returns 401 on wrong key; on success schedules a delayed `os._exit(0)` after 1 s so the HTTP response flushes before the process dies
-- enteliWEB's process supervisor respawns app.py with the new code on disk
-- Eliminates the manual SSH-or-reboot step. Per-controller deploy time drops from ~5 min to ~30 sec
-- Gated by the same `MASTER_KEY_CONST` that authorises `/update`, so no new attack surface
-
-**Example usage**:
-```bash
-curl -X POST https://c1.geniusmason.com/api/restart-flask \
-  -H "X-Master-Key: <MASTER_KEY>"
-# {"success": true, "message": "Flask process will exit in ~1 s; enteliWEB will respawn it.", "pid": 31234}
-```
-
-### 2. Regression test suite (`archive/Red5-Studio-V1.9/tests/`)
-- 12 new pytest assertions covering every regression hit on 2026-05-27
-- Runs in 0.79 s; 56 total tests passing (12 new + 44 existing)
-- Added `conftest.py` with a `pytest_ignore_collect` hook so legacy `sys.exit()`-style standalone scripts don't break `pytest tests/`
-
-**New test files**:
+**Test files**:
 | File | Invariant |
 |---|---|
 | `test_bundle_layout.py` | `ROOT_FILES` contains no `.md` entries; every `.md` in `red5_bundle.zip` lives under `docs/` |
@@ -74,11 +16,12 @@ curl -X POST https://c1.geniusmason.com/api/restart-flask \
 | `test_equipment_types_paths.py` | Every `base_graphic` in `equipment_types.json` is either null or contains a `/` (not a bare filename); paths start with `graphics/` |
 | `test_flask_routes.py` | `/dashboard.html`, `/equipment_mapper.html`, `/landing.html`, `/ahu.html` all registered (plus legacy bare `/dashboard`, `/mapper`) |
 | `test_landing_redirects.py` | `landing.html` SKIP-to-dashboard uses `/dashboard.html`, never bare `/dashboard` |
-| `test_restart_endpoint.py` | `/api/restart-flask` route exists, gated by `MASTER_KEY_CONST`, returns 401 on wrong key |
 
-**Workflow going forward**: every time we fix a subtle regression, add a 10-line test here that asserts the invariant. The next backup restore or refactor that breaks it will scream within a second.
+Added `conftest.py` with a `pytest_ignore_collect` hook so legacy `sys.exit()`-style standalone scripts don't break `pytest tests/`.
 
-**Status**: All 12 new tests passing. Existing 44 tests still passing.
+**Status**: 54/54 tests passing in 1.14 s (10 new regression guards + 44 pre-existing).
+
+**Workflow going forward**: every time we fix a subtle regression, add a 10-line test asserting the invariant.
 
 
 ## Phase L.8.3 — 🔧 HOME Button 404 on V1.9 Controllers (2026-05-27)

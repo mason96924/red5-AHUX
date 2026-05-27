@@ -189,7 +189,7 @@
             btnIn.addEventListener('click', function () {
                 // Remember where to return after the OAuth round-trip.
                 try { localStorage.setItem('r5_post_login_redirect', '/equipment_mapper.html'); } catch (e) {}
-                var redirectUrl = window.location.origin + '/dashboard';
+                var redirectUrl = window.location.origin + '/dashboard.html';
                 window.location.href = 'https://auth.emergentagent.com/?redirect=' + encodeURIComponent(redirectUrl);
             });
             btnOut.addEventListener('click', function () {

@@ -178,7 +178,7 @@
             banner.addEventListener('mouseleave', function(){ _hovered = false; applyLabel(); });
             btnIn.addEventListener('click', function () {
                 try { localStorage.setItem('r5_post_login_redirect', '/dashboard.html'); } catch (e) {}
-                var redirectUrl = window.location.origin + '/dashboard';
+                var redirectUrl = window.location.origin + '/dashboard.html';
                 window.location.href = 'https://auth.emergentagent.com/?redirect=' + encodeURIComponent(redirectUrl);
             });
             btnOut.addEventListener('click', function () {

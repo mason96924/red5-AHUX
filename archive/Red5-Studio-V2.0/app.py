@@ -1,3 +1,38 @@
+"""
+================================================================================
+  CRITICAL DEPLOYMENT NOTE -- READ BEFORE TOUCHING ANY DEPLOY/UPLOAD CODE
+================================================================================
+  /root/scripts/ is MANAGED BY ENTELIWEB.
+
+  Two files MUST live in /root/scripts/ and they can ONLY be placed there
+  manually via enteliWEB:
+
+      /root/scripts/app.py        <- this Flask server
+      /root/scripts/collector.py  <- Delta Python integration command
+
+  RULES (ignore at your peril):
+    1. These two files are placed in /root/scripts/ by the operator through
+       the enteliWEB-registered-object workflow.  ONE-TIME, MANUAL.
+    2. Writing to /root/scripts/ from Python does NOT work -- enteliWEB
+       firmware actively DELETES unregistered .py files there.
+    3. DO NOT design APIs that POST to /api/upload-file or /api/save-*
+       targeting /root/scripts/.  DO NOT design "self-update" or
+       "hot-deploy" or "restart-flask" endpoints that overwrite app.py
+       or kill the Python process.  enteliWEB does NOT auto-respawn.
+    4. All plug-in scripts go under /root/data/pgpy/ (PLUGINS_ROOT).
+       That path IS writable from bundle uploads and the firmware leaves
+       it alone.
+
+  Recovery: only via enteliWEB UI (re-paste prior text or use enteliWEB's
+  own history).  There is no API workaround.
+
+  Regression history:
+    - 2026-05-27: /api/restart-flask + /api/update-app-py were briefly
+      added, broke controllers, were removed the same day.  DO NOT
+      re-add them.
+================================================================================
+"""
+
 import math
 import os
 import sys

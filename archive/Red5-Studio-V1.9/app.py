@@ -1,3 +1,48 @@
+"""
+================================================================================
+  CRITICAL DEPLOYMENT NOTE -- READ BEFORE TOUCHING ANY DEPLOY/UPLOAD CODE
+================================================================================
+  /root/scripts/ is MANAGED BY ENTELIWEB.
+
+  Two files MUST live in /root/scripts/ and they can ONLY be placed there
+  manually via enteliWEB:
+
+      /root/scripts/app.py        <- this Flask server
+      /root/scripts/collector.py  <- Delta Python integration command
+
+  RULES (ignore at your peril):
+    1.  These two files are placed in /root/scripts/ by the operator
+        through the enteliWEB-registered-object workflow.  ONE-TIME, MANUAL.
+    2.  Writing to /root/scripts/ from Python (open(), os.replace(),
+        tempfile, anything) does NOT work reliably.  The enteliWEB firmware
+        actively DELETES unregistered .py files from /root/scripts/.
+    3.  Therefore: DO NOT design APIs that POST to /api/upload-file or
+        /api/save-* with a destination under /root/scripts/.  The file
+        will appear briefly and then be wiped.
+    4.  DO NOT design "self-update" / "hot-deploy" / "restart-flask"
+        endpoints that try to overwrite app.py and respawn -- enteliWEB
+        does NOT auto-respawn this object.  If you kill the Python
+        process, it stays dead until an operator manually Starts the
+        registered object in the enteliWEB UI.
+    5.  All plug-in scripts go under /root/data/pgpy/ (PLUGINS_ROOT) --
+        that path IS writable from the bundle upload, and the firmware
+        leaves it alone.
+
+  Recovery if /root/scripts/app.py is broken:
+    - Operator must use the enteliWEB UI to either re-paste the prior
+      good app.py text into the registered object, or revert it from
+      enteliWEB's own history.  There is no API workaround.
+
+  Regression history:
+    - 2026-05-27: An "optional improvement" added /api/restart-flask
+      (os._exit on demand) and /api/update-app-py (POST to overwrite
+      /root/scripts/app.py).  Both endpoints were doomed by the rules
+      above and broke c1 + c3.  The endpoints were removed the same day.
+      DO NOT re-add them.
+================================================================================
+"""
+
+
 import math
 import os
 import sys

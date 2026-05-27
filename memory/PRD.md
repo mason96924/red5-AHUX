@@ -1,5 +1,36 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+> ## ⚠️ CRITICAL DEPLOYMENT CONSTRAINT — V1.9 CONTROLLERS
+>
+> `/root/scripts/` on every Delta V1.9 controller is **MANAGED BY enteliWEB**.
+> Two files live there and **MUST be placed via the enteliWEB-registered-object
+> workflow ONLY** — they cannot be written via any HTTP upload API:
+>
+> - `/root/scripts/app.py` (this Flask server)
+> - `/root/scripts/collector.py` (Delta Python integration)
+>
+> **enteliWEB firmware actively deletes unregistered `.py` files from `/root/scripts/`.**
+> Any API endpoint that tries to write there will appear to succeed and then have
+> the file wiped seconds later.
+>
+> **DO NOT design**:
+> - APIs that POST app.py or collector.py to the controller
+> - "Hot-restart" / "self-update" endpoints that overwrite app.py
+> - Any code that calls `os._exit()` / `sys.exit()` from inside Flask
+>   (enteliWEB does NOT auto-respawn — the process stays dead until an
+>   operator manually Starts the registered object in enteliWEB UI)
+>
+> Plug-in scripts go under `/root/data/pgpy/` (PLUGINS_ROOT) — that path
+> IS writable from bundle uploads.
+>
+> **Regression history**: On 2026-05-27 a `/api/restart-flask` +
+> `/api/update-app-py` "improvement" was added against this constraint
+> and bricked c1 + c3 within minutes.  The endpoints were removed the
+> same day.  Recovery required manual enteliWEB intervention.  Re-adding
+> them is forbidden.
+
+
+
 
 
 ## Phase L.8.4 — 🛡️ Regression Test Suite (2026-05-27)

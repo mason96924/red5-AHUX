@@ -559,12 +559,30 @@ def serve_landing():
     return _no_cache(send_from_directory('/root/data', 'landing.html'))
 
 @app.route('/dashboard')
+@app.route('/dashboard.html')
 def serve_dashboard():
     return _serve_html_with_build_stamp('/root/data/dashboard.html')
 
 @app.route('/mapper')
+@app.route('/equipment_mapper.html')
 def serve_mapper():
     return _serve_html_with_build_stamp('/root/data/equipment_mapper.html')
+
+@app.route('/landing.html')
+def serve_landing_html():
+    return _no_cache(send_from_directory('/root/data', 'landing.html'))
+
+@app.route('/ahu.html')
+def serve_ahu_html():
+    return _no_cache(send_from_directory('/root/data', 'ahu.html'))
+
+@app.route('/sun_preview.html')
+def serve_sun_preview_html():
+    return _no_cache(send_from_directory('/root/data', 'sun_preview.html'))
+
+@app.route('/update.html')
+def serve_update_html():
+    return _no_cache(send_from_directory('/root/data', 'update.html'))
 
 @app.route('/api/version')
 def api_version():

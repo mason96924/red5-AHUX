@@ -1,6 +1,30 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
 
+## Phase L.8.3 — 🔧 HOME Button 404 on V1.9 Controllers (2026-05-27)
+
+**Bug**: Clicking HOME from `/equipment_mapper.html` on a V1.9 controller returned 404 "Not Found".
+
+**Root cause (two-layer)**:
+1. V1.9 Flask `app.py` only registered `/dashboard` and `/mapper` routes — no `/dashboard.html`. The HTML link `<a href="/dashboard.html">HOME</a>` hit a route that didn't exist.
+2. After updating `app.py`, the file change alone wasn't enough — the running Flask process holds the old route table in memory. Updating `/root/scripts/app.py` requires an explicit Flask restart (stop/start the enteliWEB-registered app.py object, or `kill <pid>` to let enteliWEB respawn it).
+
+**Fix shipped**:
+- Added stacked Flask route aliases in both `archive/Red5-Studio-V1.9/app.py` and `archive/Red5-Studio-V2.0/app.py`:
+  - `/dashboard.html` (alias for `/dashboard`)
+  - `/equipment_mapper.html` (alias for `/mapper`)
+  - `/landing.html`, `/ahu.html`, `/sun_preview.html`, `/update.html` (explicit routes so absolute paths resolve)
+- Fixed bare `/dashboard` redirects in `landing.html` / `red5_landing.html` across all 3 parity locations.
+- Both Flask apps syntax-validated via `ast.parse`.
+
+**V1.9 deploy gotcha (recorded so we don't repeat it)**:
+- `app.py` lives in `/root/scripts/` as a manually-managed enteliWEB-registered object. Bundle deploys write to `/root/data/` only — they do NOT replace `/root/scripts/app.py`. The operator must manually copy the new app.py via the enteliWEB object workflow.
+- Even after the file is in place, **Flask must be explicitly restarted** for new routes to take effect (the running Python process won't auto-reload).
+- Verification: `curl -I https://<host>/dashboard.html` should return `200 OK`. `/api/version` exposes the live mtime of `/root/scripts/app.py` for confirming the right file is on disk.
+
+**Status**: ✅ User confirmed fix working on V1.9 controllers after Flask restart.
+
+
 ## Phase L.8 — 📊 Per-AHU Performance Detail Page (2026-05-27)
 
 **Brief**: New drill-down detail page for any AHU in the fleet. Engineers click `DETAIL ↗` on an AHU card in the main dashboard (or hit a direct URL like `/ahu.html?id=AHU-01-E`) and get a single page with live state, G36 status, request counters, trim-and-respond resets, multi-panel time-series trends, mode timeline ribbon, and a VAV zones table — all polling on a 10 s cadence for live KPIs and 60 s for trend charts.

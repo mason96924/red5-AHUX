@@ -1,6 +1,44 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
 
+## Phase L.8.4 — 🛡️ Regression Guards + Self-Restart Endpoint (2026-05-27)
+
+After a full day spent fixing five separate regressions of work already done, two reinforcement systems were added:
+
+### 1. `/api/restart-flask` endpoint (V1.9 + V2.0 app.py)
+- POST to `/api/restart-flask` with master-key (`X-Master-Key` header, JSON body `master_key`, or form-field `master_key`)
+- Returns 401 on wrong key; on success schedules a delayed `os._exit(0)` after 1 s so the HTTP response flushes before the process dies
+- enteliWEB's process supervisor respawns app.py with the new code on disk
+- Eliminates the manual SSH-or-reboot step. Per-controller deploy time drops from ~5 min to ~30 sec
+- Gated by the same `MASTER_KEY_CONST` that authorises `/update`, so no new attack surface
+
+**Example usage**:
+```bash
+curl -X POST https://c1.geniusmason.com/api/restart-flask \
+  -H "X-Master-Key: <MASTER_KEY>"
+# {"success": true, "message": "Flask process will exit in ~1 s; enteliWEB will respawn it.", "pid": 31234}
+```
+
+### 2. Regression test suite (`archive/Red5-Studio-V1.9/tests/`)
+- 12 new pytest assertions covering every regression hit on 2026-05-27
+- Runs in 0.79 s; 56 total tests passing (12 new + 44 existing)
+- Added `conftest.py` with a `pytest_ignore_collect` hook so legacy `sys.exit()`-style standalone scripts don't break `pytest tests/`
+
+**New test files**:
+| File | Invariant |
+|---|---|
+| `test_bundle_layout.py` | `ROOT_FILES` contains no `.md` entries; every `.md` in `red5_bundle.zip` lives under `docs/` |
+| `test_upload_creates_parent.py` | `/api/upload-file`, `/api/save-image`, `/api/save-floor-plan` all call `os.makedirs(..., exist_ok=True)` |
+| `test_equipment_types_paths.py` | Every `base_graphic` in `equipment_types.json` is either null or contains a `/` (not a bare filename); paths start with `graphics/` |
+| `test_flask_routes.py` | `/dashboard.html`, `/equipment_mapper.html`, `/landing.html`, `/ahu.html` all registered (plus legacy bare `/dashboard`, `/mapper`) |
+| `test_landing_redirects.py` | `landing.html` SKIP-to-dashboard uses `/dashboard.html`, never bare `/dashboard` |
+| `test_restart_endpoint.py` | `/api/restart-flask` route exists, gated by `MASTER_KEY_CONST`, returns 401 on wrong key |
+
+**Workflow going forward**: every time we fix a subtle regression, add a 10-line test here that asserts the invariant. The next backup restore or refactor that breaks it will scream within a second.
+
+**Status**: All 12 new tests passing. Existing 44 tests still passing.
+
+
 ## Phase L.8.3 — 🔧 HOME Button 404 on V1.9 Controllers (2026-05-27)
 
 **Bug**: Clicking HOME from `/equipment_mapper.html` on a V1.9 controller returned 404 "Not Found".

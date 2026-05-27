@@ -647,6 +647,38 @@ def api_version():
 def health_check():
     return jsonify({"status": "healthy"})
 
+
+@app.route('/api/restart-flask', methods=['POST'])
+def restart_flask():
+    """Trigger a graceful self-restart so a newly-uploaded /root/scripts/app.py
+    takes effect WITHOUT requiring SSH access to the controller.
+
+    Gated by the same MASTER_KEY_CONST that authorises /update.  See the
+    V1.9 sibling for full design notes.
+    """
+    import threading
+    import os as _os
+    key = (request.headers.get('X-Master-Key') or '').strip()
+    if not key:
+        body = request.get_json(silent=True) or {}
+        key = (body.get('master_key') or '').strip()
+    if not key:
+        key = (request.form.get('master_key') or '').strip()
+    if key != MASTER_KEY_CONST:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    def _self_exit():
+        import time
+        time.sleep(1.0)
+        _os._exit(0)
+
+    threading.Thread(target=_self_exit, daemon=True).start()
+    return jsonify({
+        'success': True,
+        'message': 'Flask process will exit in ~1 s; supervisor will respawn it.',
+        'pid': _os.getpid(),
+    })
+
 @app.route('/api/files')
 def list_files():
     root_name = request.args.get('root', 'data')

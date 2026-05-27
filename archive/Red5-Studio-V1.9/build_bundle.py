@@ -52,32 +52,13 @@ ROOT_FILES = [
     # cN.geniusmason.com) is V2.0-only -- it embeds external subdomains
     # that the controllers themselves don't need to host.  Excluded.
 
-    # Markdown guides.
-    'band_guide.md',
-    'band_guide.ja.md',
-    'band_guide.ko.md',
-    'band_guide.zh-CN.md',
-    'band_guide.zh-TW.md',
-    'data_bridges_guide.md',
-    'control_algorithms.md',
-    'control_strategy_insight.md',
-    'control_strategy_insight.ko.md',
-    'opt_sa_insight.md',
-    'erv_band_shift_insight.md',
-    'erv_band_shift_insight.ja.md',
-    'erv_band_shift_insight.ko.md',
-    'erv_band_shift_insight.zh-CN.md',
-    'erv_band_shift_insight.zh-TW.md',
-    'psychrometric_design_workflow.md',
-    'psychrometric_design_workflow.ja.md',
-    'psychrometric_design_workflow.ko.md',
-    'psychrometric_design_workflow.zh-CN.md',
-    'psychrometric_design_workflow.zh-TW.md',
-    'g36_reset.md',
-    'g36_reset.ja.md',
-    'g36_reset.ko.md',
-    'g36_reset.zh-CN.md',
-    'g36_reset.zh-TW.md',
+    # NOTE: All .md guides are packaged via the docs/ subdir tree ONLY
+    # (see SUBDIR_TREES below).  They MUST NOT be listed here -- when
+    # they were at root, the controller extractor unpacked them flat into
+    # /root/data/<file>.md instead of /root/data/docs/<file>.md, which
+    # broke the lookup chain used by serve_asset().  Regression history:
+    # commit 60fc9f1 re-introduced them at root; this comment is here
+    # so future agents don't repeat the mistake.
 
     # G36 service module (ported from V2.0).
     'g36_service.py',

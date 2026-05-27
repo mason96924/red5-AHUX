@@ -1237,6 +1237,31 @@ async def collector_log() -> dict:
     }
 
 
+@app.get("/api/band-guide")
+async def get_band_guide() -> dict:
+    """Return the 10-band SA strategy matrix (`band_guide.csv`) as a JSON
+    array.  Powers the per-AHU detail page's band table; the frontend
+    highlights the row matching the AHU's current OA conditions."""
+    rows = _load_csv("band_guide.csv")
+    # Coerce numeric columns so the UI doesn't have to parseFloat() every cell.
+    out = []
+    NUMERIC = {"OA_T_Lo", "OA_T_Hi", "OA_RH_Lo", "OA_RH_Hi",
+               "SA_T_CC_SP", "SA_T_Delivery", "SA_W_SP_gkg",
+               "SA_RH_Delivery", "OA_Damper_SP", "Energy_Rank"}
+    for r in rows:
+        clean = {}
+        for k, v in r.items():
+            if k in NUMERIC:
+                try:
+                    clean[k] = float(v)
+                except (TypeError, ValueError):
+                    clean[k] = v
+            else:
+                clean[k] = v
+        out.append(clean)
+    return {"bands": out, "count": len(out)}
+
+
 @app.get("/api/trend-history")
 async def trend_history(point: str = Query("OA"), window_min: int = Query(60)) -> dict:
     now = time.time()

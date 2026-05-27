@@ -121,6 +121,29 @@
     </div>
   </div>
 
+  <!-- PHASE 2 KPI ROW: Uptime / Mode-hours-today / CZ-compliance -->
+  <div class="row k4">
+    <div class="panel kpi" data-testid="ahu-kpi-uptime">
+      <h2>Uptime · 24h</h2>
+      <div class="v" id="kpi-uptime">—</div>
+      <div class="u">non-fault mode time</div>
+    </div>
+    <div class="panel kpi" data-testid="ahu-kpi-mode-hours">
+      <h2>Mode Hours · Today</h2>
+      <div id="kpi-mode-hours" style="font-size:11px;line-height:1.6;color:#cbd5e1">—</div>
+    </div>
+    <div class="panel kpi" data-testid="ahu-kpi-cz-compliance">
+      <h2>CZ Compliance</h2>
+      <div class="v" id="kpi-cz">—</div>
+      <div class="u">zones inside 21–24 °C</div>
+    </div>
+    <div class="panel kpi" data-testid="ahu-kpi-zone-count">
+      <h2>Zones Online</h2>
+      <div class="v" id="kpi-zones-online">—</div>
+      <div class="u" id="kpi-zones-online-detail">—</div>
+    </div>
+  </div>
+
   <!-- Live state strip: SA / RA / SAT-reset / DSP-reset -->
   <div class="row k4">
     <div class="panel kpi"><h2>Supply Air Temp</h2><div class="v" id="kpi-sa-t">—</div><div class="u">°C</div></div>
@@ -196,6 +219,44 @@
     </table>
   </div>
 
+  <!-- PHASE 3a: 10-band CSV table with the current operating band highlighted -->
+  <div class="panel">
+    <h2>10-Band Strategy Matrix · Current Band <span id="band-current-id" style="color:#fbbf24">—</span></h2>
+    <div style="overflow-x:auto">
+      <table data-testid="ahu-band-table">
+        <thead>
+          <tr>
+            <th>Band</th><th>Name</th>
+            <th>OA Temp</th><th>OA RH</th>
+            <th>SA T Deliv</th><th>SA RH</th><th>SA W g/kg</th>
+            <th>OA Damper</th><th>CC</th><th>HC</th><th>HUM</th>
+            <th>Control Tag</th><th>Energy</th>
+          </tr>
+        </thead>
+        <tbody id="band-tbody"><tr><td colspan="13" class="loading">Loading bands…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PHASE 2: Audit log of recent setpoint changes -->
+  <div class="panel">
+    <h2>Audit Log · Setpoint &amp; Control Changes <span id="audit-status" style="color:#64748b;font-weight:normal;font-size:9px;letter-spacing:.15em">—</span></h2>
+    <table data-testid="ahu-audit-table">
+      <thead>
+        <tr>
+          <th>When</th><th>Action</th><th>User</th><th>Before → After</th>
+        </tr>
+      </thead>
+      <tbody id="audit-tbody"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- PHASE 3b: Equipment-mapper placement preview -->
+  <div class="panel">
+    <h2>Floor-Plan Placement</h2>
+    <div id="mapper-preview" data-testid="ahu-mapper-preview" style="background:#0b0f1a;border:1px solid #1e293b;border-radius:4px;min-height:120px;padding:1rem;color:#64748b;font-size:11px;text-align:center">Loading map_config…</div>
+  </div>
+
 </div>
 
 <script>
@@ -251,6 +312,40 @@
     var vavs = ahu.vavs || [];
     $('zone-count').textContent = vavs.length;
     $('ahu-zones-count').textContent = '· ' + vavs.length + ' zones';
+
+    // Phase 2 KPIs derived from snapshot data
+    // CZ compliance: zones whose ZAT is inside the G36 occupied band [21, 24].
+    // Matches `count_cooling_requests` / `count_heating_requests` semantics so
+    // an operator can correlate "Cooling=2" with "CZ=4/6".  AFM (Airflow Manual)
+    // lives under v.all_points.AFM in the V1.9 snapshot shape -- top-level
+    // `v.afm` was tried first and returned null for every zone.
+    var inBand = 0, online = 0;
+    vavs.forEach(function(v){
+      var afm = (v.all_points && v.all_points.AFM != null) ? v.all_points.AFM : v.afm;
+      if(afm != null && afm > 0) online++;
+      if(v.t != null && v.t >= 21.0 && v.t <= 24.0) inBand++;
+    });
+    if(vavs.length){
+      $('kpi-cz').textContent = Math.round((inBand / vavs.length) * 100) + '%';
+      $('kpi-cz').style.color = (inBand === vavs.length) ? '#34d399' : (inBand >= vavs.length * 0.7 ? '#fbbf24' : '#f87171');
+      $('kpi-zones-online').textContent = online + '/' + vavs.length;
+      $('kpi-zones-online-detail').textContent = (vavs.length - online) + ' offline';
+    } else {
+      $('kpi-cz').textContent = '—';
+      $('kpi-zones-online').textContent = '—';
+    }
+
+    // Current band detection (Phase 3): cross-walk this AHU's OA against the
+    // 10-band guide -- the band table highlights whichever row matches.
+    var oa = (ahu.points||[]).find(function(p){ return p.label==='OA'; });
+    if(oa && typeof _resolveBand === 'function'){
+      var bandId = _resolveBand(oa.t, oa.rh);
+      if(bandId && bandId !== window._currentBandId){
+        window._currentBandId = bandId;
+        renderBandTable();
+      }
+    }
+
     if(vavs.length === 0){
       $('zone-tbody').innerHTML = '<tr><td colspan="8" class="empty">No VAV zones reported for this AHU</td></tr>';
     } else {
@@ -259,14 +354,21 @@
         // Mirror G36 request-counter rules so the operator sees WHY a zone is contributing.
         if(v.t < 21){ state = 'HEAT'; cls = 'heat'; }
         if(v.t > 24){ state = 'COOL'; cls = 'cool'; }
+        // V1.9 snapshot nests driver points under `all_points`: ZSP, DPR, VST, AFM.
+        // Read from there with a top-level fallback for forward compat.
+        var ap  = v.all_points || {};
+        var zsp = (ap.ZSP != null) ? ap.ZSP : v.zsp;
+        var dpr = (ap.DPR != null) ? ap.DPR : v.dpr;
+        var vst = (ap.VST != null) ? ap.VST : v.vst;
+        var afm = (ap.AFM != null) ? ap.AFM : v.afm;
         return '<tr>'
           + '<td><b style="color:#e2e8f0">' + v.id + '</b></td>'
           + '<td>' + (v.t  != null ? Number(v.t ).toFixed(1) + ' °C' : '—') + '</td>'
           + '<td>' + (v.rh != null ? Number(v.rh).toFixed(0) + ' %'  : '—') + '</td>'
-          + '<td>' + (v.zsp != null ? Number(v.zsp).toFixed(1) + ' °C' : '—') + '</td>'
-          + '<td>' + (v.dpr != null ? Number(v.dpr).toFixed(0) + ' %' : '—') + '</td>'
-          + '<td>' + (v.vst != null ? Number(v.vst).toFixed(1) + ' °C' : '—') + '</td>'
-          + '<td>' + (v.afm != null ? (v.afm > 0 ? 'ON' : 'OFF') : '—') + '</td>'
+          + '<td>' + (zsp != null ? Number(zsp).toFixed(1) + ' °C' : '—') + '</td>'
+          + '<td>' + (dpr != null ? Number(dpr).toFixed(0) + ' %' : '—') + '</td>'
+          + '<td>' + (vst != null ? Number(vst).toFixed(1) + ' °C' : '—') + '</td>'
+          + '<td>' + (afm != null ? (afm > 0 ? 'ON' : 'OFF') : '—') + '</td>'
           + '<td><span class="pill ' + cls + '">' + state + '</span></td>'
           + '</tr>';
       }).join('');
@@ -351,20 +453,78 @@
     }
   }
 
-  // ----- G36 mode timeline ribbon (24h) -----
+  // ----- G36 mode timeline ribbon (24h) + Phase-2 KPIs derived from it -----
+  function _toEpoch(v){
+    // History API returns ISO strings like "2026-05-24T14:51:14.657+00:00"
+    // for both `now` and each transition's `ts`.  Convert defensively in
+    // case the backend ever switches back to epoch seconds.
+    if(v == null) return null;
+    if(typeof v === 'number') return v > 1e12 ? v / 1000 : v;
+    var d = new Date(v).getTime();
+    return isNaN(d) ? null : d / 1000;
+  }
+  function applyModeKpis(d){
+    var trans = d.transitions || [];
+    var nowTs = _toEpoch(d.now) || (Date.now() / 1000);
+    if(!trans.length){
+      $('kpi-uptime').textContent = '—';
+      $('kpi-mode-hours').innerHTML = '<span style="color:#64748b">No history yet</span>';
+      return;
+    }
+    // Normalize each transition's ts to epoch seconds.
+    var sorted = trans.map(function(t){ return { ts: _toEpoch(t.ts), mode: t.mode }; })
+                      .filter(function(t){ return t.ts != null; })
+                      .sort(function(a,b){ return a.ts - b.ts; });
+    if(!sorted.length){
+      $('kpi-uptime').textContent = '—';
+      return;
+    }
+    var firstTs = sorted[0].ts;
+    var windowSec = Math.max(1, nowTs - firstTs);
+    var midnight = new Date(); midnight.setHours(0,0,0,0); var midnightTs = midnight.getTime() / 1000;
+    var dwellAll = {}, dwellToday = {};
+    for(var i = 0; i < sorted.length; i++){
+      var t = sorted[i];
+      var next = (i+1 < sorted.length) ? sorted[i+1].ts : nowTs;
+      var len = Math.max(0, next - t.ts);
+      dwellAll[t.mode]  = (dwellAll[t.mode]  || 0) + len;
+      var todayLo = Math.max(t.ts, midnightTs);
+      var todayHi = Math.min(next, nowTs);
+      if(todayHi > todayLo){
+        dwellToday[t.mode] = (dwellToday[t.mode] || 0) + (todayHi - todayLo);
+      }
+    }
+    var faultSec = (dwellAll['fault']||0) + (dwellAll['unknown']||0);
+    var uptime = 1.0 - (faultSec / windowSec);
+    $('kpi-uptime').textContent = (uptime * 100).toFixed(1) + '%';
+    $('kpi-uptime').style.color = uptime >= 0.98 ? '#34d399' : (uptime >= 0.9 ? '#fbbf24' : '#f87171');
+
+    var arr = Object.keys(dwellToday).map(function(m){ return [m, dwellToday[m]]; });
+    arr.sort(function(a,b){ return b[1] - a[1]; });
+    if(!arr.length){
+      $('kpi-mode-hours').innerHTML = '<span style="color:#64748b">No data since midnight</span>';
+    } else {
+      $('kpi-mode-hours').innerHTML = arr.slice(0,4).map(function(p){
+        var h = (p[1] / 3600);
+        return '<div style="display:flex;justify-content:space-between"><span style="color:' + colorForMode(p[0]) + '">' + p[0] + '</span><span style="font-variant-numeric:tabular-nums">' + h.toFixed(1) + ' h</span></div>';
+      }).join('');
+    }
+  }
+
   async function fetchModeRibbon(){
     try {
       var r = await fetch('/api/g36/history/' + encodeURIComponent(ahuId) + '?minutes=' + Math.min(windowMin, 1440), {credentials:'include'});
       var d = await r.json();
-      var trans = d.transitions || [];
+      applyModeKpis(d);
+      var trans = (d.transitions || []).map(function(t){ return { ts: _toEpoch(t.ts), mode: t.mode }; })
+                                       .filter(function(t){ return t.ts != null; });
       var ribbon = $('mode-ribbon');
       if(!trans.length){
         ribbon.innerHTML = '<div class="empty" style="padding:.7rem">No transitions yet · mode = <b style="color:#34d399">' + (d.current_mode||'—').toUpperCase() + '</b></div>';
         return;
       }
-      // Build segments. Each transition entry shape: {ts, mode}
-      // We synthesize block widths in proportion to dwell time.
-      var firstTs = trans[0].ts, lastTs = d.now || (trans[trans.length-1].ts + 60);
+      var nowTs = _toEpoch(d.now) || (Date.now()/1000);
+      var firstTs = trans[0].ts, lastTs = nowTs;
       var span = Math.max(1, lastTs - firstTs);
       ribbon.innerHTML = trans.map(function(t, i){
         var next = trans[i+1] ? trans[i+1].ts : lastTs;
@@ -373,6 +533,159 @@
       }).join('');
     } catch(e){
       console.warn('[ahu] mode ribbon fetch failed:', e);
+    }
+  }
+
+  // ----- Phase 2: audit log (admin-only) -----
+  async function fetchAuditLog(){
+    try {
+      var r = await fetch('/api/audit-log?resource=' + encodeURIComponent('ahu:' + ahuId) + '&limit=20', {credentials:'include'});
+      if(r.status === 401 || r.status === 403){
+        $('audit-status').textContent = '· admin sign-in required';
+        $('audit-tbody').innerHTML = '<tr><td colspan="4" class="empty"><a href="/admin-login" style="color:#34d399">Sign in as admin</a> to view setpoint-change history for this AHU.</td></tr>';
+        return;
+      }
+      var d = await r.json();
+      var events = d.events || [];
+      $('audit-status').textContent = '· ' + events.length + ' events · 90-day retention';
+      if(!events.length){
+        $('audit-tbody').innerHTML = '<tr><td colspan="4" class="empty">No setpoint changes recorded for this AHU.</td></tr>';
+        return;
+      }
+      $('audit-tbody').innerHTML = events.map(function(e){
+        var when = e.ts ? new Date(e.ts).toLocaleString() : '—';
+        var changes = '';
+        if(e.before || e.after){
+          // Compress before/after into a single readable diff so the row
+          // stays scannable even when setpoint payloads are deeply nested.
+          try {
+            var diffs = [];
+            var keys = Object.keys(Object.assign({}, e.before || {}, e.after || {}));
+            for(var i = 0; i < keys.length; i++){
+              var k = keys[i];
+              var b = (e.before||{})[k], a = (e.after||{})[k];
+              if(JSON.stringify(b) !== JSON.stringify(a)){
+                diffs.push(k + ': ' + JSON.stringify(b) + ' → ' + JSON.stringify(a));
+              }
+            }
+            changes = diffs.length ? diffs.join('<br>') : '<i style="color:#475569">no field-level diff</i>';
+          } catch(_){
+            changes = '<i style="color:#475569">payload</i>';
+          }
+        }
+        return '<tr>'
+          + '<td style="white-space:nowrap;color:#94a3b8">' + when + '</td>'
+          + '<td><b>' + (e.action || '—') + '</b></td>'
+          + '<td style="color:#cbd5e1">' + (e.user_email || '—') + '</td>'
+          + '<td style="font-size:11px">' + changes + '</td>'
+          + '</tr>';
+      }).join('');
+    } catch(e){
+      $('audit-status').textContent = '· error';
+      $('audit-tbody').innerHTML = '<tr><td colspan="4" class="err">' + e.message + '</td></tr>';
+    }
+  }
+
+  // ----- Phase 3a: 10-band CSV table with current-band highlight -----
+  var _bandCache = null;
+  async function fetchBandGuide(){
+    try {
+      if(!_bandCache){
+        var r = await fetch('/api/band-guide', {credentials:'include'});
+        var d = await r.json();
+        _bandCache = d.bands || [];
+      }
+      renderBandTable();
+    } catch(e){
+      $('band-tbody').innerHTML = '<tr><td colspan="13" class="err">' + e.message + '</td></tr>';
+    }
+  }
+  // Decide which band an AHU is operating in by comparing OA conditions
+  // against each band's (OA_T, OA_RH) range. Mirrors backend `_resolve_band`,
+  // which defaults to B5 (PASS-THROUGH) when the OA condition falls in a gap
+  // between band ranges (the CSV does not tile the full OA plane).
+  function _resolveBand(oa_t, oa_rh){
+    if(!_bandCache || oa_t == null || oa_rh == null) return null;
+    for(var i = 0; i < _bandCache.length; i++){
+      var b = _bandCache[i];
+      if(oa_t >= b.OA_T_Lo && oa_t <= b.OA_T_Hi && oa_rh >= b.OA_RH_Lo && oa_rh <= b.OA_RH_Hi){
+        return b.Band;
+      }
+    }
+    return 'B5';   // backend fallback -- keeps the UI honest with the runtime
+  }
+  function renderBandTable(){
+    if(!_bandCache) return;
+    var currentBand = window._currentBandId; // set by applyLive() once we know OA
+    $('band-current-id').textContent = currentBand || '—';
+    $('band-tbody').innerHTML = _bandCache.map(function(b){
+      var isCur = (b.Band === currentBand);
+      var bg = isCur ? 'background:rgba(251,191,36,.12);border-left:3px solid #fbbf24' : '';
+      var marker = isCur ? '<span style="color:#fbbf24;font-weight:900">▶ </span>' : '';
+      return '<tr style="' + bg + '">'
+        + '<td>' + marker + '<b>' + b.Band + '</b></td>'
+        + '<td><b style="color:#94a3b8">' + b.Band_Name + '</b></td>'
+        + '<td>' + b.OA_T_Lo + ' to ' + b.OA_T_Hi + ' °C</td>'
+        + '<td>' + b.OA_RH_Lo + '–' + b.OA_RH_Hi + ' %</td>'
+        + '<td>' + b.SA_T_Delivery + ' °C</td>'
+        + '<td>' + b.SA_RH_Delivery + ' %</td>'
+        + '<td>' + b.SA_W_SP_gkg + '</td>'
+        + '<td>' + b.OA_Damper_SP + ' %</td>'
+        + '<td>' + b.CC_Mode + '</td>'
+        + '<td>' + b.HC_Mode + '</td>'
+        + '<td>' + b.HUM_Mode + '</td>'
+        + '<td style="color:#cbd5e1">' + b.Control_Tag + '</td>'
+        + '<td>' + b.Energy_Rank + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  // ----- Phase 3b: Floor-plan placement preview -----
+  async function fetchMapperPlacement(){
+    try {
+      var r = await fetch('/api/map-config', {credentials:'include'});
+      var d = await r.json();
+      var floors = d.floors || [];
+      var found = null;
+      for(var fi = 0; fi < floors.length; fi++){
+        var markers = floors[fi].markers || [];
+        for(var mi = 0; mi < markers.length; mi++){
+          // Match either marker.id (preferred) or marker.name against the AHU id.
+          if(markers[mi].id === ahuId || markers[mi].name === ahuId){
+            found = { floor: floors[fi], marker: markers[mi] };
+            break;
+          }
+        }
+        if(found) break;
+      }
+      if(!found){
+        var msg = (d.mode === 'demo' || !floors.length)
+          ? 'Floor-plan not configured (demo mode). <a href="/admin-login" style="color:#34d399">Sign in</a> &rarr; open <a href="/equipment_mapper.html" style="color:#34d399">Equipment Mapper</a> to place markers on the building plan.'
+          : 'AHU <b>' + ahuId + '</b> has no placement marker yet. Open the Equipment Mapper to add it.';
+        $('mapper-preview').innerHTML = msg;
+        return;
+      }
+      // Render a stylized SVG showing the marker's x/y on the floor (no
+      // image background -- just a clean dot-on-grid that gives orientation
+      // until we have the floor's PNG/SVG asset URL piped through).
+      var fname = found.floor.name || found.floor.id;
+      var x = Math.max(0, Math.min(100, Number(found.marker.x) || 50));
+      var y = Math.max(0, Math.min(100, Number(found.marker.y) || 50));
+      $('mapper-preview').innerHTML =
+        '<div style="text-align:left;color:#cbd5e1;font-size:12px;margin-bottom:.6rem">'
+        + '<b style="color:#34d399">' + fname + '</b> · marker at <span style="font-variant-numeric:tabular-nums">(' + x.toFixed(1) + ', ' + y.toFixed(1) + ')</span>'
+        + ' · <a href="/equipment_mapper.html" style="color:#34d399">open mapper ↗</a>'
+        + '</div>'
+        + '<svg viewBox="0 0 100 60" style="width:100%;height:240px;background:#0f172a;border:1px solid #1e293b;border-radius:4px">'
+        + '<defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">'
+        + '<path d="M 10 0 L 0 0 0 10" fill="none" stroke="#1e293b" stroke-width="0.2"/></pattern></defs>'
+        + '<rect width="100" height="60" fill="url(#grid)"/>'
+        + '<circle cx="' + x + '" cy="' + (y * 0.6) + '" r="2.2" fill="#34d399"/>'
+        + '<circle cx="' + x + '" cy="' + (y * 0.6) + '" r="4.5" fill="none" stroke="#34d399" stroke-width="0.4" opacity="0.6"><animate attributeName="r" from="4.5" to="9" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" from="0.6" to="0" dur="2s" repeatCount="indefinite"/></circle>'
+        + '<text x="' + (x + 3) + '" y="' + (y * 0.6 + 1) + '" fill="#34d399" font-size="3" font-family="monospace">' + ahuId + '</text>'
+        + '</svg>';
+    } catch(e){
+      $('mapper-preview').innerHTML = '<span style="color:#f87171">Mapper fetch failed: ' + e.message + '</span>';
     }
   }
 
@@ -400,9 +713,14 @@
 
   // ----- kickoff -----
   pollLive();          fetchTrend();          fetchModeRibbon();
+  fetchAuditLog();     fetchBandGuide();      fetchMapperPlacement();
   setInterval(pollLive,        POLL_MS);
   setInterval(fetchTrend,      TREND_REFRESH_MS);
   setInterval(fetchModeRibbon, TREND_REFRESH_MS);
+  // Audit log + mapper refresh on a slower cadence -- they're not in the
+  // critical "is the AHU OK right now" path so 5-min polling is enough.
+  setInterval(fetchAuditLog,       300000);
+  setInterval(fetchMapperPlacement, 300000);
 
 })();
 </script>

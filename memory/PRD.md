@@ -21,9 +21,31 @@
 - `/ahu.html?id=AHU-01-E` returns: title="AHU AHU-01-E", mode="OCCUPIED", cooling=2, heating=7, SAT-reset=12.0°C, zoneRows=6, chartCount=4, refresh="live · just now", active range="24H".
 - Main dashboard renders 3 DETAIL ↗ buttons (one per AHU), first href = `/ahu.html?id=AHU-01-E`.
 
-### Pending — Phases 2 & 3
-- **P2 next session**: KPI tiles for uptime %, mode-hours-today (e.g. "12.4 h occupied"), Comfort-Zone compliance %; audit log of recent setpoint changes for this AHU.
-- **P3 next session**: 10-band guide CSV table with the current operating band highlighted; equipment-mapper graphic embed showing the AHU's floor-plan markers.
+## Phase L.8.2 — 📊 Per-AHU Detail Phases 2 & 3 (2026-05-27)
+
+**Brief**: Phase 1 shipped earlier today; phases 2 and 3 close out the full scope: uptime / mode-hours-today / CZ-compliance / zones-online KPIs, audit log of recent setpoint changes, 10-band strategy matrix with current band highlighted, and floor-plan placement preview.
+
+### Backend additions
+- `GET /api/band-guide` — returns parsed `band_guide.csv` as `{bands: [...], count: 10}` with numeric columns coerced to float.
+- `GET /api/audit-log` extended with `resource=<string>` exact-match filter (admin-only, same auth as before).
+
+### Frontend additions to `/ahu.html`
+- **Phase 2 KPI row** (second row of KPI tiles):
+  - **Uptime · 24h** — `(window − fault/unknown dwell) / window` from `/api/g36/history`. Color-codes ≥98% green, ≥90% amber, else red.
+  - **Mode Hours · Today** — top-4 mode dwell bucketed since midnight local, each line color-coded by mode.
+  - **CZ Compliance** — % of zones whose ZAT is in [21, 24]°C right now (matches G36 occupied-band semantics so the operator can correlate the gauge with the request counters).
+  - **Zones Online** — `online/total` (where AFM > 0) + "N offline" detail line.
+- **Audit log panel** — `/api/audit-log?resource=ahu:<id>&limit=20`, renders table with When/Action/User/Before→After diff (compresses nested setpoint payloads into a `key: old → new` per-line diff). Graceful 401 fallback with "Sign in as admin" link.
+- **10-band Strategy Matrix panel** — scrollable 10-row table. Current band detected client-side via `_resolveBand(oa_t, oa_rh)` (mirrors backend `_resolve_band()` including fallback to B5/PASS-THROUGH when the OA condition lands in a gap between band ranges). Current row highlighted with amber left-border + `▶` marker.
+- **Floor-Plan Placement panel** — fetches `/api/map-config`, finds the marker whose id/name matches the AHU id, renders a stylized SVG floor grid with the marker pulsed at the right (x, y). Demo-mode graceful fallback ("Floor-plan not configured… Sign in → Equipment Mapper").
+
+### Bugs fixed mid-build (caught by Playwright)
+- Uptime displayed `NaN%`: history API returns ISO timestamps, not epoch seconds. Added `_toEpoch(v)` helper that handles both formats.
+- Zones Online showed `0/6`: V1.9 snapshot nests AFM/DPR/VST/ZSP under `v.all_points`, not the top-level fields. Read from `v.all_points` with a top-level fallback for forward-compat.
+- Current Band showed `—`: backend's `_resolve_band` falls back to B5 PASS-THROUGH when no exact match; frontend now mirrors that, surfacing the runtime decision honestly instead of pretending no band applies.
+
+### Verification (Playwright on the live preview)
+- Uptime=100.0%, Mode-hours=`occupied 2.7h`, CZ=50%, Zones Online=6/6, band=B5 (highlighted), zone damper col populated correctly, audit log shows admin-sign-in CTA, mapper panel shows demo-mode message — all rendered without console errors.
 
 
 

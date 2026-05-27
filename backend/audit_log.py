@@ -165,19 +165,23 @@ router = APIRouter(prefix="/api/audit-log", tags=["audit-log"])
 async def list_audit_events(
     limit:   int = Query(default=100, ge=1, le=500),
     action:  Optional[str] = Query(default=None),
+    resource: Optional[str] = Query(default=None,
+                                    description="Exact-match resource filter, e.g. `ahu:AHU-01-E`"),
     user_email: Optional[str] = Query(default=None),
     since:   Optional[str] = Query(default=None,
                                    description="ISO timestamp; only return events at or after this UTC instant"),
     admin: dict = Depends(_require_admin),
 ) -> dict:
     """Return the most recent N audit events, newest first.  Optional
-    filters: `action` (exact match), `user_email` (exact match), `since`
-    (ISO UTC).  Always returns `{events: [...], count: N}` so the UI can
-    bind without null checks."""
+    filters: `action` (exact match), `resource` (exact match), `user_email`
+    (exact match), `since` (ISO UTC).  Always returns
+    `{events: [...], count: N}` so the UI can bind without null checks."""
     await _ensure_indexes()
     q: dict = {}
     if action:
         q["action"] = action
+    if resource:
+        q["resource"] = resource
     if user_email:
         q["user_email"] = user_email.lower()
     if since:

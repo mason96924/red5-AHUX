@@ -1,5 +1,38 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.9 — 🆕 Red5-Modbus V3.0 (NEW PROJECT, 2026-05-29)
+
+A dedicated Delta controller running an async pluggable-driver Modbus TCP client gateway. Independent from V1.9/V2.0 HVAC work; reuses deployment machinery (bundle upload, /api/assets, /api/upload-file, directory layout) but the runtime is fresh — no HVAC code carried over.
+
+**First driver target**: Daekyung ELC SCU (Lighting Control Gateway) — Modbus TCP server fronting up to ~2000 physical relays in a mix of 4/6 sRM, 4/6 eRM, 48 sRM modules.
+
+**Status**: Design + skeleton complete; no code yet.
+
+**Documents in this repo**:
+- `docs/RED5-MODBUS-V3.0-DESIGN.md` — full architectural design (12 sections, includes open issue tracking)
+- `docs/RED5-MODBUS-V3.0-PROTOCOL.md` — distilled SCU Modbus V2.1 reference (English; original Korean preserved as artifact)
+- `archive/Red5-Modbus-V3.0/` — directory skeleton with placeholder READMEs (drivers/, modbus/, configs/, tests/, pgpy/, docs/, js/, graphics/)
+
+**Hard constraints (inherited from V1.9 — non-negotiable)**:
+- `/root/scripts/` is enteliWEB-managed. Only `app.py` + `collector.py` go there, placed manually.
+- enteliWEB does NOT auto-respawn. Never call `os._exit()`/`sys.exit()`.
+- Plug-in scripts go under `/root/data/pgpy/`.
+- Pure-stdlib Python unless empirically confirmed.
+
+**Open issues blocking Phase 1**:
+- DIBT-1: Is `reliability` writable from Python? (Affects how relay Fail State is surfaced)
+- DIBT-2: Does DIBT have a callback/COV mechanism for BACnet-side writes? (Affects how BMS commands reach the driver)
+- DIBT-3: DIBT thread-safety + asyncio compatibility (Default assumption: not thread-safe; wrap in single-worker ThreadPoolExecutor)
+- DIBT-4: DIBT per-call latency on this hardware (microbenchmark required)
+- SCU-1: 48 sRM register range (not in V2.1 spec)
+- SCU-2/3/4: byte/word order, wire-time, DEVICE_BUSY semantics (Phase 0 / Phase 8 measurement)
+
+**Phased roadmap**: 0. Reconnaissance → 1. Simulator → 2. Read-only driver → 3. Writes → 4. DIBT bridge outputs → 5. DIBT bridge inputs → 6. Driver framework extraction → 7. UI → 8. Real SCU bring-up.
+
+**BACnet object plan**: 2000 Binary Values (instance 1000–2999), one per relay. Naming: `{BLDG:3}-{FLR:02}-{AREA:4}-{LOC:3}-R{NNN:03}`. PSS state stays internal-only (no BACnet object). Heartbeat AV per driver at instance 1001.
+
+
+
 > ## ⚠️ CRITICAL DEPLOYMENT CONSTRAINT — V1.9 CONTROLLERS
 >
 > `/root/scripts/` on every Delta V1.9 controller is **MANAGED BY enteliWEB**.

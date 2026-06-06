@@ -126,8 +126,12 @@ The PDF is silent or unclear on these. Marked here for resolution before relevan
   PDF doesn't address. User stated DIBT supports multithread and non-blocking, but this PDF doesn't reflect that. Safe default assumption: **synchronous, not thread-safe**. Wrap all DIBT calls in a single-worker `ThreadPoolExecutor` so we serialize from one place and the asyncio loop never blocks. If empirical testing shows DIBT is genuinely thread-safe, we can scale the worker count.
   Resolution path: Phase 0 microbenchmark. Run 1000 reads on `max_workers=1`, then `max_workers=4`, measure throughput and correctness.
 
-- **DIBT-4 — Performance?**
-  PDF gives no numbers. Phase 0 must measure: p50, p95, p99 of a single `dibt.Read` on the target controller hardware. Drives polling cadence ceilings.
+- **DIBT-4 — Performance?** ✅ **RESOLVED (user report, 2026-05-29): ~15 ms per call on target hardware.**
+  Implications:
+  - 2000 BVs × 15 ms = 30 s worst-case full-update cycle. Direct-from-coroutine is off the table.
+  - **Delta-only updates are mandatory** — driver only calls `dibt.Write` for BVs whose cached value changed since the last DIBT push. In steady state, lighting relays change rarely (0-20 per cycle → 0-300 ms — comfortably within the 1 s tier).
+  - If DIBT is thread-safe (DIBT-3), parallel workers give a bounded ceiling for transient large-delta cycles (e.g., after a reconnect when many BVs need refresh).
+  - **Worth asking vendor**: is there a batch write API (`WriteBatch([(objref, prop, value), ...])`)? Would dramatically change the math.
 
 ---
 
@@ -386,7 +390,7 @@ Living list. Resolve before the affected Phase begins.
 | DIBT-1 | Is `reliability` writable from Python? | Phase 4 | Phase 0 experiment on hardware |
 | DIBT-2 | How do we detect BACnet-side writes to BVs? | Phase 5 | Phase 0 discovery; vendor confirmation |
 | DIBT-3 | Is DIBT thread-safe? | Phases 4, 5 | Phase 0 microbenchmark |
-| DIBT-4 | DIBT per-call latency on this hardware? | Phases 4, 5 | Phase 0 microbenchmark |
+| DIBT-4 | DIBT per-call latency on this hardware? | Phases 4, 5 | ✅ Resolved: ~15 ms (user, 2026-05-29). Drives delta-only design. |
 | SCU-1 | 48 sRM register range — same as 4/6 sRM family or distinct? | Phase 2 | Vendor confirmation OR empirical when hardware arrives |
 | SCU-2 | Real wire-time per Modbus request | Phase 2 | Phase 0 / Phase 8 measurement |
 | SCU-3 | Byte/word order for multi-register reads (Date/Time block at 65500) | Phase 4 | Phase 8 measurement against real SCU |

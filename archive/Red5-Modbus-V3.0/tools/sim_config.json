@@ -1,0 +1,31 @@
+{
+  "_comment": "Sample SCU simulator state. Populates a small mixed device set so the driver dev/test loop has realistic targets.",
+
+  "coils": {
+    "_4srm_device_0_relays_1_3": "comments-via-_keys-are-ignored",
+    "0":     true,
+    "1":     false,
+    "2":     true,
+    "3":     false,
+    "_6srm_device_0_relays_1_4": "...",
+    "24000": true,
+    "24001": true,
+    "24002": false,
+    "24003": false,
+    "24004": true,
+    "24005": false,
+
+    "_relay_fail_set_on_6srm_dev0_relay2": "...",
+    "30001": true
+  },
+
+  "holding_regs": {
+    "_device_fail_bitmask_4srm_device3_failed": "bit 3 of register 16000",
+    "16000": 8
+  },
+
+  "datetime": {
+    "year": 2026, "month": 5, "day": 29,
+    "hour": 12,   "minute": 30, "second": 0
+  }
+}

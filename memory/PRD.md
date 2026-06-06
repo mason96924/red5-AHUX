@@ -6,7 +6,7 @@ A dedicated Delta controller running an async pluggable-driver Modbus TCP client
 
 **First driver target**: Daekyung ELC SCU (Lighting Control Gateway) — Modbus TCP server fronting up to ~2000 physical relays in a mix of 4/6 sRM, 4/6 eRM, 48 sRM modules.
 
-**Status**: Design + skeleton complete; no code yet.
+**Status**: Phase 1 SCU simulator complete (480-line stdlib-only async TCP server, 13/13 tests passing). Design + skeleton complete. Phase 2 (read-only driver) ready to start.
 
 **Documents in this repo**:
 - `docs/RED5-MODBUS-V3.0-DESIGN.md` — full architectural design (12 sections, includes open issue tracking)

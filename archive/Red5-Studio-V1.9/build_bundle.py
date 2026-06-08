@@ -52,6 +52,14 @@ ROOT_FILES = [
     # cN.geniusmason.com) is V2.0-only -- it embeds external subdomains
     # that the controllers themselves don't need to host.  Excluded.
 
+    # Top-level stylesheets referenced by the HTML files above.
+    # Regression history (2026-06-08): equipment_mapper.css and
+    # landing.css existed in frontend/public/ but were never synced to
+    # this archive nor added here, so the bundle shipped without them.
+    # Caught by tests/test_html_asset_refs_bundled.py.
+    'equipment_mapper.css',
+    'landing.css',
+
     # NOTE: All .md guides are packaged via the docs/ subdir tree ONLY
     # (see SUBDIR_TREES below).  They MUST NOT be listed here -- when
     # they were at root, the controller extractor unpacked them flat into

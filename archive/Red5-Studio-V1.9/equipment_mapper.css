@@ -1,0 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@700&display=swap');
+
+/* === BASE === */
+body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; margin: 0; min-height: 100vh; overflow: hidden; }
+
+/* === SCROLLBAR === */
+.pill-scrollbar::-webkit-scrollbar { width: 10px; }
+.pill-scrollbar::-webkit-scrollbar-track { background: rgba(100,116,139,0.3); border-radius: 10px; margin-block: 2px; box-shadow: inset 0 0 5px rgba(0,0,0,0.5); }
+.pill-scrollbar::-webkit-scrollbar-thumb { background: #38bdf8; border-radius: 10px; border: 2px solid rgba(255,255,255,0.2); box-shadow: 0 0 8px rgba(56,189,248,0.5); }
+.pill-scrollbar::-webkit-scrollbar-thumb:hover { background: #7dd3fc; box-shadow: 0 0 12px rgba(125,211,252,0.8); }
+
+/* === BLUEPRINT GRID === */
+.blueprint-grid {
+    background-image: 
+        linear-gradient(to right, rgba(99, 102, 241, 0.15) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(99, 102, 241, 0.15) 1px, transparent 1px);
+    background-size: 5% 5%;
+}
+
+/* === FORM CONTROLS === */
+.custom-number-input::-webkit-inner-spin-button, .custom-number-input::-webkit-outer-spin-button { opacity: 1; cursor: pointer; }
+input[type=range] { -webkit-appearance: none; background: transparent; width: 100%; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: #818cf8; cursor: pointer; margin-top: -5px; box-shadow: 0 0 8px rgba(129,140,248,0.6), 0 2px 4px rgba(0,0,0,0.5); position: relative; z-index: 50; border: 2px solid rgba(255,255,255,0.3); }
+input[type=range]::-webkit-slider-thumb:hover { background: #a5b4fc; box-shadow: 0 0 12px rgba(165,180,252,0.8), 0 2px 6px rgba(0,0,0,0.6); }
+input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #64748b; border-radius: 2px; }
+
+/* === 3D ANIMATION ENGINES === */
+.preserve-3d { transform-style: preserve-3d; }
+
+@keyframes fan-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.anim-spin { transform-origin: center; transform-box: fill-box; animation-name: fan-rotate; animation-timing-function: linear; animation-iteration-count: infinite; }
+.anim-spin-center { transform-origin: 50px 50px; animation-name: fan-rotate; animation-timing-function: linear; animation-iteration-count: infinite; }
+
+/* === AIRFLOW RIBBON === */
+@keyframes dash-flow { from { stroke-dashoffset: 28; } to { stroke-dashoffset: 0; } }
+.animate-airflow { stroke-dasharray: 14, 14; animation: dash-flow linear infinite; }
+
+@keyframes pulse-alarm { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.anim-alarm { animation: pulse-alarm 0.8s ease-in-out infinite; }
+
+/* === CLOUD DRIFT (duct air currents) === */
+@keyframes cloud-drift {
+    0% { transform: scale(var(--base-scale)) translateZ(var(--z-pos)) translateX(-8px); opacity: var(--base-op); }
+    50% { transform: scale(calc(var(--base-scale) * 1.03)) translateZ(calc(var(--z-pos) + 6px)) translateX(8px); opacity: 1; }
+    100% { transform: scale(var(--base-scale)) translateZ(var(--z-pos)) translateX(-8px); opacity: var(--base-op); }
+}
+.animate-puffy-cloud { animation: cloud-drift 6s ease-in-out infinite; }
+
+/* === VFD TRACE AURA === */
+@keyframes trace-green {
+    0% { filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.4)) drop-shadow(0 0 10px rgba(16, 185, 129, 0.2)); }
+    100% { filter: drop-shadow(0 0 15px rgba(16, 185, 129, 0.8)) drop-shadow(0 0 30px rgba(16, 185, 129, 0.6)); }
+}
+.trace-run { animation: trace-green 1.5s ease-in-out infinite alternate; }
+
+@keyframes trace-red {
+    0% { filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.5)); }
+    100% { filter: drop-shadow(0 0 20px rgba(239, 68, 68, 1)) drop-shadow(0 0 40px rgba(239, 68, 68, 0.6)); }
+}
+.trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
+
+/* === CANVAS CURSORS === */
+.canvas-container.panning * { cursor: grabbing !important; }
+.canvas-container.pan-mode-active * { cursor: grab !important; }
+.canvas-container.pan-mode-active.panning * { cursor: grabbing !important; }

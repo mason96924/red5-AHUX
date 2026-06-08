@@ -1,21 +1,31 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
-## Phase L.10 — File Upload "(N)" Rename Fix (2026-06-09)
+## Phase L.10 — File Upload "(N)" Rename Fix + Popup Restored (2026-06-09)
 
-**Brief**: Operator reported that clicking "Upload File" in `equipment_mapper.html` and selecting `equipment_mapper.html` from Downloads resulted in a new `equipment_mapper (1).html` file appearing on the controller next to the original, instead of overwriting. Network payload analysis (DevTools screenshot) confirmed the browser's File API was handing the page a `file.name` that already contained the `(1)` suffix — Chrome/Firefox had auto-renamed the local download when the operator pulled the same file twice. Backend `/api/upload-file` writes whatever filename it receives, so the controller faithfully created the duplicate.
+**Brief**: Two coupled bugs in the equipment_mapper.html "Upload File" flow:
+1. Operator reported clicking Upload and selecting `equipment_mapper.html` from Downloads created a new `equipment_mapper (1).html` sibling on the controller instead of overwriting. Network payload analysis (DevTools screenshot) confirmed the browser's File API was handing the page a `file.name` that already contained the `(1)` suffix — Chrome/Firefox had auto-renamed the local download when the operator pulled the same file twice. Backend `/api/upload-file` writes whatever filename it receives.
+2. After upload, the confirmation popup the operator depended on (matching the delete-file confirm dialog style) was silently absent. Initial hypothesis ("Chrome blocked dialogs") was wrong — operator's screenshot proved `confirm()` works in their iframe context. Real root cause: `window.alert()` invoked after a long async chain (FileReader + fetch) loses user-activation, and Chromium silently de-prioritises post-activation dialogs in cross-origin iframes (operator's deploy at `c2.geniusmason.com`).
 
-**Fix** (frontend, defense-in-depth):
-- Added `normalizeUploadFilename(name)` helper in `equipment_mapper.html` that strips a trailing ` (N)` (or chained ` (N) (M)`) suffix from the basename's stem before sending, so re-uploads always target the canonical filename.
-- Wired both upload paths (single-file `uploadFileToController` and directory `webkitRelativePath`) through the helper.
-- Upload result message now annotates any auto-rename: `equipment_mapper.html - OK (was "equipment_mapper (1).html")`.
-- Mirrored identically to all three parity copies: `Red5-Studio-V1.9/`, `Red5-Studio-V2.0/`, `frontend/public/` (md5 identical).
-- Backend untouched — backend contract is "write what the caller sent"; the scrub lives at the boundary where it belongs.
+**Fixes**:
+- **(N) rename**: Added `normalizeUploadFilename(name)` helper in `equipment_mapper.html` that strips trailing ` (N)` (and chained ` (N) (M)`) suffixes from the basename stem before sending. Wired both upload paths (single-file + directory). Upload result lines annotate auto-renames: `equipment_mapper.html - OK (was "equipment_mapper (1).html")`.
+- **Popup restored**: Replaced fragile `alert()` with an in-page React modal (`uploadResult` state + `data-testid="upload-result-modal"`). Renders immediately, immune to user-activation rules, dismissable via OK button, Enter, Escape, or backdrop click. Tone-coloured (cyan = all ok, amber = partial, red = all fail) so the operator gets glanceable result feedback.
+- Backend `/api/upload-file` untouched — boundary contract preserved (it writes what it's told to).
+- Mirrored identically to all three parity copies: `Red5-Studio-V1.9/`, `Red5-Studio-V2.0/`, `frontend/public/` (md5 verified).
 
-**Regression tests** (18 pytest + 11 node JS-runtime cases, all green):
-- `tests/test_upload_filename_normalization.py` — helper presence + canonical regex in all 3 parity copies; both upload paths call it; reference impl table of normalization cases; backend overwrites cleanly when handed the same name twice; backend still respects an explicitly-`(1)`-named upload (no implicit dedupe).
-- `tests/test_normalize_upload_filename.js` — extracts the live JS helper from `equipment_mapper.html` and runs it in Node against the repro table.
+**Regression tests** (21 pytest + 11 node JS-runtime, all green; 81-test V1.9 suite passes):
+- `tests/test_upload_filename_normalization.py`:
+  - Helper presence + canonical regex in all 3 parity copies.
+  - Both upload paths route through the helper.
+  - Reference impl exhaustively covers the rename table (chained `(N) (M)`, paths, edge cases).
+  - Backend overwrites cleanly when handed the same name twice.
+  - Backend still respects an explicitly-`(1)`-named upload (no implicit dedupe — contract guard).
+  - **Modal wired**: `setUploadResult` called by both paths, modal JSX mounted, no raw `alert(` in upload code blocks.
+- `tests/test_normalize_upload_filename.js` — extracts the live JS helper from the page and runs it in Node.
 
-**Operator behaviour change**: re-deploying a file no longer bloats `/root/data/` with `(1)`, `(2)`, … siblings. Existing `(1)`-named files on controllers will need a one-time cleanup via the file browser delete.
+**Operator behaviour change**:
+- Re-deploying a file no longer creates `(1)/(2)/…` siblings.
+- Upload success now shows a tone-coloured modal matching the delete-confirm UX.
+- Existing `(N)`-named bloat on controllers needs one-time cleanup via the file browser.
 
 ---
 

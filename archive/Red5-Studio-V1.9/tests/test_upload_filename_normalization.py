@@ -84,6 +84,51 @@ def test_upload_paths_use_helper(path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("path", PARITY_COPIES, ids=lambda p: p.parts[-3])
+def test_upload_result_modal_wired(path: Path) -> None:
+    """The upload-result confirmation popup must be an in-page React
+    modal, never ``alert()``.  Operators in cross-origin iframe
+    deployments lose user-activation across the FileReader + fetch
+    chain, and Chromium then silently de-prioritises alert() — the
+    operator saw nothing on success.  Guards:
+
+    1. ``setUploadResult`` is called by both upload paths.
+    2. The modal JSX is mounted (looked up via ``data-testid``).
+    3. No raw ``alert(`` call survives inside the two upload handlers.
+    """
+    src = path.read_text(encoding="utf-8")
+
+    # 1) Both upload handlers set the modal state.
+    assert src.count("setUploadResult({") >= 2, (
+        f"{path}: expected both upload handlers to call setUploadResult."
+    )
+
+    # 2) Modal JSX present and addressable.
+    assert 'data-testid="upload-result-modal"' in src, (
+        f"{path}: upload-result modal JSX missing -- nothing renders the popup."
+    )
+    assert 'data-testid="upload-result-ok"' in src, (
+        f"{path}: upload-result OK button missing -- operator has no dismiss target."
+    )
+
+    # 3) No alert() inside uploadFileToController / uploadDirectoryToController.
+    #    We scope the search to the file-upload region only; the rest of the
+    #    page is allowed to use alert() if it wants.  Strip // line comments
+    #    first because the code blocks reference ``alert()`` in explanatory
+    #    comments next to the in-page modal handler.
+    upload_block_start = src.index("const uploadFileToController = ")
+    upload_block_end   = src.index("const createDirectoryOnController = ")
+    block = src[upload_block_start:upload_block_end]
+    code_only = "\n".join(
+        line for line in block.splitlines()
+        if not line.lstrip().startswith("//")
+    )
+    assert "alert(" not in code_only, (
+        f"{path}: alert() reintroduced into the upload code block -- "
+        "this is the bug that caused the silent popup regression."
+    )
+
+
 # ---------------------------------------------------------------------------
 # JS-equivalent reference impl -- proves the regex behaves as advertised.
 # ---------------------------------------------------------------------------

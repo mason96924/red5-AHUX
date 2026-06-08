@@ -374,15 +374,46 @@
             // reported by the SunCompass component; used to apply per-marker
             // amber-ring exposure halos when `sunState.enabled` is true.
             const [sunState, setSunState] = useState(null);
-            // Building lat/lon for solar math — attempt to read the first entry
-            // of weather_location.json (saved by Dashboard); fall back to NYC.
-            const [buildingLatLon, setBuildingLatLon] = useState({lat: 40.7128, lon: -74.0060});
+            // Building lat/lon for solar math.  Reads (1) localStorage
+            // `weatherLocation` (set by the Dashboard whenever the operator
+            // changes selection), and (2) /api/weather-location's `active`
+            // field as a fallback for fresh sessions before Dashboard has
+            // run.  Listens for storage events so changes made elsewhere
+            // (e.g. another tab) propagate to the sun-path widget here.
+            // Bug history (2026-05-29): the original code parsed the API
+            // response as `data[0]` but it's actually `{active, saved,
+            // default}` -- so the array check always failed and the sun
+            // path was permanently stuck on NYC.
+            const NYC = {lat: 40.7128, lon: -74.0060};
+            const readLatLonFromStorage = () => {
+                try {
+                    const wl = JSON.parse(localStorage.getItem('weatherLocation'));
+                    if (wl && typeof wl.lat === 'number') return {lat: wl.lat, lon: wl.lon};
+                } catch (e) {}
+                return null;
+            };
+            const [buildingLatLon, setBuildingLatLon] = useState(() => readLatLonFromStorage() || NYC);
             useEffect(() => {
+                // Only fall back to the API if localStorage has no pick yet.
+                if (readLatLonFromStorage()) return;
                 fetch('/api/weather-location').then(r => r.ok ? r.json() : null).then(data => {
-                    if (Array.isArray(data) && data[0] && typeof data[0].lat === 'number') {
-                        setBuildingLatLon({lat: data[0].lat, lon: data[0].lon});
+                    if (data && data.active && typeof data.active.lat === 'number') {
+                        setBuildingLatLon({lat: data.active.lat, lon: data.active.lon});
+                    } else if (data && data.default && typeof data.default.lat === 'number') {
+                        setBuildingLatLon({lat: data.default.lat, lon: data.default.lon});
                     }
                 }).catch(() => {});
+            }, []);
+            // Cross-tab / cross-page propagation: if Dashboard updates the
+            // weather selection, pick it up here without a reload.
+            useEffect(() => {
+                const onStorage = (e) => {
+                    if (e.key !== 'weatherLocation') return;
+                    const latlon = readLatLonFromStorage();
+                    if (latlon) setBuildingLatLon(latlon);
+                };
+                window.addEventListener('storage', onStorage);
+                return () => window.removeEventListener('storage', onStorage);
             }, []);
             
             // ============= POINTS EDITOR STATE =============

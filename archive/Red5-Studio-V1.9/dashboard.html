@@ -1011,14 +1011,15 @@
                inside the Floor Plan modal.  Read-only here — authored by the
                Config Tool's Sun-Path compass; the dashboard only consumes. */
             const [sunState, setSunState] = useState(null);
-            const [buildingLatLon, setBuildingLatLon] = useState({lat: 40.7128, lon: -74.0060});
-            useEffect(() => {
-                fetch('/api/weather-location').then(r => r.ok ? r.json() : null).then(data => {
-                    if (Array.isArray(data) && data[0] && typeof data[0].lat === 'number') {
-                        setBuildingLatLon({lat: data[0].lat, lon: data[0].lon});
-                    }
-                }).catch(() => {});
-            }, []); 
+            // Building lat/lon for solar math.  DERIVED from `weatherLocation`
+            // (declared below) so the floor-plan sun path follows the user's
+            // active weather selection in real time.  Falls back to NYC only
+            // when nothing is picked yet.  Bug history (2026-05-29): an
+            // earlier useEffect tried `data[0]` against /api/weather-location,
+            // but that endpoint returns {active, saved, default} (a dict, not
+            // an array), so the check `Array.isArray(data) && data[0]` was
+            // always false and the sun path was permanently stuck on NYC
+            // regardless of what the operator selected. 
             const [isFloorPlanDragging, setIsFloorPlanDragging] = useState(false);
             const [mapConfig, setMapConfig] = useState(null);
             
@@ -1030,6 +1031,11 @@
             const [weatherLocation, setWeatherLocation] = useState(() => {
                 try { return JSON.parse(localStorage.getItem('weatherLocation')) || null; } catch { return null; }
             });
+            // Derived value -- always reflects the active weather location.
+            // See comment near `sunState` declaration for bug history.
+            const buildingLatLon = (weatherLocation && typeof weatherLocation.lat === 'number')
+                ? {lat: weatherLocation.lat, lon: weatherLocation.lon}
+                : {lat: 40.7128, lon: -74.0060};
             // Saved-location list is now controller-backed (single source of truth on the
             // controller). Local copy mirrors `savedWeatherLocations` so the modal can
             // render synchronously without flicker.

@@ -2613,6 +2613,14 @@
                                     const trackEl = e.currentTarget.closest('[data-testid="sweet-spot-range"]');
                                     const r = trackEl.getBoundingClientRect();
                                     const which = handle || pickHandle(e.clientX, trackEl);
+                                    // Popout fix (2026-06-08): when the sidebar is rendered into a
+                                    // popped-out window, the slider DOM lives there but `window` in
+                                    // this closure is the PARENT window.  Attach drag listeners to
+                                    // the window that actually owns the slider so mousemove/mouseup
+                                    // events in the popout fire correctly.
+                                    const ownerWin = (e.view)
+                                        || (e.target && e.target.ownerDocument && e.target.ownerDocument.defaultView)
+                                        || window;
                                     const onMove = (mv) => {
                                         const raw = ABS_LO + ((mv.clientX - r.left) / r.width) * (ABS_HI - ABS_LO);
                                         const v = Math.round(Math.max(ABS_LO, Math.min(ABS_HI, raw)));
@@ -2622,11 +2630,11 @@
                                         });
                                     };
                                     const onUp = () => {
-                                        window.removeEventListener('mousemove', onMove);
-                                        window.removeEventListener('mouseup', onUp);
+                                        ownerWin.removeEventListener('mousemove', onMove);
+                                        ownerWin.removeEventListener('mouseup', onUp);
                                     };
-                                    window.addEventListener('mousemove', onMove);
-                                    window.addEventListener('mouseup', onUp);
+                                    ownerWin.addEventListener('mousemove', onMove);
+                                    ownerWin.addEventListener('mouseup', onUp);
                                 };
                                 const trackBg   = theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300';
                                 const handleCls = `absolute -top-1 w-4 h-4 -ml-2 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing ${theme==='dark'?'bg-emerald-400':'bg-emerald-500'}`;
@@ -2815,6 +2823,12 @@
                                     const trackEl = e.currentTarget.closest('[data-testid="axis-range-track"]');
                                     const r = trackEl.getBoundingClientRect();
                                     const which = handle || pickHandle(e.clientX, trackEl);
+                                    // Popout fix (2026-06-08): same rationale as the sweet-spot
+                                    // RH slider above -- attach drag listeners to the slider's
+                                    // own window, not the parent's.
+                                    const ownerWin = (e.view)
+                                        || (e.target && e.target.ownerDocument && e.target.ownerDocument.defaultView)
+                                        || window;
                                     const onMove = (mv) => {
                                         const raw = ABS_MIN + ((mv.clientX - r.left) / r.width) * (ABS_MAX - ABS_MIN);
                                         const v = Math.round(Math.max(ABS_MIN, Math.min(ABS_MAX, raw)));
@@ -2824,11 +2838,11 @@
                                         });
                                     };
                                     const onUp = () => {
-                                        window.removeEventListener('mousemove', onMove);
-                                        window.removeEventListener('mouseup', onUp);
+                                        ownerWin.removeEventListener('mousemove', onMove);
+                                        ownerWin.removeEventListener('mouseup', onUp);
                                     };
-                                    window.addEventListener('mousemove', onMove);
-                                    window.addEventListener('mouseup', onUp);
+                                    ownerWin.addEventListener('mousemove', onMove);
+                                    ownerWin.addEventListener('mouseup', onUp);
                                 };
                                 const trackBg = theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300';
                                 const handleCls = `absolute -top-1 w-4 h-4 -ml-2 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing ${theme==='dark'?'bg-indigo-400':'bg-indigo-500'}`;

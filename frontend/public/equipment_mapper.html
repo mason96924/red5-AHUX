@@ -343,29 +343,6 @@
             const [selectedMarkerId, setSelectedMarkerId] = useState(null);
             const [showPsychroChart, setShowPsychroChart] = useState(false);
             const [psychroChartData, setPsychroChartData] = useState(null);
-            // In-page modal for upload result summaries.  We deliberately
-            // do NOT use the browser-native ``alert()`` here: Chromium
-            // tabs that have ever shown back-to-back alerts get a
-            // persistent "Prevent this page from creating additional
-            // dialogs" suppression flag that the user cannot un-tick,
-            // and from that point on every alert() is silently dropped.
-            // A controller-side React modal is immune.  Shape:
-            //   { title: string, lines: string[], tone: 'ok'|'warn'|'err' }
-            const [uploadResult, setUploadResult] = useState(null);
-            // Allow Enter or Escape to dismiss the upload-result modal --
-            // mirrors the native browser confirm()/alert() keyboard
-            // affordance the operator is used to from the delete dialog.
-            useEffect(() => {
-                if (!uploadResult) return undefined;
-                const onKey = (e) => {
-                    if (e.key === 'Enter' || e.key === 'Escape') {
-                        e.preventDefault();
-                        setUploadResult(null);
-                    }
-                };
-                window.addEventListener('keydown', onKey);
-                return () => window.removeEventListener('keydown', onKey);
-            }, [uploadResult]);
             const [draggingFloorMarker, setDraggingFloorMarker] = useState(null);
             const floorCanvasRef = useRef(null);
             // Image aspect ratio (natural width / height) used by the air-flow
@@ -2446,18 +2423,14 @@
                         }
                     }
                     
-                    // In-page React modal (see uploadResult state).  We
-                    // do NOT call window.alert() because Chromium's
-                    // per-tab "Prevent additional dialogs" flag, once
-                    // tripped, silently swallows every subsequent
-                    // alert() — operators just saw nothing on success.
-                    const okCount   = results.filter(r => r.includes(' - OK')).length;
-                    const failCount = results.length - okCount;
-                    setUploadResult({
-                        title: 'Upload results',
-                        lines: results,
-                        tone: failCount === 0 ? 'ok' : (okCount === 0 ? 'err' : 'warn'),
-                    });
+                    // Native browser alert() — same look-and-feel as the
+                    // delete-file confirm() dialog the operator expects.
+                    // Renders as the standard cross-origin-iframe blue
+                    // popup ("An embedded page at … says").  Matches the
+                    // operator's muscle memory; no custom modal styling
+                    // that diverges from the rest of the file-browser
+                    // UX.
+                    alert(`Upload results:\n\n${results.join('\n')}`);
                     openFileBrowser(fileBrowserPath);
                 };
                 input.click();
@@ -2749,18 +2722,11 @@
                             results.push(relPath + ' \u2014 ' + err.message + (renamed ? ' (was "' + rawRelPath + '")' : ''));
                         }
                     }
-                    // In-page modal (same rationale as single-file
-                    // upload — Chromium suppresses alert() once the
-                    // "Prevent additional dialogs" flag is tripped).
-                    setUploadResult({
-                        title: 'Directory upload finished',
-                        lines: [
-                            `OK:   ${okCount}`,
-                            `FAIL: ${failCount}`,
-                            ...(results.length ? ['', ...results] : []),
-                        ],
-                        tone: failCount === 0 ? 'ok' : (okCount === 0 ? 'err' : 'warn'),
-                    });
+                    // Native browser alert() — matches the delete-file
+                    // confirm() popup so the operator's muscle memory
+                    // works uniformly across file-browser actions.
+                    alert('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
+                          (results.length ? '\n\n' + results.join('\n') : ''));
                     openFileBrowser(fileBrowserPath);
                 };
                 input.click();
@@ -5841,63 +5807,6 @@
                                         className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-black uppercase tracking-widest transition-all"
                                     >
                                         Close
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* UPLOAD RESULT MODAL
-                        Replaces the legacy ``alert()`` confirmation pop-up
-                        for /api/upload-file results.  Native alert()
-                        fires from inside an async chain (FileReader +
-                        fetch) AFTER user activation has been consumed
-                        by Chromium, so the dialog gets silently
-                        de-prioritised in cross-origin iframes (the
-                        operator's deployment context is an embedded
-                        page at c2.geniusmason.com).  An in-page React
-                        modal does not depend on user activation at
-                        all — it always renders.  Same blue tone as
-                        the file-browser theme so it feels native to
-                        the page rather than a foreign alert.  */}
-                    {uploadResult && (
-                        <div
-                            data-testid="upload-result-modal"
-                            onClick={() => setUploadResult(null)}
-                            className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-                        >
-                            <div
-                                onClick={e => e.stopPropagation()}
-                                className={
-                                    "bg-slate-900 border-2 rounded-xl shadow-[0_0_80px_rgba(56,189,248,0.35)] p-6 max-w-2xl w-full mx-4 relative " +
-                                    (uploadResult.tone === 'err'
-                                        ? 'border-red-500/60'
-                                        : uploadResult.tone === 'warn'
-                                            ? 'border-amber-500/60'
-                                            : 'border-cyan-400/60')
-                                }
-                            >
-                                <h2 className={
-                                    "text-xl font-black uppercase tracking-tight mb-4 " +
-                                    (uploadResult.tone === 'err'
-                                        ? 'text-red-400'
-                                        : uploadResult.tone === 'warn'
-                                            ? 'text-amber-300'
-                                            : 'text-cyan-300')
-                                }>
-                                    {uploadResult.title}
-                                </h2>
-                                <div className="bg-slate-950/70 border border-slate-700/50 rounded-lg p-4 max-h-[60vh] overflow-y-auto font-mono text-sm text-slate-200 whitespace-pre-wrap">
-                                    {(uploadResult.lines || []).join('\n')}
-                                </div>
-                                <div className="mt-5 flex justify-end">
-                                    <button
-                                        data-testid="upload-result-ok"
-                                        autoFocus
-                                        onClick={() => setUploadResult(null)}
-                                        className="px-6 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-lg font-black uppercase tracking-widest transition-all"
-                                    >
-                                        OK
                                     </button>
                                 </div>
                             </div>

@@ -2395,7 +2395,15 @@
                         }
                     }
                     
-                    toast(`Upload results:\n\n${results.join('\n')}`);
+                    // alert() (not toast) for upload results.  Reasons:
+                    //   1. Multi-line upload reports must be visible until
+                    //      acknowledged -- toasts auto-dismiss in 3.8 s and
+                    //      sit in a small bottom-right corner card.
+                    //   2. alert() is stdlib browser -- works on every
+                    //      controller regardless of toast.js bundle state.
+                    //   3. Matches operator expectation of "pop confirmation
+                    //      window" from the pre-2026-05-19 behavior.
+                    alert(`Upload results:\n\n${results.join('\n')}`);
                     openFileBrowser(fileBrowserPath);
                 };
                 input.click();
@@ -2681,7 +2689,9 @@
                             results.push(relPath + ' \u2014 ' + err.message);
                         }
                     }
-                    toast('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
+                    // alert() (not toast) -- see uploadFileToController for
+                    // rationale: multi-line summary must persist until OK.
+                    alert('Directory upload finished.\n\nOK:  ' + okCount + '\nFAIL: ' + failCount +
                           (results.length ? '\n\n' + results.join('\n') : ''));
                     openFileBrowser(fileBrowserPath);
                 };

@@ -1,5 +1,25 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.10 — File Upload "(N)" Rename Fix (2026-06-09)
+
+**Brief**: Operator reported that clicking "Upload File" in `equipment_mapper.html` and selecting `equipment_mapper.html` from Downloads resulted in a new `equipment_mapper (1).html` file appearing on the controller next to the original, instead of overwriting. Network payload analysis (DevTools screenshot) confirmed the browser's File API was handing the page a `file.name` that already contained the `(1)` suffix — Chrome/Firefox had auto-renamed the local download when the operator pulled the same file twice. Backend `/api/upload-file` writes whatever filename it receives, so the controller faithfully created the duplicate.
+
+**Fix** (frontend, defense-in-depth):
+- Added `normalizeUploadFilename(name)` helper in `equipment_mapper.html` that strips a trailing ` (N)` (or chained ` (N) (M)`) suffix from the basename's stem before sending, so re-uploads always target the canonical filename.
+- Wired both upload paths (single-file `uploadFileToController` and directory `webkitRelativePath`) through the helper.
+- Upload result message now annotates any auto-rename: `equipment_mapper.html - OK (was "equipment_mapper (1).html")`.
+- Mirrored identically to all three parity copies: `Red5-Studio-V1.9/`, `Red5-Studio-V2.0/`, `frontend/public/` (md5 identical).
+- Backend untouched — backend contract is "write what the caller sent"; the scrub lives at the boundary where it belongs.
+
+**Regression tests** (18 pytest + 11 node JS-runtime cases, all green):
+- `tests/test_upload_filename_normalization.py` — helper presence + canonical regex in all 3 parity copies; both upload paths call it; reference impl table of normalization cases; backend overwrites cleanly when handed the same name twice; backend still respects an explicitly-`(1)`-named upload (no implicit dedupe).
+- `tests/test_normalize_upload_filename.js` — extracts the live JS helper from `equipment_mapper.html` and runs it in Node against the repro table.
+
+**Operator behaviour change**: re-deploying a file no longer bloats `/root/data/` with `(1)`, `(2)`, … siblings. Existing `(1)`-named files on controllers will need a one-time cleanup via the file browser delete.
+
+---
+
+
 ## Phase L.9 — 🆕 Red5-Modbus V3.0 (NEW PROJECT, 2026-05-29)
 
 A dedicated Delta controller running an async pluggable-driver Modbus TCP client gateway. Independent from V1.9/V2.0 HVAC work; reuses deployment machinery (bundle upload, /api/assets, /api/upload-file, directory layout) but the runtime is fresh — no HVAC code carried over.

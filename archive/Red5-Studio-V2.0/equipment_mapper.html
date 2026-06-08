@@ -2362,6 +2362,31 @@
                 }
             };
             
+            // Strip browser-injected " (N)" duplicate suffix BEFORE the
+            // extension.  Chrome/Firefox auto-rename re-downloaded files
+            // (e.g. equipment_mapper.html  ->  equipment_mapper (1).html
+            //  ->  equipment_mapper (2).html ...).  When the operator
+            // re-uploads such a file to push a change to the controller,
+            // they expect the canonical name to overwrite -- not to grow
+            // a new "(1)" sibling on every redeploy.  Normalise on the
+            // way out so deploys are idempotent regardless of what the
+            // local browser named the download.  Multi-segment suffixes
+            // ("file (1) (2).html") collapse in a single pass.
+            const normalizeUploadFilename = (name) => {
+                if (!name) return name;
+                const slash = name.lastIndexOf('/');
+                const dir   = slash >= 0 ? name.slice(0, slash + 1) : '';
+                const leaf  = slash >= 0 ? name.slice(slash + 1)    : name;
+                const dot   = leaf.lastIndexOf('.');
+                const stem  = dot > 0 ? leaf.slice(0, dot) : leaf;
+                const ext   = dot > 0 ? leaf.slice(dot)    : '';
+                const cleanStem = stem.replace(/(\s*\(\d+\))+\s*$/, '');
+                // If stripping leaves nothing (e.g. the file was literally
+                // named "(1).html"), keep the original so we never lose
+                // the upload entirely.
+                return dir + (cleanStem || stem) + ext;
+            };
+
             const uploadFileToController = () => {
                 const input = document.createElement('input');
                 input.type = 'file';
@@ -2382,14 +2407,17 @@
                                 reader.readAsDataURL(file);
                             });
                             
-                            const uploadName = fileBrowserPath ? `${fileBrowserPath}/${file.name}` : file.name;
+                            const cleanName  = normalizeUploadFilename(file.name);
+                            const renamed    = cleanName !== file.name;
+                            const uploadName = fileBrowserPath ? `${fileBrowserPath}/${cleanName}` : cleanName;
                             const response = await fetch(`${apiUrl}/api/upload-file`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ filename: uploadName, file_data: dataURL, root: fileBrowserRoot })
                             });
                             const data = await response.json();
-                            results.push(data.success ? `${file.name} - OK` : `${file.name} - FAILED: ${data.error}`);
+                            const tag  = renamed ? ` (was "${file.name}")` : '';
+                            results.push(data.success ? `${cleanName} - OK${tag}` : `${cleanName} - FAILED: ${data.error}${tag}`);
                         } catch (err) {
                             results.push(`${file.name} - ERROR: ${err.message}`);
                         }
@@ -2667,7 +2695,13 @@
                     let okCount = 0, failCount = 0;
                     for (let i = 0; i < files.length; i++) {
                         const f = files[i];
-                        const relPath = f.webkitRelativePath || f.name;
+                        const rawRelPath = f.webkitRelativePath || f.name;
+                        // Apply the same " (N)" suffix scrubbing as
+                        // single-file uploads.  For directory uploads
+                        // webkitRelativePath carries the folder prefix,
+                        // so normalise the basename in place.
+                        const relPath    = normalizeUploadFilename(rawRelPath);
+                        const renamed    = relPath !== rawRelPath;
                         const uploadName = fileBrowserPath ? `${fileBrowserPath}/${relPath}` : relPath;
                         try {
                             const dataURL = await new Promise((resolve, reject) => {
@@ -2683,10 +2717,10 @@
                             });
                             const j = await r.json();
                             if (j.success) { okCount++; }
-                            else { failCount++; results.push(relPath + ' \u2014 ' + (j.error || 'failed')); }
+                            else { failCount++; results.push(relPath + ' \u2014 ' + (j.error || 'failed') + (renamed ? ' (was "' + rawRelPath + '")' : '')); }
                         } catch (err) {
                             failCount++;
-                            results.push(relPath + ' \u2014 ' + err.message);
+                            results.push(relPath + ' \u2014 ' + err.message + (renamed ? ' (was "' + rawRelPath + '")' : ''));
                         }
                     }
                     // alert() (not toast) -- see uploadFileToController for

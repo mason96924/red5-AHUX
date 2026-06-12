@@ -4988,11 +4988,18 @@
                                                 {hasFanPill && (() => {
                                                     var writeTarget = a.pill_write_target || 'SAFM';
                                                     var hasTarget = ap[writeTarget] !== undefined;
+                                                    // Toggle-switch position must reflect the WRITE TARGET's own
+                                                    // state (SAFM), not the fan-running state (SAFP).  Earlier
+                                                    // versions drove the toggle from `fanOn` -> click wrote SAFM
+                                                    // but the switch never moved because SAFP is unrelated to
+                                                    // SAFM, so the operator got zero visual feedback even though
+                                                    // the SA-panel SAFM toggle did flip.  Mirrors the bool-point
+                                                    // renderer at renderValueControl() ~line 4789.
+                                                    var rawWrite = ap[writeTarget];
+                                                    var manualOn = rawWrite === 1 || rawWrite === true || rawWrite === '1';
                                                     var onClickPill = function(e){
                                                         e.stopPropagation(); e.preventDefault();
-                                                        var cur = ap[writeTarget];
-                                                        var curOn = cur === 1 || cur === true || cur === '1';
-                                                        writeRW(writeTarget, curOn ? 0 : 1);
+                                                        writeRW(writeTarget, manualOn ? 0 : 1);
                                                     };
                                                     return (
                                                         <div data-testid="ahu-fan-pill" className="absolute z-30" style={{left:`${pX}%`, top:`${pY}%`, transform:`translate(-50%,-50%) scale(${pScale})`}}>
@@ -5000,13 +5007,21 @@
                                                                 onClick={hasTarget ? onClickPill : undefined}
                                                                 onMouseDown={e => e.preventDefault()}
                                                                 disabled={!hasTarget}
-                                                                title={hasTarget ? `Click to toggle ${writeTarget}` : `${writeTarget} not in telemetry`}
+                                                                title={hasTarget ? `Click to toggle ${writeTarget} (currently ${manualOn ? 'ON' : 'OFF'})` : `${writeTarget} not in telemetry`}
                                                                 className={`bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-full border shadow-[0_10px_20px_rgba(0,0,0,0.8)] flex items-center gap-3 select-none border-slate-700 ${hasTarget ? 'pointer-events-auto cursor-pointer hover:border-emerald-400/70 hover:ring-2 hover:ring-emerald-400/30 transition-all' : 'pointer-events-none opacity-70'}`}
                                                                 style={{padding:'6px 12px'}}>
                                                                 <div className="w-5 h-5 bg-slate-800 rounded-full flex items-center justify-center text-[9px] font-black text-slate-400 pointer-events-none">M</div>
-                                                                <div className={`w-9 h-5 rounded-full p-0.5 shadow-inner flex items-center pointer-events-none ${fanOn ? 'bg-emerald-500' : 'bg-slate-800 border border-slate-600'}`}>
-                                                                    <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${fanOn ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                                {/* Toggle switch -- driven by manualOn (the write target's
+                                                                    own value) so it visually flips the moment the
+                                                                    operator clicks, with one telemetry-poll round-trip
+                                                                    for the confirm.  Previously bound to fanOn which is
+                                                                    SAFP-derived and never moved. */}
+                                                                <div className={`w-9 h-5 rounded-full p-0.5 shadow-inner flex items-center pointer-events-none ${manualOn ? 'bg-emerald-500' : 'bg-slate-800 border border-slate-600'}`}>
+                                                                    <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${manualOn ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                                 </div>
+                                                                {/* R/S badge -- still tied to fanOn (actual inverter
+                                                                    running state) because that's a distinct piece of
+                                                                    info: "manual mode is engaged" vs "fan is spinning". */}
                                                                 <div className={`text-[10px] font-black w-3 text-center pointer-events-none ${fanOn ? 'text-emerald-400' : 'text-slate-500'}`}>{fanOn ? 'R' : 'S'}</div>
                                                             </button>
                                                         </div>

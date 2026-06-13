@@ -1,5 +1,36 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## 🔒 V3.0 SCOPE LOCK (authoritative — 2026-06-12)
+
+Read this BEFORE any work on `/app/archive/Red5-Modbus-V3.0/` or `/app/docs/RED5-MODBUS-V3.0-*.md`.
+
+**Operator's scope statement, verbatim:**
+
+> *V3.0 is intended only for lighting control system integration. The
+> lighting platform has data format not consonant with BACnet. So most
+> lighting-platform-specific data is brought into the controller as
+> metadata resident in the controller memory space for the
+> visualization. Only the on/off and alarm status of the lighting
+> points will come into the BACnet. This is totally separate from Psy
+> chart (V1.9 and V2.0). Only the format of asset management and
+> configuration methodology of V1.9/V2.0 to be brought into V3.0.*
+
+**Hard rules a future agent MUST follow:**
+
+| | DO | DO NOT |
+|---|---|---|
+| Domain | Lighting fixtures, relays, alarms, zones | HVAC, AHU, VAV, psy-chart, sun-path, weather |
+| BACnet surface | Per-relay `on/off` BV + `alarm` BV only | Publish every metadata field to BACnet |
+| Metadata | Keep in controller memory; expose to V3.0 visualisation via the driver's local read API | Force every field through BACnet |
+| Carry-over from V1.9/V2.0 | Asset-management format (`equipment_types.json` shape, configurator UX, file-browser/uploader, plug-in service pattern, `build_bundle.py`, regression-test discipline) | `collector.py`, `g36_service_v19_port.py`, `band_service.py`, `weather_service.py`, psy-3d, fan/AHU pills |
+| Driver scope | Lighting-platform drivers (Daekyung SCU first; future: DALI-IP, KNX-IP, Casambi, other lighting SCUs) | HVAC bus clients (those go in V2.0 extensions, not V3.0) |
+| State sharing | None. V3.0 is its own archive, its own bundle, its own controller. | Share runtime state with V1.9 or V2.0 instances |
+
+Full elaboration lives in `/app/docs/RED5-MODBUS-V3.0-DESIGN.md` §0. Any conflict between this PRD block and other docs → **this block wins**.
+
+---
+
+
 ## Phase L.10 — File Upload "(N)" Rename Fix + Popup Restored (2026-06-09)
 
 **Brief**: Two coupled bugs in the equipment_mapper.html "Upload File" flow:

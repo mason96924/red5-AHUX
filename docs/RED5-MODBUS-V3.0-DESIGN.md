@@ -1,8 +1,74 @@
 # Red5-Modbus V3.0 — Design Document
 
-**Authored**: 2026-05-29
+**Authored**: 2026-05-29 (scope clarified 2026-06-12 — see §0)
 **Project status**: Pre-implementation. Spec captured; skeleton seeded; no driver code yet.
-**Predecessor lineage**: Borrows deployment machinery and directory layout from Red5-Studio V1.9. Runtime is fresh — no HVAC code carried over.
+**Predecessor lineage**: Borrows asset-management format and configuration methodology from Red5-Studio V1.9/V2.0. **Does NOT borrow Psychrometric / HVAC runtime code** — V3.0 is a lighting-control product, not an HVAC product.
+
+---
+
+## 0. Scope — what V3.0 is and is NOT (read this first)
+
+**Authoritative scope statement from the operator (verbatim, 2026-06-12):**
+
+> *V3.0 is intended only for lighting control system integration. The
+> lighting platform has data format not consonant with BACnet. So most
+> lighting-platform-specific data is brought into the controller as
+> metadata resident in the controller memory space for the
+> visualization. Only the on/off and alarm status of the lighting
+> points will come into the BACnet. This is totally separate from Psy
+> chart (V1.9 and V2.0). Only the format of asset management and
+> configuration methodology of V1.9/V2.0 to be brought into V3.0.*
+
+### Implications a future agent MUST honour
+
+1. **V3.0 is a lighting product.** No AHU, VAV, psy-chart, sun-path,
+   centrifugal-fan pill, weather widget, or any other HVAC affordance
+   belongs in V3.0. The dashboard / visualisation layer in V3.0
+   renders **lighting fixtures, relay state, alarm flags, room/zone
+   metadata** — nothing else.
+2. **BACnet exposure is intentionally minimal.** Of the ~2000 physical
+   relays that the SCU manages, V3.0 publishes to BACnet **only**:
+     - `on/off` (BV per relay or packed CSV)
+     - `alarm status` (BV per relay or packed CSV)
+   Everything else — fixture name, dimming level, scene assignment,
+   schedule, group membership, photo-sensor binding, occupancy
+   linkage, energy reads, etc. — stays as **in-memory metadata** on
+   the V3.0 controller, exposed to the visualisation layer via the
+   driver's local read API (not BACnet).
+3. **Asset management + configuration methodology is the carry-over,
+   not the runtime.** From V1.9/V2.0 we re-use:
+     - The `equipment_types.json` shape (categories → types →
+       visual_assets → animations) — but rebranded for lighting
+       (`lighting_types.json`, categories like
+       `relay_modules`, `fixtures`, `zones`).
+     - The `equipment_mapper.html` configurator UX flow (file
+       browser, asset uploader, alignment / pill placement) —
+       adapted for lighting visuals.
+     - The plug-in service pattern from V2.0 (`_service_template.py`,
+       `register(app, ctx)`, `bridges.json` config tree).
+     - The build/bundle pipeline (`build_bundle.py`) and the
+       regression-test discipline (`tests/test_*.py`).
+   We do **NOT** re-use:
+     - `collector.py` (HVAC-CSV poller via `dibt.Read`)
+     - `g36_service_v19_port.py` (ASHRAE G36 sequences)
+     - `band_service.py`, `band_csv_generator.py` (HVAC trend bands)
+     - `weather_service.py`, sun-path widget, psy-3d engine
+     - Any of the AHU/VAV-specific telemetry plumbing.
+4. **Architectural separation is hard.** V3.0 ships in its own
+   archive (`/app/archive/Red5-Modbus-V3.0/`), its own bundle, its
+   own controller. It must never share running state with a V1.9 or
+   V2.0 instance. The only thing they can share is design lineage.
+
+### What this changes vs. the original §1 below
+
+The original §1 framed V3.0 as a "generic pluggable-driver gateway
+that bridges Modbus TCP devices into BACnet". That framing is now
+**narrower**: the gateway exists specifically to surface a lighting
+platform (Daekyung SCU and its successors) into the operator's
+control surface. The "future drivers" bullet in §1 still stands — but
+those future drivers are also lighting-platform drivers (other SCU
+vendors, DALI bridges, Casambi, KNX-over-IP, etc.), **not** HVAC bus
+clients.
 
 ---
 
@@ -12,13 +78,16 @@ A pluggable-driver gateway running on a dedicated Delta Controls controller. Bri
 
 **First driver**: Modbus TCP client to a Daekyung ELC SCU (Lighting Control Gateway) supporting up to ~2000 physical relays in a mix of 4/6 sRM, 4/6 eRM, and 48 sRM modules.
 
-**Future drivers**: additional Modbus TCP servers, Modbus RTU, OPC UA, MQTT, vendor-proprietary protocols. Driver framework is the deliverable; SCU driver is the first proof.
+**Future drivers**: additional **lighting-platform** Modbus TCP servers, Modbus RTU lighting bridges, DALI-over-IP, KNX-over-IP, vendor-proprietary lighting protocols. Driver framework is the deliverable; SCU driver is the first proof.
+
+**Out of scope** (per §0): HVAC, psychrometrics, ASHRAE G36, weather, any non-lighting telemetry. If a future driver request is for an HVAC bus, it belongs in V2.0/V1.9 Modbus extensions, not in V3.0.
 
 **Priorities (in order)**:
 1. Reliability of the data path (no silent stale reads, no commands lost)
 2. Speed sufficient to meet UI/BMS expectations (~1 s end-to-end latency, fast tier)
 3. Operational visibility (per-driver diagnostics, BACnet heartbeat)
 4. Plug-in ergonomics (adding driver #2 should not require touching driver #1)
+5. **Lighting-domain fit**: data model, configurator UX, and metadata story all assume lighting fixtures/relays/zones as the primary concept.
 
 ---
 

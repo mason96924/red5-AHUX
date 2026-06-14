@@ -175,6 +175,34 @@ def main(argv: list[str] | None = None) -> int:
     body = build_skeleton(en, args.lang)
     out_name = f"{args.doc}.{args.lang}.md"
 
+    # Parity safety: if ANY target tree already has a real (non-skeleton)
+    # translation for this doc+lang, mirror that real file to the other
+    # trees rather than overwriting it with a fresh skeleton.  A "real"
+    # translation is detected by the absence of the FROZEN-marker
+    # header we emit in build_skeleton().
+    real_source = None
+    for d in TARGETS:
+        existing = d / out_name
+        if existing.exists():
+            existing_txt = existing.read_text(encoding="utf-8")
+            if "<!--FROZEN-->" not in existing_txt and "Translation skeleton for" not in existing_txt:
+                real_source = existing
+                break
+
+    if real_source is not None:
+        real_bytes = real_source.read_bytes()
+        real_md5 = hashlib.md5(real_bytes).hexdigest()
+        print(f"FOUND real translation at {real_source}")
+        print(f"       md5={real_md5}  -- mirroring to other trees, NOT regenerating skeleton.")
+        for target_dir in TARGETS:
+            out = target_dir / out_name
+            if out == real_source:
+                continue
+            target_dir.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(real_bytes)
+            print(f"  MIRROR {out}   md5={real_md5}")
+        return 0
+
     written = []
     for target_dir in TARGETS:
         out = target_dir / out_name

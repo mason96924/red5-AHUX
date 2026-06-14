@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""make_skeleton.py — seed a translation skeleton file.
+
+Usage:
+    python3 make_skeleton.py --doc control_algorithms --lang ja
+
+For each --doc / --lang pair, this:
+  1. Reads /app/archive/Red5-Studio-V1.9/docs/<doc>.md   (source of truth)
+  2. Annotates every "frozen" span (code blocks, ALL-CAPS identifiers
+     >=2 chars, inline code, file paths, math symbols, brand names)
+     with HTML comment markers ``<!-- FROZEN -->...<!-- /FROZEN -->``
+     so the translator can see at a glance what NOT to touch.
+  3. Writes the annotated file to all three target trees:
+        /app/archive/Red5-Studio-V1.9/docs/<doc>.<lang>.md
+        /app/archive/Red5-Studio-V2.0/docs/<doc>.<lang>.md
+        /app/frontend/public/docs/<doc>.<lang>.md
+     (Refuses to overwrite an existing file unless --force is given.)
+
+After the translator finishes editing the body text in one of the
+three copies, run ``install_translation.py`` to mirror it to the
+other two and md5-verify parity.
+
+Design choices
+--------------
+* Stdlib-only. No deps, no network, deterministic.
+* The FROZEN markers are HTML comments so they survive Markdown
+  rendering invisibly -- a translator can leave them in or strip
+  them; either way the output is valid.
+* We do NOT annotate inside fenced code blocks (the whole block is
+  already implicitly frozen and the marker would clutter code).
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+DOCS_DIR_V19  = Path("/app/archive/Red5-Studio-V1.9/docs")
+DOCS_DIR_V20  = Path("/app/archive/Red5-Studio-V2.0/docs")
+DOCS_DIR_PUB  = Path("/app/frontend/public/docs")
+TARGETS = (DOCS_DIR_V19, DOCS_DIR_V20, DOCS_DIR_PUB)
+
+VALID_LANGS = ("ja", "ko", "zh-CN", "zh-TW")
+
+# Tokens that should NEVER be translated.  Kept in sync with
+# README.md §3.1 / §3.5.  The regex matches whole words only.
+FROZEN_LITERALS = (
+    # Brand / product names
+    "Red5", "Red5 Studio", "Red5-Modbus", "Emergent",
+    "Delta Controls", "Daekyung", "enteliWEB", "DIBT", "dibt",
+    "BACnet", "Modbus", "MQTT", "OPC UA", "KNX", "DALI",
+    "Casambi", "BAC0", "bacpypes", "ASHRAE", "ASHRAE G36",
+    "Webhook",
+)
+
+# Things that look like point names / control identifiers.
+ALL_CAPS_RE   = re.compile(r"\b([A-Z][A-Z0-9_]{1,})\b")
+INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
+PATH_RE       = re.compile(r"(?<![\w/])(/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)")
+
+# Pseudo-code keywords we leave alone (uppercase English control flow)
+PSEUDO_KEYWORDS = {"IF", "ELSE", "AND", "OR", "NOT", "RETURN", "THEN", "DO",
+                   "WHILE", "FOR", "BREAK", "CONTINUE"}
+
+
+def annotate(line: str) -> str:
+    """Wrap frozen spans in HTML-comment markers (single-line only).
+
+    Single-pass: collect every span that should be frozen, sort by
+    position with longest-wins on overlap, then emit.  This avoids
+    the trap of running multiple regex.sub passes -- each pass would
+    otherwise match the literal "FROZEN" inside markers added by
+    the previous pass, producing nested junk like
+    ``<!--<!--FROZEN-->FROZEN<!--/FROZEN-->-->``.
+    """
+    spans: list[tuple[int, int]] = []
+
+    # 1. Inline code spans -- whole `...` block is frozen, highest priority.
+    for m in INLINE_CODE_RE.finditer(line):
+        spans.append((m.start(), m.end()))
+
+    # 2. Filesystem-looking paths.
+    for m in PATH_RE.finditer(line):
+        spans.append((m.start(), m.end()))
+
+    # 3. Brand / product literals (longest first wins via dedupe below).
+    for lit in sorted(FROZEN_LITERALS, key=len, reverse=True):
+        pat = re.compile(r"(?<!\w)" + re.escape(lit) + r"(?!\w)")
+        for m in pat.finditer(line):
+            spans.append((m.start(), m.end()))
+
+    # 4. ALL-CAPS identifiers >= 2 chars (skip pseudo-code keywords).
+    for m in ALL_CAPS_RE.finditer(line):
+        if m.group(1) in PSEUDO_KEYWORDS:
+            continue
+        spans.append((m.start(), m.end()))
+
+    if not spans:
+        return line
+
+    # Sort by start, then by LONGEST first (so on overlap the longer
+    # span wins -- e.g. "Red5 Studio" beats "Red5" alone).
+    spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
+    chosen: list[tuple[int, int]] = []
+    cursor = 0
+    for s, e in spans:
+        if s >= cursor:
+            chosen.append((s, e))
+            cursor = e
+
+    # Emit annotated string.
+    out: list[str] = []
+    last = 0
+    for s, e in chosen:
+        out.append(line[last:s])
+        out.append(f"<!--FROZEN-->{line[s:e]}<!--/FROZEN-->")
+        last = e
+    out.append(line[last:])
+    return "".join(out)
+
+
+def build_skeleton(en_path: Path, lang: str) -> str:
+    """Produce the annotated body for a target language skeleton."""
+    out_lines = []
+    header = (
+        f"<!-- =====================================================\n"
+        f"     Translation skeleton for {en_path.name}\n"
+        f"     Target language: {lang}\n"
+        f"     Generated by /app/docs/translation_kit/make_skeleton.py\n"
+        f"\n"
+        f"     1. Translate body prose IN PLACE.\n"
+        f"     2. Anything wrapped in <!--FROZEN-->...<!--/FROZEN-->\n"
+        f"        MUST be kept verbatim (English).  You may delete\n"
+        f"        the FROZEN markers when you're done -- the text\n"
+        f"        between them is what stays in English.\n"
+        f"     3. Anything inside a ```fenced code block``` is\n"
+        f"        implicitly frozen.  Translate ONLY the # / // line\n"
+        f"        comments inside such blocks.\n"
+        f"     4. Glossary lookups: /app/docs/translation_kit/README.md\n"
+        f"     ===================================================== -->\n\n"
+    )
+    out_lines.append(header)
+    in_code_fence = False
+    for raw in en_path.read_text(encoding="utf-8").splitlines():
+        if raw.lstrip().startswith("```"):
+            in_code_fence = not in_code_fence
+            out_lines.append(raw)
+            continue
+        if in_code_fence:
+            # Don't annotate inside code -- the block is implicitly frozen.
+            out_lines.append(raw)
+            continue
+        out_lines.append(annotate(raw))
+    out_lines.append("")  # trailing newline
+    return "\n".join(out_lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--doc", required=True,
+                   help="Base name without .md, e.g. 'control_algorithms'")
+    p.add_argument("--lang", required=True, choices=VALID_LANGS,
+                   help="Target language tag")
+    p.add_argument("--force", action="store_true",
+                   help="Overwrite existing skeleton if present")
+    args = p.parse_args(argv)
+
+    en = DOCS_DIR_V19 / f"{args.doc}.md"
+    if not en.exists():
+        print(f"ERROR: source not found: {en}", file=sys.stderr)
+        return 2
+
+    body = build_skeleton(en, args.lang)
+    out_name = f"{args.doc}.{args.lang}.md"
+
+    written = []
+    for target_dir in TARGETS:
+        out = target_dir / out_name
+        if out.exists() and not args.force:
+            print(f"SKIP   (exists): {out}")
+            continue
+        target_dir.mkdir(parents=True, exist_ok=True)
+        out.write_text(body, encoding="utf-8")
+        md5 = hashlib.md5(body.encode("utf-8")).hexdigest()
+        print(f"WROTE  {out}   md5={md5}")
+        written.append(out)
+
+    if not written:
+        print("\nNothing written -- pass --force to regenerate.")
+        return 1
+    print(f"\nDone. {len(written)} skeleton(s) written.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

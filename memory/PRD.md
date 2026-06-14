@@ -31,6 +31,28 @@ Full elaboration lives in `/app/docs/RED5-MODBUS-V3.0-DESIGN.md` §0. Any confli
 ---
 
 
+## Phase L.11 — Translation Kit Delivered (2026-06-12)
+
+**Brief**: The 19-file translation backlog (`control_algorithms`, `control_strategy_insight`, `data_bridges_guide`, `data_exchange_diagram`, `opt_sa_insight` × ja/ko/zh-CN/zh-TW, minus the already-done `control_strategy_insight.ko`) has been parked since 2026-05 due to LLM-budget pressure. Operator (2026-06-12) selected option (d) "manual/external translation flow, zero LLM cost". Kit delivered at `/app/docs/translation_kit/`.
+
+**Kit contents**:
+- `README.md` — file-naming convention, workflow, 47-term glossary across all 4 target languages, frozen-string rules (BACnet point names / file paths / brand names / units / math), validation checklist.
+- `make_skeleton.py` — generates pre-annotated `.<lang>.md` stubs with `<!--FROZEN-->…<!--/FROZEN-->` markers. Single-pass span-merge avoids the double-wrap trap (fixed during smoke test).
+- `install_translation.py` — validates a finished translation (heading count, code-fence parity, leftover markers, trailing newline) then mirrors byte-identical to all three target trees with md5 verify.
+- `tests/test_translation_kit.py` — 12 regression tests locking the kit's behaviour.
+
+**Status**: Kit ready to ship to translator. No skeletons generated yet (operator hand-picks which to commission first to control invoice cost). LLM-spend path remains available (option (a-c) from the menu) if operator changes their mind.
+
+**Files added**:
+- `/app/docs/translation_kit/README.md`
+- `/app/docs/translation_kit/make_skeleton.py`
+- `/app/docs/translation_kit/install_translation.py`
+- `/app/archive/Red5-Studio-V1.9/tests/test_translation_kit.py`
+
+**Test status**: 109 passed (12 new + 97 prior), no regressions.
+
+---
+
 ## Phase L.10 — File Upload "(N)" Rename Fix + Popup Restored (2026-06-09)
 
 **Brief**: Two coupled bugs in the equipment_mapper.html "Upload File" flow:

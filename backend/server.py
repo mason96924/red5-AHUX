@@ -1886,7 +1886,24 @@ async def assets(path: str, request: Request,
                     full = variant_full
                     break
             else:
-                raise HTTPException(404, f"asset not found: {path}")
+                # Subdir fallback for V1.9 parity. V1.9's Flask serve_asset()
+                # tries /root/data/<file> first, then /root/data/docs/<file>.
+                # On V2.0 the .md guides + asset thumbs live under
+                # frontend/public/assets/ and frontend/public/docs/ rather
+                # than at the public root, so the same /assets/<file>.md
+                # URL needs to resolve into either subdir.  Without this,
+                # the DOCS-INDEX modal 404s for B-Shift, G36 Cross-Walk,
+                # and any other doc fetched by `/assets/<base>.<lang>.md`.
+                _resolved = False
+                for _subdir in ("assets", "docs"):
+                    _candidate = os.path.normpath(os.path.join(public_root, _subdir, path))
+                    if (_candidate.startswith(public_root)
+                            and os.path.exists(_candidate)):
+                        full = _candidate
+                        _resolved = True
+                        break
+                if not _resolved:
+                    raise HTTPException(404, f"asset not found: {path}")
     lower = full.lower()
     with open(full, "rb") as f:
         body = f.read()

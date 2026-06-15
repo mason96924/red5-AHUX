@@ -1860,6 +1860,162 @@ async def assets_alias(path: str, request: Request,
     return await assets(path, request, tenant)
 
 
+# ---------------------------------------------------------------------------
+# /api/thumb -- normalised raster preview for the image picker
+# ---------------------------------------------------------------------------
+# Mirror of the V1.9 Flask /api/thumb (added 2026-06-12 to fix the
+# Windows-Chrome "AHU_TYPE_01.jpg shows No preview" bug).  Same shape,
+# same disk cache concept, just routed through FastAPI tenant resolution
+# so it works on the Linux box where ``uvicorn server:app`` is the only
+# Python process.
+#
+# Root cause recap: macOS Chrome decodes CMYK JPEGs via system ImageIO;
+# Windows Chrome/Edge use Skia which dropped CMYK ~M85.  We re-encode
+# raster bytes through Pillow into vanilla sRGB PNG so Skia can decode
+# them.  SVG passes through unchanged (vector -- rasterising would
+# defeat the purpose).
+@app.get("/api/thumb")
+async def thumb(path: str = Query(...),
+                max: int = Query(256, ge=16, le=1024),
+                tenant: Optional[dict] = Depends(current_tenant_optional)):
+    rel = (path or "").lstrip("/")
+    ext = os.path.splitext(rel)[1].lower()
+    raster_exts = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
+    # SVG / unknown formats -- redirect to /api/assets/ for native browser render.
+    if ext not in raster_exts:
+        return FastResponse(status_code=302, headers={"Location": f"/api/assets/{rel}"})
+
+    # Resolve source bytes via the same path the assets() handler uses.
+    public_root = os.path.normpath(os.path.join(ROOT, "..", "frontend", "public"))
+    full = os.path.normpath(os.path.join(public_root, rel))
+    if not full.startswith(public_root):
+        raise HTTPException(403, "path traversal")
+    raw_bytes: Optional[bytes] = None
+    if os.path.exists(full):
+        with open(full, "rb") as f:
+            raw_bytes = f.read()
+    elif tenant:
+        # Signed-in users keep their uploads in tenant_assets (Mongo).
+        doc = await read_tenant_asset(tenant, rel)
+        if doc and doc.get("data_bytes"):
+            raw_bytes = doc["data_bytes"]
+    if raw_bytes is None:
+        # Last-ditch demo fallback (same as /api/assets/).
+        alt = os.path.join(DEMO_DATA_DIR, os.path.basename(rel))
+        if os.path.exists(alt):
+            with open(alt, "rb") as f:
+                raw_bytes = f.read()
+    if raw_bytes is None:
+        raise HTTPException(404, f"thumb source not found: {rel}")
+
+    # Normalise via Pillow.  Graceful 302 fallback to /api/assets/ if
+    # Pillow isn't installed (mirrors the Flask side's behaviour so the
+    # picker stays usable even on minimal deployments).
+    try:
+        from PIL import Image, ImageOps  # noqa: PLC0415
+        import io as _thumb_io          # noqa: PLC0415
+    except ImportError:
+        return FastResponse(status_code=302, headers={"Location": f"/api/assets/{rel}"})
+
+    try:
+        with Image.open(_thumb_io.BytesIO(raw_bytes)) as im:
+            im = ImageOps.exif_transpose(im)
+            # The bug: CMYK JPEGs are the dominant cause of "No preview"
+            # on Windows.  Normalise here so Skia can decode the result.
+            if im.mode in ("CMYK", "YCbCr"):
+                im = im.convert("RGB")
+            elif im.mode in ("LA", "P"):
+                im = im.convert("RGBA")
+            if im.mode == "RGBA":
+                # Flatten onto slate-900 so transparency doesn't render
+                # as black on the picker's dark cards.
+                bg = Image.new("RGB", im.size, (15, 23, 42))
+                bg.paste(im, mask=im.split()[-1])
+                im = bg
+            elif im.mode != "RGB":
+                im = im.convert("RGB")
+            im.thumbnail((max, max), Image.LANCZOS)
+            buf = _thumb_io.BytesIO()
+            im.save(buf, format="PNG", optimize=True)
+            data = buf.getvalue()
+    except Exception:  # noqa: BLE001
+        # Pillow couldn't decode (truly corrupt file, exotic format).
+        # Fall back to /api/assets/ -- same outcome as before the fix.
+        return FastResponse(status_code=302, headers={"Location": f"/api/assets/{rel}"})
+
+    return FastResponse(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600, stale-while-revalidate=86400"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# /api/weather-current -- live conditions for the sun-path widget
+# ---------------------------------------------------------------------------
+# Mirror of the V1.9 Flask /api/weather-current (added 2026-06-12 for
+# the cloud-modulated sun-ray + diagnostic ribbon).  Frontend reads:
+#   cloud_cover, wind_speed_kmh, wind_direction_deg, precipitation_mm,
+#   ghi_wm2, weather_code, temperature_c, relative_humidity, units, time
+# 5-min in-process cache per (lat,lon).
+_WEATHER_NOW_CACHE: Dict[tuple, tuple] = {}
+_WEATHER_NOW_TTL_S = 300
+
+
+@app.get("/api/weather-current")
+async def weather_current(lat: float = Query(...), lon: float = Query(...)) -> dict:
+    key = (round(lat, 2), round(lon, 2))
+    now_ts = time.time()
+    hit = _WEATHER_NOW_CACHE.get(key)
+    if hit and (now_ts - hit[0]) < _WEATHER_NOW_TTL_S:
+        return hit[1]
+    import urllib.parse  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+    params = urllib.parse.urlencode({
+        "latitude":  lat,
+        "longitude": lon,
+        "current": ("temperature_2m,relative_humidity_2m,cloud_cover,"
+                    "wind_speed_10m,wind_direction_10m,precipitation,"
+                    "shortwave_radiation,weather_code"),
+        "timezone": "auto",
+    })
+    url = "https://api.open-meteo.com/v1/forecast?" + params
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Red5-Studio-V2.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": str(e)}
+    cur = raw.get("current") or {}
+    units = raw.get("current_units") or {}
+    payload = {
+        "success": True,
+        "lat": lat, "lon": lon,
+        "time": cur.get("time"),
+        "tz": raw.get("timezone"),
+        "temperature_c":      cur.get("temperature_2m"),
+        "relative_humidity":  cur.get("relative_humidity_2m"),
+        "cloud_cover":        cur.get("cloud_cover"),
+        "wind_speed_kmh":     cur.get("wind_speed_10m"),
+        "wind_direction_deg": cur.get("wind_direction_10m"),
+        "precipitation_mm":   cur.get("precipitation"),
+        "ghi_wm2":            cur.get("shortwave_radiation"),
+        "weather_code":       cur.get("weather_code"),
+        "units": {
+            "temperature_c":    units.get("temperature_2m", "°C"),
+            "wind_speed_kmh":   units.get("wind_speed_10m", "km/h"),
+            "precipitation_mm": units.get("precipitation", "mm"),
+            "ghi_wm2":          units.get("shortwave_radiation", "W/m²"),
+        },
+        "source":  "open-meteo",
+        "fetched": int(now_ts),
+        "ttl_s":   _WEATHER_NOW_TTL_S,
+    }
+    _WEATHER_NOW_CACHE[key] = (now_ts, payload)
+    return payload
+
+
+
 @app.get("/")
 async def root() -> dict:
     return {

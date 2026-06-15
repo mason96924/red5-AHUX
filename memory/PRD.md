@@ -31,6 +31,26 @@ Full elaboration lives in `/app/docs/RED5-MODBUS-V3.0-DESIGN.md` §0. Any confli
 ---
 
 
+## Phase L.14 — V2.0 FastAPI Mirrors of /api/thumb + /api/weather-current (2026-06-15)
+
+**Brief**: Operator reported AHU_TYPE_01.jpg still showed "No preview" on Windows when hitting V2.0 on the Linux server, after I incorrectly assumed the V2.0 deploy ran the V1.9 Flask app.py. It does not — `red5-backend.service` runs `uvicorn server:app` (FastAPI in `backend/server.py`). My Flask-side `/api/thumb` and `/api/weather-current` routes from Phase L.12/L.13 were never reachable on the Linux box.
+
+**Fix**: Mirrored both routes into `backend/server.py`:
+- `/api/thumb` — same CMYK → sRGB normalisation, same SVG-passthrough 302 to `/api/assets/`, same disk-or-tenant source resolution as the V1.9 Flask version. Pillow used in-process (already installed in `backend/.venv` after L.13 deploy).
+- `/api/weather-current` — same Open-Meteo upstream + 5-min in-process cache + same payload contract as the V1.9 version.
+
+**Smoke-tested live**: posted a CMYK JPEG to `/app/frontend/public/graphics/test/cmyk_test.jpg`, hit `$REACT_APP_BACKEND_URL/api/thumb?path=…` from outside, received 449-byte PNG decoding back as `mode='RGB'`. `/api/weather-current?lat=22.3&lon=114.2` returns live HK weather.
+
+**Regression tests** (`backend/tests/test_thumb_and_weather_current.py`, 9 cases via httpx.AsyncClient + ASGITransport): route registration on the FastAPI app, end-to-end CMYK normalisation, SVG redirect target, missing-source 404, path-traversal guard, max-px clamp, payload contract (14 mandatory fields), cache dedupe.
+
+**Suite status**: 9/9 new FastAPI tests pass. V1.9 Flask suite (137) unchanged.
+
+**Architectural takeaway** (locked in PRD): the Linux server's `/api/*` is served by FastAPI `backend/server.py`. **Every future fix that introduces a new backend route MUST be added to BOTH the V1.9 Flask `app.py` AND the V2.0 FastAPI `server.py`**, otherwise the Linux box silently 404s and the feature works in V1.9 only.
+
+**Deploy**: Standard Save-to-GitHub → `git pull` → `sudo systemctl restart red5-backend.service`. No frontend rebuild needed (image-picker.js already calls `/api/thumb`).
+
+---
+
 ## Phase L.13 — Image Picker CMYK / SVG Fix (2026-06-12)
 
 **Brief**: Operator (Windows Chrome screenshot) reported `AHU_TYPE_01.jpg` showed "No preview" in the controller image-picker while the same file rendered fine in macOS Chrome. Operator also requested SVG support for AHU graphics.

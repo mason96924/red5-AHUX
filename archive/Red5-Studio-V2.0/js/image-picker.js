@@ -80,6 +80,27 @@ const ImagePickerModal = ({ isOpen, onClose, files, loading, currentPath, onNavi
                             const thumbURL = isSvg
                                 ? `${apiUrl}/assets/${fullRelPath}`
                                 : `${apiUrl}/api/thumb?path=${encoded}&max=256`;
+                            // AHU_TYPE_1.jpg vs AHU_TYPE_01.jpg safety net.
+                            // V1.8 saved unpadded ("_1"), V1.9 saves padded
+                            // ("_01"). If the schema and the uploaded file
+                            // disagree, the backend already tries both — but
+                            // for older deployments without that backend
+                            // patch we also retry the alternate spelling on
+                            // the client before giving up.
+                            const padRe = /_(\d{1,2})(\.[A-Za-z0-9]+)$/;
+                            const buildAlt = (name) => {
+                                const m = padRe.exec(name);
+                                if (!m) return null;
+                                const d = m[1], ext = m[2];
+                                const n = parseInt(d, 10);
+                                if (d.length === 1)      return name.replace(padRe, '_' + (n < 10 ? '0' + n : '' + n) + ext);
+                                if (d.length === 2 && n < 10) return name.replace(padRe, '_' + n + ext);
+                                return null;
+                            };
+                            const altRel = buildAlt(fullRelPath);
+                            const altURL = altRel && (isSvg
+                                ? `${apiUrl}/assets/${altRel}`
+                                : `${apiUrl}/api/thumb?path=${encodeURIComponent(altRel)}&max=256`);
                             return (
                                 <button 
                                     key={i}
@@ -92,14 +113,27 @@ const ImagePickerModal = ({ isOpen, onClose, files, loading, currentPath, onNavi
                                             className="max-w-full max-h-full object-contain opacity-80 group-hover:opacity-100 transition-opacity" 
                                             alt={file.name}
                                             onError={(e) => {
-                                                /* Informative fallback.  The old generic "No preview"
-                                                   left operators guessing whether the file was bad,
-                                                   the path was wrong, or the browser was at fault.
-                                                   The thumb endpoint already converts CMYK / odd
-                                                   JPEGs, so reaching this branch means Pillow
-                                                   couldn't decode it OR the path is wrong.  Show
-                                                   the extension so a CMYK-vs-corrupt distinction
-                                                   can be made by re-uploading. */
+                                                /* Two-stage fallback:
+                                                   1. Try the zero-pad
+                                                      variant once (covers
+                                                      AHU_TYPE_1 <-> _01
+                                                      mismatches between
+                                                      schema and uploaded
+                                                      file).
+                                                   2. Only after THAT also
+                                                      fails do we render
+                                                      the "No preview" tile.
+                                                   The thumb endpoint already
+                                                   converts CMYK / odd JPEGs,
+                                                   so reaching this branch
+                                                   means Pillow can't decode
+                                                   the file OR the path is
+                                                   actually wrong. */
+                                                if (altURL && e.target.dataset.alttried !== '1') {
+                                                    e.target.dataset.alttried = '1';
+                                                    e.target.src = altURL;
+                                                    return;
+                                                }
                                                 e.target.style.display='none';
                                                 var ext = (file.name.split('.').pop() || '').toLowerCase();
                                                 e.target.parentNode.innerHTML =

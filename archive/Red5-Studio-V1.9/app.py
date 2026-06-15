@@ -345,10 +345,20 @@ def serve_asset(filename):
     if _os.path.isfile(flat_path):
         resp = send_from_directory('/root/data', filename)
     else:
-        # Fallback: try /root/data/docs/<filename>.  If THAT doesn't exist
-        # either, send_from_directory raises 404 with the same shape as
-        # the original route did, so we don't change the error contract.
-        resp = send_from_directory('/root/data/docs', filename)
+        # AHU_TYPE_1.jpg vs AHU_TYPE_01.jpg fallback. V1.8 stored
+        # `AHU_TYPE_1.jpg`, V1.9 stores `AHU_TYPE_01.jpg`. If the
+        # exact name misses, try the alternate zero-pad spelling on
+        # the FINAL segment only before falling back to /docs/.
+        for _variant in _zero_pad_variants(filename):
+            _variant_full = _os.path.join('/root/data', _variant)
+            if _os.path.isfile(_variant_full):
+                resp = send_from_directory('/root/data', _variant)
+                break
+        else:
+            # Fallback: try /root/data/docs/<filename>.  If THAT doesn't exist
+            # either, send_from_directory raises 404 with the same shape as
+            # the original route did, so we don't change the error contract.
+            resp = send_from_directory('/root/data/docs', filename)
     lower = filename.lower()
     # JS/HTML/MD must never be heuristically cached — they carry app logic
     # or documentation that changes between deploys. Static graphics
@@ -394,11 +404,36 @@ def serve_asset(filename):
 import hashlib as _thumb_hashlib
 import io as _thumb_io
 import os as _thumb_os
+import re as _thumb_re
 
 _THUMB_DIR = '/root/data/.thumbs'
 _THUMB_MAX_DEFAULT = 256
 _THUMB_MAX_CAP = 1024            # never produce >1024px thumbs (DOS guard)
 _THUMB_RASTER_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
+
+# Asset name normaliser.  See V2.0 server.py for the full rationale.
+# V1.8 stored `AHU_TYPE_1.jpg`, V1.9 stores `AHU_TYPE_01.jpg`. When an
+# operator's schema and uploaded file disagree on padding, this lets
+# the alternate spelling resolve instead of showing "No preview".
+_PAD_RE = _thumb_re.compile(r'_(\d{1,2})(\.[A-Za-z0-9]+)$')
+def _zero_pad_variants(rel_path):
+    """Return alternate spellings of `rel_path` with the trailing
+    numeric suffix toggled between 1- and 2-digit zero padding.
+    Only the final segment is considered."""
+    head, sep, tail = rel_path.rpartition('/')
+    m = _PAD_RE.search(tail)
+    if not m:
+        return []
+    digits, ext = m.group(1), m.group(2)
+    n = int(digits)
+    out = []
+    if len(digits) == 1:
+        alt = _PAD_RE.sub('_%02d%s' % (n, ext), tail)
+        out.append((head + '/' + alt) if head else alt)
+    elif len(digits) == 2 and n < 10:
+        alt = _PAD_RE.sub('_%d%s' % (n, ext), tail)
+        out.append((head + '/' + alt) if head else alt)
+    return out
 
 
 def _thumb_cache_path(src_abs, max_px):
@@ -436,7 +471,18 @@ def api_thumb():
     if not src_abs.startswith(base + _thumb_os.sep) and src_abs != base:
         return jsonify({'error': 'path escape'}), 400
     if not _thumb_os.path.isfile(src_abs):
-        return jsonify({'error': 'not found'}), 404
+        # AHU_TYPE_1.jpg vs AHU_TYPE_01.jpg fallback. See _zero_pad_variants.
+        _resolved = False
+        for _variant in _zero_pad_variants(rel):
+            _variant_abs = _thumb_os.path.realpath(_thumb_os.path.join(base, _variant))
+            if (_variant_abs.startswith(base + _thumb_os.sep) and
+                    _thumb_os.path.isfile(_variant_abs)):
+                src_abs = _variant_abs
+                rel = _variant
+                _resolved = True
+                break
+        if not _resolved:
+            return jsonify({'error': 'not found'}), 404
 
     ext = _thumb_os.path.splitext(src_abs)[1].lower()
     if ext not in _THUMB_RASTER_EXTS:

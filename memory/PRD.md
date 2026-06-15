@@ -30,6 +30,24 @@ Full elaboration lives in `/app/docs/RED5-MODBUS-V3.0-DESIGN.md` §0. Any confli
 
 ---
 
+## Phase L.16 — AHU_TYPE_1 vs AHU_TYPE_01 zero-pad fallback (2026-06-16)
+
+**Brief**: Operator reported "No preview" for `AHU_TYPE_01.jpg` in Windows. Investigation found the root cause was **schema/asset spelling drift**: V1.8 stored `AHU_TYPE_1.jpg` (unpadded), V1.9 settled on `AHU_TYPE_01.jpg` (padded). When the schema and uploaded file disagree on padding, the request 404s and the picker shows "No preview". The previous agent told the operator to fix this manually in the UI; they couldn't find the field and the session ended badly.
+
+**Fix (three layers, belt-and-braces)**:
+1. **`backend/server.py`** — added `_zero_pad_variants()` helper. Both `/api/assets/<path>` and `/api/thumb?path=` now retry the alternate spelling (`_<d>` ↔ `_<0d>`) on miss against the public tree AND the `tenant_assets` virtual filesystem before 404'ing.
+2. **`archive/Red5-Studio-V1.9/app.py`** — same helper added in `serve_asset` and `api_thumb`. Mirrored to `archive/Red5-Studio-V2.0/app.py` (`md5sum` locked).
+3. **`frontend/public/js/image-picker.js`** — client-side single retry with the alternate spelling on `onError` (gated by `data-alttried`) before showing "No preview". Mirrored to V1.9/V2.0 archives.
+
+**Data canonicaliser**: `/app/backend/scripts/normalize_ahu_type_filenames.py` — one-shot script the operator can run on their own deployment to rewrite `tenant_assets.filename` and `tenant_equipment_types.*.visual_assets.base_graphic` to canonical V1.9 padding. Idempotent, with `--dry-run` default, `--apply` to commit, `--tenant` to scope.
+
+**Regression**: `/app/backend/tests/test_assets_zero_pad_fallback.py` — 12 tests covering the helper, the assets route, and the thumb route. All pass (`pytest tests/test_assets_zero_pad_fallback.py`).
+
+**Live smoke test**: confirmed via curl against the deployed preview that an unpadded request for `SMOKE_TYPE_1.jpg` against a disk file `SMOKE_TYPE_01.jpg` now returns 200 PNG; a truly missing path still returns 404.
+
+---
+
+
 
 ## Phase L.15 — Controller Assets file-browser thumbnails (2026-06-15)
 

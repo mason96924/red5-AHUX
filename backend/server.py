@@ -1812,6 +1812,43 @@ async def get_standard(slug: str) -> Any:
 # under /root/data/configs/.  In demo we serve from /app/frontend/public/.
 # Path traversal blocked.
 # ---------------------------------------------------------------------------
+
+# Asset name normaliser. Historically the equipment_types schema was loosely
+# typed: V1.8 stored `AHU_TYPE_1.jpg`, V1.9 settled on the zero-padded
+# `AHU_TYPE_01.jpg`. Either spelling can show up depending on when the
+# tenant uploaded their schema. Rather than force every user to re-edit
+# JSON by hand, when a file lookup misses we try the same path with the
+# alternate digit padding (single <-> 2-digit). Only the FINAL segment is
+# considered, and only the suffix immediately before the extension --
+# this is intentionally narrow so it can't paper over real typos.
+import re as _re_pad
+_PAD_RE = _re_pad.compile(r"_(\d{1,2})(\.[A-Za-z0-9]+)$")
+def _zero_pad_variants(rel_path: str) -> list[str]:
+    """Return alternate spellings of `rel_path` with the trailing
+    numeric suffix toggled between 1- and 2-digit zero padding.
+
+    Examples:
+        AHU_TYPE_1.jpg   -> ['AHU_TYPE_01.jpg']
+        AHU_TYPE_01.jpg  -> ['AHU_TYPE_1.jpg']
+        AHU_TYPE_10.jpg  -> []                   (already 2 digits, >9)
+        foo/bar.jpg      -> []                   (no numeric suffix)
+    """
+    head, _, tail = rel_path.rpartition("/")
+    m = _PAD_RE.search(tail)
+    if not m:
+        return []
+    digits, ext = m.group(1), m.group(2)
+    n = int(digits)
+    out: list[str] = []
+    if len(digits) == 1:
+        alt = _PAD_RE.sub(f"_{n:02d}{ext}", tail)
+        out.append(f"{head}/{alt}" if head else alt)
+    elif len(digits) == 2 and n < 10:
+        alt = _PAD_RE.sub(f"_{n}{ext}", tail)
+        out.append(f"{head}/{alt}" if head else alt)
+    return out
+
+
 @app.get("/api/assets/{path:path}")
 async def assets(path: str, request: Request,
                  tenant: Optional[dict] = Depends(current_tenant_optional)):
@@ -1831,11 +1868,25 @@ async def assets(path: str, request: Request,
                 ctype = doc.get("content_type") or "application/octet-stream"
                 return FastResponse(content=doc["data_bytes"], media_type=ctype,
                                     headers={"Cache-Control": "no-store"})
+            # AHU_TYPE_1.jpg vs AHU_TYPE_01.jpg fallback.  See _zero_pad_variants.
+            for variant in _zero_pad_variants(path):
+                doc = await read_tenant_asset(tenant, variant)
+                if doc and doc.get("data_bytes"):
+                    ctype = doc.get("content_type") or "application/octet-stream"
+                    return FastResponse(content=doc["data_bytes"], media_type=ctype,
+                                        headers={"Cache-Control": "no-store"})
         alt = os.path.join(DEMO_DATA_DIR, os.path.basename(path))
         if os.path.exists(alt):
             full = alt
         else:
-            raise HTTPException(404, f"asset not found: {path}")
+            # Disk-side zero-pad fallback for the demo public tree.
+            for variant in _zero_pad_variants(path):
+                variant_full = os.path.normpath(os.path.join(public_root, variant))
+                if variant_full.startswith(public_root) and os.path.exists(variant_full):
+                    full = variant_full
+                    break
+            else:
+                raise HTTPException(404, f"asset not found: {path}")
     lower = full.lower()
     with open(full, "rb") as f:
         body = f.read()
@@ -1899,6 +1950,20 @@ async def thumb(path: str = Query(...),
         doc = await read_tenant_asset(tenant, rel)
         if doc and doc.get("data_bytes"):
             raw_bytes = doc["data_bytes"]
+    if raw_bytes is None:
+        # AHU_TYPE_1.jpg vs AHU_TYPE_01.jpg fallback (see _zero_pad_variants).
+        # Try both the public tree and the tenant_assets virtual filesystem.
+        for variant in _zero_pad_variants(rel):
+            variant_full = os.path.normpath(os.path.join(public_root, variant))
+            if variant_full.startswith(public_root) and os.path.exists(variant_full):
+                with open(variant_full, "rb") as f:
+                    raw_bytes = f.read()
+                break
+            if tenant:
+                doc = await read_tenant_asset(tenant, variant)
+                if doc and doc.get("data_bytes"):
+                    raw_bytes = doc["data_bytes"]
+                    break
     if raw_bytes is None:
         # Last-ditch demo fallback (same as /api/assets/).
         alt = os.path.join(DEMO_DATA_DIR, os.path.basename(rel))

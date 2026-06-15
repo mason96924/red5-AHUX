@@ -366,6 +366,146 @@ def serve_asset(filename):
     return resp
 
 
+# ---------------------------------------------------------------------------
+# /api/thumb — normalised image preview for the controller image picker
+# ---------------------------------------------------------------------------
+# Why this exists:
+#   AHU_TYPE_01.jpg reported by the operator (2026-06-12 screenshot) shows
+#   "No preview" in Windows Chrome/Edge but renders fine in macOS Chrome.
+#   The single biggest cause of that asymmetry is the source JPEG being
+#   encoded in CMYK colour space (very common when graphics are exported
+#   from Photoshop or Illustrator for print pipelines).  macOS Chrome
+#   uses the system ImageIO decoder which handles CMYK JPEGs; Windows
+#   Chrome/Edge dropped CMYK JPEG support around Skia M85.  So a perfectly
+#   valid file fails to render on Windows.
+#
+#   /api/thumb opens the source via Pillow, converts to sRGB, resizes
+#   to <=max edge, and serves a vanilla PNG.  This sidesteps the CMYK
+#   issue, the TIFF-with-.jpg-extension issue, and the corrupted-marker
+#   issue all at once.  SVG is NOT routed through here -- it's vector,
+#   browsers render it natively, and rasterising would destroy the
+#   scaling property that makes SVG the right choice for AHU graphics
+#   in the first place.
+#
+# Cache:
+#   Thumbnails are cached on disk under /root/data/.thumbs/ keyed by
+#   source path + source mtime + target size.  Stale entries (source
+#   newer than thumb) are regenerated lazily.
+import hashlib as _thumb_hashlib
+import io as _thumb_io
+import os as _thumb_os
+
+_THUMB_DIR = '/root/data/.thumbs'
+_THUMB_MAX_DEFAULT = 256
+_THUMB_MAX_CAP = 1024            # never produce >1024px thumbs (DOS guard)
+_THUMB_RASTER_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
+
+
+def _thumb_cache_path(src_abs, max_px):
+    """Compute the cache filename for (src_abs, mtime, max_px)."""
+    try:
+        mtime = int(_thumb_os.path.getmtime(src_abs))
+    except OSError:
+        mtime = 0
+    key = f"{src_abs}|{mtime}|{max_px}".encode('utf-8')
+    digest = _thumb_hashlib.sha1(key).hexdigest()[:24]
+    return _thumb_os.path.join(_THUMB_DIR, digest + '.png')
+
+
+@app.route('/api/thumb')
+def api_thumb():
+    """GET /api/thumb?path=<rel>&max=<px>
+
+    Returns a PNG thumbnail of the source image, resized so its longest
+    edge is <= ``max`` pixels (default 256, max 1024).  Source is
+    resolved relative to /root/data/ (the same root /assets/ uses).
+    SVGs are redirected to /assets/ unchanged.
+    """
+    from flask import redirect, Response  # noqa: PLC0415
+
+    rel = (request.args.get('path') or '').lstrip('/')
+    try:
+        max_px = int(request.args.get('max', _THUMB_MAX_DEFAULT))
+    except (TypeError, ValueError):
+        max_px = _THUMB_MAX_DEFAULT
+    max_px = max(16, min(_THUMB_MAX_CAP, max_px))
+
+    # Resolve and harden against ..-escapes via realpath() + prefix check.
+    base = '/root/data'
+    src_abs = _thumb_os.path.realpath(_thumb_os.path.join(base, rel))
+    if not src_abs.startswith(base + _thumb_os.sep) and src_abs != base:
+        return jsonify({'error': 'path escape'}), 400
+    if not _thumb_os.path.isfile(src_abs):
+        return jsonify({'error': 'not found'}), 404
+
+    ext = _thumb_os.path.splitext(src_abs)[1].lower()
+    if ext not in _THUMB_RASTER_EXTS:
+        # SVG (and anything else non-raster) -- redirect to /assets/ for
+        # native browser rendering.  Going through Pillow would rasterise
+        # the vector and defeat the purpose of choosing SVG.
+        return redirect('/assets/' + rel, code=302)
+
+    # Try cache.
+    try:
+        _thumb_os.makedirs(_THUMB_DIR, exist_ok=True)
+    except OSError:
+        pass
+    cache_abs = _thumb_cache_path(src_abs, max_px)
+    if _thumb_os.path.isfile(cache_abs):
+        resp = send_from_directory(_THUMB_DIR, _thumb_os.path.basename(cache_abs))
+        resp.headers['Cache-Control'] = 'public, max-age=3600, stale-while-revalidate=86400'
+        resp.headers['X-Thumb-Hit'] = '1'
+        return resp
+
+    # Cache miss -- generate.
+    try:
+        from PIL import Image, ImageOps  # noqa: PLC0415
+    except ImportError:
+        # Pillow absent (e.g. minimal hardware controller).  Fall back
+        # to a 302 to /assets/<rel> so the picker still gets *something*
+        # -- exact same behaviour as before this endpoint existed.
+        return redirect('/assets/' + rel, code=302)
+
+    try:
+        with Image.open(src_abs) as im:
+            im = ImageOps.exif_transpose(im)
+            # Normalise colour: CMYK / YCbCr -> RGB; LA / P / RGBA flatten
+            # onto a slate-900 background so transparency doesn't show as
+            # black on the picker's dark cards.
+            if im.mode in ('CMYK', 'YCbCr'):
+                im = im.convert('RGB')
+            elif im.mode in ('LA', 'P'):
+                im = im.convert('RGBA')
+            if im.mode == 'RGBA':
+                bg = Image.new('RGB', im.size, (15, 23, 42))
+                bg.paste(im, mask=im.split()[-1])
+                im = bg
+            elif im.mode != 'RGB':
+                im = im.convert('RGB')
+            im.thumbnail((max_px, max_px), Image.LANCZOS)
+            buf = _thumb_io.BytesIO()
+            im.save(buf, format='PNG', optimize=True)
+            data = buf.getvalue()
+    except Exception as e:  # noqa: BLE001
+        app.logger.warning(f'[api_thumb] {rel}: {e}')
+        return redirect('/assets/' + rel, code=302)
+
+    # Persist cache atomically.
+    tmp_abs = cache_abs + '.tmp'
+    try:
+        with open(tmp_abs, 'wb') as f:
+            f.write(data)
+        _thumb_os.replace(tmp_abs, cache_abs)
+    except OSError:
+        pass  # cache write failed -- still return the thumbnail inline
+
+    resp = Response(data, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'public, max-age=3600, stale-while-revalidate=86400'
+    resp.headers['X-Thumb-Hit'] = '0'
+    return resp
+
+
+
 
 @app.route('/js/<path:filename>')
 def serve_js(filename):

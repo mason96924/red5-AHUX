@@ -31,6 +31,36 @@ Full elaboration lives in `/app/docs/RED5-MODBUS-V3.0-DESIGN.md` §0. Any confli
 ---
 
 
+## Phase L.13 — Image Picker CMYK / SVG Fix (2026-06-12)
+
+**Brief**: Operator (Windows Chrome screenshot) reported `AHU_TYPE_01.jpg` showed "No preview" in the controller image-picker while the same file rendered fine in macOS Chrome. Operator also requested SVG support for AHU graphics.
+
+**Root cause**: CMYK-colour-space JPEG. macOS Chrome decodes via system ImageIO (CMYK supported); Windows Chrome/Edge decode via Skia (CMYK dropped ~M85, 2020). The picker today loaded `/assets/<path>` directly, so the browser's decoder was the sole gate — any non-Skia-friendly JPEG showed as "No preview".
+
+**Fixes**:
+- **New backend endpoint `/api/thumb?path=…&max=…`** (`app.py` line ~370). Pillow-based: opens source, runs `ImageOps.exif_transpose`, normalises `CMYK`/`YCbCr` → RGB, flattens `RGBA`/`LA`/`P` onto a slate-900 background, resizes to `max` edge (default 256, capped 1024), serves PNG. Disk-cached under `/root/data/.thumbs/` keyed on `(src_abs, mtime, max_px)`. 302s to `/assets/` for SVG (vector — never rasterise) and when Pillow is unavailable (graceful fallback for minimal hardware controllers).
+- **Frontend (`js/image-picker.js`)** branches by extension: `.svg` → `/assets/`; raster → `/api/thumb?path=…&max=256`. Enhanced `onError` shows the file extension on failure so operator can distinguish "wrong path" from "Pillow couldn't decode".
+- **Backend image-type list** already included `.svg` since 2026-05 — locked by test so it can't regress.
+
+**Parity**: V1.9 / V2.0 / frontend-public all byte-identical for `js/image-picker.js`; V1.9 / V2.0 identical for `app.py`.
+
+**Regression tests** (`tests/test_image_picker_thumb_endpoint.py`, 11 cases):
+- Route registration + CMYK normalisation + SVG-redirect logic present in source.
+- Picker JS branches raster→/api/thumb and SVG→/assets/.
+- SVG listed as image type in backend.
+- 3-way parity for picker JS, 2-way parity for app.py.
+- End-to-end Pillow pipeline: CMYK JPEG round-trips to vanilla sRGB PNG; RGBA flattens to slate-bg without going black.
+
+**Suite status**: 137 passed (11 new + 126 prior), no regressions.
+
+**Deploy**: standard Save-to-GitHub → `git pull` → `cd frontend && yarn build` cycle. Backend changes require `sudo systemctl restart red5-backend.service`. Pillow is a runtime requirement; verify `python3 -c "from PIL import Image"` succeeds on the Linux box (`pip install Pillow` if not).
+
+**Operator workflow change**:
+- CMYK / odd JPEG previews now Just Work on Windows.
+- SVG support is real — operators can drop vector AHU schematics into `/root/data/graphics/equipments/AHUs/` and they'll render natively in the picker, scaling cleanly.
+
+---
+
 ## Phase L.12 — Sun-Path Weather Wiring (C+A, 2026-06-12)
 
 **Brief**: Operator design discussion (this fork). Sun-path widget on the floor-plan was geometric-only — showed sun azimuth/elevation but ignored cloud cover, wind, rain, GHI. Operator picked options C + A:

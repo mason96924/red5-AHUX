@@ -65,7 +65,21 @@ const ImagePickerModal = ({ isOpen, onClose, files, loading, currentPath, onNavi
                             }
                             const apiUrl = window.API_BASE_URL || '';
                             const fullRelPath = currentPath ? `${currentPath}/${file.name}` : file.name;
-                            const thumbURL = `${apiUrl}/assets/${fullRelPath}`;
+                            // Pick the right serve path per file type:
+                            //   - SVG  -> /assets/  (vector; browsers
+                            //             render natively, no rasterise)
+                            //   - raster -> /api/thumb (Pillow normalises
+                            //             CMYK / odd JPEGs that Windows
+                            //             Chrome/Edge refuse via Skia,
+                            //             and downsamples for the picker)
+                            // /api/thumb falls back to /assets/ via 302
+                            // if Pillow is missing, so this is safe on
+                            // any deployment.
+                            const isSvg    = /\.svg$/i.test(file.name);
+                            const encoded  = encodeURIComponent(fullRelPath);
+                            const thumbURL = isSvg
+                                ? `${apiUrl}/assets/${fullRelPath}`
+                                : `${apiUrl}/api/thumb?path=${encoded}&max=256`;
                             return (
                                 <button 
                                     key={i}
@@ -77,7 +91,24 @@ const ImagePickerModal = ({ isOpen, onClose, files, loading, currentPath, onNavi
                                             src={thumbURL} 
                                             className="max-w-full max-h-full object-contain opacity-80 group-hover:opacity-100 transition-opacity" 
                                             alt={file.name}
-                                            onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML='<span style="color:#475569;font-size:10px;">No preview</span>'; }}
+                                            onError={(e) => {
+                                                /* Informative fallback.  The old generic "No preview"
+                                                   left operators guessing whether the file was bad,
+                                                   the path was wrong, or the browser was at fault.
+                                                   The thumb endpoint already converts CMYK / odd
+                                                   JPEGs, so reaching this branch means Pillow
+                                                   couldn't decode it OR the path is wrong.  Show
+                                                   the extension so a CMYK-vs-corrupt distinction
+                                                   can be made by re-uploading. */
+                                                e.target.style.display='none';
+                                                var ext = (file.name.split('.').pop() || '').toLowerCase();
+                                                e.target.parentNode.innerHTML =
+                                                    '<div style="text-align:center;line-height:1.3;">'
+                                                  + '<div style="color:#64748b;font-size:24px;">' + (ext === 'svg' ? '\u25C6' : '\u25A1') + '</div>'
+                                                  + '<div style="color:#475569;font-size:10px;margin-top:4px;">No preview</div>'
+                                                  + '<div style="color:#334155;font-size:8px;margin-top:2px;">.' + ext + '</div>'
+                                                  + '</div>';
+                                            }}
                                         />
                                     </div>
                                     <span className="text-[9px] font-mono text-slate-400 group-hover:text-emerald-400 truncate w-full text-center transition-colors">{file.name}</span>

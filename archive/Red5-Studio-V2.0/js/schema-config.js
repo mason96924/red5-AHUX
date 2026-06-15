@@ -33,8 +33,14 @@ const DEFAULT_WAVY_PATH = "M 10 50 C 30 20, 70 80, 90 50";
 
 const rawFallback = {
   "ahu_types": {
-    "1": { "name": "AHU_TYPE_1", "visual_assets": { "base_graphic": "AHU_TYPE_1.jpg", "animations": [] }, "points": [] },
-    "2": { "name": "AHU_TYPE_2", "visual_assets": { "base_graphic": "AHU_TYPE_2.svg", "animations": [] }, "points": [] }
+    // Zero-padded 2-digit naming convention (operator standard, 2026-06-15):
+    //   Type 1  -> AHU_TYPE_01.jpg
+    //   Type 9  -> AHU_TYPE_09.jpg
+    //   Type 10 -> AHU_TYPE_10.jpg
+    // Picker derives filename from `base_graphic` here, so this template
+    // controls the default lookup name when no custom config overrides.
+    "1": { "name": "AHU_TYPE_01", "visual_assets": { "base_graphic": "AHU_TYPE_01.jpg", "animations": [] }, "points": [] },
+    "2": { "name": "AHU_TYPE_02", "visual_assets": { "base_graphic": "AHU_TYPE_02.svg", "animations": [] }, "points": [] }
   },
   "vav_types": {
     "1": { "name": "Standard VAV", "points": [] }

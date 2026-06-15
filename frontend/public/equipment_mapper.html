@@ -4902,7 +4902,7 @@
                                             direction.  Sits below markers (zIndex 5) so clicks still
                                             reach markers at zIndex 10+.  Only visible when overlay on. */}
                                         {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
-                                            <window.SunRayOverlay sun={sunState.sun} />
+                                            <window.SunRayOverlay sun={sunState.sun} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
                                         )}
                                         
                                         {/* Floor Markers */}

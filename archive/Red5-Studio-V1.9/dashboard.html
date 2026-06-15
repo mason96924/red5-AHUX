@@ -4197,7 +4197,7 @@
                                                         />
                                                     )}
                                                     {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
-                                                        <window.SunRayOverlay sun={sunState.sun} theme={theme} />
+                                                        <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
                                                     )}
                                                     <div className="absolute inset-0 pointer-events-none">
                                                     <div className={`absolute top-4 left-4 z-10 text-sm font-mono px-3 py-1.5 rounded pointer-events-auto ${theme === 'dark' ? 'text-emerald-400 bg-slate-900/80' : 'text-emerald-700 bg-white/80'}`}>
@@ -4366,7 +4366,7 @@
                                                         />
                                                     )}
                                                     {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
-                                                        <window.SunRayOverlay sun={sunState.sun} theme={theme} />
+                                                        <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
                                                     )}
                                                     <div className={`absolute top-4 left-4 z-10 text-sm font-mono px-3 py-1.5 rounded ${theme === 'dark' ? 'text-amber-400 bg-slate-900/80' : 'text-amber-700 bg-white/80'}`}>
                                                         No map_config.json — using fallback layout

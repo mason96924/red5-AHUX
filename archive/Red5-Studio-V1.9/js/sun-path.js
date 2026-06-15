@@ -390,10 +390,51 @@ window.SunRayOverlay = function SunRayOverlay(props){
   var isLight = props.theme === 'light';
   var intensityBase = isLight ? 0.55 : 0.35;
   var intensity = Math.min(intensityBase, 0.18 + (intensityBase - 0.18) * Math.sin(props.sun.elevation * Math.PI / 180));
-  var stopIn   = isLight ? '#fbbf24' : '#fde68a';  // core
-  var stopMid  = isLight ? '#f59e0b' : '#fbbf24';
-  var stopOut  = isLight ? '#f59e0b' : '#fbbf24';
-  var gid = 'sunray-grad-' + Math.round(az) + '-' + (isLight ? 'l' : 'd');
+  /* Cloud-cover modulation (option "A" from 2026-06-12 design).
+     Open-Meteo reports cloud_cover 0-100; 100 = full overcast.  An
+     opaque sky kills the direct beam, so we damp the ray intensity
+     down to ~10% at 100% cloud cover and grey it out (less amber,
+     more slate) so the operator can SEE that the sun is up but not
+     contributing.  We do NOT hide the ray entirely -- diffuse
+     irradiance is still there on cloudy days.  Damp from a separate
+     ``ghi_wm2`` reading if provided -- that is a single number that
+     already captures clouds + time-of-day + season and is the most
+     honest input.  Falls back to cloud-cover-only when GHI is
+     unavailable.                                                       */
+  var cloud  = (typeof props.cloudCover === 'number') ? Math.max(0, Math.min(100, props.cloudCover)) : null;
+  var ghi    = (typeof props.ghiWm2     === 'number') ? Math.max(0, props.ghiWm2) : null;
+  var weatherFactor = 1.0;
+  if (ghi !== null) {
+    /* Reference clear-sky GHI at the sun's current elevation, very
+       rough -- ~1100 W/m^2 * sin(elev) is the textbook approximation.
+       The ratio of observed:clear-sky is our attenuation factor. */
+    var refGhi = 1100 * Math.max(0.05, Math.sin(props.sun.elevation * Math.PI / 180));
+    weatherFactor = Math.max(0.10, Math.min(1.0, ghi / refGhi));
+  } else if (cloud !== null) {
+    /* Empirical: 100% cloud cover attenuates direct beam ~85%.
+       Linear ramp is good enough for visualization. */
+    weatherFactor = Math.max(0.10, 1.0 - (cloud / 100) * 0.85);
+  }
+  intensity = intensity * weatherFactor;
+  /* Desaturate the palette as it gets cloudier so the wash visibly
+     "greys out" and the operator's eye doesn't read sunny conditions
+     when it's overcast. */
+  var stopInBright  = isLight ? '#fbbf24' : '#fde68a';
+  var stopMidBright = isLight ? '#f59e0b' : '#fbbf24';
+  var stopInDim     = isLight ? '#cbd5e1' : '#475569';  // slate-300 / slate-600
+  var stopMidDim    = isLight ? '#94a3b8' : '#334155';
+  function _mix(c1, c2, t){
+    /* mix two #rrggbb colours; t=0 -> c1, t=1 -> c2 */
+    function _hx(c){ return [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)]; }
+    var a = _hx(c1), b = _hx(c2);
+    var m = a.map(function(v, i){ return Math.round(v + (b[i] - v) * t); });
+    return '#' + m.map(function(v){ return ('0' + v.toString(16)).slice(-2); }).join('');
+  }
+  var grey = 1 - weatherFactor;     // 0 = bright clear, 1 = greyed overcast
+  var stopIn  = _mix(stopInBright,  stopInDim,  grey);
+  var stopMid = _mix(stopMidBright, stopMidDim, grey);
+  var stopOut = stopMid;
+  var gid = 'sunray-grad-' + Math.round(az) + '-' + Math.round(weatherFactor*100) + '-' + (isLight ? 'l' : 'd');
   return (
     <svg
       className="absolute inset-0 pointer-events-none"
@@ -440,6 +481,28 @@ window.SunCompass = function SunCompass(props){
   var [hour, setHour] = React.useState(new Date().getHours());
   var [doy,  setDoy]  = React.useState(currentDoy());
   var [playing, setPlaying] = React.useState(false);
+  /* Live weather payload from /api/weather-current.  Refreshed every
+     5 min while the compass is enabled+expanded; the backend cache
+     and the window.red5FetchCurrentWeather dedupe layer mean this
+     doesn't actually hit the network that often.  Kept in component
+     state (not just module cache) so the compass re-renders when a
+     fresh fetch lands.                                                */
+  var [weatherNow, setWeatherNow] = React.useState(null);
+  React.useEffect(function(){
+    if (!enabled || !expanded) return undefined;
+    var lat = (props.lat != null) ? props.lat : 40.71;
+    var lon = (props.lon != null) ? props.lon : -74.01;
+    var cancelled = false;
+    function _tick(){
+      if (typeof window.red5FetchCurrentWeather !== 'function') return;
+      window.red5FetchCurrentWeather(lat, lon).then(function(p){
+        if (!cancelled) setWeatherNow(p);
+      });
+    }
+    _tick();
+    var timer = setInterval(_tick, 5 * 60 * 1000);
+    return function(){ cancelled = true; clearInterval(timer); };
+  }, [enabled, expanded, props.lat, props.lon]);
 
   /* Theme: 'light' | 'dark' (default dark).  Controls background, text
      and border contrast so the compass reads on light-mode dashboards. */
@@ -519,15 +582,23 @@ window.SunCompass = function SunCompass(props){
   var date = new Date(utcMs);
   var sun = window.red5SolarPosition(lat, lon, date);
 
-  // Report upward so the parent can color markers
+  // Report upward so the parent can color markers + dim the ray overlay
+  // based on live cloud cover / GHI (option "A" wiring).  We include the
+  // weatherNow payload here so call sites that pass the compass output
+  // straight to <SunRayOverlay> only need to forward two extra props.
   React.useEffect(function(){
     // Persist only the UI state (enabled + expanded).  Hour/day are not
     // persisted — sliders always snap to current time on next mount.
     localStorage.setItem('red5SunCompass', JSON.stringify({
       enabled: enabled, expanded: expanded
     }));
-    if (props.onChange) props.onChange({enabled: enabled, sun: sun, hour: hour, doy: doy});
-  }, [enabled, expanded, hour, doy, lat, lon]);
+    if (props.onChange) props.onChange({
+      enabled: enabled, sun: sun, hour: hour, doy: doy,
+      cloudCover: (weatherNow && weatherNow.success) ? weatherNow.cloud_cover : null,
+      ghiWm2:     (weatherNow && weatherNow.success) ? weatherNow.ghi_wm2     : null,
+      weatherNow: weatherNow || null
+    });
+  }, [enabled, expanded, hour, doy, lat, lon, weatherNow]);
 
   // Day-of-year → pretty month/day label
   var d0 = new Date(year, 0, doy);
@@ -696,6 +767,120 @@ window.SunCompass = function SunCompass(props){
       <p style={{fontSize:7, color: C.dim, marginTop:4, lineHeight:1.2}}>
         lat {lat.toFixed(2)}° · lon {lon.toFixed(2)}°
       </p>
+      {/* Live weather diagnostic ribbon (option "C" from 2026-06-12
+          design).  Renders only when (a) the compass is enabled, and
+          (b) we have a live weather payload from /api/weather-current.
+          Shows cloud%, wind speed+bearing, GHI, and the WMO icon -- all
+          the things that actually modulate solar heating load and that
+          the operator otherwise can't see from the geometric sun arc
+          alone.  The same payload feeds the SunRayOverlay's cloud
+          desaturation, so the visual and the numeric tell one story. */}
+      {enabled && weatherNow && weatherNow.success && (
+        <div
+          data-testid="sun-compass-weather"
+          style={{
+            marginTop: 6, padding: '4px 6px', borderRadius: 4,
+            background: C.chipBg, border: '1px solid ' + C.border,
+            fontFamily: 'monospace', fontSize: 8, lineHeight: 1.35,
+            color: C.text
+          }}
+          title={'Source: ' + (weatherNow.source || 'open-meteo') +
+                 ' · cached for ' + (weatherNow.ttl_s || 300) + 's'}
+        >
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span>{window.red5WmoIcon ? window.red5WmoIcon(weatherNow.weather_code) : '·'} {weatherNow.weather_code != null ? (window.red5WmoLabel ? window.red5WmoLabel(weatherNow.weather_code) : 'WMO '+weatherNow.weather_code) : '—'}</span>
+            <span style={{color: C.dim}}>{weatherNow.temperature_c != null ? weatherNow.temperature_c.toFixed(1) + '°C' : '—'}</span>
+          </div>
+          <div style={{display:'flex', justifyContent:'space-between', marginTop:2}}>
+            <span>☁ <strong style={{color:C.text}}>{weatherNow.cloud_cover != null ? Math.round(weatherNow.cloud_cover) + '%' : '—'}</strong></span>
+            <span>💨 <strong style={{color:C.text}}>{weatherNow.wind_speed_kmh != null ? weatherNow.wind_speed_kmh.toFixed(1) : '—'}</strong> {(weatherNow.units && weatherNow.units.wind_speed_kmh) || 'km/h'} {weatherNow.wind_direction_deg != null ? (window.red5DegToCompass ? window.red5DegToCompass(weatherNow.wind_direction_deg) : Math.round(weatherNow.wind_direction_deg)+'°') : ''}</span>
+          </div>
+          <div style={{display:'flex', justifyContent:'space-between', marginTop:2}}>
+            <span>☀ GHI <strong style={{color:C.text}}>{weatherNow.ghi_wm2 != null ? Math.round(weatherNow.ghi_wm2) : '—'}</strong> W/m²</span>
+            <span>{weatherNow.precipitation_mm != null && weatherNow.precipitation_mm > 0 ? '🌧 ' + weatherNow.precipitation_mm.toFixed(1) + ' mm' : ''}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
+};
+
+/* ---------- LIVE WEATHER FETCHER ---------------------------------- */
+/* Single-flight, 5-min in-memory cache.  Multiple sun-path consumers
+   (dashboard, equipment_mapper, sun_preview) share one fetch per
+   (lat,lon).  Returns a Promise<weatherPayload> matching the
+   /api/weather-current response contract.  The backend already
+   caches 5 min upstream, so this is mainly to dedupe simultaneous
+   page-mount fetches.                                                */
+window.red5CurrentWeatherCache = window.red5CurrentWeatherCache || {};
+window.red5FetchCurrentWeather = function(lat, lon){
+  var key = (Math.round(lat*100)/100) + ',' + (Math.round(lon*100)/100);
+  var hit = window.red5CurrentWeatherCache[key];
+  var now = Date.now();
+  if (hit && (now - hit.t) < 5 * 60 * 1000 && hit.p) {
+    return Promise.resolve(hit.p);
+  }
+  if (hit && hit.inflight) return hit.inflight;
+  /* Frontend API base may be exposed by the host page as
+     window.API_BASE_URL (e.g. set by dashboard.html bootstrap).
+     Fall back to same-origin so sun_preview.html (which does not
+     bootstrap API_BASE_URL) still resolves to the local Flask. */
+  var base = (typeof window !== 'undefined' && window.API_BASE_URL) || '';
+  var url = base + '/api/weather-current?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon);
+  var p = fetch(url, { credentials: 'include' })
+    .then(function(r){ return r.json(); })
+    .then(function(payload){
+      window.red5CurrentWeatherCache[key] = { t: Date.now(), p: payload };
+      return payload;
+    })
+    .catch(function(err){
+      var fail = { success: false, error: String(err) };
+      window.red5CurrentWeatherCache[key] = { t: Date.now(), p: fail };
+      return fail;
+    });
+  window.red5CurrentWeatherCache[key] = { t: now, p: hit && hit.p, inflight: p };
+  return p;
+};
+
+/* ---------- WMO WEATHER-CODE HELPERS ------------------------------ */
+/* Minimal lookup tables -- icons are unicode glyphs so no asset
+   loads, and labels are short enough to fit in the diagnostic
+   ribbon.  WMO codes per
+   https://open-meteo.com/en/docs#weathervariables -- we cluster
+   into 9 visual buckets rather than render all 28 codes verbatim. */
+window.red5WmoIcon = function(code){
+  if (code == null) return '·';
+  if (code === 0) return '☀';
+  if (code <= 2) return '🌤';
+  if (code === 3) return '☁';
+  if (code === 45 || code === 48) return '🌫';
+  if (code >= 51 && code <= 57) return '🌦';
+  if (code >= 61 && code <= 67) return '🌧';
+  if (code >= 71 && code <= 77) return '❄';
+  if (code >= 80 && code <= 82) return '🌧';
+  if (code >= 85 && code <= 86) return '❄';
+  if (code >= 95) return '⛈';
+  return '·';
+};
+window.red5WmoLabel = function(code){
+  if (code == null) return '—';
+  if (code === 0) return 'Clear';
+  if (code <= 2) return 'Mostly clear';
+  if (code === 3) return 'Overcast';
+  if (code === 45 || code === 48) return 'Fog';
+  if (code >= 51 && code <= 57) return 'Drizzle';
+  if (code >= 61 && code <= 67) return 'Rain';
+  if (code >= 71 && code <= 77) return 'Snow';
+  if (code >= 80 && code <= 82) return 'Showers';
+  if (code >= 85 && code <= 86) return 'Snow showers';
+  if (code >= 95) return 'Thunderstorm';
+  return 'WMO ' + code;
+};
+
+/* 16-point compass from a 0-360 bearing -- N, NNE, NE, ...  */
+window.red5DegToCompass = function(deg){
+  if (deg == null || isNaN(deg)) return '';
+  var pts = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var i = Math.round(((deg % 360 + 360) % 360) / 22.5) % 16;
+  return pts[i];
 };

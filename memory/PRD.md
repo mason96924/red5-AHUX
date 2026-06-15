@@ -31,6 +31,39 @@ Full elaboration lives in `/app/docs/RED5-MODBUS-V3.0-DESIGN.md` §0. Any confli
 ---
 
 
+## Phase L.12 — Sun-Path Weather Wiring (C+A, 2026-06-12)
+
+**Brief**: Operator design discussion (this fork). Sun-path widget on the floor-plan was geometric-only — showed sun azimuth/elevation but ignored cloud cover, wind, rain, GHI. Operator picked options C + A:
+- **C** — diagnostic ribbon under the SunCompass showing live cloud %, wind speed+bearing, GHI W/m², precipitation, and WMO weather code/icon.
+- **A** — modulate the `SunRayOverlay` ray colour + opacity by cloud cover (and by GHI when available) so the wash visibly "greys out" on cloudy days while still rendering diffuse light.
+
+**Backend**:
+- New `weather_service.py::_current_weather(lat, lon)` helper + `weather_current()` handler. Endpoint `/api/weather-current?lat=…&lon=…` (also accepts no-args fallback to saved forecast config). Returns: `temperature_c`, `relative_humidity`, `cloud_cover`, `wind_speed_kmh`, `wind_direction_deg`, `precipitation_mm`, `ghi_wm2`, `weather_code`, `time`, `tz`, `units`, plus cache metadata.
+- 5-min per-(lat,lon) in-process cache, dedupes back-to-back requests.
+- Upstream: Open-Meteo `current_weather` block (free, no key). 8 s timeout.
+
+**Frontend (`js/sun-path.js`)**:
+- `window.red5FetchCurrentWeather(lat, lon)` — single-flight + 5-min frontend cache so dashboard/equipment_mapper/sun_preview all share one fetch.
+- `SunCompass`: useEffect polls weather on enable+expand, refresh every 5 min; renders a diagnostic ribbon under the lat/lon line (cloud%, wind, GHI, precipitation, WMO icon+label).
+- `SunRayOverlay`: accepts `cloudCover` + `ghiWm2` props. GHI-based ratio is preferred (uses 1100·sin(elev) as clear-sky reference); falls back to a 1 − 0.85·(cloud/100) linear ramp when GHI is unavailable. Palette desaturates from amber→slate as `weatherFactor` decreases.
+- `SunCompass.onChange` payload now includes `cloudCover`, `ghiWm2`, `weatherNow` so consumers (`dashboard.html`, `equipment_mapper.html`, `sun_preview.html`) just forward two extra props to `SunRayOverlay`.
+- New WMO helpers: `red5WmoIcon`, `red5WmoLabel`, `red5DegToCompass` (16-point cardinal).
+
+**Call sites updated** (all 4 `SunRayOverlay` instances):
+- `dashboard.html` × 2 occurrences (light + dark theme branches)
+- `equipment_mapper.html` × 1
+- `sun_preview.html` × 1
+
+**Parity**: V1.9 / V2.0 / frontend-public all byte-identical (`dashboard.html`, `equipment_mapper.html`, `sun_preview.html`, `js/sun-path.js`); V1.9 / V2.0 identical for `weather_service.py`.
+
+**Regression tests** (`tests/test_sunpath_weather_wiring.py`, 17 cases): handler+helper presence, route registration, payload contract (7 mandatory fields), cache dedupe behaviour, invalid lat/lon handling, frontend prop wiring (SunRayOverlay reads cloudCover+ghiWm2, fetcher present, onChange forwards new fields, WMO helpers present), call-site guards (each parity copy forwards the two new props), 4×3-way frontend parity + 1×2-way backend parity.
+
+**Suite status**: 126 passed (17 new + 109 prior), no regressions.
+
+**Deploy**: Standard Save-to-GitHub → `git pull` → `yarn build` cycle. Backend changes require `red5-backend.service` restart on the Linux box; HTML/JS changes don't.
+
+---
+
 ## Phase L.11 — Translation Kit Delivered (2026-06-12)
 
 **Brief**: The 19-file translation backlog (`control_algorithms`, `control_strategy_insight`, `data_bridges_guide`, `data_exchange_diagram`, `opt_sa_insight` × ja/ko/zh-CN/zh-TW, minus the already-done `control_strategy_insight.ko`) has been parked since 2026-05 due to LLM-budget pressure. Operator (2026-06-12) selected option (d) "manual/external translation flow, zero LLM cost". Kit delivered at `/app/docs/translation_kit/`.

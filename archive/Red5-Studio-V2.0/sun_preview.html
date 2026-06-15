@@ -72,7 +72,7 @@ function App(){
         <window.BuildingShadow imgSrc={planUrl} sun={sun} threshold={200}/>
       )}
       <window.SunCompass lat={40.71} lon={-74.01} theme="light" onChange={setSunState}/>
-      {sunState && sunState.enabled && sun && window.SunRayOverlay && <window.SunRayOverlay sun={sun} theme="light"/>}
+      {sunState && sunState.enabled && sun && window.SunRayOverlay && <window.SunRayOverlay sun={sun} theme="light" cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}/>}
       {markers.map(m=>{
         let ring=null, shadow=null;
         if(sunState && sunState.enabled && sun){

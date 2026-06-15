@@ -747,6 +747,118 @@ def _daily_forecast_job():
 # (Background forecast thread is started inside register(), not at
 # module-import time, so the thread does not run before app.py is ready.)
 
+# ---------------------------------------------------------------------
+# /api/weather-current — live conditions for the sun-path widget
+# ---------------------------------------------------------------------
+# Powers the diagnostic ribbon under the floor-plan sun-path overlay
+# (option "C" from the 2026-06-12 design discussion) and the cloud-cover
+# modulation of the sun glyph (option "A").  Returns the *currently
+# observed* weather, not a forecast, so the sun-path can honestly
+# answer "yes the sun is at azimuth 230° altitude 41° BUT it's 78%
+# overcast and the south wall is only seeing ~240 W/m² GHI right now".
+#
+# Cached in-process for 5 minutes per (lat,lon) -- Open-Meteo updates
+# their current_weather block every ~10 min, so 5 min is conservative.
+#
+# All numeric fields tolerate ``None`` so a partial upstream payload
+# does not 500 the dashboard.
+
+_WEATHER_NOW_CACHE = {}        # { (lat_key, lon_key): (ts_epoch, payload) }
+_WEATHER_NOW_TTL_S = 300       # 5 min
+
+
+def _current_weather(lat, lon):
+    """Fetch current weather from Open-Meteo, cache 5 min, JSON-able dict."""
+    try:
+        lat_f = float(lat)
+        lon_f = float(lon)
+    except (TypeError, ValueError):
+        return {'success': False, 'error': 'lat/lon must be numeric'}
+    key = (round(lat_f, 2), round(lon_f, 2))
+
+    now_ts = time.time()
+    hit = _WEATHER_NOW_CACHE.get(key)
+    if hit and (now_ts - hit[0]) < _WEATHER_NOW_TTL_S:
+        return hit[1]
+
+    # Open-Meteo "current" block (free, no key).  We ask for the seven
+    # fields that materially change building heating/cooling load:
+    #   - temperature_2m         (°C, dry-bulb)
+    #   - relative_humidity_2m   (%)
+    #   - cloud_cover            (%, total sky cover -- the BIG one)
+    #   - wind_speed_10m         (km/h)
+    #   - wind_direction_10m     (deg, met convention: 0=N, 90=E, ...)
+    #   - precipitation          (mm in last hour)
+    #   - shortwave_radiation    (W/m^2, GHI -- captures clouds in one #)
+    #   - weather_code           (WMO code, drives the icon)
+    params = urllib.parse.urlencode({
+        'latitude':  lat_f,
+        'longitude': lon_f,
+        'current': ('temperature_2m,relative_humidity_2m,cloud_cover,'
+                    'wind_speed_10m,wind_direction_10m,precipitation,'
+                    'shortwave_radiation,weather_code'),
+        'timezone': 'auto',
+    })
+    url = 'https://api.open-meteo.com/v1/forecast?' + params
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Red5-Studio-V1.9'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:  # noqa: BLE001
+        return {'success': False, 'error': str(e)}
+
+    cur = (raw.get('current') or {})
+    units = (raw.get('current_units') or {})
+
+    # Compose a stable, well-typed contract for the frontend.  We pin
+    # the field names so a future Open-Meteo schema change can't silently
+    # break the sun-path widget.
+    payload = {
+        'success': True,
+        'lat':  lat_f,
+        'lon':  lon_f,
+        'time': cur.get('time'),                            # ISO local
+        'tz':   raw.get('timezone'),
+        'temperature_c':       cur.get('temperature_2m'),
+        'relative_humidity':   cur.get('relative_humidity_2m'),
+        'cloud_cover':         cur.get('cloud_cover'),
+        'wind_speed_kmh':      cur.get('wind_speed_10m'),
+        'wind_direction_deg':  cur.get('wind_direction_10m'),
+        'precipitation_mm':    cur.get('precipitation'),
+        'ghi_wm2':             cur.get('shortwave_radiation'),
+        'weather_code':        cur.get('weather_code'),
+        'units': {
+            'temperature_c':      units.get('temperature_2m', '°C'),
+            'wind_speed_kmh':     units.get('wind_speed_10m', 'km/h'),
+            'precipitation_mm':   units.get('precipitation', 'mm'),
+            'ghi_wm2':            units.get('shortwave_radiation', 'W/m²'),
+        },
+        'source':   'open-meteo',
+        'fetched':  int(now_ts),
+        'ttl_s':    _WEATHER_NOW_TTL_S,
+    }
+    _WEATHER_NOW_CACHE[key] = (now_ts, payload)
+    return payload
+
+
+def weather_current():
+    """GET /api/weather-current?lat=...&lon=... -- live conditions."""
+    lat = request.args.get('lat')
+    lon = request.args.get('lon')
+    if not lat or not lon:
+        # Fall back to the saved forecast-config so the sun-path widget
+        # can call this with no args during normal dashboard operation.
+        cfg = _load_forecast_config()
+        lat = lat or cfg.get('lat')
+        lon = lon or cfg.get('lon')
+    if not lat or not lon:
+        return jsonify({'success': False, 'error': 'lat/lon required'}), 400
+    out = _current_weather(lat, lon)
+    code = 200 if out.get('success') else 502
+    return jsonify(out), code
+
+
+
 
 def tomorrow_forecast():
     """Get tomorrow's forecast based on past year's same-day data."""
@@ -821,6 +933,8 @@ def register(app, ctx):
                      forecast_config, methods=['GET', 'POST'])
     app.add_url_rule('/api/forecast-write-now','forecast_write_now',
                      forecast_write_now, methods=['POST'])
+    app.add_url_rule('/api/weather-current',   'weather_current',
+                     weather_current, methods=['GET'])
 
     if ctx.get('start_forecast_thread', True):
         t = threading.Thread(target=_daily_forecast_job, daemon=True,

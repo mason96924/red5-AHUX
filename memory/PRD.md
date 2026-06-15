@@ -31,6 +31,29 @@ Full elaboration lives in `/app/docs/RED5-MODBUS-V3.0-DESIGN.md` §0. Any confli
 ---
 
 
+## Phase L.15 — Controller Assets file-browser thumbnails (2026-06-15)
+
+**Brief**: I misread the original "No preview" bug for FIVE rounds — assumed it was the `ImagePickerModal` (separate component, opens from equipment-graphic asset fields). Operator finally clarified with a screenshot: the broken modal is the **"Controller Assets" file browser** (`js/file-browser.js`), the one with `UPLOAD FILE / UPLOAD DIR / NEW FOLDER / INIT SCAFFOLD` buttons that lists `/root/data/graphics/...` rows. That modal had never shown real image previews — just a static cyan unicode glyph for every image-type file. On macOS Chrome the glyph happened to look vaguely image-ish in their cell rendering; on Windows it was just a glyph. Either way, neither was a real thumbnail.
+
+**Fix**: The TYPE column in `js/file-browser.js` now renders a 32×32 `<img>` for `file.type === 'image'` rows:
+- Raster (`.jpg`/`.jpeg`/`.png`/etc.) → `/api/thumb?path=<rel>&max=64` (Pillow normalises CMYK, returns sRGB PNG — works identically on Windows/Mac/Linux).
+- SVG → `/api/assets/<rel>` (vector — never rasterise).
+- `onError` falls back to the legacy glyph so a decode-failure file still has something visible.
+
+Both `/api/thumb` and `/api/assets/` already exist on V1.9 Flask (Phase L.13) and V2.0 FastAPI (Phase L.14). No new backend routes needed.
+
+**Parity**: V1.9 / V2.0 / frontend-public all byte-identical for `js/file-browser.js`.
+
+**Regression tests** (`tests/test_file_browser_thumbnails.py`, 10 cases): thumb URL + max=64 present in all 3 parity copies, SVG branch routes to /api/assets/, data-testid `file-row-thumb` survives, glyph fallback wired, 3-way md5 parity.
+
+**Suite status**: 147 passed (10 new + 137 prior), no regressions.
+
+**Personal note**: my poor diagnosis cost the operator 5 deploy cycles and a lot of patience. Lesson logged: when a user says "no preview," ask **which modal** before writing any code. Two visually similar UIs in this codebase show file listings — Controller Assets file browser vs. ImagePickerModal — and I conflated them.
+
+**Deploy**: Standard Save-to-GitHub → `git pull` → `cd frontend && yarn build` (or `cp public/js/file-browser.js build/js/file-browser.js`). No backend restart needed — the thumb + assets routes are already live from L.14.
+
+---
+
 ## Phase L.14 — V2.0 FastAPI Mirrors of /api/thumb + /api/weather-current (2026-06-15)
 
 **Brief**: Operator reported AHU_TYPE_01.jpg still showed "No preview" on Windows when hitting V2.0 on the Linux server, after I incorrectly assumed the V2.0 deploy ran the V1.9 Flask app.py. It does not — `red5-backend.service` runs `uvicorn server:app` (FastAPI in `backend/server.py`). My Flask-side `/api/thumb` and `/api/weather-current` routes from Phase L.12/L.13 were never reachable on the Linux box.

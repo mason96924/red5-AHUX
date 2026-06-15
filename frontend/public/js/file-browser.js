@@ -137,7 +137,50 @@ const FileBrowserModal = ({
                                                     />
                                                 ) : null}
                                             </td>
-                                            <td className={`px-2 py-1.5 text-center text-base ${file.type === 'directory' ? 'text-amber-400' : fileTypeColor(file.type)}`}>{file.type === 'directory' ? '\u{1F4C1}' : fileTypeIcon(file.type)}</td>
+                                            {/* TYPE column.  For image files we render a real
+                                                32-px thumbnail via /api/thumb so the operator
+                                                can SEE which file is which without opening it
+                                                (the previous cyan placeholder icon told them
+                                                nothing).  Raster -> /api/thumb (Pillow
+                                                normalises CMYK on the way out so Windows
+                                                Chrome renders it the same as Mac).  SVG ->
+                                                /assets/ direct (vector; native render).
+                                                Non-image types keep the legacy glyph. */}
+                                            <td className={`px-2 py-1.5 text-center text-base ${file.type === 'directory' ? 'text-amber-400' : fileTypeColor(file.type)}`}>
+                                                {file.type === 'directory' ? '\u{1F4C1}' : (
+                                                    file.type === 'image' ? (() => {
+                                                        var apiUrl = window.API_BASE_URL || '';
+                                                        var rel = currentPath ? (currentPath + '/' + file.name) : file.name;
+                                                        var isSvg = /\.svg$/i.test(file.name);
+                                                        var src = isSvg
+                                                            ? (apiUrl + '/api/assets/' + rel)
+                                                            : (apiUrl + '/api/thumb?path=' + encodeURIComponent(rel) + '&max=64');
+                                                        return React.createElement('img', {
+                                                            src: src,
+                                                            alt: file.name,
+                                                            'data-testid': 'file-row-thumb',
+                                                            style: {
+                                                                width: 32, height: 32,
+                                                                objectFit: 'contain',
+                                                                display: 'inline-block',
+                                                                borderRadius: 3,
+                                                                background: '#0f172a',
+                                                                border: '1px solid #1e293b',
+                                                            },
+                                                            onError: function(e){
+                                                                /* Pillow couldn't decode OR fetch failed:
+                                                                   fall back to the legacy glyph so the row
+                                                                   still has something visible. */
+                                                                e.target.style.display = 'none';
+                                                                var span = document.createElement('span');
+                                                                span.textContent = fileTypeIcon(file.type);
+                                                                span.title = 'preview unavailable';
+                                                                e.target.parentNode.appendChild(span);
+                                                            }
+                                                        });
+                                                    })() : fileTypeIcon(file.type)
+                                                )}
+                                            </td>
                                             <td className="px-3 py-1.5">
                                                 {file.type === 'directory' ? (
                                                     <button onClick={() => onNavigate(currentPath ? `${currentPath}/${file.name}` : file.name)} className="text-[11px] font-mono text-amber-400 hover:text-amber-300 font-bold hover:underline">{file.name}/</button>

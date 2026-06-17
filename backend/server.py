@@ -1849,6 +1849,26 @@ def _zero_pad_variants(rel_path: str) -> list[str]:
     return out
 
 
+def _404_no_cache(detail: str):
+    """Return a 404 that browsers will NOT cache.
+
+    Why this exists: Chrome / Safari apply heuristic caching to 404
+    responses that omit Cache-Control.  A user once hit an asset before
+    it had been uploaded -> Chrome cached the 404 -> after the upload
+    succeeded the user still saw "No preview" until a hard refresh.
+    Worse: different PCs cached different states ("works on Linux PC,
+    broken on the Mac next to it").  By emitting `Cache-Control:
+    no-store` on every 404 from /api/assets and /api/thumb, a freshly
+    uploaded asset becomes visible on the very next page load on every
+    PC, with no cache-invalidation dance required.
+    """
+    return JSONResponse(
+        {"detail": detail},
+        status_code=404,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/api/assets/{path:path}")
 async def assets(path: str, request: Request,
                  tenant: Optional[dict] = Depends(current_tenant_optional)):
@@ -1903,7 +1923,7 @@ async def assets(path: str, request: Request,
                         _resolved = True
                         break
                 if not _resolved:
-                    raise HTTPException(404, f"asset not found: {path}")
+                    return _404_no_cache(f"asset not found: {path}")
     lower = full.lower()
     with open(full, "rb") as f:
         body = f.read()
@@ -1988,7 +2008,7 @@ async def thumb(path: str = Query(...),
             with open(alt, "rb") as f:
                 raw_bytes = f.read()
     if raw_bytes is None:
-        raise HTTPException(404, f"thumb source not found: {rel}")
+        return _404_no_cache(f"thumb source not found: {rel}")
 
     # Normalise via Pillow.  Graceful 302 fallback to /api/assets/ if
     # Pillow isn't installed (mirrors the Flask side's behaviour so the

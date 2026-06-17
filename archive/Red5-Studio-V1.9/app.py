@@ -349,16 +349,25 @@ def serve_asset(filename):
         # `AHU_TYPE_1.jpg`, V1.9 stores `AHU_TYPE_01.jpg`. If the
         # exact name misses, try the alternate zero-pad spelling on
         # the FINAL segment only before falling back to /docs/.
+        _variant_hit = None
         for _variant in _zero_pad_variants(filename):
             _variant_full = _os.path.join('/root/data', _variant)
             if _os.path.isfile(_variant_full):
-                resp = send_from_directory('/root/data', _variant)
+                _variant_hit = _variant
                 break
-        else:
-            # Fallback: try /root/data/docs/<filename>.  If THAT doesn't exist
-            # either, send_from_directory raises 404 with the same shape as
-            # the original route did, so we don't change the error contract.
+        if _variant_hit is not None:
+            resp = send_from_directory('/root/data', _variant_hit)
+        elif _os.path.isfile(_os.path.join('/root/data/docs', filename)):
+            # Fallback: try /root/data/docs/<filename>.
             resp = send_from_directory('/root/data/docs', filename)
+        else:
+            # Explicit 404 with `no-store` so the browser doesn't sticky-cache
+            # the miss.  Without this Chrome/Safari heuristically cache 404s
+            # and a freshly uploaded asset stays invisible until hard-refresh,
+            # often diverging across PCs ("works on Linux, broken on Mac").
+            err = jsonify({'error': 'not found', 'path': filename})
+            err.headers['Cache-Control'] = 'no-store'
+            return err, 404
     lower = filename.lower()
     # JS/HTML/MD must never be heuristically cached — they carry app logic
     # or documentation that changes between deploys. Static graphics
@@ -482,7 +491,14 @@ def api_thumb():
                 _resolved = True
                 break
         if not _resolved:
-            return jsonify({'error': 'not found'}), 404
+            # `no-store` so browsers don't sticky-cache the 404. Without
+            # this, a user who hits /api/thumb before an asset has been
+            # uploaded will keep seeing "No preview" on subsequent loads
+            # until they hard-refresh -- and different PCs end up in
+            # different cached states ("works on Linux, broken on Mac").
+            resp = jsonify({'error': 'not found'})
+            resp.headers['Cache-Control'] = 'no-store'
+            return resp, 404
 
     ext = _thumb_os.path.splitext(src_abs)[1].lower()
     if ext not in _THUMB_RASTER_EXTS:

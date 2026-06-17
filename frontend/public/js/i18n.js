@@ -116,7 +116,7 @@
     live:                 ['Live','实时','即時','ライブ','실시간'],
     offline:              ['Offline','离线','離線','オフライン','오프라인'],
     asset_search:         ['Asset Search','资产搜索','資產搜尋','資産検索','자산 검색'],
-    toggle_givoni:        ['Toggle Givoni Engine','切换 Givoni 引擎','切換 Givoni 引擎','Givoni エンジン切替','Givoni 엔진 전환'],
+    toggle_givoni:        ['Givoni Engine','Givoni 引擎','Givoni 引擎','Givoni エンジン','Givoni 엔진'],
 
     /* ── Equipment Mapper ── */
     equipment_config_tool:  ['Equipment Configuration Tool','设备配置工具','設備配置工具','機器設定ツール','장비 구성 도구'],

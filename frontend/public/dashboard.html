@@ -2691,7 +2691,7 @@
                         </div>
                         <div className={`p-4 border-b ${ui.border} bg-opacity-50`}>
                             <div className="flex gap-2">
-                                <button onClick={() => setShowGivoni(!showGivoni)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button>
+                                <button onClick={() => setShowGivoni(!showGivoni)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-slate-100 shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button>
                                 <button
                                     data-testid="toggle-sweet-spot"
                                     onClick={() => setShowSweetSpot(!showSweetSpot)}
@@ -2699,7 +2699,7 @@
                                     title={showGivoni
                                         ? (showSweetSpot ? 'Hide sweet-spot RH strip' : 'Show sweet-spot RH strip')
                                         : 'Enable Givoni first to use this overlay'}
-                                    className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-white shadow-lg' : ui.btnToggle)}`}
+                                    className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-slate-100 shadow-lg' : ui.btnToggle)}`}
                                 >{sweetSpotRange.lo}-{sweetSpotRange.hi}% RH</button>
                             </div>
                             {/* Tier legend chip - colour-codes the VAV-table dots so
@@ -3162,7 +3162,7 @@
                                                 data-no-drag
                                                 data-testid="sidebar-floating-attach"
                                                 onClick={() => setSidebarFloating(false)}
-                                                className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600 transition-all"
+                                                className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600 transition-all"
                                                 title="Re-attach sidebar to the docked position"
                                             >{'\u21A9 Attach'}</button>
                                         </div>
@@ -3208,7 +3208,7 @@
                                         <div className="flex-1 flex flex-col justify-between">
                                             <div>
                                                 <div 
-                                                    className={`text-2xl font-black tracking-tight uppercase italic cursor-pointer hover:text-sky-400 hover:underline transition-colors ${theme==='dark'?'text-white shadow-black':'text-slate-900'}`}
+                                                    className={`text-2xl font-black tracking-tight uppercase italic cursor-pointer hover:text-sky-400 hover:underline transition-colors ${theme==='dark'?'text-slate-100 shadow-black':'text-slate-900'}`}
                                                     onMouseDown={(e) => { 
                                                         e.stopPropagation(); 
                                                         setShowFloorPlanForAhu(selectedAhuId); 
@@ -3231,7 +3231,7 @@
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-1.5 mb-3 font-black"><button onClick={() => setVecVis({...vecVis, enthalpy: !vecVis.enthalpy})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.enthalpy ? 'bg-pink-600/30 border-pink-500 text-pink-500' : ui.btnToggle}`}>{t('enthalpy')}</button><button onClick={() => setVecVis({...vecVis, sensible: !vecVis.sensible})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.sensible ? 'bg-blue-600/30 border-blue-500 text-blue-500' : ui.btnToggle}`}>{t('sensible')}</button><button onClick={() => setVecVis({...vecVis, latent: !vecVis.latent})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.latent ? 'bg-yellow-600/30 border-yellow-500 text-yellow-600' : ui.btnToggle}`}>{t('latent')}</button><button onClick={() => setVecVis({...vecVis, diagnostic: !vecVis.diagnostic})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.diagnostic ? 'bg-emerald-600/30 border-emerald-400 text-emerald-600' : ui.btnToggle}`}>{t('diagnostic')}</button></div>
-                                    <div className="flex gap-2 mt-1 text-xs font-black"><button onClick={() => {setSelectedAhuId(null); setLockedVavId(null);}} className={`flex-1 ${ui.btnToggle} py-2.5 rounded-xl uppercase shadow-lg font-black tracking-widest text-[9px]`}>Close</button><button onClick={() => setShowPath(!showPath)} className={`flex-1 py-2.5 rounded-xl border transition-all text-[9px] font-black shadow-black ${showPath ? 'bg-indigo-600 border-indigo-400 text-white' : ui.btnToggle}`}>Path</button><button onClick={() => {setIsLockedToSA(!isLockedToSA); setLockedVavId(null);}} className={`flex-1 py-2.5 rounded-xl border transition-all text-[9px] font-black shadow-black ${isLockedToSA ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg' : ui.btnLockedOff}`}>{isLockedToSA ? 'SA Locked' : 'Lock SA'}</button></div>
+                                    <div className="flex gap-2 mt-1 text-xs font-black"><button onClick={() => {setSelectedAhuId(null); setLockedVavId(null);}} className={`flex-1 ${ui.btnToggle} py-2.5 rounded-xl uppercase shadow-lg font-black tracking-widest text-[9px]`}>Close</button><button onClick={() => setShowPath(!showPath)} className={`flex-1 py-2.5 rounded-xl border transition-all text-[9px] font-black shadow-black ${showPath ? 'bg-indigo-600 border-indigo-400 text-slate-100' : ui.btnToggle}`}>Path</button><button onClick={() => {setIsLockedToSA(!isLockedToSA); setLockedVavId(null);}} className={`flex-1 py-2.5 rounded-xl border transition-all text-[9px] font-black shadow-black ${isLockedToSA ? 'bg-emerald-600 border-emerald-400 text-slate-100 shadow-lg' : ui.btnLockedOff}`}>{isLockedToSA ? 'SA Locked' : 'Lock SA'}</button></div>
                                 </div>
                             </div>
                         )}
@@ -3317,7 +3317,7 @@
                                                             <td className={`font-black ${Math.abs(diffH) < 3 ? 'text-emerald-500' : Math.abs(diffH) < 6 ? 'text-blue-500' : 'text-red-400'}`}>{diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</td>
                                                             <td className={`font-black text-[10px] ${diag.distSA < 3 ? 'text-emerald-500' : diag.distSA < 6 ? 'text-slate-400' : 'text-amber-400'}`}>{diag.distSA.toFixed(1)}</td>
                                                             <td className={`font-black text-[10px] ${diag.totalDemand === 0 ? 'text-emerald-500' : diag.demandType === 'heating' ? 'text-orange-400' : 'text-cyan-400'}`}>{diag.totalDemand === 0 ? '--' : diag.totalDemand.toFixed(1)}</td>
-                                                            <td className="text-center"><button onMouseDown={(e) => { e.stopPropagation(); setLockedVavId(lockedVavId === v.id ? null : v.id); setIsLockedToSA(false); }} className={`p-1.5 rounded-lg border transition-all shadow-black ${lockedVavId === v.id ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg' : ui.btnToggle}`}><LockIcon/></button></td>
+                                                            <td className="text-center"><button onMouseDown={(e) => { e.stopPropagation(); setLockedVavId(lockedVavId === v.id ? null : v.id); setIsLockedToSA(false); }} className={`p-1.5 rounded-lg border transition-all shadow-black ${lockedVavId === v.id ? 'bg-emerald-600 border-emerald-400 text-slate-100 shadow-lg' : ui.btnToggle}`}><LockIcon/></button></td>
                                                         </tr>
                                                     );
                                                 })}
@@ -3351,7 +3351,7 @@
                             <text x={pad.left + gridWidth/2} y={pad.top + gridHeight + 70} textAnchor="middle" fill={ui.svgAxis} fontSize="14" fontWeight="900" className={`uppercase tracking-[0.3em] font-black italic shadow-black shadow-black`}>{t('dry_bulb_temp')} (°C)</text><text x={pad.left + gridWidth + 65} y={pad.top + gridHeight/2} transform={`rotate(-90, ${pad.left + gridWidth + 65}, ${pad.top+gridHeight/2})`} textAnchor="middle" fill={ui.svgAxis} fontSize="14" fontWeight="900" className={`uppercase tracking-[0.3em] font-black italic shadow-black shadow-black`}>{t('humidity_ratio')} (g/kg)</text>
                         </svg>
                         
-                        <div className={`absolute bottom-12 left-10 flex gap-6 p-4 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-2xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest`}><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-pink-400 border-b border-pink-400 border-dashed shadow-black shadow-black"></div> {t('enthalpy')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-yellow-400 border-b border-yellow-400 border-dashed shadow-black shadow-black"></div> {t('latent')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-blue-400 border-b border-blue-400 border-dashed shadow-black shadow-black"></div> {t('sensible')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-emerald-500 border-b border-emerald-500 border-dashed shadow-black shadow-black"></div> {t('diagnostic')}</div><button onClick={() => { if (!weatherLocation) { setShowWeatherSettings(true); } setShowWeatherStrip(p => !p); }} className={`ml-2 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${showWeatherStrip ? (theme==='dark'?'bg-indigo-600 text-white':'bg-indigo-500 text-white') : (theme==='dark'?'bg-slate-700 text-slate-400 border border-slate-600':'bg-slate-200 text-slate-500 border border-slate-300')}`}>{t('weather')}</button>{showWeatherStrip && <button onClick={() => setShowWeatherSettings(true)} className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-700 text-sky-400 border border-slate-600 hover:text-white':'bg-slate-200 text-sky-600 border border-slate-300 hover:text-sky-800'}`}>{weatherLocation ? (weatherLocation.name || weatherLocation.lat + ',' + weatherLocation.lon) : t('set_location')}</button>}{showWeatherStrip && weatherFetchStatus && (() => {
+                        <div className={`absolute bottom-12 left-10 flex gap-6 p-4 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-2xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest`}><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-pink-400 border-b border-pink-400 border-dashed shadow-black shadow-black"></div> {t('enthalpy')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-yellow-400 border-b border-yellow-400 border-dashed shadow-black shadow-black"></div> {t('latent')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-blue-400 border-b border-blue-400 border-dashed shadow-black shadow-black"></div> {t('sensible')}</div><div className="flex items-center gap-2 whitespace-nowrap font-black font-mono shadow-black"><div className="w-8 h-0.5 bg-emerald-500 border-b border-emerald-500 border-dashed shadow-black shadow-black"></div> {t('diagnostic')}</div><button onClick={() => { if (!weatherLocation) { setShowWeatherSettings(true); } setShowWeatherStrip(p => !p); }} className={`ml-2 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider transition-all ${showWeatherStrip ? (theme==='dark'?'bg-indigo-600 text-slate-100':'bg-indigo-500 text-slate-100') : (theme==='dark'?'bg-slate-700 text-slate-400 border border-slate-600':'bg-slate-200 text-slate-500 border border-slate-300')}`}>{t('weather')}</button>{showWeatherStrip && <button onClick={() => setShowWeatherSettings(true)} className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-700 text-sky-400 border border-slate-600 hover:text-slate-100':'bg-slate-200 text-sky-600 border border-slate-300 hover:text-sky-800'}`}>{weatherLocation ? (weatherLocation.name || weatherLocation.lat + ',' + weatherLocation.lon) : t('set_location')}</button>}{showWeatherStrip && weatherFetchStatus && (() => {
                                 const cfg = weatherFetchStatus.source === 'browser'
                                     ? { label: 'BROWSER', color: theme==='dark'?'text-indigo-300 border-indigo-500/40 bg-indigo-500/10':'text-indigo-700 border-indigo-300 bg-indigo-50' }
                                     : weatherFetchStatus.source === 'controller'
@@ -3367,7 +3367,7 @@
                         {!weatherLocation ? (
                             <div className="flex items-center justify-between px-6 py-3">
                                 <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>{window.t ? window.t("yearly_weather_dist") : "Yearly Weather Distribution"}</span>
-                                <button onClick={() => setShowWeatherSettings(true)} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black uppercase tracking-wider rounded transition-all">{t('set_location')}</button>
+                                <button onClick={() => setShowWeatherSettings(true)} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-slate-100 text-[9px] font-black uppercase tracking-wider rounded transition-all">{t('set_location')}</button>
                             </div>
                         ) : weatherLoading ? (
                             <div className="flex items-center justify-center py-4">
@@ -3386,15 +3386,15 @@
                                             const active = weatherViewMode === m;
                                             return (
                                                 <button key={m} onClick={() => { setWeatherViewMode(m); setWeatherZoom(null); setWeatherNavDate(new Date().toISOString().slice(0,10)); }}
-                                                    className={`w-full px-1 py-0 text-[7px] font-black uppercase tracking-wider rounded transition-all leading-tight ${active ? (theme==='dark'?'bg-indigo-600 text-white':'bg-indigo-500 text-white') : (theme==='dark'?'text-slate-500 hover:text-slate-300':'text-slate-400 hover:text-slate-600')}`}
+                                                    className={`w-full px-1 py-0 text-[7px] font-black uppercase tracking-wider rounded transition-all leading-tight ${active ? (theme==='dark'?'bg-indigo-600 text-slate-100':'bg-indigo-500 text-slate-100') : (theme==='dark'?'text-slate-500 hover:text-slate-300':'text-slate-400 hover:text-slate-600')}`}
                                                 >{labels[m]}</button>
                                             );
                                         })}
                                     </div>
                                     {weatherViewMode !== 'active_year' && (
                                         <div className="flex items-center gap-0.5">
-                                            <button onClick={() => weatherNav(-1)} className={`text-[9px] font-black ${theme==='dark'?'text-slate-500 hover:text-white':'text-slate-400 hover:text-slate-800'} transition-all`}>&lt;</button>
-                                            <button onClick={() => weatherNav(1)} className={`text-[9px] font-black ${theme==='dark'?'text-slate-500 hover:text-white':'text-slate-400 hover:text-slate-800'} transition-all`}>&gt;</button>
+                                            <button onClick={() => weatherNav(-1)} className={`text-[9px] font-black ${theme==='dark'?'text-slate-500 hover:text-slate-100':'text-slate-400 hover:text-slate-800'} transition-all`}>&lt;</button>
+                                            <button onClick={() => weatherNav(1)} className={`text-[9px] font-black ${theme==='dark'?'text-slate-500 hover:text-slate-100':'text-slate-400 hover:text-slate-800'} transition-all`}>&gt;</button>
                                         </div>
                                     )}
                                     <button onClick={() => setShowWeatherSettings(true)} className={`text-[6px] font-black uppercase ${theme==='dark'?'text-slate-600 hover:text-slate-400':'text-slate-400 hover:text-slate-600'} transition-all`}>Loc</button>
@@ -3722,7 +3722,7 @@
                                     <span className={`text-[10px] font-mono ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>{window.t ? window.t("no_weather_loaded") : "No weather data loaded"}</span>
                                     {weatherError && <span className={`text-[9px] font-mono text-red-400`}>{weatherError}</span>}
                                 </div>
-                                <button onClick={() => setShowWeatherSettings(true)} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black uppercase tracking-wider rounded transition-all">{t('set_location')}</button>
+                                <button onClick={() => setShowWeatherSettings(true)} className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-slate-100 text-[9px] font-black uppercase tracking-wider rounded transition-all">{t('set_location')}</button>
                             </div>
                         )}
                     </div>
@@ -3863,7 +3863,7 @@
                                     <button
                                         id="wl-dropdown-btn"
                                         onClick={() => { const dd = document.getElementById('wl-dropdown-list'); dd.style.display = dd.style.display === 'block' ? 'none' : 'block'; }}
-                                        className={`w-full text-left ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded-lg py-2 px-3 text-[11px] font-mono font-bold focus:outline-none focus:border-indigo-500 cursor-pointer`}
+                                        className={`w-full text-left ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded-lg py-2 px-3 text-[11px] font-mono font-bold focus:outline-none focus:border-indigo-500 cursor-pointer`}
                                         style={{backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E")`, backgroundRepeat:'no-repeat', backgroundPosition:'right 10px center', paddingRight:'28px', boxSizing:'border-box'}}
                                     >
                                         {curName}
@@ -3902,12 +3902,12 @@
                                 {/* Add new location */}
                                 <div className={`p-3 rounded-lg border border-dashed ${theme==='dark'?'border-slate-600 bg-slate-800/30':'border-slate-300 bg-slate-50'}`}>
                                     <div className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} mb-2`}>Add New</div>
-                                    <input id="wl-new-name" type="text" placeholder={window.t ? window.t("location_name_ph") : "Location name"} className={`w-full mb-2 ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
+                                    <input id="wl-new-name" type="text" placeholder={window.t ? window.t("location_name_ph") : "Location name"} className={`w-full mb-2 ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
                                     <div className="flex gap-1.5 mb-2">
-                                        <input id="wl-new-lat" type="number" step="0.01" placeholder="Lat" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
-                                        <input id="wl-new-lon" type="number" step="0.01" placeholder="Lon" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-white':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
+                                        <input id="wl-new-lat" type="number" step="0.01" placeholder="Lat" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
+                                        <input id="wl-new-lon" type="number" step="0.01" placeholder="Lon" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
                                     </div>
-                                    <button onClick={addNew} className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[9px] uppercase tracking-widest rounded transition-all">+ Add &amp; Load</button>
+                                    <button onClick={addNew} className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-slate-100 font-black text-[9px] uppercase tracking-widest rounded transition-all">+ Add &amp; Load</button>
                                 </div>
 
                                 <button onClick={() => setShowWeatherSettings(false)} className={`w-full mt-3 py-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500'} border font-black text-[9px] uppercase tracking-widest rounded-lg transition-all`}>{t('cancel')}</button>
@@ -4062,11 +4062,11 @@
                                                 data-testid="popout-vav-modal-btn"
                                                 onClick={() => { if (vavModalPopupWin && !vavModalPopupWin.closed) { vavModalPopupWin.close(); } else { popOutVavModal(); } }}
                                                 title={vavIsPopped ? 'Re-attach VAV modal to this window' : 'Pop the VAV modal out into a draggable window'}
-                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${vavIsPopped ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${vavIsPopped ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
                                             >
                                                 {vavIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
                                             </button>
-                                            <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setSelectedVavForModal(null)}>
+                                            <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-slate-100' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setSelectedVavForModal(null)}>
                                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                             </button>
                                         </div>
@@ -4134,9 +4134,9 @@
                                                             };
                                                             return (
                                                                 <div className="flex items-center gap-1 pointer-events-auto">
-                                                                    <button type="button" onClick={e => { e.stopPropagation(); bump(-step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-white text-sm font-black flex items-center justify-center transition-colors select-none">−</button>
+                                                                    <button type="button" onClick={e => { e.stopPropagation(); bump(-step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-slate-100 text-sm font-black flex items-center justify-center transition-colors select-none">−</button>
                                                                     <input id={inpId} type="text" inputMode="decimal" defaultValue={numVal.toFixed(1)} onKeyDown={e => { if (e.key === 'Enter') { writeVavRW(p.label, e.target.value); e.target.blur(); } }} onBlur={e => writeVavRW(p.label, e.target.value)} onClick={e => e.stopPropagation()} className="no-spinner w-12 bg-slate-900 border border-slate-600 rounded px-1 py-0.5 text-emerald-400 font-mono text-[10px] font-black text-right outline-none focus:border-emerald-500" />
-                                                                    <button type="button" onClick={e => { e.stopPropagation(); bump(+step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-white text-sm font-black flex items-center justify-center transition-colors select-none">+</button>
+                                                                    <button type="button" onClick={e => { e.stopPropagation(); bump(+step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-slate-100 text-sm font-black flex items-center justify-center transition-colors select-none">+</button>
                                                                     {p.unit && <span className="text-[7px] font-black text-slate-400">{p.unit}</span>}
                                                                 </div>
                                                             );
@@ -4163,7 +4163,7 @@
                                                             ) : (
                                                                 <div className="flex flex-row gap-2 px-2.5 py-1 bg-slate-900/90 border border-slate-700 rounded-full shadow-xl backdrop-blur-md items-center">
                                                                     <div className="w-2 h-2 rounded-full flex-shrink-0 bg-emerald-500 shadow-[0_0_8px_#10b981]"></div>
-                                                                    <span className="font-mono text-[8px] font-black uppercase tracking-widest text-white whitespace-nowrap">{displayName}</span>
+                                                                    <span className="font-mono text-[8px] font-black uppercase tracking-widest text-slate-100 whitespace-nowrap">{displayName}</span>
                                                                     {renderCtl()}
                                                                 </div>
                                                             )}
@@ -4283,7 +4283,7 @@
 
                         const floorModalTree = (
                         <div className={floorOuterCls} style={floorOuterStyle}>
-                            <div ref={floorOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-white' : 'bg-white border-slate-300 text-slate-800'} ${floorIsPopped ? '' : 'rounded-2xl border'} shadow-2xl relative flex flex-col overflow-hidden`} style={floorInnerStyle} onMouseDown={e => e.stopPropagation()}>
+                            <div ref={floorOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-slate-100' : 'bg-white border-slate-300 text-slate-800'} ${floorIsPopped ? '' : 'rounded-2xl border'} shadow-2xl relative flex flex-col overflow-hidden`} style={floorInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                 
                                 <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'} border-b p-4 flex justify-between items-center z-[60] relative`} onMouseDown={(e) => { if (floorIsPopped) return; setIsFloorPlanDragging(true); setDragStart({ x: e.clientX - floorPlanOffset.x, y: e.clientY - floorPlanOffset.y }); }}>
                                     <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE {!floorIsPopped && <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal', textTransform:'none', letterSpacing:'normal'}}>Drag corner ↘ to resize</span>}</h3>
@@ -4292,11 +4292,11 @@
                                             data-testid="popout-floorplan-modal-btn"
                                             onClick={() => { if (floorPlanPopupWin && !floorPlanPopupWin.closed) { floorPlanPopupWin.close(); } else { popOutFloorPlanModal(); } }}
                                             title={floorIsPopped ? 'Re-attach floor plan to this window' : 'Pop the floor plan out into a draggable window'}
-                                            className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${floorIsPopped ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                            className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${floorIsPopped ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
                                         >
                                             {floorIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
                                         </button>
-                                        <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowFloorPlanForAhu(null)}>
+                                        <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-slate-100' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowFloorPlanForAhu(null)}>
                                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                         </button>
                                     </div>
@@ -4370,7 +4370,7 @@
                                                                     title={marker.name + (sunRing ? ' · sun-exposed' : '')}
                                                                     onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(marker.name); setShowFloorPlanForAhu(marker.name); setLockedVavId(null); }}
                                                                 >
-                                                                    <span className={`text-xs font-black ${isActive ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600')}`}>{(marker.name || '').split('-')[1] || 'AHU'}</span>
+                                                                    <span className={`text-xs font-black ${isActive ? 'text-slate-100' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600')}`}>{(marker.name || '').split('-')[1] || 'AHU'}</span>
                                                                 </div>
                                                                 <div className={`mt-3 border px-3 py-1.5 rounded-lg text-xs min-w-[80px] text-center shadow-2xl font-mono cursor-pointer transition-colors flex flex-col items-center ${theme === 'dark' ? 'bg-slate-900/95 border-slate-700' : 'bg-white/95 border-slate-300'} ${isActive ? '!border-orange-500' : 'group-hover:border-orange-400'}`}
                                                                     title={isActive ? 'Click to view diagram' : 'Click to select'}
@@ -4539,7 +4539,7 @@
                                                                         title={ahu.id + (sunRing ? ' · sun-exposed' : '')}
                                                                         onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(ahu.id); setLockedVavId(null); }}
                                                                     >
-                                                                        <span className={`text-xs font-black ${isActiveAhu ? 'text-white' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600')}`}>{ahu.id.split('-')[1] || 'AHU'}</span>
+                                                                        <span className={`text-xs font-black ${isActiveAhu ? 'text-slate-100' : (theme === 'dark' ? 'text-slate-400' : 'text-slate-600')}`}>{ahu.id.split('-')[1] || 'AHU'}</span>
                                                                     </div>
                                                                 </div>
                                                             );
@@ -4873,11 +4873,11 @@
                                                 data-testid="popout-ahu-modal-btn"
                                                 onClick={() => { if (ahuModalPopupWin && !ahuModalPopupWin.closed) { ahuModalPopupWin.close(); } else { popOutAhuModal(); } }}
                                                 title={ahuModalPopupWin ? 'Re-attach modal to this window' : 'Pop modal out into a draggable window (move it to another monitor)'}
-                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${ahuModalPopupWin ? 'bg-emerald-700 border-emerald-400 text-white hover:bg-emerald-600' : (dk ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${ahuModalPopupWin ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (dk ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
                                             >
                                                 {ahuModalPopupWin ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
                                             </button>
-                                            <button className={`${dk ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowAhuModalFor(null)}>
+                                            <button className={`${dk ? 'text-slate-400 hover:text-slate-100' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowAhuModalFor(null)}>
                                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                             </button>
                                         </div>
@@ -4956,9 +4956,9 @@
                                                     };
                                                     return (
                                                         <div className="flex items-center gap-1 pointer-events-auto">
-                                                            <button type="button" onClick={e => { e.stopPropagation(); bump(-step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-white text-sm font-black flex items-center justify-center transition-colors select-none">−</button>
+                                                            <button type="button" onClick={e => { e.stopPropagation(); bump(-step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-slate-100 text-sm font-black flex items-center justify-center transition-colors select-none">−</button>
                                                             <input id={inpId} type="text" inputMode="decimal" defaultValue={numVal.toFixed(1)} onKeyDown={e => { if (e.key === 'Enter') { writeRW(p.label, e.target.value); e.target.blur(); } }} onBlur={e => writeRW(p.label, e.target.value)} onClick={e => e.stopPropagation()} className="no-spinner w-12 bg-slate-900 border border-slate-600 rounded px-1 py-0.5 text-emerald-400 font-mono text-[10px] font-black text-right outline-none focus:border-emerald-500" />
-                                                            <button type="button" onClick={e => { e.stopPropagation(); bump(+step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-white text-sm font-black flex items-center justify-center transition-colors select-none">+</button>
+                                                            <button type="button" onClick={e => { e.stopPropagation(); bump(+step); }} className="w-5 h-5 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 rounded text-slate-100 text-sm font-black flex items-center justify-center transition-colors select-none">+</button>
                                                             {p.unit && <span className="text-[7px] font-black text-slate-400">{p.unit}</span>}
                                                         </div>
                                                     );
@@ -4992,7 +4992,7 @@
                                                         <div className="flex flex-col gap-1 px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded-xl shadow-xl backdrop-blur-md items-center">
                                                             <div className="flex items-center justify-center gap-1.5 w-full border-b border-slate-700/50 pb-0.5 mb-0.5">
                                                                 <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-emerald-500 shadow-[0_0_8px_#10b981]"></div>
-                                                                <span className="font-mono text-[9px] font-black uppercase tracking-widest text-white whitespace-nowrap">{displayName}</span>
+                                                                <span className="font-mono text-[9px] font-black uppercase tracking-widest text-slate-100 whitespace-nowrap">{displayName}</span>
                                                             </div>
                                                             <div className="flex flex-row flex-wrap gap-x-2 gap-y-1 justify-center max-w-[280px]">
                                                                 {grp.points.map((p, pIdx) => (
@@ -5197,7 +5197,7 @@
                         <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-cyan-500/40':'bg-white border-slate-300'} border-2 rounded-2xl w-[700px] max-h-[85vh] flex flex-col shadow-2xl`}>
                             <div className={`p-5 border-b ${theme==='dark'?'border-slate-700':'border-slate-200'} flex justify-between items-center`}>
                                 <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-cyan-400':'text-cyan-600'}`}>{window.t ? window.t("collector_configuration") : "Collector Configuration"}</h3>
-                                <button onClick={() => setShowCollectorCfg(false)} className={`w-7 h-7 rounded-full flex items-center justify-center text-lg font-bold ${theme==='dark'?'bg-slate-800 text-slate-400 hover:text-white':'bg-slate-100 text-slate-500 hover:text-slate-800'} transition-all`}>&times;</button>
+                                <button onClick={() => setShowCollectorCfg(false)} className={`w-7 h-7 rounded-full flex items-center justify-center text-lg font-bold ${theme==='dark'?'bg-slate-800 text-slate-400 hover:text-slate-100':'bg-slate-100 text-slate-500 hover:text-slate-800'} transition-all`}>&times;</button>
                             </div>
                             <div className={`flex border-b ${theme==='dark'?'border-slate-700':'border-slate-200'}`}>
                                 {['groups','types','settings'].map(tb => (
@@ -5228,19 +5228,19 @@
                                                         {ccEditGroup===name && (
                                                             <div className="space-y-2 mt-3">
                                                                 <div className="flex gap-1">
-                                                                    <input type="text" value={ccNewVav} onChange={e=>setCcNewVav(e.target.value)} placeholder={window.t ? window.t("add_vav_name_ph") : "Add VAV name"} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
-                                                                    <button onClick={() => { if (!ccNewVav.trim()) return; const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.ahu_groups[name].vavs) c.ahu_groups[name].vavs = []; if (!c.ahu_groups[name].vavs.includes(ccNewVav.trim())) { c.ahu_groups[name].vavs.push(ccNewVav.trim()); setCcConfig(c); setCcNewVav(''); } }} className="px-2 py-1 bg-cyan-600 text-white rounded text-[9px] font-black uppercase hover:bg-cyan-500 transition-all">+VAV</button>
+                                                                    <input type="text" value={ccNewVav} onChange={e=>setCcNewVav(e.target.value)} placeholder={window.t ? window.t("add_vav_name_ph") : "Add VAV name"} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                                    <button onClick={() => { if (!ccNewVav.trim()) return; const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.ahu_groups[name].vavs) c.ahu_groups[name].vavs = []; if (!c.ahu_groups[name].vavs.includes(ccNewVav.trim())) { c.ahu_groups[name].vavs.push(ccNewVav.trim()); setCcConfig(c); setCcNewVav(''); } }} className="px-2 py-1 bg-cyan-600 text-slate-100 rounded text-[9px] font-black uppercase hover:bg-cyan-500 transition-all">+VAV</button>
                                                                 </div>
                                                                 <div>
                                                                     <label className={`text-[8px] font-black uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-500'}`}>{window.t ? window.t("csv_object_label") : "CSV Object:"}</label>
-                                                                    <input type="text" defaultValue={grp.csv_object||''} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); c.ahu_groups[name].csv_object = e.target.value.trim(); setCcConfig(c); }} className={`w-full mt-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                                    <input type="text" defaultValue={grp.csv_object||''} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); c.ahu_groups[name].csv_object = e.target.value.trim(); setCcConfig(c); }} className={`w-full mt-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
                                                                 </div>
                                                             </div>
                                                         )}
                                                     </div>
                                                     <div className="flex gap-1 ml-2">
-                                                        <button onClick={() => setCcEditGroup(ccEditGroup===name ? null : name)} className={`px-2 py-1 text-[8px] font-black uppercase rounded transition-all ${ccEditGroup===name ? 'bg-cyan-600 text-white' : (theme==='dark'?'bg-slate-700 text-slate-400 hover:text-cyan-400':'bg-slate-200 text-slate-500 hover:text-cyan-600')}`}>{ccEditGroup===name ? 'Done' : 'Edit'}</button>
-                                                        <button onClick={() => { if (!confirm('Delete group ' + name + '?')) return; const c = JSON.parse(JSON.stringify(ccConfig)); delete c.ahu_groups[name]; setCcConfig(c); if (ccEditGroup===name) setCcEditGroup(null); }} className={`px-2 py-1 text-[8px] font-black uppercase rounded transition-all ${theme==='dark'?'bg-slate-700 text-red-400 hover:bg-red-600 hover:text-white':'bg-slate-200 text-red-500 hover:bg-red-500 hover:text-white'}`}>Del</button>
+                                                        <button onClick={() => setCcEditGroup(ccEditGroup===name ? null : name)} className={`px-2 py-1 text-[8px] font-black uppercase rounded transition-all ${ccEditGroup===name ? 'bg-cyan-600 text-slate-100' : (theme==='dark'?'bg-slate-700 text-slate-400 hover:text-cyan-400':'bg-slate-200 text-slate-500 hover:text-cyan-600')}`}>{ccEditGroup===name ? 'Done' : 'Edit'}</button>
+                                                        <button onClick={() => { if (!confirm('Delete group ' + name + '?')) return; const c = JSON.parse(JSON.stringify(ccConfig)); delete c.ahu_groups[name]; setCcConfig(c); if (ccEditGroup===name) setCcEditGroup(null); }} className={`px-2 py-1 text-[8px] font-black uppercase rounded transition-all ${theme==='dark'?'bg-slate-700 text-red-400 hover:bg-red-600 hover:text-slate-100':'bg-slate-200 text-red-500 hover:bg-red-500 hover:text-slate-100'}`}>Del</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -5248,13 +5248,13 @@
                                         <div className={`p-4 rounded-xl border border-dashed ${theme==='dark'?'border-slate-600 bg-slate-800/30':'border-slate-300 bg-slate-50'}`}>
                                             <div className={`text-[9px] font-black uppercase tracking-wider ${theme==='dark'?'text-slate-400':'text-slate-500'} mb-2`}>{window.t ? window.t("add_new_ahu_group") : "Add New AHU Group"}</div>
                                             <div className="flex gap-2">
-                                                <input type="text" value={ccNewGroupName} onChange={e=>setCcNewGroupName(e.target.value)} placeholder={window.t ? window.t("ahu_name_ph") : "AHU name (e.g. AHU-03-W)"} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
-                                                <input type="text" value={ccNewGroupCsv} onChange={e=>setCcNewGroupCsv(e.target.value)} placeholder={window.t ? window.t("csv_object_ph") : "CSV object"} className={`w-36 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
-                                                <button onClick={() => { if (!ccNewGroupName.trim()) return; const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.ahu_groups) c.ahu_groups = {}; if (c.ahu_groups[ccNewGroupName.trim()]) { setCcMsg('Error: Group already exists'); return; } c.ahu_groups[ccNewGroupName.trim()] = { csv_object: ccNewGroupCsv.trim() || 'CSV_' + ccNewGroupName.trim().replace(/[^A-Za-z0-9]/g,''), vavs: [] }; setCcConfig(c); setCcNewGroupName(''); setCcNewGroupCsv(''); }} className="px-3 py-1.5 bg-cyan-600 text-white rounded text-[9px] font-black uppercase hover:bg-cyan-500 transition-all">Add</button>
+                                                <input type="text" value={ccNewGroupName} onChange={e=>setCcNewGroupName(e.target.value)} placeholder={window.t ? window.t("ahu_name_ph") : "AHU name (e.g. AHU-03-W)"} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                <input type="text" value={ccNewGroupCsv} onChange={e=>setCcNewGroupCsv(e.target.value)} placeholder={window.t ? window.t("csv_object_ph") : "CSV object"} className={`w-36 ${theme==='dark'?'bg-slate-950 border-slate-600 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1.5 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                <button onClick={() => { if (!ccNewGroupName.trim()) return; const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.ahu_groups) c.ahu_groups = {}; if (c.ahu_groups[ccNewGroupName.trim()]) { setCcMsg('Error: Group already exists'); return; } c.ahu_groups[ccNewGroupName.trim()] = { csv_object: ccNewGroupCsv.trim() || 'CSV_' + ccNewGroupName.trim().replace(/[^A-Za-z0-9]/g,''), vavs: [] }; setCcConfig(c); setCcNewGroupName(''); setCcNewGroupCsv(''); }} className="px-3 py-1.5 bg-cyan-600 text-slate-100 rounded text-[9px] font-black uppercase hover:bg-cyan-500 transition-all">Add</button>
                                             </div>
                                         </div>
                                         <div className="flex justify-end pt-2">
-                                            <button onClick={() => saveCollectorCfg(ccConfig)} disabled={ccSaving} className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-widest rounded-lg transition-all">{ccSaving ? 'Saving...' : 'Save Config'}</button>
+                                            <button onClick={() => saveCollectorCfg(ccConfig)} disabled={ccSaving} className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-100 font-black text-[10px] uppercase tracking-widest rounded-lg transition-all">{ccSaving ? 'Saving...' : 'Save Config'}</button>
                                         </div>
                                     </div>
                                 ) : ccTab === 'types' ? (
@@ -5298,14 +5298,14 @@
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
                                             <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>{window.t ? window.t("data_source_mode") : "Data Source Mode"}</label>
                                             <div className="flex gap-2">
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('simulator'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = false; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Simulator (preview only -- sign in to persist).' : 'Switched to Simulator.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
-                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('mock'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = true; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Mock (preview only -- sign in to persist).' : 'Switched to Mock.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-white' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'simulator'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('simulator'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = false; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Simulator (preview only -- sign in to persist).' : 'Switched to Simulator.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='simulator' ? 'bg-emerald-600 border-emerald-400 text-slate-100' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-simulator-btn">Simulator (Config AHUs)</button>
+                                                <button onClick={() => { fetch(API_URL + '/api/data-mode', { method:'POST', credentials: 'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'mock'}) }).then(r=>r.json()).then(d=>{ if(d.success) { setDataMode('mock'); if (ccConfig) { const c = JSON.parse(JSON.stringify(ccConfig)); c.mock_mode = true; setCcConfig(c); setCcMsg(d.persisted === false ? 'Switched to Mock (preview only -- sign in to persist).' : 'Switched to Mock.'); } } }); }} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${dataMode==='mock' ? 'bg-amber-600 border-amber-400 text-slate-100' : (theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500')}`} data-testid="mode-mock-btn">Mock (14 Demo AHUs)</button>
                                             </div>
                                             <p className={`text-[8px] mt-2 ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>Simulator reads from collector_config.json. Mock generates 14 random demo AHUs.</p>
                                         </div>
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
                                             <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-2`}>Poll Interval (seconds)</label>
-                                            <input type="number" min="1" max="300" defaultValue={ccConfig.interval || 5} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); c.interval = Math.max(1, Math.min(300, parseInt(e.target.value) || 5)); setCcConfig(c); }} className={`w-32 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500`} />
+                                            <input type="number" min="1" max="300" defaultValue={ccConfig.interval || 5} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); c.interval = Math.max(1, Math.min(300, parseInt(e.target.value) || 5)); setCcConfig(c); }} className={`w-32 ${theme==='dark'?'bg-slate-950 border-slate-600 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500`} />
                                         </div>
                                         <div className={`p-4 rounded-xl border ${theme==='dark'?'border-slate-700 bg-slate-800/50':'border-slate-200 bg-slate-50'}`}>
                                             <label className={`text-[9px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-3`}>{window.t ? window.t("dashboard_point_map") : "Dashboard Point Map"}</label>
@@ -5318,7 +5318,7 @@
                                                             {Object.entries(dpm).map(([k, v]) => (
                                                                 <div key={k} className="flex gap-1 items-center">
                                                                     <span className={`text-[8px] font-mono font-bold ${theme==='dark'?'text-slate-400':'text-slate-500'} w-16 text-right`}>{k}:</span>
-                                                                    <input type="text" defaultValue={v} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.dashboard_point_map) c.dashboard_point_map = {}; if (!c.dashboard_point_map[eqType]) c.dashboard_point_map[eqType] = {}; c.dashboard_point_map[eqType][k] = e.target.value.trim(); setCcConfig(c); }} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
+                                                                    <input type="text" defaultValue={v} onBlur={e => { const c = JSON.parse(JSON.stringify(ccConfig)); if (!c.dashboard_point_map) c.dashboard_point_map = {}; if (!c.dashboard_point_map[eqType]) c.dashboard_point_map[eqType] = {}; c.dashboard_point_map[eqType][k] = e.target.value.trim(); setCcConfig(c); }} className={`flex-1 ${theme==='dark'?'bg-slate-950 border-slate-600 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-cyan-500`} />
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -5327,7 +5327,7 @@
                                             })}
                                         </div>
                                         <div className="flex justify-end pt-2">
-                                            <button onClick={() => saveCollectorCfg(ccConfig)} disabled={ccSaving} className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-widest rounded-lg transition-all">{ccSaving ? 'Saving...' : 'Save Config'}</button>
+                                            <button onClick={() => saveCollectorCfg(ccConfig)} disabled={ccSaving} className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-100 font-black text-[10px] uppercase tracking-widest rounded-lg transition-all">{ccSaving ? 'Saving...' : 'Save Config'}</button>
                                         </div>
                                     </div>
                                 ) : null}
@@ -5348,7 +5348,7 @@
                                 onKeyDown={e => { if (e.key === 'Enter') { const MASTER_KEY = 'b%9P$MdeQP]['; const pw = configPwInput; if (!pw || !pw.trim()) return; const hashPw = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h = h & h; } const hex = Math.abs(h).toString(16).padStart(8, '0'); let h2 = 0; const salted = s + hex; for (let i = 0; i < salted.length; i++) { h2 = ((h2 << 5) - h2) + salted.charCodeAt(i); h2 = h2 & h2; } return hex + Math.abs(h2).toString(16).padStart(8, '0'); }; const storedHash = localStorage.getItem('configPasswordHash') || ''; if (pw === MASTER_KEY || (storedHash && hashPw(pw) === storedHash)) { sessionStorage.setItem('engineerAuthenticated', 'true'); window.location.href = window.location.origin + '/mapper'; } else if (!storedHash) { setConfigPwError('No password set. Use landing page first.'); } else { setConfigPwError('Incorrect password.'); setConfigPwInput(''); } } }}
                                 autoFocus
                                 placeholder={window.t ? window.t("enter_password_ph") : "Enter password"}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 px-4 text-sm text-white focus:outline-none focus:border-amber-500 font-mono"
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 px-4 text-sm text-slate-100 focus:outline-none focus:border-amber-500 font-mono"
                             />
                             {configPwError && <p className="text-red-400 text-xs font-bold mt-2">{configPwError}</p>}
                             <div className="flex gap-2 mt-4">
@@ -5369,7 +5369,7 @@
                                             setConfigPwInput('');
                                         }
                                     }}
-                                    className="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs uppercase tracking-widest rounded-lg transition-all"
+                                    className="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-slate-100 font-black text-xs uppercase tracking-widest rounded-lg transition-all"
                                 >
                                     Enter
                                 </button>

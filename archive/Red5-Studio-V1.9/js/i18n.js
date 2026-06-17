@@ -116,7 +116,7 @@
     live:                 ['Live','实时','即時','ライブ','실시간'],
     offline:              ['Offline','离线','離線','オフライン','오프라인'],
     asset_search:         ['Asset Search','资产搜索','資產搜尋','資産検索','자산 검색'],
-    toggle_givoni:        ['Toggle Givoni Engine','切换 Givoni 引擎','切換 Givoni 引擎','Givoni エンジン切替','Givoni 엔진 전환'],
+    toggle_givoni:        ['Givoni Engine','Givoni 引擎','Givoni 引擎','Givoni エンジン','Givoni 엔진'],
 
     /* ── Equipment Mapper ── */
     equipment_config_tool:  ['Equipment Configuration Tool','设备配置工具','設備配置工具','機器設定ツール','장비 구성 도구'],
@@ -131,7 +131,7 @@
     new_aligner:            ['New Aligner','新建对齐器','新增對齊器','新規アライナー','새 얼라이너'],
     save_json:              ['Save JSON','保存 JSON','儲存 JSON','JSON 保存','JSON 저장'],
     load_json:              ['Load JSON','加载 JSON','載入 JSON','JSON 読込','JSON 불러오기'],
-    save_to_controller:     ['Save to Controller','保存到控制器','儲存至控制器','コントローラに保存','컨트롤러에 저장'],
+    save_to_controller:     ['Save to Virtual Controller','保存到虚拟控制器','儲存至虛擬控制器','仮想コントローラに保存','가상 컨트롤러에 저장'],
     download_to_browser:    ['Download to Browser','下载到浏览器','下載到瀏覽器','ブラウザにDL','브라우저에 다운로드'],
     upload_image:           ['Upload Image','上传图片','上傳圖片','画像アップロード','이미지 업로드'],
     change_image:           ['Change Image','更换图片','更換圖片','画像を変更','이미지 변경'],

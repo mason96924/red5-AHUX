@@ -37,13 +37,42 @@
     var btn = document.createElement('button');
     btn.id          = 'audit-log-btn';
     btn.setAttribute('data-testid', 'audit-log-btn');
+    btn.setAttribute('aria-label', 'Audit Log');
     btn.title       = 'Open the admin audit log (setpoint changes + write-point overrides).';
-    btn.textContent = '📋 Audit';
-    /* Match the STANDARDS button styling 1:1 by cloning its className. */
-    btn.className = anchor.className.replace(/text-violet-[0-9]+/g, 'text-emerald-400')
-                                    .replace(/hover:border-violet-[0-9]+/g, 'hover:border-emerald-400')
-                                    .replace(/hover:bg-violet-[0-9]+/g, 'hover:bg-emerald-50');
+    /* Icon-only: same Lucide `clipboard-list` SVG used by the React-side
+     * toolbar buttons.  Uses currentColor so it picks up whichever
+     * Tailwind text-emerald-* class we clone from STANDARDS below.
+     * Kept inline (no external SVG fetch) so it renders instantly --
+     * the AUDIT chip only appears for admins so any flash before paint
+     * is a leak we don't want. */
+    btn.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+        'stroke-linejoin="round" aria-hidden="true">' +
+          '<rect width="8" height="4" x="8" y="2" rx="1"/>' +
+          '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>' +
+          '<path d="M12 11h4"/>' +
+          '<path d="M12 16h4"/>' +
+          '<path d="M8 11h.01"/>' +
+          '<path d="M8 16h.01"/>' +
+        '</svg>';
+    /* Match the STANDARDS button styling but drop the px-2 py-1 (text
+     * padding) in favour of p-1.5 (square icon padding) and the
+     * text-[8px]/uppercase rules.  Re-tint to emerald so AUDIT stays
+     * visually distinct from STANDARDS at a glance. */
+    btn.className = anchor.className
+        .replace(/px-2 py-1\s+/g, 'p-1.5 ')
+        .replace(/text-\[8px\]\s+/g, '')
+        .replace(/font-black\s+/g, '')
+        .replace(/uppercase\s+/g, '')
+        .replace(/tracking-wider\s+/g, '')
+        .replace(/text-violet-[0-9]+/g, 'text-emerald-400')
+        .replace(/hover:border-violet-[0-9]+/g, 'hover:border-emerald-400')
+        .replace(/hover:bg-violet-[0-9]+/g, 'hover:bg-emerald-50');
     btn.style.marginLeft = '4px';
+    btn.style.display = 'inline-flex';
+    btn.style.alignItems = 'center';
+    btn.style.justifyContent = 'center';
     btn.addEventListener('click', _openPopup);
     anchor.parentNode.insertBefore(btn, anchor.nextSibling);
   }

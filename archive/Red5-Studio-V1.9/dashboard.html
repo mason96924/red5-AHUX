@@ -344,6 +344,65 @@
             const [vavTypeImages, setVavTypeImages] = useState({});
             const [pyDebug, setPyDebug] = useState('');
 
+            /* Inline Lucide-style icons used by the toolbar buttons in the
+             * left sidebar.  Kept here (rather than a separate <svg> CDN
+             * or icon package) so the build stays dependency-free and the
+             * icons inherit `currentColor` from whichever Tailwind text-*
+             * class the button uses.  Each `name` matches the Lucide
+             * canonical icon so future swaps are a 30-second search. */
+            const Icon = ({ name, size = 14, strokeWidth = 2, className = '' }) => {
+                const paths = {
+                    'book-open': (
+                        <>
+                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                        </>
+                    ),
+                    'clipboard-list': (
+                        <>
+                            <rect width="8" height="4" x="8" y="2" rx="1" />
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                            <path d="M12 11h4" />
+                            <path d="M12 16h4" />
+                            <path d="M8 11h.01" />
+                            <path d="M8 16h.01" />
+                        </>
+                    ),
+                    'radio-tower': (
+                        <>
+                            <path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" />
+                            <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" />
+                            <circle cx="12" cy="9" r="2" />
+                            <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" />
+                            <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" />
+                            <path d="M9.5 18h5" />
+                            <path d="m8 22 4-11 4 11" />
+                        </>
+                    ),
+                    'settings': (
+                        <>
+                            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                            <circle cx="12" cy="12" r="3" />
+                        </>
+                    ),
+                    'rotate-ccw': (
+                        <>
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
+                        </>
+                    ),
+                };
+                return (
+                    <svg width={size} height={size} viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" strokeWidth={strokeWidth}
+                         strokeLinecap="round" strokeLinejoin="round"
+                         className={className}
+                         aria-hidden="true">
+                        {paths[name] || null}
+                    </svg>
+                );
+            };
+
             const [theme, setTheme] = useState(() => (typeof localStorage !== 'undefined' && localStorage.getItem('red5.theme')) || 'dark');
             useEffect(() => { try { localStorage.setItem('red5.theme', theme); } catch(e){} }, [theme]);
             // Dark-mode brightness slider.  The whole app is built around
@@ -2557,11 +2616,16 @@
                                     onClick={() => window.red5DocsIndex && window.red5DocsIndex.open()}
                                     data-testid="standards-btn"
                                     title="Open Standards — ASHRAE Guideline 36 cross-walk, Band Guide, Control Algorithms, B-Shift Insight, Psych Design Workflow"
-                                    className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
-                                    📘 Standards
+                                    aria-label="Open Standards"
+                                    className={`p-1.5 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
+                                    <Icon name="book-open" />
                                 </button>
-                                <button onClick={openCollectorCfg} className={`px-2 py-1 rounded border text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"}>Collector</button>
-                                <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded text-[8px] font-black uppercase tracking-wider transition-all`}>{t('config')}</button>
+                                <button onClick={openCollectorCfg} className={`p-1.5 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"} aria-label="Collector Configuration">
+                                    <Icon name="radio-tower" />
+                                </button>
+                                <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`p-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded transition-all`} title={t('config')} aria-label={t('config')}>
+                                    <Icon name="settings" />
+                                </button>
                                 {/* Reset Modal Sizes: clears localStorage entries
                                     for the AHU / VAV / Floor Plan modal dimensions
                                     so the next time an operator opens a modal it
@@ -2570,7 +2634,8 @@
                                     size (the resize:both handle has no minimum
                                     limit short of 400x300).  Brief green flash
                                     on success so the user sees the action
-                                    registered without an alert/toast. */}
+                                    registered without an alert/toast.  Icon-only
+                                    since the tooltip carries the semantic. */}
                                 <button data-testid="reset-modal-sizes-btn"
                                         onClick={(e) => {
                                             try {
@@ -2582,18 +2647,20 @@
                                             setVavModalSize({ w: 1400, h: 850 });
                                             setFloorPlanModalSize({ w: 1400, h: 900 });
                                             const b = e.currentTarget;
-                                            const orig = b.textContent;
-                                            b.textContent = '\u2713 reset';
+                                            b.dataset.flashed = '1';
                                             b.style.color = '#22c55e';
                                             b.style.borderColor = '#22c55e';
                                             setTimeout(() => {
-                                                b.textContent = orig;
                                                 b.style.color = '';
                                                 b.style.borderColor = '';
+                                                delete b.dataset.flashed;
                                             }, 1100);
                                         }}
                                         title="Reset AHU / VAV / Floor Plan modal sizes to their defaults. Clears the stored sizes from local storage."
-                                        className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded text-[8px] font-black uppercase tracking-wider transition-all`}>Reset Sizes</button>
+                                        aria-label="Reset modal sizes"
+                                        className={`p-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded transition-all`}>
+                                    <Icon name="rotate-ccw" />
+                                </button>
                             </div>
                         </div>
                         <div className={`flex border-b ${ui.border}`} data-testid="view-tabs" style={{gap:'1px'}}>
@@ -2857,7 +2924,7 @@
                                                         className={`flex-1 py-1.5 rounded text-[9px] font-black uppercase tracking-wider border transition-all ${
                                                             !dirty
                                                                 ? (theme==='dark' ? 'bg-slate-800/60 border-slate-700 text-slate-600 cursor-not-allowed' : 'bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed')
-                                                                : (theme==='dark' ? 'bg-amber-600 border-amber-400 text-white hover:bg-amber-500 shadow-md shadow-amber-600/30' : 'bg-amber-500 border-amber-600 text-white hover:bg-amber-600 shadow-md')
+                                                                : (theme==='dark' ? 'bg-amber-500 border-amber-300 text-slate-900 hover:bg-amber-400 shadow-md shadow-amber-600/30' : 'bg-amber-400 border-amber-500 text-slate-900 hover:bg-amber-500 shadow-md')
                                                         }`}>
                                                         {bandClampBusy ? '...' : (dirty ? 'Apply to Controller' : 'Applied')}
                                                     </button>
@@ -3721,7 +3788,7 @@
                                     </div>
                                     <div className="mt-3 flex gap-2 justify-end">
                                         <button data-testid="band-clamp-cancel" onClick={onCancel} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700':'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'}`}>Cancel</button>
-                                        <button data-testid="band-clamp-confirm" onClick={onConfirm} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-amber-600 border-amber-400 text-white hover:bg-amber-500':'bg-amber-500 border-amber-600 text-white hover:bg-amber-600'} shadow-md`}>
+                                        <button data-testid="band-clamp-confirm" onClick={onConfirm} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-amber-500 border-amber-300 text-slate-900 hover:bg-amber-400':'bg-amber-400 border-amber-500 text-slate-900 hover:bg-amber-500'} shadow-md`}>
                                             {bandClampBusy ? 'Applying...' : 'Confirm & Apply'}
                                         </button>
                                     </div>

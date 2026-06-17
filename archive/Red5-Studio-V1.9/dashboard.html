@@ -424,11 +424,21 @@
             // the old factory dark (1.0) and everything below were
             // unreadable on their monitor.  Default 2.0 sits at the
             // sweet spot.  Stored per-browser, no server round-trip.
+            //
+            // The slider doubles as the Light/Dark mode switch: dragging
+            // it to the exact maximum (300%) flips the theme to LIGHT
+            // and the brightness filter is disabled.  Dragging it back
+            // below the max snaps the theme back to DARK at whatever
+            // brightness the slider shows.  This replaces the old
+            // standalone sun/moon toggle button.
             const DARK_LEVEL_MIN     = 1.5;
             const DARK_LEVEL_MAX     = 3.0;
             const DARK_LEVEL_DEFAULT = 2.0;
             const [darkLevel, setDarkLevel] = useState(() => {
                 try {
+                    // If the user was last in LIGHT mode, snap the slider
+                    // to its max so the UI stays consistent on reload.
+                    if (localStorage.getItem('red5.theme') === 'light') return DARK_LEVEL_MAX;
                     const v = parseFloat(localStorage.getItem('red5.darkLevel'));
                     // Clamp legacy saved values (could be anywhere from the
                     // old 0.7..2.5 range) into the new floor/ceiling so a
@@ -442,6 +452,16 @@
                 return DARK_LEVEL_DEFAULT;
             });
             useEffect(() => { try { localStorage.setItem('red5.darkLevel', String(darkLevel)); } catch(e){} }, [darkLevel]);
+            // Slider <-> theme bridge: max (3.0) means LIGHT, anything
+            // below is DARK.  Using >= rather than === lets float-rounding
+            // (e.g. 2.9999) still count as "at max".
+            useEffect(() => {
+                if (darkLevel >= DARK_LEVEL_MAX) {
+                    if (theme !== 'light') setTheme('light');
+                } else {
+                    if (theme !== 'dark') setTheme('dark');
+                }
+            }, [darkLevel]);
             // Resizable left sidebar — bounded to [250, 320] so the header
             // ("AHU DIAGNOSTIC HUB" + theme toggle) keeps a small gap at min,
             // and the original baseline (320 px) stays the comfortable max.
@@ -2495,35 +2515,6 @@
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1 flex-wrap justify-end">
-                                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`px-2 py-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-yellow-400':'bg-slate-200 border-slate-400 text-slate-700'} border rounded text-sm transition-all hover:opacity-80 flex-shrink-0`} title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}>{theme === 'dark' ? '\u2600' : '\u263D'}</button>
-                                {/* Dark-mode brightness dimmer.  Hidden in light
-                                    mode because there's nothing to dim.  Range
-                                    150% .. 300% of factory dark (the operator
-                                    found anything below 150% unreadable on
-                                    their monitor).  Default 200%.  Double-
-                                    click resets to the default. */}
-                                {theme === 'dark' && (
-                                    <div
-                                        className="flex items-center gap-1 px-1.5 py-0.5 rounded border bg-slate-800 border-slate-700"
-                                        title={`Dark brightness: ${Math.round(darkLevel * 100)}% — drag to dim/lighten, double-click to reset to ${Math.round(DARK_LEVEL_DEFAULT * 100)}%`}
-                                        data-testid="dark-level-slider-wrap">
-                                        <span className="text-[9px] font-mono font-black text-slate-400 select-none" aria-hidden>DIM</span>
-                                        <input
-                                            type="range"
-                                            min={DARK_LEVEL_MIN}
-                                            max={DARK_LEVEL_MAX}
-                                            step="0.02"
-                                            value={darkLevel}
-                                            onChange={(e) => setDarkLevel(parseFloat(e.target.value))}
-                                            onDoubleClick={() => setDarkLevel(DARK_LEVEL_DEFAULT)}
-                                            data-testid="dark-level-slider"
-                                            style={{ width: 80, accentColor: '#facc15' }}
-                                            aria-label="Dark mode brightness" />
-                                        <span className="text-[9px] font-mono font-black text-yellow-300 select-none w-9 text-right tabular-nums">
-                                            {Math.round(darkLevel * 100)}%
-                                        </span>
-                                    </div>
-                                )}
                                 {/* Plugin-health chip - polls /api/services once on
                                     mount.  Surfaces missing or failed plugins at a
                                     glance so the operator does not discover them
@@ -2576,24 +2567,6 @@
                                         </button>
                                     );
                                 })()}
-                                {/* Pop-out toggle - turns the docked sidebar into
-                                    a floating, draggable in-page panel.  Only
-                                    rendered when the sidebar is DOCKED -- once
-                                    the panel is floating, the title bar inside
-                                    the floating shell already has its own
-                                    ATTACH button, so rendering this header copy
-                                    would produce two identical buttons stacked
-                                    vertically (operator-reported bug). */}
-                                {!sidebarFloating && !sidebarPopoutWin && (
-                                <button
-                                    onClick={() => setSidebarFloating(true)}
-                                    className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-cyan-500 hover:text-cyan-700'}`}
-                                    title="Float the sidebar into a draggable, resizable in-page panel"
-                                    data-testid="popout-sidebar-btn"
-                                >
-                                    {'\u2197 POP'}
-                                </button>
-                                )}
                                 {/* Cross-window pop-out - opens a separate
                                     browser window the operator can drag to an
                                     extended display.  Mirrors the AHU / VAV /
@@ -2611,6 +2584,37 @@
                                     {'\u29C9 WIN'}
                                 </button>
                                 )}
+                                {/* DIM slider — controls dark-mode brightness
+                                    AND doubles as the light/dark switch.
+                                    Dragging to the exact maximum (300%) flips
+                                    the theme to LIGHT; anything below stays
+                                    DARK at that brightness.  Always rendered
+                                    so the operator can flip back from light
+                                    mode without hunting for a separate toggle.
+                                    Double-click resets to the default dark
+                                    brightness. */}
+                                <div
+                                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded border flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-700':'bg-slate-100 border-slate-300'}`}
+                                    title={darkLevel >= DARK_LEVEL_MAX
+                                        ? `LIGHT MODE — drag below 300% to return to dark, double-click to reset to ${Math.round(DARK_LEVEL_DEFAULT * 100)}%`
+                                        : `Dark brightness: ${Math.round(darkLevel * 100)}% — drag to dim/lighten, slide to 300% for light mode, double-click to reset to ${Math.round(DARK_LEVEL_DEFAULT * 100)}%`}
+                                    data-testid="dark-level-slider-wrap">
+                                    <span className={`text-[9px] font-mono font-black select-none ${theme==='dark'?'text-slate-400':'text-slate-500'}`} aria-hidden>DIM</span>
+                                    <input
+                                        type="range"
+                                        min={DARK_LEVEL_MIN}
+                                        max={DARK_LEVEL_MAX}
+                                        step="0.02"
+                                        value={darkLevel}
+                                        onChange={(e) => setDarkLevel(parseFloat(e.target.value))}
+                                        onDoubleClick={() => setDarkLevel(DARK_LEVEL_DEFAULT)}
+                                        data-testid="dark-level-slider"
+                                        style={{ width: 60, accentColor: darkLevel >= DARK_LEVEL_MAX ? '#38bdf8' : '#facc15' }}
+                                        aria-label="Dark mode brightness / Light mode toggle" />
+                                    <span className={`text-[9px] font-mono font-black select-none w-9 text-right tabular-nums ${darkLevel >= DARK_LEVEL_MAX ? 'text-sky-400' : (theme==='dark'?'text-yellow-300':'text-slate-700')}`}>
+                                        {darkLevel >= DARK_LEVEL_MAX ? 'LIGHT' : `${Math.round(darkLevel * 100)}%`}
+                                    </span>
+                                </div>
                                 </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5 mt-2">

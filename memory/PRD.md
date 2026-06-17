@@ -4992,3 +4992,60 @@ reload (same behaviour as the V1.9 controller).
 
 Verified: 3 AHU rows × 5 transitions each visible in 24h view; current
 mode at right edge correctly tracks the simulator's real-time output.
+
+
+## Left Sidebar UI Surgery (2026-06-17, this session)
+
+User request — final sidebar refinements:
+
+1. **POP button removed.**  The in-page floating-panel toggle
+   (`data-testid="popout-sidebar-btn"`, "↗ POP") was removed from
+   the sidebar header.  Cross-window pop-out ("WIN", ⤉) remains.
+
+2. **Theme toggle merged into DIM slider.**  Sun/moon button is gone.
+   The DIM slider now doubles as the light/dark switch:
+   - Slider < 300% → DARK mode at that brightness
+   - Slider == 300% (max) → LIGHT mode, brightness filter disabled
+   A `useEffect` watches `darkLevel` and calls `setTheme('light'|'dark')`
+   accordingly.  On reload, if persisted theme is `'light'` the slider
+   snaps to its max so the UI stays consistent.
+
+3. **DIM slider repositioned + shortened.**  New order in the sidebar
+   header (right column): `PLUGIN` chip → `WIN` button → `DIM` slider.
+   Slider width reduced from 80 px → 60 px.  Always rendered (no
+   longer hidden in light mode) so the operator can always slide back
+   to dark.  Track color flips: yellow in dark mode, sky-blue at the
+   LIGHT max.  Value readout shows `LIGHT` when at 300%, `%` otherwise.
+
+4. **PLUGIN button explained.**  The "PLUGIN" pill (data-testid
+   `plugin-health-chip`) is a Flask-service health beacon, defined in
+   `dashboard.html` ~L717-748.  On mount it polls `/api/services` and
+   compares the live list against the expected set:
+   ```
+   PLUGIN_EXPECTED = ['band_service', 'telemetry_service',
+                      'weather_service', 'upload_service',
+                      'band_overrides_service']
+   ```
+   States:
+   - **OK** (green) — all 5 plugins registered & running
+   - **WARN** (amber) — some plugin returned SKIPPED/WARNING
+   - **PLUGIN** (red) — one or more expected plugins missing; tooltip
+     names the file (e.g. `band_overrides_service.py`) and tells the
+     operator to upload it to `/root/data/pgpy/` and restart Flask
+   - **ERR** (red) — `/api/services` itself failed
+   Click any state → toast with the full breakdown.  This pre-empts
+   the cryptic "Unexpected token '<'" error operators hit when they
+   click "Apply to Controller" before the band-overrides plugin is
+   deployed.
+
+Files changed:
+- `/app/frontend/public/dashboard.html`
+- `/app/archive/Red5-Studio-V1.9/dashboard.html` (mirrored)
+- `/app/archive/Red5-Studio-V2.0/dashboard.html` (mirrored)
+- `/app/archive/Red5-Studio-V1.9/red5_bundle.zip` (rebuilt, 2121.8 KB)
+
+Parity verified via `md5sum` across all three HTML copies.
+29/29 backend regression tests pass.
+Smoke-test screenshot confirms POP gone, theme button gone, DIM slider
+shows `200%` in yellow with `PLUGIN` chip + `WIN` button adjacent.
+

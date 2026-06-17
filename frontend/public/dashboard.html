@@ -16,11 +16,19 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
-    <script src="js/i18n.js"></script>
-    <script src="js/toast.js"></script>
-    <script src="js/docs_index.js"></script>
-    <script src="js/audit_log.js"></script>
-    <script src="js/g36_timeline.js"></script>
+    <!-- Cache-busting version stamp on the local helper scripts.  Browsers
+         cache `.js` files aggressively (often days to weeks) which has
+         repeatedly bitten us: an operator pulls a fresh `dashboard.html`
+         and `js/i18n.js`, the HTML reloads with the new code, but the
+         browser keeps serving the OLD i18n table from disk cache.
+         The bumped query string forces a refetch when any of these files
+         change.  Bump the date stamp on a per-deploy basis whenever any
+         of `js/*.js` changes -- it's just a string the server ignores. -->
+    <script src="js/i18n.js?v=2026-06-17c"></script>
+    <script src="js/toast.js?v=2026-06-17c"></script>
+    <script src="js/docs_index.js?v=2026-06-17c"></script>
+    <script src="js/audit_log.js?v=2026-06-17c"></script>
+    <script src="js/g36_timeline.js?v=2026-06-17c"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){

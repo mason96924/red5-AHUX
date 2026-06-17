@@ -5033,9 +5033,12 @@
                                         </div>
 
                                         {/* === Active Band pill === */}
+                                        {/* High-contrast text (dark blue / pale blue) so the BAND identifier
+                                            reads cleanly off the amber background in both light & dark modes.
+                                            The earlier amber-on-amber palette washed out under glare. */}
                                         {targetAhu?.active_band && (
-                                            <div className={`absolute top-[3%] left-[42%] px-3 py-1 rounded-full border shadow z-30 ${dk?'bg-amber-500/20 border-amber-500/40':'bg-amber-100 border-amber-300'}`}>
-                                                <span className={`text-[10px] font-black ${dk?'text-amber-400':'text-amber-600'}`}>BAND {targetAhu.active_band.id}</span>
+                                            <div className={`absolute top-[3%] left-[42%] px-3 py-1 rounded-full border shadow z-30 ${dk?'bg-amber-400 border-amber-500':'bg-amber-100 border-amber-400'}`}>
+                                                <span className={`text-[11px] font-black tracking-wide ${dk?'text-blue-950':'text-blue-900'}`}>BAND {targetAhu.active_band.id}</span>
                                             </div>
                                         )}
                                         </div>

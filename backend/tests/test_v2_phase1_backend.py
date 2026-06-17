@@ -131,8 +131,12 @@ check("/api/band-overrides/sa-rh-clamp  -> 200",
 
 s, body = get("/api/band-overrides/preview", "?lo=40&hi=55")
 prev = json.loads(body) if s == 200 else None
-check("/api/band-overrides/preview  -> reports affected count",
-      s == 200 and "affected_bands" in prev and prev["total_bands"] == 10)
+check("/api/band-overrides/preview  -> returns V1.9-shape preview array (10 bands)",
+      s == 200
+      and isinstance(prev, dict)
+      and isinstance(prev.get("preview"), list)
+      and len(prev["preview"]) == 10
+      and all("changed" in row for row in prev["preview"]))
 
 # Trend / collector log / write history
 s, body = get("/api/trend-history", "?point=OA&window_min=60")

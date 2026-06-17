@@ -1206,16 +1206,46 @@ async def set_sa_rh_clamp(payload: dict,
 
 @app.get("/api/band-overrides/preview")
 async def preview_clamp(lo: float = Query(...), hi: float = Query(...)) -> dict:
+    """Dry-run: show what each band looks like under a candidate clamp.
+    Used by the dashboard "Apply to Controller" confirm modal.
+
+    Returns the V1.9 Flask `band_overrides_service` contract that the
+    dashboard JS reads (a `preview` array with before/after/changed
+    fields per band).  An earlier V2.0 implementation returned a
+    different `affected` shape, which made the dashboard crash with
+    `Cannot read properties of undefined (reading 'filter')` because
+    `preview` was `undefined` and `preview.filter(...)` blew up before
+    the confirm modal could render.  Parity restored 2026-06-17.
+    """
+    if lo > hi:
+        lo, hi = hi, lo
     rows = _load_csv("band_guide.csv")
-    affected = [r for r in rows if not (lo <= float(r["SA_RH_Delivery"]) <= hi)]
-    return {
-        "status": "ok",
-        "lo": lo, "hi": hi,
-        "total_bands": len(rows),
-        "affected_bands": len(affected),
-        "affected": [{"band": r["Band"], "name": r["Band_Name"],
-                      "delivered_rh": float(r["SA_RH_Delivery"])} for r in affected],
-    }
+    preview = []
+    for r in rows:
+        try:
+            orig_rh = float(r.get("SA_RH_Delivery") or 0)
+        except (TypeError, ValueError):
+            orig_rh = 0.0
+        clamped_rh = max(lo, min(hi, orig_rh))
+        orig_hum = r.get("HUM_Mode", "")
+        if clamped_rh < orig_rh:
+            new_hum = "DEHUMIDIFY"
+            direction = "down"
+        elif clamped_rh > orig_rh:
+            new_hum = "HUMIDIFY"
+            direction = "up"
+        else:
+            new_hum = orig_hum
+            direction = None
+        preview.append({
+            "id":     r.get("Band", ""),
+            "name":   r.get("Band_Name", ""),
+            "before": {"sa_rh": orig_rh,    "hum": orig_hum},
+            "after":  {"sa_rh": clamped_rh, "hum": new_hum},
+            "changed":  direction is not None,
+            "direction": direction,
+        })
+    return {"status": "ok", "preview": preview}
 
 
 @app.get("/api/write-history")

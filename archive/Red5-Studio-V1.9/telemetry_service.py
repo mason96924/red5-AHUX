@@ -323,6 +323,37 @@ def api_data():
             # Apply AHU-level sim overrides
             if _sim_overrides.get(ahu_name):
                 pts = {**pts, **_sim_overrides[ahu_name]}
+            # Pass through active_band when the BACnet collector wrote one
+            # to telemetry.json.  This is what drives the yellow "BAND Bn"
+            # pill at the top of the AHU Equipment Diagram modal in
+            # dashboard.html.  Without this propagation the V1.9 dashboard
+            # never sees `active_band` (collector computes it, but
+            # api_data() rebuilds its own output dict and historically
+            # dropped the field).  V2.0's server.py includes the same
+            # block in its synthetic response -- this keeps parity.
+            _active_band = ahu_data.get('active_band') if isinstance(ahu_data, dict) else None
+            if not _active_band:
+                # Simulator / no-collector fallback: classify the band
+                # ourselves from the OA values we already have.  Wrapped
+                # in try/except because classify_band depends on a global
+                # BANDS catalog that may be unavailable on a minimal
+                # deployment; falling back to "no band" is fine.
+                try:
+                    from collector import classify_band  # noqa: PLC0415
+                    _band = classify_band(float(oa_t), float(oa_rh))
+                    _active_band = {
+                        'id': _band['id'],
+                        'sa_t_sp': _band.get('sa_t'),
+                        'sa_rh_sp': _band.get('sa_rh'),
+                        'reheat_t': _band.get('reheat_t'),
+                        'oa_damper_sp': _band.get('oa_damper'),
+                        'cc_mode': _band.get('cc'),
+                        'hc_mode': _band.get('hc'),
+                        'hum_mode': _band.get('hum'),
+                        'oa_source': 'simulated',
+                    }
+                except Exception:
+                    _active_band = None
             ahu_entry = {
                 "id": ahu_name, "procColor": proc_colors[color_idx % len(proc_colors)],
                 "source": "live" if not telemetry.get('mock_mode') else "simulator",
@@ -333,6 +364,8 @@ def api_data():
                 ],
                 "all_points": pts, "vavs": vav_list
             }
+            if _active_band:
+                ahu_entry["active_band"] = _active_band
             output.append(ahu_entry); color_idx += 1
         return jsonify(output)
 
@@ -367,7 +400,29 @@ def _sim_fallback_from_config(collector_config):
             vav_temps.append(vt); vav_rhs.append(vrh)
         ra_t = sum(vav_temps) / len(vav_temps) if vav_temps else 24.0
         ra_rh = sum(vav_rhs) / len(vav_rhs) if vav_rhs else 50.0
-        output.append({
+        # Classify the band from the synthesized OA so the dashboard's
+        # "BAND Bn" pill renders even before the BACnet collector has
+        # written its first telemetry.json snapshot.  Best-effort; if
+        # the band catalog isn't importable on this deployment we just
+        # omit the field (the pill quietly stays hidden).
+        _active_band = None
+        try:
+            from collector import classify_band  # noqa: PLC0415
+            _band = classify_band(float(oa_t), float(oa_rh))
+            _active_band = {
+                'id': _band['id'],
+                'sa_t_sp': _band.get('sa_t'),
+                'sa_rh_sp': _band.get('sa_rh'),
+                'reheat_t': _band.get('reheat_t'),
+                'oa_damper_sp': _band.get('oa_damper'),
+                'cc_mode': _band.get('cc'),
+                'hc_mode': _band.get('hc'),
+                'hum_mode': _band.get('hum'),
+                'oa_source': 'simulated',
+            }
+        except Exception:
+            _active_band = None
+        _entry = {
             "id": ahu_id, "procColor": proc_colors[color_idx % len(proc_colors)],
             "source": "simulator_fallback",
             "points": [
@@ -377,7 +432,10 @@ def _sim_fallback_from_config(collector_config):
             ],
             "all_points": dict(_sim_overrides.get(ahu_id, {})),
             "vavs": vav_list
-        })
+        }
+        if _active_band:
+            _entry["active_band"] = _active_band
+        output.append(_entry)
         color_idx += 1
     return jsonify(output)
 
@@ -410,7 +468,27 @@ def _mock_14_ahus():
             vav_temps.append(vt); vav_rhs.append(vrh)
         ra_t = sum(vav_temps) / len(vav_temps) if vav_temps else base
         ra_rh = sum(vav_rhs) / len(vav_rhs) if vav_rhs else 50.0
-        output.append({
+        # Same active_band injection as the other two branches -- keeps
+        # the "BAND Bn" pill alive in mock mode too.  See `api_data`
+        # for the rationale block.
+        _active_band = None
+        try:
+            from collector import classify_band  # noqa: PLC0415
+            _band = classify_band(float(oa_t), float(oa_rh))
+            _active_band = {
+                'id': _band['id'],
+                'sa_t_sp': _band.get('sa_t'),
+                'sa_rh_sp': _band.get('sa_rh'),
+                'reheat_t': _band.get('reheat_t'),
+                'oa_damper_sp': _band.get('oa_damper'),
+                'cc_mode': _band.get('cc'),
+                'hc_mode': _band.get('hc'),
+                'hum_mode': _band.get('hum'),
+                'oa_source': 'mock',
+            }
+        except Exception:
+            _active_band = None
+        _entry = {
             "id": ahu_id, "procColor": data["procColor"],
             "source": "mock",
             "points": [
@@ -419,7 +497,10 @@ def _mock_14_ahus():
                 {"label": "RA", "t": ra_t, "rh": ra_rh, "w": get_w(ra_t, ra_rh), "color": "#f43f5e"},
             ],
             "vavs": vav_list
-        })
+        }
+        if _active_band:
+            _entry["active_band"] = _active_band
+        output.append(_entry)
     return jsonify(output)
 
 

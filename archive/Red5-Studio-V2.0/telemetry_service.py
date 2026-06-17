@@ -18,7 +18,7 @@ Endpoints registered:
   GET      /api/write-history
   GET      /api/trend-history
 """
-# Required SERVICE_CTX keys — validated by app.py auto-discovery.
+# Required SERVICE_CTX keys -- validated by app.py auto-discovery.
 _service_dependencies = ['DATA_ROOT', 'get_psat', 'get_w', 'get_h', 'ahu_records']
 import os
 import sys
@@ -57,7 +57,7 @@ COLLECTOR_CONFIG_PATH = None
 # NOTE on BACnet writes (architecture, 2026-05-08):
 # This module no longer imports dibt directly. dibt is the Delta Controls
 # native BACnet binding, available ONLY when a script is registered as
-# an enteliWEB "object" and runs in the controller's runtime (where
+# an enteliWEB "object" and runs in the controllers runtime (where
 # `dibt` is preloaded as a global). Importing it from a Python plug-in
 # auto-loaded into Flask via importlib FAILS on the hardware (raises
 # non-ImportError C-extension faults) and causes the whole telemetry
@@ -65,8 +65,8 @@ COLLECTOR_CONFIG_PATH = None
 #
 # Instead, /api/write-point serializes its CSV write request into a
 # queue file (`write_queue.json` under CONFIG_DIR) and returns success
-# immediately. `collector.py` — which IS an enteliWEB object and DOES
-# have dibt available — polls that queue file on each cycle and
+# immediately. `collector.py` -- which IS an enteliWEB object and DOES
+# have dibt available -- polls that queue file on each cycle and
 # executes the writes via dibt.Write().  Result audit goes back into
 # `write_results.json` for /api/write-history to surface.
 
@@ -77,8 +77,39 @@ WRITE_HISTORY_MAX = 100
 # Sim-mode write overrides: persists UI-originated writes so they reflect in /api/data
 # while the background simulator keeps regenerating random values. Keyed by
 # (equipment_name -> {label: (value, timestamp)}). Entries persist until explicitly
-# overwritten by another write — this matches real BACnet setpoint behavior.
+# overwritten by another write -- this matches real BACnet setpoint behavior.
 _sim_overrides = {}
+
+# ---------------------------------------------------------------------------
+# Markov drift layer (Ornstein-Uhlenbeck random walk).
+#
+# When a VAV has no physical (zone_t, zone_rh) sensor wired, the live-data
+# fallback synthesizes a beat-of-sines so the dashboard never freezes at
+# 22/45.  A pure deterministic beat still looks mechanically periodic, so
+# this drift layer adds a small mean-reverting random walk on top.  State
+# persists per-VAV across polls so the jitter is coherent over ~30-60 s
+# (matching real zone-sensor noise) instead of independent flicker.
+# Mirrors the V2.0 SaaS implementation in /app/backend/server.py.
+# ---------------------------------------------------------------------------
+_VAV_DRIFT_STATE = {}
+
+def _markov_drift(key, sigma_t=0.18, sigma_rh=0.55, alpha=0.92,
+                  clamp_t=1.4, clamp_rh=5.5):
+    s = _VAV_DRIFT_STATE.get(key)
+    if s is None:
+        s = {"dt": 0.0, "drh": 0.0}
+        _VAV_DRIFT_STATE[key] = s
+    s["dt"] = alpha * s["dt"] + sigma_t * random.gauss(0.0, 1.0)
+    s["drh"] = alpha * s["drh"] + sigma_rh * random.gauss(0.0, 1.0)
+    if s["dt"] > clamp_t:
+        s["dt"] = clamp_t
+    elif s["dt"] < -clamp_t:
+        s["dt"] = -clamp_t
+    if s["drh"] > clamp_rh:
+        s["drh"] = clamp_rh
+    elif s["drh"] < -clamp_rh:
+        s["drh"] = -clamp_rh
+    return s["dt"], s["drh"]
 
 def _record_write(equip_name, writes, csv_object, csv_value, success, mock=False, queued=False):
     """Record a write command in history, and cache value as sim override.
@@ -135,7 +166,7 @@ def _load_telemetry():
             _last_good_telemetry = data
             return data
         except (json.JSONDecodeError, IOError):
-            # Mid-write collision or corrupt file — fall back to last-good snapshot
+            # Mid-write collision or corrupt file -- fall back to last-good snapshot
             if _last_good_telemetry is not None:
                 return _last_good_telemetry
     return None
@@ -176,7 +207,7 @@ def _build_write_csv(point_defs, write_dict):
 
 # ---------------- BLOCK B: data-mode + /api/data ----------------
 # --- Data mode state (persisted in memory; switchable from dashboard) ---
-_data_mode = 'simulator'   # 'simulator' or 'mock'
+_data_mode = 'simulator'   # simulator or mock
 
 
 # --- API ENDPOINTS ---
@@ -228,20 +259,31 @@ def api_data():
             oa_rh = pts.get(ahu_map.get('oa_rh', 'OAH'))
             sa_t = pts.get(ahu_map.get('sa_t', 'SAT'))
             sa_rh = pts.get(ahu_map.get('sa_rh', 'SAH'))
-            if oa_t is None: oa_t = 12.0
-            if oa_rh is None: oa_rh = 70.0
-            if sa_t is None: sa_t = 16.0
-            if sa_rh is None: sa_rh = 55.0
+            # Live-data fallback (2026-05-20): when an AHU-level read is None
+            # (BACnet point unmapped or device offline), drive the value with
+            # a slow sinusoid so the chart points and trends never freeze.
+            # Real telemetry always wins.  `any()` over a tuple is used
+            # instead of a multi-term `or` chain to stay clear of the
+            # V1.9 controller parser's long-or-chain hang (see CHANGELOG).
+            if any(v is None for v in (oa_t, oa_rh, sa_t, sa_rh)):
+                _t_now = time.time()
+                _ahu_seed = sum(ord(c) for c in ahu_name) * 0.01
+                _ow = math.sin(_t_now / 600.0 + _ahu_seed)      # ~10 min OA drift
+                _sw = math.sin(_t_now / 220.0 + _ahu_seed)      # ~3.5 min SA drift
+                if oa_t is None:  oa_t  = 18.0 + 6.0 * _ow      # 12-24 C
+                if oa_rh is None: oa_rh = 60.0 + 14.0 * (-_ow)  # 46-74 %
+                if sa_t is None:  sa_t  = 15.5 + 1.2 * _sw      # 14.3-16.7 C
+                if sa_rh is None: sa_rh = 60.0 + 6.0 * _sw      # 54-66 %
             vav_map = dashboard_map.get('vav', {})
             embedded_vavs = ahu_data.get('vavs', {})
 
-            # VAV identity list is PINNED to the static collector_config → matches map_config.json.
+            # VAV identity list is PINNED to the static collector_config -> matches map_config.json.
             # Telemetry only supplies values; missing/empty telemetry shows VAV with defaults,
             # never drops it from the list (prevents flicker between telemetry writes).
             _cfg_grp = collector_config.get('ahu_groups', {}).get(ahu_name, {})
             _cfg_vav_names = _cfg_grp.get('vavs', [])
             if not _cfg_vav_names:
-                # No static list configured → fall back to whatever telemetry has
+                # No static list configured -> fall back to whatever telemetry has
                 _cfg_vav_names = list(embedded_vavs.keys())
 
             vav_list, vav_temps, vav_rhs = [], [], []
@@ -253,8 +295,26 @@ def api_data():
                     vav_pts = {**vav_pts, **_sim_overrides[vav_name]}
                 vt = vav_pts.get(vav_map.get('zone_t', 't'))
                 vrh = vav_pts.get(vav_map.get('zone_rh', 'rh'))
-                if vt is None: vt = 22.0
-                if vrh is None: vrh = 45.0
+                # ----------------------------------------------------------
+                # Live-data fallback (2026-05-20): if either zone reading is
+                # None (no physical sensor wired) substitute a per-VAV beat
+                # of two sinusoids so the dashboard never sits frozen at
+                # 22 / 45.  Real telemetry always wins.  See V2.0 server.py
+                # for the symmetric implementation.
+                # ----------------------------------------------------------
+                if vt is None or vrh is None:
+                    _seed = sum(ord(c) for c in vav_name) * 0.013
+                    _t_now = time.time()
+                    _wa = math.sin(_t_now / 22.0 + _seed)
+                    _wb = math.sin(_t_now / 95.0 + _seed * 0.7)
+                    # Markov drift layer -- mean-reverting OU walk on top of
+                    # the beat so the synthesized waveform looks like real
+                    # zone-sensor noise instead of a clean sinusoid.
+                    _dt, _drh = _markov_drift(ahu_name + ":" + vav_name)
+                    if vt is None:
+                        vt = 22.5 + 2.6 * _wb + 0.6 * _wa + _dt
+                    if vrh is None:
+                        vrh = 47.0 + 6.5 * (-_wb) + 2.0 * (-_wa) + _drh
                 vw = get_w(vt, vrh)
                 vav_list.append({"id": vav_name, "t": vt, "rh": vrh, "w": vw, "h": get_h(vt, vw), "all_points": vav_pts})
                 vav_temps.append(vt); vav_rhs.append(vrh)
@@ -263,6 +323,37 @@ def api_data():
             # Apply AHU-level sim overrides
             if _sim_overrides.get(ahu_name):
                 pts = {**pts, **_sim_overrides[ahu_name]}
+            # Pass through active_band when the BACnet collector wrote one
+            # to telemetry.json.  This is what drives the yellow "BAND Bn"
+            # pill at the top of the AHU Equipment Diagram modal in
+            # dashboard.html.  Without this propagation the V1.9 dashboard
+            # never sees `active_band` (collector computes it, but
+            # api_data() rebuilds its own output dict and historically
+            # dropped the field).  V2.0's server.py includes the same
+            # block in its synthetic response -- this keeps parity.
+            _active_band = ahu_data.get('active_band') if isinstance(ahu_data, dict) else None
+            if not _active_band:
+                # Simulator / no-collector fallback: classify the band
+                # ourselves from the OA values we already have.  Wrapped
+                # in try/except because classify_band depends on a global
+                # BANDS catalog that may be unavailable on a minimal
+                # deployment; falling back to "no band" is fine.
+                try:
+                    from collector import classify_band  # noqa: PLC0415
+                    _band = classify_band(float(oa_t), float(oa_rh))
+                    _active_band = {
+                        'id': _band['id'],
+                        'sa_t_sp': _band.get('sa_t'),
+                        'sa_rh_sp': _band.get('sa_rh'),
+                        'reheat_t': _band.get('reheat_t'),
+                        'oa_damper_sp': _band.get('oa_damper'),
+                        'cc_mode': _band.get('cc'),
+                        'hc_mode': _band.get('hc'),
+                        'hum_mode': _band.get('hum'),
+                        'oa_source': 'simulated',
+                    }
+                except Exception:
+                    _active_band = None
             ahu_entry = {
                 "id": ahu_name, "procColor": proc_colors[color_idx % len(proc_colors)],
                 "source": "live" if not telemetry.get('mock_mode') else "simulator",
@@ -273,6 +364,8 @@ def api_data():
                 ],
                 "all_points": pts, "vavs": vav_list
             }
+            if _active_band:
+                ahu_entry["active_band"] = _active_band
             output.append(ahu_entry); color_idx += 1
         return jsonify(output)
 
@@ -307,7 +400,29 @@ def _sim_fallback_from_config(collector_config):
             vav_temps.append(vt); vav_rhs.append(vrh)
         ra_t = sum(vav_temps) / len(vav_temps) if vav_temps else 24.0
         ra_rh = sum(vav_rhs) / len(vav_rhs) if vav_rhs else 50.0
-        output.append({
+        # Classify the band from the synthesized OA so the dashboard's
+        # "BAND Bn" pill renders even before the BACnet collector has
+        # written its first telemetry.json snapshot.  Best-effort; if
+        # the band catalog isn't importable on this deployment we just
+        # omit the field (the pill quietly stays hidden).
+        _active_band = None
+        try:
+            from collector import classify_band  # noqa: PLC0415
+            _band = classify_band(float(oa_t), float(oa_rh))
+            _active_band = {
+                'id': _band['id'],
+                'sa_t_sp': _band.get('sa_t'),
+                'sa_rh_sp': _band.get('sa_rh'),
+                'reheat_t': _band.get('reheat_t'),
+                'oa_damper_sp': _band.get('oa_damper'),
+                'cc_mode': _band.get('cc'),
+                'hc_mode': _band.get('hc'),
+                'hum_mode': _band.get('hum'),
+                'oa_source': 'simulated',
+            }
+        except Exception:
+            _active_band = None
+        _entry = {
             "id": ahu_id, "procColor": proc_colors[color_idx % len(proc_colors)],
             "source": "simulator_fallback",
             "points": [
@@ -317,7 +432,10 @@ def _sim_fallback_from_config(collector_config):
             ],
             "all_points": dict(_sim_overrides.get(ahu_id, {})),
             "vavs": vav_list
-        })
+        }
+        if _active_band:
+            _entry["active_band"] = _active_band
+        output.append(_entry)
         color_idx += 1
     return jsonify(output)
 
@@ -350,7 +468,27 @@ def _mock_14_ahus():
             vav_temps.append(vt); vav_rhs.append(vrh)
         ra_t = sum(vav_temps) / len(vav_temps) if vav_temps else base
         ra_rh = sum(vav_rhs) / len(vav_rhs) if vav_rhs else 50.0
-        output.append({
+        # Same active_band injection as the other two branches -- keeps
+        # the "BAND Bn" pill alive in mock mode too.  See `api_data`
+        # for the rationale block.
+        _active_band = None
+        try:
+            from collector import classify_band  # noqa: PLC0415
+            _band = classify_band(float(oa_t), float(oa_rh))
+            _active_band = {
+                'id': _band['id'],
+                'sa_t_sp': _band.get('sa_t'),
+                'sa_rh_sp': _band.get('sa_rh'),
+                'reheat_t': _band.get('reheat_t'),
+                'oa_damper_sp': _band.get('oa_damper'),
+                'cc_mode': _band.get('cc'),
+                'hc_mode': _band.get('hc'),
+                'hum_mode': _band.get('hum'),
+                'oa_source': 'mock',
+            }
+        except Exception:
+            _active_band = None
+        _entry = {
             "id": ahu_id, "procColor": data["procColor"],
             "source": "mock",
             "points": [
@@ -359,7 +497,10 @@ def _mock_14_ahus():
                 {"label": "RA", "t": ra_t, "rh": ra_rh, "w": get_w(ra_t, ra_rh), "color": "#f43f5e"},
             ],
             "vavs": vav_list
-        })
+        }
+        if _active_band:
+            _entry["active_band"] = _active_band
+        output.append(_entry)
     return jsonify(output)
 
 
@@ -571,8 +712,8 @@ def write_point():
         # value immediately even before collector.py executes the write.
         # NOTE: `mock=False` here because the Flask side has no way to know
         # whether the dibt.Write inside collector.py will hit MOCK or real
-        # path — the truthful state is "queued, outcome pending".  The
-        # actual mock flag is only set in collector.py's write_results.json.
+        # path -- the truthful state is "queued, outcome pending".  The
+        # actual mock flag is only set in collector.pys write_results.json.
         # The optimistic UI override is still applied (the helper checks
         # `success`, not `mock`, when caching).
         _record_write(equip_name, writes, csv_object, csv_value, True, mock=False, queued=True)

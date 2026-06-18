@@ -112,7 +112,7 @@
         .rw-slider-knob { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.3); transition:left 0.25s; }
         .rw-slider-off .rw-slider-knob { left:2px; }
         .rw-slider-on .rw-slider-knob { left:20px; }
-        /* Dark-mode DIM compensation for raster artwork.
+        /* Dark-mode DIM compensation for graphic zones.
            When the dashboard root applies `filter: brightness(N)` for the
            operator's dark-mode DIM slider (range 1.5..3.0), every photo /
            3D render asset gets over-brightened and washes out — the VAV
@@ -120,12 +120,18 @@
            ghostly compared to the light-mode reference.
            We expose `--red5-dim` on the root container alongside the
            brightness filter; this rule applies the multiplicative inverse
-           to every <img>, cancelling the parent's boost so the raster
-           keeps its natural luminance regardless of the DIM slider.
+           on the WHOLE graphic-zone composite (background + opacity +
+           mixBlendMode + img), so the final pixel output matches the
+           light-mode pixel output exactly — not just the raw <img> source.
+           Applying to a wrapping container (rather than to <img> alone) is
+           critical for the floor plan, which uses opacity-60 + multiply
+           blend with a light bg; opacity/blend modes composite BEFORE the
+           parent's filter, so correcting only the img leaves the blended
+           background pixels still doubled-bright → washed out.
            CSS filters compose multiplicatively, so brightness(2.0) *
            brightness(1/2.0) = brightness(1.0).  When --red5-dim is unset
            (light mode), the calc evaluates to brightness(1) — a no-op. */
-        img { filter: brightness(calc(1 / var(--red5-dim, 1))); }
+        .red5-graphic-zone { filter: brightness(calc(1 / var(--red5-dim, 1))); }
     </style>
 </head>
 <body>
@@ -4103,7 +4109,7 @@
                                         </div>
                                     </div>
 
-                                    <div className={`relative w-full flex-1 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
+                                    <div className={`red5-graphic-zone relative w-full flex-1 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
                                         {!effectiveVavImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
                                                 <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("vav_image_missing") : "VAV IMAGE MISSING"}</span>
@@ -4333,7 +4339,7 @@
                                     </div>
                                 </div>
                                 
-                                <div className={`relative bg-slate-200 overflow-hidden flex items-center justify-center`}>
+                                <div className={`red5-graphic-zone relative bg-slate-200 overflow-hidden flex items-center justify-center`}>
                                     
                                     {(() => {
                                         const floorData = getFloorForAhu(showFloorPlanForAhu);
@@ -4515,7 +4521,7 @@
                                             // Wrap in a fixed-ratio box so absolute-positioned markers +
                                             // the sun compass have a non-zero canvas to sit on.
                                             return (
-                                                <div className="relative" style={{width: '80vw', maxWidth: 1200, height: '70vh', maxHeight: 700}}>
+                                                <div className="red5-graphic-zone relative" style={{width: '80vw', maxWidth: 1200, height: '70vh', maxHeight: 700}}>
                                                     <React.Fragment>
                                                     {floorImage ? (
                                                         <img src={floorImage} className="absolute inset-0 w-full h-full object-contain z-0 opacity-40 transition-all duration-500" style={{ mixBlendMode: 'multiply' }} alt="Floor Plan" />
@@ -4914,7 +4920,7 @@
                                         </div>
                                     </div>
 
-                                    <div ref={ahuBodyRef} className={`relative w-full flex-1 ${dk ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
+                                    <div ref={ahuBodyRef} className={`red5-graphic-zone relative w-full flex-1 ${dk ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
                                         {!currentAhuImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
                                                 <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("ahu_image_missing") : "AHU IMAGE MISSING"}</span>

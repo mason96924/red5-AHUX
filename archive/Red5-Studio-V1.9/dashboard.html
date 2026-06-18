@@ -112,6 +112,20 @@
         .rw-slider-knob { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.3); transition:left 0.25s; }
         .rw-slider-off .rw-slider-knob { left:2px; }
         .rw-slider-on .rw-slider-knob { left:20px; }
+        /* Dark-mode DIM compensation for raster artwork.
+           When the dashboard root applies `filter: brightness(N)` for the
+           operator's dark-mode DIM slider (range 1.5..3.0), every photo /
+           3D render asset gets over-brightened and washes out — the VAV
+           box, AHU duct, CP2000 VFD photos, floor plan, etc. all look
+           ghostly compared to the light-mode reference.
+           We expose `--red5-dim` on the root container alongside the
+           brightness filter; this rule applies the multiplicative inverse
+           to every <img>, cancelling the parent's boost so the raster
+           keeps its natural luminance regardless of the DIM slider.
+           CSS filters compose multiplicatively, so brightness(2.0) *
+           brightness(1/2.0) = brightness(1.0).  When --red5-dim is unset
+           (light mode), the calc evaluates to brightness(1) — a no-op. */
+        img { filter: brightness(calc(1 / var(--red5-dim, 1))); }
     </style>
 </head>
 <body>
@@ -2425,6 +2439,11 @@
                     // when the slider is dragged.
                     ...(theme === 'dark' && Math.abs(darkLevel - 1) > 0.001 ? {
                         filter: `brightness(${darkLevel})`,
+                        // Expose the same value as a CSS custom property so
+                        // child <img> elements can apply an inverse-brightness
+                        // filter and stay at their natural luminance.  See
+                        // the `img { filter: ... }` rule in the head <style>.
+                        '--red5-dim': String(darkLevel),
                         transition: 'filter 120ms linear',
                     } : {}),
                 }} onMouseMove={(e) => {
@@ -4314,7 +4333,7 @@
                                     </div>
                                 </div>
                                 
-                                <div className={`relative ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} overflow-hidden flex items-center justify-center`}>
+                                <div className={`relative bg-slate-200 overflow-hidden flex items-center justify-center`}>
                                     
                                     {(() => {
                                         const floorData = getFloorForAhu(showFloorPlanForAhu);
@@ -4329,7 +4348,7 @@
                                                     <img 
                                                         src={imgSrc} 
                                                         className="block pointer-events-none opacity-60 transition-all duration-500" 
-                                                        style={{ maxWidth: 'calc(min(1400px, 95vw) - 20px)', maxHeight: 'calc(min(850px, 90vh) - 90px)', filter: theme === 'dark' ? 'invert(1) hue-rotate(180deg)' : 'none', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }}
+                                                        style={{ maxWidth: 'calc(min(1400px, 95vw) - 20px)', maxHeight: 'calc(min(850px, 90vh) - 90px)', mixBlendMode: 'multiply' }}
                                                         alt={floorData.floor.name}
                                                     />
                                                     {/* Sun-Path Phase A: compass + directional ray overlay.
@@ -4499,7 +4518,7 @@
                                                 <div className="relative" style={{width: '80vw', maxWidth: 1200, height: '70vh', maxHeight: 700}}>
                                                     <React.Fragment>
                                                     {floorImage ? (
-                                                        <img src={floorImage} className="absolute inset-0 w-full h-full object-contain z-0 opacity-40 transition-all duration-500" style={{ filter: theme === 'dark' ? 'invert(1) hue-rotate(180deg)' : 'none', mixBlendMode: theme === 'dark' ? 'screen' : 'multiply' }} alt="Floor Plan" />
+                                                        <img src={floorImage} className="absolute inset-0 w-full h-full object-contain z-0 opacity-40 transition-all duration-500" style={{ mixBlendMode: 'multiply' }} alt="Floor Plan" />
                                                     ) : (
                                                         <div className="absolute inset-0 blueprint-grid opacity-30 pointer-events-none z-0"></div>
                                                     )}

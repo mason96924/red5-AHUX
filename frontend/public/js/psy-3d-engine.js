@@ -4191,10 +4191,20 @@ global.initPsy3D = function(container, opts){
       var rect=ren.domElement.getBoundingClientRect();
       mv.x=((e.clientX-rect.left)/rect.width)*2-1;mv.y=-((e.clientY-rect.top)/rect.height)*2+1;
       rc.setFromCamera(mv,cam);
-      var pts=pathGroup.children[0];
+      /* Collect every Points mesh under pathGroup.  Earlier the tooltip
+         grabbed `pathGroup.children[0]` assuming a single scatter mesh,
+         but the RH-band split adds a chronological Line at index 0 plus
+         up to two Points (in-band + out-of-band).  Walking the children
+         array makes the hit-test robust to the layer order. */
+      var wxPts = [];
+      if (pathGroup) {
+        for (var ci = 0; ci < pathGroup.children.length; ci++) {
+          var ch = pathGroup.children[ci];
+          if (ch && ch.isPoints) wxPts.push(ch);
+        }
+      }
       var vavPts=(vavGroup&&vavGroup.children.length>0&&vavGroup.children[0].isPoints)?vavGroup.children[0]:null;
-      var targets=[];
-      if(pts&&pts.isPoints)targets.push(pts);
+      var targets=wxPts.slice();
       if(vavPts)targets.push(vavPts);
       if(!targets.length){tipEl.style.display='none';return;}
       var hits=rc.intersectObjects(targets);
@@ -4205,24 +4215,33 @@ global.initPsy3D = function(container, opts){
           var sLbl=vi.status==='left'?'COLD (Left of CZ)':vi.status==='in'?'IN COMFORT ZONE':'HOT (Right of CZ)';
           var sCol=vi.status==='left'?'#3b82f6':vi.status==='in'?'#10b981':'#ef4444';
           html='<div style="color:'+sCol+';font-weight:900;margin-bottom:2px">'+sLbl+'</div><div style="color:#f472b6;margin-bottom:1px"><b>'+d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})+'</b></div><div>T = <b style="color:#60a5fa">'+p.t.toFixed(1)+' \u00b0C</b></div><div>RH = <b style="color:#34d399">'+p.rh.toFixed(0)+'%</b></div><div>W = <b style="color:#fbbf24">'+(p.w*1000).toFixed(1)+' g/kg</b></div>';
-        }else if(hitObj===pts&&idx<weatherData.length){
-          var p=weatherData[idx];var d=new Date(p.ts);
-          html='<div style="color:#f472b6;margin-bottom:1px"><b>'+d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})+'</b></div><div>T = <b style="color:#60a5fa">'+p.t.toFixed(1)+' \u00b0C</b></div><div>RH = <b style="color:#34d399">'+p.rh.toFixed(0)+'%</b></div><div>W = <b style="color:#fbbf24">'+(p.w*1000).toFixed(1)+' g/kg</b></div>';
-          /* When ERV is ON, append a savings block: OA' state + per-hour
-             enthalpy delta in kJ/kg + dollar value at current tariff. */
-          if (_saDropERVOn && saDropGroup && saDropGroup.visible) {
-            var hEps = Math.max(0, Math.min(1, _designerERVEps));
-            var hRaT = _designerRA_T, hRaW = getW(_designerRA_T, _designerRA_RH);
-            var hOaT = p.t + hEps * (hRaT - p.t);
-            var hOaW = p.w + hEps * (hRaW - p.w);
-            var hDh  = enthalpy(p.t, p.w) - enthalpy(hOaT, hOaW);
-            var hRtH = Math.abs(hDh) * (_designerCFM * 4.5 / 0.4299) / 12000;
-            var hKWh = hRtH * 3.517;
-            var hUSD = hKWh * _ervTariffKwh;
-            html += '<div style="margin-top:3px;padding-top:3px;border-top:1px dashed #475569"></div>'+
-              '<div style="color:#22d3ee">OA\u2032 = <b>'+hOaT.toFixed(1)+' \u00b0C / '+(hOaW*1000).toFixed(1)+' g/kg</b></div>'+
-              '<div style="color:#22d3ee">\u0394h<sub>saved</sub> = <b>'+hDh.toFixed(1)+' kJ/kg</b></div>'+
-              '<div style="color:#22d3ee">'+hRtH.toFixed(2)+' RT\u00b7h \u00b7 '+_ervFmtMoney(hUSD)+' saved</div>';
+        }else if(hitObj.isPoints && hitObj.userData && hitObj.userData.kind === 'wx'){
+          /* Out-band / in-band scatter point.  Local `idx` is into the
+             split mesh's geometry; resolve back to the original
+             weatherData index via the userData.idxMap stashed at build
+             time.  Falls back to direct indexing if the map is missing
+             (older cached version of the engine). */
+          var map = hitObj.userData.idxMap;
+          var wIdx = (map && idx < map.length) ? map[idx] : idx;
+          if (wIdx < weatherData.length) {
+            var p=weatherData[wIdx];var d=new Date(p.ts);
+            html='<div style="color:#f472b6;margin-bottom:1px"><b>'+d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})+'</b></div><div>T = <b style="color:#60a5fa">'+p.t.toFixed(1)+' \u00b0C</b></div><div>RH = <b style="color:#34d399">'+p.rh.toFixed(0)+'%</b></div><div>W = <b style="color:#fbbf24">'+(p.w*1000).toFixed(1)+' g/kg</b></div>';
+            /* When ERV is ON, append a savings block: OA' state + per-hour
+               enthalpy delta in kJ/kg + dollar value at current tariff. */
+            if (_saDropERVOn && saDropGroup && saDropGroup.visible) {
+              var hEps = Math.max(0, Math.min(1, _designerERVEps));
+              var hRaT = _designerRA_T, hRaW = getW(_designerRA_T, _designerRA_RH);
+              var hOaT = p.t + hEps * (hRaT - p.t);
+              var hOaW = p.w + hEps * (hRaW - p.w);
+              var hDh  = enthalpy(p.t, p.w) - enthalpy(hOaT, hOaW);
+              var hRtH = Math.abs(hDh) * (_designerCFM * 4.5 / 0.4299) / 12000;
+              var hKWh = hRtH * 3.517;
+              var hUSD = hKWh * _ervTariffKwh;
+              html += '<div style="margin-top:3px;padding-top:3px;border-top:1px dashed #475569"></div>'+
+                '<div style="color:#22d3ee">OA\u2032 = <b>'+hOaT.toFixed(1)+' \u00b0C / '+(hOaW*1000).toFixed(1)+' g/kg</b></div>'+
+                '<div style="color:#22d3ee">\u0394h<sub>saved</sub> = <b>'+hDh.toFixed(1)+' kJ/kg</b></div>'+
+                '<div style="color:#22d3ee">'+hRtH.toFixed(2)+' RT\u00b7h \u00b7 '+_ervFmtMoney(hUSD)+' saved</div>';
+            }
           }
         }
         if(html){tipEl.innerHTML=html;tipEl.style.display='block';tipEl.style.left=(e.clientX-root.getBoundingClientRect().left+14)+'px';tipEl.style.top=(e.clientY-root.getBoundingClientRect().top-16)+'px';}
@@ -4530,32 +4549,41 @@ global.initPsy3D = function(container, opts){
     /* Split scatter into out-band (default size 2.2) and in-band (1.6×
        = 3.52).  When the RH band layer is hidden, every sample lands
        in the out-band bucket and the marker size is uniform — keeping
-       the legacy appearance for operators who toggle RH BAND off. */
-    var pV1=[],pC1=[],pV2=[],pC2=[];
+       the legacy appearance for operators who toggle RH BAND off.
+       `idxOut` / `idxIn` map each split-mesh's local point index back
+       to the original weatherData index so the hover tooltip can
+       resolve `hits[0].index` to a sample. */
+    var pV1=[],pC1=[],pV2=[],pC2=[],idxIn=[],idxOut=[];
     for (var i = 0; i < weatherData.length; i++) {
       var i3 = i * 3;
       var vx=pV[i3], vy=pV[i3+1], vz=pV[i3+2];
       var cr=pC[i3], cg=pC[i3+1], cb=pC[i3+2];
-      if (inFlag[i]) { pV1.push(vx,vy,vz); pC1.push(cr,cg,cb); }
-      else           { pV2.push(vx,vy,vz); pC2.push(cr,cg,cb); }
+      if (inFlag[i]) { pV1.push(vx,vy,vz); pC1.push(cr,cg,cb); idxIn.push(i); }
+      else           { pV2.push(vx,vy,vz); pC2.push(cr,cg,cb); idxOut.push(i); }
     }
     if (pV2.length) {
       var outGeo = new THREE.BufferGeometry();
       outGeo.setAttribute('position', new THREE.Float32BufferAttribute(pV2,3));
       outGeo.setAttribute('color',    new THREE.Float32BufferAttribute(pC2,3));
-      pathGroup.add(new THREE.Points(outGeo, new THREE.PointsMaterial({
+      var outPts = new THREE.Points(outGeo, new THREE.PointsMaterial({
         size:2.2, vertexColors:true, transparent:true, opacity:.85,
         sizeAttenuation:true, depthWrite:false
-      })));
+      }));
+      outPts.userData.idxMap = idxOut;
+      outPts.userData.kind   = 'wx';
+      pathGroup.add(outPts);
     }
     if (pV1.length) {
       var inGeo = new THREE.BufferGeometry();
       inGeo.setAttribute('position', new THREE.Float32BufferAttribute(pV1,3));
       inGeo.setAttribute('color',    new THREE.Float32BufferAttribute(pC1,3));
-      pathGroup.add(new THREE.Points(inGeo, new THREE.PointsMaterial({
+      var inPts = new THREE.Points(inGeo, new THREE.PointsMaterial({
         size:3.52, vertexColors:true, transparent:true, opacity:.95,
         sizeAttenuation:true, depthWrite:false
-      })));
+      }));
+      inPts.userData.idxMap = idxIn;
+      inPts.userData.kind   = 'wx';
+      pathGroup.add(inPts);
     }
     var prGeo=new THREE.BufferGeometry();prGeo.setAttribute('position',new THREE.Float32BufferAttribute(prV,3));prGeo.setAttribute('color',new THREE.Float32BufferAttribute(prC,3));
     projGroup.add(new THREE.Points(prGeo,new THREE.PointsMaterial({size:1.5,vertexColors:true,transparent:true,opacity:.4,sizeAttenuation:true,depthWrite:false})));

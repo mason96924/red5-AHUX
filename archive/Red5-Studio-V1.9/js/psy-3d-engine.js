@@ -671,11 +671,25 @@ global.initPsy3D = function(container, opts){
      range.  Defaults to ASHRAE 55 Cat A indoor envelope (21..27 °C)
      so the magenta volume sits exactly where indoor RH control is
      actionable, instead of sprawling across the whole chart from
-     winter outdoor air to summer outdoor air.  Surfaced as constants
-     here (not a slider) on the assumption that operators will rarely
-     want to retune them — if you do, expose them in the sidebar later. */
+     winter outdoor air to summer outdoor air.  Now operator-tunable
+     via the sidebar's "3D WX · T·CLIP" dual-handle slider; React
+     dispatches `r5-t-clip-change` on every drag, the engine rebuilds
+     the slab + reclassifies the scatter live. */
   var RH_BAND_T_CLIP_LO = 21;
   var RH_BAND_T_CLIP_HI = 27;
+  (function _hydrateTClipFromStorage(){
+    try {
+      var raw = localStorage.getItem('red5_t_clip_range');
+      if (raw) {
+        var p = JSON.parse(raw);
+        var lo = +p.lo, hi = +p.hi;
+        if (Number.isFinite(lo) && Number.isFinite(hi) && lo < hi) {
+          RH_BAND_T_CLIP_LO = lo;
+          RH_BAND_T_CLIP_HI = hi;
+        }
+      }
+    } catch (e) {}
+  })();
   var SX=260,SY=200,SZ=150;
   function t2sx(t){return(t-T_MIN)/(T_MAX-T_MIN)*SX;}
   function w2sz(wkg){return Math.max(0,Math.min(SZ,SZ-(wkg*1000/W_MAX)*SZ));}
@@ -1318,6 +1332,25 @@ global.initPsy3D = function(container, opts){
     if (weatherData.length > 0 && _lastWeatherCtx) {
       buildWeatherVis(_lastWeatherCtx.locName, _lastWeatherCtx.fromD, _lastWeatherCtx.toD);
     }
+  });
+
+  /* T-clip event — sidebar's "3D WX · T·CLIP" slider fires this on
+     every drag.  Reset the global constants, rebuild the slab so it
+     reshapes to the new T window, and (if `_rhBandTight` is on)
+     reclassify the scatter so the 1.6× markers also retighten. */
+  window.addEventListener('r5-t-clip-change', function(e) {
+    if (!e || !e.detail) return;
+    var lo = +e.detail.lo, hi = +e.detail.hi;
+    if (!(Number.isFinite(lo) && Number.isFinite(hi) && lo < hi)) return;
+    RH_BAND_T_CLIP_LO = lo;
+    RH_BAND_T_CLIP_HI = hi;
+    _buildRhBandSlab(_rhBandRange.lo, _rhBandRange.hi);
+    if (weatherData.length > 0 && _lastWeatherCtx) {
+      buildWeatherVis(_lastWeatherCtx.locName, _lastWeatherCtx.fromD, _lastWeatherCtx.toD);
+    }
+    // Refresh the tooltip on the FREE | T·CLIP sub-chip so it reflects the new range.
+    var tc = document.getElementById('p3-rhBand-tclip');
+    if (tc) tc.title = 'In-band highlight mode\n  FREE   = any sample with RH \u2208 [lo,hi] gets the 1.6\u00D7 marker (across the whole year)\n  T-CLIP = strict: also require T \u2208 [' + RH_BAND_T_CLIP_LO + ',' + RH_BAND_T_CLIP_HI + ' \u00B0C], so the highlight matches the slab volume';
   });
 
   var projMode='lines'; /* 'lines' | 'dots' | 'vav' — shared between setupControls and render2DChart */

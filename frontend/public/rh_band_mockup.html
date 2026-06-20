@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<!--
+  RH-BAND OVERLAY MOCKUP for the 3D WX scene.
+  Purpose: show the operator what the proposed feature will look like
+  BEFORE writing the production THREE.js geometry.  This file is a
+  static, hand-drawn approximation using SVG and CSS — the scatter
+  cloud, Givoni envelope and proposed RH-band ribbons are stylised,
+  not a literal render.  It only needs to be faithful enough that the
+  operator can evaluate visual hierarchy, colour, opacity and where
+  the highlighted points sit inside the band.
+
+  Drop into /app/frontend/public/ and open:
+     <preview-url>/rh_band_mockup.html
+
+  Two side-by-side panels:
+     LEFT  = current 3D WX scene (no RH-band overlay)
+     RIGHT = proposed scene with translucent yellow slab + highlighted dots
+
+  Toggle button reveals/hides the new overlay on the right panel so the
+  before/after delta is obvious.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RH-Band Overlay — 3D WX Mockup</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0b1220; color: #e2e8f0; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  header { padding: 18px 28px 8px; border-bottom: 1px solid #1e293b; }
+  header h1 { font-size: 18px; margin: 0 0 4px; letter-spacing: 0.04em; color: #facc15; }
+  header p { font-size: 12px; margin: 0; color: #94a3b8; line-height: 1.6; max-width: 1100px; }
+  .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 24px 24px; }
+  .panel { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden; }
+  .panel-title { padding: 8px 14px; background: #1e293b; font-size: 11px; letter-spacing: 0.12em; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; }
+  .panel-title .badge { padding: 2px 8px; border-radius: 3px; font-size: 9px; font-weight: 800; }
+  .badge.before { background: #475569; color: #f1f5f9; }
+  .badge.after  { background: #facc15; color: #0b1220; }
+  .scene { position: relative; width: 100%; aspect-ratio: 16/10; background: radial-gradient(ellipse at center, #0c1530 0%, #050912 80%); }
+  .scene svg { width: 100%; height: 100%; display: block; }
+  .axis-label { fill: #64748b; font-size: 10px; font-family: ui-monospace, monospace; }
+  .tick-label { fill: #475569; font-size: 8px; font-family: ui-monospace, monospace; }
+  .legend { padding: 12px 14px; background: #0a1226; border-top: 1px solid #1e293b; font-size: 11px; line-height: 1.7; }
+  .legend-row { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.15); }
+  .legend-row span.muted { color: #64748b; }
+  button.toggle {
+    background: #facc15; color: #0b1220; border: 0; padding: 4px 12px;
+    font-family: inherit; font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+    border-radius: 3px; cursor: pointer; text-transform: uppercase;
+  }
+  button.toggle:hover { background: #fde047; }
+  .ctl-row { padding: 10px 14px; background: #0a1226; border-top: 1px solid #1e293b; display: flex; gap: 14px; align-items: center; font-size: 11px; }
+  .ctl-row label { color: #94a3b8; }
+  .ctl-row input[type=range] { accent-color: #facc15; width: 110px; }
+  .ctl-row .val { font-family: ui-monospace, monospace; color: #facc15; width: 30px; text-align: right; }
+  footer { padding: 16px 28px 28px; font-size: 11px; color: #64748b; line-height: 1.7; border-top: 1px solid #1e293b; max-width: 1100px; }
+  footer b { color: #cbd5e1; }
+  footer code { background: #1e293b; padding: 1px 6px; border-radius: 3px; color: #facc15; font-size: 10px; }
+  .impl-note { margin-top: 10px; padding: 10px 12px; background: #1e293b; border-left: 3px solid #facc15; border-radius: 0 3px 3px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RH-BAND OVERLAY — 3D WX MOCKUP</h1>
+  <p>Side-by-side preview of adding a translucent <b>RH-band slab</b> to the 3D Psychrometric weather scatter.
+     The slab is bounded by the sidebar's two RH sliders (default 40 % / 60 %).  Points falling inside the
+     band get a yellow halo + slightly larger marker so the operator can see how often the climate visits the
+     selected RH window across the year.  This is a stylised SVG approximation, not a live render — drag the
+     two sliders below to feel out the interaction.</p>
+</header>
+
+<div class="layout">
+
+  <!-- ─── LEFT PANEL · CURRENT ─────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-title">
+      <span>CURRENT &mdash; 3D WX with Givoni envelope only</span>
+      <span class="badge before">BEFORE</span>
+    </div>
+    <div class="scene">
+      <svg viewBox="0 0 800 500" id="svgBefore" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="legend">
+      <div class="legend-row"><span class="swatch" style="background:#22d3ee;"></span>Givoni envelope (T-dependent comfort ROI)</div>
+      <div class="legend-row"><span class="swatch" style="background:linear-gradient(90deg,#3b82f6,#22d3ee,#22c55e,#facc15,#f97316,#ef4444);"></span>Weather points coloured by dry-bulb temperature</div>
+    </div>
+  </div>
+
+  <!-- ─── RIGHT PANEL · PROPOSED ───────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-title">
+      <span>PROPOSED &mdash; with RH-band slab from sidebar sliders</span>
+      <button class="toggle" id="toggleBand">HIDE RH BAND</button>
+    </div>
+    <div class="scene">
+      <svg viewBox="0 0 800 500" id="svgAfter" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="ctl-row">
+      <label>RH MIN</label>
+      <input type="range" id="rhMin" min="10" max="90" value="40" step="1">
+      <span class="val" id="rhMinV">40%</span>
+      <label style="margin-left:18px;">RH MAX</label>
+      <input type="range" id="rhMax" min="10" max="90" value="60" step="1">
+      <span class="val" id="rhMaxV">60%</span>
+    </div>
+    <div class="legend">
+      <div class="legend-row"><span class="swatch" style="background:rgba(250,204,21,0.25); border:1px dashed #facc15;"></span>Proposed RH-band slab (translucent yellow, extruded along the time axis)</div>
+      <div class="legend-row"><span class="swatch" style="background:#facc15; box-shadow:0 0 6px #facc15;"></span>Weather points <b>inside</b> the band &mdash; yellow halo + 1.4&times; marker size</div>
+      <div class="legend-row"><span class="swatch" style="background:#475569;"></span>Weather points <b>outside</b> the band &mdash; dimmed to 40 % opacity</div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <b>How this would be wired into the real 3D WX scene:</b>
+  <div class="impl-note">
+    <b>Geometry</b> &mdash; two parametric ribbons in psychrometric T&times;W space, each tracing
+    <code>W = 0.622 &middot; (RH &middot; P<sub>sat</sub>(T)) / (P<sub>atm</sub> &minus; RH &middot; P<sub>sat</sub>(T))</code>
+    along the X axis, then extruded along the Z (time) axis &mdash; using the existing
+    <code>BufferGeometry</code> path that draws the Givoni envelope.  Two-sided
+    <code>MeshBasicMaterial</code>, alpha 0.18, additive blending, no depth-write so the slab does
+    not clip the dots behind it.
+    <br><br>
+    <b>Hit-test</b> &mdash; on every <code>FETCH WEATHER DATA</code> response the existing
+    <code>weatherSamples[]</code> array gets a derived <code>rh</code> column (already there).  A 1-liner
+    boolean <code>inBand = (s.rh &ge; rhMin &amp;&amp; s.rh &le; rhMax)</code> drives marker size + halo.
+    <br><br>
+    <b>Reactivity</b> &mdash; the slab geometry and hit-test bind to the same
+    <code>rhBandMin / rhBandMax</code> state already used by the sidebar pills and the 2-D
+    psychrometric chart, so dragging the sliders updates all three views in lock-step.
+    <br><br>
+    <b>Cost</b> &mdash; ~80 lines net add to the 3D WX component.  No new dependencies.  No impact
+    on light/dark mode or the new DIM compensation (zone is rendered inside the existing
+    <code>red5-graphic-zone</code> wrapper).
+  </div>
+</footer>
+
+<script>
+// ──────────────────────────────────────────────────────────────────────
+//  Mockup renderer — stylised psychrometric scatter
+//  All values here are illustrative.  The point cloud is fake (Ulaanbaatar-ish
+//  yearly weather PDF — bimodal, cold-dry winter + warm-humid summer).  We
+//  project (T, W) into a fake isometric view so the mockup reads as 3D
+//  without bringing in a real 3D engine.
+// ──────────────────────────────────────────────────────────────────────
+
+const SCENE_W = 800, SCENE_H = 500;
+const T_MIN = -40, T_MAX = 40;
+const W_MIN = 0,   W_MAX = 0.025;        // humidity ratio (kg water / kg dry air)
+const X0 = 90, X1 = 720;                  // pixel range for T axis
+const Y0 = 440, Y1 = 80;                  // pixel range for W axis (inverted)
+const SKEW_X = 0.28, SKEW_Y = -0.14;      // isometric perspective for "depth"
+
+// Atmospheric pressure (kPa) for W <-> RH conversion.  Sea level reference;
+// faithful enough for a mockup.
+const P_ATM = 101.325;
+// Magnus-form saturation vapour pressure (kPa) — typical psychrometric
+// approximation, accurate to ±0.1 °C across our domain.
+function pSat(T) { return 0.6108 * Math.exp(17.27 * T / (T + 237.3)); }
+// Humidity ratio (W) at a given temperature T and relative humidity RH (0..1).
+function wAt(T, RH) {
+    const pw = RH * pSat(T);
+    return 0.622 * pw / (P_ATM - pw);
+}
+
+// Project (T, W, depth) into 2D screen coords.
+function proj(T, W, depth) {
+    const x = X0 + (T - T_MIN) / (T_MAX - T_MIN) * (X1 - X0);
+    const y = Y0 + (W - W_MIN) / (W_MAX - W_MIN) * (Y1 - Y0);
+    return { x: x + depth * SKEW_X * 70, y: y + depth * SKEW_Y * 70 };
+}
+
+// Build a faked Ulaanbaatar-ish (cold + dry) yearly weather sample set.
+function generateSamples(n = 720) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+        // Two seasonal clusters
+        const winter = Math.random() < 0.55;
+        let T, RH;
+        if (winter) {
+            T  = -25 + (Math.random() - 0.5) * 18;
+            RH = 0.55 + (Math.random() - 0.5) * 0.35;
+        } else {
+            T  = 18 + (Math.random() - 0.5) * 16;
+            RH = 0.50 + (Math.random() - 0.5) * 0.40;
+        }
+        RH = Math.max(0.05, Math.min(0.99, RH));
+        const W = wAt(T, RH);
+        const depth = (i / n) * 2 - 1;   // -1..+1 along time axis
+        out.push({ T, RH, W, depth });
+    }
+    return out;
+}
+
+// Temperature → colour ramp (cold-blue → hot-red), matches the existing scene.
+function tempColour(T) {
+    const t = Math.max(0, Math.min(1, (T - T_MIN) / (T_MAX - T_MIN)));
+    const stops = [
+        { p: 0.0,  c: [59, 130, 246] },   // blue
+        { p: 0.25, c: [34, 211, 238] },   // cyan
+        { p: 0.5,  c: [34, 197, 94 ] },   // green
+        { p: 0.75, c: [250, 204, 21] },   // yellow
+        { p: 0.9,  c: [249, 115, 22] },   // orange
+        { p: 1.0,  c: [239, 68,  68] }    // red
+    ];
+    for (let i = 0; i < stops.length - 1; i++) {
+        if (t >= stops[i].p && t <= stops[i+1].p) {
+            const k = (t - stops[i].p) / (stops[i+1].p - stops[i].p);
+            const a = stops[i].c, b = stops[i+1].c;
+            return `rgb(${a[0]+(b[0]-a[0])*k|0},${a[1]+(b[1]-a[1])*k|0},${a[2]+(b[2]-a[2])*k|0})`;
+        }
+    }
+    return '#22c55e';
+}
+
+const SAMPLES = generateSamples();
+
+// ─── BEFORE scene (no RH band) ──────────────────────────────────────────
+function renderBefore() {
+    const svg = document.getElementById('svgBefore');
+    svg.innerHTML = drawAxes() + drawGivoni() + drawScatter(SAMPLES, null, null);
+}
+
+// ─── AFTER scene (with RH band) ─────────────────────────────────────────
+let showBand = true;
+let rhMin = 0.40, rhMax = 0.60;
+
+function renderAfter() {
+    const svg  = document.getElementById('svgAfter');
+    const band = showBand ? drawRhBand(rhMin, rhMax) : '';
+    svg.innerHTML = drawAxes() + drawGivoni() + band + drawScatter(SAMPLES, showBand ? rhMin : null, showBand ? rhMax : null);
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+function drawAxes() {
+    let s = '';
+    // Floor grid (z = 0 plane)
+    for (let T = T_MIN; T <= T_MAX; T += 10) {
+        const a = proj(T, W_MIN, -1), b = proj(T, W_MIN, +1);
+        s += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#1e293b" stroke-width="0.5"/>`;
+    }
+    for (let d = -1; d <= 1; d += 0.5) {
+        const a = proj(T_MIN, W_MIN, d), b = proj(T_MAX, W_MIN, d);
+        s += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#1e293b" stroke-width="0.5"/>`;
+    }
+    // X axis ticks
+    for (let T = T_MIN; T <= T_MAX; T += 10) {
+        const p = proj(T, W_MIN, -1);
+        s += `<text class="tick-label" x="${p.x}" y="${p.y+12}" text-anchor="middle">${T}°</text>`;
+    }
+    // Y axis ticks
+    for (let W = 0; W <= W_MAX; W += 0.005) {
+        const p = proj(T_MAX, W, -1);
+        s += `<text class="tick-label" x="${p.x+8}" y="${p.y+3}">${(W*1000).toFixed(0)}g</text>`;
+    }
+    // Axis labels
+    s += `<text class="axis-label" x="${(X0+X1)/2}" y="${SCENE_H-12}" text-anchor="middle">DRY-BULB TEMP (°C)</text>`;
+    s += `<text class="axis-label" x="20" y="${(Y0+Y1)/2}" transform="rotate(-90,20,${(Y0+Y1)/2})" text-anchor="middle">HUMIDITY RATIO (g/kg)</text>`;
+    // Saturation curve (RH=100%)
+    let pathSat = 'M ';
+    for (let T = T_MIN; T <= T_MAX; T += 1) {
+        const p = proj(T, Math.min(W_MAX, wAt(T, 1.0)), -1);
+        pathSat += `${p.x},${p.y} L `;
+    }
+    s += `<path d="${pathSat.slice(0,-3)}" fill="none" stroke="#312e81" stroke-width="1.2"/>`;
+    return s;
+}
+
+function drawGivoni() {
+    // Stylised cyan envelope around the comfort zone (T=18..27, RH=30..70).
+    // Two parallel quads, front + back face, connected.
+    const corners = [ [18,0.30],[27,0.30],[27,0.70],[18,0.70] ];
+    const front = corners.map(([T,RH]) => proj(T, wAt(T,RH), +1));
+    const back  = corners.map(([T,RH]) => proj(T, wAt(T,RH), -1));
+    const poly = (arr) => arr.map(p=>`${p.x},${p.y}`).join(' ');
+    let s = '';
+    s += `<polygon points="${poly(front)}" fill="rgba(34,211,238,0.06)" stroke="#22d3ee" stroke-width="1.1"/>`;
+    s += `<polygon points="${poly(back)}"  fill="rgba(34,211,238,0.06)" stroke="#22d3ee" stroke-width="1.1" stroke-dasharray="3 2"/>`;
+    for (let i = 0; i < 4; i++) {
+        s += `<line x1="${front[i].x}" y1="${front[i].y}" x2="${back[i].x}" y2="${back[i].y}" stroke="#22d3ee" stroke-width="0.8" stroke-dasharray="2 2"/>`;
+    }
+    return s;
+}
+
+function drawRhBand(rhLo, rhHi) {
+    // Two ribbons (lower + upper RH curve), extruded along z, filled translucently between them.
+    const front = [], back = [];
+    for (let T = T_MIN; T <= T_MAX; T += 2) {
+        const wLo = Math.min(W_MAX, wAt(T, rhLo));
+        const wHi = Math.min(W_MAX, wAt(T, rhHi));
+        front.push({ lo: proj(T, wLo, +1), hi: proj(T, wHi, +1) });
+        back.push ({ lo: proj(T, wLo, -1), hi: proj(T, wHi, -1) });
+    }
+    let s = '';
+    // Side fill — front face polygon (lower curve forward, upper curve backward)
+    const frontPoly = [...front.map(p=>`${p.lo.x},${p.lo.y}`), ...front.slice().reverse().map(p=>`${p.hi.x},${p.hi.y}`)].join(' ');
+    s += `<polygon points="${frontPoly}" fill="rgba(250,204,21,0.18)" stroke="rgba(250,204,21,0.55)" stroke-width="1"/>`;
+    // Back face polygon (dashed to read as "far side")
+    const backPoly = [...back.map(p=>`${p.lo.x},${p.lo.y}`), ...back.slice().reverse().map(p=>`${p.hi.x},${p.hi.y}`)].join(' ');
+    s += `<polygon points="${backPoly}" fill="rgba(250,204,21,0.10)" stroke="rgba(250,204,21,0.40)" stroke-width="0.8" stroke-dasharray="3 2"/>`;
+    // Connect front ↔ back at each end to suggest the slab is extruded along Z
+    s += `<line x1="${front[0].lo.x}" y1="${front[0].lo.y}" x2="${back[0].lo.x}" y2="${back[0].lo.y}" stroke="rgba(250,204,21,0.45)" stroke-width="0.8" stroke-dasharray="2 2"/>`;
+    s += `<line x1="${front[0].hi.x}" y1="${front[0].hi.y}" x2="${back[0].hi.x}" y2="${back[0].hi.y}" stroke="rgba(250,204,21,0.45)" stroke-width="0.8" stroke-dasharray="2 2"/>`;
+    const lastF = front[front.length-1], lastB = back[back.length-1];
+    s += `<line x1="${lastF.lo.x}" y1="${lastF.lo.y}" x2="${lastB.lo.x}" y2="${lastB.lo.y}" stroke="rgba(250,204,21,0.45)" stroke-width="0.8" stroke-dasharray="2 2"/>`;
+    s += `<line x1="${lastF.hi.x}" y1="${lastF.hi.y}" x2="${lastB.hi.x}" y2="${lastB.hi.y}" stroke="rgba(250,204,21,0.45)" stroke-width="0.8" stroke-dasharray="2 2"/>`;
+    // Annotation labels at the right edge
+    const labLo = proj(T_MAX, Math.min(W_MAX, wAt(T_MAX, rhLo)), +1);
+    const labHi = proj(T_MAX, Math.min(W_MAX, wAt(T_MAX, rhHi)), +1);
+    s += `<text x="${labLo.x+6}" y="${labLo.y+3}" fill="#facc15" font-family="ui-monospace" font-size="10" font-weight="700">${(rhLo*100)|0}% RH</text>`;
+    s += `<text x="${labHi.x+6}" y="${labHi.y+3}" fill="#facc15" font-family="ui-monospace" font-size="10" font-weight="700">${(rhHi*100)|0}% RH</text>`;
+    return s;
+}
+
+function drawScatter(samples, rhLo, rhHi) {
+    let s = '';
+    // Sort by depth so back points draw first (basic painter's algorithm).
+    const sorted = samples.slice().sort((a,b) => a.depth - b.depth);
+    for (const sm of sorted) {
+        const p = proj(sm.T, sm.W, sm.depth);
+        const inBand = rhLo !== null && rhHi !== null && sm.RH >= rhLo && sm.RH <= rhHi;
+        const col = tempColour(sm.T);
+        if (rhLo === null) {
+            // BEFORE — uniform style, just temp colour
+            s += `<circle cx="${p.x}" cy="${p.y}" r="1.6" fill="${col}" opacity="0.85"/>`;
+        } else if (inBand) {
+            // AFTER — inside band: halo + larger
+            s += `<circle cx="${p.x}" cy="${p.y}" r="3.6" fill="rgba(250,204,21,0.20)" />`;
+            s += `<circle cx="${p.x}" cy="${p.y}" r="2.3" fill="${col}" stroke="#facc15" stroke-width="0.6"/>`;
+        } else {
+            // AFTER — outside band: dim
+            s += `<circle cx="${p.x}" cy="${p.y}" r="1.4" fill="${col}" opacity="0.32"/>`;
+        }
+    }
+    return s;
+}
+
+// ─── Wire up controls ──────────────────────────────────────────────────
+document.getElementById('rhMin').addEventListener('input', (e) => {
+    rhMin = parseInt(e.target.value, 10) / 100;
+    if (rhMin >= rhMax) { rhMin = rhMax - 0.01; e.target.value = (rhMin * 100) | 0; }
+    document.getElementById('rhMinV').textContent = ((rhMin * 100)|0) + '%';
+    renderAfter();
+});
+document.getElementById('rhMax').addEventListener('input', (e) => {
+    rhMax = parseInt(e.target.value, 10) / 100;
+    if (rhMax <= rhMin) { rhMax = rhMin + 0.01; e.target.value = (rhMax * 100) | 0; }
+    document.getElementById('rhMaxV').textContent = ((rhMax * 100)|0) + '%';
+    renderAfter();
+});
+document.getElementById('toggleBand').addEventListener('click', (e) => {
+    showBand = !showBand;
+    e.target.textContent = showBand ? 'HIDE RH BAND' : 'SHOW RH BAND';
+    renderAfter();
+});
+
+renderBefore();
+renderAfter();
+</script>
+
+</body>
+</html>

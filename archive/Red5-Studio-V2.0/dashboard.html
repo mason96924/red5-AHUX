@@ -694,6 +694,16 @@
             });
             useEffect(() => {
                 try { localStorage.setItem('red5_sweet_spot_range', JSON.stringify(sweetSpotRange)); } catch (e) {}
+                // Notify the 3D WX engine (psy-3d-engine.js) to rebuild
+                // its RH-band slab + re-classify the scatter into in-band
+                // (1.6×) / out-of-band markers.  The engine listens on
+                // `window` for this event so the React<->vanilla-JS
+                // boundary stays one-way and decoupled.
+                try {
+                    window.dispatchEvent(new CustomEvent('r5-rh-band-change', {
+                        detail: { lo: sweetSpotRange.lo, hi: sweetSpotRange.hi }
+                    }));
+                } catch (e) {}
             }, [sweetSpotRange]);
 
             // Robust JSON fetch that catches the common controller-side

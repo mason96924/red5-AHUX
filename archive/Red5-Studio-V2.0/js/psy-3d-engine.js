@@ -1189,9 +1189,110 @@ global.initPsy3D = function(container, opts){
   });
 
   /* ---------- SCENE ---------- */
-  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup,saDropGroup;
+  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup,saDropGroup,rhBandGroup;
   var _p3RedrawPsyTex = null; /* populated by buildScene so theme listener can redraw floor chart */
   var weatherData=[],timeLabels=[],vavData=[];
+
+  /* ---- RH-band overlay state -------------------------------------------
+     Driven by the sidebar's "sweet-spot" slider (default 40-60% RH).  The
+     React state lives at `sweetSpotRange = {lo, hi}` and is mirrored to
+     localStorage on every change; we read it on engine init for the
+     initial geometry, and live-update via a custom window event so
+     dragging the slider in the sidebar redraws the slab + reclassifies
+     the in-band scatter without any round-trip refetch. */
+  function _readRhBandRange() {
+    try {
+      var raw = localStorage.getItem('red5_sweet_spot_range');
+      if (raw) {
+        var p = JSON.parse(raw);
+        var lo = Math.max(1, Math.min(99, +p.lo));
+        var hi = Math.max(1, Math.min(99, +p.hi));
+        if (lo < hi) return { lo: lo, hi: hi };
+      }
+    } catch (e) {}
+    return { lo: 40, hi: 60 };
+  }
+  var _rhBandRange = _readRhBandRange();
+  var _lastWeatherCtx = null; /* {locName, fromD, toD} — for rebuilding scatter on RH-band change */
+
+  /* ---- RH-band slab builder --------------------------------------------
+     Constructs a mesh + outline ribbons spanning the volume between the
+     two RH curves (RH_lo, RH_hi) over the chart's T range.  Each "slice"
+     at temperature T has cross-section endpoints
+       low  = (t2sx(T), *, w2sz(getW(T, RH_lo)))
+       high = (t2sx(T), *, w2sz(getW(T, RH_hi)))
+     extruded along Y from 0 (= start of time window) to SY (= end).
+     The slab curves upward exponentially with T because W = f(T, RH)
+     grows along the saturation envelope.  Magenta (0xec4899) matches
+     the operator's pick from the mockup and reads cleanly against
+     both the blue cold scatter and the yellow/red warm scatter. */
+  function _buildRhBandSlab(rhLo, rhHi) {
+    if (!rhBandGroup) return;
+    var THREE = window.THREE;
+    while (rhBandGroup.children.length) rhBandGroup.remove(rhBandGroup.children[0]);
+    var nT = 60;
+    var loPts = [], hiPts = [];
+    for (var i = 0; i <= nT; i++) {
+      var T = T_MIN + (T_MAX - T_MIN) * (i / nT);
+      loPts.push({ t: T, w: getW(T, rhLo) });
+      hiPts.push({ t: T, w: getW(T, rhHi) });
+    }
+    /* Build the 4-face extruded mesh: 4 verts per T-slice
+       (front-lo, front-hi, back-lo, back-hi).  Triangles weave the
+       top cap, bottom cap, low-RH wall and high-RH wall.  Front =
+       y=SY (most-recent end of time axis), back = y=0. */
+    var verts = [], idx = [];
+    for (var i = 0; i <= nT; i++) {
+      var xL = t2sx(loPts[i].t), zL = w2sz(loPts[i].w);
+      var xH = t2sx(hiPts[i].t), zH = w2sz(hiPts[i].w);
+      verts.push(xL, SY, zL,  xH, SY, zH,  xL, 0, zL,  xH, 0, zH);
+    }
+    for (var i = 0; i < nT; i++) {
+      var b = i * 4, n = b + 4;
+      idx.push(b+0, b+1, n+1,   b+0, n+1, n+0);     // top  (y=SY)
+      idx.push(b+2, n+2, n+3,   b+2, n+3, b+3);     // bot  (y=0)
+      idx.push(b+0, n+0, n+2,   b+0, n+2, b+2);     // low-RH wall
+      idx.push(b+1, b+3, n+3,   b+1, n+3, n+1);     // hi-RH wall
+    }
+    var slabGeo = new THREE.BufferGeometry();
+    slabGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    slabGeo.setIndex(idx);
+    slabGeo.computeVertexNormals();
+    rhBandGroup.add(new THREE.Mesh(slabGeo, new THREE.MeshBasicMaterial({
+      color: 0xec4899, transparent: true, opacity: 0.10,
+      side: THREE.DoubleSide, depthWrite: false
+    })));
+    /* Outline ribbons on the front (y=SY) and back (y=0) faces — front
+       at 0.65 opacity, back at 0.30 to imply depth.  These trace the
+       two RH curves so the slab is legible even when viewed edge-on. */
+    [{ y: SY, op: 0.65 }, { y: 0, op: 0.30 }].forEach(function(face){
+      var lo = [], hi = [];
+      for (var i = 0; i <= nT; i++) {
+        lo.push(new THREE.Vector3(t2sx(loPts[i].t), face.y, w2sz(loPts[i].w)));
+        hi.push(new THREE.Vector3(t2sx(hiPts[i].t), face.y, w2sz(hiPts[i].w)));
+      }
+      var mat = new THREE.LineBasicMaterial({ color: 0xec4899, transparent: true, opacity: face.op });
+      rhBandGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(lo), mat));
+      rhBandGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hi), mat));
+    });
+  }
+
+  /* Listen for the sidebar's RH-band slider to dispatch updates.  The
+     React layer fires `r5-rh-band-change` with {lo,hi} whenever the
+     sweetSpotRange state changes; we rebuild the slab geometry and
+     re-classify the scatter (which lives inside pathGroup) so the
+     1.6× in-band markers track the slider live. */
+  window.addEventListener('r5-rh-band-change', function(e) {
+    if (!e || !e.detail) return;
+    var lo = +e.detail.lo, hi = +e.detail.hi;
+    if (!(lo > 0 && hi > 0 && lo < hi)) return;
+    _rhBandRange = { lo: lo, hi: hi };
+    _buildRhBandSlab(lo, hi);
+    if (weatherData.length > 0 && _lastWeatherCtx) {
+      buildWeatherVis(_lastWeatherCtx.locName, _lastWeatherCtx.fromD, _lastWeatherCtx.toD);
+    }
+  });
+
   var projMode='lines'; /* 'lines' | 'dots' | 'vav' — shared between setupControls and render2DChart */
   var chart2DMode='psy'; /* 'psy' | 'tt' | 'wt' — drives the 2D overlay layout */
 
@@ -1472,6 +1573,25 @@ global.initPsy3D = function(container, opts){
        Hidden by default so existing scenes stay uncluttered. */
     saDropGroup=new THREE.Group();saDropGroup.visible=false;scene.add(saDropGroup);
 
+    /* ---- RH-BAND SLAB --------------------------------------------------
+       Translucent magenta volume bounded by the two RH curves
+       W = f(T, RH_lo) and W = f(T, RH_hi) sampled along the X (T) axis
+       and extruded along the Y (time) axis.  Default ON so operators
+       immediately see the new feature; chip in the legend can toggle it.
+       Same depth-write/two-sided treatment as the comfort-zone volume
+       so it never clips the scatter dots behind it. */
+    rhBandGroup = new THREE.Group();
+    scene.add(rhBandGroup);
+    /* `_rhBandRange` is normally initialised at module top (var
+       declared at line ~1215), but if THREE.js is already cached the
+       `loadScripts` callback runs SYNCHRONOUSLY, so buildScene fires
+       before the `var ... = _readRhBandRange()` assignment line is
+       reached.  Read from localStorage as a fallback to keep the
+       initial render safe; the live state is hydrated immediately
+       after when execution continues past the var declarations. */
+    var _rb = _rhBandRange || _readRhBandRange();
+    _buildRhBandSlab(_rb.lo, _rb.hi);
+
     setupControls(mkT);
     startRender();
 
@@ -1745,8 +1865,8 @@ global.initPsy3D = function(container, opts){
 
     /* toggles */
     var tgEl=$('#p3-toggles');
-    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,saDrop:saDropGroup};
-    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ'],['saDrop','#22d3ee','OA\u2192SA Drops']].forEach(function(t){
+    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,saDrop:saDropGroup,rhBand:rhBandGroup};
+    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['rhBand','#ec4899','RH Band'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ'],['saDrop','#22d3ee','OA\u2192SA Drops']].forEach(function(t){
       var div=document.createElement('div');div.className='p3-tgl';div.id='p3-tgl-'+t[0];
       div.innerHTML='<span class="p3td" style="background:'+t[1]+'"></span>'+t[2];
       // Sync initial off-state for layers that start hidden (saDropGroup).
@@ -1758,6 +1878,14 @@ global.initPsy3D = function(container, opts){
           if (chip) chip.style.display = o.visible ? 'inline-flex' : 'none';
           var ervChip=document.getElementById('p3-saDrop-erv');
           if (ervChip) ervChip.style.display = o.visible ? 'inline-flex' : 'none';
+        }
+        // Toggling RH BAND on/off also flips the scatter between
+        // split (in-band 1.6× + out-band 1×) and unified (uniform
+        // markers).  Rebuilding the weather vis is a single pass —
+        // no refetch, no perceptible lag at the 720..8760-point
+        // typical sizes. */
+        if (t[0]==='rhBand' && weatherData.length > 0 && _lastWeatherCtx) {
+          buildWeatherVis(_lastWeatherCtx.locName, _lastWeatherCtx.fromD, _lastWeatherCtx.toD);
         }
       };
       tgEl.appendChild(div);
@@ -4260,6 +4388,10 @@ global.initPsy3D = function(container, opts){
     if(saDropGroup) while(saDropGroup.children.length)saDropGroup.remove(saDropGroup.children[0]);
     timeLabels.forEach(function(s){scene.remove(s);});timeLabels=[];
     if(!weatherData.length)return;
+    /* Stash the args so the RH-band slider listener can rebuild the
+       scatter (which re-classifies in-band vs out-of-band) without a
+       full weather refetch. */
+    _lastWeatherCtx = { locName: locName, fromD: fromD, toD: toD };
 
     $('#p3-loc').textContent=locName+' ('+fromD+' \u2192 '+toD+')';
     var tMin=Infinity,tMax=-Infinity,rhMin=Infinity,rhMax=-Infinity;
@@ -4270,13 +4402,56 @@ global.initPsy3D = function(container, opts){
     $('#p3-st-per').textContent=fromD+'\u2192'+toD;
     $('#p3-stats').style.display='block';
 
-    var pV=[],pC=[],prV=[],prC=[];
-    weatherData.forEach(function(p){var x=t2sx(p.t),z=w2sz(p.w),y=frac2sy(p.frac);pV.push(x,y,z);var c=t2rgb(p.t);pC.push(c[0],c[1],c[2]);prV.push(x,.2,z);prC.push(c[0]*.5,c[1]*.5,c[2]*.5);});
+    /* Build the chronological position arrays + per-sample in-band flag.
+       The line geometry uses the FULL chronological pV so the path
+       remains continuous; only the scatter Points are split. */
+    var pV=[],pC=[],prV=[],prC=[],inFlag=[];
+    var rbActive = rhBandGroup && rhBandGroup.visible;
+    var rbLo = _rhBandRange.lo, rbHi = _rhBandRange.hi;
+    weatherData.forEach(function(p){
+      var x=t2sx(p.t),z=w2sz(p.w),y=frac2sy(p.frac);
+      pV.push(x,y,z);
+      var c=t2rgb(p.t);pC.push(c[0],c[1],c[2]);
+      prV.push(x,.2,z);prC.push(c[0]*.5,c[1]*.5,c[2]*.5);
+      inFlag.push(rbActive && p.rh >= rbLo && p.rh <= rbHi);
+    });
 
-    var ptGeo=new THREE.BufferGeometry();ptGeo.setAttribute('position',new THREE.Float32BufferAttribute(pV,3));ptGeo.setAttribute('color',new THREE.Float32BufferAttribute(pC,3));
-    pathGroup.add(new THREE.Points(ptGeo,new THREE.PointsMaterial({size:2.2,vertexColors:true,transparent:true,opacity:.85,sizeAttenuation:true,depthWrite:false})));
-    var lnGeo=new THREE.BufferGeometry();lnGeo.setAttribute('position',new THREE.Float32BufferAttribute(pV,3));lnGeo.setAttribute('color',new THREE.Float32BufferAttribute(pC,3));
+    /* Chronological weather-path line (unchanged contract). */
+    var lnGeo=new THREE.BufferGeometry();
+    lnGeo.setAttribute('position',new THREE.Float32BufferAttribute(pV,3));
+    lnGeo.setAttribute('color',new THREE.Float32BufferAttribute(pC,3));
     pathGroup.add(new THREE.Line(lnGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.35})));
+
+    /* Split scatter into out-band (default size 2.2) and in-band (1.6×
+       = 3.52).  When the RH band layer is hidden, every sample lands
+       in the out-band bucket and the marker size is uniform — keeping
+       the legacy appearance for operators who toggle RH BAND off. */
+    var pV1=[],pC1=[],pV2=[],pC2=[];
+    for (var i = 0; i < weatherData.length; i++) {
+      var i3 = i * 3;
+      var vx=pV[i3], vy=pV[i3+1], vz=pV[i3+2];
+      var cr=pC[i3], cg=pC[i3+1], cb=pC[i3+2];
+      if (inFlag[i]) { pV1.push(vx,vy,vz); pC1.push(cr,cg,cb); }
+      else           { pV2.push(vx,vy,vz); pC2.push(cr,cg,cb); }
+    }
+    if (pV2.length) {
+      var outGeo = new THREE.BufferGeometry();
+      outGeo.setAttribute('position', new THREE.Float32BufferAttribute(pV2,3));
+      outGeo.setAttribute('color',    new THREE.Float32BufferAttribute(pC2,3));
+      pathGroup.add(new THREE.Points(outGeo, new THREE.PointsMaterial({
+        size:2.2, vertexColors:true, transparent:true, opacity:.85,
+        sizeAttenuation:true, depthWrite:false
+      })));
+    }
+    if (pV1.length) {
+      var inGeo = new THREE.BufferGeometry();
+      inGeo.setAttribute('position', new THREE.Float32BufferAttribute(pV1,3));
+      inGeo.setAttribute('color',    new THREE.Float32BufferAttribute(pC1,3));
+      pathGroup.add(new THREE.Points(inGeo, new THREE.PointsMaterial({
+        size:3.52, vertexColors:true, transparent:true, opacity:.95,
+        sizeAttenuation:true, depthWrite:false
+      })));
+    }
     var prGeo=new THREE.BufferGeometry();prGeo.setAttribute('position',new THREE.Float32BufferAttribute(prV,3));prGeo.setAttribute('color',new THREE.Float32BufferAttribute(prC,3));
     projGroup.add(new THREE.Points(prGeo,new THREE.PointsMaterial({size:1.5,vertexColors:true,transparent:true,opacity:.4,sizeAttenuation:true,depthWrite:false})));
 

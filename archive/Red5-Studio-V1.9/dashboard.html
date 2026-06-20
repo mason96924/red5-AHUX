@@ -3019,8 +3019,12 @@
                                 the RH slider above, in magenta to visually
                                 tie back to the RH-BAND chip in the 3D WX
                                 legend.  Pure 3D visualisation control — no
-                                Apply-to-Controller wiring needed. */}
-                            {(() => {
+                                Apply-to-Controller wiring needed.  Only
+                                rendered when the 3D WX tab is in focus
+                                (`activeView === 'weather3d'`) — under any
+                                other tab the slider has no visible effect
+                                and just clutters the sidebar. */}
+                            {activeView === 'weather3d' && (() => {
                                 const T_ABS_LO = 15, T_ABS_HI = 32, T_GAP = 1;
                                 const tPct = (v) => ((v - T_ABS_LO) / (T_ABS_HI - T_ABS_LO)) * 100;
                                 const tPick = (clientX, trackEl) => {

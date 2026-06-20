@@ -667,6 +667,15 @@ global.initPsy3D = function(container, opts){
 
   /* ---------- CONSTANTS ---------- */
   var T_MIN=-15,T_MAX=50,W_MAX=30;
+  /* RH-band T-clip — the band slab only renders inside this dry-bulb
+     range.  Defaults to ASHRAE 55 Cat A indoor envelope (21..27 °C)
+     so the magenta volume sits exactly where indoor RH control is
+     actionable, instead of sprawling across the whole chart from
+     winter outdoor air to summer outdoor air.  Surfaced as constants
+     here (not a slider) on the assumption that operators will rarely
+     want to retune them — if you do, expose them in the sidebar later. */
+  var RH_BAND_T_CLIP_LO = 21;
+  var RH_BAND_T_CLIP_HI = 27;
   var SX=260,SY=200,SZ=150;
   function t2sx(t){return(t-T_MIN)/(T_MAX-T_MIN)*SX;}
   function w2sz(wkg){return Math.max(0,Math.min(SZ,SZ-(wkg*1000/W_MAX)*SZ));}
@@ -1215,6 +1224,19 @@ global.initPsy3D = function(container, opts){
   var _rhBandRange = _readRhBandRange();
   var _lastWeatherCtx = null; /* {locName, fromD, toD} — for rebuilding scatter on RH-band change */
 
+  /* `_rhBandTight` ties the in-band scatter highlight to the slab's
+     T-clip range.  OFF (default) = original behaviour: any sample with
+     `p.rh ∈ [lo,hi]` gets the 1.6× marker, regardless of T — useful for
+     "how often does this climate visit my RH window across the year".
+     ON = strict: only samples that also fall inside the slab's T-clip
+     ([21,27 °C] by default) get the highlight, so the markers track
+     the volume the operator can actually influence.  Persisted via
+     localStorage so the choice survives reloads. */
+  function _readRhBandTight() {
+    try { return localStorage.getItem('red5_rh_band_tight') === '1'; } catch (e) { return false; }
+  }
+  var _rhBandTight = _readRhBandTight();
+
   /* ---- RH-band slab builder --------------------------------------------
      Constructs a mesh + outline ribbons spanning the volume between the
      two RH curves (RH_lo, RH_hi) over the chart's T range.  Each "slice"
@@ -1232,8 +1254,13 @@ global.initPsy3D = function(container, opts){
     while (rhBandGroup.children.length) rhBandGroup.remove(rhBandGroup.children[0]);
     var nT = 60;
     var loPts = [], hiPts = [];
+    /* Walk only over the T-clip range (default 21..27 °C) — the slab
+       used to span T_MIN..T_MAX which produced a magenta curtain that
+       buried most of the cold-cluster scatter.  Clipping focuses the
+       eye on the band exactly where RH control is meaningful. */
+    var Tlo = RH_BAND_T_CLIP_LO, Thi = RH_BAND_T_CLIP_HI;
     for (var i = 0; i <= nT; i++) {
-      var T = T_MIN + (T_MAX - T_MIN) * (i / nT);
+      var T = Tlo + (Thi - Tlo) * (i / nT);
       loPts.push({ t: T, w: getW(T, rhLo) });
       hiPts.push({ t: T, w: getW(T, rhHi) });
     }
@@ -1884,11 +1911,49 @@ global.initPsy3D = function(container, opts){
         // markers).  Rebuilding the weather vis is a single pass —
         // no refetch, no perceptible lag at the 720..8760-point
         // typical sizes. */
-        if (t[0]==='rhBand' && weatherData.length > 0 && _lastWeatherCtx) {
-          buildWeatherVis(_lastWeatherCtx.locName, _lastWeatherCtx.fromD, _lastWeatherCtx.toD);
+        if (t[0]==='rhBand') {
+          var tchip = document.getElementById('p3-rhBand-tclip');
+          if (tchip) tchip.style.display = o.visible ? 'inline-flex' : 'none';
+          if (weatherData.length > 0 && _lastWeatherCtx) {
+            buildWeatherVis(_lastWeatherCtx.locName, _lastWeatherCtx.fromD, _lastWeatherCtx.toD);
+          }
         }
       };
       tgEl.appendChild(div);
+      // T-clip sub-chip beside the RH BAND row.  Operators flip between
+      //   FREE  = highlight any sample whose RH ∈ [lo,hi], regardless of T
+      //   T-CLIP = strict: also require T ∈ [21,27 °C] (the slab volume)
+      // Default FREE.  Persisted in localStorage so it survives reloads.
+      if (t[0]==='rhBand') {
+        var tcChip = document.createElement('div');
+        tcChip.id = 'p3-rhBand-tclip';
+        tcChip.style.cssText = 'display:none;align-items:center;gap:0;background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:4px;padding:0 0;cursor:pointer;font-size:7px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;user-select:none;backdrop-filter:blur(14px);overflow:hidden';
+        tcChip.title = 'In-band highlight mode\n  FREE   = any sample with RH \u2208 [lo,hi] gets the 1.6\u00D7 marker (across the whole year)\n  T-CLIP = strict: also require T \u2208 [' + RH_BAND_T_CLIP_LO + ',' + RH_BAND_T_CLIP_HI + ' \u00B0C], so the highlight matches the slab volume';
+        function _renderTcChip() {
+          var on = !!_rhBandTight;
+          tcChip.innerHTML =
+            '<span data-tc="off" style="padding:3px 7px;color:'+(!on?'#ec4899':'#94a3b8')+';background:'+(!on?'rgba(236,72,153,.15)':'transparent')+'">FREE</span>'+
+            '<span style="color:#475569">|</span>'+
+            '<span data-tc="on"  style="padding:3px 7px;color:'+( on?'#ec4899':'#94a3b8')+';background:'+( on?'rgba(236,72,153,.15)':'transparent')+'">T\u00B7CLIP</span>';
+          tcChip.style.borderColor = on ? '#ec4899' : '#334155';
+        }
+        _renderTcChip();
+        tcChip.addEventListener('click', function(e){
+          var s = e.target.closest('[data-tc]');
+          if (!s) return;
+          var on = s.getAttribute('data-tc') === 'on';
+          if (on === !!_rhBandTight) return;
+          _rhBandTight = on;
+          try { localStorage.setItem('red5_rh_band_tight', on ? '1' : '0'); } catch(err){}
+          _renderTcChip();
+          if (weatherData.length > 0 && _lastWeatherCtx) {
+            buildWeatherVis(_lastWeatherCtx.locName, _lastWeatherCtx.fromD, _lastWeatherCtx.toD);
+          }
+        });
+        // Initial visibility tracks the rhBand layer (default ON for rhBand → chip shows on init).
+        if (rhBandGroup && rhBandGroup.visible) tcChip.style.display = 'inline-flex';
+        tgEl.appendChild(tcChip);
+      }
       // Append the small `T | B` color-mode chip next to the OA→SA Drops row.
       // Re-uses the same .p3-tgl styling but renders two clickable spans, with
       // the active mode highlighted in the layer's accent color (cyan).
@@ -4404,16 +4469,23 @@ global.initPsy3D = function(container, opts){
 
     /* Build the chronological position arrays + per-sample in-band flag.
        The line geometry uses the FULL chronological pV so the path
-       remains continuous; only the scatter Points are split. */
+       remains continuous; only the scatter Points are split.  The
+       in-band predicate optionally honours the slab's T-clip when
+       `_rhBandTight` is on, so the 1.6× highlight tracks exactly
+       what the magenta volume covers. */
     var pV=[],pC=[],prV=[],prC=[],inFlag=[];
     var rbActive = rhBandGroup && rhBandGroup.visible;
     var rbLo = _rhBandRange.lo, rbHi = _rhBandRange.hi;
+    var rbTight = !!_rhBandTight;
+    var tcLo = RH_BAND_T_CLIP_LO, tcHi = RH_BAND_T_CLIP_HI;
     weatherData.forEach(function(p){
       var x=t2sx(p.t),z=w2sz(p.w),y=frac2sy(p.frac);
       pV.push(x,y,z);
       var c=t2rgb(p.t);pC.push(c[0],c[1],c[2]);
       prV.push(x,.2,z);prC.push(c[0]*.5,c[1]*.5,c[2]*.5);
-      inFlag.push(rbActive && p.rh >= rbLo && p.rh <= rbHi);
+      var rhMatch = rbActive && p.rh >= rbLo && p.rh <= rbHi;
+      var tMatch  = !rbTight || (p.t >= tcLo && p.t <= tcHi);
+      inFlag.push(rhMatch && tMatch);
     });
 
     /* Chronological weather-path line (unchanged contract). */

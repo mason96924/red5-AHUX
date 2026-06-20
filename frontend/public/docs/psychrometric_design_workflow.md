@@ -92,7 +92,7 @@ What designers do statically on paper, Red5's engine does **dynamically with liv
 | Verify ZA in comfort zone | VAV CZ scatter (right wall) + dark/light emerald status rings |
 | Compare control strategies on calculator | Monthly × Sites 4-strategy chart + "% of Opt-SA captured" |
 
-The killer feature is the **40–60 % RH "sweet spot" strip** + Givoni overlay. That's the building-physics overlay designers normally draw onto a Carrier or ASHRAE Fundamentals chart with a colored pencil — but Red5's auto-shifts with the user's range slider and grades each VAV's status in real time:
+The killer feature is the **40–60 % RH "sweet spot" strip** + Givoni overlay. That's the building-physics overlay designers normally draw onto a Carrier or ASHRAE Fundamentals chart with a colored pencil — but Red5's auto-shifts with the user's range slider and grades each VAV's status in real time. The 40-60 % RH default and the 21-27 °C T·CLIP both come directly from **ASHRAE Standard 55-2023** Category A (see `📘 ASHRAE 55 Reference` in the Docs Index for the full standard-to-control mapping and per-space-type override table).
 
 - **Dark emerald** — inside the sweet spot
 - **Light emerald** — inside the comfort zone (Givoni)

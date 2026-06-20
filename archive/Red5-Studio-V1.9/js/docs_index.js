@@ -97,6 +97,19 @@
       },
       doc_base: '/assets/control_algorithms',
       color:    '#34d399'
+    },
+    /* ASHRAE Standard 55 reference — the authoritative source for the
+       21..27 °C T·CLIP and 40..60 % RH band defaults used throughout
+       the dashboard.  Added 2026-06-20 alongside the T·CLIP slider so
+       operators can click straight from the slider's context into the
+       standard's reasoning. */
+    {
+      id:       'ashrae-55',
+      titles: {
+        'en':    '\ud83d\udcd8 ASHRAE 55 Reference',
+      },
+      doc_base: '/assets/ashrae_55_reference',
+      color:    '#ec4899'
     }
   ];
 

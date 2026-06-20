@@ -29,6 +29,12 @@ The system only acts when zones drift outside (or threaten to drift outside) the
 
 ## 2. GIVONI COMFORT ZONE DEFINITION
 
+> **Standards basis** — the CZ polygon below is Red5's implementation of
+> **ASHRAE Standard 55-2023** (*Thermal Environmental Conditions for Human
+> Occupancy*) Category A, extended with Givoni-1969 bioclimatic strategy
+> regions for actionable HVAC advice.  See `📘 ASHRAE 55 Reference` in the
+> Docs Index for the full mapping of each polygon edge to the standard.
+
 ```
 CZ Boundaries:
   Temperature: 20.0°C to 27.0°C dry-bulb
@@ -195,10 +201,17 @@ ELSE:
 
 ### 4.4 Humidity Control (The Only Setpoint)
 
+> **Standards basis** — the 40-60 % RH default tracks **ASHRAE Standard
+> 55-2023 § 5.2.3** ("humidity limits") combined with WHO indoor-air
+> guidance on mucous-membrane health (RH < 30 %) and ASHRAE 62.1 mould
+> thresholds (RH > 60 %).  The operator can widen via the sidebar slider
+> for non-office occupancies — see `📘 ASHRAE 55 Reference` § 4 for the
+> per-space-type override table.
+
 ```
 // HUMIDITY_SETPOINT is the ONLY operator-controlled setpoint.
 // Set by building operator based on:
-//   - Occupant health (40-60% RH recommended by WHO/ASHRAE)
+//   - Occupant health (40-60% RH — ASHRAE 55-2023 § 5.2.3 + WHO IAQ guidance)
 //   - Occupant preference
 //   - Seasonal health data (higher in dry winter, lower in humid summer)
 

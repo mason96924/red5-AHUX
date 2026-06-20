@@ -91,6 +91,11 @@ straight outside air. Chiller + boiler both off → biggest savings.
 
 ### 🌞 Warm comfort bands
 
+> **Standards basis** — B5 and B6 sit inside the **ASHRAE Standard
+> 55-2023** Category A summer comfort polygon (operative T 23-27 °C,
+> RH 30-60 %).  See `📘 ASHRAE 55 Reference` for the underlying PMV/PPD
+> reasoning.
+
 #### B5 — Warm & medium humidity  *(OA: 22–25 °C, 40–60 % RH)*
 - **SA:** 23.5 °C / 50 % RH | **OA damper:** **100 %**
 - Cooling coil: light trim only — Heating: OFF — Humidifier: OFF

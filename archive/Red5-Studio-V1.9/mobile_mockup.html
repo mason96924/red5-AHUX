@@ -112,37 +112,34 @@
   .modal-backdrop { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.84); backdrop-filter: blur(12px); display: none; z-index: 50; align-items: center; justify-content: center; padding: 16px; }
   .modal-backdrop.show { display: flex; animation: fadeIn 240ms ease; }
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-  .modal { width: 100%; max-width: 380px; background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(2, 6, 23, 0.96) 100%); border: 1px solid var(--ahu-accent, rgba(99, 102, 241, 0.45)); border-radius: 22px; padding: 18px 18px 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.6), 0 0 60px var(--ahu-glow, rgba(99, 102, 241, 0.30)); }
-  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .modal { width: 100%; max-width: 380px; max-height: 90vh; background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(2, 6, 23, 0.96) 100%); border: 1px solid var(--ahu-accent, rgba(99, 102, 241, 0.45)); border-radius: 22px; padding: 18px 18px 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.6), 0 0 60px var(--ahu-glow, rgba(99, 102, 241, 0.30)); display: flex; flex-direction: column; overflow: hidden; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex: 0 0 auto; }
   .modal-head h3 { font-size: 14px; font-weight: 800; color: var(--ahu-bright, #c4b5fd); letter-spacing: 0.04em; }
   .modal-close { background: rgba(51, 65, 85, 0.5); border: 0; width: 28px; height: 28px; border-radius: 50%; color: #cbd5e1; font-size: 16px; cursor: pointer; display: grid; place-items: center; }
   .modal-close:active { transform: scale(0.92); }
-  /* Equipment graphic frame — taller aspect ratio gives the iframe-embedded
-     V1.9/V2.0 modal enough room for its schema-driven pills to render
-     readable on a phone-width parent. */
-  .modal-svg { width: 100%; aspect-ratio: 4/3; background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%); border-radius: 14px; overflow: hidden; }
-  .modal-svg svg, .modal-svg iframe { width: 100%; height: 100%; display: block; border: 0; }
-  .modal-foot { margin-top: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .modal-stat { background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; padding: 8px 10px; text-align: center; }
-  .modal-stat .v { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 16px; font-weight: 800; color: var(--ahu-bright, #c4b5fd); }
-  .modal-stat .k { font-family: ui-monospace, monospace; font-size: 8px; color: #64748b; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 2px; font-weight: 700; }
+  /* Stylised 2D equipment diagram — no iframe.  Phone screens don't have
+     the real estate for the full desktop modal; the simple SVG keeps
+     things readable.  Telemetry shows below in headline pills + scrolling table. */
+  .modal-svg { width: 100%; aspect-ratio: 16/9; background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%); border-radius: 14px; overflow: hidden; flex: 0 0 auto; }
+  .modal-svg svg { width: 100%; height: 100%; display: block; }
 
-  /* ── FULL-SCREEN EQUIPMENT MODAL ──
-     Activated by `.modal-backdrop.fs` whenever the gauge / VAV-tap opens
-     the iframe-embedded V1.9/V2.0 equipment view.  The desktop modal was
-     designed for ~600 × 500 px; squeezing it into the default mobile
-     modal's 340 × 255 px window stacks the pills + title + footer on
-     top of each other (the issue the user flagged with their phone
-     screenshot).  In `.fs` mode the modal fills the entire phone
-     viewport so the desktop modal has room to render legibly. */
-  .modal-backdrop.fs { padding: 0; }
-  .modal-backdrop.fs .modal { max-width: none; width: 100vw; height: 100vh; border-radius: 0; padding: 0; border: 0; display: flex; flex-direction: column; box-shadow: none; }
-  .modal-backdrop.fs .modal-head { padding: 10px 14px 8px; margin-bottom: 0; background: rgba(2,6,23,0.92); border-bottom: 1px solid rgba(71,85,105,0.4); flex: 0 0 auto; }
-  .modal-backdrop.fs .modal-head h3 { font-size: 11px; }
-  .modal-backdrop.fs .modal-svg { aspect-ratio: unset; flex: 1 1 auto; border-radius: 0; min-height: 0; }
-  .modal-backdrop.fs .modal-foot { margin: 0; padding: 10px 14px 14px; background: rgba(2,6,23,0.92); border-top: 1px solid rgba(71,85,105,0.4); flex: 0 0 auto; }
-  .modal-backdrop.fs .modal-stat { padding: 6px 8px; }
-  .modal-backdrop.fs .modal-stat .v { font-size: 14px; }
+  /* Headline pills — 4 most-important metrics at-a-glance. */
+  .modal-foot { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; flex: 0 0 auto; }
+  .modal-stat { background: rgba(2, 6, 23, 0.55); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 10px; padding: 8px 6px; text-align: center; }
+  .modal-stat .v { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; font-weight: 800; color: var(--ahu-bright, #c4b5fd); line-height: 1.2; }
+  .modal-stat .k { font-family: ui-monospace, monospace; font-size: 7px; color: #64748b; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; font-weight: 700; }
+
+  /* Scrolling all-points table — everything else lives here */
+  .modal-tablewrap { margin-top: 10px; flex: 1 1 auto; overflow-y: auto; border-top: 1px solid rgba(71, 85, 105, 0.35); padding-top: 8px; min-height: 0; }
+  .modal-tablewrap::-webkit-scrollbar { width: 4px; }
+  .modal-tablewrap::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); border-radius: 4px; }
+  .modal-table { width: 100%; border-collapse: collapse; font-family: ui-monospace, monospace; font-size: 10px; }
+  .modal-table thead th { position: sticky; top: 0; background: rgba(2,6,23,0.95); color: #64748b; text-transform: uppercase; letter-spacing: 0.12em; font-size: 8px; font-weight: 800; padding: 6px 8px; text-align: left; border-bottom: 1px solid rgba(71,85,105,0.4); }
+  .modal-table tbody td { padding: 6px 8px; border-bottom: 1px solid rgba(30, 41, 59, 0.6); color: #cbd5e1; }
+  .modal-table tbody td.k { color: #94a3b8; font-weight: 700; }
+  .modal-table tbody td.v { font-family: "JetBrains Mono", ui-monospace, monospace; color: var(--ahu-bright, #c4b5fd); text-align: right; font-weight: 700; }
+  .modal-table tbody td.v.alert { color: #f87171; text-shadow: 0 0 12px rgba(248,113,113,0.6); }
+  .modal-table tbody tr:last-child td { border-bottom: 0; }
 
   .footer { margin-top: auto; padding: 16px 24px calc(20px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(30, 41, 59, 0.6); display: flex; align-items: center; justify-content: space-between; font-family: ui-monospace, monospace; font-size: 9px; color: #475569; letter-spacing: 0.08em; }
   .footer a { color: #64748b; text-decoration: none; }
@@ -166,7 +163,10 @@
   </linearGradient>
 </defs></svg>
 
-<!-- AHU graphic modal (one shared instance) -->
+<!-- AHU/VAV graphic modal — stylised 2D + headline pills + scrolling table.
+     Phones don't have room for the full schema-driven equipment graphic with
+     overlay pills, so we keep the diagram stylised and surface ALL the
+     telemetry as a sticky-header table below the 4 headline metrics. -->
 <div class="modal-backdrop" id="ahuModal">
   <div class="modal">
     <div class="modal-head">
@@ -178,6 +178,13 @@
       <div class="modal-stat"><div class="v" id="mOA">— °C</div><div class="k">OA</div></div>
       <div class="modal-stat"><div class="v" id="mSA">— °C</div><div class="k">SA</div></div>
       <div class="modal-stat"><div class="v" id="mFan">— Hz</div><div class="k">FAN</div></div>
+      <div class="modal-stat"><div class="v" id="mSP">— Pa</div><div class="k">STATIC</div></div>
+    </div>
+    <div class="modal-tablewrap">
+      <table class="modal-table">
+        <thead><tr><th>Point</th><th style="text-align:right">Value</th></tr></thead>
+        <tbody id="modalTableBody"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -229,7 +236,8 @@ function _cookedVavs(rawVavs) {
       t:      v.t  != null ? +v.t  : 22,
       rh:     v.rh != null ? +v.rh : 50,
       flow:   Math.max(200, Math.round((dpr != null ? +dpr : 50) * 12)),  // synthetic CFM proxy
-      status: status
+      status: status,
+      _raw:   v   // full point map for the modal table
     };
   }).sort((a,b) => (a.status === 'in') - (b.status === 'in'));
 }
@@ -245,7 +253,8 @@ function _cookedAhus(raw) {
       name:  row.zone || row.id,
       accent: acc,
       label: 'live',
-      _vavs: vavs   // keep raw so detail page doesn't refetch
+      _vavs: vavs,  // keep raw so detail page doesn't refetch
+      _raw:  row    // full AHU object (incl. all_points) for the modal table
     };
   }).sort((a, b) => (b.out - a.out) || ((b.out/(b.total||1)) - (a.out/(a.total||1))));
 }
@@ -334,19 +343,15 @@ function animateRing(fgEl, pctEl, target) {
    strip the dashboard chrome and ?modal_ahu= / ?modal_vav= to auto-open
    the requested modal on load.  A stylised-SVG fallback still renders if
    the iframe fails to load (e.g. backend offline). */
-window.__mockupFallback = function(el, kind, accent) {
-  el.parentNode.innerHTML = (kind === 'ahu' ? ahuSvg(accent) : vavSvg(accent));
-};
+/* Stylised 2D equipment diagram + headline pills + scrolling all-points
+   table.  We dropped the iframe-embedded V1.9/V2.0 modal — phone screens
+   simply don't have the real estate for the desktop layout (pills
+   stacked, title bled out, image clipped to a sliver).  Instead the
+   modal renders a clean SVG, 4 headline metrics, and a sticky-header
+   table that scrolls through every available point.  Tap-to-open from
+   the gauge or any VAV row passes the live point map via `stats`. */
 function realImgWithFallback(label, accent, kind) {
-  const param = kind === 'ahu' ? 'modal_ahu' : 'modal_vav';
-  const src = `/dashboard.html?iframe=1&${param}=${encodeURIComponent(label)}`;
-  // Fallback: if iframe doesn't dispatch a load event within 6s we assume
-  // the dashboard couldn't auto-open the modal (e.g. backend down) and
-  // swap in the stylised SVG so the modal is never empty.
-  return `<iframe src="${src}" title="${label} equipment"
-              style="width:100%;height:100%;border:0;background:transparent;display:block;"
-              loading="lazy"
-              onerror="window.__mockupFallback(this, '${kind}', '${accent}')"></iframe>`;
+  return (kind === 'ahu' ? ahuSvg(accent) : vavSvg(accent));
 }
 
 function vavSvg(accent) {
@@ -639,7 +644,7 @@ function renderAhu(id) {
         </div>
       </div>`;
     // VAV tap → open the VAV equipment modal (mirrors the AHU-gauge tap)
-    row.addEventListener('click', () => openEquipmentModal('vav', v.id, cAcc, v));
+    row.addEventListener('click', () => openEquipmentModal('vav', v));
     list.appendChild(row);
   });
 
@@ -648,35 +653,73 @@ function renderAhu(id) {
 
   // Tap-the-gauge → open the AHU equipment modal
   const ring = document.getElementById('ringTap');
-  ring.addEventListener('click', () => openEquipmentModal('ahu', ahu.id, ahu.accent, {}));
+  ring.addEventListener('click', () => openEquipmentModal('ahu', ahu));
 }
 
-/* ── EQUIPMENT MODAL (shared between AHU + VAV) ─────── */
-function openEquipmentModal(kind, label, accent, stats) {
-  document.getElementById('modalTitle').textContent = `${label} · ${kind === 'ahu' ? 'AHU equipment' : 'VAV equipment'}`;
-  document.getElementById('modalSvg').innerHTML = realImgWithFallback(label, accent, kind);
-  // Update modal stats from caller — different keys for AHU vs VAV
+/* ── EQUIPMENT MODAL (shared between AHU + VAV) ───────────
+   - 2D stylised SVG (ahuSvg/vavSvg) — phone-friendly diagram
+   - 4 headline metric pills (OA/SA/FAN/STATIC for AHUs;
+     ZONE T / ZONE RH / FLOW / DAMPER for VAVs)
+   - sticky-header table of every available telemetry point so
+     operators can scroll through full point lists without
+     squinting at overlay pills jammed into a thumbnail. */
+function openEquipmentModal(kind, item) {
+  const isAhu  = kind === 'ahu';
+  const accent = item.accent || '#facc15';
+  document.getElementById('modalTitle').textContent = `${item.id} \u00B7 ${isAhu ? 'AHU' : 'VAV'} equipment`;
+  document.getElementById('modalSvg').innerHTML     = isAhu ? ahuSvg(accent) : vavSvg(accent);
+
+  // Resolve raw point map (each AHU/VAV from /api/data has all_points)
+  const raw    = item._raw || {};
+  const points = raw.all_points || raw.points || {};
+  // Robust numeric/format helper — '—' fallback keeps the layout stable
+  const fmt = (v, suf, digits) => {
+    if (v == null || v === '' || isNaN(+v)) return '\u2014 ' + suf;
+    return (+v).toFixed(digits == null ? 1 : digits) + ' ' + suf;
+  };
+
+  // Headline metrics — 4 most actionable values for the kind
+  const headline = isAhu
+    ? [
+        ['OA',     fmt(points.OAT  || points.OA_T  || points.OA,  '\u00B0C', 1)],
+        ['SA',     fmt(points.SAT  || points.SA_T  || points.SA,  '\u00B0C', 1)],
+        ['FAN',    fmt(points.INV1_F || points.SAFP || points.FAN_HZ, 'Hz',   0)],
+        ['STATIC', fmt(points.SPR  || points.STATIC_P || points.SP, 'Pa',    0)]
+      ]
+    : [
+        ['ZONE T',  fmt(item.t,  '\u00B0C', 1)],
+        ['ZONE RH', fmt(item.rh, '%',       0)],
+        ['FLOW',    fmt(item.flow, 'cfm',   0)],
+        ['DAMPER',  fmt(points.DPR, '%',    0)]
+      ];
   const sEls = document.querySelectorAll('.modal-foot .modal-stat');
-  if (kind === 'ahu') {
-    sEls[0].querySelector('.k').textContent = 'OA';
-    sEls[1].querySelector('.k').textContent = 'SA';
-    sEls[2].querySelector('.k').textContent = 'FAN';
-    sEls[0].querySelector('.v').textContent = (12 + Math.random()*8).toFixed(1) + ' °C';
-    sEls[1].querySelector('.v').textContent = (14 + Math.random()*2).toFixed(1) + ' °C';
-    sEls[2].querySelector('.v').textContent = (35 + Math.random()*12).toFixed(0) + ' Hz';
-  } else {
-    sEls[0].querySelector('.k').textContent = 'ZONE T';
-    sEls[1].querySelector('.k').textContent = 'ZONE RH';
-    sEls[2].querySelector('.k').textContent = 'FLOW';
-    sEls[0].querySelector('.v').textContent = stats.t.toFixed(1) + ' °C';
-    sEls[1].querySelector('.v').textContent = stats.rh.toFixed(0) + ' %';
-    sEls[2].querySelector('.v').textContent = stats.flow + ' cfm';
-  }
+  headline.forEach((cell, i) => {
+    const el = sEls[i]; if (!el) return;
+    el.querySelector('.k').textContent = cell[0];
+    el.querySelector('.v').textContent = cell[1];
+  });
+
+  // Full table — every point with a value, sorted alphabetically
+  const rows = Object.keys(points || {})
+    .filter(k => points[k] !== null && points[k] !== '')
+    .sort((a, b) => a.localeCompare(b))
+    .map(k => {
+      const raw = points[k];
+      const num = (typeof raw === 'number') ? raw : (raw != null && !isNaN(+raw) ? +raw : null);
+      const display = (num != null) ? num.toFixed(Math.abs(num) < 10 ? 2 : 1) : String(raw);
+      // Flag SAT/OAT below 5 or above 35 °C as alert; can be tuned later.
+      const isTemp = /T($|_)/.test(k) && num != null;
+      const alert  = isTemp && (num < 5 || num > 35);
+      return '<tr><td class="k">' + k + '</td><td class="v' + (alert ? ' alert' : '') + '">' + display + '</td></tr>';
+    });
+  document.getElementById('modalTableBody').innerHTML = rows.length
+    ? rows.join('')
+    : '<tr><td class="k" colspan="2" style="text-align:center;color:#64748b;padding:24px 8px;">No telemetry yet.<br/>Waiting for the next /api/data tick.</td></tr>';
+
   document.getElementById('ahuModal').classList.add('show');
-  document.getElementById('ahuModal').classList.add('fs');
 }
-document.getElementById('modalClose').onclick = () => { const m = document.getElementById('ahuModal'); m.classList.remove('show'); m.classList.remove('fs'); };
-document.getElementById('ahuModal').addEventListener('click', (e) => { if (e.target.id === 'ahuModal') { e.target.classList.remove('show'); e.target.classList.remove('fs'); } });
+document.getElementById('modalClose').onclick = () => document.getElementById('ahuModal').classList.remove('show');
+document.getElementById('ahuModal').addEventListener('click', (e) => { if (e.target.id === 'ahuModal') e.target.classList.remove('show'); });
 
 /* ── ICONS (inline SVG) + reused fragments ──────────── */
 function iconAhu(){ return `<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="9" cy="12" r="2.6"/><circle cx="15" cy="12" r="2.6"/><line x1="3" y1="10" x2="3" y2="14"/><line x1="21" y1="10" x2="21" y2="14"/></svg>`; }

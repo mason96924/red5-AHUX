@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only regression for the mobile-stylised-SVG modal + headline pills + table layout and desktop pill scale formula. Ran all 10 requested scenarios on the live preview (https://controller-dashboard-2.preview.emergentagent.com). 10/10 PASS. Mobile AHU modal now renders pure inline SVG (no iframe), shows the 4 headline pills (OA/SA/FAN/STATIC) with formatted values, populates a 26-row points table, and #modalTitle h3 reads exactly 'AHU-01-E · AHU equipment'. VAV modal swaps headlines to ZONE T/ZONE RH/FLOW/DAMPER and populates 8 rows. #ahuModal carries no 'fs' class; computed max-height is 759.6px (~90vh of 844 viewport). Close button and backdrop click both dismiss the modal. ArrowRight/ArrowLeft cycle AHUs (AHU-01-E -> AHU-02-S -> AHU-01-E). Desktop pill computed scales read 1.0 across all 10 sampled groups (within the 0.7-1.0 clamp window). QR phone-preview overlay opens with #r5-qr-canvas SVG and Escape closes it. /mobile redirects to /mobile_mockup.html. Both ASHRAE docs return 200 with content lengths 8138 and 10006 (>1000). Also grep-verified source: dashboard.html line 5323 has `gScale * Math.max(0.7, Math.min(1, imgScale))`, line 4443 has the VAV equivalent with vavImgScale, line 5411 has `vfdScale = (a.scale ?? 1.0) * imgScale`, line 5416 has `perspective(1200px) scale(...) rotateY(...) rotateX(...)`, and line 5444 has the generic animation `aEffScale = (a.scale||1) * imgScale`.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dashboard.html is now ~5500 lines; should be split into modules per the >700-line guideline (pre-existing, not introduced this iteration)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100% (10/10)"},
+  "test_credentials": "n/a - anonymous demo",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Mobile equipment modal currently uses #modalTitle (h3) inside .modal-head for title, #modalSvg for the inline SVG (no iframe), .modal-foot .modal-stat for the 4 headline pills (AHU: OA/SA/FAN/STATIC, VAV: ZONE T/ZONE RH/FLOW/DAMPER), and #modalTableBody for the full points table populated from item._raw.all_points. To open: tap #ringTap on /mobile/ahu/<id>; for VAV go through #ddTrigger then click a #vavList .list-row. Backdrop close is the #ahuModal element itself (inner .modal stops propagation). Live env has 3 AHUs (AHU-01-E, AHU-02-S, AHU-03-W per arrow cycle observed) with 6 VAVs each. Pill scale formula verified by grep at dashboard.html:5323 and :4443. VFD scaling/tilt at :5411 and :5416. Generic animation imgScale multiplier at :5444. All 10 sampled desktop pill scales returned 1.0 (gScale=1, imgScale clamps to <=1) at 1280x800 - no caps below 0.7 nor inflation observed.",
+  "rca of the issue": "n/a - no bugs found"
+}

@@ -4244,10 +4244,14 @@
                                                  onLoad={(e) => { const im = e.target; setVavImgDims({ natW: im.naturalWidth || 1600, natH: im.naturalHeight || 1004, dispW: im.offsetWidth, dispH: im.offsetHeight }); }} />
                                             <div className="relative pointer-events-none" style={{ gridArea: '1 / 1' }}>
 
+                                                {/* Image-fit scale: pills/animations multiply this so they shrink with the image when the modal is small (fixes pill drift on tablet/phone). */}
+                                                {(() => { /* keep a no-op so the closure scope is obvious */ return null; })()}
+
                                                 {/* === SCHEMA-DRIVEN VAV POINTS === */}
                                                 {vavSchemaPoints.map((p, pi) => {
                                                     if (p.x == null || p.y == null) return null;
-                                                    const gScale = p.scale || 1.0;
+                                                    const vavImgScale = (vavImgDims.dispW && vavImgDims.natW) ? (vavImgDims.dispW / vavImgDims.natW) : 1;
+                                                    const gScale = (p.scale || 1.0) * vavImgScale;
                                                     const isRW = p.access === 'RW';
                                                     const minVal = parseFloat(p.min);
                                                     const maxVal = parseFloat(p.max);
@@ -5119,7 +5123,7 @@
                                             };
 
                                             return (
-                                                <div key={`grp_${gi}`} className="absolute z-20" style={{left:`${grp.x}%`,top:`${grp.y}%`,transform:`translate(-50%,-50%) scale(${gScale})`,transformOrigin:'center center'}}>
+                                                <div key={`grp_${gi}`} className="absolute z-20" style={{left:`${grp.x}%`,top:`${grp.y}%`,transform:`translate(-50%,-50%) scale(${gScale * imgScale})`,transformOrigin:'center center'}}>
                                                     {hasRW ? (
                                                         // RW DATABOX — amber-bordered rectangular
                                                         <div className="flex flex-col bg-slate-950/95 border border-amber-700/60 rounded shadow-xl backdrop-blur-md min-w-[150px]">

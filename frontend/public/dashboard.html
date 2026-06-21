@@ -144,18 +144,33 @@
            rely on shallow selectors. */
         body.iframe-modal-mode { overflow: hidden; background: #d0d4d8 !important; }
         body.iframe-modal-mode #v2-auth-banner { display: none !important; }
-        /* React modal portals live inside #root; G36 timeline strip + toast
-           host + auth banner + any other DOM portals are appended directly
-           as body siblings.  Hide every body-direct child except #root and
-           inert tags so no chrome leaks behind the iframe-mode modal. */
+        /* Hide body-direct portals (G36 timeline strip, toast host, etc) */
         body.iframe-modal-mode > *:not(#root):not(script):not(style):not(svg) { display: none !important; }
+        /* Hide the whole React tree visually — the modals will be promoted
+           to the document root via position:fixed (escapes any stacking
+           context #root might create from transform/opacity rules). */
         body.iframe-modal-mode #root > * { visibility: hidden !important; }
+        /* Re-show the equipment modals.  AHU modal lives at z-[130], VAV at
+           z-[120] (verified in dashboard.html lines 4358 + 5194).  Promote
+           BOTH to a very high z-index so a chart-rendered canvas or any
+           other rogue element can never paint over them. */
         body.iframe-modal-mode [class*='z-[120]'],
         body.iframe-modal-mode [class*='z-[130]'] {
             visibility: visible !important;
             position: fixed !important;
             inset: 0 !important;
-            z-index: 1 !important;
+            z-index: 2147483000 !important;
+        }
+        body.iframe-modal-mode [class*='z-[120]'] *,
+        body.iframe-modal-mode [class*='z-[130]'] * { visibility: visible !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div,
+        body.iframe-modal-mode [class*='z-[130]'] > div {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            border-radius: 0 !important;
+            resize: none !important;
         }
         body.iframe-modal-mode [class*='z-[120]'] *,
         body.iframe-modal-mode [class*='z-[130]'] * { visibility: visible !important; }
@@ -4422,7 +4437,9 @@
                                                 {vavSchemaPoints.map((p, pi) => {
                                                     if (p.x == null || p.y == null) return null;
                                                     const vavImgScale = (vavImgDims.dispW && vavImgDims.natW) ? (vavImgDims.dispW / vavImgDims.natW) : 1;
-                                                    const gScale = (p.scale || 1.0) * vavImgScale;
+                                                    // 70% readability floor — pills must never shrink past 0.7x even on
+                                                    // a tiny modal width, otherwise field operators can't read them.
+                                                    const gScale = Math.max(0.7, (p.scale || 1.0) * vavImgScale);
                                                     const isRW = p.access === 'RW';
                                                     const minVal = parseFloat(p.min);
                                                     const maxVal = parseFloat(p.max);
@@ -5302,7 +5319,7 @@
                                             };
 
                                             return (
-                                                <div key={`grp_${gi}`} className="absolute z-20" style={{left:`${grp.x}%`,top:`${grp.y}%`,transform:`translate(-50%,-50%) scale(${gScale * imgScale})`,transformOrigin:'center center'}}>
+                                                <div key={`grp_${gi}`} className="absolute z-20" style={{left:`${grp.x}%`,top:`${grp.y}%`,transform:`translate(-50%,-50%) scale(${Math.max(0.7, gScale * imgScale)})`,transformOrigin:'center center'}}>
                                                     {hasRW ? (
                                                         // RW DATABOX — amber-bordered rectangular
                                                         <div className="flex flex-col bg-slate-950/95 border border-amber-700/60 rounded shadow-xl backdrop-blur-md min-w-[150px]">

@@ -227,6 +227,57 @@ function animateRing(fgEl, pctEl, target) {
   requestAnimationFrame(step);
 }
 
+/* AHU/VAV graphic loader — point at the same `/api/thumb` URL that
+   the V1.9/V2.0 dashboards use, so the mobile modal shows the
+   operator's actual photo/render rather than a stylised diagram.
+   The asset naming convention is `<LABEL>_01.jpg`; the backend
+   normalises `_1` → `_01` for legacy uploads, so either works.
+   If no asset is uploaded (`/api/thumb` 404s) we fall back to a
+   stylised SVG so the modal never renders empty.  The fallback is
+   wired via a window-scoped function (not inline btoa) because the
+   SVG markup contains Unicode arrows + degree symbols that don't
+   survive Latin-1 base64 encoding. */
+window.__mockupFallback = function(el, kind, accent) {
+  el.parentNode.innerHTML = (kind === 'ahu' ? ahuSvg(accent) : vavSvg(accent));
+};
+function realImgWithFallback(label, accent, kind) {
+  const url = `/api/thumb?path=${encodeURIComponent(label + '_01.jpg')}`;
+  return `<img src="${url}" alt="${label}"
+             style="width:100%;height:100%;object-fit:contain;background:transparent"
+             onerror="window.__mockupFallback(this, '${kind}', '${accent}')"/>`;
+}
+
+function vavSvg(accent) {
+  return `<svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid meet">
+    <defs><linearGradient id="vbox" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#cbd5e1" stop-opacity="0.7"/>
+    </linearGradient></defs>
+    <!-- VAV box body -->
+    <rect x="50" y="60" width="300" height="130" fill="url(#vbox)" stroke="${accent}" stroke-width="2.5" rx="6"/>
+    <!-- Inlet (left) -->
+    <rect x="10" y="100" width="40" height="50" fill="${accent}" opacity="0.30" stroke="${accent}" stroke-width="1.5" rx="2"/>
+    <text x="30" y="92" text-anchor="middle" font-family="ui-monospace" font-size="9" font-weight="800" fill="${accent}">INLET</text>
+    <!-- Damper (rotating blade) -->
+    <circle cx="120" cy="125" r="34" fill="#fff" stroke="${accent}" stroke-width="1.5"/>
+    <line x1="92" y1="125" x2="148" y2="125" stroke="${accent}" stroke-width="3" stroke-linecap="round" transform="rotate(35 120 125)"/>
+    <text x="120" y="190" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="${accent}">DAMPER</text>
+    <!-- Reheat coil -->
+    <rect x="170" y="80" width="50" height="90" fill="#fecaca" stroke="#ef4444" stroke-width="1.2" rx="2"/>
+    <path d="M178 90 v70 M188 90 v70 M198 90 v70 M208 90 v70" stroke="#b91c1c" stroke-width="0.8"/>
+    <text x="195" y="190" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="#7f1d1d">REHEAT</text>
+    <!-- Flow sensor + arrow -->
+    <circle cx="250" cy="125" r="8" fill="${accent}" opacity="0.85"/>
+    <text x="250" y="190" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="${accent}">CFM</text>
+    <path d="M270 125 L330 125" stroke="${accent}" stroke-width="2" stroke-dasharray="4 3"/>
+    <polygon points="330,121 340,125 330,129" fill="${accent}"/>
+    <!-- Outlet to zone -->
+    <rect x="345" y="100" width="45" height="50" fill="${accent}" opacity="0.35" stroke="${accent}" stroke-width="1.5" rx="3"/>
+    <text x="367" y="92" text-anchor="middle" font-family="ui-monospace" font-size="9" font-weight="800" fill="${accent}">ZONE</text>
+    <text x="200" y="225" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="#475569" letter-spacing="2">DAMPER ⟶ REHEAT ⟶ ZONE</text>
+  </svg>`;
+}
+
 /* AHU equipment SVG — stylised duct schematic, scales to the modal */
 function ahuSvg(accent) {
   return `<svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid meet">
@@ -472,6 +523,8 @@ function renderAhu(id) {
           <span class="badge">${dev}</span>
         </div>
       </div>`;
+    // VAV tap → open the VAV equipment modal (mirrors the AHU-gauge tap)
+    row.addEventListener('click', () => openEquipmentModal('vav', v.id, cAcc, v));
     list.appendChild(row);
   });
 
@@ -480,16 +533,30 @@ function renderAhu(id) {
 
   // Tap-the-gauge → open the AHU equipment modal
   const ring = document.getElementById('ringTap');
-  ring.addEventListener('click', () => openAhuModal(ahu));
+  ring.addEventListener('click', () => openEquipmentModal('ahu', ahu.id, ahu.accent, {}));
 }
 
-/* ── AHU MODAL ──────────────────────────────────────── */
-function openAhuModal(ahu) {
-  document.getElementById('modalTitle').textContent = `${ahu.id} · ${ahu.name}`;
-  document.getElementById('modalSvg').innerHTML = ahuSvg(ahu.accent);
-  document.getElementById('mOA').textContent = (12 + Math.random()*8).toFixed(1) + ' °C';
-  document.getElementById('mSA').textContent = (14 + Math.random()*2).toFixed(1) + ' °C';
-  document.getElementById('mFan').textContent = (35 + Math.random()*12).toFixed(0) + ' Hz';
+/* ── EQUIPMENT MODAL (shared between AHU + VAV) ─────── */
+function openEquipmentModal(kind, label, accent, stats) {
+  document.getElementById('modalTitle').textContent = `${label} · ${kind === 'ahu' ? 'AHU equipment' : 'VAV equipment'}`;
+  document.getElementById('modalSvg').innerHTML = realImgWithFallback(label, accent, kind);
+  // Update modal stats from caller — different keys for AHU vs VAV
+  const sEls = document.querySelectorAll('.modal-foot .modal-stat');
+  if (kind === 'ahu') {
+    sEls[0].querySelector('.k').textContent = 'OA';
+    sEls[1].querySelector('.k').textContent = 'SA';
+    sEls[2].querySelector('.k').textContent = 'FAN';
+    sEls[0].querySelector('.v').textContent = (12 + Math.random()*8).toFixed(1) + ' °C';
+    sEls[1].querySelector('.v').textContent = (14 + Math.random()*2).toFixed(1) + ' °C';
+    sEls[2].querySelector('.v').textContent = (35 + Math.random()*12).toFixed(0) + ' Hz';
+  } else {
+    sEls[0].querySelector('.k').textContent = 'ZONE T';
+    sEls[1].querySelector('.k').textContent = 'ZONE RH';
+    sEls[2].querySelector('.k').textContent = 'FLOW';
+    sEls[0].querySelector('.v').textContent = stats.t.toFixed(1) + ' °C';
+    sEls[1].querySelector('.v').textContent = stats.rh.toFixed(0) + ' %';
+    sEls[2].querySelector('.v').textContent = stats.flow + ' cfm';
+  }
   document.getElementById('ahuModal').classList.add('show');
 }
 document.getElementById('modalClose').onclick = () => document.getElementById('ahuModal').classList.remove('show');

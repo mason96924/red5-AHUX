@@ -548,7 +548,7 @@ function renderAhu(id) {
       <div class="status-bar"><span class="pulse"></span><span>LIVE</span></div>
     </header>
     <h1 class="page-title"><span class="ahu-id">${ahu.id}</span></h1>
-    <div class="subtitle">${ahu.name} · tap the gauge to see equipment graphic.</div>
+    <div class="subtitle">${ahu.name} · tap the gauge to see equipment · swipe ← → for next AHU.</div>
     <div class="ts"><span class="dot"></span><span id="tsNow">— • —</span><span class="dot"></span><span>${ahu.total} VAVs</span></div>
     <section class="gauge-card">
       <div class="ring-wrap tap-hint" id="ringTap" role="button" aria-label="open AHU diagram">
@@ -696,6 +696,86 @@ setInterval(setTimestamp, 30000);
 // demo roster is replaced with real /api/data as soon as the network
 // responds.  Subsequent polls re-render in place every 8 s.
 fetchLive().then(ok => { if (ok) route(); _liveLoop(); });
+
+/* ── SWIPE-TO-NEXT-AHU ──────────────────────────────────
+   On the AHU detail view (body[data-view='ahu']), a horizontal touch
+   swipe cycles through AHUs in the worst-first sort order — same as
+   the dropdown list — so an operator walking a building can flick
+   through equipment one-handed.  Threshold values are sized for
+   thumb-only navigation (60 px min, 40 px vertical tolerance).  Desktop
+   preview is supported via Arrow-Left / Arrow-Right keys.  Each
+   transition triggers a 280 ms slide animation pegged to the swipe
+   direction so the user perceives forward/backward motion. */
+(function setupSwipeNav() {
+  let startX = 0, startY = 0, startT = 0, tracking = false;
+  const TH_X = 60, TH_Y = 40, TH_T = 700;
+
+  function neighbour(id, dir) {
+    if (!AHUs.length) return null;
+    const idx = AHUs.findIndex(a => a.id === id);
+    if (idx < 0) return AHUs[0].id;            // unknown id → bounce to first
+    const next = (idx + dir + AHUs.length) % AHUs.length;
+    return AHUs[next].id;
+  }
+  function go(dir) {
+    if (document.body.dataset.view !== 'ahu') return;
+    const cur = parseHash().id;
+    const nxt = neighbour(cur, dir);
+    if (!nxt || nxt === cur) return;
+    const app = document.getElementById('app');
+    // Animate the outgoing view: slide in the OPPOSITE direction of the
+    // swipe so it visually "leaves" toward the gesture origin.
+    app.style.transition = 'transform 220ms ease, opacity 220ms ease';
+    app.style.transform  = `translateX(${dir > 0 ? -36 : 36}px)`;
+    app.style.opacity    = '0';
+    setTimeout(() => {
+      location.hash = '#/ahu/' + encodeURIComponent(nxt);
+      // After the new view paints, animate it in from the opposite edge
+      requestAnimationFrame(() => {
+        app.style.transition = 'none';
+        app.style.transform  = `translateX(${dir > 0 ? 36 : -36}px)`;
+        app.style.opacity    = '0';
+        requestAnimationFrame(() => {
+          app.style.transition = 'transform 280ms cubic-bezier(.2,.7,.2,1), opacity 280ms ease';
+          app.style.transform  = 'translateX(0)';
+          app.style.opacity    = '1';
+        });
+      });
+    }, 200);
+  }
+
+  document.addEventListener('touchstart', (e) => {
+    if (document.body.dataset.view !== 'ahu') return;
+    // Ignore swipes that start inside the modal or the dropdown (those have
+    // their own scroll/tap semantics).
+    const t = e.target;
+    if (t.closest('#ahuModal') || t.closest('.dropdown')) return;
+    const p = e.touches[0];
+    startX = p.clientX; startY = p.clientY; startT = Date.now();
+    tracking = true;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const p = (e.changedTouches && e.changedTouches[0]) || null;
+    if (!p) return;
+    const dx = p.clientX - startX;
+    const dy = p.clientY - startY;
+    const dt = Date.now() - startT;
+    if (dt > TH_T) return;
+    if (Math.abs(dx) < TH_X || Math.abs(dy) > TH_Y) return;
+    // Left-swipe (dx negative) → NEXT AHU.  Right-swipe → PREV.
+    go(dx < 0 ? 1 : -1);
+  }, { passive: true });
+
+  document.addEventListener('keydown', (e) => {
+    if (document.body.dataset.view !== 'ahu') return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.key === 'ArrowRight') go(1);
+    else if (e.key === 'ArrowLeft') go(-1);
+  });
+})();
 </script>
 </body>
 </html>

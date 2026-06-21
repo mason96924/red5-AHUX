@@ -7,6 +7,7 @@ import ConfigTool from "./pages/ConfigTool";
 import AuthCallback from "./pages/AuthCallback";
 import AccessControl from "./pages/AccessControl";
 import AdminLogin from "./pages/AdminLogin";
+import Mobile from "./pages/Mobile";
 
 /**
  * AppRouter intercepts the Emergent OAuth callback BEFORE the normal route
@@ -29,6 +30,8 @@ function AppRouter() {
       <Route path="/config-tool" element={<ConfigTool />} />
       <Route path="/admin/access-control" element={<AccessControl />} />
       <Route path="/admin-login" element={<AdminLogin />} />
+      <Route path="/mobile" element={<Mobile />} />
+      <Route path="/mobile/:kind/:id" element={<Mobile />} />
     </Routes>
   );
 }

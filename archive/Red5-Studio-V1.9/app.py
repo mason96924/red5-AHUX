@@ -866,6 +866,15 @@ def serve_sun_preview_html():
 def serve_update_html():
     return _no_cache(send_from_directory('/root/data', 'update.html'))
 
+@app.route('/mobile')
+@app.route('/mobile_mockup.html')
+def serve_mobile_mockup():
+    """Mobile phone view — production entry point (added 2026-02-21).
+    Reads live data from /api/data and renders the same controller in a
+    phone-first layout.  Both URLs serve the same file; /mobile is the
+    canonical share/QR target."""
+    return _no_cache(send_from_directory('/root/data', 'mobile_mockup.html'))
+
 @app.route('/api/version')
 def api_version():
     """Expose mtime of key client files so operators can verify the deployed

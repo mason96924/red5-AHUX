@@ -29,6 +29,7 @@
     <script src="js/docs_index.js?v=2026-06-20a"></script>
     <script src="js/audit_log.js?v=2026-06-20a"></script>
     <script src="js/g36_timeline.js?v=2026-06-20a"></script>
+    <script src="js/qrcode.min.js?v=2026-02-21a"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
@@ -174,9 +175,99 @@
         body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > div:last-child > button:last-child,
         body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > div:last-child > button:last-child { display: none !important; }
+        /* Hide the QR button in iframe mode too (embedder owns the share UX) */
+        body.iframe-modal-mode [data-testid='qr-phone-preview-btn'] { display: none !important; }
+
+        /* ── QR-CODE PHONE PREVIEW OVERLAY ──
+           Triggered from the QR button in any equipment modal's title bar.
+           Shows a self-contained QR code that points operators' phones at
+           `/mobile_mockup.html#/ahu/<id>` (or `#/vav/<id>`) so they can
+           scan-and-go without typing the URL.  Rendered as table-cells via
+           qrcode-generator's `createSvgTag` so we never hit a canvas
+           dependency; styled here for the dashboard's dark/light themes. */
+        #r5-qr-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(2, 6, 23, 0.78); backdrop-filter: blur(12px); display: none; align-items: center; justify-content: center; padding: 24px; }
+        #r5-qr-overlay.show { display: flex; }
+        #r5-qr-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 26px 28px 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); max-width: 320px; width: 100%; }
+        #r5-qr-card h3 { color: #facc15; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
+        #r5-qr-card p { color: #94a3b8; font-family: ui-monospace, monospace; font-size: 10px; line-height: 1.55; margin-bottom: 14px; }
+        #r5-qr-canvas { background: #fff; padding: 14px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+        #r5-qr-canvas svg { width: 100%; height: auto; display: block; }
+        #r5-qr-url { margin-top: 12px; padding: 8px 10px; background: #050912; border: 1px solid #1e293b; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 10px; color: #cbd5e1; word-break: break-all; text-align: center; }
+        #r5-qr-actions { display: flex; gap: 8px; margin-top: 14px; }
+        #r5-qr-actions button { flex: 1; padding: 8px 10px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 9px; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; transition: all 180ms ease; border: 1px solid #1e293b; }
+        #r5-qr-copy { background: #1e293b; color: #cbd5e1; }
+        #r5-qr-copy:hover { border-color: #06b6d4; color: #67e8f9; }
+        #r5-qr-close { background: #facc15; color: #0b1220; border-color: #facc15; }
+        #r5-qr-close:hover { background: #fde047; }
     </style>
 </head>
 <body>
+    <!-- QR Phone-Preview overlay — one shared instance, hidden by default.
+         Surfaced from each equipment modal's title-bar QR button.  Pure
+         vanilla DOM (no React) so it works inside the existing modal stack
+         without prop-drilling.  Closed on backdrop click / Escape / Close. -->
+    <div id="r5-qr-overlay" role="dialog" aria-modal="true" aria-label="Phone preview QR code" data-testid="qr-phone-overlay">
+      <div id="r5-qr-card" onclick="event.stopPropagation()">
+        <h3 id="r5-qr-title">Phone Preview</h3>
+        <p id="r5-qr-subtitle">Scan with your phone to open the mobile view in this equipment.</p>
+        <div id="r5-qr-canvas"></div>
+        <div id="r5-qr-url" data-testid="qr-phone-url"></div>
+        <div id="r5-qr-actions">
+          <button id="r5-qr-copy" type="button" data-testid="qr-phone-copy-btn">Copy URL</button>
+          <button id="r5-qr-close" type="button" data-testid="qr-phone-close-btn">Close</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Self-contained QR launcher.  Called from React modal buttons via
+      // window.openQrPhonePreview('ahu' | 'vav', id).  Same-origin URL so a
+      // phone scanning the code only needs to be on the same LAN as the
+      // dashboard host — no DNS or cert fiddling required.
+      (function () {
+        var overlay = document.getElementById('r5-qr-overlay');
+        var canvas  = document.getElementById('r5-qr-canvas');
+        var urlEl   = document.getElementById('r5-qr-url');
+        var title   = document.getElementById('r5-qr-title');
+        var copyBtn = document.getElementById('r5-qr-copy');
+        var closeBtn= document.getElementById('r5-qr-close');
+
+        function buildUrl(kind, id) {
+          return window.location.origin + '/mobile_mockup.html#/' + kind + '/' + encodeURIComponent(id);
+        }
+        function render(kind, id) {
+          var url = buildUrl(kind, id);
+          title.textContent = (kind === 'ahu' ? 'AHU' : 'VAV') + ' \u00B7 ' + id + ' \u00B7 Phone Preview';
+          urlEl.textContent = url;
+          if (typeof qrcode === 'undefined') {
+            canvas.innerHTML = '<div style="padding:18px;font-family:ui-monospace,monospace;font-size:10px;color:#475569">QR library failed to load.</div>';
+            return;
+          }
+          var qr = qrcode(0, 'M');
+          qr.addData(url);
+          qr.make();
+          canvas.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+        }
+        window.openQrPhonePreview = function (kind, id) {
+          render(kind, id);
+          overlay.classList.add('show');
+        };
+        function close() { overlay.classList.remove('show'); }
+        closeBtn.addEventListener('click', close);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.classList.contains('show')) close(); });
+        copyBtn.addEventListener('click', async function () {
+          try {
+            await navigator.clipboard.writeText(urlEl.textContent || '');
+            var orig = copyBtn.textContent;
+            copyBtn.textContent = 'Copied!';
+            setTimeout(function () { copyBtn.textContent = orig; }, 1400);
+          } catch (e) {
+            copyBtn.textContent = 'Copy failed';
+            setTimeout(function () { copyBtn.textContent = 'Copy URL'; }, 1400);
+          }
+        });
+      })();
+    </script>
     <!-- V2.0 Phase 2a/c: auth banner identical to equipment_mapper.html's so
          operators see their sign-in state and can persist clamps/locations
          from the live dashboard.  Collapsed pill by default so it doesn't
@@ -4283,6 +4374,14 @@
                                         )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{vavIsPopped ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>
                                         <div className="flex items-center gap-2 mr-1" onMouseDown={e => e.stopPropagation()}>
                                             <button
+                                                data-testid="qr-phone-preview-btn"
+                                                onClick={() => { if (typeof window.openQrPhonePreview === 'function') window.openQrPhonePreview('vav', selectedVavForModal.id); }}
+                                                title="Show phone-preview QR code for this VAV"
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-amber-500 hover:text-amber-600'}`}
+                                            >
+                                                {'\u2316 QR'}
+                                            </button>
+                                            <button
                                                 data-testid="popout-vav-modal-btn"
                                                 onClick={() => { if (vavModalPopupWin && !vavModalPopupWin.closed) { vavModalPopupWin.close(); } else { popOutVavModal(); } }}
                                                 title={vavIsPopped ? 'Re-attach VAV modal to this window' : 'Pop the VAV modal out into a draggable window'}
@@ -5097,6 +5196,14 @@
                                     <div className={`cursor-grab active:cursor-grabbing ${dk ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-2.5 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (ahuModalPopupWin) return; setIsAhuModalDragging(true); setDragStart({ x: e.clientX - ahuModalOffset.x, y: e.clientY - ahuModalOffset.y }); }}>
                                         <h3 className={`text-sm font-black tracking-widest ml-2 ${dk ? 'text-slate-300' : 'text-slate-700'}`}>{showAhuModalFor} EQUIPMENT DIAGRAM <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{ahuModalPopupWin ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>
                                         <div className="flex items-center gap-2 mr-1" onMouseDown={e => e.stopPropagation()}>
+                                            <button
+                                                data-testid="qr-phone-preview-btn"
+                                                onClick={() => { if (typeof window.openQrPhonePreview === 'function') window.openQrPhonePreview('ahu', showAhuModalFor); }}
+                                                title="Show phone-preview QR code for this AHU"
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${dk ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-amber-500 hover:text-amber-600'}`}
+                                            >
+                                                {'\u2316 QR'}
+                                            </button>
                                             <button
                                                 data-testid="popout-ahu-modal-btn"
                                                 onClick={() => { if (ahuModalPopupWin && !ahuModalPopupWin.closed) { ahuModalPopupWin.close(); } else { popOutAhuModal(); } }}

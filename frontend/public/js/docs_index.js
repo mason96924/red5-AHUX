@@ -110,6 +110,28 @@
       },
       doc_base: '/assets/ashrae_55_reference',
       color:    '#ec4899'
+    },
+    /* ASHRAE Standard 90.1 — energy code reference.  Sits next to 55
+       because operators frequently jump between comfort (55) and energy
+       (90.1) when justifying band shifts. */
+    {
+      id:       'ashrae-90-1',
+      titles: {
+        'en':    '\u26a1 ASHRAE 90.1 Energy Reference',
+      },
+      doc_base: '/assets/ashrae_90_1_reference',
+      color:    '#22c55e'
+    },
+    /* ASHRAE Guideline 36 — high-performance control sequences.  Pairs
+       with the G36 timeline strip in the dashboard so operators can map
+       what they see in the strip back to the standard. */
+    {
+      id:       'ashrae-g36',
+      titles: {
+        'en':    '\ud83c\udfaf ASHRAE Guideline 36',
+      },
+      doc_base: '/assets/ashrae_g36_reference',
+      color:    '#06b6d4'
     }
   ];
 

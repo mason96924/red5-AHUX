@@ -1,0 +1,63 @@
+{
+  "summary": "Frontend-only validation of 4 new features layered on top of the iter1 pill-scaling + iframe-embed work: (1) QR code 'Preview on Phone' button in AHU/VAV modals; (2) productionized mobile_mockup.html with live /api/data fetch; (3) /mobile React redirect route; (4) ASHRAE 90.1 + Guideline 36 reference docs. Six of seven scenarios fully pass. ONE real bug found: the /mobile/:kind/:id React route does not propagate the URL params into the redirect hash — /mobile/ahu/AHU-01 currently redirects to /mobile_mockup.html (no hash) instead of /mobile_mockup.html#/ahu/AHU-01, so the mobile detail view fails to auto-open. Also a happy regression confirmation: the iter1 iframe-mode CSS leak (G36 timeline strip visible in iframe-mode dashboard) is now FIXED — clean screenshot at 360x640 ?iframe=1.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "/app/frontend/src/pages/Mobile.jsx",
+        "issue": "/mobile/:kind/:id route discards :kind and :id. Mobile.jsx useEffect builds the redirect as `/mobile_mockup.html + (window.location.hash||'')`, but with a path-based URL like /mobile/ahu/AHU-01 there is NO hash on the browser URL — kind/id live in pathname params. Result: navigating to /mobile/ahu/AHU-01 redirects to /mobile_mockup.html with empty hash, so the mobile page lands on Site Overview instead of the AHU-01 detail view. Verified live: pathname=/mobile_mockup.html, hash='', vavList rows=0. The QR code feature itself emits the correct deep-link URL (#/ahu/AHU-01 directly into mobile_mockup.html), so QR-scan path works. The bug only bites if someone hits /mobile/ahu/<id> via the React route (which IS registered in App.js line 34).",
+        "selector": "[data-testid='mobile-route-redirect']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix /app/frontend/src/pages/Mobile.jsx: import useParams from react-router-dom, capture { kind, id }, and build the redirect target as `/mobile_mockup.html` + (kind && id ? `#/${kind}/${id}` : (window.location.hash || '')). After fix, /mobile/ahu/AHU-01 should land on /mobile_mockup.html#/ahu/AHU-01 and render the AHU detail view (vavList rows > 0).",
+    "No other action items — all 6 remaining scenarios pass cleanly. iter1 G36 leak is fixed."
+  ],
+  "critical_code_review_comments": [
+    "Mobile.jsx forwards only window.location.hash, not react-router params — root cause of the only failing scenario. Two-line fix.",
+    "dashboard.html is now 5765 lines. Still over the 700-line guideline. Carry-over from iter1.",
+    "QR overlay (#r5-qr-overlay) uses class 'show' for visibility — clean, no z-index conflicts observed. Escape + backdrop-click both close correctly. Copy URL writes to clipboard AND temporarily flips button text to 'Copied!' — both behaviours verified live.",
+    "iframe-mode hides QR button via computed-style display:none (verified). Good chrome scoping vs iter1 leak.",
+    "Mobile mockup fetchLive() correctly replaces the DEMO_AHUs fallback with /api/data response — AHU-01..AHU-05 verified live, 58 total VAVs confirmed, tap on AHU-05 → #/ahu/AHU-05 → 10 vavList rows. Live-data wiring is solid.",
+    "Parity md5 across /app/frontend/public, /app/archive/Red5-Studio-V1.9, /app/archive/Red5-Studio-V2.0 is IDENTICAL for dashboard.html (270be903ebdb4b1f32f80e994ec9a909), mobile_mockup.html (14bfe0fd7e0258c3e399789220b0c0c9), js/docs_index.js (f6fc9657e0f9288f30cfc5da5b73290f), js/qrcode.min.js (170c5297533897f4793f676fd2d259d6). Perfect parity.",
+    "Docs panel (window.red5DocsIndex.open() invoked by [data-testid='standards-btn']) now lists both new entries — '⚡ ASHRAE 90.1 Energy Reference' and '🎯 ASHRAE Guideline 36' — confirmed visible in the standards drawer alongside the existing G36 Cross-Walk, Band Guide, ASHRAE 55, etc.",
+    "Both reference docs return HTTP 200 with substantial content: ashrae_90_1_reference.md = 8236 bytes, ashrae_g36_reference.md = 10095 bytes (both > 1000 chars threshold)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "n/a (skipped per request)",
+    "frontend": "86% — 6 of 7 scenarios pass; 1 (/mobile/:kind/:id param propagation) fails"
+  },
+  "test_credentials": "Not required — all flows tested via anonymous demo path.",
+  "seed_data_creation": "None.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Verified live: (a) AHU QR overlay — show class, SVG canvas, URL https://controller-dashboard-2.preview.emergentagent.com/mobile_mockup.html#/ahu/AHU-01, Escape closes, backdrop click closes, Copy button writes to navigator.clipboard AND flips text to 'Copied!'. (b) VAV QR overlay — same flow, URL ends with #/vav/VAV-01-E. (c) iframe-mode (?iframe=1) — QR button computed display:none, plus iter1 G36 timeline leak is now FIXED. (d) /mobile_mockup.html — fetchLive returns AHU-01..AHU-05 (no demo fallback), tap row → #/ahu/<id>, vavList renders. (e) /mobile React route — redirects to /mobile_mockup.html cleanly. (f) Docs — both .md files return 200, both appear in standards drawer when [data-testid='standards-btn'] is clicked. (g) Parity — md5 identical across all three copies. The ONLY remaining issue is Mobile.jsx not forwarding :kind/:id. After main agent's two-line fix, re-test /mobile/ahu/AHU-01 → expect hash '#/ahu/AHU-01' and vavList rows > 0.",
+  "rca of the issue": {
+    "bug": "/mobile/:kind/:id React route does not propagate URL params into the mobile_mockup.html hash; user lands on Site Overview instead of the AHU/VAV detail view.",
+    "reproduce": "1) Hit https://controller-dashboard-2.preview.emergentagent.com/mobile/ahu/AHU-01 at 420x900. 2) Wait ~4s for redirect. 3) Observe: window.location.pathname === '/mobile_mockup.html', window.location.hash === '' (empty), and document.querySelectorAll('#vavList .list-row').length === 0 — the AHU detail page didn't render because the hash route is missing.",
+    "rca": "/app/frontend/src/pages/Mobile.jsx line 18: `const target = '/mobile_mockup.html' + (window.location.hash || '');`. When the route is /mobile/ahu/AHU-01, `kind` and `id` are URL pathname params (react-router useParams), NOT a hash on window.location. So the concatenation appends empty string and the deep-link is lost. App.js correctly registers `<Route path='/mobile/:kind/:id' element={<Mobile/>}/>` at line 34 so Mobile.jsx receives the navigation — it just doesn't read the params.",
+    "fix": "Edit /app/frontend/src/pages/Mobile.jsx:\n\n```jsx\nimport { useEffect } from 'react';\nimport { useParams } from 'react-router-dom';\n\nexport default function Mobile() {\n  const { kind, id } = useParams();\n  useEffect(() => {\n    const deepLink = (kind && id) ? `#/${kind}/${id}` : (window.location.hash || '');\n    window.location.replace('/mobile_mockup.html' + deepLink);\n  }, [kind, id]);\n  return ( /* unchanged placeholder */ );\n}\n```\n\nNo other files need touching — App.js already wires `/mobile/:kind/:id` to <Mobile/>."
+  },
+  "verified_observations": {
+    "parity_md5": {
+      "dashboard.html": "270be903ebdb4b1f32f80e994ec9a909",
+      "mobile_mockup.html": "14bfe0fd7e0258c3e399789220b0c0c9",
+      "js/docs_index.js": "f6fc9657e0f9288f30cfc5da5b73290f",
+      "js/qrcode.min.js": "170c5297533897f4793f676fd2d259d6",
+      "all_three_copies_match": true
+    },
+    "ahu_qr": { "url_emitted": "https://controller-dashboard-2.preview.emergentagent.com/mobile_mockup.html#/ahu/AHU-01", "overlay_show": true, "svg_in_canvas": true, "escape_closes": true, "backdrop_closes": true, "copy_writes_clipboard": true, "copy_button_text_flips_to_Copied": true },
+    "vav_qr": { "url_emitted": "https://controller-dashboard-2.preview.emergentagent.com/mobile_mockup.html#/vav/VAV-01-E", "overlay_show": true, "svg_in_canvas": true },
+    "iframe_mode_qr_hidden": { "computed_display": "none", "is_visible": false },
+    "iter1_g36_leak_status": "FIXED — clean screenshot at /dashboard.html?iframe=1&modal_ahu=AHU-01 360x640, no dark G36 timeline panel visible.",
+    "mobile_mockup_live_data": { "ahu_ids_returned": ["AHU-05","AHU-04","AHU-01","AHU-02","AHU-03"], "demo_fallback_present": false, "tap_route_hash": "#/ahu/AHU-05", "vav_list_rows_after_tap": 10, "total_vav_count_in_api": 58 },
+    "mobile_react_route": { "/mobile -> /mobile_mockup.html": "PASS", "/mobile/ahu/AHU-01 -> /mobile_mockup.html#/ahu/AHU-01": "FAIL — hash empty", "/mobile/vav/VAV-01-E -> /mobile_mockup.html#/vav/VAV-01-E": "FAIL — hash empty" },
+    "docs_assets": { "ashrae_90_1_reference.md_size": 8236, "ashrae_g36_reference.md_size": 10095, "both_http_200": true, "visible_in_standards_drawer": true, "drawer_titles_sample": ["⚡ ASHRAE 90.1 Energy Reference", "🎯 ASHRAE Guideline 36", "📘 G36 Cross-Walk", "📘 ASHRAE 55 Reference"] }
+  }
+}

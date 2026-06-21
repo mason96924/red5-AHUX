@@ -166,8 +166,22 @@
 </div>
 
 <script>
-/* ── DATA ─────────────────────────────────────────────── */
-const AHUs = [
+/* ── LIVE DATA HOOK ────────────────────────────────────
+   Pulls the real AHU+VAV roster from /api/data (V1.9-shaped array used
+   by the desktop dashboard).  Falls back to the demo roster below only
+   when the backend can't be reached, so the mockup degrades gracefully
+   in offline-preview situations.
+
+   The same backend hosts the dashboard and this page, so a same-origin
+   request is enough — no CORS handshake, no auth header for the demo
+   path.  We poll every 8s to keep the gauge + VAV roster live without
+   pounding the controller.
+
+   /api/data row shape we depend on:
+     { id, vavs: [{ id, t, rh, all_points:{ DPR, AFM, ... } }] }
+   → mapped into the mockup's `AHUs[]` + `vavsFor(ahu)` shape so the
+     rest of the UI is unchanged. */
+const DEMO_AHUs = [
   { id: 'AHU-05-N', total: 24, out: 11, name: 'North Wing',  accent: '#f43f5e', label: 'rose'    },
   { id: 'AHU-02-S', total: 18, out:  7, name: 'South Wing',  accent: '#fb923c', label: 'orange'  },
   { id: 'AHU-01-E', total: 22, out:  5, name: 'East Annex',  accent: '#facc15', label: 'amber'   },
@@ -177,13 +191,79 @@ const AHUs = [
   { id: 'AHU-04-C', total: 19, out:  1, name: 'Conference',  accent: '#22d3ee', label: 'sky'     },
   { id: 'AHU-06-L', total: 17, out:  0, name: 'Lobby',       accent: '#10b981', label: 'emerald' }
 ];
-AHUs.sort((a, b) => (b.out - a.out) || (b.out / b.total - a.out / a.total));
+/* Accent rotation matches the dashboard's per-AHU palette feel */
+const ACCENT_RING = ['#f43f5e','#fb923c','#facc15','#84cc16','#06b6d4','#a78bfa','#22d3ee','#10b981','#ef4444','#f59e0b'];
+/* Comfort-zone gate: a VAV is "out" if its zone temp leaves 19..27 °C
+   OR its RH leaves 30..65 %.  Mirrors the band defaults shipped in
+   /app/frontend/public/docs/ashrae_55_reference.md. */
+function _isVavOut(v) {
+  const t  = (v.t  != null) ? +v.t  : 22;
+  const rh = (v.rh != null) ? +v.rh : 50;
+  return t < 19 || t > 27 || rh < 30 || rh > 65;
+}
+function _cookedVavs(rawVavs) {
+  return (rawVavs || []).map(v => {
+    const isOut = _isVavOut(v);
+    const status = !isOut ? 'in' : (v.t < 21 ? 'cold' : 'hot');
+    const dpr = v.all_points && v.all_points.DPR;
+    return {
+      id:     v.id,
+      zone:   v.zone || ('Zone-' + (v.id || '').slice(-3)),
+      t:      v.t  != null ? +v.t  : 22,
+      rh:     v.rh != null ? +v.rh : 50,
+      flow:   Math.max(200, Math.round((dpr != null ? +dpr : 50) * 12)),  // synthetic CFM proxy
+      status: status
+    };
+  }).sort((a,b) => (a.status === 'in') - (b.status === 'in'));
+}
+function _cookedAhus(raw) {
+  return (raw || []).map((row, i) => {
+    const vavs = row.vavs || [];
+    const out  = vavs.filter(_isVavOut).length;
+    const acc  = ACCENT_RING[i % ACCENT_RING.length];
+    return {
+      id:    row.id,
+      total: vavs.length,
+      out:   out,
+      name:  row.zone || row.id,
+      accent: acc,
+      label: 'live',
+      _vavs: vavs   // keep raw so detail page doesn't refetch
+    };
+  }).sort((a, b) => (b.out - a.out) || ((b.out/(b.total||1)) - (a.out/(a.total||1))));
+}
+let AHUs = DEMO_AHUs.slice().sort((a, b) => (b.out - a.out) || (b.out / b.total - a.out / a.total));
+let _liveOk = false;
 
-/* Generate a VAV roster for a given AHU.  The "out of CZ" count is
-   honoured exactly — first N rows are tagged 'out', rest are 'in'.
-   Mixes 'cold' / 'hot' statuses for the 'out' rows so the operator
-   sees both failure modes. */
+async function fetchLive() {
+  try {
+    const r = await fetch('/api/data', { credentials: 'include' });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const data = await r.json();
+    if (!Array.isArray(data) || !data.length) throw new Error('empty');
+    AHUs = _cookedAhus(data);
+    _liveOk = true;
+    return true;
+  } catch (e) {
+    if (!_liveOk) AHUs = DEMO_AHUs.slice();   // first-failure: fall back
+    return false;
+  }
+}
+
+/* Re-render the current view on each successful poll so the gauge + VAV
+   list stay live.  Routing hash drives view selection (see ROUTER). */
+async function _liveLoop() {
+  const ok = await fetchLive();
+  if (ok) route();          // re-render with fresh data
+  setTimeout(_liveLoop, 8000);
+}
+
+/* Generate a VAV roster for a given AHU.  When live data is available
+   we use the real VAVs cached on the AHU object (set by `_cookedAhus`).
+   Falls through to deterministic synthetic data for the demo roster so
+   the mockup still renders convincingly when /api/data is unreachable. */
 function vavsFor(ahu) {
+  if (ahu._vavs && ahu._vavs.length) return _cookedVavs(ahu._vavs);
   const out = [];
   for (let i = 1; i <= ahu.total; i++) {
     const isOut = i <= ahu.out;
@@ -599,6 +679,10 @@ function route() {
 window.addEventListener('hashchange', route);
 route();
 setInterval(setTimestamp, 30000);
+// Kick the live-data fetch loop right after first paint so the cached
+// demo roster is replaced with real /api/data as soon as the network
+// responds.  Subsequent polls re-render in place every 8 s.
+fetchLive().then(ok => { if (ok) route(); _liveLoop(); });
 </script>
 </body>
 </html>

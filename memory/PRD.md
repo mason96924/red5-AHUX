@@ -5159,3 +5159,44 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - Regression: /mobile/ahu/AHU-01 React redirect still works ✓
 
 **Parity**: dashboard.html / mobile_mockup.html / docs_index.js / qrcode.min.js md5-identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.
+
+---
+
+## Phase L.20 — Pill Readability Floor + Mobile Full-Screen Iframe (2026-02-21)
+
+**User-reported (with phone screenshot)**:
+1. Desktop pills shrank past readable size when modals were small
+2. Mobile iframe equipment modal squeezed into 340x255 thumbnail; pills stacked
+
+**Fix A — 70% readability floor on desktop pill scaling**:
+- `/app/frontend/public/dashboard.html` line ~5193 (AHU): `scale(${Math.max(0.7, gScale * imgScale)})`
+- Line ~4324 (VAV): `gScale = Math.max(0.7, (p.scale || 1.0) * vavImgScale)`
+- Pills never shrink below 70% of original even on a tiny modal width
+
+**Fix B — Full-screen iframe modal on mobile**:
+- `/app/frontend/public/mobile_mockup.html` adds `.modal-backdrop.fs` CSS:
+  - `.modal` becomes 100vw × 100vh, no border-radius, flex column
+  - `.modal-head` + `.modal-foot` stay slim (~50px each)
+  - `.modal-svg` gets `flex: 1 1 auto; min-height: 0` so the iframe owns the rest
+- `openEquipmentModal()` adds both `show` and `fs` classes; close handlers strip both
+- Dashboard.html iframe-mode CSS rewritten:
+  - Removed fragile `body::before` pseudo backdrop (it was trapped by #root's stacking context)
+  - Hides body-direct portals via `display: none`
+  - Hides `#root > *` via `visibility: hidden`
+  - Promotes z-[120]/z-[130] modals to `position: fixed; z-index: 2147483000` (escapes any #root stacking context, masks all leaking WX/chart elements)
+
+**Tested**: `testing_agent_v3_fork` iteration_4 — **7/7 scenarios PASS, 0 bugs, 0 action items, 100 % success**. Validated:
+- AHU pill scale floor in production rendering (scale = 1.0, >= 0.7 floor active)
+- VAV pill scale floor in production rendering
+- Mobile fs modal: 390×844 viewport, iframe area 390×727
+- Close strips both `show` + `fs` classes
+- iframe-mode chrome 100 % clean (no sidebar / chart / WX / G36 strip leak)
+- VAV mobile fs regression OK
+- Desktop 1280×800 normal flow unchanged
+
+**Parity locked** (md5 identical) across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.
+
+**Files touched in this phase**:
+- `/app/frontend/public/dashboard.html` (pill floors + iframe-mode CSS rewrite)
+- `/app/frontend/public/mobile_mockup.html` (`.fs` class + handlers)
+- Mirrored to both archive trees + bundle rebuilt

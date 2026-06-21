@@ -5049,3 +5049,42 @@ Parity verified via `md5sum` across all three HTML copies.
 Smoke-test screenshot confirms POP gone, theme button gone, DIM slider
 shows `200%` in yellow with `PLUGIN` chip + `WIN` button adjacent.
 
+
+---
+
+## Phase L.17 — Responsive Pill Scaling + Mobile Iframe Embed (2026-02-21)
+
+**User intent**: Original V1.9/V2.0 desktop AHU+VAV equipment graphics (image + data pills + animations) must render readably inside the mobile mockup. Prerequisite: pills must scale with the modal-resized image instead of staying at fixed Tailwind pixel sizes.
+
+**Fix (two layers)**:
+
+1. **Responsive pill scaling** — `dashboard.html`:
+   - AHU side (line ~5193): `transform: scale(${gScale})` → `scale(${gScale * imgScale})` on `groupedPoints.map` wrapper. `imgScale = ahuImgDims.dispW / ahuImgDims.natW` was already computed at line ~5000.
+   - VAV side (line ~4256): lifted `vavImgScale` computation above `vavSchemaPoints.map`, multiplied into per-point `gScale`. `gScale = (p.scale || 1.0) * vavImgScale`.
+   - CSS `transform: scale()` cascades to text size + padding + border + shadow, so a single multiplier rescales the entire pill body without schema changes.
+
+2. **Iframe-mode modal embed** — `dashboard.html` + `mobile_mockup.html`:
+   - New URL params: `?iframe=1&modal_ahu=<id>` or `?modal_vav=<id>` → useEffect at line ~1828 calls `setShowAhuModalFor(id)` / `setSelectedVavForModal(vav)` and toggles `body.iframe-modal-mode` class.
+   - New CSS block at line ~136 hides everything via `body > *:not(#root) {display:none}` + `#root > * {visibility:hidden}`, then re-enables `[class*='z-[120]']` (VAV modal) and `[class*='z-[130]']` (AHU modal) at fixed inset:0.
+   - POP OUT button, drag-to-resize hint, and inner X close button are display:none in iframe mode (embedder owns chrome).
+   - `mobile_mockup.html` `realImgWithFallback()` switched from `<img src=/api/thumb?path=...>` to `<iframe src=/dashboard.html?iframe=1&modal_ahu=...>`.
+
+**Tested**:
+- `testing_agent_v3_fork` iteration_1.json: 3/4 acceptance criteria met on first pass; found chrome leak (#g36-timeline-strip, .r5-toast-host body-direct siblings of #root). Fixed via broader `body > *:not(#root):not(script)...` rule.
+- Re-verified visually at /dashboard.html?iframe=1&modal_ahu=AHU-01 (360x640) — clean modal, no leak, g36 + toast both computed-style:none.
+- Parity locked: md5 identical across /app/frontend/public/, /app/archive/Red5-Studio-V1.9/, /app/archive/Red5-Studio-V2.0/.
+- V1.9 bundle rebuilt (2134.5 KB).
+
+**Notes for next agent**:
+- Dev env has no equipment-type schema seeded → `currentAhuImage` / `effectiveVavImage` is null → "AHU IMAGE MISSING" placeholder shows. This is dev-only; production deployments with `visual_assets.base_graphic` configured will render the actual graphic.
+- A backend migration to convert MongoDB `tenant_assets` absolute-pixel overlay coords to percentages is DEFERRED until user requests it (most positions are already in `%` per spec).
+- Testing agent flagged dashboard.html is now 5653 lines (over 700-line guideline). Splitting into modules is a candidate refactor.
+
+**Files touched**:
+- `/app/frontend/public/dashboard.html`
+- `/app/frontend/public/mobile_mockup.html`
+- `/app/archive/Red5-Studio-V1.9/dashboard.html` (mirrored)
+- `/app/archive/Red5-Studio-V1.9/mobile_mockup.html` (mirrored)
+- `/app/archive/Red5-Studio-V2.0/dashboard.html` (mirrored)
+- `/app/archive/Red5-Studio-V2.0/mobile_mockup.html` (mirrored)
+- `/app/archive/Red5-Studio-V1.9/red5_bundle.zip` (rebuilt)

@@ -143,6 +143,11 @@
            rely on shallow selectors. */
         body.iframe-modal-mode { overflow: hidden; background: #d0d4d8 !important; }
         body.iframe-modal-mode #v2-auth-banner { display: none !important; }
+        /* React modal portals live inside #root; G36 timeline strip + toast
+           host + auth banner + any other DOM portals are appended directly
+           as body siblings.  Hide every body-direct child except #root and
+           inert tags so no chrome leaks behind the iframe-mode modal. */
+        body.iframe-modal-mode > *:not(#root):not(script):not(style):not(svg) { display: none !important; }
         body.iframe-modal-mode #root > * { visibility: hidden !important; }
         body.iframe-modal-mode [class*='z-[120]'],
         body.iframe-modal-mode [class*='z-[130]'] {

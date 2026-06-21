@@ -5133,3 +5133,29 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 **Next Action Items (P1+ pipeline)**:
 - 🟢 P3: V3.0 Red5-Modbus Phase 2 (`modbus/codec.py`, `tcp_client.py`, drivers)
 - Refactor: split `dashboard.html` into modules (now ~5770 lines)
+
+---
+
+## Phase L.19 — Swipe-to-Next-AHU Gesture (2026-02-21)
+
+**User intent**: Operators walking a building should flick between AHUs one-handed instead of back-tap-row-tap each time.
+
+**Implementation** (in `/app/frontend/public/mobile_mockup.html`):
+- `setupSwipeNav` IIFE at the end of `<script>` registers `touchstart` + `touchend` + `keydown` handlers on `document`. Gated by `body[data-view='ahu']`.
+- Thresholds: 60 px horizontal min, 40 px vertical max, 700 ms time max.
+- Worst-first cyclic order (wraps last → first).
+- 280 ms slide-in animation pegged to gesture direction.
+- Subtitle on the AHU detail page now reads `… · swipe ← → for next AHU`.
+- Touches that start inside `#ahuModal` or `.dropdown` are ignored (preserves modal/dropdown semantics).
+- Keyboard `ArrowLeft` / `ArrowRight` for desktop preview.
+
+**Tested**: `testing_agent_v3_fork` iteration_3 — 100 % (6/6 phases pass):
+- ArrowRight: AHU-01 → AHU-02 ✓
+- ArrowLeft from AHU-01 wraps → AHU-05 ✓
+- Touch swipe (synthetic TouchEvent) AHU-01 → AHU-02 ✓
+- Home page inertness ✓
+- Modal swipe immunity ✓
+- Subtitle hint visible ✓
+- Regression: /mobile/ahu/AHU-01 React redirect still works ✓
+
+**Parity**: dashboard.html / mobile_mockup.html / docs_index.js / qrcode.min.js md5-identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.

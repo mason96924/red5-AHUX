@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <!--
-  RED5 STUDIO · MOBILE START PAGE MOCKUP (iter 2)
-  Big circular gauge in the centre with AHU + VAV icons inside.
-  AHU drilldown moved into a tappable collapsed dropdown at the
-  bottom of the screen.
+  RED5 STUDIO · MOBILE MOCKUP (iter 3)
+  Two-screen flow with hash routing:
+    #/         → site overview (gauge + AHU dropdown)
+    #/ahu/<id> → per-AHU detail page (per-AHU bg tint, VAV dropdown,
+                 tap-gauge to open the AHU equipment graphic modal)
 -->
 <html lang="en">
 <head>
@@ -13,412 +14,191 @@
 <title>Red5 Studio · Mobile</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    background: #050912;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    color: #e2e8f0;
-    min-height: 100vh;
-    overscroll-behavior: contain;
-  }
+  html, body { background: #050912; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #e2e8f0; min-height: 100vh; overscroll-behavior: contain; }
   .device-frame {
     max-width: 420px; margin: 0 auto; min-height: 100vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 0 80px rgba(99, 102, 241, 0.15);
+    position: relative; transition: background 320ms ease;
+  }
+  /* Home view bg */
+  body[data-view="home"] .device-frame {
     background:
       radial-gradient(circle at 50% 18%, rgba(244, 63, 94, 0.18) 0%, transparent 55%),
       radial-gradient(circle at 50% 0%, #1e1b4b 0%, transparent 55%),
       linear-gradient(180deg, #0b1220 0%, #050912 100%);
-    display: flex; flex-direction: column;
-    box-shadow: 0 0 80px rgba(99, 102, 241, 0.15);
-    position: relative;
+  }
+  /* AHU-detail view bg — accent colour comes from `--ahu-accent` set per AHU */
+  body[data-view="ahu"] .device-frame {
+    background:
+      radial-gradient(circle at 50% 18%, var(--ahu-glow, rgba(99, 102, 241, 0.30)) 0%, transparent 55%),
+      radial-gradient(circle at 50% 0%, var(--ahu-tint, #1e1b4b) 0%, transparent 60%),
+      linear-gradient(180deg, #0b1220 0%, #050912 100%);
   }
 
-  /* ── TOP HEADER ─────────────────────────────────────────── */
-  header.brand {
-    padding: 22px 24px 4px;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .logo {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 11px; font-weight: 900; letter-spacing: 0.18em;
-    color: #f87171; text-transform: uppercase;
-    display: flex; align-items: center; gap: 6px;
-  }
-  .logo .dot { width: 7px; height: 7px; border-radius: 50%; background: #f87171; box-shadow: 0 0 10px #f87171; }
-  .status-bar {
-    display: flex; align-items: center; gap: 10px;
-    font-family: ui-monospace, monospace; font-size: 10px; color: #94a3b8;
-  }
+  header.brand { padding: 22px 24px 4px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; font-weight: 900; letter-spacing: 0.18em; color: #f87171; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+  .logo .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ahu-accent, #f87171); box-shadow: 0 0 10px var(--ahu-accent, #f87171); }
+  .status-bar { display: flex; align-items: center; gap: 10px; font-family: ui-monospace, monospace; font-size: 10px; color: #94a3b8; }
   .status-bar .pulse { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.35 } }
 
-  h1.page-title {
-    padding: 4px 24px 0;
-    font-size: 30px;
-    font-weight: 900; line-height: 1.05; letter-spacing: -0.02em;
-    color: #f8fafc;
-  }
-  h1.page-title span.accent {
-    background: linear-gradient(135deg, #ec4899 0%, #f43f5e 60%, #fb7185 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .subtitle {
-    padding: 6px 24px 0;
-    font-size: 12px; color: #64748b; line-height: 1.5;
-  }
-  .ts {
-    padding: 14px 24px 0;
-    font-family: ui-monospace, monospace; font-size: 10px;
-    color: #475569; letter-spacing: 0.08em;
-    display: flex; align-items: center; gap: 8px;
-  }
+  .back-btn { background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(99, 116, 139, 0.4); padding: 6px 12px 6px 8px; border-radius: 14px; color: #cbd5e1; font-family: ui-monospace, monospace; font-size: 10px; font-weight: 800; letter-spacing: 0.12em; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+  .back-btn:active { transform: scale(0.96); }
+
+  h1.page-title { padding: 4px 24px 0; font-size: 30px; font-weight: 900; line-height: 1.05; letter-spacing: -0.02em; color: #f8fafc; }
+  h1.page-title span.accent { background: linear-gradient(135deg, #ec4899 0%, #f43f5e 60%, #fb7185 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h1.page-title span.ahu-id { background: linear-gradient(135deg, var(--ahu-bright, #c4b5fd) 0%, var(--ahu-accent, #818cf8) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .subtitle { padding: 6px 24px 0; font-size: 12px; color: #64748b; line-height: 1.5; }
+  .ts { padding: 14px 24px 0; font-family: ui-monospace, monospace; font-size: 10px; color: #475569; letter-spacing: 0.08em; display: flex; align-items: center; gap: 8px; }
   .ts .dot { width: 4px; height: 4px; background: #475569; border-radius: 50%; }
 
-  /* ── GAUGE CARD ─────────────────────────────────────────── */
-  .gauge-card {
-    margin: 22px 20px 0;
-    padding: 20px 20px 22px;
-    border-radius: 28px;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(2, 6, 23, 0.4) 100%);
-    border: 1px solid rgba(244, 63, 94, 0.18);
-    backdrop-filter: blur(10px);
-    display: flex; flex-direction: column; align-items: center;
-  }
-  .ring-wrap {
-    position: relative;
-    width: 260px; height: 260px;
-    margin: 4px auto 6px;
-  }
+  /* ── GAUGE ──────────────────────────────────────────── */
+  .gauge-card { margin: 22px 20px 0; padding: 20px 20px 22px; border-radius: 28px; background: linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(2, 6, 23, 0.4) 100%); border: 1px solid var(--ahu-border, rgba(244, 63, 94, 0.18)); backdrop-filter: blur(10px); display: flex; flex-direction: column; align-items: center; transition: border 320ms ease; }
+  .ring-wrap { position: relative; width: 260px; height: 260px; margin: 4px auto 6px; cursor: pointer; }
+  .ring-wrap.tap-hint::after { content: 'TAP'; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); font-family: ui-monospace, monospace; font-size: 8px; letter-spacing: 0.20em; color: var(--ahu-accent, #fb7185); font-weight: 800; opacity: 0.65; animation: tapPulse 2s ease-in-out infinite; }
+  @keyframes tapPulse { 0%, 100% { opacity: 0.30; transform: translateX(-50%) translateY(0); } 50% { opacity: 0.85; transform: translateX(-50%) translateY(2px); } }
   .ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-  .ring-bg, .ring-fg {
-    fill: none; stroke-width: 14; stroke-linecap: round;
-  }
+  .ring-bg, .ring-fg { fill: none; stroke-width: 14; stroke-linecap: round; }
   .ring-bg { stroke: rgba(51, 65, 85, 0.45); }
-  .ring-fg {
-    stroke: url(#ringGrad);
-    filter: drop-shadow(0 0 12px rgba(244, 63, 94, 0.55));
-    transition: stroke-dashoffset 1200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .ring-tick {
-    fill: rgba(100, 116, 139, 0.5);
-  }
+  .ring-fg { stroke: url(#ringGrad); filter: drop-shadow(0 0 12px var(--ahu-glowstroke, rgba(244, 63, 94, 0.55))); transition: stroke-dashoffset 1200ms cubic-bezier(0.16, 1, 0.3, 1); }
 
-  .gauge-centre {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    pointer-events: none;
-  }
-  .gauge-pct {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 64px; font-weight: 900; line-height: 1;
-    background: linear-gradient(180deg, #fff 0%, #fb7185 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.04em;
-  }
-  .gauge-pct .sym {
-    font-size: 28px; vertical-align: top; line-height: 1; margin-left: 2px;
-    color: #fb7185; -webkit-text-fill-color: #fb7185;
-  }
-  .gauge-label {
-    font-family: ui-monospace, monospace;
-    font-size: 9.5px; font-weight: 800; letter-spacing: 0.20em;
-    color: #fda4af; text-transform: uppercase; margin-top: 4px;
-    text-align: center;
-  }
-  .gauge-fraction {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 12px; font-weight: 700; color: #94a3b8; margin-top: 6px;
-  }
-  .gauge-fraction b { color: #fb7185; }
+  .gauge-centre { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+  .gauge-pct { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 64px; font-weight: 900; line-height: 1; background: linear-gradient(180deg, #fff 0%, var(--ahu-bright, #fb7185) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+  .gauge-pct .sym { font-size: 28px; vertical-align: top; line-height: 1; margin-left: 2px; color: var(--ahu-bright, #fb7185); -webkit-text-fill-color: var(--ahu-bright, #fb7185); }
+  .gauge-label { font-family: ui-monospace, monospace; font-size: 9.5px; font-weight: 800; letter-spacing: 0.20em; color: var(--ahu-label, #fda4af); text-transform: uppercase; margin-top: 4px; text-align: center; }
+  .gauge-fraction { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; font-weight: 700; color: #94a3b8; margin-top: 6px; }
+  .gauge-fraction b { color: var(--ahu-bright, #fb7185); }
 
-  /* ── PILL ROW INSIDE THE RING (AHU + VAV) ─────────────── */
-  .icon-row {
-    display: flex; gap: 22px; margin-top: 16px; padding: 4px 0;
-  }
-  .icon-pill {
-    display: flex; align-items: center; gap: 9px;
-    padding: 8px 14px;
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(99, 102, 241, 0.25);
-    border-radius: 18px;
-    backdrop-filter: blur(8px);
-  }
-  .icon-pill .ic {
-    width: 22px; height: 22px;
-    display: grid; place-items: center;
-    border-radius: 8px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.30), rgba(139, 92, 246, 0.18));
-    border: 1px solid rgba(139, 92, 246, 0.45);
-  }
-  .icon-pill .ic svg { width: 14px; height: 14px; stroke: #c4b5fd; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .icon-pill .num {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 18px; font-weight: 800; color: #f1f5f9;
-    line-height: 1; font-variant-numeric: tabular-nums;
-  }
-  .icon-pill .lbl {
-    font-family: ui-monospace, monospace;
-    font-size: 8.5px; font-weight: 700; letter-spacing: 0.14em;
-    color: #94a3b8; text-transform: uppercase;
-    line-height: 1; margin-top: 3px;
-  }
+  .icon-row { display: flex; gap: 22px; margin-top: 16px; padding: 4px 0; }
+  .icon-pill { display: flex; align-items: center; gap: 9px; padding: 8px 14px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--ahu-pill-border, rgba(99, 102, 241, 0.25)); border-radius: 18px; backdrop-filter: blur(8px); }
+  .icon-pill .ic { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 8px; background: var(--ahu-pill-bg, linear-gradient(135deg, rgba(99, 102, 241, 0.30), rgba(139, 92, 246, 0.18))); border: 1px solid var(--ahu-pill-border, rgba(139, 92, 246, 0.45)); }
+  .icon-pill .ic svg { width: 14px; height: 14px; stroke: var(--ahu-pill-icon, #c4b5fd); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-pill .num { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 18px; font-weight: 800; color: #f1f5f9; line-height: 1; font-variant-numeric: tabular-nums; }
+  .icon-pill .lbl { font-family: ui-monospace, monospace; font-size: 8.5px; font-weight: 700; letter-spacing: 0.14em; color: #94a3b8; text-transform: uppercase; line-height: 1; margin-top: 3px; }
 
-  /* ── AHU DROPDOWN ───────────────────────────────────────── */
-  .dropdown {
-    margin: 26px 20px 24px;
-    border-radius: 20px;
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(71, 85, 105, 0.5);
-    overflow: hidden;
-    backdrop-filter: blur(8px);
-  }
-  .dd-trigger {
-    width: 100%;
-    padding: 16px 18px;
-    display: flex; align-items: center; justify-content: space-between;
-    background: linear-gradient(90deg, rgba(244, 63, 94, 0.08) 0%, transparent 100%);
-    border: 0; cursor: pointer;
-    text-align: left;
-    transition: background 200ms ease;
-  }
-  .dd-trigger:active { background: rgba(244, 63, 94, 0.14); }
+  /* ── DROPDOWN (shared between AHU+VAV lists) ─────────── */
+  .dropdown { margin: 26px 20px 24px; border-radius: 20px; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(71, 85, 105, 0.5); overflow: hidden; backdrop-filter: blur(8px); }
+  .dd-trigger { width: 100%; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; background: linear-gradient(90deg, var(--ahu-trigger-bg, rgba(244, 63, 94, 0.08)) 0%, transparent 100%); border: 0; cursor: pointer; text-align: left; transition: background 200ms ease; }
+  .dd-trigger:active { background: var(--ahu-trigger-active, rgba(244, 63, 94, 0.14)); }
   .dd-trigger .left { display: flex; align-items: center; gap: 12px; }
-  .dd-trigger .ic-circle {
-    width: 32px; height: 32px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, rgba(244, 63, 94, 0.25), rgba(190, 24, 93, 0.15));
-    border: 1px solid rgba(244, 63, 94, 0.50);
-    display: grid; place-items: center;
-    flex-shrink: 0;
-  }
-  .dd-trigger .ic-circle svg { width: 16px; height: 16px; stroke: #fda4af; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .dd-trigger .title-block {
-    display: flex; flex-direction: column;
-  }
-  .dd-trigger .title-block .t1 {
-    font-size: 13px; font-weight: 800; color: #f1f5f9; line-height: 1.1;
-  }
-  .dd-trigger .title-block .t2 {
-    font-family: ui-monospace, monospace; font-size: 9.5px;
-    color: #94a3b8; letter-spacing: 0.10em; margin-top: 3px;
-    text-transform: uppercase;
-  }
-  .dd-trigger .chev {
-    width: 18px; height: 18px; color: #94a3b8;
-    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .dropdown.open .chev { transform: rotate(180deg); color: #fb7185; }
-  .dd-body {
-    max-height: 0; opacity: 0; overflow: hidden;
-    transition: max-height 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease;
-  }
-  .dropdown.open .dd-body {
-    max-height: 1200px; opacity: 1;
-  }
-  .ahu-list {
-    padding: 4px 12px 12px;
-    display: flex; flex-direction: column; gap: 8px;
-  }
-  .ahu-row {
-    background: rgba(2, 6, 23, 0.6);
-    border: 1px solid rgba(51, 65, 85, 0.4);
-    border-radius: 14px;
-    padding: 12px 14px;
-    display: flex; align-items: center; gap: 12px;
-    position: relative; overflow: hidden;
-    cursor: pointer; transition: transform 140ms;
-  }
-  .ahu-row::before {
-    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-    background: var(--accent, #475569);
-    box-shadow: 0 0 10px var(--accent, #475569); opacity: 0.85;
-  }
-  .ahu-row:active { transform: scale(0.985); }
-  .ahu-row .id {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 13px; font-weight: 800; color: #f1f5f9;
-    letter-spacing: 0.05em; flex-shrink: 0; min-width: 76px;
-  }
-  .ahu-row .meta { flex: 1; min-width: 0; }
-  .ahu-row .bar-row { display: flex; align-items: center; gap: 8px; }
-  .ahu-row .bar-bg { flex: 1; height: 5px; background: rgba(51, 65, 85, 0.6); border-radius: 3px; overflow: hidden; }
-  .ahu-row .bar-fill { height: 100%; background: var(--accent, #475569); box-shadow: 0 0 6px var(--accent, #475569); border-radius: 3px; }
-  .ahu-row .pct {
-    font-family: ui-monospace, monospace; font-size: 11px;
-    color: var(--accent, #94a3b8); font-weight: 800;
-    min-width: 38px; text-align: right; font-variant-numeric: tabular-nums;
-  }
-  .ahu-row .sub {
-    font-family: ui-monospace, monospace; font-size: 9px;
-    color: #64748b; margin-top: 4px;
-    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  }
-  .ahu-row .sub b { color: #e2e8f0; font-weight: 700; }
-  .ahu-row .sub .sep { width: 2px; height: 2px; background: #475569; border-radius: 50%; }
-  .ahu-row .sub .badge {
-    color: var(--accent, #94a3b8); font-weight: 800; letter-spacing: 0.06em;
-  }
+  .dd-trigger .ic-circle { width: 32px; height: 32px; border-radius: 50%; background: var(--ahu-circle-bg, linear-gradient(135deg, rgba(244, 63, 94, 0.25), rgba(190, 24, 93, 0.15))); border: 1px solid var(--ahu-accent, rgba(244, 63, 94, 0.50)); display: grid; place-items: center; flex-shrink: 0; }
+  .dd-trigger .ic-circle svg { width: 16px; height: 16px; stroke: var(--ahu-bright, #fda4af); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .dd-trigger .title-block { display: flex; flex-direction: column; }
+  .dd-trigger .title-block .t1 { font-size: 13px; font-weight: 800; color: #f1f5f9; line-height: 1.1; }
+  .dd-trigger .title-block .t2 { font-family: ui-monospace, monospace; font-size: 9.5px; color: #94a3b8; letter-spacing: 0.10em; margin-top: 3px; text-transform: uppercase; }
+  .dd-trigger .chev { width: 18px; height: 18px; color: #94a3b8; transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .dropdown.open .chev { transform: rotate(180deg); color: var(--ahu-bright, #fb7185); }
+  .dd-body { max-height: 0; opacity: 0; overflow: hidden; transition: max-height 360ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease; }
+  .dropdown.open .dd-body { max-height: 2400px; opacity: 1; }
 
-  /* ── FOOTER ─────────────────────────────────────────────── */
-  .footer {
-    margin-top: auto;
-    padding: 16px 24px calc(20px + env(safe-area-inset-bottom));
-    border-top: 1px solid rgba(30, 41, 59, 0.6);
-    display: flex; align-items: center; justify-content: space-between;
-    font-family: ui-monospace, monospace; font-size: 9px; color: #475569;
-    letter-spacing: 0.08em;
-  }
+  /* AHU row (home view) and VAV row (detail view) share styling */
+  .list { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .list-row { background: rgba(2, 6, 23, 0.6); border: 1px solid rgba(51, 65, 85, 0.4); border-radius: 14px; padding: 12px 14px; display: flex; align-items: center; gap: 12px; position: relative; overflow: hidden; cursor: pointer; transition: transform 140ms; }
+  .list-row::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent, #475569); box-shadow: 0 0 10px var(--accent, #475569); opacity: 0.85; }
+  .list-row:active { transform: scale(0.985); }
+  .list-row .id { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; font-weight: 800; color: #f1f5f9; letter-spacing: 0.05em; flex-shrink: 0; min-width: 76px; }
+  .list-row .meta { flex: 1; min-width: 0; }
+  .list-row .bar-row { display: flex; align-items: center; gap: 8px; }
+  .list-row .bar-bg { flex: 1; height: 5px; background: rgba(51, 65, 85, 0.6); border-radius: 3px; overflow: hidden; }
+  .list-row .bar-fill { height: 100%; background: var(--accent, #475569); box-shadow: 0 0 6px var(--accent, #475569); border-radius: 3px; }
+  .list-row .pct { font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent, #94a3b8); font-weight: 800; min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+  .list-row .sub { font-family: ui-monospace, monospace; font-size: 9px; color: #64748b; margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .list-row .sub b { color: #e2e8f0; font-weight: 700; }
+  .list-row .sub .sep { width: 2px; height: 2px; background: #475569; border-radius: 50%; }
+  .list-row .sub .badge { color: var(--accent, #94a3b8); font-weight: 800; letter-spacing: 0.06em; }
+
+  /* ── AHU GRAPHIC MODAL ──────────────────────────────── */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.84); backdrop-filter: blur(12px); display: none; z-index: 50; align-items: center; justify-content: center; padding: 16px; }
+  .modal-backdrop.show { display: flex; animation: fadeIn 240ms ease; }
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+  .modal { width: 100%; max-width: 380px; background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(2, 6, 23, 0.96) 100%); border: 1px solid var(--ahu-accent, rgba(99, 102, 241, 0.45)); border-radius: 22px; padding: 18px 18px 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.6), 0 0 60px var(--ahu-glow, rgba(99, 102, 241, 0.30)); }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .modal-head h3 { font-size: 14px; font-weight: 800; color: var(--ahu-bright, #c4b5fd); letter-spacing: 0.04em; }
+  .modal-close { background: rgba(51, 65, 85, 0.5); border: 0; width: 28px; height: 28px; border-radius: 50%; color: #cbd5e1; font-size: 16px; cursor: pointer; display: grid; place-items: center; }
+  .modal-close:active { transform: scale(0.92); }
+  .modal-svg { width: 100%; aspect-ratio: 16/10; background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%); border-radius: 14px; overflow: hidden; }
+  .modal-svg svg { width: 100%; height: 100%; display: block; }
+  .modal-foot { margin-top: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .modal-stat { background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; padding: 8px 10px; text-align: center; }
+  .modal-stat .v { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 16px; font-weight: 800; color: var(--ahu-bright, #c4b5fd); }
+  .modal-stat .k { font-family: ui-monospace, monospace; font-size: 8px; color: #64748b; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 2px; font-weight: 700; }
+
+  .footer { margin-top: auto; padding: 16px 24px calc(20px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(30, 41, 59, 0.6); display: flex; align-items: center; justify-content: space-between; font-family: ui-monospace, monospace; font-size: 9px; color: #475569; letter-spacing: 0.08em; }
   .footer a { color: #64748b; text-decoration: none; }
   .footer a:active { color: #ec4899; }
   .footer .links { display: flex; gap: 14px; }
 
   @media (min-width: 480px) {
-    body::before {
-      content: 'desktop preview — open on a phone or use dev-tools mobile mode';
-      position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
-      font-family: ui-monospace, monospace; font-size: 10px;
-      background: rgba(15, 23, 42, 0.9); color: #94a3b8;
-      padding: 6px 14px; border-radius: 12px;
-      border: 1px solid #334155; z-index: 999; white-space: nowrap;
-    }
+    body::before { content: 'desktop preview — open on a phone or use dev-tools mobile mode'; position: fixed; top: 8px; left: 50%; transform: translateX(-50%); font-family: ui-monospace, monospace; font-size: 10px; background: rgba(15, 23, 42, 0.9); color: #94a3b8; padding: 6px 14px; border-radius: 12px; border: 1px solid #334155; z-index: 999; white-space: nowrap; }
   }
 </style>
 </head>
-<body>
-<div class="device-frame">
+<body data-view="home">
+<div class="device-frame" id="app"></div>
 
-  <!-- ── BRAND BAR ────────────────────────────────────────── -->
-  <header class="brand">
-    <div class="logo"><span class="dot"></span>RED5 STUDIO</div>
-    <div class="status-bar"><span class="pulse"></span><span id="ts-tag">LIVE</span></div>
-  </header>
+<!-- Reusable SVG gradient defs (out of flow) -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%"  stop-color="#fb7185"/>
+    <stop offset="50%" stop-color="#f43f5e"/>
+    <stop offset="100%" stop-color="#e11d48"/>
+  </linearGradient>
+</defs></svg>
 
-  <h1 class="page-title">Site<br><span class="accent">Overview</span></h1>
-  <div class="subtitle">Big number first. Tap the drilldown for unit-by-unit health.</div>
-  <div class="ts">
-    <span class="dot"></span><span id="ts-now">— • —</span>
-    <span class="dot"></span><span>4 sites</span>
-  </div>
-
-  <!-- ── CIRCULAR GAUGE ───────────────────────────────────── -->
-  <section class="gauge-card">
-    <div class="ring-wrap">
-      <svg viewBox="0 0 200 200" aria-hidden="true">
-        <defs>
-          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"  stop-color="#fb7185"/>
-            <stop offset="50%" stop-color="#f43f5e"/>
-            <stop offset="100%" stop-color="#e11d48"/>
-          </linearGradient>
-        </defs>
-        <!-- ticks every 30 deg, subtle -->
-        <g id="ringTicks"></g>
-        <circle class="ring-bg" cx="100" cy="100" r="86"/>
-        <circle id="ringFg" class="ring-fg" cx="100" cy="100" r="86" pathLength="100" stroke-dasharray="0 100"/>
-      </svg>
-      <div class="gauge-centre">
-        <div class="gauge-pct"><span id="gPct">0</span><span class="sym">%</span></div>
-        <div class="gauge-label">VAVs out of CZ</div>
-        <div class="gauge-fraction"><b id="gNum">0</b> of <span id="gDen">0</span></div>
-      </div>
+<!-- AHU graphic modal (one shared instance) -->
+<div class="modal-backdrop" id="ahuModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">AHU-XX-X · Equipment</h3>
+      <button class="modal-close" id="modalClose" aria-label="close">×</button>
     </div>
-
-    <!-- AHU + VAV pills, sit just under the ring -->
-    <div class="icon-row">
-      <div class="icon-pill">
-        <div class="ic">
-          <!-- AHU icon: stylised box with twin fans + duct -->
-          <svg viewBox="0 0 24 24">
-            <rect x="3" y="6" width="18" height="12" rx="2"/>
-            <circle cx="9"  cy="12" r="2.6"/>
-            <circle cx="15" cy="12" r="2.6"/>
-            <line x1="3"  y1="10" x2="3"  y2="14"/>
-            <line x1="21" y1="10" x2="21" y2="14"/>
-          </svg>
-        </div>
-        <div>
-          <div class="num" id="pAhu">0</div>
-          <div class="lbl">AHUs</div>
-        </div>
-      </div>
-      <div class="icon-pill">
-        <div class="ic">
-          <!-- VAV icon: smaller box with damper line + arrow -->
-          <svg viewBox="0 0 24 24">
-            <rect x="4" y="7" width="16" height="10" rx="1.5"/>
-            <line x1="8" y1="9" x2="16" y2="15"/>
-            <path d="M3 12 H6"/>
-            <path d="M18 12 H21"/>
-          </svg>
-        </div>
-        <div>
-          <div class="num" id="pVav">0</div>
-          <div class="lbl">VAVs</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── AHU DROPDOWN ─────────────────────────────────────── -->
-  <div class="dropdown" id="dd">
-    <button class="dd-trigger" id="ddTrigger">
-      <div class="left">
-        <div class="ic-circle">
-          <svg viewBox="0 0 24 24"><path d="M3 12 H21"/><path d="M3 6 H21"/><path d="M3 18 H21"/></svg>
-        </div>
-        <div class="title-block">
-          <div class="t1">AHU Drilldown</div>
-          <div class="t2"><span id="ddSummary">tap to expand · worst first</span></div>
-        </div>
-      </div>
-      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 9 L12 15 L18 9"/>
-      </svg>
-    </button>
-    <div class="dd-body">
-      <div class="ahu-list" id="ahuList"></div>
-    </div>
-  </div>
-
-  <div class="footer">
-    <span>Red5 Studio v3.0 · Mobile</span>
-    <div class="links">
-      <a href="#" id="lRefresh">refresh</a>
-      <a href="#" id="lFull">full site →</a>
+    <div class="modal-svg" id="modalSvg"></div>
+    <div class="modal-foot">
+      <div class="modal-stat"><div class="v" id="mOA">— °C</div><div class="k">OA</div></div>
+      <div class="modal-stat"><div class="v" id="mSA">— °C</div><div class="k">SA</div></div>
+      <div class="modal-stat"><div class="v" id="mFan">— Hz</div><div class="k">FAN</div></div>
     </div>
   </div>
 </div>
 
 <script>
+/* ── DATA ─────────────────────────────────────────────── */
 const AHUs = [
-  { id: 'AHU-05-N', total: 24, out: 11, name: 'North Wing'  },
-  { id: 'AHU-02-S', total: 18, out:  7, name: 'South Wing'  },
-  { id: 'AHU-01-E', total: 22, out:  5, name: 'East Annex'  },
-  { id: 'AHU-07-W', total: 16, out:  3, name: 'West Lab'    },
-  { id: 'AHU-08-R', total: 14, out:  3, name: 'Roof Plenum' },
-  { id: 'AHU-03-W', total: 12, out:  1, name: 'Workshop'    },
-  { id: 'AHU-04-C', total: 19, out:  1, name: 'Conference'  },
-  { id: 'AHU-06-L', total: 17, out:  0, name: 'Lobby'       }
+  { id: 'AHU-05-N', total: 24, out: 11, name: 'North Wing',  accent: '#f43f5e', label: 'rose'    },
+  { id: 'AHU-02-S', total: 18, out:  7, name: 'South Wing',  accent: '#fb923c', label: 'orange'  },
+  { id: 'AHU-01-E', total: 22, out:  5, name: 'East Annex',  accent: '#facc15', label: 'amber'   },
+  { id: 'AHU-07-W', total: 16, out:  3, name: 'West Lab',    accent: '#84cc16', label: 'lime'    },
+  { id: 'AHU-08-R', total: 14, out:  3, name: 'Roof Plenum', accent: '#06b6d4', label: 'cyan'    },
+  { id: 'AHU-03-W', total: 12, out:  1, name: 'Workshop',    accent: '#a78bfa', label: 'violet'  },
+  { id: 'AHU-04-C', total: 19, out:  1, name: 'Conference',  accent: '#22d3ee', label: 'sky'     },
+  { id: 'AHU-06-L', total: 17, out:  0, name: 'Lobby',       accent: '#10b981', label: 'emerald' }
 ];
 AHUs.sort((a, b) => (b.out - a.out) || (b.out / b.total - a.out / a.total));
 
-/* SVG circular gauge — pathLength=100 means the dasharray we set is
-   the literal percent.  Tween from 0 → target on mount so the ring
-   visibly fills (operator-attention cue). */
-function setRing(pct) {
-  const fg = document.getElementById('ringFg');
-  fg.style.strokeDasharray = `${pct} ${100 - pct}`;
-  // Tween the numeric readout in lockstep with the ring fill
-  const start = parseFloat(document.getElementById('gPct').textContent) || 0;
-  const t0 = performance.now();
-  function step(t) {
-    const k = Math.min(1, (t - t0) / 1200);
-    const eased = 1 - Math.pow(1 - k, 3);
-    document.getElementById('gPct').textContent = (start + (pct - start) * eased).toFixed(0);
-    if (k < 1) requestAnimationFrame(step);
+/* Generate a VAV roster for a given AHU.  The "out of CZ" count is
+   honoured exactly — first N rows are tagged 'out', rest are 'in'.
+   Mixes 'cold' / 'hot' statuses for the 'out' rows so the operator
+   sees both failure modes. */
+function vavsFor(ahu) {
+  const out = [];
+  for (let i = 1; i <= ahu.total; i++) {
+    const isOut = i <= ahu.out;
+    const cold  = isOut && (i % 2 === 0);
+    out.push({
+      id:    `VAV-${String(i).padStart(3,'0')}`,
+      zone:  `Zone-${ahu.id.slice(4,6)}-${String(i).padStart(2,'0')}`,
+      t:     cold ? (18 + Math.random()*1.8) : isOut ? (28 + Math.random()*2.0) : (22 + Math.random()*3.5),
+      rh:    cold ? (28 + Math.random()*7)   : isOut ? (62 + Math.random()*12) : (44 + Math.random()*14),
+      flow:  ((420 + Math.random()*180)|0),
+      status: cold ? 'cold' : isOut ? 'hot' : 'in'
+    });
   }
-  requestAnimationFrame(step);
+  // Out first
+  return out.sort((a,b) => (a.status === 'in') - (b.status === 'in'));
 }
 
+/* Colour ramp re-used across home & AHU views */
 function accentForPct(pct) {
   if (pct === 0)  return { c: '#475569', name: 'NOMINAL'  };
   if (pct >= 30)  return { c: '#f43f5e', name: 'CRITICAL' };
@@ -426,32 +206,154 @@ function accentForPct(pct) {
   return                  { c: '#34d399', name: 'OK'       };
 }
 
-function render() {
+/* Helpers: hex → rgba with given alpha */
+function rgba(hex, a) {
+  const h = hex.replace('#',''); const r = parseInt(h.slice(0,2),16);
+  const g = parseInt(h.slice(2,4),16); const b = parseInt(h.slice(4,6),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+/* Tween the ring fill + numeric readout */
+function animateRing(fgEl, pctEl, target) {
+  const start = parseFloat(pctEl.textContent) || 0;
+  fgEl.style.strokeDasharray = `${target} ${100 - target}`;
+  const t0 = performance.now();
+  function step(t) {
+    const k = Math.min(1, (t - t0) / 1100);
+    const eased = 1 - Math.pow(1 - k, 3);
+    pctEl.textContent = (start + (target - start) * eased).toFixed(0);
+    if (k < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* AHU equipment SVG — stylised duct schematic, scales to the modal */
+function ahuSvg(accent) {
+  return `<svg viewBox="0 0 400 250" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <linearGradient id="duct" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="#fff" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#e2e8f0" stop-opacity="0.7"/>
+      </linearGradient>
+    </defs>
+    <!-- Outdoor air intake -->
+    <rect x="10" y="80" width="40" height="80" fill="${accent}" opacity="0.25" stroke="${accent}" stroke-width="1.5" rx="3"/>
+    <text x="30" y="68" text-anchor="middle" font-family="ui-monospace" font-size="9" font-weight="800" fill="${accent}">OA</text>
+    <!-- Filter -->
+    <rect x="60" y="80" width="22" height="80" fill="#fff" stroke="#94a3b8" stroke-width="1.2" rx="2"/>
+    <path d="M62 84 L80 156 M62 92 L80 164 M62 100 L80 152" stroke="#94a3b8" stroke-width="0.7"/>
+    <text x="71" y="178" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="#475569">FILT</text>
+    <!-- Cooling coil -->
+    <rect x="92" y="80" width="24" height="80" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.2" rx="2"/>
+    <path d="M98 86 q4 6 8 0 t8 0 M98 102 q4 6 8 0 t8 0 M98 118 q4 6 8 0 t8 0 M98 134 q4 6 8 0 t8 0 M98 150 q4 6 8 0 t8 0" stroke="#1d4ed8" stroke-width="0.8" fill="none"/>
+    <text x="104" y="178" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="#1e3a8a">CC</text>
+    <!-- Heating coil -->
+    <rect x="126" y="80" width="24" height="80" fill="#fecaca" stroke="#ef4444" stroke-width="1.2" rx="2"/>
+    <path d="M132 86 v68 M138 86 v68 M144 86 v68" stroke="#b91c1c" stroke-width="0.8"/>
+    <text x="138" y="178" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="#7f1d1d">HC</text>
+    <!-- Fan -->
+    <circle cx="190" cy="120" r="36" fill="url(#duct)" stroke="${accent}" stroke-width="2"/>
+    <g transform="translate(190 120)">
+      <path d="M0 -28 Q12 -16 0 0 Q-12 -16 0 -28 Z" fill="${accent}" opacity="0.85">
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2.5s" repeatCount="indefinite"/>
+      </path>
+      <path d="M0 -28 Q12 -16 0 0 Q-12 -16 0 -28 Z" fill="${accent}" opacity="0.85" transform="rotate(120)">
+        <animateTransform attributeName="transform" type="rotate" from="120" to="480" dur="2.5s" repeatCount="indefinite"/>
+      </path>
+      <path d="M0 -28 Q12 -16 0 0 Q-12 -16 0 -28 Z" fill="${accent}" opacity="0.85" transform="rotate(240)">
+        <animateTransform attributeName="transform" type="rotate" from="240" to="600" dur="2.5s" repeatCount="indefinite"/>
+      </path>
+      <circle r="6" fill="#0f172a"/>
+    </g>
+    <text x="190" y="178" text-anchor="middle" font-family="ui-monospace" font-size="8" font-weight="800" fill="#0f172a">FAN</text>
+    <!-- Duct between fan and SA -->
+    <rect x="230" y="100" width="100" height="40" fill="url(#duct)" stroke="#94a3b8" stroke-width="1.2"/>
+    <path d="M240 120 L320 120" stroke="#475569" stroke-dasharray="4 3" stroke-width="0.8"/>
+    <polygon points="320,116 328,120 320,124" fill="#475569"/>
+    <!-- SA outlet -->
+    <rect x="340" y="80" width="44" height="80" fill="${accent}" opacity="0.30" stroke="${accent}" stroke-width="1.5" rx="3"/>
+    <text x="362" y="68" text-anchor="middle" font-family="ui-monospace" font-size="9" font-weight="800" fill="${accent}">SA</text>
+    <!-- Bottom labels -->
+    <text x="200" y="220" text-anchor="middle" font-family="ui-monospace" font-size="8" fill="#475569" letter-spacing="2">CCHC ⟶ FAN ⟶ ZONE VAVs</text>
+  </svg>`;
+}
+
+/* ── ROUTER ──────────────────────────────────────────── */
+function parseHash() {
+  const h = (location.hash || '#/').replace(/^#/, '');
+  const parts = h.split('/').filter(Boolean);
+  if (parts[0] === 'ahu' && parts[1]) return { view: 'ahu', id: parts[1] };
+  return { view: 'home' };
+}
+
+/* ── HOME VIEW ──────────────────────────────────────── */
+function renderHome() {
+  document.body.dataset.view = 'home';
+  document.body.style.setProperty('--ahu-accent', '#f87171');
   const totalAhu = AHUs.length;
   const totalVav = AHUs.reduce((s, a) => s + a.total, 0);
   const totalBad = AHUs.reduce((s, a) => s + a.out, 0);
   const pctBad   = totalVav > 0 ? (totalBad / totalVav * 100) : 0;
+  const worst    = AHUs[0];
+  const worstPct = Math.round(worst.out / worst.total * 100);
 
-  document.getElementById('pAhu').textContent = totalAhu;
-  document.getElementById('pVav').textContent = totalVav;
-  document.getElementById('gNum').textContent = totalBad;
-  document.getElementById('gDen').textContent = totalVav;
-  setRing(pctBad);
+  document.getElementById('app').innerHTML = `
+    <header class="brand">
+      <div class="logo"><span class="dot"></span>RED5 STUDIO</div>
+      <div class="status-bar"><span class="pulse"></span><span>LIVE</span></div>
+    </header>
+    <h1 class="page-title">Site<br><span class="accent">Overview</span></h1>
+    <div class="subtitle">Tap the worst AHU to drill in.</div>
+    <div class="ts"><span class="dot"></span><span id="tsNow">— • —</span><span class="dot"></span><span>4 sites</span></div>
+    <section class="gauge-card">
+      <div class="ring-wrap">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          ${ticksSvg()}
+          <circle class="ring-bg" cx="100" cy="100" r="86"/>
+          <circle id="ringFg" class="ring-fg" cx="100" cy="100" r="86" pathLength="100" stroke-dasharray="0 100"/>
+        </svg>
+        <div class="gauge-centre">
+          <div class="gauge-pct"><span id="gPct">0</span><span class="sym">%</span></div>
+          <div class="gauge-label">VAVs out of CZ</div>
+          <div class="gauge-fraction"><b>${totalBad}</b> of ${totalVav}</div>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-pill">
+          <div class="ic">${iconAhu()}</div>
+          <div><div class="num">${totalAhu}</div><div class="lbl">AHUs</div></div>
+        </div>
+        <div class="icon-pill">
+          <div class="ic">${iconVav()}</div>
+          <div><div class="num">${totalVav}</div><div class="lbl">VAVs</div></div>
+        </div>
+      </div>
+    </section>
+    <div class="dropdown" id="dd">
+      <button class="dd-trigger" id="ddTrigger">
+        <div class="left">
+          <div class="ic-circle">${iconBars()}</div>
+          <div class="title-block">
+            <div class="t1">AHU Drilldown</div>
+            <div class="t2">worst: ${worst.id} · ${worst.out}/${worst.total} (${worstPct}%) · tap</div>
+          </div>
+        </div>
+        ${iconChev()}
+      </button>
+      <div class="dd-body"><div class="list" id="ahuList"></div></div>
+    </div>
+    ${footerHtml()}
+  `;
 
-  // Worst AHU + worst pct → drop-down summary teaser
-  const worst = AHUs[0];
-  const worstPct = worst.total > 0 ? Math.round(worst.out / worst.total * 100) : 0;
-  document.getElementById('ddSummary').textContent =
-    `worst: ${worst.id} · ${worst.out}/${worst.total} (${worstPct}%) · tap`;
-
+  setTimestamp();
+  animateRing(document.getElementById('ringFg'), document.getElementById('gPct'), pctBad);
   const list = document.getElementById('ahuList');
-  list.innerHTML = '';
-  AHUs.forEach((a) => {
+  AHUs.forEach(a => {
     const pct = a.total > 0 ? (a.out / a.total * 100) : 0;
     const ac  = accentForPct(pct);
-    const row = document.createElement('div');
-    row.className = 'ahu-row';
-    row.style.setProperty('--accent', ac.c);
+    const row = document.createElement('a');
+    row.className = 'list-row'; row.style.setProperty('--accent', ac.c);
+    row.href = `#/ahu/${a.id}`; row.style.textDecoration = 'none';
     row.innerHTML = `
       <div class="id">${a.id}</div>
       <div class="meta">
@@ -459,55 +361,172 @@ function render() {
           <div class="bar-bg"><div class="bar-fill" style="width:${pct.toFixed(0)}%"></div></div>
           <div class="pct">${pct.toFixed(0)}%</div>
         </div>
+        <div class="sub"><b>${a.out}</b>/${a.total} out of CZ<span class="sep"></span>${a.name}<span class="sep"></span><span class="badge">${ac.name}</span></div>
+      </div>`;
+    list.appendChild(row);
+  });
+  document.getElementById('ddTrigger').onclick = () => document.getElementById('dd').classList.toggle('open');
+}
+
+/* ── AHU DETAIL VIEW ────────────────────────────────── */
+function renderAhu(id) {
+  const ahu = AHUs.find(a => a.id === id);
+  if (!ahu) { location.hash = '#/'; return; }
+  document.body.dataset.view = 'ahu';
+  const accent = ahu.accent;
+  // Set CSS vars on the document so all child elements pick up the per-AHU palette
+  const root = document.documentElement.style;
+  root.setProperty('--ahu-accent', accent);
+  root.setProperty('--ahu-bright', accent);
+  root.setProperty('--ahu-label',  rgba(accent, 0.85));
+  root.setProperty('--ahu-glow',   rgba(accent, 0.30));
+  root.setProperty('--ahu-tint',   rgba(accent, 0.55));
+  root.setProperty('--ahu-border', rgba(accent, 0.35));
+  root.setProperty('--ahu-glowstroke', rgba(accent, 0.65));
+  root.setProperty('--ahu-pill-border', rgba(accent, 0.35));
+  root.setProperty('--ahu-pill-bg', `linear-gradient(135deg, ${rgba(accent, 0.30)}, ${rgba(accent, 0.16)})`);
+  root.setProperty('--ahu-pill-icon', accent);
+  root.setProperty('--ahu-trigger-bg', rgba(accent, 0.10));
+  root.setProperty('--ahu-trigger-active', rgba(accent, 0.18));
+  root.setProperty('--ahu-circle-bg', `linear-gradient(135deg, ${rgba(accent, 0.25)}, ${rgba(accent, 0.12)})`);
+
+  const pct = ahu.total > 0 ? (ahu.out / ahu.total * 100) : 0;
+  const inCount = ahu.total - ahu.out;
+
+  document.getElementById('app').innerHTML = `
+    <header class="brand">
+      <button class="back-btn" id="backBtn">← Site</button>
+      <div class="status-bar"><span class="pulse"></span><span>LIVE</span></div>
+    </header>
+    <h1 class="page-title"><span class="ahu-id">${ahu.id}</span></h1>
+    <div class="subtitle">${ahu.name} · tap the gauge to see equipment graphic.</div>
+    <div class="ts"><span class="dot"></span><span id="tsNow">— • —</span><span class="dot"></span><span>${ahu.total} VAVs</span></div>
+    <section class="gauge-card">
+      <div class="ring-wrap tap-hint" id="ringTap" role="button" aria-label="open AHU diagram">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          ${ticksSvg()}
+          <circle class="ring-bg" cx="100" cy="100" r="86"/>
+          <circle id="ringFg" class="ring-fg" cx="100" cy="100" r="86" pathLength="100" stroke-dasharray="0 100" stroke="${accent}"/>
+        </svg>
+        <div class="gauge-centre">
+          <div class="gauge-pct"><span id="gPct">0</span><span class="sym">%</span></div>
+          <div class="gauge-label">VAVs out of CZ</div>
+          <div class="gauge-fraction"><b>${ahu.out}</b> of ${ahu.total}</div>
+        </div>
+      </div>
+      <div class="icon-row">
+        <div class="icon-pill">
+          <div class="ic">${iconVav()}</div>
+          <div><div class="num">${ahu.total}</div><div class="lbl">total</div></div>
+        </div>
+        <div class="icon-pill">
+          <div class="ic">${iconCheck()}</div>
+          <div><div class="num">${inCount}</div><div class="lbl">in CZ</div></div>
+        </div>
+        <div class="icon-pill">
+          <div class="ic">${iconAlert()}</div>
+          <div><div class="num">${ahu.out}</div><div class="lbl">out CZ</div></div>
+        </div>
+      </div>
+    </section>
+    <div class="dropdown" id="dd">
+      <button class="dd-trigger" id="ddTrigger">
+        <div class="left">
+          <div class="ic-circle">${iconBars()}</div>
+          <div class="title-block">
+            <div class="t1">VAV Drilldown</div>
+            <div class="t2">${ahu.out} out of ${ahu.total} · sorted worst → ok</div>
+          </div>
+        </div>
+        ${iconChev()}
+      </button>
+      <div class="dd-body"><div class="list" id="vavList"></div></div>
+    </div>
+    ${footerHtml()}
+  `;
+
+  setTimestamp();
+  animateRing(document.getElementById('ringFg'), document.getElementById('gPct'), pct);
+  const vavs = vavsFor(ahu);
+  const list = document.getElementById('vavList');
+  vavs.forEach(v => {
+    const cAcc = v.status === 'cold' ? '#3b82f6' : v.status === 'hot' ? '#f43f5e' : '#34d399';
+    const cLbl = v.status === 'cold' ? 'COLD' : v.status === 'hot' ? 'HOT' : 'IN CZ';
+    const dev  = v.status === 'cold' ? (20 - v.t).toFixed(1) + ' °C low'
+               : v.status === 'hot'  ? (v.t - 27).toFixed(1) + ' °C hi'
+               : 'on target';
+    const fillPct = v.status === 'in' ? 100 : Math.min(100, (v.status === 'cold' ? (20 - v.t) : (v.t - 27)) * 30);
+    const row = document.createElement('div');
+    row.className = 'list-row'; row.style.setProperty('--accent', cAcc);
+    row.innerHTML = `
+      <div class="id">${v.id}</div>
+      <div class="meta">
+        <div class="bar-row">
+          <div class="bar-bg"><div class="bar-fill" style="width:${fillPct.toFixed(0)}%"></div></div>
+          <div class="pct">${cLbl}</div>
+        </div>
         <div class="sub">
-          <b>${a.out}</b>/${a.total} out of CZ
-          <span class="sep"></span>${a.name}
-          <span class="sep"></span><span class="badge">${ac.name}</span>
+          T <b>${v.t.toFixed(1)} °C</b><span class="sep"></span>
+          RH <b>${v.rh.toFixed(0)}%</b><span class="sep"></span>
+          ${v.flow} cfm<span class="sep"></span>
+          <span class="badge">${dev}</span>
         </div>
       </div>`;
     list.appendChild(row);
   });
+
+  document.getElementById('ddTrigger').onclick = () => document.getElementById('dd').classList.toggle('open');
+  document.getElementById('backBtn').onclick = () => { location.hash = '#/'; };
+
+  // Tap-the-gauge → open the AHU equipment modal
+  const ring = document.getElementById('ringTap');
+  ring.addEventListener('click', () => openAhuModal(ahu));
 }
 
-function refreshTimestamp() {
-  const d = new Date();
-  const t = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  document.getElementById('ts-now').textContent = `synced ${t}`;
+/* ── AHU MODAL ──────────────────────────────────────── */
+function openAhuModal(ahu) {
+  document.getElementById('modalTitle').textContent = `${ahu.id} · ${ahu.name}`;
+  document.getElementById('modalSvg').innerHTML = ahuSvg(ahu.accent);
+  document.getElementById('mOA').textContent = (12 + Math.random()*8).toFixed(1) + ' °C';
+  document.getElementById('mSA').textContent = (14 + Math.random()*2).toFixed(1) + ' °C';
+  document.getElementById('mFan').textContent = (35 + Math.random()*12).toFixed(0) + ' Hz';
+  document.getElementById('ahuModal').classList.add('show');
 }
+document.getElementById('modalClose').onclick = () => document.getElementById('ahuModal').classList.remove('show');
+document.getElementById('ahuModal').addEventListener('click', (e) => { if (e.target.id === 'ahuModal') document.getElementById('ahuModal').classList.remove('show'); });
 
-/* Draw 12 tick marks every 30° on the gauge ring (purely decorative
-   but anchors the eye and reads as "this is a real gauge"). */
-function drawTicks() {
-  const g = document.getElementById('ringTicks');
-  const cx = 100, cy = 100, rOut = 92, rIn = 87;
-  const ticks = [];
+/* ── ICONS (inline SVG) + reused fragments ──────────── */
+function iconAhu(){ return `<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="9" cy="12" r="2.6"/><circle cx="15" cy="12" r="2.6"/><line x1="3" y1="10" x2="3" y2="14"/><line x1="21" y1="10" x2="21" y2="14"/></svg>`; }
+function iconVav(){ return `<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="10" rx="1.5"/><line x1="8" y1="9" x2="16" y2="15"/><path d="M3 12 H6"/><path d="M18 12 H21"/></svg>`; }
+function iconCheck(){ return `<svg viewBox="0 0 24 24"><path d="M5 12 L10 17 L19 7"/></svg>`; }
+function iconAlert(){ return `<svg viewBox="0 0 24 24"><path d="M12 4 L21 20 H3 Z"/><path d="M12 10 V14"/><circle cx="12" cy="17" r="0.5" fill="currentColor"/></svg>`; }
+function iconBars(){ return `<svg viewBox="0 0 24 24"><path d="M3 12 H21"/><path d="M3 6 H21"/><path d="M3 18 H21"/></svg>`; }
+function iconChev(){ return `<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9 L12 15 L18 9"/></svg>`; }
+function ticksSvg() {
+  let s = '<g>';
   for (let i = 0; i < 12; i++) {
     const a = (i * 30 - 90) * Math.PI / 180;
-    const x1 = cx + rOut * Math.cos(a), y1 = cy + rOut * Math.sin(a);
-    const x2 = cx + rIn  * Math.cos(a), y2 = cy + rIn  * Math.sin(a);
-    ticks.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(100,116,139,0.55)" stroke-width="1.4" stroke-linecap="round"/>`);
+    const x1 = 100 + 92 * Math.cos(a), y1 = 100 + 92 * Math.sin(a);
+    const x2 = 100 + 87 * Math.cos(a), y2 = 100 + 87 * Math.sin(a);
+    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(100,116,139,0.55)" stroke-width="1.4" stroke-linecap="round"/>`;
   }
-  g.innerHTML = ticks.join('');
+  return s + '</g>';
+}
+function footerHtml(){ return `<div class="footer"><span>Red5 Studio v3.0 · Mobile</span><div class="links"><a href="#/" id="lHome">home</a><a href="#" id="lFull">full site →</a></div></div>`; }
+function setTimestamp() {
+  const el = document.getElementById('tsNow'); if (!el) return;
+  const d = new Date(); const t = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  el.textContent = `synced ${t}`;
 }
 
-drawTicks();
-render();
-refreshTimestamp();
-setInterval(refreshTimestamp, 30000);
-
-document.getElementById('ddTrigger').addEventListener('click', () => {
-  document.getElementById('dd').classList.toggle('open');
-});
-
-document.getElementById('lRefresh').addEventListener('click', (e) => {
-  e.preventDefault();
-  refreshTimestamp();
-  AHUs.forEach(a => {
-    if (Math.random() < 0.30) a.out = Math.max(0, Math.min(a.total, a.out + (Math.random() < 0.5 ? -1 : 1)));
-  });
-  AHUs.sort((a, b) => (b.out - a.out) || (b.out / b.total - a.out / a.total));
-  render();
-});
+/* ── BOOT ──────────────────────────────────────────── */
+function route() {
+  const r = parseHash();
+  if (r.view === 'ahu') renderAhu(r.id); else renderHome();
+}
+window.addEventListener('hashchange', route);
+route();
+setInterval(setTimestamp, 30000);
 </script>
 </body>
 </html>

@@ -5200,3 +5200,55 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - `/app/frontend/public/dashboard.html` (pill floors + iframe-mode CSS rewrite)
 - `/app/frontend/public/mobile_mockup.html` (`.fs` class + handlers)
 - Mirrored to both archive trees + bundle rebuilt
+
+---
+
+## Phase L.21 — Pill Formula Correction + VFD Resize/3D + Mobile Phone-Native Modal (2026-02-21)
+
+**User feedback (real phone test)**:
+1. Pills still too small — original gScale should be the DEFAULT (full size), 70 % should be the MIN as the image shrinks
+2. AHU VFD chassis was flat and didn't resize with the image
+3. Mobile iframe was a bad call — phone real estate is insufficient
+
+**Fixes**:
+
+### 1. Pill scaling formula (gScale * clamp(imgScale, 0.7, 1))
+- `dashboard.html` line ~5193 (AHU): `scale(${gScale * Math.max(0.7, Math.min(1, imgScale))})`
+- Line ~4324 (VAV): `gScale = (p.scale || 1.0) * Math.max(0.7, Math.min(1, vavImgScale))`
+- At default modal size → pills at original gScale (no shrink, no grow)
+- At 50 % modal → pills floor at 70 % of gScale
+- Beyond 100 % modal → pills capped at gScale (no inflation)
+
+### 2. AHU VFD scaling + subtle 3D tilt
+- `vfd_aligner` block (~line 5400) now applies `(a.scale ?? 1.0) * imgScale` AND a default `perspective(1200px) rotateY(-8deg) rotateX(3deg)` for oblique-projection 3D feel
+- Schema `rotX`/`rotY`/`rotZ` override the defaults (operators can flatten or tilt further)
+- Generic AHU animation block (~line 5432) also fixed — `aEffScale = (a.scale||1) * imgScale` applied to fans/dampers/valves (matched the VAV side which already had it)
+
+### 3. Mobile equipment modal: iframe → stylised SVG + headline pills + table
+- `mobile_mockup.html` modal HTML restructured with a 4th headline pill (STATIC) + `<div class='modal-tablewrap'>` containing a sticky-header point/value table
+- `realImgWithFallback()` reverts to returning the existing stylised SVG (`ahuSvg()`/`vavSvg()`)
+- `openEquipmentModal(kind, item)` rewritten:
+  - Sets stylised SVG inline
+  - Populates 4 headline pills (AHU: OA/SA/FAN/STATIC; VAV: ZONE T/ZONE RH/FLOW/DAMPER)
+  - Builds an alphabetically-sorted scrolling table from `item._raw.all_points`
+  - Flags out-of-range temperature points with red colour
+- `_cookedAhus` + `_cookedVavs` now keep `_raw: <full row>` so the modal can read every point
+- `.modal-backdrop.fs` CSS + `.fs` class toggling removed (no longer needed)
+
+**Tested**: `testing_agent_v3_fork` iteration_5 — **10/10 PASS, 0 bugs, 0 action items, 100 % success**:
+- Mobile AHU modal: SVG renders, 4 headline pills populated, 26-row points table, no iframe in DOM ✓
+- Mobile VAV modal: ZONE T/ZONE RH/FLOW/DAMPER pills, 8-row table ✓
+- `.fs` class gone, modal max-height ~90vh ✓
+- Close + backdrop dismiss ✓
+- ArrowRight/ArrowLeft swipe nav still works (AHU-01-E → AHU-02-S → AHU-01-E cyclic) ✓
+- Desktop pill scales sampled at 1.0 across 10 groups (within 0.7-1.0 clamp window) ✓
+- QR phone-preview overlay + Escape close ✓
+- /mobile → /mobile_mockup.html redirect ✓
+- Both ASHRAE docs 200, content lengths 8138 + 10006 ✓
+
+**Parity locked**: dashboard.html + mobile_mockup.html md5-identical across `/app/frontend/public/`, V1.9, V2.0. V1.9 bundle rebuilt.
+
+**Files touched**:
+- `/app/frontend/public/dashboard.html` (pill formula + VFD imgScale/tilt + generic animation imgScale)
+- `/app/frontend/public/mobile_mockup.html` (modal rewrite — iframe out, table in)
+- Mirrors + V1.9 bundle

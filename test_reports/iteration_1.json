@@ -1,0 +1,53 @@
+{
+  "summary": "Frontend-only test pass for AHU/VAV pill responsive scaling + iframe-mode modal embed + mobile mockup iframe wiring. All four scenarios exercised against the live preview URL. Code-level wiring is correct everywhere; one CSS scoping bug found in iframe-mode chrome hiding (#g36-timeline-strip and r5-toast-host leak because they are body-level siblings of #root, not children of it). Mobile mockup iframe embed works perfectly. Parity check across the three dashboard.html copies (public + V1.9 + V2.0) is byte-identical (matching MD5). Desktop pill scale multiplier code is in place at the documented lines but cannot be fully runtime-verified because this dev env has no equipment image assets — naturalWidth=0, so imgScale fallback to 1 (expected per spec).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "dashboard.html — iframe-modal-mode CSS scope",
+        "issue": "Chrome leak: #g36-timeline-strip (dark G36 legend panel with mode/timeline/AHU OCCUPIED rows) AND .r5-toast-host remain VISIBLE in iframe-mode at small viewports. Root cause: these elements are body-direct siblings of #root (confirmed via DOM walk), but the hide rule only targets `body.iframe-modal-mode #root > * { visibility: hidden }`. Visible in screenshot of /dashboard.html?iframe=1&modal_ahu=AHU-01 at 360x640 — bottom ~40% of viewport shows the G36 timeline strip behind/below the modal. Spec explicitly lists 'G36 timeline' as chrome that must be hidden.",
+        "selector": "#g36-timeline-strip, .r5-toast-host",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Extend iframe-mode hide rule in /app/frontend/public/dashboard.html (line ~146) to also hide body-direct chrome. Suggested patch: add `body.iframe-modal-mode > #g36-timeline-strip, body.iframe-modal-mode > .r5-toast-host { display: none !important; }` (or broaden to `body.iframe-modal-mode > div:not(#root) { display: none !important; }` and then keep the existing z-[120]/z-[130] allowlist for modal portal). Mirror the change into /app/archive/Red5-Studio-V1.9/dashboard.html and /app/archive/Red5-Studio-V2.0/dashboard.html to preserve parity.",
+    "Optional UX: when no equipment image is seeded (naturalWidth=0), pills currently render at scale(1) regardless of modal size. Consider falling back imgScale to (modal.contentWidth / DESIGN_BASE_WIDTH) when natW===0, so pills still shrink proportionally with the modal when the placeholder is shown. Low priority — placeholder mode is dev-only.",
+    "No action needed for mobile mockup or parity — both correct."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/public/dashboard.html line 146: `body.iframe-modal-mode #root > * { visibility: hidden !important; }` — selector scope is too narrow; chrome rendered outside #root (#g36-timeline-strip line confirmed, .r5-toast-host confirmed, and the standalone v2-auth-banner which luckily already has display:none) is not hidden. This is the only structural bug in the iframe-mode feature.",
+    "/app/frontend/public/dashboard.html line 5193 / 4320 / 4399: `scale(gScale * imgScale)` math is correct; imgScale = dispW/natW with `(dispW && natW) ? ... : 1` safe fallback when image fails to load. Looks robust.",
+    "/app/frontend/public/mobile_mockup.html line 249-252: iframe-fallback wiring is clean; src URL construction with encodeURIComponent is correct; loading='lazy' is appropriate.",
+    "Suggestion: in dashboard.html line 1882, the VAV auto-open `if (wantVav && ahuData && ahuData.length)` runs only after ahuData loads; if iframe loads before ahuData, the VAV setup is skipped because effect dep is [ahuData] — actually that re-fires, so OK. AHU path on line 1881 runs unconditionally (no ahuData gate). Both work.",
+    "Parity: md5 0e34b9b6b76280920c446e4750c44d13 identical across /app/frontend/public/dashboard.html, /app/archive/Red5-Studio-V1.9/dashboard.html, /app/archive/Red5-Studio-V2.0/dashboard.html — perfect.",
+    "dashboard.html is now 5653 lines — far over the 700-line guideline. Should be split into modules at the main agent's discretion (not a regression from this change)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (skipped per request)", "frontend": "85% — 3 of 4 acceptance criteria fully met, 1 partial (iframe-mode chrome leak)" },
+  "test_credentials": "Not required — dashboard.html renders via anonymous demo path; never hit auth wall during testing.",
+  "seed_data_creation": "None.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent patches the iframe-mode CSS to hide body-direct children (g36-timeline-strip, r5-toast-host), re-run a single visual check at /dashboard.html?iframe=1&modal_ahu=AHU-01 in 360x640 viewport and confirm the bottom dark G36 panel is gone. Mobile mockup test (open #ddTrigger -> first .list-row -> #ringTap) already produces a clipped-iframe view that hides the leak today, so user-facing impact on mobile is zero; the bug is only visible when the dashboard URL is opened directly in iframe mode. The desktop pill scaling (gScale * imgScale) cannot be visually verified without seeded equipment-image assets — naturalWidth=0 in dev — but the code path on lines 5193, 4320, 4399 is correct.",
+  "rca of the issue": {
+    "bug": "G36 timeline panel (and toast host) visible inside iframe-mode dashboard",
+    "reproduce": "1) Open https://controller-dashboard-2.preview.emergentagent.com/dashboard.html?iframe=1&modal_ahu=AHU-01 at 360x640 viewport. 2) Wait ~7s for React boot. 3) Observe: top 60% shows the AHU modal (correct), bottom ~40% shows a dark panel with G36 MODE TIMELINE 4H/24H legend and AHU-01..AHU-05 OCCUPIED rows (leaked chrome).",
+    "rca": "/app/frontend/public/dashboard.html line ~146 hides chrome via `body.iframe-modal-mode #root > * { visibility: hidden !important; }`. This selector only matches direct children of #root. DOM inspection confirms #g36-timeline-strip is appended as a body-direct child (likely outside the React tree, via a portal or direct DOM append), and .r5-toast-host similarly. Neither is reached by the existing selector, so both stay visible in iframe-mode.",
+    "fix": "Add `body.iframe-modal-mode > #g36-timeline-strip, body.iframe-modal-mode > .r5-toast-host { display: none !important; }` next to the existing #v2-auth-banner rule, OR generalise to `body.iframe-modal-mode > *:not(#root):not(script) { display: none !important; }` (cleaner). Then mirror to both V1.9 and V2.0 archive copies."
+  },
+  "verified_observations": {
+    "parity_md5_all_three_dashboard_html": "0e34b9b6b76280920c446e4750c44d13",
+    "iframe_param_handler_lines": "dashboard.html lines 1873-1894 — useEffect parses ?iframe=1, ?modal_ahu=, ?modal_vav= and calls setShowAhuModalFor / setSelectedVavForModal",
+    "body_class_added_on_iframe_param": true,
+    "ahu_modal_z130_class_visible_in_iframe_mode": true,
+    "mobile_mockup_ahu_iframe_src": "/dashboard.html?iframe=1&modal_ahu=AHU-05-N (verified live)",
+    "mobile_mockup_vav_iframe_src": "/dashboard.html?iframe=1&modal_vav=VAV-001 (verified live)",
+    "pill_scale_formula_present_at": ["line 5193 (AHU group)", "line 4320 (VAV schema point)", "line 4399 / 4427 / 4446 (VAV anim & aligner)"],
+    "pill_scale_runtime_value": "scale(1) — because dev env has no equipment image assets, ahuImgDims.natW=0, imgScale falls back to 1 (expected per spec)"
+  }
+}

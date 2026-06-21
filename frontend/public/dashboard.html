@@ -132,6 +132,43 @@
            brightness(1/2.0) = brightness(1.0).  When --red5-dim is unset
            (light mode), the calc evaluates to brightness(1) — a no-op. */
         .red5-graphic-zone { filter: brightness(calc(1 / var(--red5-dim, 1))); }
+
+        /* ── IFRAME MODAL-ONLY MODE ──
+           Activated by ?iframe=1 URL param.  Used by mobile_mockup.html (and
+           any other embedder) to display only the AHU/VAV equipment modal as
+           iframe content.  We hide *everything* inside the React root with
+           `visibility:hidden`, then re-enable the modal subtree only.  This is
+           more robust than `display:none` on the chrome because React renders
+           modals as deep descendants — not direct root children — so we can't
+           rely on shallow selectors. */
+        body.iframe-modal-mode { overflow: hidden; background: #d0d4d8 !important; }
+        body.iframe-modal-mode #v2-auth-banner { display: none !important; }
+        body.iframe-modal-mode #root > * { visibility: hidden !important; }
+        body.iframe-modal-mode [class*='z-[120]'],
+        body.iframe-modal-mode [class*='z-[130]'] {
+            visibility: visible !important;
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 1 !important;
+        }
+        body.iframe-modal-mode [class*='z-[120]'] *,
+        body.iframe-modal-mode [class*='z-[130]'] * { visibility: visible !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div,
+        body.iframe-modal-mode [class*='z-[130]'] > div {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            border-radius: 0 !important;
+            resize: none !important;
+        }
+        /* Hide embedder-irrelevant chrome inside the modal */
+        body.iframe-modal-mode [data-testid='popout-ahu-modal-btn'],
+        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'] { display: none !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > h3 > span:last-child,
+        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > div:last-child > button:last-child,
+        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > div:last-child > button:last-child { display: none !important; }
     </style>
 </head>
 <body>
@@ -1825,6 +1862,36 @@
             }, [fetchTelemetry]);
             // Expose refetch so writeRW can trigger immediate refresh
             useEffect(() => { window._refetchTelemetry = fetchTelemetry; }, [fetchTelemetry]);
+
+            // ── IFRAME-MODE MODAL AUTO-OPEN ──
+            // Allows another page (e.g. mobile_mockup.html) to embed this dashboard
+            // as an iframe focused on a single AHU/VAV equipment modal.  Triggered
+            // via URL params:  ?iframe=1&modal_ahu=AHU-05-N  or  ?modal_vav=VAV-001
+            // The `iframe=1` flag toggles a body class that hides every chrome
+            // element except the modal itself, so the iframe content area is the
+            // bare equipment graphic + data pills + animations.
+            useEffect(() => {
+                try {
+                    const qp = new URLSearchParams(window.location.search);
+                    if (qp.get('iframe') === '1') {
+                        document.body.classList.add('iframe-modal-mode');
+                    }
+                    const wantAhu = qp.get('modal_ahu');
+                    const wantVav = qp.get('modal_vav');
+                    if (wantAhu) { setShowAhuModalFor(wantAhu); return; }
+                    if (wantVav && ahuData && ahuData.length) {
+                        for (const a of ahuData) {
+                            const v = (a.vavs || []).find(x => x.id === wantVav);
+                            if (v) {
+                                setSelectedVavForModal(v);
+                                setLockedVavId(v.id);
+                                setIsLockedToSA(false);
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) { /* params parse - safe to ignore */ }
+            }, [ahuData]);
 
             // Load initial data mode from backend
             useEffect(() => {

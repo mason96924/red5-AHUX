@@ -5252,3 +5252,23 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - `/app/frontend/public/dashboard.html` (pill formula + VFD imgScale/tilt + generic animation imgScale)
 - `/app/frontend/public/mobile_mockup.html` (modal rewrite — iframe out, table in)
 - Mirrors + V1.9 bundle
+
+---
+
+## Phase L.22 — Scale Floor Tweak (2026-02-21)
+
+**User-requested**:
+- Pill floor 70 % → **80 %** (tighter readability)
+- VFD + generic AHU + VAV animations: should START at original size, shrink down to 70 % floor (was missing any floor)
+
+**Changes in `/app/frontend/public/dashboard.html`**:
+- AHU pill: `scale(${gScale * Math.max(0.8, Math.min(1, imgScale))})`
+- VAV pill: `(p.scale||1.0) * Math.max(0.8, Math.min(1, vavImgScale))`
+- AHU VFD: `vfdScale = (a.scale ?? 1.0) * Math.max(0.7, Math.min(1, imgScale))`
+- AHU generic animation: `aEffScale = (a.scale||1) * Math.max(0.7, Math.min(1, imgScale))`
+- VAV VFD: `(a.scale ?? 1.0) * Math.max(0.7, Math.min(1, vavImgScale))` + perspective/rotation tilt now applied to VAV side too (matches AHU)
+- VAV generic animation: `effScale = (a.scale||1) * Math.max(0.7, Math.min(1, vavImgScale))`
+
+**Self-verified**: 6/6 sampled AHU pills render at scale 1.0 at 1280×800 (default-size case). Modal visual: VFD chassis at original proportions + subtle 3D tilt visible; data pills readable + properly anchored.
+
+**Parity locked**: md5 identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.

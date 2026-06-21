@@ -4438,9 +4438,9 @@
                                                     if (p.x == null || p.y == null) return null;
                                                     const vavImgScale = (vavImgDims.dispW && vavImgDims.natW) ? (vavImgDims.dispW / vavImgDims.natW) : 1;
                                                     // Original schema scale is the DEFAULT (full size at imgScale>=1).
-                                                    // Pills shrink with the image but never below 70% of original —
+                                                    // Pills shrink with the image but never below 80% of original —
                                                     // the readability floor.  imgScale > 1 is capped (no grow).
-                                                    const gScale = (p.scale || 1.0) * Math.max(0.7, Math.min(1, vavImgScale));
+                                                    const gScale = (p.scale || 1.0) * Math.max(0.8, Math.min(1, vavImgScale));
                                                     const isRW = p.access === 'RW';
                                                     const minVal = parseFloat(p.min);
                                                     const maxVal = parseFloat(p.max);
@@ -4546,7 +4546,7 @@
                                                             const hz = tVal;
                                                             const amps = (hz / 60) * 8.5;
                                                             return (
-                                                                <div key={`vanim_${ai}`} className="absolute z-20" style={{left:`${a.x}%`, top:`${a.y}%`, transform:`scale(${(a.scale ?? 1.0) * vavImgScale})`}}>
+                                                                <div key={`vanim_${ai}`} className="absolute z-20" style={{left:`${a.x}%`, top:`${a.y}%`, transform:`perspective(1200px) scale(${(a.scale ?? 1.0) * Math.max(0.7, Math.min(1, vavImgScale))}) rotateY(${(a.rotY != null) ? a.rotY : -8}deg) rotateX(${(a.rotX != null) ? a.rotX : 3}deg) rotateZ(${a.rotZ||0}deg)`, transformStyle:'preserve-3d'}}>
                                                                     <div className="relative w-0 h-0">
                                                                         <div className="absolute" style={{left:0,top:0,width:chassisW+'px',height:chassisH+'px',transform:'translate(-50%,-50%)'}}>
                                                                             {typeof PreviewVFDChassis !== 'undefined' && <PreviewVFDChassis imageData={a.image_data} isRunning={isRunning} isAlarm={isAlarm} />}
@@ -4563,9 +4563,10 @@
                                                         }
 
                                                         const wPx = a.base_w || 120, hPx = a.base_h || 120;
-                                                        // Aligners are authored relative to natural image size — multiply scale by vavImgScale
-                                                        // so their position + size stay proportional when the image is shrunk to fit the modal.
-                                                        const effScale = (a.scale || 1) * vavImgScale;
+                                                        // Aligners + generic animations: start at the schema's scale
+                                                        // and shrink down to 70 % of original as the modal image gets
+                                                        // smaller (matches the VFD + pill clamps).
+                                                        const effScale = (a.scale || 1) * Math.max(0.7, Math.min(1, vavImgScale));
                                                         const transformStyle = `scale(${effScale}) scaleX(${a.stretchX||1}) scaleY(${a.stretchY||1}) skewX(${a.skewX||0}deg) skewY(${a.skewY||0}deg) rotateX(${a.rotX||0}deg) rotateY(${a.rotY||0}deg) rotateZ(${a.rotZ||0}deg)`;
                                                         const isSplitDP = atype === 'diff_pressure_switch';
                                                         const sX = a.sensor_x != null ? a.sensor_x : a.x;
@@ -5320,7 +5321,7 @@
                                             };
 
                                             return (
-                                                <div key={`grp_${gi}`} className="absolute z-20" style={{left:`${grp.x}%`,top:`${grp.y}%`,transform:`translate(-50%,-50%) scale(${gScale * Math.max(0.7, Math.min(1, imgScale))})`,transformOrigin:'center center'}}>
+                                                <div key={`grp_${gi}`} className="absolute z-20" style={{left:`${grp.x}%`,top:`${grp.y}%`,transform:`translate(-50%,-50%) scale(${gScale * Math.max(0.8, Math.min(1, imgScale))})`,transformOrigin:'center center'}}>
                                                     {hasRW ? (
                                                         // RW DATABOX — amber-bordered rectangular
                                                         <div className="flex flex-col bg-slate-950/95 border border-amber-700/60 rounded shadow-xl backdrop-blur-md min-w-[150px]">
@@ -5403,12 +5404,13 @@
                                                 const pillW = a.pill_w || 100, pillH = a.pill_h || 32;
                                                 const hz = tVal;
                                                 const amps = (hz / 60) * 8.5;
-                                                // Apply imgScale so the VFD chassis shrinks with the modal image
-                                                // (was static, leaving the VFD oversized on a half-width modal).
-                                                // Subtle oblique-projection rotation gives the flat chassis/photo a
-                                                // 3D "tilted-toward-operator" feel.  Schema-supplied rotX/rotY/rotZ
-                                                // override the defaults so operators can flatten or tilt further.
-                                                const vfdScale = (a.scale ?? 1.0) * imgScale;
+                                                // Apply imgScale (clamped 0.7..1.0) so the VFD chassis starts at
+                                                // its original size and shrinks DOWN to 70% of original as the
+                                                // modal image gets smaller.  Subtle oblique-projection rotation
+                                                // gives the flat chassis/photo a 3D "tilted-toward-operator" feel.
+                                                // Schema-supplied rotX/rotY/rotZ override the defaults so operators
+                                                // can flatten or tilt further.
+                                                const vfdScale = (a.scale ?? 1.0) * Math.max(0.7, Math.min(1, imgScale));
                                                 const vfdRotY  = (a.rotY != null) ? a.rotY : -8;
                                                 const vfdRotX  = (a.rotX != null) ? a.rotX :  3;
                                                 const vfdRotZ  = (a.rotZ != null) ? a.rotZ :  0;
@@ -5438,10 +5440,11 @@
                                             }
 
                                             const wPx = a.base_w || 150, hPx = a.base_h || 150;
-                                            // Aligners + generic animations are authored relative to natural image
-                                            // size — multiply scale by imgScale so fans/dampers/valves stay
-                                            // proportional when the AHU modal image is shrunk to fit the modal.
-                                            const aEffScale = (a.scale||1) * imgScale;
+                                            // Aligners + generic animations: start at the schema's scale and
+                                            // shrink down to 70 % of original as the modal image gets smaller
+                                            // (matches the VFD + pill clamps so the whole graphic shrinks in
+                                            // proportion when the modal is dragged narrower).
+                                            const aEffScale = (a.scale||1) * Math.max(0.7, Math.min(1, imgScale));
                                             const transformStyle = `scale(${aEffScale}) scaleX(${a.stretchX||1}) scaleY(${a.stretchY||1}) skewX(${a.skewX||0}deg) skewY(${a.skewY||0}deg) rotateX(${a.rotX||0}deg) rotateY(${a.rotY||0}deg) rotateZ(${a.rotZ||0}deg)`;
                                             const isSplitDP = atype === 'diff_pressure_switch';
                                             const sX = a.sensor_x != null ? a.sensor_x : a.x;

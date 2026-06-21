@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useParams } from "react-router-dom";
 
 /**
  * /mobile route — production phone view.
@@ -11,13 +12,19 @@ import { useEffect } from "react";
  * links and bookmarks.
  *
  * `replace: true` keeps the address bar at /mobile_mockup.html after
- * redirect, which is what the share/QR URLs already point at.
+ * redirect, which is what the share/QR URLs already point at.  When the
+ * caller deep-links via /mobile/:kind/:id (react-router path params,
+ * NOT a hash) we re-encode the target as a hash route so the vanilla
+ * mockup's hash-driven router picks it up.
  */
 export default function Mobile() {
+  const { kind, id } = useParams();
   useEffect(() => {
-    const target = "/mobile_mockup.html" + (window.location.hash || "");
-    window.location.replace(target);
-  }, []);
+    const deepLink = (kind && id)
+      ? `#/${kind}/${encodeURIComponent(id)}`
+      : (window.location.hash || "");
+    window.location.replace("/mobile_mockup.html" + deepLink);
+  }, [kind, id]);
   return (
     <div
       data-testid="mobile-route-redirect"

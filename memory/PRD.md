@@ -5088,3 +5088,48 @@ shows `200%` in yellow with `PLUGIN` chip + `WIN` button adjacent.
 - `/app/archive/Red5-Studio-V2.0/dashboard.html` (mirrored)
 - `/app/archive/Red5-Studio-V2.0/mobile_mockup.html` (mirrored)
 - `/app/archive/Red5-Studio-V1.9/red5_bundle.zip` (rebuilt)
+
+---
+
+## Phase L.18 — Preview-on-Phone QR, Production Mobile Route, ASHRAE 90.1 + G36 Docs (2026-02-21)
+
+**Three concurrent features**:
+
+### 1. Preview-on-Phone QR overlay
+- Vendored `qrcode-generator@1.4.4` at `/app/frontend/public/js/qrcode.min.js` (20.7 KB, air-gap-safe).
+- New QR button (`data-testid='qr-phone-preview-btn'`) inside both AHU and VAV modal title bars; opens a vanilla DOM overlay (`#r5-qr-overlay`) at `<body>` scope with a QR code pointing at same-origin `/mobile_mockup.html#/{kind}/{id}`.
+- Copy URL / Close buttons, Escape + backdrop click both close. Hidden in iframe-mode.
+
+### 2. Production mobile route + live data
+- `/app/frontend/public/mobile_mockup.html` rewritten: now pulls live AHU+VAV roster from `/api/data` (V1.9-shaped). Demo fallback only when fetch fails. `_cookedAhus()` / `_cookedVavs()` mappers compute "out of CZ" against the ASHRAE 55 default band. Polls every 8s.
+- React `/mobile` + `/mobile/:kind/:id` routes added (`/app/frontend/src/pages/Mobile.jsx`). Uses `useParams` to translate path params → hash route (`#/{kind}/{id}`) before redirecting to `/mobile_mockup.html`.
+- Flask `/mobile` + `/mobile_mockup.html` routes added in `/app/archive/Red5-Studio-V1.9/app.py` and `/app/archive/Red5-Studio-V2.0/app.py`.
+
+### 3. ASHRAE 90.1 + G36 docs
+- `/app/frontend/public/docs/ashrae_90_1_reference.md` (~8.2 KB) — energy code clause-by-clause, mapped to Red5 features.
+- `/app/frontend/public/docs/ashrae_g36_reference.md` (~10 KB) — operator-friendly walk through the seven G36 modes, Trim & Respond, AHU/VAV/plant sequences.
+- Both registered in `/app/frontend/public/js/docs_index.js` and surfaced in the standards drawer.
+
+**Bugs caught + fixed during this phase**:
+- iteration_2.json HIGH: `/mobile/:kind/:id` was ignoring URL params → `Mobile.jsx` updated to call `useParams()` and build the hash deep-link. Verified live.
+- Mobile mockup race: `renderAhu()` was stripping hash to `#/` when invoked before live data landed (DEMO roster has different IDs). Added `_liveOk` guard that renders a "Loading <id>…" stub and waits for the next live-data tick to re-route.
+
+**Tested**: `testing_agent_v3_fork` iteration_2 — 6/7 pass on first run, then 7/7 after Mobile.jsx fix + race guard. Verified live:
+- AHU QR → URL `…/mobile_mockup.html#/ahu/AHU-01`, SVG canvas, Escape + backdrop + Copy all work
+- VAV QR → URL `…/mobile_mockup.html#/vav/VAV-01-E`
+- iframe-mode hides QR button
+- /mobile/ahu/AHU-01 → mobile_mockup.html#/ahu/AHU-01, 10 VAVs render, rose-pink AHU-01 accent
+- /api/data returns AHU-01..AHU-05 (58 total VAVs) and replaces the DEMO roster
+- Both new docs return 200; both visible in standards drawer
+
+**Parity locked** (md5 identical across all three trees):
+- dashboard.html, mobile_mockup.html, js/docs_index.js, js/qrcode.min.js, docs/ashrae_90_1_reference.md, docs/ashrae_g36_reference.md
+
+**Deploy commands for Linux PC**:
+```
+cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build && sudo systemctl restart red5-backend.service
+```
+
+**Next Action Items (P1+ pipeline)**:
+- 🟢 P3: V3.0 Red5-Modbus Phase 2 (`modbus/codec.py`, `tcp_client.py`, drivers)
+- Refactor: split `dashboard.html` into modules (now ~5770 lines)

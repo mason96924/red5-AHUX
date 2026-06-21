@@ -507,7 +507,20 @@ function renderHome() {
 /* ── AHU DETAIL VIEW ────────────────────────────────── */
 function renderAhu(id) {
   const ahu = AHUs.find(a => a.id === id);
-  if (!ahu) { location.hash = '#/'; return; }
+  if (!ahu) {
+    /* Race guard: deep-links from QR scans / /mobile/ahu/<id> arrive
+       BEFORE the first /api/data response.  The DEMO_AHUs roster won't
+       know about the real `id`, so without this guard we'd strip the
+       hash back to '#/' and lose the deep-link.  Instead, render a
+       loading stub and rely on the live-data tick to call route()
+       again once AHUs is repopulated. */
+    if (!_liveOk) {
+      document.getElementById('app').innerHTML = '<div style="padding:64px 24px;text-align:center;color:#94a3b8;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase">Loading <b style="color:#facc15">' + (id || 'equipment') + '</b>\u2026</div>';
+      return;
+    }
+    location.hash = '#/';
+    return;
+  }
   document.body.dataset.view = 'ahu';
   const accent = ahu.accent;
   // Set CSS vars on the document so all child elements pick up the per-AHU palette

@@ -5272,3 +5272,37 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 **Self-verified**: 6/6 sampled AHU pills render at scale 1.0 at 1280×800 (default-size case). Modal visual: VFD chassis at original proportions + subtle 3D tilt visible; data pills readable + properly anchored.
 
 **Parity locked**: md5 identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.
+
+---
+
+## Phase L.23 — dashboard.html Refactor, First Slice (2026-02-21)
+
+**Goal**: split `dashboard.html` (~5800 lines) into JS modules. Started with the safest closure-free utilities to prove the pattern.
+
+**Architecture used**: dashboard.html already has a module loader at the bottom (lines ~5660-5680) that fetches `jsModules[]` array entries, concatenates them with the inline `<script type="text/plain" id="main-source">` body, and Babel-transpiles the whole thing as one block. Top-level declarations in any external module remain accessible to the App closure — no `window.*` boilerplate needed.
+
+**Extracted to `/app/frontend/public/js/dashboard/dashboard-helpers.js`** (~170 lines):
+- `red5OpenPopupWindow(name, title, w, h)` — cross-modal pop-out helper (cloned styles + Tailwind CDN, returns {win, host} for createPortal)
+- `Icon` — Lucide-style SVG icon renderer (book-open, clipboard-list, radio-tower, settings, rotate-ccw)
+- `Sparkline` — minimal trend-line component (props-only, no state)
+
+**dashboard.html size**: 5799 → 5697 lines (~2 % reduction; modular pattern established).
+
+**Tested**: `testing_agent_v3_fork` iteration_6 — **6/6 PASS, 0 bugs, 0 action items, 100 % success**. Verified:
+- All 3 utilities resolve in window scope
+- Sidebar 4 icon buttons render their SVG children
+- Sparkline mounts a 102-char polyline via direct React invocation
+- POP OUT data-testid button click spawns a new Playwright page with 0 console errors
+- /assets/js/dashboard/dashboard-helpers.js md5 575037e11c0c66cdd4753990ec7c29fd matches local
+- /mobile redirect, ASHRAE docs, AHU/VAV modal regression-clean
+
+**Phase 1B parked**: AHU + VAV modal IIFE extraction. Their bodies reference 50+ closure variables (state, refs, helpers) inside App. Safe extraction needs a proper prop-interface design + careful seam choice — too risky in a one-shot pass, will be its own dedicated phase.
+
+**Follow-up cleanup (low priority)**: testing agent noted Sparkline uses `React.createElement` while Icon uses JSX — mix-and-match works but a future pass could harmonise to JSX for readability.
+
+**Parity locked**: dashboard.html + dashboard-helpers.js md5-identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.
+
+**Files touched**:
+- `/app/frontend/public/js/dashboard/dashboard-helpers.js` (new)
+- `/app/frontend/public/dashboard.html` (registered module + removed inline definitions)
+- Mirrors in V1.9 + V2.0 archives + `red5_bundle.zip` rebuild

@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only smoke + regression for Phase 1 module-split refactor (first slice) lifting red5OpenPopupWindow, Icon, Sparkline into /assets/js/dashboard/dashboard-helpers.js. Ran all 6 requested scenarios against live preview https://controller-dashboard-2.preview.emergentagent.com. 6/6 PASS. (1) Boot smoke: typeof Icon, Sparkline, red5OpenPopupWindow all resolve to 'function' in window scope after 7s wait; #root populated with 105k chars HTML; no Babel-error red banner; psychrometric chart, sidebar toolbar, G36 timeline strip all render (verified visually + via SVG counts). (2) Sidebar Icon usage: exactly 4 svg[viewBox='0 0 24 24'] elements inside <button> wrappers all carry inner <path>/<circle>/<rect> children (book-open, radio-tower, settings, rotate-ccw confirmed by tag inspection). Clicking the first icon button raises 0 new console errors. (3) Sparkline usage: direct React invocation with sample data [1..6..1] mounts an <svg> containing a <polyline points='0,18 8,14.8 16,11.6 24,8.4 32,5.2 40,2 48,5.2 56,8.4 64,11.6 72,14.8 80,18'/> (102 chars of point pairs) confirming the props-only component is fully functional. The DIAG-tab TRENDS panel correctly renders the documented 'no data' fallback because the simulator collector has not yet accumulated samples — this matches the explicit branch in dashboard-helpers.js:147. (4) POP OUT: /dashboard.html?modal_ahu=AHU-01-E exposes [data-testid='popout-ahu-modal-btn'] (63x18px, visible). Listening on page.context.on('page'), clicking spawned a new Playwright page (pages_before=1, after=2; event fired once); zero console errors and zero pageerror events during click. red5OpenPopupWindow handler runs end-to-end. (5) Regression: /mobile correctly redirects to /mobile_mockup.html (final url); /ashrae_55.html and /ashrae_90_1.html both return 200; dashboard.html re-renders AHU-01-E by default; sidebar + 3D chart + G36 timeline strip + 3 AHU rows (AHU-01-E/02-S/03-W) all present. (6) Parity: dashboard.html md5 matches local except for one Cloudflare-injected tracking iframe line (diff shows ONLY the cf challenge-platform <script> appended before </body> — content is byte-identical otherwise). dashboard-helpers.js md5 575037e11c0c66cdd4753990ec7c29fd matches LOCAL EXACTLY between /app/frontend/public/js/dashboard/dashboard-helpers.js and the public /assets/js/dashboard/dashboard-helpers.js. content-type: application/javascript; charset=UTF-8.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dashboard.html still ~5700 lines after this slice — continue Phase 1B (AHU/VAV modal extraction with prop-interface design) to push it under the >700 line guideline.",
+    "Pre-existing background errors observed in console (401/404 on /api telemetry endpoints, Babel 'deoptimised styling' note for >500KB inline source). These are not caused by this iteration's refactor but are worth tracking separately.",
+    "Sparkline import: dashboard-helpers.js mixes JSX (Icon uses <svg>...<path/>...) and React.createElement (Sparkline). The mixed style works because Babel transpiles the JSX in the concatenated module, but for consistency consider migrating Sparkline to JSX as well in a follow-up cleanup."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100% (6/6)"},
+  "test_credentials": "n/a - anonymous demo",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 first slice verified: js/dashboard/dashboard-helpers.js (md5 575037e11c0c66cdd4753990ec7c29fd) is loaded by the dashboard.html module loader (jsModules array at line ~5660-5666) and exports Icon, Sparkline, red5OpenPopupWindow into the App closure scope via Babel concat. POP OUT data-testid is 'popout-ahu-modal-btn' (line 5125). The desktop equipment modal opened via ?modal_ahu=AHU-01-E does NOT use #ahuModal (that id is reserved for the mobile modal) — its popout button is the only stable identifier. DIAG tab Sparkline shows 'no data' fallback in simulator mode until collector accumulates samples; do not treat this as a Sparkline failure — verify via direct React invocation instead. Phase 1B (AHU/VAV modal IIFE extraction) is deferred per main agent note — those modals reference 50+ closure variables and need careful prop interface design.",
+  "rca of the issue": "n/a - no bugs found, refactor is clean"
+}

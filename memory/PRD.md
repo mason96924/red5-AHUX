@@ -5306,3 +5306,32 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - `/app/frontend/public/js/dashboard/dashboard-helpers.js` (new)
 - `/app/frontend/public/dashboard.html` (registered module + removed inline definitions)
 - Mirrors in V1.9 + V2.0 archives + `red5_bundle.zip` rebuild
+
+---
+
+## Phase L.24 — Phase 1B-Alt: Whole App Extraction (2026-02-21)
+
+**Goal**: ship the biggest visible reduction with the lowest risk by extracting the entire `App` React component into its own module.
+
+**Changes**:
+- New file `/app/frontend/public/js/dashboard/app.js` (5221 lines) holds the whole App component + ReactDOM.createRoot(...).render(...) call.
+- `dashboard.html`: removed the giant inline `<script type="text/plain" id="main-source">…</script>` block. Now **500 lines exactly** (down from 5697 — **91 % reduction**).
+- Module loader simplified: dropped the `mainSource.textContent` read; just fetches all `jsModules[]` (now including `dashboard-helpers.js` + `app.js`) and Babel-transpiles the concat as one closure scope.
+
+**Tested**: `testing_agent_v3_fork` iteration_7 — **100 % PASS, 0 bugs, 0 action items**. Verified:
+- Boot, all 4 sidebar tabs (PSYCH/DIAG/DYNAM/3D WX) ✓
+- AHU + VAV modal auto-open via URL params, QR overlay, POP OUT button ✓
+- Mobile /mobile/ahu/AHU-01-E + #ringTap modal (8 SVGs + 40 table rows) ✓
+- /mobile React redirect ✓
+- Both ASHRAE docs 200 ✓
+- Swipe nav (ArrowRight/ArrowLeft) ✓
+- dashboard.html length confirmed 500 lines, app.js 5221 lines, dashboard-helpers.js 158 lines
+
+**Notable observation (informational)**: Babel-in-browser emits a deopt warning at 500 KB (app.js alone is 469 KB). Functionally identical, just a slightly slower first-paint transpile. Long-term improvement: pre-compile app.js with Babel/SWC at build time and serve transpiled JS directly, removing @babel/standalone from the runtime path. Tracked as Phase 2 candidate.
+
+**Parity locked**: dashboard.html + app.js + dashboard-helpers.js md5-identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.
+
+**Files touched**:
+- `/app/frontend/public/js/dashboard/app.js` (new, 5221 lines)
+- `/app/frontend/public/dashboard.html` (5697 → 500 lines)
+- Mirrors in V1.9 + V2.0 archives + bundle rebuild

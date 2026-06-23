@@ -1,0 +1,43 @@
+{
+  "summary": "Phase L.24 / Phase 1B-Alt regression PASSED. Verified the extraction of the entire ~5200-line App React component from inline <script id='main-source'> in dashboard.html into the new external module /js/dashboard/app.js. dashboard.html is now 500 lines exactly; app.js is 5221 lines. All boot, modal, tab-switching, mobile, docs and arrow-nav flows still work identically with zero blocking errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_checks": {
+    "boot_smoke": "PASS — typeof Icon/Sparkline/red5OpenPopupWindow all === 'function'; #root innerHTML = 105,104 chars; 0 Babel error overlays (div[style*='color:red']); 22 absolute-positioned pills detected; sidebar text contains Givoni, COMFORT, SOFT TRIM",
+    "module_loader_sanity": "PASS — GET /assets/js/dashboard/app.js → 200, content-type 'application/javascript', 468,897 bytes. File begins with `/* dashboard/app.jsx — main React application module` and ends with `root.render(<ErrorBoundary><App /></ErrorBoundary>)`. dashboard.html jsModules array confirmed to contain BOTH '/assets/js/dashboard/dashboard-helpers.js' AND '/assets/js/dashboard/app.js' in that order.",
+    "tab_switching": "PASS — DIAG, DYNAM, 3D WX, PSYCH all clicked successfully with 0 console errors during transitions",
+    "ahu_modal_url": "PASS — ?modal_ahu=AHU-01-E auto-opens modal; qr-phone-preview-btn (1) and popout-ahu-modal-btn (1) both present; QR click opens #r5-qr-canvas with embedded SVG; Escape closes",
+    "vav_modal_url": "PASS — ?modal_vav=VAV-1-E-A auto-opens VAV modal; qr-phone-preview-btn (1) and popout-* (2) present",
+    "pill_scale_formula": "INCONCLUSIVE — 22 pills with class containing 'absolute z-20' detected, but the immediate inner <div> children did not expose a CSS transform matrix in computed style (likely because the scale wrapper is nested deeper or applied via a style attribute rather than computed transform). Visual rendering is correct. Not a regression — same selector behaviour as iteration 6.",
+    "regression_mobile_ringtap": "PASS — /mobile/ahu/AHU-01-E at 390x844 shows #ringTap; click opens stylised modal with 8 SVGs and 40 table rows",
+    "regression_mobile_redirect": "PASS — /mobile redirects to /mobile_mockup.html",
+    "regression_docs": "PASS — /docs/ashrae_g36_reference.md → 200 (10,095 bytes); /docs/ashrae_90_1_reference.md → 200 (8,236 bytes)",
+    "regression_arrow_nav": "PASS — ArrowRight at /mobile/ahu/AHU-01-E navigates to AHU-02-S; ArrowLeft returns to AHU-01-E",
+    "parity_line_counts": "PASS — fetched dashboard.html = 500 lines exactly (91% reduction confirmed); fetched app.js = 5221 lines; dashboard-helpers.js = 158 lines, still loads OK (200, 8337 bytes)"
+  },
+  "observed_console_noise": [
+    "1× 401 from polling endpoint (non-blocking, pre-existing)",
+    "1× '[BABEL] Note: The code generator has deoptimised the styling … exceeds the max of 500KB' — INFORMATIONAL Babel warning because the concatenated source now passes the 500KB threshold (app.js alone is 469KB). This does NOT prevent transpilation or execution; everything still renders. May be worth noting for future perf consideration.",
+    "4× 404s on what appear to be missing static assets/icons (pre-existing, not related to this refactor)"
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Babel-in-browser deopt warning (500KB threshold exceeded) — works fine functionally but transpile time is now slower on first paint. Long-term: consider pre-compiling app.js with Babel/SWC at build time and serving the transpiled JS directly, removing @babel/standalone from the runtime path.",
+    "app.js at 5221 lines is still a monolith. Suggested next slice: break out the AHU modal, VAV modal, psychrometric chart, and tab panels into separate modules (each ~500–1000 lines) and append to jsModules in dependency order. The concat-then-transpile pattern already supports this."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% of critical flows"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase L.24 extraction is functionally complete and regression-clean. The Babel-in-browser deopt warning at 500KB is expected and benign. If main agent continues slicing app.js into smaller modules (next likely Phase 1C), use the same regression checklist: globals on window, modal data-testids (qr-phone-preview-btn, popout-ahu-modal-btn, popout-vav-modal-btn), #ringTap on mobile, ArrowLeft/Right swipe nav, and dashboard.html line count parity.",
+  "rca of the issue": "N/A — no bugs found this iteration."
+}

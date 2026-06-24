@@ -5373,3 +5373,51 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - Mirrors in V1.9 + V2.0 archives + bundle rebuild
 
 **Phase 1D queued**: AHU equipment modal extraction (~610-line IIFE at z-[130], ~24 ctx props). Same pattern as VAV — use the vav-modal.js JSDoc header as a template. Watch out for locals named with the `ahu*` prefix that might be flagged as closure refs (the locals-vs-closure scan needs manual review).
+
+---
+
+## Phase L.26 — Phase 1D: AHU Modal Extraction (2026-02-21)
+
+**Goal**: peel the AHU equipment modal IIFE out of `app.js` into its own module, mirroring the Phase L.25 VAV pattern.
+
+**Approach** (identical to L.25):
+- Created `/app/frontend/public/js/dashboard/ahu-modal.js` (~652 lines including JSDoc header).
+- Defines `renderAhuEquipmentModal(ctx)` at top level. `ctx` is a 23-property object: API_URL, _setForceApTick, ahuBodyRef, ahuData, ahuImage, ahuImgDims, ahuImgRef, ahuModalOffset, ahuModalPopupHost, ahuModalPopupWin, ahuModalSize, ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal, setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging, setShowAhuModalFor, showAhuModalFor, theme.
+- Locals NOT passed via ctx (declared inside body): `dk`, `writeRW`, `imgScale`, `currentAhuImage`, `groupedPoints`, `schemaPoints`, `schemaAnimations`, `schemaType`, `targetAhu`, `ahuTypeId`, etc.
+- 608-line IIFE at `{showAhuModalFor && (() => {...})()}` replaced with 8-line `{showAhuModalFor && renderAhuEquipmentModal({...23 props...})}`.
+- Module loader: `ahu-modal.js` listed BETWEEN `vav-modal.js` and `app.js`.
+- **app.js shrank from 4864 → 4255 lines** (608 lines moved out).
+
+**Tested**: `testing_agent_v3_fork` iteration_9 — **100 % PASS (9/9 criteria), 0 bugs, 0 action items**. Verified:
+- AHU modal opens via `?modal_ahu=AHU-01-E`, z-[130] container, "AHU-01-E EQUIPMENT DIAGRAM" title ✓
+- Real-time pills render: OAT, SAT, INV1_F, INV2_F, BAND B5 yellow pill, VFD chassis SVG ✓
+- QR overlay opens correctly, embedded SVG, deep-link `#/ahu/AHU-01-E` ✓
+- POP OUT spawns 2nd page (context.pages 1→2) ✓
+- ahu-modal.js loads 200 + correct JSDoc header + correct jsModules position ✓
+- Pill scale clamp [0.8, 1.2] verified across 9 sampled pills ✓
+- VAV modal regression-clean ✓
+- Boot smoke clean — typeof renderAhuEquipmentModal/renderVavEquipmentModal === 'function', no Babel errors ✓
+
+**Cumulative refactor status (Phases L.23-L.26)**:
+| Phase | What moved | dashboard.html lines | app.js lines | New module |
+|-------|------------|---------------------|--------------|------------|
+| Pre   | (baseline) | 5799 | (inline) | — |
+| L.23  | red5OpenPopupWindow + Icon + Sparkline | 5697 | (inline) | dashboard-helpers.js |
+| L.24  | Whole App component | 500 | 5221 | app.js |
+| L.25  | VAV modal IIFE | 500 | 4864 | vav-modal.js |
+| L.26  | AHU modal IIFE | 500 | 4255 | ahu-modal.js |
+
+**Net result**: dashboard.html shrank **5799 → 500 lines (91 % reduction)**; the React app is now distributed across `app.js` (4255 lines), `ahu-modal.js` (652 lines), `vav-modal.js` (415 lines), `dashboard-helpers.js` (170 lines). Total ~5492 lines across 4 well-named files instead of 5799 lines in one.
+
+**Testing agent code-review notes (advisory, not blocking)**:
+- app.js still >700-line guideline; next splits suggested: plugin/PSYCH chart panel, sidebar/header chrome, settings drawer
+- ctx prop interfaces are wide and un-typechecked — convert to React.memo'd components when stable
+- 4× pre-existing 404s on dashboard.html load (unrelated to refactor; should clean up to silence noise)
+
+**Parity locked**: all new modules + app.js + dashboard.html md5-identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.
+
+**Files touched**:
+- `/app/frontend/public/js/dashboard/ahu-modal.js` (new)
+- `/app/frontend/public/js/dashboard/app.js` (608 lines removed, replaced with 8-line call)
+- `/app/frontend/public/dashboard.html` (jsModules array updated)
+- Mirrors in V1.9 + V2.0 archives + bundle rebuild

@@ -5335,3 +5335,41 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - `/app/frontend/public/js/dashboard/app.js` (new, 5221 lines)
 - `/app/frontend/public/dashboard.html` (5697 → 500 lines)
 - Mirrors in V1.9 + V2.0 archives + bundle rebuild
+
+---
+
+## Phase L.25 — Phase 1C-VAV: VAV Modal Extraction (2026-02-21)
+
+**Goal**: peel the VAV equipment modal IIFE (~366 lines) out of `app.js` into its own module with a designed prop interface. Test, then queue AHU modal for next session.
+
+**Approach**:
+- Created `/app/frontend/public/js/dashboard/vav-modal.js` (~415 lines including JSDoc header).
+- Defines `renderVavEquipmentModal(ctx)` at top level. `ctx` is a 24-property object: API_URL, _setForceApTick, ahuData, setAhuData, selectedAhuId, ccEquipTypes, mapConfig, popOutVavModal, selectedVavForModal, setSelectedVavForModal, setDragStart, setIsVavModalDragging, setVavImgDims, vavImgDims, sunState, theme, vavCfm, vavImage, vavImgRef, vavTypeImages, vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize, vavOuterRef.
+- Function destructures `ctx` at the top, then runs the original IIFE body verbatim (byte-identical behaviour).
+- In `app.js`, the 366-line IIFE at `{selectedVavForModal && (() => {...})()}` was replaced with an 8-line call `{selectedVavForModal && renderVavEquipmentModal({...24 props...})}`.
+- Module loader's `jsModules[]` order: `vav-modal.js` listed BEFORE `app.js` so the function is defined by the time the App's render runs.
+- **app.js shrank from 5222 → 4864 lines** (358 lines moved out).
+
+**Debugging captured along the way** (worth noting for AHU extraction):
+- Initial closure-ref auto-detector flagged `vavSchema`, `vavAp` — both are LOCAL variables declared inside the IIFE body (`const vavSchema = ...`, `let vavAp = ...`). Removing them from `ctx` resolved the "already declared" error.
+- Two JSX prop names (`cavFlow`, `vavFlow`) were also flagged — they appear as `<PreviewDPDisplay cavFlow={...} />` attribute names, not closure refs. Removing them resolved the "not defined" error.
+- `vavImgRef` was missed by the auto-detector (used as `ref={vavImgRef}` JSX prop) and added manually after the second smoke test.
+
+**Tested**: `testing_agent_v3_fork` iteration_8 — **100 % PASS (7/7 review criteria, 0 bugs, 0 action items)**. Verified:
+- VAV modal opens via `?modal_vav=VAV-1-E-A`, full chrome ✓
+- QR overlay opens, SVG renders, deep-link URL correct ✓
+- POP OUT spawns a new page ✓
+- vav-modal.js fetched 200 + correct content-type + correct header start ✓
+- Pill transform scales clamped in [0.8, 1.2] ✓
+- AHU modal regression intact ✓
+- Boot smoke clean — no Babel red overlay ✓
+
+**Parity locked**: vav-modal.js, app.js, dashboard.html md5-identical across `/app/frontend/public/`, V1.9 archive, V2.0 archive. V1.9 bundle rebuilt.
+
+**Files touched**:
+- `/app/frontend/public/js/dashboard/vav-modal.js` (new)
+- `/app/frontend/public/js/dashboard/app.js` (358 lines removed, replaced with 8-line call)
+- `/app/frontend/public/dashboard.html` (added vav-modal.js to jsModules)
+- Mirrors in V1.9 + V2.0 archives + bundle rebuild
+
+**Phase 1D queued**: AHU equipment modal extraction (~610-line IIFE at z-[130], ~24 ctx props). Same pattern as VAV — use the vav-modal.js JSDoc header as a template. Watch out for locals named with the `ahu*` prefix that might be flagged as closure refs (the locals-vs-closure scan needs manual review).

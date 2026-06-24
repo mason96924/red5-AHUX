@@ -1,6 +1,79 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.34 — `/api/data` Pydantic response model + OpenAPI bonus fix (2026-06-24)
+
+**Brief**: Added typed response shape to the dashboard's single largest
+endpoint (`/api/data`) so the frontend contract is schema-checked +
+self-documenting via OpenAPI, without changing the wire format.
+
+### `models/data.py` (88 lines)
+Declares the snapshot shape:
+  * `PsyPoint` -- one of the three plotted dots (OA / SA / RA): `label`,
+    `t`, `rh`, `w`, `color`.
+  * `VAVSnapshot` -- per-VAV terminal: `id`, `t`, `rh`, `w`, `h`,
+    `all_points`.
+  * `ActiveBand` -- Givoni-band controller output: `id`, `sa_t_sp`,
+    `sa_rh_sp`, `oa_damper_sp`, `cc_mode`, `hc_mode`, `hum_mode`,
+    `oa_source`.
+  * `G36State` -- ASHRAE Guideline 36 controller: `mode`, `mode_reason`,
+    `cooling_requests`, `heating_requests`, `pressure_requests`,
+    `sat_reset_c`, `dsp_reset_pa`, `last_tick_at`.
+  * `AHUSnapshot` -- one AHU's complete state: `id`, `procColor`,
+    `source`, `points`, `all_points`, `vavs`, `active_band`, `g36`.
+  * `SnapshotList = List[AHUSnapshot]` -- top-level response type.
+
+Loose-typed dicts (`AHUPoints` / `VAVPoints`) kept as
+`Dict[str, Union[float, int, str, bool, None]]` because real BACnet
+schemas can surface manufacturer-specific point names that the
+simulator's 26-key shape doesn't cover.  Every model uses
+`ConfigDict(extra="allow")` for forward compat.
+
+### Wired in
+`routes/health.py` now:
+```python
+@router.get("/api/data",
+            response_model=SnapshotList,
+            response_model_exclude_none=False)
+async def get_data(...) -> SnapshotList: ...
+```
+Wire format byte-identical to the pre-Pydantic response (verified with
+side-by-side diff): same 8 top-level keys per AHU, same `active_band`
+fields, same `g36` fields, same loose `all_points` dict.  Response time
+unchanged at ~125 ms.
+
+### OpenAPI bonus fix
+`/openapi.json` had been returning 500 since well before this session --
+Pydantic v2 couldn't introspect three handlers in `routes/maintenance.py`
+that had `-> FastResponse` return-type annotations (an alias for
+`fastapi.responses.Response`).  Removed those three annotations (the
+runtime returns still construct `FastResponse(...)` -- only the type hint
+was problematic).  Now `/openapi.json` returns 200 with **58 paths and
+13 named schemas** including `AHUSnapshot`, `ActiveBand`, `G36State`,
+`PsyPoint`, `VAVSnapshot`.
+
+### Result
+- /api/data has a queryable shape -- both `/openapi.json` and any
+  Swagger UI tooling can introspect it.
+- Frontend devs grep `models/data.py` to see the contract.
+- Field-level validation runs on every response (catches a regression
+  if the simulator output ever drifts from the documented schema).
+- No wire-format change, no perf regression.
+
+**Verified**:
+- 76/76 regression tests pass (Phase 1 26, tenants 26, FS-mode 12,
 ## Phase L.33 — Direct imports (lazy `_pull_from_server` shim removed) (2026-06-24)
+
+  zero-pad 12).
+- `/openapi.json` returns 200 with full schema (was 500 for the entire
+  pre-this-session period).
+- Live dashboard renders cleanly -- LIVE chip, full Givoni Engine + 40-60 %
+  RH sidebar + psy-chart with COMFORT + WINTER + NATURAL VENT zones +
+  AHU-01 + AHU-02 dots + G36 timeline showing 5 AHUs OCCUPIED.
+- Zero page errors.
+
+---
+
+
 
 **Brief**: Collapsed the L.29 lazy-shim pattern in the 8 remaining router
 modules into explicit, module-load-time imports from the canonical

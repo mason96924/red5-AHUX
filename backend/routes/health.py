@@ -55,6 +55,7 @@ from models.loaders import (
     _load_csv,
     _load_json,
 )
+from models.data import AHUSnapshot, SnapshotList
 from models.weather import (
     ACTIVE_LOCATION,
     SAVED_LOCATIONS,
@@ -116,8 +117,9 @@ async def data_mode(tenant: Optional[dict] = Depends(current_tenant_optional)) -
             "ahu_count": len(cfg.get("ahu_groups") or {})}
 
 
-@router.get("/api/data")
-async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) -> list:
+@router.get("/api/data", response_model=SnapshotList,
+            response_model_exclude_none=False)
+async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) -> SnapshotList:
     """V1.9 contract: ARRAY of AHU entries.  Dashboard rejects non-array.
 
     Resolution:

@@ -152,7 +152,7 @@ async def write_point(payload: dict,
 
 @router.post("/api/zip-files")
 async def zip_files(payload: dict,
-                    tenant: Optional[dict] = Depends(current_tenant_optional)) -> FastResponse:
+                    tenant: Optional[dict] = Depends(current_tenant_optional)):
     """Stream a ZIP of the named files from `tenant_assets`."""
     if not tenant:
         raise HTTPException(403, "Sign in to download your virtual controller assets.")
@@ -180,7 +180,7 @@ async def zip_files(payload: dict,
 
 @router.post("/api/zip-dir")
 async def zip_dir(payload: dict,
-                  tenant: Optional[dict] = Depends(current_tenant_optional)) -> FastResponse:
+                  tenant: Optional[dict] = Depends(current_tenant_optional)):
     """Stream a ZIP of every file under the named virtual directory."""
     if not tenant:
         raise HTTPException(403, "Sign in to download your virtual controller assets.")

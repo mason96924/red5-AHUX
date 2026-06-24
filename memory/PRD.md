@@ -1,5 +1,62 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.17 — V2.0 Controller Assets browser regression (2026-06-24)
+
+**Brief**: After the V2.0 SaaS port, the Controller Assets file browser
+showed empty `data/` and `scripts/` on the operator's Linux server even
+though `/root/data` and `/root/scripts` were populated.  Root cause:
+`/api/files` (and the related save/upload/create/delete endpoints) had
+been narrowed to read **only** from MongoDB `tenant_assets` — the
+filesystem code-path was deleted in the port.  V1.9 had always operated
+directly on `/root/data` and `/root/scripts`.
+
+**Fix** (in `/app/backend/server.py`):
+
+- Added `DATA_ROOT` (`/root/data`) and `SCRIPTS_ROOT` (`/root/scripts`)
+  env-overridable constants plus `_fs_available()`, `_fs_root()` and
+  `_safe_join()` helpers (path-traversal-safe).
+- `/api/files`, `/api/save-image` / `/api/save-floor-plan`,
+  `/api/upload-file`, `/api/create-directory`, `/api/delete-directory`,
+  `/api/delete-file`, `/api/move-file`, `/api/init-directories` and
+  `/api/directory-scaffold` now dual-mode: when the host filesystem
+  root exists they read/write disk **exactly like V1.9 Flask** (same
+  response shape, same field names); otherwise they keep the existing
+  per-tenant virtual filesystem behaviour.
+- `/api/assets/<path>` and `/api/thumb` prepend a `/root/data` lookup so
+  files saved via FS mode serve back correctly with the right
+  `Content-Type`.
+- Fixed a latent bug in `/api/assets/<path>` that decoded **all**
+  non-JSON/MD bytes as UTF-8 (corrupting binary images served from
+  disk).  Now uses `mimetypes.guess_type` + a `FastResponse` binary
+  pass-through.
+
+**Regression tests** added (`backend/tests/test_fs_mode_file_browser.py`,
+12 cases): list/save/upload/get-back/list/delete/init-scaffold round-trip
+including path-traversal guards.  Existing `test_v2_phase2b_tenants.py`
+updated to recognise FS mode and skip the virtual-FS-only isolation
+assertions when the host has `/root/data` (the assertions still run in
+SaaS-only sandboxes).  All zero-pad fallback tests (12) and the Phase 1
+backend suite (26) still pass.
+
+**Verified live**: opened the Controller Assets modal on the deployed
+preview and confirmed the full `/root/data` tree (`_uploads/`,
+`ahu_types/`, `configs/`, `dashboard.html`, `equipment_mapper.html`,
+`graphics/`, `js/`, etc.) now renders with file sizes, modified
+timestamps and DEL/MOV/GET buttons.
+
+**Files touched**:
+- `backend/server.py` (file-management endpoints + asset/thumb serve)
+- `backend/tests/test_v2_phase2b_tenants.py` (FS-mode-aware skips)
+- `backend/tests/test_fs_mode_file_browser.py` (new)
+
+**Note for next agent**: the V1.9 archive Flask backend is unchanged --
+it has always operated on `/root/data` / `/root/scripts` directly.
+Parity rule still applies to `frontend/public/` HTML+JS; backend code is
+**not** mirrored to the archives (V1.9 is Flask, V2.0 is FastAPI).
+
+---
+
+
 ## 🔒 V3.0 SCOPE LOCK (authoritative — 2026-06-12)
 
 Read this BEFORE any work on `/app/archive/Red5-Modbus-V3.0/` or `/app/docs/RED5-MODBUS-V3.0-*.md`.

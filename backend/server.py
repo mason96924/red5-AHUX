@@ -119,6 +119,57 @@ from tenants import (  # noqa: E402
 import base64  # noqa: E402
 from fastapi.responses import Response as FastResponse  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Local-filesystem file browser (V1.9 parity on Linux server).
+# V1.9 Flask reads/writes /root/data and /root/scripts directly.  V2.0
+# FastAPI must do the same when those paths exist on the host so the
+# Controller Assets browser, uploader, and asset URLs all "just work" on
+# the operator's Linux deploy.  When the paths don't exist (preview /
+# SaaS sandbox), fall back to the tenant_assets virtual filesystem.
+# ---------------------------------------------------------------------------
+DATA_ROOT = os.environ.get("DATA_ROOT", "/root/data")
+SCRIPTS_ROOT = os.environ.get("SCRIPTS_ROOT", "/root/scripts")
+ALLOWED_FS_ROOTS = {"data": DATA_ROOT, "scripts": SCRIPTS_ROOT}
+# V1.9-style scaffold the INIT SCAFFOLD button creates under DATA_ROOT.
+DIRECTORY_SCAFFOLD = [
+    "graphics/equipments/AHUs",
+    "graphics/equipments/VAVs",
+    "graphics/equipments/VFDs",
+    "graphics/equipments/DIFF_PRs",
+    "graphics/equipments/CHILLERs",
+    "graphics/equipments/CTs",
+    "graphics/floor_plans",
+    "configs",
+    "js",
+]
+
+
+def _fs_root(root_name: str) -> str:
+    return ALLOWED_FS_ROOTS.get(root_name or "data", DATA_ROOT)
+
+
+def _fs_available(root_name: str) -> bool:
+    """True iff the local filesystem root exists.  This is the switch
+    between V1.9-on-Linux mode (real `/root/data`) and the hosted demo
+    mode (tenant_assets virtual filesystem)."""
+    try:
+        return os.path.isdir(_fs_root(root_name))
+    except OSError:
+        return False
+
+
+def _safe_join(base: str, rel: str) -> Optional[str]:
+    """Path-traversal-safe join.  Returns None when `rel` would escape `base`."""
+    if rel is None:
+        rel = ""
+    if ".." in rel:
+        return None
+    full = os.path.normpath(os.path.join(base, rel))
+    if not (full == base or full.startswith(base + os.sep)):
+        return None
+    return full
+
+
 
 # ---------------------------------------------------------------------------
 # Demo data loaders -- cached in-memory after first read.
@@ -1467,17 +1518,57 @@ async def save_equipment_schema(payload: dict,
 async def list_files(path: str = Query(""),
                      root: str = Query("data"),
                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """V1.9-compatible file-browser response shape used by the image picker.
+    """V1.9-compatible file browser.
 
-    Anonymous callers get an empty list (so the picker simply shows nothing
-    instead of crashing).  Signed-in callers get their tenant_assets within
-    the requested virtual root (`data` or `scripts`).
+    On the Linux deploy the V1.9 file roots (`/root/data`, `/root/scripts`)
+    exist on disk -- we list them directly, exactly like V1.9 Flask does.
+    On the hosted preview / SaaS sandbox those paths don't exist, so we
+    fall back to the per-tenant virtual filesystem stored in MongoDB.
     """
+    # ---- Local-filesystem mode (V1.9 parity on Linux server) -----------
+    if _fs_available(root):
+        base = _fs_root(root)
+        data_dir = _safe_join(base, path)
+        if data_dir is None:
+            return {"success": False, "error": "Invalid path"}
+        if not os.path.isdir(data_dir):
+            return {"success": False, "error": f"Directory not found: {path}"}
+        files: list[dict] = []
+        try:
+            for f in sorted(os.listdir(data_dir)):
+                if f.endswith(".tmp"):
+                    continue
+                filepath = os.path.join(data_dir, f)
+                try:
+                    stat = os.stat(filepath)
+                except (FileNotFoundError, OSError):
+                    continue
+                if os.path.isdir(filepath):
+                    files.append({"name": f, "size": 0,
+                                  "modified": stat.st_mtime,
+                                  "type": "directory"})
+                elif os.path.isfile(filepath):
+                    ext = os.path.splitext(f)[1].lower()
+                    ftype = ("image" if ext in (".png", ".jpg", ".jpeg", ".svg",
+                                                ".gif", ".bmp", ".webp")
+                             else "config" if ext in (".json",)
+                             else "page"   if ext in (".html", ".htm")
+                             else "style"  if ext in (".css",)
+                             else "script" if ext in (".py", ".js")
+                             else "other")
+                    files.append({"name": f, "size": stat.st_size,
+                                  "modified": stat.st_mtime, "type": ftype})
+        except Exception as e:  # noqa: BLE001
+            return {"success": False, "error": str(e)}
+        return {"success": True, "path": data_dir, "rel_path": path,
+                "files": files, "count": len(files), "root": root,
+                "mode": "filesystem"}
+    # ---- SaaS / preview mode: per-tenant virtual filesystem ------------
     if not tenant:
         return {"success": True, "files": [],
                 "warning": "Sign in to browse your uploaded assets."}
     return {"success": True, "files": await list_tenant_assets(tenant, path, root=root),
-            "root": root}
+            "root": root, "mode": "virtual"}
 
 
 @app.post("/api/save-image")
@@ -1485,22 +1576,18 @@ async def list_files(path: str = Query(""),
 async def save_image(payload: dict,
                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """Mapper POSTs {deployment_path, filename, image_data} where image_data
-    is a data-URL (data:image/png;base64,...).  Anonymous = preview-only no-op.
+    is a data-URL (data:image/png;base64,...).
 
-    The `/api/save-floor-plan` alias exists because the V1.9 mapper's
-    floor-plan background-upload flow POSTs to that legacy URL; both
-    routes share the same handler so floor-plan PNGs land in the same
-    `tenant_assets` collection as every other graphic."""
+    On the Linux deploy the V1.9 root (`/root/data`) exists -- we write
+    bytes to disk exactly like V1.9 Flask does so the file appears in
+    the Controller Assets browser immediately.  Otherwise we route the
+    bytes into the per-tenant virtual filesystem.
+    """
     filename = payload.get("filename") or ""
     image_data = payload.get("image_data") or ""
     if not filename or not image_data:
         return {"success": False, "error": "filename and image_data are required"}
-    if not tenant:
-        return {
-            "success": False,
-            "error": "Sign in to save asset images to your virtual controller.",
-            "warning": "Anonymous demo -- image preview-only; sign in to persist.",
-        }
+    root = (payload or {}).get("root", "data") or "data"
     # Decode the data-URL.  Accept both "data:<mime>;base64,XXX" and the bare
     # base64 form some clients send.
     if image_data.startswith("data:"):
@@ -1516,14 +1603,42 @@ async def save_image(payload: dict,
         data_bytes = base64.b64decode(b64)
     except Exception as e:  # noqa: BLE001
         return {"success": False, "error": f"base64 decode failed: {e}"}
+    # ---- Local-filesystem mode -----------------------------------------
+    if _fs_available(root):
+        base = _fs_root(root)
+        filepath = _safe_join(base, filename)
+        if filepath is None:
+            return {"success": False, "error": "Invalid path"}
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(data_bytes)
+        except OSError as e:
+            return {"success": False, "error": str(e)}
+        return {
+            "success": True,
+            "relative_path": filename,
+            "size_bytes": len(data_bytes),
+            "root": root,
+            "file": filepath,
+            "mode": "filesystem",
+        }
+    # ---- SaaS / preview mode -------------------------------------------
+    if not tenant:
+        return {
+            "success": False,
+            "error": "Sign in to save asset images to your virtual controller.",
+            "warning": "Anonymous demo -- image preview-only; sign in to persist.",
+        }
     res = await save_tenant_asset(tenant, filename, content_type, data_bytes,
-                                  root=(payload or {}).get("root", "data") or "data")
+                                  root=root)
     return {
         "success": True,
         "relative_path": res["relative_path"],
         "size_bytes": res["size_bytes"],
         "root": res["root"],
         "tenant_id": tenant["tenant_id"],
+        "mode": "virtual",
     }
 
 
@@ -1556,12 +1671,24 @@ async def save_map_config_alias(payload: dict,
 @app.post("/api/create-directory")
 async def create_directory(payload: dict,
                            tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Persist an empty-directory marker so the folder shows up in the
-    image-picker even before a file lives in it.  Idempotent."""
+    """Create a directory.  Local FS on Linux deploy, marker doc otherwise."""
     dirname = (payload or {}).get("dirname", "") or ""
     root = (payload or {}).get("root", "data") or "data"
     if not dirname or ".." in dirname:
         return {"success": False, "error": "Invalid directory name"}
+    if _fs_available(root):
+        base = _fs_root(root)
+        dirpath = _safe_join(base, dirname)
+        if dirpath is None:
+            return {"success": False, "error": "Invalid path"}
+        if os.path.exists(dirpath):
+            return {"success": False, "error": f"Already exists: {dirname}"}
+        try:
+            os.makedirs(dirpath)
+        except OSError as e:
+            return {"success": False, "error": str(e)}
+        return {"success": True, "message": f"Created: {dirname}",
+                "path": dirpath, "mode": "filesystem"}
     if not tenant:
         return {"success": False, "error": "Sign in to manage your virtual controller filesystem.",
                 "warning": "Anonymous demo -- mapper can browse but not mutate."}
@@ -1576,8 +1703,22 @@ async def delete_directory(payload: dict,
                            tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     dirname = (payload or {}).get("dirname", "") or ""
     root = (payload or {}).get("root", "data") or "data"
-    if not dirname or ".." in dirname:
+    if not dirname or ".." in dirname or dirname.strip() == "":
         return {"success": False, "error": "Invalid directory name"}
+    if _fs_available(root):
+        base = _fs_root(root)
+        dirpath = _safe_join(base, dirname)
+        if dirpath is None or dirpath == base:
+            return {"success": False, "error": "Cannot delete root directory"}
+        if not os.path.isdir(dirpath):
+            return {"success": False, "error": f"Directory not found: {dirname}"}
+        import shutil
+        try:
+            shutil.rmtree(dirpath)
+        except OSError as e:
+            return {"success": False, "error": str(e)}
+        return {"success": True, "message": f"Deleted directory: {dirname}",
+                "mode": "filesystem"}
     if not tenant:
         return {"success": False, "error": "Sign in to delete from your virtual controller."}
     return await delete_tenant_directory(tenant, dirname, root=root)
@@ -1590,6 +1731,19 @@ async def delete_file(payload: dict,
     root = (payload or {}).get("root", "data") or "data"
     if not filename or ".." in filename:
         return {"success": False, "error": "Invalid filename"}
+    if _fs_available(root):
+        base = _fs_root(root)
+        filepath = _safe_join(base, filename)
+        if filepath is None:
+            return {"success": False, "error": "Invalid path"}
+        if not os.path.isfile(filepath):
+            return {"success": False, "error": f"File not found: {filename}"}
+        try:
+            os.remove(filepath)
+        except OSError as e:
+            return {"success": False, "error": str(e)}
+        return {"success": True, "message": f"Deleted: {filename}",
+                "mode": "filesystem"}
     if not tenant:
         return {"success": False, "error": "Sign in to delete from your virtual controller."}
     return await delete_tenant_asset(tenant, filename, root=root)
@@ -1601,8 +1755,32 @@ async def move_file(payload: dict,
     src      = (payload or {}).get("src", "") or ""
     dest_dir = (payload or {}).get("dest_dir", "") or ""
     root     = (payload or {}).get("root", "data") or "data"
+    dest_root = (payload or {}).get("dest_root", root) or root
     if not src or ".." in src or ".." in dest_dir:
         return {"success": False, "error": "Invalid path"}
+    if _fs_available(root) or _fs_available(dest_root):
+        import shutil
+        base = _fs_root(root)
+        dest_base = _fs_root(dest_root)
+        src_path = _safe_join(base, src)
+        if src_path is None:
+            return {"success": False, "error": "Invalid source path"}
+        if not os.path.exists(src_path):
+            return {"success": False, "error": f"Source not found: {src}"}
+        target_dir = _safe_join(dest_base, dest_dir) if dest_dir else dest_base
+        if target_dir is None:
+            return {"success": False, "error": "Invalid destination path"}
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            final_path = os.path.join(target_dir, os.path.basename(src_path))
+            if os.path.normpath(src_path) == os.path.normpath(final_path):
+                return {"success": False, "error": "Source and destination are the same"}
+            shutil.move(src_path, final_path)
+        except OSError as e:
+            return {"success": False, "error": str(e)}
+        return {"success": True,
+                "message": f"Moved: {os.path.basename(src)} -> {dest_root}:{dest_dir or '/'}",
+                "mode": "filesystem"}
     if not tenant:
         return {"success": False, "error": "Sign in to manage your virtual controller filesystem."}
     return await move_tenant_asset(tenant, src, dest_dir, root=root)
@@ -1611,17 +1789,14 @@ async def move_file(payload: dict,
 @app.post("/api/upload-file")
 async def upload_file(payload: dict,
                       tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Generic file upload (V1.9 mapper uses this for non-image config drops,
-    e.g. CSV).  Routes through `tenant_assets`; content_type inferred from
-    the data-URL prefix, with a sensible application/octet-stream fallback."""
+    """Generic file upload.  Local FS on Linux deploy, tenant_assets otherwise."""
     filename = (payload or {}).get("filename", "") or ""
     file_data = (payload or {}).get("file_data", "") or ""
+    root = (payload or {}).get("root", "data") or "data"
     if not filename or ".." in filename:
         return {"success": False, "error": "Invalid filename"}
     if not file_data:
         return {"success": False, "error": "No file data"}
-    if not tenant:
-        return {"success": False, "error": "Sign in to upload to your virtual controller."}
     if file_data.startswith("data:"):
         try:
             head, b64 = file_data.split(",", 1)
@@ -1629,32 +1804,71 @@ async def upload_file(payload: dict,
             return {"success": False, "error": "malformed data-URL"}
         content_type = head[len("data:"):].split(";", 1)[0] or "application/octet-stream"
     else:
-        b64 = file_data
+        # V1.9 mapper also POSTs raw base64 with a leading comma; tolerate both.
+        b64 = file_data.split(",", 1)[1] if "," in file_data else file_data
         content_type = "application/octet-stream"
     try:
         data_bytes = base64.b64decode(b64)
     except Exception as e:  # noqa: BLE001
         return {"success": False, "error": f"base64 decode failed: {e}"}
+    if _fs_available(root):
+        base = _fs_root(root)
+        filepath = _safe_join(base, filename)
+        if filepath is None:
+            return {"success": False, "error": "Invalid path"}
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(data_bytes)
+        except OSError as e:
+            return {"success": False, "error": str(e)}
+        return {"success": True, "message": f"Uploaded: {filename}",
+                "file": filepath, "size": len(data_bytes),
+                "root": root, "mode": "filesystem"}
+    if not tenant:
+        return {"success": False, "error": "Sign in to upload to your virtual controller."}
     res = await save_tenant_asset(tenant, filename, content_type, data_bytes,
-                                  root=(payload or {}).get("root", "data") or "data")
+                                  root=root)
     return {"success": True, "message": f"Uploaded: {filename}",
             "file": res["relative_path"], "size": res["size_bytes"],
             "root": res["root"],
-            "tenant_id": tenant["tenant_id"]}
+            "tenant_id": tenant["tenant_id"], "mode": "virtual"}
 
 
 @app.post("/api/init-directories")
 async def init_directories(payload: Optional[dict] = None) -> dict:
-    """V1.9 created /root/data/{configs,graphics,...} on first run.  In SaaS
-    the tenant_assets schema is flat -- directories are implicit -- so this
-    is a no-op success."""
+    """V1.9 created /root/data/{configs,graphics,...} on first run.  When the
+    Linux FS root exists, materialise the scaffold there (idempotent).  In
+    SaaS the tenant_assets schema is flat -- directories are implicit -- so
+    it's a no-op success."""
+    if _fs_available("data"):
+        base = _fs_root("data")
+        created: list[str] = []
+        existing: list[str] = []
+        for d in DIRECTORY_SCAFFOLD:
+            dirpath = os.path.join(base, d)
+            if os.path.isdir(dirpath):
+                existing.append(d)
+            else:
+                try:
+                    os.makedirs(dirpath, exist_ok=True)
+                    created.append(d)
+                except OSError:
+                    pass
+        return {"success": True, "created": created, "existing": existing,
+                "mode": "filesystem"}
     return {"success": True, "created": [], "existing": [], "mode": "virtual-fs"}
 
 
 @app.get("/api/directory-scaffold")
 async def directory_scaffold() -> dict:
-    """Mirror the V1.9 response so the mapper's `scaffold` view does not
-    show a permanent red 'not initialized' badge."""
+    """Reflect real FS state when on the Linux deploy; in SaaS pretend
+    everything exists (the virtual FS is flat / implicit)."""
+    if _fs_available("data"):
+        base = _fs_root("data")
+        scaffold = [{"path": d, "exists": os.path.isdir(os.path.join(base, d))}
+                    for d in DIRECTORY_SCAFFOLD]
+        return {"success": True, "scaffold": scaffold, "mode": "filesystem"}
     return {"success": True, "scaffold": [
         {"path": "configs", "exists": True},
         {"path": "graphics", "exists": True},
@@ -1663,7 +1877,7 @@ async def directory_scaffold() -> dict:
         {"path": "graphics/equipments/VAVs", "exists": True},
         {"path": "graphics/floor_plans", "exists": True},
         {"path": "graphics/icons", "exists": True},
-    ]}
+    ], "mode": "virtual-fs"}
 
 
 @app.post("/api/write-point")
@@ -1909,6 +2123,20 @@ async def assets(path: str, request: Request,
     if path in ("configs/equipment_types.json", "equipment_types.json"):
         return JSONResponse(_load_json("equipment_types.json"),
                             headers={"Cache-Control": "no-store"})
+    # V1.9 parity: when /root/data exists on the Linux deploy, files saved
+    # via /api/save-image and /api/upload-file land there.  Serve them back
+    # from disk before falling through to the public tree / tenant_assets.
+    if _fs_available("data"):
+        fs_full = _safe_join(_fs_root("data"), path)
+        if fs_full and os.path.isfile(fs_full):
+            full = fs_full
+        else:
+            # Zero-pad fallback on the FS root too.
+            for variant in _zero_pad_variants(path):
+                fs_variant = _safe_join(_fs_root("data"), variant)
+                if fs_variant and os.path.isfile(fs_variant):
+                    full = fs_variant
+                    break
     if not os.path.exists(full):
         # Phase 2 Piece B: signed-in users get their personal asset bytes
         # served back here.  Mapper uploads end up in `tenant_assets`.
@@ -1964,7 +2192,31 @@ async def assets(path: str, request: Request,
         return PlainTextResponse(body.decode("utf-8"),
                                   headers={"Cache-Control": "no-store",
                                            "Content-Type": "text/markdown; charset=utf-8"})
-    return PlainTextResponse(body.decode("utf-8", errors="replace"))
+    # Binary-safe pass-through with mimetype guessing for everything else
+    # (images, PDFs, CSV, JS, CSS, ...).  Decoding as utf-8 corrupts binary
+    # files; the previous PlainTextResponse fallback worked only because
+    # /api/assets/ historically served only tenant-uploaded bytes via the
+    # FastResponse branch above.  With FS mode the bytes are read from
+    # disk and need an honest media_type.
+    import mimetypes as _mt
+    ctype, _ = _mt.guess_type(full)
+    if not ctype:
+        if lower.endswith((".jpg", ".jpeg")):
+            ctype = "image/jpeg"
+        elif lower.endswith(".png"):
+            ctype = "image/png"
+        elif lower.endswith(".svg"):
+            ctype = "image/svg+xml"
+        elif lower.endswith((".html", ".htm")):
+            ctype = "text/html; charset=utf-8"
+        elif lower.endswith(".css"):
+            ctype = "text/css; charset=utf-8"
+        elif lower.endswith(".js"):
+            ctype = "application/javascript; charset=utf-8"
+        else:
+            ctype = "application/octet-stream"
+    return FastResponse(content=body, media_type=ctype,
+                        headers={"Cache-Control": "no-store"})
 
 
 # Bare `/assets/<path>` alias.  V1.9's Flask backend serves images at
@@ -2009,10 +2261,16 @@ async def thumb(path: str = Query(...),
     if not full.startswith(public_root):
         raise HTTPException(403, "path traversal")
     raw_bytes: Optional[bytes] = None
-    if os.path.exists(full):
+    # V1.9 parity: try /root/data first when present.
+    if _fs_available("data"):
+        fs_full = _safe_join(_fs_root("data"), rel)
+        if fs_full and os.path.isfile(fs_full):
+            with open(fs_full, "rb") as f:
+                raw_bytes = f.read()
+    if raw_bytes is None and os.path.exists(full):
         with open(full, "rb") as f:
             raw_bytes = f.read()
-    elif tenant:
+    elif raw_bytes is None and tenant:
         # Signed-in users keep their uploads in tenant_assets (Mongo).
         doc = await read_tenant_asset(tenant, rel)
         if doc and doc.get("data_bytes"):

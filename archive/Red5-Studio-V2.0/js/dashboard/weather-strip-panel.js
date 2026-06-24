@@ -29,6 +29,7 @@ function renderWeatherStripPanel(ctx) {
 
     if (!showWeatherStrip) return null;
 
+    return (
 <div className={`w-full ${theme==='dark'?'bg-slate-900 border-slate-800':'bg-slate-100 border-slate-300'} border-t`}>
     {!weatherLocation ? (
         <div className="flex items-center justify-between px-6 py-3">
@@ -392,4 +393,5 @@ function renderWeatherStripPanel(ctx) {
         </div>
     )}
 </div>
+    );
 }

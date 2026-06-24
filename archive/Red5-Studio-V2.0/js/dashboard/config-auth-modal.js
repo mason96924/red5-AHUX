@@ -16,6 +16,7 @@ function renderConfigAuthModal(ctx) {
 
     if (!showConfigAuth) return null;
 
+    return (
 <div onClick={() => setShowConfigAuth(false)} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
     <div onClick={e => e.stopPropagation()} className="bg-slate-900 border-2 border-amber-500/50 rounded-2xl p-8 w-80">
         <h3 className="text-sm font-black uppercase tracking-widest text-amber-400 mb-4">{window.t ? window.t("config_password") : "Config Password"}</h3>
@@ -55,4 +56,5 @@ function renderConfigAuthModal(ctx) {
         </div>
     </div>
 </div>
+    );
 }

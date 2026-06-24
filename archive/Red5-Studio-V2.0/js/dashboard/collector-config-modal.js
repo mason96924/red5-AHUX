@@ -28,6 +28,7 @@ function renderCollectorConfigModal(ctx) {
 
     if (!showCollectorCfg) return null;
 
+    return (
 <div onClick={() => setShowCollectorCfg(false)} className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-testid="collector-config-modal">
     <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-cyan-500/40':'bg-white border-slate-300'} border-2 rounded-2xl w-[700px] max-h-[85vh] flex flex-col shadow-2xl`}>
         <div className={`p-5 border-b ${theme==='dark'?'border-slate-700':'border-slate-200'} flex justify-between items-center`}>
@@ -169,4 +170,5 @@ function renderCollectorConfigModal(ctx) {
         </div>
     </div>
 </div>
+    );
 }

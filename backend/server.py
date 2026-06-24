@@ -178,6 +178,20 @@ from simulator import (  # noqa: E402
 # and `_CACHE` off the `server` module.
 from models.loaders import _load_json, _load_csv, _CACHE  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Process-wide mutable state moved to models/state.py in Phase L.32
+# (2026-06-24).  Re-exported here so the existing L.29 router shims keep
+# resolving the names off the `server` module unchanged.
+# ---------------------------------------------------------------------------
+from models.state import (  # noqa: E402
+    _ANON_OVERRIDE,
+    _DEMO_START_TS,
+    _LAST_WEATHER_SOURCE,
+    _LAST_WEATHER_TS,
+    _WEATHER_NOW_CACHE,
+    _WEATHER_NOW_TTL_S,
+)
+
 
 
 # ---------------------------------------------------------------------------
@@ -194,8 +208,6 @@ from models.loaders import _load_json, _load_csv, _CACHE  # noqa: E402
 # `_pull_from_server()` shims and the anonymous /api/weather-location
 # handler keep resolving them off the `server` module unchanged.
 from models.weather import SAVED_LOCATIONS, ACTIVE_LOCATION  # noqa: E402
-
-_DEMO_START_TS = time.time()
 
 
 
@@ -242,9 +254,10 @@ _DEMO_START_TS = time.time()
 
 
 # ---------------------------------------------------------------------------
-# Anonymous mode override (process-wide, in-memory, demo-only).
 # ---------------------------------------------------------------------------
-_ANON_OVERRIDE: dict = {}  # e.g. {"mock_mode": False}
+# Anonymous mode override moved to models/state.py in Phase L.32; re-exported
+# above.
+# ---------------------------------------------------------------------------
 
 
 def _bundled_mock_mode_default() -> bool:
@@ -282,23 +295,9 @@ def _anon_effective_config() -> dict:
 
 
 # ----------------------------------------------------------------------------
-# Weather-proxy health tracking
+# Weather-proxy health tracking -- `_LAST_WEATHER_SOURCE` moved to
+# models/state.py in Phase L.32 (re-exported above).
 # ----------------------------------------------------------------------------
-# `_LAST_WEATHER_SOURCE` is updated on every /api/weather-proxy call so the
-# dashboard's auth pill can render a colored dot showing which upstream
-# satisfied the most recent request:
-#   "open-meteo"     -> emerald  (primary, free, no key)
-#   "weatherapi.com" -> cyan     (fallback, ≤ 7-day window, requires key)
-#   "nasa-power"     -> amber    (last-resort, unlimited history, slower)
-#   "error"          -> red      (all three failed)
-# Exposed via GET /api/weather-health.  Process-local; intentionally no
-# persistence — this is a live-status indicator, not an audit log.
-_LAST_WEATHER_SOURCE: Dict[str, Any] = {
-    "source":     None,         # "open-meteo" | "weatherapi.com" | "nasa-power" | "error"
-    "status":     "unknown",    # "ok" | "error" | "unknown"
-    "updated_at": None,         # ISO-8601 UTC timestamp of the last call
-    "detail":     None,         # short human-readable note (errors etc.)
-}
 
 
 def _mark_weather_source(source: Optional[str], status: str, detail: Optional[str] = None) -> None:

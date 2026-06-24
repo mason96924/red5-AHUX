@@ -1,6 +1,60 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
-## Phase L.31 — `models/weather.py` + canonical location seed (2026-06-24)
+## Phase L.32 — `models/state.py` + latent `/api/weather-current` fix (2026-06-24)
+
+**Brief**: Final state-consolidation pass.  All process-wide mutable
+in-memory dicts that previously lived as module-level globals in
+`server.py` moved into a single dedicated module
+`/app/backend/models/state.py`.
+
+### `models/state.py` (80 lines)
+Consolidates:
+  * `_ANON_OVERRIDE` -- dashboard's "Force LIVE / Force SIM" toggle for
+    anonymous users (mutated by POST /api/data-mode).
+  * `_DEMO_START_TS` -- boot timestamp used by /api/disk-status and the
+    demo waveform phase offsets.
+  * `_LAST_WEATHER_SOURCE` + `_LAST_WEATHER_TS` -- most-recent
+    /api/weather-proxy upstream tracker (mutated by `_mark_weather_source`,
+    read by /api/weather-health).
+  * `_WEATHER_NOW_CACHE` + `_WEATHER_NOW_TTL_S` -- 5-minute TTL cache
+    for /api/weather-current.
+
+### Latent bug surfaced + fixed
+`/api/weather-current` was crashing with `NameError: _WEATHER_NOW_CACHE`
+since Phase L.29.  The handler body had been moved to
+`routes/weather.py` and the names were listed in the `_pull_from_server`
+shim, but server.py never defined them anywhere.  Defining them in
+`models/state.py` fixes the route -- verified live: returns
+`success: true, temp: 18.1, rh: 89, ttl_s: 300`.
+
+### Back-compat shim
+`server.py` re-exports the names at module scope via
+`from models.state import (...)` so the existing Phase L.29 router shims
+keep resolving them off the `server` module.  Mutation works correctly
+because Python re-binds module attributes to the SAME underlying dict
+identity -- every consumer sees the mutations.
+
+### Result
+- **server.py: 576 -> 575 lines** (minor; the constants were tiny).
+- Cumulative L.28 + L.29 + L.30 + L.31 + L.32: **server.py 2,430 -> 575
+  lines (-76 %)**.
+- `/app/backend/models/` package now has 5 modules: `__init__.py`,
+  `fs.py`, `loaders.py`, `weather.py`, `state.py`.
+- `server.py` is now purely declarative imports + app wiring + a handful
+  of cached config readers (`_bundled_mock_mode_default`,
+  `_anon_effective_config`, `_mark_weather_source`, `_v2_weatherapi_key`,
+  `_nasa_power_history`, the open-meteo / weatherapi.com adapters, the
+  G36 wiring hook, and the single `@app.get("/")` welcome handler).
+
+**Verified**: 26/26 + 26/26 + 12/12 + 12/12 = **76/76 regression tests
+pass**.  All 8 smoke endpoints return 200.  /api/weather-current now
+returns 200 with valid data (previously crashing).  Live dashboard
+renders cleanly -- LIVE chip, 5 AHUs OCCUPIED in G36 timeline, sidebar +
+chart + comfort polygon + dot scatter all intact, zero page errors.
+
+---
+
+
 
 **Brief**: Final residual-state pass.  The bundled location list had been
 divergent across two paths:
@@ -10,6 +64,8 @@ divergent across two paths:
   * `tenants.py::_DEMO_SAVED_LOCATIONS` -- 5 hospital reference sites,
     active = Seattle Children's (used by `get_or_create_tenant_for_user`
     when seeding a fresh tenant)
+## Phase L.31 — `models/weather.py` + canonical location seed (2026-06-24)
+
 
 Phase L.31 unifies both behind a single source of truth.
 

@@ -1,6 +1,77 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
-## Phase L.27 — Sidebar extraction (deeper React refactor) (2026-06-24)
+## Phase L.28 — Backend `routes/` split + psy-chart SVG extraction (2026-06-24)
+
+**Brief**: Took both items from the "Future / Backlog" list -- backend
+modularisation and the psy-chart SVG carve-out -- in a single pass.
+
+### Backend `server.py` split into `routes/` + `models/`
+- Created `/app/backend/routes/` with `__init__.py` and three router modules:
+  * `routes/standards.py` (63 lines) -- `/api/standards`, `/api/standards/{slug}`.
+  * `routes/files.py` (380 lines) -- file-management group: `/api/files`,
+    `/api/save-image`, `/api/save-floor-plan`, `/api/upload-file`,
+    `/api/create-directory`, `/api/delete-directory`, `/api/delete-file`,
+    `/api/move-file`, `/api/init-directories`, `/api/directory-scaffold`,
+    `/api/assets` manifest.  Dual-mode FS / tenant_assets preserved.
+  * `routes/assets.py` (234 lines) -- `/api/assets/{path}`, `/assets/{path}`
+    bare-alias, `/api/thumb`.  Binary-safe with mimetype guessing.
+- Created `/app/backend/models/__init__.py` scaffold for future Pydantic
+  model relocations.
+- Shared helpers (`_fs_available`, `_fs_root`, `_safe_join`,
+  `_zero_pad_variants`, `_404_no_cache`, `DATA_ROOT`, `DEMO_DATA_DIR`,
+  etc.) still live in `server.py`; the router modules pick them up via
+  a lazy `import server as _s` to keep the existing FastAPI app stable.
+- Wired each router into the app immediately after the existing G36
+  / audit / password-auth router includes.
+- **server.py: 2,430 -> 1,817 lines (-613, ~25 % smaller)**.
+
+**Regression suite green**:
+- `test_fs_mode_file_browser.py` -- 12/12 pass
+- `test_assets_zero_pad_fallback.py` -- 12/12 pass
+- `test_v2_phase1_backend.py` -- 26/26 pass
+- `test_v2_phase2b_tenants.py` -- 25/26 pass (the one failure is a
+  pre-existing stale `Seattle` assertion unrelated to this work).
+
+### Frontend psy-chart SVG extraction
+- Extracted the entire `<div className="flex-1 relative flex items-center...">`
+  chart-area (163 lines, ~65 ctx props) into
+  `/app/frontend/public/js/dashboard/psy-chart-svg.js`.  Contains:
+  * Selected-AHU Info Card overlay (drag-positioned)
+  * VAV Terminal Hub table (drag-positioned, with live CZ% badge + per-VAV
+    diagnostic rows)
+  * Main SVG psychrometric chart (defs, grid, Givoni overlay, AHU/VAV dot
+    scatter, process vectors, draggable indicator)
+  * Bottom-left legend chip cluster (colour swatches + weather strip
+    toggle + status chip + forecast micro-summary)
+- Same `renderXxx(ctx)` pattern as the other 14 modules under
+  `js/dashboard/`.
+- **app.js: 2,448 -> 2,286 lines (-162)**.
+
+### Session-wide totals (Phases L.24 + L.26 + L.27 + L.28)
+- `app.js`: 4,262 -> **2,286 lines (-1,976, ~46% reduction)**.
+- 16 modules under `js/dashboard/` (added `psy-chart-svg.js`).
+- `server.py`: 2,430 -> **1,817 lines (-613, ~25% reduction)**.
+- 3 router modules under `backend/routes/` + `models/` scaffold.
+- 3-way parity locked across `frontend/public/`,
+  `archive/Red5-Studio-V1.9/`, `archive/Red5-Studio-V2.0/`.
+- V1.9 bundle rebuilt -- 114 files, 2,210 KB.
+- Zero page errors on live preview.
+
+### What's still in `server.py` for future passes
+- Remaining route groups (~28 routes, ~1,500 lines) that can be
+  extracted into their own router files following the established
+  pattern: `health.py` (5 routes), `telemetry.py`, `equipment.py` /
+  `collector.py`, `weather.py` (7 routes incl. weather-current),
+  `bands.py` (4 routes), `history.py`, `mapper.py`, `maintenance.py`
+  (write-point, zip-files, zip-dir, disk-status).
+- `_humidity_ratio`, `_telemetry_now()` and the demo simulator still
+  live in `server.py` as shared module-level state; they should move
+  into `models/` (or a `simulator/` sub-package) when their callers
+  are router-ised.
+
+---
+
+
 
 **Brief**: Continued from Phase L.26. The sidebar was a 519-line inline
 IIFE inside App's main return — the largest remaining monolithic block.
@@ -9,6 +80,8 @@ Extracted to `js/dashboard/sidebar.js` following the same
 
 **Side-fix**: `DARK_LEVEL_MIN/MAX/DEFAULT` constants lived inside App's
 closure and were referenced by the sidebar's dark-mode brightness
+## Phase L.27 — Sidebar extraction (deeper React refactor) (2026-06-24)
+
 slider.  Moved into `sidebar.js` as module-local constants with a
 sync-warning comment pointing back to the canonical declarations in
 `app.js`.  Surface caused two `ReferenceError` crashes after the first

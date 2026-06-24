@@ -36,23 +36,15 @@ from tenants import (
     move_tenant_asset,
 )
 
-# Local-FS helpers are imported on first request to avoid a circular
-# import (this module is loaded by `server.py` at the bottom of its
-# import block).  We snapshot the references once at first use.
-_fs_available = None  # type: ignore[assignment]
-_fs_root = None       # type: ignore[assignment]
-_safe_join = None     # type: ignore[assignment]
-_DIRECTORY_SCAFFOLD: list[str] = []
-
-
-def _ensure_fs_helpers() -> None:
-    global _fs_available, _fs_root, _safe_join, _DIRECTORY_SCAFFOLD
-    if _fs_available is None:
-        import server as _server  # noqa: PLC0415  -- intentional late import
-        _fs_available = _server._fs_available
-        _fs_root = _server._fs_root
-        _safe_join = _server._safe_join
-        _DIRECTORY_SCAFFOLD = _server.DIRECTORY_SCAFFOLD
+# FS helpers consolidated in models/fs.py (Phase L.30) -- direct import,
+# no lazy dance.  These are pure functions/constants so importing them at
+# module load time can never deadlock with `server.py`.
+from models.fs import (
+    DIRECTORY_SCAFFOLD,
+    _fs_available,
+    _fs_root,
+    _safe_join,
+)
 
 
 router = APIRouter()
@@ -63,7 +55,6 @@ async def list_files(path: str = Query(""),
                      root: str = Query("data"),
                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """V1.9-compatible file browser."""
-    _ensure_fs_helpers()
     if _fs_available(root):
         base = _fs_root(root)
         data_dir = _safe_join(base, path)
@@ -114,7 +105,6 @@ async def save_image(payload: dict,
                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """Mapper POSTs {deployment_path, filename, image_data} where image_data
     is a data-URL (data:image/png;base64,...)."""
-    _ensure_fs_helpers()
     filename = payload.get("filename") or ""
     image_data = payload.get("image_data") or ""
     if not filename or not image_data:
@@ -169,7 +159,6 @@ async def assets_manifest() -> dict:
 async def create_directory(payload: dict,
                            tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """Create a directory.  Local FS on Linux deploy, marker doc otherwise."""
-    _ensure_fs_helpers()
     dirname = (payload or {}).get("dirname", "") or ""
     root = (payload or {}).get("root", "data") or "data"
     if not dirname or ".." in dirname:
@@ -199,7 +188,6 @@ async def create_directory(payload: dict,
 @router.post("/api/delete-directory")
 async def delete_directory(payload: dict,
                            tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    _ensure_fs_helpers()
     dirname = (payload or {}).get("dirname", "") or ""
     root = (payload or {}).get("root", "data") or "data"
     if not dirname or ".." in dirname or dirname.strip() == "":
@@ -225,7 +213,6 @@ async def delete_directory(payload: dict,
 @router.post("/api/delete-file")
 async def delete_file(payload: dict,
                       tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    _ensure_fs_helpers()
     filename = (payload or {}).get("filename", "") or ""
     root = (payload or {}).get("root", "data") or "data"
     if not filename or ".." in filename:
@@ -251,7 +238,6 @@ async def delete_file(payload: dict,
 @router.post("/api/move-file")
 async def move_file(payload: dict,
                     tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    _ensure_fs_helpers()
     src       = (payload or {}).get("src", "") or ""
     dest_dir  = (payload or {}).get("dest_dir", "") or ""
     root      = (payload or {}).get("root", "data") or "data"
@@ -289,7 +275,6 @@ async def move_file(payload: dict,
 async def upload_file(payload: dict,
                       tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """Generic file upload.  Local FS on Linux deploy, tenant_assets otherwise."""
-    _ensure_fs_helpers()
     filename = (payload or {}).get("filename", "") or ""
     file_data = (payload or {}).get("file_data", "") or ""
     root = (payload or {}).get("root", "data") or "data"
@@ -339,12 +324,11 @@ async def init_directories(payload: Optional[dict] = None) -> dict:
     Linux FS root exists, materialise the scaffold there (idempotent).  In
     SaaS the tenant_assets schema is flat -- directories are implicit -- so
     it's a no-op success."""
-    _ensure_fs_helpers()
     if _fs_available("data"):
         base = _fs_root("data")
         created: list[str] = []
         existing: list[str] = []
-        for d in _DIRECTORY_SCAFFOLD:
+        for d in DIRECTORY_SCAFFOLD:
             dirpath = os.path.join(base, d)
             if os.path.isdir(dirpath):
                 existing.append(d)
@@ -363,11 +347,10 @@ async def init_directories(payload: Optional[dict] = None) -> dict:
 async def directory_scaffold() -> dict:
     """Reflect real FS state when on the Linux deploy; in SaaS pretend
     everything exists (the virtual FS is flat / implicit)."""
-    _ensure_fs_helpers()
     if _fs_available("data"):
         base = _fs_root("data")
         scaffold = [{"path": d, "exists": os.path.isdir(os.path.join(base, d))}
-                    for d in _DIRECTORY_SCAFFOLD]
+                    for d in DIRECTORY_SCAFFOLD]
         return {"success": True, "scaffold": scaffold, "mode": "filesystem"}
     return {"success": True, "scaffold": [
         {"path": "configs", "exists": True},

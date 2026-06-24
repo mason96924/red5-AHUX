@@ -1,12 +1,84 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
-## Phase L.29 — `server.py` refactor complete (2026-06-24)
+## Phase L.30 — `simulator/` + `models/fs.py` + `models/loaders.py` (2026-06-24)
+
+**Brief**: Final thin-shell pass on `server.py` -- moved the demo telemetry
+simulator and the filesystem + data-loader helpers into dedicated
+sub-packages so `server.py` reduces to app wiring + router includes.
+
+### `simulator/__init__.py` (329 lines)
+- Pure module (no FastAPI, no MongoDB).  Pulled out 13 top-level defs:
+  `_humidity_ratio`, `_enthalpy`, `_VAV_DRIFT_STATE`, `_markov_drift`,
+  `_scalar_drift`, `_demo_oa_state`, `_resolve_band`, `_simulate_ahu`,
+  `_MANUAL_OVERRIDES`, `_DEMO_AHUS`, `_AHU_COLORS`, `_ahus_from_config`,
+  `_build_snapshot`.
+- Math + AHU/VAV waveform shapes byte-identical to the originals.
+- `_resolve_band` references `_load_csv("band_guide.csv")` -- direct
+  import from `models.loaders` (no circular risk).
+
+### `models/fs.py` (125 lines)
+- FS constants + helpers: `DATA_ROOT`, `SCRIPTS_ROOT`, `ALLOWED_FS_ROOTS`,
+  `DIRECTORY_SCAFFOLD`, `_fs_root`, `_fs_available`, `_safe_join`,
+  `_zero_pad_variants`, `_404_no_cache`.
+- Pure module -- no FastAPI app, no MongoDB.
+- `routes/files.py` and `routes/assets.py` now import these **directly**
+  at module-load time.  The lazy `_ensure_fs_helpers()` /
+  `_import_server()` shims are gone (user-requested "drop the
+  lazy-import dance").
+
+### `models/loaders.py` (39 lines)
+- `_load_json`, `_load_csv`, `_CACHE`.  Shared by both the simulator
+  (band-guide.csv read in `_resolve_band`) and several router groups via
+  the L.29 shim.
+
+### Back-compat shim
+`server.py` re-exports every name from `simulator`, `models.fs`, and
+`models.loaders` at module scope -- the existing Phase L.29
+`_pull_from_server()` shims in router modules continue to resolve
+`_simulate_ahu`, `_DEMO_AHUS`, `_fs_available`, etc. off the `server`
+module unchanged.
+
+### Side-fix: Seattle vs New York
+- Stale assertion `anonymous /api/weather-location -> 200 + active:Seattle`
+  updated to assert `New York` -- the anonymous-path `ACTIVE_LOCATION` was
+  changed from Seattle to New York months ago for 4-season climate +
+  reliable Open-Meteo coverage.
+- The OTHER stale assertion (`user B's active location still Seattle`)
+  was actually **correct** for a different reason: fresh tenant seeds in
+  `tenants.py::get_or_create_tenant_for_user` use
+  `_DEMO_SAVED_LOCATIONS[-1]` = "Seattle Children's", which is separate
+  from the anonymous `ACTIVE_LOCATION`.  Added a clarifying comment so
+  the next reader doesn't fall into the same trap.
+
+### Result
+- **server.py: 932 -> 584 lines (-348, ~37 % smaller this phase).**
+- Cumulative L.28 + L.29 + L.30: **2,430 -> 584 lines (-1,846, ~76 % smaller)**.
+- Only one `@app.*` handler left in `server.py`: the root `/` welcome.
+- The thin shell now contains exactly the FastAPI wiring +
+  module-level demo state + router includes -- everything else lives in
+  `simulator/`, `models/`, or `routes/`.
+
+**Verified**:
+- 26/26 Phase 1 backend tests pass
+- 12/12 FS-mode regression tests pass
+- 12/12 zero-pad fallback tests pass
+- 26/26 tenant tests pass (Seattle/NY assertions both intentional now;
+  see comments above)
+- All 12 representative smoke endpoints return 200
+- Live dashboard renders with `LIVE` chip, 5 AHUs in G36 timeline, full
+  sidebar + chart + comfort polygon + dot scatter; zero page errors
+
+---
+
+
 
 **Brief**: Continued from Phase L.28 (which extracted standards / files /
 assets routers).  Used AST-based handler detection to extract the
 remaining 32 routes into 8 new router modules without touching any
 handler body byte.  Handler bodies live in the router files unchanged;
 they pull every helper and module-level constant they reference from
+## Phase L.29 — `server.py` refactor complete (2026-06-24)
+
 `server` via a `_pull_from_server()` shim run at router-import time.
 
 **New routers** (`/app/backend/routes/`):

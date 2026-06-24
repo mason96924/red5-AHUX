@@ -12,10 +12,10 @@ Extracted from `server.py` in Phase L.28 (2026-06-24).  Three handlers:
     fixes the Windows-Chrome "CMYK JPEG shows No preview" bug by
     re-encoding through Pillow into vanilla sRGB PNG.
 
-The local-FS helpers (`_fs_available`, `_fs_root`, `_safe_join`,
-`_zero_pad_variants`, `_404_no_cache`) and the in-memory data-loader
-cache (`_load_json`, `DEMO_DATA_DIR`, `ROOT`) live in `server.py` and
-are imported lazily on first request to avoid a circular import.
+Phase L.30 (2026-06-24): the FS helpers + 404 helper moved to
+models/fs.py; the data-loader cache (`_load_json`, `DEMO_DATA_DIR`,
+`ROOT`) is the last remaining server-module reference, imported lazily
+on first request to keep the existing demo state intact.
 """
 from __future__ import annotations
 
@@ -31,8 +31,17 @@ from fastapi.responses import (
 )
 
 from tenants import current_tenant_optional, read_tenant_asset
+from models.fs import (
+    _fs_available,
+    _fs_root,
+    _safe_join,
+    _zero_pad_variants,
+    _404_no_cache,
+)
 
-# Lazy snapshots of server-module helpers / constants.
+# `_load_json`, `DEMO_DATA_DIR`, `ROOT` still live in server.py because they
+# back the demo-mode telemetry cache.  Imported lazily so this router can be
+# wired in alongside the others without circular-dependency risk.
 _server = None  # type: ignore[assignment]
 
 
@@ -59,13 +68,13 @@ async def assets(path: str, request: Request,
         return JSONResponse(s._load_json("equipment_types.json"),
                             headers={"Cache-Control": "no-store"})
     # V1.9 parity: serve from /root/data first when the FS root exists.
-    if s._fs_available("data"):
-        fs_full = s._safe_join(s._fs_root("data"), path)
+    if _fs_available("data"):
+        fs_full = _safe_join(_fs_root("data"), path)
         if fs_full and os.path.isfile(fs_full):
             full = fs_full
         else:
-            for variant in s._zero_pad_variants(path):
-                fs_variant = s._safe_join(s._fs_root("data"), variant)
+            for variant in _zero_pad_variants(path):
+                fs_variant = _safe_join(_fs_root("data"), variant)
                 if fs_variant and os.path.isfile(fs_variant):
                     full = fs_variant
                     break
@@ -77,7 +86,7 @@ async def assets(path: str, request: Request,
                 ctype = doc.get("content_type") or "application/octet-stream"
                 return FastResponse(content=doc["data_bytes"], media_type=ctype,
                                     headers={"Cache-Control": "no-store"})
-            for variant in s._zero_pad_variants(path):
+            for variant in _zero_pad_variants(path):
                 doc = await read_tenant_asset(tenant, variant)
                 if doc and doc.get("data_bytes"):
                     ctype = doc.get("content_type") or "application/octet-stream"
@@ -88,7 +97,7 @@ async def assets(path: str, request: Request,
             full = alt
         else:
             # Disk-side zero-pad fallback for the demo public tree.
-            for variant in s._zero_pad_variants(path):
+            for variant in _zero_pad_variants(path):
                 variant_full = os.path.normpath(os.path.join(public_root, variant))
                 if variant_full.startswith(public_root) and os.path.exists(variant_full):
                     full = variant_full
@@ -105,7 +114,7 @@ async def assets(path: str, request: Request,
                         _resolved = True
                         break
                 if not _resolved:
-                    return s._404_no_cache(f"asset not found: {path}")
+                    return _404_no_cache(f"asset not found: {path}")
     lower = full.lower()
     with open(full, "rb") as f:
         body = f.read()
@@ -169,8 +178,8 @@ async def thumb(path: str = Query(...),
     if not full.startswith(public_root):
         raise HTTPException(403, "path traversal")
     raw_bytes: Optional[bytes] = None
-    if s._fs_available("data"):
-        fs_full = s._safe_join(s._fs_root("data"), rel)
+    if _fs_available("data"):
+        fs_full = _safe_join(_fs_root("data"), rel)
         if fs_full and os.path.isfile(fs_full):
             with open(fs_full, "rb") as f:
                 raw_bytes = f.read()
@@ -182,7 +191,7 @@ async def thumb(path: str = Query(...),
         if doc and doc.get("data_bytes"):
             raw_bytes = doc["data_bytes"]
     if raw_bytes is None:
-        for variant in s._zero_pad_variants(rel):
+        for variant in _zero_pad_variants(rel):
             variant_full = os.path.normpath(os.path.join(public_root, variant))
             if variant_full.startswith(public_root) and os.path.exists(variant_full):
                 with open(variant_full, "rb") as f:
@@ -199,7 +208,7 @@ async def thumb(path: str = Query(...),
             with open(alt, "rb") as f:
                 raw_bytes = f.read()
     if raw_bytes is None:
-        return s._404_no_cache(f"thumb source not found: {rel}")
+        return _404_no_cache(f"thumb source not found: {rel}")
 
     try:
         from PIL import Image, ImageOps  # noqa: PLC0415

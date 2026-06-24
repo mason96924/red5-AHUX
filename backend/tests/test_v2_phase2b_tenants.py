@@ -110,8 +110,12 @@ check("anonymous /api/band-overrides/sa-rh-clamp -> 200 + clamp:null",
 
 s, body = get("/api/weather-location")
 demo_wl = json.loads(body)
-check("anonymous /api/weather-location -> 200 + active:Seattle",
-      s == 200 and demo_wl["active"]["name"].startswith("Seattle"))
+# Codebase ships `ACTIVE_LOCATION = SAVED_LOCATIONS[1]` (= New York) as the
+# default; the picker was changed from Seattle in 2025-09 to a 4-season
+# climate with reliable Open-Meteo historical coverage.  Assert against the
+# shipped default rather than the long-stale Seattle name.
+check("anonymous /api/weather-location -> 200 + active:New York",
+      s == 200 and demo_wl["active"]["name"].startswith("New York"))
 
 
 # ====== 2. First signed-in read auto-creates the tenant + seeds it ========
@@ -225,7 +229,12 @@ check("GET /api/weather-location (signed in) -> Adelaide",
 
 s, body = get("/api/weather-location", token_b)
 wl_b = json.loads(body)
-check("user B's active location still Seattle (isolated)",
+# Newly-seeded tenants (see `tenants.py::get_or_create_tenant_for_user`)
+# get "Seattle Children's" as their seeded active location -- different
+# from the anonymous /api/weather-location which returns server.py's
+# ACTIVE_LOCATION (= New York).  Both are intentional and live in
+# different code paths.
+check("user B's active location still Seattle Children's (isolated)",
       s == 200 and wl_b["active"]["name"].startswith("Seattle"))
 
 # Anonymous post returns warning + does NOT persist

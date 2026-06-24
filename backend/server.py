@@ -92,6 +92,9 @@ from routes.files import router as files_router  # noqa: E402
 app.include_router(files_router)
 from routes.assets import router as assets_router  # noqa: E402
 app.include_router(assets_router)
+# Phase L.29 routers are wired at the BOTTOM of this file (after all helpers
+# and module-level constants like ACTIVE_LOCATION / _DEMO_AHUS / _CACHE are
+# defined, so each router's `_pull_from_server()` shim resolves cleanly).
 
 
 @app.on_event("startup")
@@ -529,114 +532,19 @@ def _build_snapshot(ahus: Optional[list[tuple[str, str, list[str]]]] = None) -> 
 # ---------------------------------------------------------------------------
 # Core endpoints.
 # ---------------------------------------------------------------------------
-@app.get("/api/health")
-async def health() -> dict:
-    return {"ok": True, "version": "2.0.0-phase1", "mode": "demo"}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/version")
-async def version() -> dict:
-    return {"version": "2.0.0-phase1", "build": "demo", "fork": "V2.0"}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/data-mode")
-async def data_mode(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Reflect the operator's `mock_mode` setting so the dashboard's mode
-    toggle shows the right pill on page load.  Signed-in users see their
-    saved tenant state; anonymous users see the in-memory anonymous override
-    (defaults to whatever the bundled collector_config.json says)."""
-    if tenant:
-        cfg = await read_collector_config(tenant) or {}
-        mock = bool(cfg.get("mock_mode", _bundled_mock_mode_default()))
-        groups = cfg.get("ahu_groups") or _load_json("collector_config.json").get("ahu_groups") or {}
-        return {"mode": "mock" if mock else "simulator", "live": False,
-                "source": "tenant-config", "ahu_count": len(groups)}
-    cfg = _anon_effective_config()
-    return {"mode": "mock" if cfg.get("mock_mode") else "simulator",
-            "live": False, "source": "anon-config",
-            "ahu_count": len(cfg.get("ahu_groups") or {})}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/data")
-async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) -> list:
-    """V1.9 contract: ARRAY of AHU entries.  Dashboard rejects non-array.
-
-    Resolution:
-      - Signed-in: tenant's saved collector_config (falling back to bundled
-        demo if the tenant hasn't saved one yet).
-      - Anonymous: bundled collector_config.json with the in-memory
-        anonymous mock_mode override applied.
-
-    `mock_mode:false` + non-empty `ahu_groups` -> snapshot built from those
-    AHU/VAV names.  Otherwise -> the bundled `_DEMO_AHUS` template.
-
-    Per-AHU enrichment: each entry is decorated with a `g36` block
-    (operating mode + request counts + SAT/DSP reset values) computed
-    from the synthesized telemetry.  Mode + request counts refresh on
-    every poll; the T&R reset values walk on the canonical 2-minute
-    ASHRAE-36 Td cadence (throttled inside `auto_tick_from_ahu_dict`).
-    """
-    if tenant:
-        cfg = await read_collector_config(tenant)
-        if cfg is None:
-            cfg = _load_json("collector_config.json")
-    else:
-        cfg = _anon_effective_config()
-    if not cfg.get("mock_mode", True):
-        ahus = _ahus_from_config(cfg)
-        if ahus:
-            snapshot = _build_snapshot(ahus)
-        else:
-            snapshot = _build_snapshot()
-    else:
-        snapshot = _build_snapshot()
-
-    # Decorate each AHU with G36 state.  Runs all ticks in parallel so
-    # the /api/data response stays under ~50 ms even with 10+ AHUs.
-    import asyncio
-    g36_results = await asyncio.gather(
-        *[auto_tick_from_ahu_dict(a["id"], a) for a in snapshot],
-        return_exceptions=True,
-    )
-    for ahu, g36 in zip(snapshot, g36_results):
-        if isinstance(g36, dict):
-            # Shrink the payload to just what the dashboard chip needs.
-            ahu["g36"] = {
-                "mode":             g36.get("mode"),
-                "mode_reason":      g36.get("mode_reason"),
-                "cooling_requests": g36.get("cooling_requests", 0),
-                "heating_requests": g36.get("heating_requests", 0),
-                "pressure_requests": g36.get("pressure_requests", 0),
-                "sat_reset_c":      g36.get("sat_reset_c"),
-                "dsp_reset_pa":     g36.get("dsp_reset_pa"),
-                "last_tick_at":     g36.get("last_tick_at"),
-            }
-    return snapshot
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/data-mode")
-async def set_data_mode(payload: dict,
-                        tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Persist Simulator <-> Mock.  Signed-in -> tenant's collector_config;
-    anonymous -> a process-wide in-memory override so demo users can also
-    toggle without signing in (state is lost on backend restart; that is
-    intentional)."""
-    desired_mode = (payload.get("mode") or "").lower()
-    is_mock = desired_mode == "mock"
-    if not tenant:
-        _ANON_OVERRIDE["mock_mode"] = is_mock
-        return {"success": True, "mode": desired_mode, "persisted": False,
-                "scope": "anonymous-in-memory",
-                "note": "Anonymous toggle held in server memory; sign in to persist across restarts."}
-    cfg = await read_collector_config(tenant) or {}
-    if not cfg:
-        # First save -> seed from bundled defaults so we don't end up with
-        # an empty `ahu_groups` on the tenant record.
-        cfg = _load_json("collector_config.json") or {}
-    cfg["mock_mode"] = is_mock
-    await write_collector_config(tenant, cfg)
-    return {"success": True, "mode": desired_mode, "persisted": True,
-            "tenant_id": tenant["tenant_id"]}
+# [Phase L.29] handler moved to routes/*.py
 
 
 # ---------------------------------------------------------------------------
@@ -658,138 +566,25 @@ def _anon_effective_config() -> dict:
     return cfg
 
 
-@app.get("/api/telemetry-status")
-async def telemetry_status(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """V1.9-compatible health probe used by the dashboard header chip.
-
-    The chip shows LIVE / SIM / STALE / OFF based on these flags:
-      * `live=True` -> the demo simulator is producing data (always true here).
-      * `mock_mode` -> reflects the operator's data-source toggle so the
-        chip flips between LIVE (mock_mode=false) and SIM (mock_mode=true).
-      * `stale=False`, `age_seconds=0` -> demo data is generated on each call.
-      * `equipment_count` -> AHU count the dashboard expects to render.
-    """
-    # Resolve the effective config (tenant-saved -> bundled w/ anon override).
-    if tenant:
-        cfg = await read_collector_config(tenant) or _load_json("collector_config.json")
-    else:
-        cfg = _anon_effective_config()
-    is_mock = bool(cfg.get("mock_mode", True))
-    if not is_mock:
-        ahu_count = len((cfg.get("ahu_groups") or {}))
-        if ahu_count == 0:
-            ahu_count = len(_DEMO_AHUS)
-    else:
-        ahu_count = len(_DEMO_AHUS)
-    now = datetime.now(timezone.utc)
-    return {
-        "success": True,
-        "live": True,
-        "polling": True,
-        "mock_mode": is_mock,
-        "stale": False,
-        "stale_s": 0,
-        "age_seconds": 0,
-        "equipment_count": ahu_count,
-        "read_ok": ahu_count,
-        "read_errors": 0,
-        "timestamp_iso": now.isoformat(),
-        "collector_version": "v2.0-demo",
-        "mode": "demo",
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/equipment-types")
-async def equipment_types(tenant: Optional[dict] = Depends(current_tenant_optional)) -> Any:
-    """Signed-in users get THEIR copy (Phase 2 Piece B); anonymous gets demo."""
-    if tenant:
-        tenant_eq = await read_equipment_types(tenant)
-        if tenant_eq:
-            return tenant_eq
-    return _load_json("equipment_types.json")
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/collector-config")
-async def collector_config(tenant: Optional[dict] = Depends(current_tenant_optional)) -> Any:
-    """Signed-in users get THEIR saved collector config; anonymous gets the
-    bundled demo template with the in-memory anonymous mode override applied
-    so the modal's Simulator/Mock pill matches what /api/data is using."""
-    if tenant:
-        saved = await read_collector_config(tenant)
-        if saved:
-            return saved
-    return _anon_effective_config()
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/collector-config")
-async def save_collector_config(payload: dict,
-                                tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Dashboard COLLECTOR modal posts the whole cfg JSON here.  We persist
-    per-tenant when signed in.  Anonymous callers get success:true with a
-    `persisted:false` flag so the modal does not show a misleading error --
-    the live dashboard still works in demo mode regardless."""
-    if not tenant:
-        return {
-            "success": True,
-            "persisted": False,
-            "warning": "Demo mode (anonymous) -- sign in to persist collector configuration.",
-        }
-    res = await write_collector_config(tenant, payload)
-    return {
-        "success": True,
-        "persisted": True,
-        "tenant_id": res["tenant_id"],
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/services")
-async def services() -> dict:
-    return {
-        "services": [
-            {"name": "telemetry_service",       "ok": True,  "loaded_at": _DEMO_START_TS},
-            {"name": "band_service",            "ok": True,  "loaded_at": _DEMO_START_TS},
-            {"name": "weather_service",         "ok": True,  "loaded_at": _DEMO_START_TS},
-            {"name": "band_overrides_service",  "ok": True,  "loaded_at": _DEMO_START_TS},
-            {"name": "bacnet_diag_service",     "ok": False, "loaded_at": None,
-             "error": "BACnet stack unavailable in demo mode"},
-        ]
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/weather-location")
-async def weather_location(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    if tenant:
-        loc = await read_weather_location(tenant)
-        if loc:
-            # Fresh-session fallback: when no `active` has been picked yet
-            # but the operator has pinned a default, surface that as the
-            # active location so the dashboard auto-loads it on first open
-            # instead of stranding the user on the bundled "Seattle Children's"
-            # baseline.  `default` itself is also returned verbatim so the
-            # UI can render the star indicator.
-            if not loc.get("active") and loc.get("default"):
-                loc["active"] = loc["default"]
-            # 2026-05-25 fix: when the operator has not saved any custom
-            # locations yet (`saved` is empty/missing), seed the dropdown
-            # with the bundled demo cities so the modal isn't empty.  The
-            # moment the operator adds their first real location and POSTs,
-            # the persisted `saved` array fully replaces this fallback --
-            # we never silently mix user content with bundled defaults
-            # AFTER the user has started curating their own list.
-            if not loc.get("saved"):
-                loc["saved"] = SAVED_LOCATIONS
-            return loc
-    return {"active": ACTIVE_LOCATION, "saved": SAVED_LOCATIONS, "default": None}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/weather-location")
-async def set_weather_location(update: WeatherLocationUpdate,
-                               tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Persist the operator's weather-location pick.  Anonymous = no-op."""
-    if not tenant:
-        return {"ok": False, "persisted": False,
-                "warning": "Sign in to save weather locations."}
-    return await write_weather_location(tenant, update)
+# [Phase L.29] handler moved to routes/*.py
 
 
 # ----------------------------------------------------------------------------
@@ -899,281 +694,13 @@ def _nasa_power_to_openmeteo(power_json: dict, requested_lat: float, requested_l
     }
 
 
-@app.get("/api/weather-proxy")
-async def weather_proxy(
-    latitude: float = Query(...),
-    longitude: float = Query(...),
-    start_date: str = Query(...),
-    end_date: str = Query(...),
-    hourly: str = Query("temperature_2m,relative_humidity_2m"),
-    timezone_q: str = Query("auto", alias="timezone"),
-) -> Any:
-    """3-tier weather-history proxy used by the psy_3d.html page.
-
-    Order:
-      1. open-meteo /v1/archive  (free, no key, ideal; blocked on some Korean ISPs)
-      2. weatherapi.com history.json (free key, last 7 days only)
-      3. NASA POWER hourly point   (free, no key, unlimited history)
-
-    The front-end always sees the open-meteo response shape.  The `source`
-    field in the body tells you which tier served the data."""
-    import httpx  # local import keeps cold-start fast
-    om_error = wa_error = np_error = None
-
-    # ---- 1) open-meteo
-    om_params = {
-        "latitude":   latitude,
-        "longitude":  longitude,
-        "start_date": start_date,
-        "end_date":   end_date,
-        "hourly":     hourly,
-        "timezone":   timezone_q,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            r = await client.get("https://archive-api.open-meteo.com/v1/archive",
-                                 params=om_params)
-        if r.status_code == 200:
-            _mark_weather_source("open-meteo", "ok")
-            return r.json()
-        om_error = f"HTTP {r.status_code}"
-    except Exception as e:  # noqa: BLE001
-        om_error = str(e)
-
-    # ---- 2) weatherapi.com
-    key = _v2_weatherapi_key()
-    if key:
-        wa_params = {
-            "key":    key,
-            "q":      f"{latitude},{longitude}",
-            "dt":     start_date,
-            "end_dt": end_date,
-        }
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.get("https://api.weatherapi.com/v1/history.json",
-                                     params=wa_params)
-            if r.status_code == 200:
-                payload = _weatherapi_to_openmeteo(r.json(), latitude, longitude)
-                if payload.get("hourly", {}).get("time"):
-                    _mark_weather_source("weatherapi.com", "ok")
-                    return payload
-                wa_error = "empty payload (range likely older than 7-day free-tier window)"
-            else:
-                wa_error = f"HTTP {r.status_code}"
-        except Exception as e:  # noqa: BLE001
-            wa_error = str(e)
-    else:
-        wa_error = "no API key configured"
-
-    # ---- 3) NASA POWER
-    np_params = {
-        "parameters":    "T2M,RH2M",
-        "community":     "RE",
-        "longitude":     longitude,
-        "latitude":      latitude,
-        "start":         start_date.replace("-", ""),
-        "end":           end_date.replace("-", ""),
-        "format":        "JSON",
-        "time-standard": "UTC",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get("https://power.larc.nasa.gov/api/temporal/hourly/point",
-                                 params=np_params)
-        if r.status_code == 200:
-            payload = _nasa_power_to_openmeteo(r.json(), latitude, longitude)
-            if payload.get("hourly", {}).get("time"):
-                _mark_weather_source("nasa-power", "ok")
-                return payload
-            np_error = "empty payload from NASA POWER"
-        else:
-            np_error = f"HTTP {r.status_code}"
-    except Exception as e:  # noqa: BLE001
-        np_error = str(e)
-
-    _mark_weather_source(
-        "error", "error",
-        detail=f"open-meteo={om_error}; weatherapi={wa_error}; nasa-power={np_error}",
-    )
-    return {"success": False,
-            "error":  "all weather sources failed",
-            "open_meteo_error": om_error,
-            "weatherapi_error": wa_error,
-            "nasa_power_error": np_error}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/weather-health")
-async def weather_health() -> Any:
-    """Lightweight live-status endpoint for the dashboard's source dot.
-
-    Returns the upstream that satisfied the most recent /api/weather-proxy
-    call so operators get instant visual feedback when Open-Meteo is
-    blocked and the proxy has cascaded to WeatherAPI or NASA POWER."""
-    return dict(_LAST_WEATHER_SOURCE)
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/weather-history")
-async def weather_history(lat: float = Query(ACTIVE_LOCATION["lat"]),
-                          lon: float = Query(ACTIVE_LOCATION["lon"]),
-                          year: Optional[int] = None,
-                          force: bool = Query(False)) -> Any:
-    """Return weather history for (lat, lon, year).
-
-    Resolution order:
-      1. Mongo `weather_cache` (per coord+year) — past years are immutable
-         and cached forever; current-year cache is refreshed every 24 h.
-      2. Bundled demo_data file for Seattle 2020 (offline fallback).
-      3. Live open-meteo archive API (real climate for any city).
-
-    All non-2020 responses get their dates re-stamped to the requested year
-    so the dashboard's `date.startsWith('YYYY')` filter aligns when we
-    serve cached data from a different year.
-    """
-    import httpx  # local import keeps cold-start fast
-    from motor.motor_asyncio import AsyncIOMotorClient
-
-    lat_key = round(float(lat), 2)
-    lon_key = round(float(lon), 2)
-    target_year = int(year) if year else datetime.now(timezone.utc).year
-    is_current_year = target_year == datetime.now(timezone.utc).year
-
-    # ---- 1. Mongo cache ----
-    mongo_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
-    wx_col = mongo_client[os.environ["DB_NAME"]]["weather_cache"]
-    cache_key = {"lat": lat_key, "lon": lon_key, "year": target_year}
-    if not force:
-        doc = await wx_col.find_one(cache_key, {"_id": 0, "payload": 1, "fetched_at": 1})
-        if doc:
-            stale = False
-            if is_current_year:
-                fetched = doc.get("fetched_at")
-                if fetched and isinstance(fetched, datetime):
-                    if fetched.tzinfo is None:
-                        fetched = fetched.replace(tzinfo=timezone.utc)
-                    stale = (datetime.now(timezone.utc) - fetched).total_seconds() > 86400
-                else:
-                    stale = True
-            if not stale and doc.get("payload"):
-                p = doc["payload"]
-                p["_from_cache"] = True
-                return p
-
-    # ---- 2. Bundled demo file (Seattle 2020 only) ----
-    bundle = os.path.join(DEMO_DATA_DIR, f"weather_{lat_key:.2f}_{lon_key:.2f}_2020.json")
-    if os.path.exists(bundle):
-        with open(bundle, "r") as f:
-            payload = json.load(f)
-        if target_year != 2020:
-            payload = _restamp_year(payload, target_year)
-        return payload
-
-    # ---- 3. Live open-meteo ----
-    end_d = f"{target_year}-12-31"
-    today_iso = datetime.now(timezone.utc).date().isoformat()
-    if end_d > today_iso:
-        end_d = today_iso
-    params = {
-        "latitude": lat_key,
-        "longitude": lon_key,
-        "start_date": f"{target_year}-01-01",
-        "end_date": end_d,
-        "hourly": "temperature_2m,relative_humidity_2m",
-        "daily": "weather_code",
-        "timezone": "auto",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get("https://archive-api.open-meteo.com/v1/archive", params=params)
-        if r.status_code != 200:
-            # Network fallback: serve the bundled Seattle file re-stamped.
-            with open(os.path.join(DEMO_DATA_DIR, "weather_47.60_-122.30_2020.json"), "r") as f:
-                payload = json.load(f)
-            payload = _restamp_year(payload, target_year)
-            payload["source"] = "demo-fallback"
-            payload["warning"] = f"open-meteo returned {r.status_code}; serving demo data"
-            return payload
-        data = r.json()
-    except Exception as e:  # noqa: BLE001
-        with open(os.path.join(DEMO_DATA_DIR, "weather_47.60_-122.30_2020.json"), "r") as f:
-            payload = json.load(f)
-        payload = _restamp_year(payload, target_year)
-        payload["source"] = "demo-fallback"
-        payload["warning"] = f"open-meteo unreachable ({e}); serving demo data"
-        return payload
-
-    hourly = data.get("hourly") or {}
-    times = hourly.get("time") or []
-    temps = hourly.get("temperature_2m") or []
-    rhs   = hourly.get("relative_humidity_2m") or []
-    daily_raw = data.get("daily") or {}
-    wc_dates = daily_raw.get("time") or []
-    wc_codes = daily_raw.get("weather_code") or []
-    weather_codes = {wc_dates[i]: (wc_codes[i] if i < len(wc_codes) else None)
-                     for i in range(len(wc_dates))}
-
-    # Aggregate hourly -> daily
-    day_bucket: dict[str, dict] = {}
-    for i, ts in enumerate(times):
-        day = ts[:10]
-        t = temps[i] if i < len(temps) else None
-        rh = rhs[i] if i < len(rhs) else None
-        if t is None or rh is None:
-            continue
-        day_bucket.setdefault(day, {"temps": [], "rhs": []})
-        day_bucket[day]["temps"].append(t)
-        day_bucket[day]["rhs"].append(rh)
-
-    daily_out: list[dict] = []
-    hourly_out: list[dict] = []
-    for day in sorted(day_bucket.keys()):
-        d = day_bucket[day]
-        h_values = []
-        for t, rh in zip(d["temps"], d["rhs"]):
-            w_kgkg = _humidity_ratio(t, rh)
-            h_values.append(_enthalpy(t, w_kgkg))
-        daily_out.append({
-            "date": day,
-            "temp_min": round(min(d["temps"]), 1),
-            "temp_max": round(max(d["temps"]), 1),
-            "temp_avg": round(sum(d["temps"]) / len(d["temps"]), 1),
-            "rh_min": round(min(d["rhs"])),
-            "rh_max": round(max(d["rhs"])),
-            "rh_avg": round(sum(d["rhs"]) / len(d["rhs"])),
-            "h_min": round(min(h_values), 1),
-            "h_max": round(max(h_values), 1),
-            "h_avg": round(sum(h_values) / len(h_values), 1),
-            "wc": weather_codes.get(day),
-        })
-    for i, ts in enumerate(times):
-        t = temps[i] if i < len(temps) else None
-        rh = rhs[i] if i < len(rhs) else None
-        if t is None or rh is None:
-            continue
-        w_kgkg = _humidity_ratio(t, rh)
-        hourly_out.append({
-            "time": ts, "temp": round(t, 1), "rh": round(rh),
-            "h": round(_enthalpy(t, w_kgkg), 1),
-        })
-
-    payload = {
-        "success": True,
-        "source": "open-meteo",
-        "lat": lat_key,
-        "lon": lon_key,
-        "year": target_year,
-        "timezone": data.get("timezone", ""),
-        "daily": daily_out,
-        "hourly": hourly_out,
-        "hourly_count": len(hourly_out),
-    }
-    await wx_col.update_one(
-        cache_key,
-        {"$set": {"payload": payload, "fetched_at": datetime.now(timezone.utc), **cache_key}},
-        upsert=True,
-    )
-    payload["_from_cache"] = False
-    return payload
+# [Phase L.29] handler moved to routes/*.py
 
 
 def _restamp_year(payload: dict, target_year: int) -> dict:
@@ -1209,317 +736,44 @@ def _restamp_year(payload: dict, target_year: int) -> dict:
     return out
 
 
-@app.get("/api/tomorrow-forecast")
-async def tomorrow_forecast() -> dict:
-    now = time.time()
-    out = [{"hour": h, "t": _demo_oa_state(now + h * 3600)["t"],
-            "rh": _demo_oa_state(now + h * 3600)["rh"]} for h in range(24)]
-    return {"location": ACTIVE_LOCATION, "hours": out}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/band-overrides/sa-rh-clamp")
-async def get_sa_rh_clamp(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    if tenant:
-        clamp = await read_sa_rh_clamp(tenant)
-        return {"status": "ok", "sa_rh_clamp": clamp, "tenant_id": tenant["tenant_id"]}
-    return {"status": "ok", "sa_rh_clamp": None}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/band-overrides/sa-rh-clamp")
-async def set_sa_rh_clamp(payload: dict,
-                          request: Request,
-                          tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    if not tenant:
-        return {
-            "status": "ok",
-            "sa_rh_clamp": payload.get("sa_rh_clamp"),
-            "applied": False,
-            "warning": "Demo mode -- sign in to persist clamp settings.",
-        }
-    # Snapshot the previous value for the audit before we overwrite it.
-    prev_clamp = await read_sa_rh_clamp(tenant)
-    new_clamp  = payload.get("sa_rh_clamp")
-    await write_sa_rh_clamp(tenant, new_clamp)
-    # Resolve the acting user from the cookie for the audit row (lazy
-    # import to avoid an import-cycle bootstrapping audit_log first).
-    try:
-        from auth import _resolve_session_token  # noqa: WPS433
-        token = request.cookies.get("session_token")
-        user = await _resolve_session_token(token) if token else None
-    except Exception:  # noqa: BLE001
-        user = None
-    await record_audit(
-        request, user, tenant,
-        action="sa-rh-clamp",
-        resource=f"tenant:{tenant['tenant_id']}",
-        before={"sa_rh_clamp": prev_clamp},
-        after={"sa_rh_clamp": new_clamp},
-    )
-    return {
-        "status": "ok",
-        "sa_rh_clamp": new_clamp,
-        "applied": True,
-        "tenant_id": tenant["tenant_id"],
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/band-overrides/preview")
-async def preview_clamp(lo: float = Query(...), hi: float = Query(...)) -> dict:
-    """Dry-run: show what each band looks like under a candidate clamp.
-    Used by the dashboard "Apply to Controller" confirm modal.
-
-    Returns the V1.9 Flask `band_overrides_service` contract that the
-    dashboard JS reads (a `preview` array with before/after/changed
-    fields per band).  An earlier V2.0 implementation returned a
-    different `affected` shape, which made the dashboard crash with
-    `Cannot read properties of undefined (reading 'filter')` because
-    `preview` was `undefined` and `preview.filter(...)` blew up before
-    the confirm modal could render.  Parity restored 2026-06-17.
-    """
-    if lo > hi:
-        lo, hi = hi, lo
-    rows = _load_csv("band_guide.csv")
-    preview = []
-    for r in rows:
-        try:
-            orig_rh = float(r.get("SA_RH_Delivery") or 0)
-        except (TypeError, ValueError):
-            orig_rh = 0.0
-        clamped_rh = max(lo, min(hi, orig_rh))
-        orig_hum = r.get("HUM_Mode", "")
-        if clamped_rh < orig_rh:
-            new_hum = "DEHUMIDIFY"
-            direction = "down"
-        elif clamped_rh > orig_rh:
-            new_hum = "HUMIDIFY"
-            direction = "up"
-        else:
-            new_hum = orig_hum
-            direction = None
-        preview.append({
-            "id":     r.get("Band", ""),
-            "name":   r.get("Band_Name", ""),
-            "before": {"sa_rh": orig_rh,    "hum": orig_hum},
-            "after":  {"sa_rh": clamped_rh, "hum": new_hum},
-            "changed":  direction is not None,
-            "direction": direction,
-        })
-    return {"status": "ok", "preview": preview}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/write-history")
-async def write_history() -> dict:
-    return {"history": [], "mode": "demo"}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/collector-log")
-async def collector_log() -> dict:
-    base = int(time.time())
-    oa = _demo_oa_state(time.time())
-    band_name = _resolve_band(oa["t"], oa["rh"])["Band_Name"]
-    return {
-        "log": [
-            {"ts": base - 60, "level": "INFO", "msg": "Demo simulator started."},
-            {"ts": base - 30, "level": "INFO", "msg": "Loaded weather year (Seattle 2020)."},
-            {"ts": base - 10, "level": "INFO", "msg": "Active band: " + band_name},
-        ]
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/band-guide")
-async def get_band_guide() -> dict:
-    """Return the 10-band SA strategy matrix (`band_guide.csv`) as a JSON
-    array.  Powers the per-AHU detail page's band table; the frontend
-    highlights the row matching the AHU's current OA conditions."""
-    rows = _load_csv("band_guide.csv")
-    # Coerce numeric columns so the UI doesn't have to parseFloat() every cell.
-    out = []
-    NUMERIC = {"OA_T_Lo", "OA_T_Hi", "OA_RH_Lo", "OA_RH_Hi",
-               "SA_T_CC_SP", "SA_T_Delivery", "SA_W_SP_gkg",
-               "SA_RH_Delivery", "OA_Damper_SP", "Energy_Rank"}
-    for r in rows:
-        clean = {}
-        for k, v in r.items():
-            if k in NUMERIC:
-                try:
-                    clean[k] = float(v)
-                except (TypeError, ValueError):
-                    clean[k] = v
-            else:
-                clean[k] = v
-        out.append(clean)
-    return {"bands": out, "count": len(out)}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/trend-history")
-async def trend_history(point: str = Query("OA"), window_min: int = Query(60)) -> dict:
-    now = time.time()
-    samples = []
-    for i in range(window_min, 0, -1):
-        ts = now - i * 60
-        oa = _demo_oa_state(ts)
-        samples.append({"ts": int(ts), "t": oa["t"], "rh": oa["rh"]})
-    return {"point": point, "samples": samples}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/ahu-history/{ahu_id}")
-async def ahu_history(ahu_id: str,
-                      window_min: int = Query(1440, ge=15, le=43200),
-                      step_s: int    = Query(60, ge=15, le=900)) -> dict:
-    """Synthesise per-AHU time-series for the drill-down detail page.
-
-    Returns supply-air temp / RH / airflow samples on the requested cadence
-    (default 1-minute step over 24 h = 1440 samples).  Because the demo
-    backend has no historical persistence layer yet, we deterministically
-    replay the same drift / band logic that `_simulate_ahu` uses live --
-    seeded from `(ahu_id, ts)` so two calls with the same window return
-    identical curves.  When telemetry persistence ships (Phase 4) this
-    endpoint can swap to a real Mongo query without touching the frontend.
-
-    Returns:
-        {
-          ahu_id: str,
-          window_min, step_s: int,
-          samples: [{ts, sa_t, sa_rh, sa_w, ra_t, ra_rh, oa_t, oa_rh, airflow_pct}],
-        }
-    """
-    now = time.time()
-    samples_n = max(1, window_min * 60 // step_s)
-    seed_base = hash(ahu_id) % 1000
-    samples: list[dict] = []
-    for i in range(samples_n, 0, -1):
-        ts = now - i * step_s
-        oa = _demo_oa_state(ts)
-        # Deterministic drift seeded by (ahu, ts) so the same window
-        # always replays identical waveforms even across server restarts.
-        seed = seed_base + (int(ts) % 86400) / 86400.0
-        wave_slow = math.sin(ts / 7200.0 + seed * 0.6)            # 2-hour beat
-        wave_fast = math.sin(ts / 1800.0 + seed * 1.3)            # 30-min beat
-        wave_micro = math.sin(ts / 360.0 + seed * 2.7) * 0.4      # 6-min ripple
-        sa_t = 13.5 + 1.8 * wave_slow + 0.6 * wave_fast + wave_micro
-        sa_rh = 58.0 + 6.0 * wave_slow + 2.5 * wave_fast
-        ra_t  = 23.0 + 0.9 * wave_slow + 0.4 * wave_fast
-        ra_rh = 48.0 + 4.0 * (-wave_slow) + 1.6 * wave_fast
-        # Airflow: tracks daytime occupancy curve + microvariation
-        hour = (datetime.fromtimestamp(ts).hour + datetime.fromtimestamp(ts).minute / 60.0)
-        occ_curve = max(0.25, min(1.0,
-            0.30 + 0.65 * math.exp(-((hour - 13.0) ** 2) / 18.0)))   # bell-shape peak ~1pm
-        airflow = occ_curve * (1.0 + 0.08 * wave_fast + 0.04 * wave_micro)
-        samples.append({
-            "ts": int(ts),
-            "sa_t":  round(sa_t,  2),
-            "sa_rh": round(sa_rh, 1),
-            "sa_w":  round(_humidity_ratio(sa_t, sa_rh), 5),
-            "ra_t":  round(ra_t,  2),
-            "ra_rh": round(ra_rh, 1),
-            "oa_t":  round(float(oa["t"]),  2),
-            "oa_rh": round(float(oa["rh"]), 1),
-            "airflow_pct": round(airflow * 100.0, 1),
-        })
-    return {
-        "ahu_id":     ahu_id,
-        "window_min": window_min,
-        "step_s":     step_s,
-        "now":        int(now),
-        "samples":    samples,
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
 
-@app.get("/api/map-config")
-async def map_config(tenant: Optional[dict] = Depends(current_tenant_optional)) -> Any:
-    """Return the tenant's saved map_config (floors + markers).  Anonymous
-    callers get the bundled demo map_config so the dashboard's floor-plan
-    overlay still renders during the demo walkthrough.
-
-    Response is the V1.9 map_config.json shape (NOT wrapped):
-        { floors: [{id, name, markers: [{type, name, id, x, y, ...}]}],
-          version, ... }
-    The dashboard's `getFloorForAhu()` reads `data.floors[*].markers[*]`
-    directly so we cannot wrap the payload in another envelope."""
-    if tenant:
-        saved = await read_map_config(tenant)
-        if saved:
-            return saved
-    # Bundled demo fallback (optional file).  If absent, return an empty
-    # shape with `mode:'demo'` so the legacy 'No map_config.json' banner
-    # still fires for anonymous users without a saved layout.
-    demo_path = os.path.join(DEMO_DATA_DIR, "map_config.json")
-    if os.path.exists(demo_path):
-        with open(demo_path, "r") as f:
-            return json.load(f)
-    return {"floors": [], "mode": "demo", "warning": "No map_config saved yet."}
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/save-config")
-async def save_config(payload: dict,
-                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """Equipment-mapper SAVE TO VIRTUAL CONTROLLER button posts here.
-
-    Payload shape (V1.9):
-        { deployment_path: '/root', map_config: {...}, image_manifest: {...} }
-    """
-    map_cfg  = payload.get("map_config") or {}
-    img_man  = payload.get("image_manifest") or {}
-    if not tenant:
-        return {
-            "success": False,
-            "error": "Demo mode (anonymous) -- sign in to save the floor-plan map_config.",
-            "persisted": False,
-        }
-    res = await write_map_config(tenant, map_cfg, img_man)
-    return {
-        "success": True,
-        "persisted": True,
-        "tenant_id": res["tenant_id"],
-        "floors": res["floors"],
-        "file": f"virtual-controller://{res['tenant_id']}/map_config.json",
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.get("/api/disk-status")
-async def disk_status() -> dict:
-    return {
-        "total_kb": 50000,
-        "used_kb": 18430,
-        "free_kb": 31570,
-        "percent_used": 36.86,
-        "mode": "demo",
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/save-equipment-schema")
-async def save_equipment_schema(payload: dict,
-                                tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    # The V1.9 equipment_mapper.html sends the schema wrapped:
-    #     { deployment_path: "/root", equipment_schema: { ahu_types, vav_types } }
-    # while the Phase 2b backend originally expected the schema at the top
-    # level.  Unwrap if present, fall back to direct payload for clients
-    # (tests, integration scripts) that POST the schema flat.
-    schema = payload.get("equipment_schema") if isinstance(payload.get("equipment_schema"), dict) else payload
-    if not tenant:
-        # Anonymous demo: return the V1.9-shaped failure so the mapper drops
-        # into its built-in browser-download fallback gracefully.
-        return {
-            "status": "ok",
-            "success": False,
-            "saved_keys": list(schema.keys()),
-            "persisted": False,
-            "warning": "Demo mode (anonymous) -- sign in to save to your virtual controller.",
-        }
-    res = await write_equipment_types(tenant, schema)
-    return {
-        "status": "ok",
-        "success": True,
-        # The V1.9 mapper alerts the operator with `data.file`; we surface
-        # a virtual-controller path so the dialog reads sensibly without
-        # claiming a filesystem write that never happened.
-        "file": "virtual-controller://%s/equipment_types" % res["tenant_id"],
-        "saved_keys": list(schema.keys()),
-        "persisted": True,
-        "tenant_id": res["tenant_id"],
-        "updated_at": res["updated_at"],
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
 # ---------------------------------------------------------------------------
@@ -1533,126 +787,13 @@ async def save_equipment_schema(payload: dict,
 
 
 
-@app.post("/api/write-point")
-async def write_point(payload: dict,
-                      request: Request,
-                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
-    """V1.9 BACnet RW write via dibt.Write().  In SaaS there is no real
-    BACnet target -- we accept the write and reflect it back as 'applied'
-    so the dashboard's APPLY TO CONTROLLER / clamp / override flows complete
-    without throwing.  Each write is logged to `virtual_write_log`."""
-    equip = (payload or {}).get("equipment_name") or ""
-    writes = (payload or {}).get("writes") or {}
-    if not equip or not isinstance(writes, dict) or not writes:
-        return {"success": False, "error": "equipment_name and writes required"}
-    # Snapshot the previous override values for the audit row so the UI
-    # can render a clean before/after diff.
-    prev_overrides = {
-        k: _MANUAL_OVERRIDES.get(f"{equip}:{k}") for k in writes.keys()
-    }
-    # Update the in-memory simulator overrides so the very next /api/data
-    # poll reflects the operator's pill toggle.  Anonymous demo state --
-    # process-lifetime only.
-    for k, v in writes.items():
-        try:
-            _MANUAL_OVERRIDES[f"{equip}:{k}"] = float(v)
-        except (TypeError, ValueError):
-            _MANUAL_OVERRIDES[f"{equip}:{k}"] = 1.0 if v else 0.0
-    log_doc = {
-        "tenant_id": (tenant or {}).get("tenant_id") or None,
-        "equipment_name": equip,
-        "writes": writes,
-        "applied_at": datetime.now(timezone.utc),
-        "mode": "virtual-controller",
-    }
-    try:
-        from motor.motor_asyncio import AsyncIOMotorClient as _MC
-        _mc = _MC(os.environ["MONGO_URL"])
-        await _mc[os.environ["DB_NAME"]]["virtual_write_log"].insert_one(log_doc)
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; never fail the operator's write
-    # Audit the write so admins can see who flipped which pill / SA-RH
-    # clamp / band override and when.  Best-effort; never fails the call.
-    try:
-        from auth import _resolve_session_token  # noqa: WPS433
-        token = request.cookies.get("session_token")
-        user = await _resolve_session_token(token) if token else None
-    except Exception:  # noqa: BLE001
-        user = None
-    await record_audit(
-        request, user, tenant,
-        action="write-point",
-        resource=equip,
-        before=prev_overrides,
-        after=writes,
-    )
-    return {
-        "success": True,
-        "equipment_name": equip,
-        "writes": writes,
-        "mode": "virtual-controller",
-        "note": "Write accepted and logged.  Virtual controller -- no real BACnet target.",
-    }
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/zip-files")
-async def zip_files(payload: dict,
-                    tenant: Optional[dict] = Depends(current_tenant_optional)) -> FastResponse:
-    """Stream a ZIP of the named files from `tenant_assets`."""
-    if not tenant:
-        raise HTTPException(403, "Sign in to download your virtual controller assets.")
-    names: list[str] = (payload or {}).get("names") or []
-    base_path: str = (payload or {}).get("path") or ""
-    if not isinstance(names, list) or not names:
-        raise HTTPException(400, "names[] required")
-    import io, zipfile
-    buf = io.BytesIO()
-    added = 0
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name in names:
-            if ".." in name or name.startswith("/"):
-                continue
-            rel = (base_path.strip("/") + "/" + name).strip("/") if base_path else name
-            doc = await read_tenant_asset(tenant, rel)
-            if doc and doc.get("data_bytes"):
-                zf.writestr(name, doc["data_bytes"])
-                added += 1
-    buf.seek(0)
-    return FastResponse(content=buf.getvalue(),
-                        media_type="application/zip",
-                        headers={"Content-Disposition": f'attachment; filename="bundle-{added}.zip"'})
+# [Phase L.29] handler moved to routes/*.py
 
 
-@app.post("/api/zip-dir")
-async def zip_dir(payload: dict,
-                  tenant: Optional[dict] = Depends(current_tenant_optional)) -> FastResponse:
-    """Stream a ZIP of every file under the named virtual directory."""
-    if not tenant:
-        raise HTTPException(403, "Sign in to download your virtual controller assets.")
-    dirname: str = (payload or {}).get("dirname") or ""
-    base_path: str = (payload or {}).get("path") or ""
-    prefix = ((base_path.strip("/") + "/") if base_path else "") + dirname.strip("/")
-    prefix = prefix.strip("/") + "/"
-    import io, zipfile, re
-    from tenants import ten_asset_col as _assets_col  # noqa: WPS433
-    buf = io.BytesIO()
-    added = 0
-    cursor = _assets_col.find(
-        {"tenant_id": tenant["tenant_id"],
-         "filename": {"$regex": "^" + re.escape(prefix)}},
-        {"_id": 0, "filename": 1, "data_bytes": 1},
-    )
-    docs = await cursor.to_list(length=10000)
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for doc in docs:
-            short = doc["filename"][len(prefix):]
-            zf.writestr(short or doc["filename"], doc.get("data_bytes") or b"")
-            added += 1
-    buf.seek(0)
-    arcname = (dirname.strip("/") or "assets").replace("/", "_")
-    return FastResponse(content=buf.getvalue(),
-                        media_type="application/zip",
-                        headers={"Content-Disposition": f'attachment; filename="{arcname}.zip"'})
+# [Phase L.29] handler moved to routes/*.py
 
 
 
@@ -1740,57 +881,7 @@ def _404_no_cache(detail: str):
 
 
 
-@app.get("/api/weather-current")
-async def weather_current(lat: float = Query(...), lon: float = Query(...)) -> dict:
-    key = (round(lat, 2), round(lon, 2))
-    now_ts = time.time()
-    hit = _WEATHER_NOW_CACHE.get(key)
-    if hit and (now_ts - hit[0]) < _WEATHER_NOW_TTL_S:
-        return hit[1]
-    import urllib.parse  # noqa: PLC0415
-    import urllib.request  # noqa: PLC0415
-    params = urllib.parse.urlencode({
-        "latitude":  lat,
-        "longitude": lon,
-        "current": ("temperature_2m,relative_humidity_2m,cloud_cover,"
-                    "wind_speed_10m,wind_direction_10m,precipitation,"
-                    "shortwave_radiation,weather_code"),
-        "timezone": "auto",
-    })
-    url = "https://api.open-meteo.com/v1/forecast?" + params
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Red5-Studio-V2.0"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            raw = json.loads(resp.read().decode("utf-8"))
-    except Exception as e:  # noqa: BLE001
-        return {"success": False, "error": str(e)}
-    cur = raw.get("current") or {}
-    units = raw.get("current_units") or {}
-    payload = {
-        "success": True,
-        "lat": lat, "lon": lon,
-        "time": cur.get("time"),
-        "tz": raw.get("timezone"),
-        "temperature_c":      cur.get("temperature_2m"),
-        "relative_humidity":  cur.get("relative_humidity_2m"),
-        "cloud_cover":        cur.get("cloud_cover"),
-        "wind_speed_kmh":     cur.get("wind_speed_10m"),
-        "wind_direction_deg": cur.get("wind_direction_10m"),
-        "precipitation_mm":   cur.get("precipitation"),
-        "ghi_wm2":            cur.get("shortwave_radiation"),
-        "weather_code":       cur.get("weather_code"),
-        "units": {
-            "temperature_c":    units.get("temperature_2m", "°C"),
-            "wind_speed_kmh":   units.get("wind_speed_10m", "km/h"),
-            "precipitation_mm": units.get("precipitation", "mm"),
-            "ghi_wm2":          units.get("shortwave_radiation", "W/m²"),
-        },
-        "source":  "open-meteo",
-        "fetched": int(now_ts),
-        "ttl_s":   _WEATHER_NOW_TTL_S,
-    }
-    _WEATHER_NOW_CACHE[key] = (now_ts, payload)
-    return payload
+# [Phase L.29] handler moved to routes/*.py
 
 
 
@@ -1815,3 +906,27 @@ async def root() -> dict:
             "/api/save-equipment-schema", "/api/assets/{path}",
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase L.29 (2026-06-24) -- wire the route groups extracted from server.py.
+# Imports MUST live here at the bottom of the file so that every module-level
+# helper and constant (`ACTIVE_LOCATION`, `_DEMO_AHUS`, `_CACHE`, etc.) is
+# already defined by the time each router's `_pull_from_server()` shim runs.
+# ---------------------------------------------------------------------------
+from routes.health import router as health_router  # noqa: E402
+app.include_router(health_router)
+from routes.equipment import router as equipment_router  # noqa: E402
+app.include_router(equipment_router)
+from routes.telemetry import router as telemetry_router  # noqa: E402
+app.include_router(telemetry_router)
+from routes.weather import router as weather_router  # noqa: E402
+app.include_router(weather_router)
+from routes.bands import router as bands_router  # noqa: E402
+app.include_router(bands_router)
+from routes.history import router as history_router  # noqa: E402
+app.include_router(history_router)
+from routes.mapper import router as mapper_router  # noqa: E402
+app.include_router(mapper_router)
+from routes.maintenance import router as maintenance_router  # noqa: E402
+app.include_router(maintenance_router)

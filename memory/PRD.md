@@ -1,6 +1,84 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.29 — `server.py` refactor complete (2026-06-24)
+
+**Brief**: Continued from Phase L.28 (which extracted standards / files /
+assets routers).  Used AST-based handler detection to extract the
+remaining 32 routes into 8 new router modules without touching any
+handler body byte.  Handler bodies live in the router files unchanged;
+they pull every helper and module-level constant they reference from
+`server` via a `_pull_from_server()` shim run at router-import time.
+
+**New routers** (`/app/backend/routes/`):
+- `health.py` (164 lines) -- `/api/health`, `/api/version`,
+  `/api/data-mode` GET+POST, `/api/data`, `/api/disk-status` (6 handlers)
+- `equipment.py` (86 lines) -- `/api/equipment-types`,
+  `/api/collector-config` GET+POST (3 handlers)
+- `telemetry.py` (98 lines) -- `/api/telemetry-status`, `/api/services`
+- `weather.py` (417 lines) -- `/api/weather-location` GET+POST,
+  `/api/weather-proxy`, `/api/weather-health`, `/api/weather-history`,
+  `/api/tomorrow-forecast`, `/api/weather-current` (7 handlers)
+- `bands.py` (158 lines) -- `/api/band-overrides/sa-rh-clamp` GET+POST,
+  `/api/band-overrides/preview`, `/api/band-guide` (4 handlers)
+- `history.py` (136 lines) -- `/api/write-history`, `/api/collector-log`,
+  `/api/trend-history`, `/api/ahu-history/{ahu_id}` (4 handlers)
+- `mapper.py` (128 lines) -- `/api/map-config`, `/api/save-config`,
+  `/api/save-equipment-schema` (3 handlers)
+- `maintenance.py` (165 lines) -- `/api/write-point`, `/api/zip-files`,
+  `/api/zip-dir` (3 handlers)
+
+**Result**:
+- **server.py: 1,817 → 932 lines (-885, ~49 % smaller this phase).**
+- Cumulative L.28 + L.29: **2,430 → 932 lines (-1,498, ~62 % smaller).**
+- Only one `@app.*` handler left in `server.py`: the root `/` welcome.
+- 11 router modules under `routes/`, all wired via APIRouter.
+
+**Side-fix**: First run-time NameError surfaced 3 weather helpers
+(`_restamp_year`, `_nasa_power_to_openmeteo`, `_weatherapi_to_openmeteo`)
+that handler bodies referenced but my initial `_pull_from_server()`
+shim hadn't enumerated.  Added them to `routes/weather.py`'s shim list;
+Phase 1 backend suite now 26/26 green.
+
+**Architecture note**: the L.29 router includes had to be moved to the
+**bottom** of `server.py` (after every helper + constant is defined)
+because handler default-argument values like
+`Query(ACTIVE_LOCATION["lat"])` are evaluated at function-def time,
+which happens during router-module import.  If the routers are imported
+early (next to the auth / G36 routers), `ACTIVE_LOCATION` isn't bound
+yet and the import crashes.  This is intentional and called out in a
+comment block right above the L.29 imports.
+
+**Verified**:
+- 26/26 Phase 1 backend tests pass.
+- 12/12 FS-mode file-browser regression tests pass.
+- 12/12 zero-pad fallback tests pass.
+- 25/26 tenant tests (the 1 fail is the unrelated pre-existing
+  Seattle/NY default-location assertion).
+- Live preview: 24 endpoints across 11 router groups all return 200.
+- Dashboard renders end-to-end with `LIVE` chip in the header, 5 AHUs
+  in the G36 mode timeline, comfort polygon + dot scatter all intact.
+
+**What's left in `server.py`** (932 lines):
+- App init + CORS + middleware + startup hook
+- The whole demo simulator (`_simulate_ahu`, `_demo_oa_state`,
+  `_resolve_band`, `_build_snapshot`, `_humidity_ratio`, etc.)
+- Module-level state (`_DEMO_AHUS`, `ACTIVE_LOCATION`, `SAVED_LOCATIONS`,
+  `_ANON_OVERRIDE`, `_MANUAL_OVERRIDES`, `_VAV_DRIFT_STATE`, `_CACHE`)
+- All FS helpers (`_fs_available`, `_fs_root`, `_safe_join`, ...) until
+  they're moved into `models/fs.py` in a follow-on pass
+- Router includes (top: L.28 standards/files/assets; bottom: L.29
+  health/equipment/telemetry/weather/bands/history/mapper/maintenance)
+- The lone remaining `@app.get("/")` welcome endpoint
+
+This is now a sensible "thin shell" -- the only further reduction would
+require moving the simulator + helpers out into a `simulator/`
+sub-package (P3 follow-on, not refactor-debt).
 ## Phase L.28 — Backend `routes/` split + psy-chart SVG extraction (2026-06-24)
+
+
+---
+
+
 
 **Brief**: Took both items from the "Future / Backlog" list -- backend
 modularisation and the psy-chart SVG carve-out -- in a single pass.

@@ -1,0 +1,164 @@
+"""routes/health.py -- health endpoints.
+
+Phase L.29 (2026-06-24): auto-extracted from server.py using AST.
+Handler bodies are byte-identical to the originals; only changes are
+`@app.` -> `@router.` and the `_pull_from_server()` shim below that
+imports every helper and module-level constant from `server` into this
+router's namespace so handler bodies can use them unchanged.
+"""
+from __future__ import annotations
+
+from typing import Any, Optional, Dict
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
+from datetime import datetime, timezone
+import os, json, math, time, random, csv, base64
+import urllib.parse, urllib.request
+
+from tenants import (
+    current_tenant_optional,
+    read_equipment_types, write_equipment_types,
+    read_sa_rh_clamp, write_sa_rh_clamp,
+    read_weather_location, write_weather_location,
+    save_tenant_asset, read_tenant_asset, list_tenant_assets,
+    delete_tenant_asset, delete_tenant_directory, create_tenant_directory,
+    move_tenant_asset,
+    read_collector_config, write_collector_config,
+    read_map_config, write_map_config,
+    WeatherLocationUpdate,
+)
+from audit_log import record_audit
+from g36_service import auto_tick_from_ahu_dict
+
+router = APIRouter()
+
+import server as _server  # noqa: E402  -- lazy module reference
+
+def _pull_from_server():
+    g = globals()
+    for name in ('ACTIVE_LOCATION', 'ALLOWED_FS_ROOTS', 'DATA_ROOT', 'DEMO_DATA_DIR', 'DIRECTORY_SCAFFOLD', 'ROOT', 'SAVED_LOCATIONS', 'SCRIPTS_ROOT', '_404_no_cache', '_AHU_COLORS', '_ANON_OVERRIDE', '_CACHE', '_DEMO_AHUS', '_DEMO_START_TS', '_LAST_WEATHER_SOURCE', '_LAST_WEATHER_TS', '_MANUAL_OVERRIDES', '_VAV_DRIFT_STATE', '_WEATHER_NOW_CACHE', '_WEATHER_NOW_TTL_S', '_ahus_from_config', '_anon_effective_config', '_build_snapshot', '_bundled_mock_mode_default', '_demo_oa_state', '_enthalpy', '_fs_available', '_fs_root', '_humidity_ratio', '_load_csv', '_load_json', '_mark_weather_source', '_markov_drift', '_nasa_power_history', '_resolve_band', '_safe_join', '_scalar_drift', '_set_last_weather_source', '_simulate_ahu', '_v2_weatherapi_key', '_zero_pad_variants', 'httpx'):
+        if hasattr(_server, name):
+            g[name] = getattr(_server, name)
+
+_pull_from_server()
+
+
+@router.get("/api/health")
+async def health() -> dict:
+    return {"ok": True, "version": "2.0.0-phase1", "mode": "demo"}
+
+
+@router.get("/api/version")
+async def version() -> dict:
+    return {"version": "2.0.0-phase1", "build": "demo", "fork": "V2.0"}
+
+
+@router.get("/api/data-mode")
+async def data_mode(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Reflect the operator's `mock_mode` setting so the dashboard's mode
+    toggle shows the right pill on page load.  Signed-in users see their
+    saved tenant state; anonymous users see the in-memory anonymous override
+    (defaults to whatever the bundled collector_config.json says)."""
+    if tenant:
+        cfg = await read_collector_config(tenant) or {}
+        mock = bool(cfg.get("mock_mode", _bundled_mock_mode_default()))
+        groups = cfg.get("ahu_groups") or _load_json("collector_config.json").get("ahu_groups") or {}
+        return {"mode": "mock" if mock else "simulator", "live": False,
+                "source": "tenant-config", "ahu_count": len(groups)}
+    cfg = _anon_effective_config()
+    return {"mode": "mock" if cfg.get("mock_mode") else "simulator",
+            "live": False, "source": "anon-config",
+            "ahu_count": len(cfg.get("ahu_groups") or {})}
+
+
+@router.get("/api/data")
+async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) -> list:
+    """V1.9 contract: ARRAY of AHU entries.  Dashboard rejects non-array.
+
+    Resolution:
+      - Signed-in: tenant's saved collector_config (falling back to bundled
+        demo if the tenant hasn't saved one yet).
+      - Anonymous: bundled collector_config.json with the in-memory
+        anonymous mock_mode override applied.
+
+    `mock_mode:false` + non-empty `ahu_groups` -> snapshot built from those
+    AHU/VAV names.  Otherwise -> the bundled `_DEMO_AHUS` template.
+
+    Per-AHU enrichment: each entry is decorated with a `g36` block
+    (operating mode + request counts + SAT/DSP reset values) computed
+    from the synthesized telemetry.  Mode + request counts refresh on
+    every poll; the T&R reset values walk on the canonical 2-minute
+    ASHRAE-36 Td cadence (throttled inside `auto_tick_from_ahu_dict`).
+    """
+    if tenant:
+        cfg = await read_collector_config(tenant)
+        if cfg is None:
+            cfg = _load_json("collector_config.json")
+    else:
+        cfg = _anon_effective_config()
+    if not cfg.get("mock_mode", True):
+        ahus = _ahus_from_config(cfg)
+        if ahus:
+            snapshot = _build_snapshot(ahus)
+        else:
+            snapshot = _build_snapshot()
+    else:
+        snapshot = _build_snapshot()
+
+    # Decorate each AHU with G36 state.  Runs all ticks in parallel so
+    # the /api/data response stays under ~50 ms even with 10+ AHUs.
+    import asyncio
+    g36_results = await asyncio.gather(
+        *[auto_tick_from_ahu_dict(a["id"], a) for a in snapshot],
+        return_exceptions=True,
+    )
+    for ahu, g36 in zip(snapshot, g36_results):
+        if isinstance(g36, dict):
+            # Shrink the payload to just what the dashboard chip needs.
+            ahu["g36"] = {
+                "mode":             g36.get("mode"),
+                "mode_reason":      g36.get("mode_reason"),
+                "cooling_requests": g36.get("cooling_requests", 0),
+                "heating_requests": g36.get("heating_requests", 0),
+                "pressure_requests": g36.get("pressure_requests", 0),
+                "sat_reset_c":      g36.get("sat_reset_c"),
+                "dsp_reset_pa":     g36.get("dsp_reset_pa"),
+                "last_tick_at":     g36.get("last_tick_at"),
+            }
+    return snapshot
+
+
+@router.post("/api/data-mode")
+async def set_data_mode(payload: dict,
+                        tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    """Persist Simulator <-> Mock.  Signed-in -> tenant's collector_config;
+    anonymous -> a process-wide in-memory override so demo users can also
+    toggle without signing in (state is lost on backend restart; that is
+    intentional)."""
+    desired_mode = (payload.get("mode") or "").lower()
+    is_mock = desired_mode == "mock"
+    if not tenant:
+        _ANON_OVERRIDE["mock_mode"] = is_mock
+        return {"success": True, "mode": desired_mode, "persisted": False,
+                "scope": "anonymous-in-memory",
+                "note": "Anonymous toggle held in server memory; sign in to persist across restarts."}
+    cfg = await read_collector_config(tenant) or {}
+    if not cfg:
+        # First save -> seed from bundled defaults so we don't end up with
+        # an empty `ahu_groups` on the tenant record.
+        cfg = _load_json("collector_config.json") or {}
+    cfg["mock_mode"] = is_mock
+    await write_collector_config(tenant, cfg)
+    return {"success": True, "mode": desired_mode, "persisted": True,
+            "tenant_id": tenant["tenant_id"]}
+
+
+@router.get("/api/disk-status")
+async def disk_status() -> dict:
+    return {
+        "total_kb": 50000,
+        "used_kb": 18430,
+        "free_kb": 31570,
+        "percent_used": 36.86,
+        "mode": "demo",
+    }

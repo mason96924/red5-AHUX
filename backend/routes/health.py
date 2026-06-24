@@ -32,17 +32,62 @@ from g36_service import auto_tick_from_ahu_dict
 
 router = APIRouter()
 
-import server as _server  # noqa: E402  -- lazy module reference
-
-def _pull_from_server():
-    g = globals()
-    for name in ('ACTIVE_LOCATION', 'ALLOWED_FS_ROOTS', 'DATA_ROOT', 'DEMO_DATA_DIR', 'DIRECTORY_SCAFFOLD', 'ROOT', 'SAVED_LOCATIONS', 'SCRIPTS_ROOT', '_404_no_cache', '_AHU_COLORS', '_ANON_OVERRIDE', '_CACHE', '_DEMO_AHUS', '_DEMO_START_TS', '_LAST_WEATHER_SOURCE', '_LAST_WEATHER_TS', '_MANUAL_OVERRIDES', '_VAV_DRIFT_STATE', '_WEATHER_NOW_CACHE', '_WEATHER_NOW_TTL_S', '_ahus_from_config', '_anon_effective_config', '_build_snapshot', '_bundled_mock_mode_default', '_demo_oa_state', '_enthalpy', '_fs_available', '_fs_root', '_humidity_ratio', '_load_csv', '_load_json', '_mark_weather_source', '_markov_drift', '_nasa_power_history', '_resolve_band', '_safe_join', '_scalar_drift', '_set_last_weather_source', '_simulate_ahu', '_v2_weatherapi_key', '_zero_pad_variants', 'httpx'):
-        if hasattr(_server, name):
-            g[name] = getattr(_server, name)
-
-_pull_from_server()
-
-
+# Phase L.33 (2026-06-24): direct imports replacing the original
+# `_pull_from_server()` shim.  Each name now lives in its canonical
+# module; `server` still exports the few helpers (mark/set weather
+# source, nasa-power adapter, weatherapi key reader, etc.) that
+# genuinely live there.
+from models.fs import (
+    ALLOWED_FS_ROOTS,
+    DATA_ROOT,
+    DIRECTORY_SCAFFOLD,
+    SCRIPTS_ROOT,
+    _404_no_cache,
+    _fs_available,
+    _fs_root,
+    _safe_join,
+    _zero_pad_variants,
+)
+from models.loaders import (
+    DEMO_DATA_DIR,
+    ROOT,
+    _CACHE,
+    _load_csv,
+    _load_json,
+)
+from models.weather import (
+    ACTIVE_LOCATION,
+    SAVED_LOCATIONS,
+)
+from models.state import (
+    _ANON_OVERRIDE,
+    _DEMO_START_TS,
+    _LAST_WEATHER_SOURCE,
+    _LAST_WEATHER_TS,
+    _WEATHER_NOW_CACHE,
+    _WEATHER_NOW_TTL_S,
+)
+from simulator import (
+    _AHU_COLORS,
+    _DEMO_AHUS,
+    _MANUAL_OVERRIDES,
+    _VAV_DRIFT_STATE,
+    _ahus_from_config,
+    _build_snapshot,
+    _demo_oa_state,
+    _enthalpy,
+    _humidity_ratio,
+    _markov_drift,
+    _resolve_band,
+    _scalar_drift,
+    _simulate_ahu,
+)
+from server import (
+    _anon_effective_config,
+    _bundled_mock_mode_default,
+    _mark_weather_source,
+    _v2_weatherapi_key,
+)
 @router.get("/api/health")
 async def health() -> dict:
     return {"ok": True, "version": "2.0.0-phase1", "mode": "demo"}

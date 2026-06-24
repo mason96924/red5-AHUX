@@ -1,6 +1,51 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
-## Phase L.32 — `models/state.py` + latent `/api/weather-current` fix (2026-06-24)
+## Phase L.33 — Direct imports (lazy `_pull_from_server` shim removed) (2026-06-24)
+
+**Brief**: Collapsed the L.29 lazy-shim pattern in the 8 remaining router
+modules into explicit, module-load-time imports from the canonical
+modules (`models.fs`, `models.loaders`, `models.weather`, `models.state`,
+`simulator`).  Each router file now has a transparent
+`from models.X import (...)` block right under `router = APIRouter()` --
+no `getattr(_server, name)`, no `hasattr` silently-skip, no runtime
+indirection.
+
+### What changed
+- For each of `bands.py`, `equipment.py`, `health.py`, `history.py`,
+  `maintenance.py`, `mapper.py`, `telemetry.py`, `weather.py`:
+  removed the `import server as _server` + `_pull_from_server()` block
+  and replaced it with explicit `from <module> import (...)` for the
+  ~40 names that handlers reference.
+- `routes/files.py`, `routes/assets.py`, `routes/standards.py` already
+  used direct imports from earlier phases -- left unchanged.
+- 8 router files * ~6 explicit import blocks = no remaining
+  `getattr(_server, ...)` lookups anywhere in `routes/`.
+
+### Side-fix during the migration
+- Two names that the L.29 shim listed -- `_nasa_power_history` and
+  `_set_last_weather_source` -- were never actually defined on the
+  `server` module.  The L.29 shim used `hasattr` to silently skip them;
+  my first attempt at direct imports failed loud.  Filtered them out of
+  every router's import block (they were unused everywhere -- dead
+  shim entries from the original auto-extraction).
+
+### Result
+- No measurable line-count change (the shim was ~8 lines, the explicit
+  imports take ~30 -- but they're transparent + grep-able).
+- Eliminates the only remaining piece of the old "import server,
+  monkey-patch globals()" pattern from the backend.
+- Type checkers + linters now see the cross-module names statically;
+  IDEs can jump-to-definition into `models/state.py` etc.
+- A misnamed shared symbol now surfaces as a clean `ImportError` at
+  backend startup instead of a `NameError` at first request.
+
+**Verified**: 12/12 smoke endpoints + 76/76 regression tests pass.
+Live dashboard renders cleanly with `LIVE` chip, 5 AHUs OCCUPIED, full
+psy-chart + sidebar + comfort polygon, zero page errors.
+
+---
+
+
 
 **Brief**: Final state-consolidation pass.  All process-wide mutable
 in-memory dicts that previously lived as module-level globals in
@@ -12,6 +57,8 @@ Consolidates:
   * `_ANON_OVERRIDE` -- dashboard's "Force LIVE / Force SIM" toggle for
     anonymous users (mutated by POST /api/data-mode).
   * `_DEMO_START_TS` -- boot timestamp used by /api/disk-status and the
+## Phase L.32 — `models/state.py` + latent `/api/weather-current` fix (2026-06-24)
+
     demo waveform phase offsets.
   * `_LAST_WEATHER_SOURCE` + `_LAST_WEATHER_TS` -- most-recent
     /api/weather-proxy upstream tracker (mutated by `_mark_weather_source`,

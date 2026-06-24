@@ -3524,192 +3524,24 @@
                     )}
                     </div>
                     
-                    {/* Band SA-RH Clamp Confirm Modal */}
-                    {bandClampModal && (() => {
-                        const { lo, hi, preview } = bandClampModal;
-                        const changed = preview.filter(p => p.changed);
-                        const onCancel = () => setBandClampModal(null);
-                        const onConfirm = async () => {
-                            setBandClampBusy(true);
-                            try {
-                                const j = await fetchJSON('/api/band-overrides/sa-rh-clamp', {
-                                    method: 'POST',
-                                    headers: {'Content-Type':'application/json'},
-                                    body: JSON.stringify({ lo, hi, enabled: true, applied_by: 'dashboard' })
-                                });
-                                if (j.status === 'ok') {
-                                    setBandClampApplied({ lo, hi });
-                                    setBandClampModal(null);
-                                } else {
-                                    toast('Apply failed: ' + (j.message || 'unknown'));
-                                }
-                            } catch (e) {
-                                toast(e.message);
-                            } finally {
-                                setBandClampBusy(false);
-                            }
-                        };
-                        return (
-                            <div onClick={onCancel} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-testid="band-clamp-modal">
-                                <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-amber-500/60':'bg-white border-amber-400'} border-2 rounded-2xl p-5 shadow-2xl`} style={{width:'480px', maxHeight:'80vh', overflow:'hidden', display:'flex', flexDirection:'column'}}>
-                                    <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-amber-400':'text-amber-700'} mb-2`}>Confirm SA-RH Clamp</h3>
-                                    <p className={`text-[10px] font-mono mb-3 leading-relaxed ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>
-                                        Applying <span className="font-black text-amber-500">{lo}-{hi}% RH</span> will clamp every band SA-RH target into this window and force the hum mode where needed.  This rewrites <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>band_guide.csv</code> and every AHU <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>CSV.Description</code> string on the controller.
-                                    </p>
-                                    <div className={`text-[9px] font-mono mb-2 px-2 py-1.5 rounded ${theme==='dark'?'bg-amber-900/30 border border-amber-700/40 text-amber-300':'bg-amber-50 border border-amber-300 text-amber-800'}`} data-testid="band-clamp-warning">
-                                        <span className="font-black uppercase tracking-wider">Warning:</span> {changed.length} of {preview.length} bands will change.  The clamped SA-RH value is written to each AHU humidity setpoint BACnet point (default: <code className={theme==='dark'?'text-emerald-300':'text-emerald-700'}>AV&lt;n&gt;</code> where <code>n</code> is the AHU number; override via <code>humidity_sp</code> in <code>collector_config.json</code>).  This DRIVES the humidifier coil mechanically -- confirm only if your AHU has a humidity loop wired to that point.
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar -mx-1 px-1" data-testid="band-clamp-preview">
-                                        <table className="w-full text-left border-separate border-spacing-y-1 text-[10px] font-mono">
-                                            <thead>
-                                                <tr className={`text-[8px] font-black uppercase ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>
-                                                    <th>Band</th><th>SA-RH Before</th><th>After</th><th>Hum Before</th><th>After</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {preview.map(p => (
-                                                    <tr key={p.id} className={`${p.changed ? (theme==='dark'?'bg-amber-900/20':'bg-amber-50') : (theme==='dark'?'bg-slate-950/40':'bg-slate-100/50')} rounded`}>
-                                                        <td className={`px-2 py-1 font-black ${theme==='dark'?'text-indigo-400':'text-indigo-600'}`}>{p.id}</td>
-                                                        <td className="px-2 py-1">{p.before.sa_rh}%</td>
-                                                        <td className={`px-2 py-1 font-black ${p.changed ? (p.direction === 'down' ? 'text-cyan-400' : 'text-rose-400') : (theme==='dark'?'text-slate-500':'text-slate-400')}`}>
-                                                            {p.after.sa_rh}%{p.changed ? (p.direction === 'down' ? ' \u2193' : ' \u2191') : ''}
-                                                        </td>
-                                                        <td className={`px-2 py-1 text-[9px] ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>{p.before.hum}</td>
-                                                        <td className={`px-2 py-1 text-[9px] font-black ${p.changed ? (theme==='dark'?'text-amber-400':'text-amber-700') : (theme==='dark'?'text-slate-500':'text-slate-400')}`}>{p.after.hum}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="mt-3 flex gap-2 justify-end">
-                                        <button data-testid="band-clamp-cancel" onClick={onCancel} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700':'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'}`}>Cancel</button>
-                                        <button data-testid="band-clamp-confirm" onClick={onConfirm} disabled={bandClampBusy} className={`px-3 py-2 rounded text-[10px] font-black uppercase tracking-wider border ${theme==='dark'?'bg-amber-500 border-amber-300 text-slate-900 hover:bg-amber-400':'bg-amber-400 border-amber-500 text-slate-900 hover:bg-amber-500'} shadow-md`}>
-                                            {bandClampBusy ? 'Applying...' : 'Confirm & Apply'}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })()}
+                    {/* Band SA-RH Clamp Confirm Modal — extracted to band-clamp-modal.js (L.26) */}
+                    {renderBandClampModal({
+                        bandClampModal, setBandClampModal,
+                        bandClampBusy,  setBandClampBusy,
+                        setBandClampApplied,
+                        theme, fetchJSON, toast,
+                    })}
 
                     {/* Weather Location Settings Modal */}
-                    {showWeatherSettings && (() => {
-                        const savedLocs = savedWeatherLocations;
-                        const currentKey = weatherLocation ? weatherLocation.lat.toFixed(4)+','+weatherLocation.lon.toFixed(4) : '';
-                        const curName = weatherLocation ? (weatherLocation.name || weatherLocation.lat+', '+weatherLocation.lon) : 'Select location';
-
-                        const selectLocation = (loc) => {
-                            // Ensure the selected location is also in the saved list (top of it)
-                            const key = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
-                            const dedupedSaved = savedWeatherLocations.filter(l => (l.lat.toFixed(4)+','+l.lon.toFixed(4)) !== key);
-                            const nextSaved = [loc, ...dedupedSaved].slice(0, 20);
-                            try { localStorage.setItem('weatherLocation', JSON.stringify(loc)); } catch (e) {}
-                            try { localStorage.setItem('savedWeatherLocations', JSON.stringify(nextSaved)); } catch (e) {}
-                            setWeatherLocation(loc);
-                            setSavedWeatherLocations(nextSaved);
-                            setWeatherZoom(null);
-                            setShowWeatherSettings(false);
-                            persistWeatherState(loc, nextSaved);
-                        };
-                        const addNew = () => {
-                            const name = document.getElementById('wl-new-name').value.trim();
-                            const lat = parseFloat(document.getElementById('wl-new-lat').value);
-                            const lon = parseFloat(document.getElementById('wl-new-lon').value);
-                            if (!name) { toast('Enter a location name.'); return; }
-                            if (isNaN(lat) || isNaN(lon)) { toast('Enter valid coordinates.'); return; }
-                            const loc = { name, lat, lon };
-                            selectLocation(loc);
-                        };
-                        const removeLocation = (idx, e) => {
-                            e.stopPropagation();
-                            const removed = savedWeatherLocations[idx];
-                            const nextSaved = savedWeatherLocations.filter((_, i) => i !== idx);
-                            try { localStorage.setItem('savedWeatherLocations', JSON.stringify(nextSaved)); } catch (e) {}
-                            setSavedWeatherLocations(nextSaved);
-                            // If we removed the active one, clear active too
-                            let nextActive = weatherLocation;
-                            if (removed && weatherLocation
-                                && removed.lat.toFixed(4) === weatherLocation.lat.toFixed(4)
-                                && removed.lon.toFixed(4) === weatherLocation.lon.toFixed(4)) {
-                                nextActive = nextSaved[0] || null;
-                                if (nextActive) {
-                                    try { localStorage.setItem('weatherLocation', JSON.stringify(nextActive)); } catch (e) {}
-                                } else {
-                                    try { localStorage.removeItem('weatherLocation'); } catch (e) {}
-                                }
-                                setWeatherLocation(nextActive);
-                            }
-                            persistWeatherState(nextActive, nextSaved);
-                        };
-
-                        return (
-                        <div onClick={() => setShowWeatherSettings(false)} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-                            <div onClick={e => e.stopPropagation()} className={`${theme==='dark'?'bg-slate-900 border-indigo-500/50':'bg-white border-slate-300'} border-2 rounded-2xl p-5`} style={{width:'320px', overflow:'hidden'}}>
-                                <h3 className={`text-sm font-black uppercase tracking-widest ${theme==='dark'?'text-indigo-400':'text-indigo-600'} mb-3`}>{window.t ? window.t("weather_location") : "Weather Location"}</h3>
-                                {weatherSaveError && (
-                                    <div data-testid="weather-save-error" className={`mb-3 px-2 py-1.5 rounded text-[9px] font-mono font-bold ${theme==='dark'?'bg-red-900/40 border border-red-500/40 text-red-300':'bg-red-50 border border-red-300 text-red-700'}`}>
-                                        {weatherSaveError}
-                                    </div>
-                                )}
-
-                                {/* Custom dropdown with inline delete */}
-                                <div className="mb-3 relative">
-                                    <label className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} block mb-1`}>{window.t ? window.t("current_location") : "Current Location"}</label>
-                                    <button
-                                        id="wl-dropdown-btn"
-                                        onClick={() => { const dd = document.getElementById('wl-dropdown-list'); dd.style.display = dd.style.display === 'block' ? 'none' : 'block'; }}
-                                        className={`w-full text-left ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded-lg py-2 px-3 text-[11px] font-mono font-bold focus:outline-none focus:border-indigo-500 cursor-pointer`}
-                                        style={{backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E")`, backgroundRepeat:'no-repeat', backgroundPosition:'right 10px center', paddingRight:'28px', boxSizing:'border-box'}}
-                                    >
-                                        {curName}
-                                    </button>
-                                    <div
-                                        id="wl-dropdown-list"
-                                        style={{display:'none', position:'absolute', top:'100%', left:0, right:0, zIndex:10, maxHeight:'180px', overflowY:'auto'}}
-                                        className={`mt-1 rounded-lg border shadow-xl ${theme==='dark'?'bg-slate-950 border-slate-700':'bg-white border-slate-200'}`}
-                                    >
-                                        {savedLocs.map((loc, i) => {
-                                            const key = loc.lat.toFixed(4)+','+loc.lon.toFixed(4);
-                                            const isActive = key === currentKey;
-                                            const defKey = defaultLocation ? (defaultLocation.lat.toFixed(4)+','+defaultLocation.lon.toFixed(4)) : '';
-                                            const isPinned = key === defKey;
-                                            return (
-                                                <div key={i} className={`flex items-center px-3 py-2 text-[11px] font-mono ${theme==='dark'?'border-b border-slate-800 last:border-0':'border-b border-slate-100 last:border-0'} ${isActive ? (theme==='dark'?'bg-indigo-600/20 text-indigo-300':'bg-indigo-50 text-indigo-700') : (theme==='dark'?'text-slate-300 hover:bg-slate-800':'text-slate-700 hover:bg-slate-50')} transition-all`}>
-                                                    <div onClick={() => { document.getElementById('wl-dropdown-list').style.display='none'; selectLocation(loc); }} className="flex-1 cursor-pointer truncate font-bold">
-                                                        {loc.name || 'Unnamed'} <span className={`text-[8px] font-normal ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>({loc.lat.toFixed(2)}, {loc.lon.toFixed(2)})</span>
-                                                    </div>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); pinLocation(isPinned ? null : loc); }}
-                                                        title={isPinned ? 'Unpin (no auto-load default)' : 'Pin as default — auto-load this on every fresh session'}
-                                                        data-testid={`pin-location-${i}`}
-                                                        className={`ml-1 w-5 h-5 flex items-center justify-center rounded text-sm flex-shrink-0 transition-all ${isPinned ? (theme==='dark'?'text-amber-300 hover:bg-amber-500/20':'text-amber-500 hover:bg-amber-50') : (theme==='dark'?'text-slate-600 hover:text-amber-300 hover:bg-amber-500/10':'text-slate-300 hover:text-amber-500 hover:bg-amber-50')}`}
-                                                    >{isPinned ? '★' : '☆'}</button>
-                                                    <button onClick={(e) => { e.stopPropagation(); document.getElementById('wl-dropdown-list').style.display='none'; removeLocation(i, e); }} className={`ml-2 w-5 h-5 flex items-center justify-center rounded text-xs flex-shrink-0 ${theme==='dark'?'text-red-400 hover:bg-red-500/20':'text-red-500 hover:bg-red-50'} transition-all`} title="Delete">&times;</button>
-                                                </div>
-                                            );
-                                        })}
-                                        {savedLocs.length === 0 && (
-                                            <div className={`px-3 py-2 text-[10px] italic ${theme==='dark'?'text-slate-600':'text-slate-400'}`}>{window.t ? window.t("no_saved_locations") : "No saved locations"}</div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Add new location */}
-                                <div className={`p-3 rounded-lg border border-dashed ${theme==='dark'?'border-slate-600 bg-slate-800/30':'border-slate-300 bg-slate-50'}`}>
-                                    <div className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-slate-400':'text-slate-500'} mb-2`}>Add New</div>
-                                    <input id="wl-new-name" type="text" placeholder={window.t ? window.t("location_name_ph") : "Location name"} className={`w-full mb-2 ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
-                                    <div className="flex gap-1.5 mb-2">
-                                        <input id="wl-new-lat" type="number" step="0.01" placeholder="Lat" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
-                                        <input id="wl-new-lon" type="number" step="0.01" placeholder="Lon" className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950 border-slate-700 text-slate-100':'bg-white border-slate-300 text-slate-800'} border rounded py-1.5 px-2 text-[11px] font-mono focus:outline-none focus:border-indigo-500`} style={{boxSizing:'border-box'}} />
-                                    </div>
-                                    <button onClick={addNew} className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 text-slate-100 font-black text-[9px] uppercase tracking-widest rounded transition-all">+ Add &amp; Load</button>
-                                </div>
-
-                                <button onClick={() => setShowWeatherSettings(false)} className={`w-full mt-3 py-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-400':'bg-slate-100 border-slate-300 text-slate-500'} border font-black text-[9px] uppercase tracking-widest rounded-lg transition-all`}>{t('cancel')}</button>
-                            </div>
-                        </div>
-                        );
-                    })()}
+                    {/* Weather Location Settings Modal — extracted to weather-settings-modal.js (L.26) */}
+                    {renderWeatherSettingsModal({
+                        showWeatherSettings, setShowWeatherSettings,
+                        weatherLocation, setWeatherLocation,
+                        savedWeatherLocations, setSavedWeatherLocations,
+                        defaultLocation, pinLocation,
+                        weatherSaveError, persistWeatherState, setWeatherZoom,
+                        theme, toast, t,
+                    })}
 
                     {/* VAV Graphic Overlay Modal */}
                     {selectedVavForModal && renderVavEquipmentModal({

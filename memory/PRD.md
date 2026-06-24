@@ -1,6 +1,91 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
-## Phase L.17 — V2.0 Controller Assets browser regression (2026-06-24)
+## Phase L.27 — Sidebar extraction (deeper React refactor) (2026-06-24)
+
+**Brief**: Continued from Phase L.26. The sidebar was a 519-line inline
+IIFE inside App's main return — the largest remaining monolithic block.
+Extracted to `js/dashboard/sidebar.js` following the same
+`renderXxx(ctx)` pattern as the other modules (58 ctx props).
+
+**Side-fix**: `DARK_LEVEL_MIN/MAX/DEFAULT` constants lived inside App's
+closure and were referenced by the sidebar's dark-mode brightness
+slider.  Moved into `sidebar.js` as module-local constants with a
+sync-warning comment pointing back to the canonical declarations in
+`app.js`.  Surface caused two `ReferenceError` crashes after the first
+extraction attempt — caught by smoke-test, fixed inline.
+
+**Result**:
+- `app.js`: 2,964 → **2,447 lines** (-517).
+- Across L.24 + L.26 + L.27 the total reduction is **4,262 → 2,447
+  lines (-1,815, ~43%)**, split across 15 modules.
+- Zero page errors on live preview; sidebar (Givoni Engine,
+  40-60 % RH, A/B/C+/C- presets, axis settings, asset search, per-AHU
+  detail pills), psy-chart, and G36 timeline all render correctly.
+- 3-way parity locked, V1.9 bundle rebuilt (113 files).
+
+**What's left in `app.js`** (genuine residual, not refactor-debt):
+- All `useState` / `useEffect` / `useRef` / `useCallback` declarations
+- Helper functions (`fetchJSON`, `toast`, `getFloorForAhu`,
+  `getVavDiagnostic`, `popOutSidebarToWindow`, etc.)
+## Phase L.26 — dashboard.html → modular `js/dashboard/` (2026-06-24)
+
+- The main return JSX with the psychrometric chart SVG and its
+  overlays (~1,300 lines).  Extracting the SVG would need ~70 props
+  and is genuinely state-coupled — not a natural component boundary.
+
+---
+
+
+
+**Brief**: Continued the Phase L.24/L.25 modularization. At handoff, only
+`vav-modal.js` and `ahu-modal.js` had been extracted; `app.js` was still
+4,262 lines containing every other modal, panel, and overlay inline.
+
+**Extracted 10 new modules** (in order of largest → smallest impact):
+
+| Module | Lines | Source range |
+|---|---|---|
+| `weather-strip-panel.js` | 395 | bottom yearly-weather distribution + rubber-band drag selection + hover tooltip + overlay-year layers |
+| `floor-plan-modal.js` | 370 | full floor-plan mapper with sun-path compass + VAV markers + map_config + fallback layout |
+| `sweet-spot-slider.js` | 229 | dual-handle RH range slider + apply/reset clamp wiring + per-AHU preview spark chart |
+| `collector-config-modal.js` | 172 | AHU-groups + equipment-types + settings tabs (data-mode toggle, poll interval, dashboard point map) |
+| `weather-settings-modal.js` | 149 | location picker dropdown + pin-default + add-location flow |
+| `band-clamp-modal.js` | 96 | SA-RH clamp confirm dialog + before/after preview table |
+| `t-clip-slider.js` | 81 | 3D-WX T-clip dual-handle slider (ASHRAE 55 default 21-27 °C) |
+| `config-auth-modal.js` | 58 | engineer-mode password gate for `/mapper` |
+| `givoni-tier-legend.js` | 35 | 4-tier swatch legend (Comfort / Soft trim / Hot+humid / Cold+dry) |
+| `telemetry-status-badge.js` | 30 | LIVE / SIM / STALE / OFF badge in dashboard header |
+
+**Result**:
+- `app.js`: 4,262 → **2,964** lines (-1,298, ~30% smaller).
+- 14 total modules under `js/dashboard/`.
+- `dashboard.html`: 512 lines (shell + module loader only).
+- Zero page errors on live preview after each extraction.
+
+**Pattern**: every module exports a single top-level
+`renderXxx(ctx)` function that destructures App-scope state/setters from
+`ctx`; the body is byte-identical to the pre-extraction IIFE (modulo one
+block of dedent).  Caller in `app.js` is a single line that passes the
+ctx literal.  This avoids the closure-scope mismatch that would arise
+from a naive top-level function.
+
+**3-way parity locked** via `md5sum` on every save:
+`/app/frontend/public/` ≡ `/app/archive/Red5-Studio-V1.9/` ≡ `/app/archive/Red5-Studio-V2.0/`.
+
+**V1.9 bundle rebuilt** with `python3 build_bundle.py` → 112 files, 2,170 KB.
+
+**Residual `app.js` contents** (genuinely tightly-coupled to App's state):
+- All hooks, effects, refs, and `useState`/`useCallback` declarations
+- Main return JSX skeleton (psy-chart SVG container, header, sidebar, AHU pill grid, footer)
+- Inline render helpers nested inside `ahuData.map()` iterations (e.g. per-AHU G36 mini-bar at ~39 lines, per-band clamp-spark mini-chart at ~65 lines) — these reference the loop variable so extracting them would just relocate the closure-passing boilerplate.
+
+Further reduction would require restructuring into proper React
+components (`<App>` → `<Header>` + `<Sidebar>` + `<PsyChart>` +
+`<AhuList>`) — a deeper structural change, not just IIFE extraction.
+
+---
+
+
 
 **Brief**: After the V2.0 SaaS port, the Controller Assets file browser
 showed empty `data/` and `scripts/` on the operator's Linux server even
@@ -9,6 +94,8 @@ though `/root/data` and `/root/scripts` were populated.  Root cause:
 been narrowed to read **only** from MongoDB `tenant_assets` — the
 filesystem code-path was deleted in the port.  V1.9 had always operated
 directly on `/root/data` and `/root/scripts`.
+## Phase L.17 — V2.0 Controller Assets browser regression (2026-06-24)
+
 
 **Fix** (in `/app/backend/server.py`):
 

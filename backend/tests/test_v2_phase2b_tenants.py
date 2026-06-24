@@ -229,13 +229,11 @@ check("GET /api/weather-location (signed in) -> Adelaide",
 
 s, body = get("/api/weather-location", token_b)
 wl_b = json.loads(body)
-# Newly-seeded tenants (see `tenants.py::get_or_create_tenant_for_user`)
-# get "Seattle Children's" as their seeded active location -- different
-# from the anonymous /api/weather-location which returns server.py's
-# ACTIVE_LOCATION (= New York).  Both are intentional and live in
-# different code paths.
-check("user B's active location still Seattle Children's (isolated)",
-      s == 200 and wl_b["active"]["name"].startswith("Seattle"))
+# Phase L.31 alignment: per-tenant seed and anonymous fallback now share
+# `models/weather.py::ACTIVE_LOCATION` (= New York).  Previously the two
+# paths diverged (anonymous = New York, tenant seed = Seattle Children's).
+check("user B's active location defaults to New York (isolated from A)",
+      s == 200 and wl_b["active"]["name"].startswith("New York"))
 
 # Anonymous post returns warning + does NOT persist
 s, body = post("/api/weather-location", loc_update)

@@ -1,6 +1,60 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
-## Phase L.30 — `simulator/` + `models/fs.py` + `models/loaders.py` (2026-06-24)
+## Phase L.31 — `models/weather.py` + canonical location seed (2026-06-24)
+
+**Brief**: Final residual-state pass.  The bundled location list had been
+divergent across two paths:
+
+  * `server.py::SAVED_LOCATIONS` -- 11 world cities, active = New York
+    (used by anonymous /api/weather-location GET)
+  * `tenants.py::_DEMO_SAVED_LOCATIONS` -- 5 hospital reference sites,
+    active = Seattle Children's (used by `get_or_create_tenant_for_user`
+    when seeding a fresh tenant)
+
+Phase L.31 unifies both behind a single source of truth.
+
+### `models/weather.py` (52 lines)
+- **15 locations**: 5 Red5 reference / customer sites (NRAH Adelaide,
+  Perth, Hanyang Seoul, Beijing Geriatric, Seattle Children's) + 10
+  world cities (London, Berlin, Tokyo, New York, Vancouver, Ulaanbaatar,
+  Taipei, Hong Kong, Singapore, Sydney).
+- `ACTIVE_LOCATION = SAVED_LOCATIONS[5]` = **New York** -- chosen for the
+  4-season climate property the dashboard's year-overlay rendering needs.
+  Rationale documented in the module docstring (Seattle Children's was a
+  borderline pick; the others are closer to single-season climates).
+- Pure module -- no circular dep with `server.py` or `tenants.py`.
+
+### Wired into both paths
+- `server.py` now does `from models.weather import SAVED_LOCATIONS, ACTIVE_LOCATION`.
+- `tenants.py` does
+  `from models.weather import SAVED_LOCATIONS as _DEMO_SAVED_LOCATIONS,`
+  `ACTIVE_LOCATION as _DEMO_ACTIVE_LOCATION`.
+- All other call sites unchanged -- the Phase L.29 `_pull_from_server()`
+  shims still resolve these names off the `server` module.
+
+### Behavioural change
+- Anonymous /api/weather-location: `saved.count` 11 -> 15 (added the 5
+  hospital reference sites).  Active unchanged (still New York).
+- Per-tenant seed: `saved.count` 5 -> 15 (added the 10 world cities).
+  Active changed from Seattle Children's -> New York (single coherent
+  default; world-cities/hospital lists share the dropdown).
+- Test `user B's active location ... isolated` updated to assert New York
+  instead of Seattle Children's; rationale documented inline.
+
+### Result
+- **server.py: 584 -> 576 lines** (minor; the constant block was tiny).
+- Cumulative L.28 + L.29 + L.30 + L.31: **server.py 2,430 -> 576 lines (-76 %)**.
+- Both UX paths now show the same dropdown -- no more
+  "the dashboard I just signed into has different cities than the demo
+  I tried logged out".
+
+**Verified**: 26/26 + 26/26 + 12/12 + 12/12 = 76/76 regression tests pass.
+Live dashboard renders with `LIVE` chip, full sidebar + chart + comfort
+polygon + 5-AHU G36 timeline.  Zero page errors.
+
+---
+
+
 
 **Brief**: Final thin-shell pass on `server.py` -- moved the demo telemetry
 simulator and the filesystem + data-loader helpers into dedicated
@@ -17,6 +71,8 @@ sub-packages so `server.py` reduces to app wiring + router includes.
   import from `models.loaders` (no circular risk).
 
 ### `models/fs.py` (125 lines)
+## Phase L.30 — `simulator/` + `models/fs.py` + `models/loaders.py` (2026-06-24)
+
 - FS constants + helpers: `DATA_ROOT`, `SCRIPTS_ROOT`, `ALLOWED_FS_ROOTS`,
   `DIRECTORY_SCAFFOLD`, `_fs_root`, `_fs_available`, `_safe_join`,
   `_zero_pad_variants`, `_404_no_cache`.

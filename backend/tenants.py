@@ -58,17 +58,15 @@ ten_loc_col      = _db["tenant_locations"]
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEMO_DATA_DIR = os.path.join(ROOT, "demo_data")
 
-# Canon demo data used as seed for a freshly-created tenant.  These mirror
-# the constants in server.py -- we re-derive them here so this module
-# stays import-safe in isolation (avoids a circular import).
-_DEMO_SAVED_LOCATIONS = [
-    {"lat": -34.92, "lon": 138.60, "name": "NRAH (Adelaide)"},
-    {"lat": -31.95, "lon": 115.86, "name": "Perth Children Hospital"},
-    {"lat":  37.56, "lon": 127.04, "name": "Hanyang Univ Hospital (Seoul)"},
-    {"lat":  39.91, "lon": 116.40, "name": "Beijing Geriatric Hospital"},
-    {"lat":  47.60, "lon": -122.30, "name": "Seattle Children's"},
-]
-_DEMO_ACTIVE_LOCATION = _DEMO_SAVED_LOCATIONS[-1]
+# Canonical demo / reference locations + active default.  Phase L.31
+# (2026-06-24) unified this with the anonymous fallback list in
+# server.py -- both paths now resolve to a single source of truth in
+# models/weather.py.  Importing here keeps tenants.py loadable on its
+# own (no circular dep -- models/weather.py is a pure module).
+from models.weather import (
+    SAVED_LOCATIONS as _DEMO_SAVED_LOCATIONS,
+    ACTIVE_LOCATION as _DEMO_ACTIVE_LOCATION,
+)
 
 
 # ---------------------------------------------------------------------------

@@ -188,20 +188,12 @@ from models.loaders import _load_json, _load_csv, _CACHE  # noqa: E402
 # ---------------------------------------------------------------------------
 # Demo telemetry simulator.
 # ---------------------------------------------------------------------------
-SAVED_LOCATIONS = [
-    {"lat":  47.92, "lon": 106.92, "name": "Ulaanbaatar"},
-    {"lat":  40.71, "lon": -74.01, "name": "New York"},
-    {"lat":  51.51, "lon":  -0.13, "name": "London"},
-    {"lat":  52.52, "lon":  13.40, "name": "Berlin"},
-    {"lat":  49.28, "lon": -123.12, "name": "Vancouver"},
-    {"lat":  35.68, "lon": 139.69, "name": "Tokyo"},
-    {"lat":  39.91, "lon": 116.40, "name": "Beijing"},
-    {"lat":  25.03, "lon": 121.57, "name": "Taipei"},
-    {"lat":  22.32, "lon": 114.17, "name": "Hong Kong"},
-    {"lat":   1.35, "lon": 103.82, "name": "Singapore"},
-    {"lat": -33.87, "lon": 151.21, "name": "Sydney"},
-]
-ACTIVE_LOCATION = SAVED_LOCATIONS[1]  # New York -- 4 -season climate with reliable Open-Meteo data
+# Phase L.31 (2026-06-24): SAVED_LOCATIONS + ACTIVE_LOCATION moved to
+# models/weather.py and unified with the per-tenant seed list (previously
+# duplicated in tenants.py).  Re-exported here so the existing Phase L.29
+# `_pull_from_server()` shims and the anonymous /api/weather-location
+# handler keep resolving them off the `server` module unchanged.
+from models.weather import SAVED_LOCATIONS, ACTIVE_LOCATION  # noqa: E402
 
 _DEMO_START_TS = time.time()
 

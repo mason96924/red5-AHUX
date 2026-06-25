@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 16 — Relocation of theme (dark/light) + brightness (darkLevel) UI from dashboard sidebar into Psy Chart Setting full-page editor VERIFIED across all 12 review items on https://controller-dashboard-2.preview.emergentagent.com. The DIM percentage badge + brightness slider have been completely removed from /dashboard.html (dark-level-slider count=0, dark-level-slider-wrap count=0) while venue-preset-chip, standards-btn, collector-config-btn, reset-modal-sizes-btn all still render correctly. On /setup.html?force=1 → Psy Chart Setting tile, the new 'Display Mode' block renders FIRST in the right rail (above the Givoni toggle, confirmed via compareDocumentPosition) with exactly 1 [data-testid='psy-cfg-theme-block'], 1 [data-testid='psy-cfg-theme-dark'], 1 [data-testid='psy-cfg-theme-light'] and 1 [data-testid='psy-cfg-dark-level'] range slider. Block text contains 'Display Mode' label. Light-mode click → Save & return writes localStorage['red5.theme']='light' AND localStorage['red5.darkLevel']='3' exactly; navigating to /dashboard.html confirms theme stays 'light' and 15 elements with .bg-slate-100/.bg-white classes mount (light surface). Dark-mode click + slider drag to 2.4 → save writes 'dark' + 2.4 (±0.05) and re-entering the page hydrates the slider back to 2.4 with the dark button keeping the active yellow styling. Slider container becomes 'pointer-events-none' (disabled) when Light is selected, and 'enabled' when Dim/Dark is selected. Regression: red5_sweet_spot_range + red5_rh_preset are still written by Save & return alongside the new theme keys. Screenshot confirms Display Mode block at top of right rail with Dim/Dark active (yellow accent) and 200% brightness slider.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_16.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/frontend/public/js/dashboard/sidebar.js — DIM slider block cleanly removed; no orphan refs to dark-level-slider or its wrapper testid in the rendered tree. Surrounding sidebar elements (venue-preset-chip, standards-btn, collector-config-btn, reset-modal-sizes-btn, LangSelector) all still mount.",
+    "/app/frontend/src/setup-walk/setup_walk.jsx — PsyChartSettingPage cleanly extends with theme:'dark', darkLevel:2.0 default in initial state; hydrate useEffect reads both keys; persistAndSave (L355-358 of compiled bundle) writes both keys verbatim. The light-mode click pushes darkLevel to 3.0 which matches the dashboard app.js threshold (DARK_LEVEL_MAX=3.0 → theme='light').",
+    "Data contract is preserved (same localStorage keys 'red5.theme' + 'red5.darkLevel') so app.js lazy initializers at boot pick up either setup-walk-written values or any legacy values — backwards compatible. Round-trip confirmed: setup walk → dashboard mounts in chosen theme; re-enter setup → hydrates the chosen values.",
+    "Display Mode block renders above Givoni toggle as specified (compareDocumentPosition returned DOCUMENT_POSITION_FOLLOWING for givoni element relative to the block).",
+    "Note: tailwindcss CDN warning still appears on /setup.html — pre-existing, out of scope.",
+    "Note: pre-existing /api/weather-location 401 + 4 static-asset 404s on /dashboard.html are NOT regressions (identical to iterations 12-15)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (12/12 review items PASS)"},
+  "test_credentials": "n/a",
+  "seed_data_creation": "localStorage cleared between test runs inside Playwright session only; no persistent seed data created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Setup walk tiles in /setup.html?force=1 are class='tile-btn' <button> elements — the canonical selector is `page.locator('.tile-btn').all()` with .nth(0)=PSY CHART SETTING, .nth(1)=LOCATION, .nth(2)=LANGUAGE, .nth(3)=PLUG-IN. There are NO data-testid attributes on the tiles themselves (consider adding e.g. data-testid='setup-tile-psy' in a future iteration for cleaner test selectors). Psy Chart Setting page uses data-testid='psy-cfg-theme-block', 'psy-cfg-theme-dark', 'psy-cfg-theme-light', 'psy-cfg-dark-level'. Save button has visible text 'Save & return ✓' (Unicode tick); using a regex /save\\s*&\\s*return|save.*return/i is the safest match. The slider container's disabled state can be detected by walking up to 6 ancestor levels checking for either 'pointer-events-none' OR 'opacity-40' class — both indicate the LIGHT-mode disabled state.",
+  "rca of the issue": "Original feature request was a clean relocation — not a bug fix. Main agent (a) deleted the DIM slider div from sidebar.js and replaced it with a 7-line explanatory comment, (b) extended PsyChartSettingPage state and hydrate/save effects to cover red5.theme + red5.darkLevel, (c) added the new Display Mode block (theme buttons + brightness slider) as the FIRST element of PsyControlPanel above the Givoni toggle. Data contract preserved: same two localStorage keys are read by dashboard app.js's useState lazy initializers at boot, so changing them from the new setup-walk UI has the same downstream effect as the (now-removed) sidebar slider had. All 12 verification points PASS — no regressions observed."
+}

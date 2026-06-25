@@ -188,37 +188,13 @@ function renderSidebar(ctx) {
                 {'\u29C9 WIN'}
             </button>
             )}
-            {/* DIM slider — controls dark-mode brightness
-                AND doubles as the light/dark switch.
-                Dragging to the exact maximum (300%) flips
-                the theme to LIGHT; anything below stays
-                DARK at that brightness.  Always rendered
-                so the operator can flip back from light
-                mode without hunting for a separate toggle.
-                Double-click resets to the default dark
-                brightness. */}
-            <div
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded border flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-700':'bg-slate-100 border-slate-300'}`}
-                title={darkLevel >= DARK_LEVEL_MAX
-                    ? `LIGHT MODE — drag below 300% to return to dark, double-click to reset to ${Math.round(DARK_LEVEL_DEFAULT * 100)}%`
-                    : `Dark brightness: ${Math.round(darkLevel * 100)}% — drag to dim/lighten, slide to 300% for light mode, double-click to reset to ${Math.round(DARK_LEVEL_DEFAULT * 100)}%`}
-                data-testid="dark-level-slider-wrap">
-                <span className={`text-[9px] font-mono font-black select-none ${theme==='dark'?'text-slate-400':'text-slate-500'}`} aria-hidden>DIM</span>
-                <input
-                    type="range"
-                    min={DARK_LEVEL_MIN}
-                    max={DARK_LEVEL_MAX}
-                    step="0.02"
-                    value={darkLevel}
-                    onChange={(e) => setDarkLevel(parseFloat(e.target.value))}
-                    onDoubleClick={() => setDarkLevel(DARK_LEVEL_DEFAULT)}
-                    data-testid="dark-level-slider"
-                    style={{ width: 60, accentColor: darkLevel >= DARK_LEVEL_MAX ? '#38bdf8' : '#facc15' }}
-                    aria-label="Dark mode brightness / Light mode toggle" />
-                <span className={`text-[9px] font-mono font-black select-none w-9 text-right tabular-nums ${darkLevel >= DARK_LEVEL_MAX ? 'text-sky-400' : (theme==='dark'?'text-yellow-300':'text-slate-700')}`}>
-                    {darkLevel >= DARK_LEVEL_MAX ? 'LIGHT' : `${Math.round(darkLevel * 100)}%`}
-                </span>
-            </div>
+            {/* DIM slider relocated 2026-06-25 to the setup walk's
+                "Psy Chart Setting" page (theme + brightness now live
+                under the same RH/Givoni configuration screen).  The
+                live values are still read from localStorage keys
+                `red5.theme` and `red5.darkLevel` by app.js, so this
+                sidebar's removal is purely UI -- no behaviour
+                change.  Click the venue-preset chip to reach setup. */}
             </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 mt-2">

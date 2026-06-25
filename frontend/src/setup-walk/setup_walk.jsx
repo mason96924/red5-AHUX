@@ -19,7 +19,7 @@ function App() {
     const [route, setRoute] = useState('hub');   // 'hub' | 'psy'
     const [modal, setModal] = useState(null);     // 'location' | 'language' | 'plugins' | null
 
-    const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhPreset:'office', rhLo:30, rhHi:60, tLo:-15, tHi:50 });
+    const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhPreset:'office', rhLo:30, rhHi:60, tLo:-15, tHi:50, theme:'dark', darkLevel:2.0 });
     const [locCfg, setLocCfg]         = useState({ siteName:'My Building', city:'Toronto, ON', lat:43.6532, lon:-79.3832 });
     const [langCfg, setLangCfg]       = useState({ lang:'en' });
     const [pluginCfg, setPluginCfg]   = useState({ enabled:['weather','givoni','sweet_spot'] });
@@ -164,6 +164,11 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
             if (preset && RH_PRESETS.find(x => x.id === preset)) {
                 patch.rhPreset = preset;
             }
+            /* Theme + brightness — same keys app.js (dashboard) reads. */
+            const th = localStorage.getItem('red5.theme');
+            if (th === 'light' || th === 'dark') patch.theme = th;
+            const dl = parseFloat(localStorage.getItem('red5.darkLevel'));
+            if (Number.isFinite(dl) && dl >= 1.5 && dl <= 3.0) patch.darkLevel = dl;
             if (Object.keys(patch).length) setCfg(c => ({...c, ...patch}));
         } catch (e) { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -178,6 +183,16 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
                 JSON.stringify({ lo: cfg.rhLo, hi: cfg.rhHi }));
             if (cfg.rhPreset) {
                 localStorage.setItem('red5_rh_preset', cfg.rhPreset);
+            }
+            /* Theme + brightness — written to the SAME keys the dashboard
+             * (app.js lines 57-58 and 84-97) reads as its useState lazy
+             * initialiser, so the chosen theme takes effect on next dashboard
+             * load.  app.js treats darkLevel >= 3.0 as light-mode trigger. */
+            if (cfg.theme === 'light' || cfg.theme === 'dark') {
+                localStorage.setItem('red5.theme', cfg.theme);
+            }
+            if (Number.isFinite(cfg.darkLevel)) {
+                localStorage.setItem('red5.darkLevel', String(cfg.darkLevel));
             }
             window.dispatchEvent(new CustomEvent('r5-rh-band-change', {
                 detail: { lo: cfg.rhLo, hi: cfg.rhHi }
@@ -392,6 +407,49 @@ function PsySkeleton({ cfg }) {
 function PsyControlPanel({ cfg, update, setCfg }) {
     return (
         <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-6">
+            {/* Theme + brightness  -- relocated from the dashboard sidebar 2026-06-25.
+                Two controls: Dark/Light mode toggle, and Brightness slider (only
+                meaningful in dark mode).  Live preview applies to the surrounding
+                control panel so the operator can FEEL the change before saving. */}
+            <div data-testid="psy-cfg-theme-block">
+                <div className="field-label mb-2">Display Mode</div>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                    <button data-testid="psy-cfg-theme-dark"
+                            onClick={() => setCfg(c => ({...c, theme:'dark', darkLevel:Math.min(c.darkLevel || 2.0, 2.6)}))}
+                            className={`py-2.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all
+                                ${cfg.theme === 'dark'
+                                    ? 'bg-slate-800 border-yellow-500/70 text-yellow-300 shadow-lg shadow-yellow-500/10'
+                                    : 'bg-slate-900/30 border-slate-700 text-slate-500 hover:bg-slate-800/60'}`}>
+                        🌙  Dim / Dark
+                    </button>
+                    <button data-testid="psy-cfg-theme-light"
+                            onClick={() => setCfg(c => ({...c, theme:'light', darkLevel:3.0}))}
+                            className={`py-2.5 rounded-lg text-xs font-black uppercase tracking-widest border transition-all
+                                ${cfg.theme === 'light'
+                                    ? 'bg-slate-100 border-sky-500/70 text-sky-700 shadow-lg shadow-sky-500/10'
+                                    : 'bg-slate-900/30 border-slate-700 text-slate-500 hover:bg-slate-800/60'}`}>
+                        ☀  Light
+                    </button>
+                </div>
+                {/* Brightness slider — only meaningful when theme === 'dark' */}
+                <div className={cfg.theme === 'light' ? 'opacity-40 pointer-events-none' : ''}>
+                    <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Dim brightness</label>
+                        <span className="text-[10px] font-mono text-yellow-300 tabular-nums">{Math.round((cfg.darkLevel || 2.0) * 100)}%</span>
+                    </div>
+                    <input type="range"
+                           data-testid="psy-cfg-dark-level"
+                           min="1.5" max="2.8" step="0.02"
+                           value={cfg.theme === 'light' ? 2.0 : (cfg.darkLevel || 2.0)}
+                           onChange={(e) => setCfg(c => ({...c, darkLevel: parseFloat(e.target.value), theme:'dark'}))}
+                           className="range-input w-full"
+                           style={{ accentColor:'#facc15' }}/>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2 italic">
+                    Applied to the whole dashboard.  Dim is recommended for control rooms; Light for daytime walk-throughs.
+                </p>
+            </div>
+
             {/* Givoni toggle */}
             <div>
                 <div className="field-label mb-2">Givoni Engine</div>

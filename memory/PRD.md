@@ -6112,3 +6112,26 @@ V1.9 build_bundle.py's ROOT_FILES list extended with 'dashboard.compiled.js'; bu
 - Retire legacy setup_walk_mockup.html once the new flow is battle-tested.
 - Resume V3.0 Red5-Modbus Phase 2.
 - Optional: add a `yarn build` wrapper so both setup walk + dashboard precompiles run together with one command (mentioned as potential improvement in iteration_13).
+
+---
+## 2026-06-25 (cont) — V2.0 React Landing → Setup Walk Wire-In (BUG FIX)
+
+User reported: "the landing page with try Dashboard goes straight into Dashboard page, not that new setup page we created."
+
+Root cause: iteration_13 wired the V1.9 static landing.html → /setup.html, but the V2.0 React landing at `/app/frontend/src/pages/LandingPage.jsx` (served at root `/`) was NEVER touched — its CTAs still pointed directly at `/dashboard.html`. So V2.0 users on the React SPA never saw the setup walk at all.
+
+Fix:
+- `LandingPage.jsx:152` — header 'Open Dashboard →' link: `/dashboard.html` → `/setup.html?force=1`
+- `LandingPage.jsx:182` — main 'Try the Dashboard' CTA: `/dashboard.html` → `/setup.html?force=1`
+- `?force=1` query bypasses the gate IIFE in setup.html, so the setup walk shows EVERY time on the landing flow — even after the operator has completed setup once.
+- Direct URL access to /setup.html (no `?force`) still respects the gate (redirects to /dashboard.html if flag is set).
+- Equipment Mapper CTA UNCHANGED (still `/equipment_mapper.html`).
+
+Mirror in `/app/archive/Red5-Studio-V2.0/src/pages/LandingPage.jsx` (md5sum OK).
+
+**Verified by testing_agent iteration_15**: 8/8 PASS. Specifically test #3 (the regression scenario) — even with `localStorage['red5.setup.done']='1'` set before clicking 'Try the Dashboard', the user now lands on the setup walk hub instead of dashboard.html. The exact user complaint is resolved.
+
+**Open items**:
+- Retire `setup_walk_mockup.html` legacy redirect stub once no more traffic lands there (already done as a redirect in earlier iteration).
+- Resume V3.0 Red5-Modbus Phase 2 (async TCP client).
+- Optional future hardening: testing agent flagged `cdn.tailwindcss.com` warning on /setup.html — could swap to a pre-extracted Tailwind CSS file in a future hardening pass.

@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 17 — Cache-busting query string (?v=<10hex>) on /setup.html → /setup_walk.compiled.js and /dashboard.html → /dashboard.compiled.js VERIFIED. All 7 review items PASS on https://controller-dashboard-2.preview.emergentagent.com. Determinism: both build scripts produce byte-identical HTMLs (same md5sum) across two consecutive runs — setup hash=2534bfc55d, dashboard hash=a5c456af04. Cache-bust regex `/(setup_walk|dashboard)\\.compiled\\.js\\?v=[a-f0-9]{10}/` matches both raw HTML and the live <script> tag's `src` attribute in DOM. Psy Chart Setting page (opened by clicking .tile-btn.nth(0), since the requested 'setup-tile-psy' data-testid does NOT exist in the source — see action_items) renders Display Mode block above Givoni toggle with all 4 testids exactly count=1: psy-cfg-theme-block, psy-cfg-theme-dark, psy-cfg-theme-light, psy-cfg-dark-level. Regression: Save & return button (1), venue preset <select> with 10 <option>s (1), 5 <input type=range> sliders (RH lo/hi + T axis + DIM brightness + 1 other), Givoni text labels (2) — all present. Dashboard regression: dark-level-slider count=0, dark-level-slider-wrap count=0; venue-preset-chip, standards-btn, collector-config-btn, reset-modal-sizes-btn all count=1.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_17.json"],
+  "action_items": [
+    "MINOR — The review_request says 'click [data-testid=\"setup-tile-psy\"]' but the source /app/frontend/src/setup-walk/setup_walk.jsx still has no data-testid on the tile-btn elements (only `className=\"tile-btn …\"`). Iteration_16's context noted this as a future improvement; it was NOT actually added. Either (a) add data-testid='setup-tile-psy' etc. on the 4 tile-btn buttons in setup_walk.jsx, or (b) drop the requirement from future review requests. Current canonical selector remains `page.locator('.tile-btn').nth(0)`."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/src/setup-walk/build.sh — sed -E regex `(/setup_walk\\.compiled\\.js)(\\?v=[a-f0-9]+)?` correctly idempotent: handles BOTH first-run (no ?v= yet) and rebuild cases. Uses md5sum first 10 chars (~40 bits, sufficient collision resistance for a cache-bust token).",
+    "/app/frontend/src/dashboard/build.sh — same pattern, also fixed earlier mktemp leak by using deterministic /tmp/red5_dashboard_concat.jsx so source-map inline hash is stable; this is what makes the build deterministic (same input → same hash twice in a row).",
+    "Both build scripts also rewrite the HTML comment line that mentions the bundle filename — verified harmless because the regex matches BOTH the <script src> AND the comment, keeping them in sync.",
+    "Cache-bust uses ?v=<hash> as a query string only (no filename change) — this is the standard, safe approach (CDN respects URL, browser cache key includes query string, no orphaned files left over).",
+    "No code regressions: Psy Chart Setting full-page editor still shows all controls (Display Mode block, Givoni toggle, RH preset dropdown with 10 options, RH lo/hi sliders, T-axis sliders, Save & return button). Dashboard sidebar still shows venue-preset-chip, standards-btn, collector-config-btn, reset-modal-sizes-btn — all data-testid intact.",
+    "MINOR DOCUMENTATION GAP — Iteration_17's review_request lists `setup-tile-psy` as 'the testid added last iteration' but no such testid exists in setup_walk.jsx. Either the main agent skipped that change or the request was prepared based on a draft. Current `.tile-btn` selector still works."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (7/7 review items PASS)"},
+  "test_credentials": "n/a",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Build script determinism is the key invariant: running `bash /app/frontend/src/setup-walk/build.sh` or `bash /app/frontend/src/dashboard/build.sh` twice MUST produce identical md5sum on BOTH the compiled .js AND the matching .html. If either differs across runs, the cache-bust has a non-determinism leak (most likely culprit: a random tmp suffix appearing inside the inline source map). Current setup-walk hash=2534bfc55d, dashboard hash=a5c456af04. Note that data-testid='setup-tile-psy' is REQUESTED in iteration_17's review but does NOT exist in setup_walk.jsx — keep using `page.locator('.tile-btn').nth(0)` until the testid is actually added.",
+  "rca of the issue": "User saw stale setup.html bundle because the browser had cached an old /setup_walk.compiled.js from a prior visit (filename never changed across builds). Fix: both build.sh scripts now compute md5sum first-10-chars of the compiled bundle and `sed -E` inject ?v=<HASH> into the script src in setup.html / dashboard.html. Result: every rebuild changes the URL → cache key invalidated → browser refetches. Verified the HTML served to clients carries the correct ?v= hash, the live DOM <script> src matches, the Display Mode block renders, and the build is deterministic (same source → same hash on repeated runs)."
+}

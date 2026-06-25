@@ -22,5 +22,11 @@ node_modules/.bin/babel \
     --source-maps inline \
     "$SRC" -o "$DST"
 
+# Cache-bust the <script src> in setup.html with a short MD5 of the compiled
+# bundle.  Every rebuild produces a new hash → browser is forced to re-fetch.
+HASH=$(md5sum "$DST" | cut -c1-10)
+sed -i -E "s|(/setup_walk\.compiled\.js)(\?v=[a-f0-9]+)?|\1?v=$HASH|g" /app/frontend/public/setup.html
+echo "Cache-bust setup.html → /setup_walk.compiled.js?v=$HASH"
+
 # Tiny size readout so the operator can sanity-check the build.
 echo "Built $DST  ($(wc -c < "$DST" | awk '{printf "%.1f KB", $1/1024}'),  $(wc -l < "$DST") lines)"

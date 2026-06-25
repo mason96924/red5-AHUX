@@ -632,8 +632,32 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         );
     };
 
+    /* When user clicks "Save & return", POST the selection to the same
+     * /api/weather-location endpoint the dashboard reads.  Setting BOTH
+     * `active` and `default` means the weather strip on the dashboard
+     * loads this location immediately on next page load (and stays pinned
+     * for any future fresh sessions).  Anonymous users get a soft warning
+     * back from the server -- we still call onSave() either way. */
+    const persistAndSave = async () => {
+        const loc = { lat: cfg.lat, lon: cfg.lon, name: cfg.siteName || cfg.city };
+        try {
+            const r = await fetch('/api/weather-location', {
+                method: 'POST',
+                headers: { 'Content-Type':'application/json' },
+                body: JSON.stringify({ active: loc, default: loc }),
+            });
+            const j = await r.json();
+            window._lastWeatherLocationSave = j;
+            console.info('[setup walk] /api/weather-location <-', j);
+        } catch (e) {
+            console.warn('[setup walk] could not persist location:', e);
+        }
+        onSave();
+    };
+
+
     return (
-        <ModalShell title="Location Setting" subtitle="Click the map, drag the pin, or use your device" accent="amber" onClose={onClose} onSave={onSave} size="max">
+        <ModalShell title="Location Setting" subtitle="Click the map, drag the pin, or use your device" accent="amber" onClose={onClose} onSave={persistAndSave} size="max">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full" style={{minHeight:'70vh'}}>
                 {/* MAP — fills the left side, with a search bar floating on top */}
                 <div className="relative">

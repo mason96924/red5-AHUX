@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only verification of two bug fixes in /app/frontend/public/setup_walk_mockup.html: (a) Psy Chart Setting venue-preset dropdown previously reverted to 'office' on most picks (setCfg was undefined in PsyControlPanel); (b) RH range chosen in the editor must now persist to localStorage['red5_sweet_spot_range'] so the dashboard picks it up. Ran Playwright across setup_walk_mockup.html and dashboard.html. Core flows PASS. One minor cosmetic gap found on the hydration path (rhPreset is not hydrated, only rhLo/rhHi).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "PsyChartSettingPage (setup_walk_mockup.html ~L222-233)",
+        "issue": "After saving a non-'office' preset (e.g. Museum) and reloading the page, the useEffect hydrates cfg.rhLo and cfg.rhHi from localStorage['red5_sweet_spot_range'] (verified: sliders show 40%/55%), but cfg.rhPreset is NOT hydrated from localStorage['red5_rh_preset']. So the dropdown reopens showing 'Office · 30-60% RH' even though the sliders and chart reflect the saved 40-55 band. UI is inconsistent: dropdown label disagrees with slider values & note line. Should add: `const preset = localStorage.getItem('red5_rh_preset'); if (preset) setCfg(c => ({...c, rhPreset: preset, ...}))` inside the existing useEffect.",
+        "selector": "select inside PsyControlPanel",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_10.json"],
+  "action_items": [
+    "OPTIONAL polish: extend the useEffect at setup_walk_mockup.html L222-233 to also read localStorage['red5_rh_preset'] and set cfg.rhPreset so the dropdown label survives reloads. Otherwise the editor reopens with an out-of-sync dropdown label after a Museum/Library/etc preset is saved.",
+    "OPTIONAL: the manual-slider override correctly switches the dropdown to 'Custom (manual)' but the rh-band hi slider was not re-tested independently — confirm symmetrically if needed."
+  ],
+  "critical_code_review_comments": [
+    "setup_walk_mockup.html is 944 lines and contains multiple React components, Babel-in-browser, and Tailwind CDN. It exceeds the 700-line guideline and uses cdn.tailwindcss.com + in-browser Babel (both flagged by console warnings: 'should not be used in production', 'You are using the in-browser Babel transformer'). Acceptable for a preview mockup, but should be precompiled before shipping.",
+    "The persistAndSave wrapper dispatches a 'r5-rh-band-change' window event but the dashboard's useState lazy initializer in app.js:308 only reads localStorage on mount — so live cross-tab updates won't work without an additional 'storage' or custom-event listener on the dashboard. Today's test scenario (write -> reload) works correctly; live propagation would not."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "95%"},
+  "test_credentials": "none required",
+  "seed_data_creation": "Set localStorage['red5_sweet_spot_range']={lo:40,hi:55} and localStorage['red5_rh_preset']='museum' to verify dashboard consumption.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Both fixes verified working end-to-end via Playwright. (1) All 10 venue presets (office, museum, hotel, library, hospital, lecture, concert, meeting, exhibition, custom) now stick — none revert to office. Tested in the exact order requested. (2) Save & return writes the correct {lo,hi} to localStorage['red5_sweet_spot_range'] and the preset id to localStorage['red5_rh_preset']; observed console log '[setup walk] psy chart saved -> RH 40 - 55 % preset= museum'. (3) Manual slider override (lo->35) correctly switches dropdown to 'custom'. (4) Reloading /setup_walk_mockup.html and reopening Psy Chart Setting correctly hydrates sliders to 40%/55%. (5) Reloading /dashboard.html with the saved range shows the sweet-spot toggle button text update from '40-60% RH' to '40-55% RH' and the COMFORT polygon redraws to the narrower band. (6) The three other walk-path tiles (Location, Language, Plug-in) all still open their modals with zero JS errors. The ONLY remaining cosmetic gap: the dropdown label inside the Psy Chart Setting editor doesn't hydrate cfg.rhPreset from localStorage on reload, so it shows 'Office' even when sliders are 40/55.",
+  "rca of the issue": "Original RCA confirmed: PsyControlPanel was destructuring only {cfg, update} but the venue-preset onChange and the rhLo/rhHi sliders called setCfg(c => ({...c, ...})), causing a ReferenceError that React swallowed inside the synthetic-event handler. The select element is controlled by cfg.rhPreset, so the failed state update made it visually revert to the previous selection. Fix: passed setCfg as a prop (mounted at L273) and destructured it in PsyControlPanel signature (L455). Verified all 10 picks hold."
+}

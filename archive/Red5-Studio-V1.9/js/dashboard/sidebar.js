@@ -272,7 +272,7 @@ function renderSidebar(ctx) {
     </div>
     <div className={`p-4 border-b ${ui.border} bg-opacity-50`}>
         <div className="flex gap-2">
-            <button onClick={() => setShowGivoni(!showGivoni)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? 'bg-indigo-600 border-indigo-400 text-slate-100 shadow-lg' : ui.btnToggle}`}>{t('toggle_givoni')}</button>
+            <button onClick={() => setShowGivoni(!showGivoni)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? `bg-indigo-600 border-indigo-400 shadow-lg ${theme==='dark' ? 'text-slate-900' : 'text-slate-100'}` : ui.btnToggle}`}>{t('toggle_givoni')}</button>
             <button
                 data-testid="toggle-sweet-spot"
                 onClick={() => setShowSweetSpot(!showSweetSpot)}
@@ -280,7 +280,7 @@ function renderSidebar(ctx) {
                 title={showGivoni
                     ? (showSweetSpot ? 'Hide sweet-spot RH strip' : 'Show sweet-spot RH strip')
                     : 'Enable Givoni first to use this overlay'}
-                className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-slate-100 shadow-lg' : ui.btnToggle)}`}
+                className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? `bg-emerald-700 border-emerald-400 shadow-lg ${theme==='dark' ? 'text-slate-900' : 'text-slate-100'}` : ui.btnToggle)}`}
             >{sweetSpotRange.lo}-{sweetSpotRange.hi}% RH</button>
         </div>
         {/* Tier legend chip — relocated to the VAV Terminal Hub header

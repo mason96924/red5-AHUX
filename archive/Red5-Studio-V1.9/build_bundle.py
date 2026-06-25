@@ -46,6 +46,7 @@ ROOT_FILES = [
     'landing.html',
     'setup.html',                # 2026-06-25: pre-compiled setup walk (one-time onboarding gate)
     'setup_walk.compiled.js',    # 2026-06-25: compiled JSX bundle for setup.html (built offline)
+    'dashboard.compiled.js',     # 2026-06-25: compiled JSX bundle for dashboard.html (built offline)
     'psy_3d.html',
     'sun_preview.html',
     'deepdive.html',

@@ -15,7 +15,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
+    <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
+         js/dashboard/* are now pre-compiled offline into the single bundle
+         /dashboard.compiled.js (built via /app/frontend/src/dashboard/build.sh).
+         Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
          repeatedly bitten us: an operator pulls a fresh `dashboard.html`
@@ -456,59 +459,14 @@
         })();
     </script>
     <div id="root"></div>
-    <script>
-        /* Module loader — fetches every entry in `jsModules`, concatenates the
-         * sources, and Babel-transpiles them as a single block (so all top-
-         * level declarations across files share one closure scope).  Phase
-         * L.24 (2026-02-21) lifted the entire `App` component out of the
-         * inline `<script type="text/plain" id="main-source">` and into
-         * `js/dashboard/app.js` — so the dashboard.html shell is now ~500
-         * lines and everything else is a fetched module. */
-        (function() {
-            var jsModules = [
-                '/assets/js/psychrometric.js',
-                '/assets/js/dashboard-components.js',
-                '/assets/js/schema-config.js',
-                '/assets/js/preview-components.js',
-                '/assets/js/sun-path.js',
-                '/assets/js/dashboard/dashboard-helpers.js',
-                '/assets/js/dashboard/vav-modal.js',
-                '/assets/js/dashboard/ahu-modal.js',
-                '/assets/js/dashboard/band-clamp-modal.js',
-                '/assets/js/dashboard/weather-settings-modal.js',
-                '/assets/js/dashboard/weather-strip-panel.js',
-                '/assets/js/dashboard/floor-plan-modal.js',
-                '/assets/js/dashboard/collector-config-modal.js',
-                '/assets/js/dashboard/config-auth-modal.js',
-                '/assets/js/dashboard/telemetry-status-badge.js',
-                '/assets/js/dashboard/givoni-tier-legend.js',
-                '/assets/js/dashboard/sweet-spot-slider.js',
-                '/assets/js/dashboard/t-clip-slider.js',
-                '/assets/js/dashboard/sidebar.js',
-                '/assets/js/dashboard/psy-chart-svg.js',
-                '/assets/js/dashboard/app.js'
-            ];
-
-            Promise.all(jsModules.map(function(url) {
-                return fetch(url).then(function(r) {
-                    if (!r.ok) throw new Error(url + ' returned ' + r.status);
-                    return r.text();
-                });
-            })).then(function(sources) {
-                var combined = sources.join('\n\n');
-                var script = document.createElement('script');
-                script.type = 'text/babel';
-                script.setAttribute('data-presets', 'react');
-                script.textContent = combined;
-                document.body.appendChild(script);
-                if (window.Babel) {
-                    Babel.transformScriptTags();
-                }
-            }).catch(function(err) {
-                console.error('Module loader failed:', err);
-                document.getElementById('root').innerHTML = '<div style="color:red;padding:40px;font-family:monospace;">Module load error: ' + err.message + '</div>';
-            });
-        })();
-    </script>
+    <!-- Pre-compiled offline by /app/frontend/src/dashboard/build.sh —
+         contains the verbatim concatenation of (in order):
+            psychrometric.js, dashboard-components.js, schema-config.js,
+            preview-components.js, sun-path.js, plus all 16 modules under
+            js/dashboard/*.js.
+         Whenever any of those source files changes, re-run the build
+         script BEFORE shipping or the dashboard will run stale code.
+         The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
+    <script src="/dashboard.compiled.js"></script>
 </body>
 </html>

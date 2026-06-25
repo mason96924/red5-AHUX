@@ -95,6 +95,10 @@ function renderPsyChartSvg(ctx) {
                             </div>
                         )}
                     </div>
+                    {/* Comfort-tier legend (A/B/C+/C-) — moved here from the sidebar so the
+                        operator sees the CZ tier colour code right next to the VAV table that
+                        uses those colours.  Only rendered while the Givoni overlay is on. */}
+                    {renderGivoniTierLegend({ showGivoni, theme })}
                     {ahuDiag && ahuDiag.recommendations.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                             {ahuDiag.recommendations.slice(0, 2).map((r, i) => (

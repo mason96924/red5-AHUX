@@ -283,13 +283,9 @@ function renderSidebar(ctx) {
                 className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? 'bg-emerald-700 border-emerald-400 text-slate-100 shadow-lg' : ui.btnToggle)}`}
             >{sweetSpotRange.lo}-{sweetSpotRange.hi}% RH</button>
         </div>
-        {/* Tier legend chip - colour-codes the VAV-table dots so
-            the operator can map "circle colour -> chart region"
-            without hovering each row.  Colours come from the
-            same GIVONI_COLORS token map the chart polygons use
-            (single source of truth in psychrometric.js). */}
-        {/* Givoni Tier Legend -- extracted to givoni-tier-legend.js (L.26) */}
-        {renderGivoniTierLegend({ showGivoni, theme })}
+        {/* Tier legend chip — relocated to the VAV Terminal Hub header
+            (psy-chart-svg.js) so the colour key lives next to the table
+            that uses it.  Sidebar no longer renders it. */}
 
         {/* Sweet Spot Slider -- extracted to sweet-spot-slider.js (L.26) */}
         {renderSweetSpotSlider({

@@ -6048,3 +6048,22 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - Wire setup walk into the real `landing.html → /setup.html → /dashboard.html` flow (one-time gate via `localStorage['red5.setup.done']`).
 - Precompile (in-browser Babel + tailwind CDN currently used — flagged by testing agent).
 - Consider broadcasting preset id through the `r5-rh-band-change` CustomEvent for live preset-name display on dashboard.
+
+---
+## 2026-06-25 (cont) — Venue-Preset Chip on Dashboard + Plug-in Configure Fix
+
+**New feature**: dashboard sidebar now shows a small chip in the icon row (between LangSelector and standards-btn) with `data-testid="venue-preset-chip"` displaying the active RH preset name + range, e.g. "🏛 MUSEUM 40-55%". Click chip → navigates to `/setup_walk_mockup.html`. Chip falls back to "CUSTOM" if the live `sweetSpotRange` doesn't match any preset.
+
+**Bug fix**: Plug-in modal's "Configure" button now works. Each row has expandable inline panel (`data-testid="plugin-config-panel-<id>"`) with per-plug-in fields (select/number/text/toggle) plus Reset/Done buttons. Plug-in field schemas defined in PLUGIN_CONFIG_FIELDS map (weather/givoni/sweet_spot/g36/dibt/lighting).
+
+**Files touched**:
+- `/app/frontend/public/js/dashboard/sidebar.js` (+VENUE_PRESETS map, +chip JSX)
+- `/app/frontend/public/setup_walk_mockup.html` (+PLUGIN_CONFIG_FIELDS, refactored PluginsModal)
+- Mirrored to V1.9 + V2.0 archives, bundle rebuilt (114 files, 2174.7 KB)
+
+**Verified by testing_agent iteration_12.json**: 8/8 PASS — default render, museum hydration, live-tracking drops to custom, exact-match fallback (30-60 → OFFICE), chip click navigation, Configure expand/collapse, per-plug-in field variation, reset defaults.
+
+**Open items**:
+- Wire setup_walk into real landing→dashboard flow (one-time gate).
+- Consider precompile of setup_walk_mockup.html (currently uses in-browser Babel + Tailwind CDN).
+- Resume V3.0 Red5-Modbus Phase 2 (async TCP client) when ready.

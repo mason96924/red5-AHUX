@@ -6092,3 +6092,23 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - Apply the same precompile treatment to dashboard.html (still uses @babel/standalone — pre-existing, flagged by iteration_13).
 - Retire legacy `setup_walk_mockup.html` once the new flow has been in production for a few weeks.
 - Resume V3.0 Red5-Modbus Phase 2 (async TCP client).
+
+---
+## 2026-06-25 (cont) — Pre-Compile dashboard.html
+
+Same shuffle iteration_13 did to setup.html, now applied to dashboard.html:
+- Dropped `@babel/standalone` (3 MB) from `<head>`.
+- Replaced the 50-line runtime `fetch` + concat + `Babel.transformScriptTags()` loader with a single `<script src="/dashboard.compiled.js"></script>`.
+- New build pipeline at `/app/frontend/src/dashboard/{build.sh, babel.config.json}`. Concatenates the same 20 source files (psychrometric.js + dashboard-components.js + schema-config.js + preview-components.js + sun-path.js + 16 modules under js/dashboard/*.js) in the exact order the runtime loader used, then runs Babel offline (preset-env + preset-react). Output: `/app/frontend/public/dashboard.compiled.js` (~1.88 MB, 1328 lines).
+- Build is **deterministic** — uses a fixed `/tmp/red5_dashboard_concat.jsx` filename so consecutive rebuilds produce byte-identical bundles (md5 stable).
+
+V1.9 build_bundle.py's ROOT_FILES list extended with 'dashboard.compiled.js'; bundle file count 116→117, size 2232.6→2714.6 KB.
+
+**Verified by testing_agent iteration_14**: 10/10 PASS — window.Babel undefined, /dashboard.compiled.js served as application/javascript, React mount OK (46+ data-testids found), all icon-row modals work, venue chip preset detection + click-to-setup-walk works, Givoni/RH dark-text fix intact, VAV TERMINAL HUB w/ tier legend renders, view tabs switch cleanly, end-to-end /landing→/setup→/dashboard round-trip clean.
+
+**First-paint improvement**: removes ~3 MB of CDN download + ~4 s of in-browser JIT on hardware controllers. Single HTTP fetch instead of 20.
+
+**Open items**:
+- Retire legacy setup_walk_mockup.html once the new flow is battle-tested.
+- Resume V3.0 Red5-Modbus Phase 2.
+- Optional: add a `yarn build` wrapper so both setup walk + dashboard precompiles run together with one command (mentioned as potential improvement in iteration_13).

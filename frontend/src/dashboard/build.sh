@@ -23,7 +23,9 @@ cd "$(dirname "$0")/../.."             # → /app/frontend
 PUB=/app/frontend/public
 SRC=/app/frontend/src/dashboard
 CFG="$SRC/babel.config.json"
-TMP="$(mktemp --suffix=.jsx)"
+# Deterministic temp filename (was `mktemp` -- the random suffix leaked into
+# the inline source map and made byte-identical rebuilds impossible).
+TMP=/tmp/red5_dashboard_concat.jsx
 DST="$PUB/dashboard.compiled.js"
 
 # Mirror of dashboard.html lines 468-489.  Keep IN SYNC.

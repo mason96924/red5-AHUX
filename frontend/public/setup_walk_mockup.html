@@ -596,39 +596,69 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
     };
 
     return (
-        <ModalShell title="Location Setting" subtitle="Click the map, drag the pin, or use your device" accent="amber" onClose={onClose} onSave={onSave} size="map">
-            <div className="space-y-3">
-                {/* MAP */}
+        <ModalShell title="Location Setting" subtitle="Click the map, drag the pin, or use your device" accent="amber" onClose={onClose} onSave={onSave} size="max">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full" style={{minHeight:'70vh'}}>
+                {/* MAP — fills the left side */}
                 <div ref={mapBoxRef}
-                     style={{ height:'360px', width:'100%', borderRadius:'12px', overflow:'hidden',
-                              border:'1px solid #334155', background:'#0b1220' }}/>
+                     style={{ height:'100%', minHeight:'70vh', width:'100%', borderRadius:'12px',
+                              overflow:'hidden', border:'1px solid #334155', background:'#0b1220' }}/>
 
-                {/* manual fields */}
-                <div>
-                    <div className="field-label mb-1.5">City / Site name {geoBusy && <span className="ml-2 text-amber-400">… resolving</span>}</div>
-                    <input className="field-input" value={cfg.city}
-                           onChange={(e)=>setCfg({...cfg, city:e.target.value})}/>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+                {/* SIDE PANEL */}
+                <div className="space-y-4 overflow-y-auto pr-1">
                     <div>
-                        <div className="field-label mb-1.5">Latitude</div>
-                        <input className="field-input" type="number" step="0.0001" value={cfg.lat}
-                               onChange={(e)=>setCfg({...cfg, lat:+e.target.value})}/>
+                        <div className="field-label mb-1.5">
+                            City / Site name
+                            {geoBusy && <span className="ml-2 text-amber-400 normal-case tracking-normal">… resolving</span>}
+                        </div>
+                        <input className="field-input" value={cfg.city}
+                               onChange={(e)=>setCfg({...cfg, city:e.target.value})}/>
                     </div>
-                    <div>
-                        <div className="field-label mb-1.5">Longitude</div>
-                        <input className="field-input" type="number" step="0.0001" value={cfg.lon}
-                               onChange={(e)=>setCfg({...cfg, lon:+e.target.value})}/>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <div className="field-label mb-1.5">Latitude</div>
+                            <input className="field-input" type="number" step="0.0001" value={cfg.lat}
+                                   onChange={(e)=>setCfg({...cfg, lat:+e.target.value})}/>
+                        </div>
+                        <div>
+                            <div className="field-label mb-1.5">Longitude</div>
+                            <input className="field-input" type="number" step="0.0001" value={cfg.lon}
+                                   onChange={(e)=>setCfg({...cfg, lon:+e.target.value})}/>
+                        </div>
                     </div>
+
+                    <button onClick={useMyLocation}
+                            className="w-full py-2.5 rounded-lg bg-amber-700/70 border border-amber-500/40 text-xs font-black uppercase tracking-widest text-amber-50 hover:bg-amber-600/70">
+                        📍  Use my device location
+                    </button>
+
+                    <div className="border-t border-slate-800 pt-3 mt-2">
+                        <div className="field-label mb-2">Quick jumps</div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                            {[
+                                { name:'Toronto, ON',   lat:43.6532, lon:-79.3832, z:11 },
+                                { name:'New York, NY',  lat:40.7128, lon:-74.0060, z:11 },
+                                { name:'London, UK',    lat:51.5074, lon: -0.1278, z:11 },
+                                { name:'Paris, FR',     lat:48.8566, lon:  2.3522, z:11 },
+                                { name:'Tokyo, JP',     lat:35.6762, lon:139.6503, z:11 },
+                                { name:'Sydney, AU',    lat:-33.8688,lon:151.2093, z:11 },
+                            ].map(j => (
+                                <button key={j.name}
+                                        onClick={() => {
+                                            setCfg(c => ({...c, lat:j.lat, lon:j.lon, city:j.name}));
+                                            if (mapRef.current) mapRef.current.setView([j.lat, j.lon], j.z);
+                                        }}
+                                        className="text-left px-2.5 py-1.5 rounded-md bg-slate-800/70 border border-slate-700 text-[11px] font-bold text-slate-300 hover:bg-slate-700 hover:border-amber-500/40 transition-all">
+                                    {j.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                        Tiles: OpenStreetMap · Geocode: Nominatim (free, ~1 req/s).
+                        Used for Open-Meteo weather feed and sunrise/sunset estimation.
+                    </p>
                 </div>
-                <button onClick={useMyLocation}
-                        className="w-full py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-xs font-black uppercase tracking-widest text-slate-300 hover:bg-slate-700">
-                    📍  Use my device location
-                </button>
-                <p className="text-[10px] text-slate-500 leading-relaxed">
-                    Map: OpenStreetMap.  Reverse geocoding: Nominatim (free; ~1 req/s).
-                    Used for the Open-Meteo weather feed and sunrise/sunset estimation.
-                </p>
             </div>
         </ModalShell>
     );
@@ -728,7 +758,12 @@ function ModalShell({ title, subtitle, accent='indigo', onClose, onSave, size=''
         indigo:'#818cf8', amber:'#fbbf24', emerald:'#34d399', pink:'#f472b6'
     };
     const c = colorMap[accent] || '#818cf8';
-    const width = size === 'wide' ? 'max-w-2xl' : size === 'map' ? 'max-w-3xl' : 'max-w-md';
+    const sizeMap = {
+        wide: 'max-w-2xl',
+        map:  'max-w-3xl',
+        max:  'max-w-[96vw] w-[96vw] h-[92vh]',
+    };
+    const width = sizeMap[size] || 'max-w-md';
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" onClick={onClose}>
             <div className={`bg-slate-900 border-2 rounded-2xl w-full ${width} mx-4 p-6 fade-up`}

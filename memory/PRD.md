@@ -6020,3 +6020,31 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - `/app/frontend/public/js/dashboard/app.js` (608 lines removed, replaced with 8-line call)
 - `/app/frontend/public/dashboard.html` (jsModules array updated)
 - Mirrors in V1.9 + V2.0 archives + bundle rebuild
+
+---
+## 2026-06-25 — Setup Walk-Path Mockup (preview)
+
+**New preview page**: `/app/frontend/public/setup_walk_mockup.html` — 4-tile hub for the proposed "Try Dashboard → 1-time setup walk" UX. Not yet wired into landing.html. Mirrored to V1.9 + V2.0 archives.
+
+**4 walk paths**:
+1. **Psy Chart Setting** — full-page editor w/ live psy-chart preview using REAL `getW()` and the verbatim app.js polygon math (CZ/NV/Mass/MCV/EVAP/WINTER/SWEET). Controls: Givoni toggle, RH range sliders, Temperature axis range sliders, **venue-preset dropdown** (10 industry-standard RH ranges: Office 30-60, Museum 40-55, Hotel 30-60, Library 40-55, Hospital 30-60, Lecture hall 30-60, Concert hall 40-55, Meeting room 30-60, Exhibition 40-55, Custom).
+2. **Location Setting** — maximized modal (96vw × 92vh) with Leaflet + OpenStreetMap. Click-to-place pin, drag-pin, search bar (Nominatim forward-geocode), reverse-geocode for auto city name, "Use my device location" geolocation, 6 quick-jump city presets, site-name input. On Save → POSTs to `/api/weather-location` with `{active, default}`.
+3. **Language Setting** — modal, 6 language tiles.
+4. **Plug-in Setting** — wide modal, scrollable plug-in list with enable/disable + configure + dashed file-drop zone.
+
+**Wiring (live)**:
+- Psy Chart Setting save → writes `localStorage['red5_sweet_spot_range']` ({lo,hi}) AND `localStorage['red5_rh_preset']` (preset id). Dashboard's app.js:308 useState lazy-initializer auto-picks this up on next load.
+- Location Setting save → POSTs to `/api/weather-location` (existing backend endpoint).
+
+**Bugs fixed in this session (verified by testing agent iterations 10 & 11)**:
+- Venue-preset dropdown reverted to 'office' on most picks → root cause: `PsyControlPanel` received `{cfg, update}` but its onChange handlers called `setCfg` which was undefined. Fix: pass `setCfg` as a prop and destructure it.
+- Dropdown label didn't hydrate on reload (only sliders did) → useEffect now also reads `localStorage['red5_rh_preset']` and validates against RH_PRESETS before applying.
+
+**Files touched**:
+- `/app/frontend/public/setup_walk_mockup.html` (new)
+- Mirrored to `/app/archive/Red5-Studio-V1.9/setup_walk_mockup.html` and `/app/archive/Red5-Studio-V2.0/setup_walk_mockup.html`
+
+**Open items / next**:
+- Wire setup walk into the real `landing.html → /setup.html → /dashboard.html` flow (one-time gate via `localStorage['red5.setup.done']`).
+- Precompile (in-browser Babel + tailwind CDN currently used — flagged by testing agent).
+- Consider broadcasting preset id through the `r5-rh-band-change` CustomEvent for live preset-name display on dashboard.

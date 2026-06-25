@@ -217,17 +217,26 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
     const update = (k, v) => setCfg(c => ({...c, [k]:v}));
 
     /* On mount: hydrate from the SAME localStorage key the dashboard reads
-     * (`red5_sweet_spot_range`).  So if the operator has already tuned the
-     * RH band on the dashboard, the setup walk starts from those values. */
+     * (`red5_sweet_spot_range`) plus the preset id (`red5_rh_preset`) so
+     * the dropdown label stays consistent with the slider values across
+     * reloads.  If the operator has already tuned the RH band on the
+     * dashboard, the setup walk starts from those values. */
     React.useEffect(() => {
         try {
-            const raw = localStorage.getItem('red5_sweet_spot_range');
+            const raw    = localStorage.getItem('red5_sweet_spot_range');
+            const preset = localStorage.getItem('red5_rh_preset');
+            const patch  = {};
             if (raw) {
                 const p = JSON.parse(raw);
                 if (Number.isFinite(p.lo) && Number.isFinite(p.hi) && p.lo < p.hi) {
-                    setCfg(c => ({...c, rhLo:p.lo, rhHi:p.hi}));
+                    patch.rhLo = p.lo;
+                    patch.rhHi = p.hi;
                 }
             }
+            if (preset && RH_PRESETS.find(x => x.id === preset)) {
+                patch.rhPreset = preset;
+            }
+            if (Object.keys(patch).length) setCfg(c => ({...c, ...patch}));
         } catch (e) { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

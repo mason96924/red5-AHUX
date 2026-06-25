@@ -1,0 +1,27 @@
+{
+  "summary": "Re-verified the LOW-priority polish fix flagged in iteration_10: dropdown label hydration from localStorage['red5_rh_preset']. All 4 requested scenarios PASS via Playwright on the production preview URL. The useEffect at setup_walk_mockup.html L224-242 now correctly reads both red5_sweet_spot_range AND red5_rh_preset, validates the preset id against RH_PRESETS, and hydrates cfg.rhPreset so the dropdown label, note line, and slider labels are all consistent across reloads.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_11.json",
+    "/app/test_reports/iteration_10.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "setup_walk_mockup.html is now 953 lines (was 944) and still uses cdn.tailwindcss.com + in-browser Babel — console emits the two standard 'not for production' warnings on every load. Acceptable for a preview mockup; precompile before shipping.",
+    "RH_PRESETS validation in the new hydration code (`RH_PRESETS.find(x => x.id === preset)`) correctly guards against stale/invalid preset ids in localStorage, so the dropdown can never end up in an undefined state. Good defensive coding.",
+    "The persistAndSave handler still doesn't broadcast the preset id through the 'r5-rh-band-change' CustomEvent (only lo/hi). If a future dashboard tile wants to show the venue name live (e.g. 'Museum mode active'), it will need either an extra event field or a 'storage' listener. Not a regression — note only."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "100% (4/4 scenarios PASS)"},
+  "test_credentials": "none required",
+  "seed_data_creation": "Test sets/clears localStorage['red5_sweet_spot_range'] and localStorage['red5_rh_preset'] between scenarios via page.evaluate.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 4 scenarios from the review request PASS end-to-end on https://controller-dashboard-2.preview.emergentagent.com/setup_walk_mockup.html. Scenario results: (1) MUSEUM HYDRATION — after clear→pick museum→Save→reload→re-enter, dropdown value='museum', visible text='Museum  ·  40-55% RH', note='AAM collection preservation', sliders=40%/55%. PASS. (2) REGRESSION 10 PRESETS — all of office/museum/hotel/library/hospital/lecture/concert/meeting/exhibition/custom stick on pick with matching slider labels. PASS. (3) MANUAL OVERRIDE — pick museum then drag lo→35 switches dropdown to 'Custom (manual)' with sliders 35/55; save+reload re-opens as 'Custom (manual)' with sliders 35/55 and localStorage red5_rh_preset='custom'. PASS. (4) EMPTY LOCALSTORAGE FALLBACK — after clear+reload, dropdown defaults to 'Office  ·  30-60% RH', sliders 30/60, no JS errors. PASS. Note for next iteration: when scripting React-controlled range sliders, use the native setter trick `Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(el, '35')` before dispatching input/change events — a plain `el.value = '35'` does NOT fire React's onChange, which initially made TEST 3 appear to fail. After applying the setter trick, TEST 3 passed cleanly.",
+  "rca of the issue": "Original cosmetic gap was that the useEffect on line ~224 only hydrated cfg.rhLo / cfg.rhHi from localStorage['red5_sweet_spot_range'] but skipped cfg.rhPreset, so the dropdown always reverted to its default 'office' even when the saved range matched a non-office preset. Fix applied by main agent in this iteration: added `const preset = localStorage.getItem('red5_rh_preset'); if (preset && RH_PRESETS.find(x => x.id === preset)) patch.rhPreset = preset;` inside the existing useEffect, and merged via the existing `setCfg(c => ({...c, ...patch}))` call. The RH_PRESETS.find guard rejects unknown/stale ids. Verified working for both built-in preset ids (museum) and the 'custom' id."
+}

@@ -6067,3 +6067,28 @@ cd ~/red5-studio && git pull --ff-only origin main && cd frontend && yarn build 
 - Wire setup_walk into real landing→dashboard flow (one-time gate).
 - Consider precompile of setup_walk_mockup.html (currently uses in-browser Babel + Tailwind CDN).
 - Resume V3.0 Red5-Modbus Phase 2 (async TCP client) when ready.
+
+---
+## 2026-06-25 (cont) — Pre-Compile Setup Walk + Wire 1-Time Gate
+
+**Pre-compile** — Eliminated `@babel/standalone` (3 MB runtime JIT) from the setup walk. New artefacts:
+- `/app/frontend/src/setup-walk/setup_walk.jsx` — source (extracted from old setup_walk_mockup.html)
+- `/app/frontend/src/setup-walk/babel.config.json` — preset-env + preset-react
+- `/app/frontend/src/setup-walk/build.sh` — offline build script (uses `node_modules/.bin/babel`)
+- `/app/frontend/public/setup.html` — NEW production page; loads compiled JS via `<script src>`
+- `/app/frontend/public/setup_walk.compiled.js` — compiled bundle (~213 KB, 1590 lines)
+- Legacy `setup_walk_mockup.html` left untouched as fallback (still uses in-browser Babel; will retire once new flow is fully battle-tested).
+
+**Wire 1-time gate**:
+- `landing.html` Dashboard tile (L109) and skip handler (L94) now point at `/setup.html`.
+- `setup.html` has a synchronous IIFE in `<head>` that calls `location.replace('/dashboard.html')` if `localStorage['red5.setup.done']==='1'` and the URL has no `?force=1`.
+- Both 'Open Dashboard →' and 'Skip all →' anchors set `localStorage['red5.setup.done']='1'` in onClick before navigating.
+- Dashboard venue chip (`sidebar.js:233`) now navigates to `/setup.html?force=1` so operators can re-edit.
+- V1.9 `build_bundle.py` ROOT_FILES list extended (setup.html + setup_walk.compiled.js); bundle now 116 files / 2232.6 KB.
+
+**Verified by testing_agent iteration_13.json**: 10/10 functional requirements PASS. `window.Babel === undefined`; compiled bundle served as `application/javascript`; gate redirect, ?force=1 bypass, Open Dashboard and Skip all both close the gate; landing tile + venue chip both point at /setup.html. Cosmetic HTML duplicate-body issue fixed afterward.
+
+**Open items**:
+- Apply the same precompile treatment to dashboard.html (still uses @babel/standalone — pre-existing, flagged by iteration_13).
+- Retire legacy `setup_walk_mockup.html` once the new flow has been in production for a few weeks.
+- Resume V3.0 Red5-Modbus Phase 2 (async TCP client).

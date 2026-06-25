@@ -37,6 +37,41 @@ function renderSidebar(ctx) {
     const DARK_LEVEL_DEFAULT = 2.0;
     const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, t } = ctx;
 
+    /* ---------------- Venue preset chip --------------------------------
+       Mirror of the RH_PRESETS list in setup_walk_mockup.html (the source
+       of truth for venue-type RH bands).  Keep the two lists in sync. */
+    const VENUE_PRESETS = [
+        { id:'office',     label:'Office',           icon:'🏢', lo:30, hi:60 },
+        { id:'museum',     label:'Museum',           icon:'🏛',  lo:40, hi:55 },
+        { id:'hotel',      label:'Hotel',            icon:'🛏',  lo:30, hi:60 },
+        { id:'library',    label:'Library',          icon:'📚', lo:40, hi:55 },
+        { id:'hospital',   label:'Hospital',         icon:'⚕',  lo:30, hi:60 },
+        { id:'lecture',    label:'Lecture hall',     icon:'🎓', lo:30, hi:60 },
+        { id:'concert',    label:'Concert hall',     icon:'🎼', lo:40, hi:55 },
+        { id:'meeting',    label:'Meeting room',     icon:'💬', lo:30, hi:60 },
+        { id:'exhibition', label:'Exhibition hall',  icon:'🖼',  lo:40, hi:55 },
+    ];
+    /* Resolve preset:
+       1. honour `localStorage['red5_rh_preset']` IF its lo/hi match the live sweetSpotRange
+       2. else pick the first VENUE_PRESETS row that matches lo/hi exactly
+       3. else fall back to 'Custom'  */
+    let venuePreset = null;
+    try {
+        const saved = localStorage.getItem('red5_rh_preset');
+        if (saved) {
+            const v = VENUE_PRESETS.find(x => x.id === saved);
+            if (v && v.lo === sweetSpotRange.lo && v.hi === sweetSpotRange.hi) venuePreset = v;
+        }
+    } catch (e) { /* localStorage unavailable */ }
+    if (!venuePreset) {
+        venuePreset = VENUE_PRESETS.find(v => v.lo === sweetSpotRange.lo && v.hi === sweetSpotRange.hi) || null;
+    }
+    const venueChipLabel = venuePreset ? venuePreset.label.toUpperCase() : 'CUSTOM';
+    const venueChipIcon  = venuePreset ? venuePreset.icon : '🎚';
+    const venueChipTitle = venuePreset
+        ? `Venue preset: ${venuePreset.label} (${venuePreset.lo}-${venuePreset.hi}% RH) — click to change in setup walk`
+        : `Custom RH band (${sweetSpotRange.lo}-${sweetSpotRange.hi}% RH) — click to pick a venue preset`;
+
     const isPoppedToWin   = !!sidebarPopoutWin;
     const isPoppedFloat   = sidebarFloating && !isPoppedToWin;
     const isPopped        = isPoppedFloat || isPoppedToWin;
@@ -188,6 +223,30 @@ function renderSidebar(ctx) {
         </div>
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
             {i18nReady && window.LangSelector && <LangSelector />}
+            {/* ----- Venue Preset chip ------------------------------------------------
+                Tiny pill that shows the operator which industry-standard RH band
+                is currently active (Office / Museum / Hotel / Library / Hospital /
+                Lecture hall / Concert hall / Meeting room / Exhibition hall) or
+                "Custom" if the live sweetSpotRange doesn't match any preset.
+                Clicking it opens the setup walk so the operator can re-pick.    */}
+            <button
+                onClick={() => { window.location.href = '/setup_walk_mockup.html'; }}
+                data-testid="venue-preset-chip"
+                title={venueChipTitle}
+                aria-label={venueChipTitle}
+                className={`flex items-center gap-1 px-2 py-1 rounded border text-[10px] font-black uppercase tracking-wider transition-all ${
+                    venuePreset
+                        ? (theme === 'dark'
+                            ? 'bg-emerald-900/30 border-emerald-600/60 text-emerald-300 hover:bg-emerald-800/40'
+                            : 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100')
+                        : (theme === 'dark'
+                            ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
+                            : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200')
+                }`}>
+                <span aria-hidden style={{fontSize:'11px'}}>{venueChipIcon}</span>
+                <span data-testid="venue-preset-chip-label">{venueChipLabel}</span>
+                <span className="font-mono opacity-70 tabular-nums">{sweetSpotRange.lo}-{sweetSpotRange.hi}%</span>
+            </button>
             {/* Standards / Docs button — single entry point.
                 Opens the docs popup at whichever tab the
                 operator was last reading (G36 cross-walk on

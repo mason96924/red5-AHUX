@@ -6155,3 +6155,14 @@ Mirror in `/app/archive/Red5-Studio-V2.0/src/pages/LandingPage.jsx` (md5sum OK).
 - Resume V3.0 Red5-Modbus Phase 2.
 - Optional: add data-testids to the 4 setup-walk tiles (testing agent's recommendation for cleaner E2E selectors).
 - Optional: pre-extract Tailwind CSS to drop the cdn.tailwindcss.com runtime warning.
+
+---
+## 2026-06-25 (cont) — Automatic Cache-Busting
+
+User reported: "I do not see any changes in the setup page for Psy chart." — most likely browser cache stale on /setup_walk.compiled.js after iteration_16's rebuild (filename hadn't changed).
+
+Fix: both build scripts now `md5sum` the freshly-compiled bundle and `sed -E` inject `?v=<10 hex chars>` into the matching HTML's <script src>. Idempotent regex handles first-run AND re-run cases. Current hashes: setup_walk.compiled.js?v=2534bfc55d, dashboard.compiled.js?v=a5c456af04.
+
+**Verified by iteration_17**: 7/7 PASS. Determinism confirmed — consecutive rebuilds with no source changes produce byte-identical HTMLs. Display Mode block is verified present in the bundle. Zero regressions.
+
+**Open items**: V3.0 Modbus Phase 2 (async TCP client), Tailwind extraction (drop cdn.tailwindcss.com runtime warning).

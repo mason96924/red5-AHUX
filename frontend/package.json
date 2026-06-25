@@ -58,11 +58,12 @@
   },
   "scripts": {
     "start": "craco start",
-    "build": "craco build && yarn build:static",
+    "build": "craco build",
     "test": "craco test",
     "build:setup-walk": "bash src/setup-walk/build.sh",
     "build:dashboard": "bash src/dashboard/build.sh",
-    "build:static": "yarn build:setup-walk && yarn build:dashboard"
+    "build:static": "yarn build:setup-walk && yarn build:dashboard",
+    "build:all": "yarn build && yarn build:static"
   },
   "browserslist": {
     "production": [

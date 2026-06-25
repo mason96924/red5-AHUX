@@ -6135,3 +6135,23 @@ Mirror in `/app/archive/Red5-Studio-V2.0/src/pages/LandingPage.jsx` (md5sum OK).
 - Retire `setup_walk_mockup.html` legacy redirect stub once no more traffic lands there (already done as a redirect in earlier iteration).
 - Resume V3.0 Red5-Modbus Phase 2 (async TCP client).
 - Optional future hardening: testing agent flagged `cdn.tailwindcss.com` warning on /setup.html — could swap to a pre-extracted Tailwind CSS file in a future hardening pass.
+
+---
+## 2026-06-25 (cont) — Theme/Brightness UI Relocation
+
+**User request**: move Dim/Light selection from the dashboard sidebar to the Psy Chart Setting page in setup walk.
+
+**Changes**:
+- `sidebar.js` — DIM slider div (33 lines) replaced with a 7-line explanatory comment. `[data-testid="dark-level-slider"]` and `-wrap` no longer in the rendered tree.
+- `setup_walk.jsx` — PsyChartSettingPage now includes a new "Display Mode" block as the FIRST element in PsyControlPanel:
+  * Two buttons: `[data-testid="psy-cfg-theme-dark"]` (🌙 DIM/DARK) and `[data-testid="psy-cfg-theme-light"]` (☀ LIGHT)
+  * Brightness slider: `[data-testid="psy-cfg-dark-level"]` (active only in dark mode; range 1.5–2.8, step 0.02)
+  * Light click pushes darkLevel to 3.0 (matches dashboard's DARK_LEVEL_MAX threshold)
+- **Data contract preserved**: same `localStorage['red5.theme']` + `localStorage['red5.darkLevel']` keys app.js reads at boot. No backend change. Hydrate on entering Psy Chart Setting; write on Save & return.
+
+**Verified by iteration_16.json**: 12/12 PASS. Light/dark round-trip, brightness persistence, slider disable in light mode, no regressions on venue chip / modals / RH dropdown / chart preview.
+
+**Open items**:
+- Resume V3.0 Red5-Modbus Phase 2.
+- Optional: add data-testids to the 4 setup-walk tiles (testing agent's recommendation for cleaner E2E selectors).
+- Optional: pre-extract Tailwind CSS to drop the cdn.tailwindcss.com runtime warning.

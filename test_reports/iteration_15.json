@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 15 — V2.0 React landing CTA redirect fix VERIFIED across all 8 review items on https://controller-dashboard-2.preview.emergentagent.com/. Both V2.0 landing CTAs ([data-testid='v2-cta-open-dashboard'] and [data-testid='v2-nav-dashboard-link']) now have href='/setup.html?force=1' (NOT /dashboard.html). The Equipment Mapper CTA ([data-testid='v2-cta-open-mapper']) remains correctly at '/equipment_mapper.html'. Clean-state click: lands on /setup.html?force=1 with the 4-tile hub rendered (PSY CHART, LOCATION, LANGUAGE, PLUG-IN). Gate-flag-set state (the EXACT user-reported regression): with localStorage['red5.setup.done']='1' set BEFORE clicking 'Try the Dashboard', the page still correctly lands on /setup.html?force=1 and renders the 4-tile hub — confirming the ?force=1 bypass works against the gate IIFE in setup.html. Direct gate still effective: navigating directly to /setup.html (no force) with the flag set redirects to /dashboard.html (gate IIFE at setup.html L22-31 still works for non-landing entries). Header 'Open Dashboard →' link behaves identically to main CTA. Setup→Dashboard round-trip: clicking the 'Open Dashboard' anchor at the bottom of the setup hub navigates to /dashboard.html and writes localStorage['red5.setup.done']='1'. Dashboard mounts post-roundtrip with [data-testid='venue-preset-chip'] visible ('🎚CUSTOM40-60%'). No new JS console errors introduced — only the pre-existing /api/weather-location 401 + 4 static-asset 404s on dashboard.html, identical to iterations 12-14.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_15.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "LandingPage.jsx L152 (header link) and L182 (main CTA) — both anchors point at '/setup.html?force=1'. The ?force=1 query is consumed by the synchronous gate IIFE at setup.html L22-31 which bypasses the localStorage redirect when params.get('force') === '1'. Clean targeted fix, no unintended side effects observed in 8-test sweep.",
+    "Equipment Mapper anchor (L190) correctly unchanged at '/equipment_mapper.html' — confirmed by href read in Test 6.",
+    "Gate IIFE at /app/frontend/public/setup.html L22-31 is correctly defensive: try/catch around localStorage (private-mode safe), runs synchronously before paint (prevents flash), only redirects when BOTH force!=1 AND red5.setup.done==1. Test 4 confirmed direct-URL gate path still redirects to /dashboard.html when the flag is set.",
+    "Note: tailwindcss CDN warning ('cdn.tailwindcss.com should not be used in production') appears on /setup.html — pre-existing, not in scope, but worth tracking for a future hardening pass."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (8/8 review items PASS)"},
+  "test_credentials": "n/a (no auth required for V2.0 landing/setup/dashboard paths)",
+  "seed_data_creation": "localStorage seeding inside Playwright session only: red5.setup.done='1' to verify gate-bypass + direct-gate behaviour; localStorage.clear() between tests to reset.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The V2.0 React SPA landing at root URL '/' is served by craco dev with hot reload. CTAs use simple <a href> (no JS handler) so href reads via get_attribute are authoritative — no need to click + intercept. Gate IIFE in setup.html runs BEFORE React/setup_walk.compiled.js loads, so URL/redirect happens almost instantly; a wait_for_load_state('domcontentloaded') + page.wait_for_timeout(2000) is sufficient. The 4-tile hub text markers are 'PSY CHART SETTING', 'LOCATION SETTING', 'LANGUAGE SETTING', 'PLUG-IN SETTING' (all uppercase in DOM). 'Open Dashboard' button on the setup hub is an <a> tag — locator 'a:has-text(\"Open Dashboard\")' works. Pre-existing console errors on dashboard.html (5x: /api/weather-location 401 + 4 static 404s) are NOT regressions.",
+  "rca of the issue": "Original user bug ('the landing page with try Dashboard goes straight into Dashboard page, not that new setup page we created') — Root cause: V2.0 LandingPage.jsx CTAs (L152, L182) hardcoded href='/dashboard.html'. Even after iteration_13 added the setup walk + gate, the V2.0 landing never routed through /setup.html — so first-time visitors went straight to the dashboard, bypassing onboarding entirely. Fix applied by main agent: change both anchors to '/setup.html?force=1'. The ?force=1 is essential because operators who had completed setup in a prior session would have red5.setup.done=1 in localStorage, which the gate IIFE would honour and redirect-bounce them right back to dashboard.html — re-creating the same bug. Adding ?force=1 to the landing CTAs only (NOT to direct URL bookmarks) preserves the gate's intended behaviour for direct visits while guaranteeing the landing entry always lands on the setup hub. Verified in Tests 3 (regression scenario) and 4 (direct-URL gate preserved)."
+}

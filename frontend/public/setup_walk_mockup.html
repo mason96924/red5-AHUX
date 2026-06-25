@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<!--
+  setup_walk_mockup.html  —  MOCKUP ONLY (no backend wiring)
+  Demonstrates the proposed "Try Dashboard → 4-step setup walk path" UX.
+  Open directly at /setup_walk_mockup.html to preview & critique before
+  we touch landing.html or dashboard.html.
+
+  Walk steps (left-to-right tiles on the hub):
+    1. Psy Chart Setting    →  full-page editor w/ live skeleton chart
+    2. Location Setting     →  popup modal
+    3. Language Setting     →  popup modal
+    4. Plug-in Setting      →  popup modal w/ list + upload area
+
+  Nothing here calls any /api/* route — every change is local state.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup Walk Path — Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
+<style>
+    body { background:#020617; color:#e2e8f0; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .tile-btn {
+        transition: transform .15s ease, border-color .15s ease, background .2s ease;
+    }
+    .tile-btn:hover {
+        transform: translateY(-2px);
+        background: rgba(99,102,241,0.08);
+    }
+    .tile-btn.done {
+        border-color: rgb(16,185,129) !important;
+        background: rgba(16,185,129,0.05) !important;
+    }
+    .check {
+        position:absolute; top:14px; right:14px;
+        width:28px; height:28px; border-radius:9999px;
+        background:rgb(16,185,129); display:flex; align-items:center; justify-content:center;
+        color:#fff; font-weight:900; font-size:14px;
+        box-shadow: 0 0 14px rgba(16,185,129,0.55);
+    }
+    .pill { padding:2px 10px; border-radius:9999px; font-size:10px; font-weight:900; letter-spacing:0.15em; }
+    .skeleton {
+        background:repeating-linear-gradient(45deg, #1e293b, #1e293b 6px, #0f172a 6px, #0f172a 12px);
+    }
+    .chart-region {
+        stroke-width:2; stroke-linejoin:round; transition: opacity .25s ease;
+    }
+    .modal-backdrop {
+        background: rgba(0,0,0,0.74); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    }
+    .field-label { font-size:10px; font-weight:900; letter-spacing:0.18em; color:#94a3b8; text-transform:uppercase; }
+    .field-input {
+        width:100%; background:#0f172a; border:1px solid #334155; color:#e2e8f0;
+        padding:10px 12px; border-radius:10px; font-size:14px; outline:none;
+        transition: border-color .15s ease;
+    }
+    .field-input:focus { border-color:#6366f1; }
+    .range-input { width:100%; accent-color:#6366f1; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:translateY(0);} }
+    .fade-up { animation: fadeUp .35s ease both; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+/* =========================================================================
+ * STEP DEFINITIONS — the 4 walk paths the user described
+ * ========================================================================= */
+const STEPS = [
+    { key:'psy',      label:'Psy Chart Setting',    sub:'Givoni · RH range · axis range', kind:'page',  iconColor:'#818cf8', accent:'indigo' },
+    { key:'location', label:'Location Setting',     sub:'City name & lat / long',         kind:'modal', iconColor:'#fbbf24', accent:'amber' },
+    { key:'language', label:'Language Setting',     sub:'EN · FR · ES · ZH · …',          kind:'modal', iconColor:'#34d399', accent:'emerald' },
+    { key:'plugins',  label:'Plug-in Setting',      sub:'List · upload · modify',         kind:'modal', iconColor:'#f472b6', accent:'pink' },
+];
+
+/* =========================================================================
+ * ROOT APP
+ * ========================================================================= */
+function App() {
+    /* completion + per-step config -- mockup state, never persisted */
+    const [done, setDone] = useState({ psy:false, location:false, language:false, plugins:false });
+    const [route, setRoute] = useState('hub');   // 'hub' | 'psy'
+    const [modal, setModal] = useState(null);     // 'location' | 'language' | 'plugins' | null
+
+    const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhLo:40, rhHi:60, tLo:-15, tHi:50 });
+    const [locCfg, setLocCfg]         = useState({ city:'Toronto, ON', lat:43.6532, lon:-79.3832 });
+    const [langCfg, setLangCfg]       = useState({ lang:'en' });
+    const [pluginCfg, setPluginCfg]   = useState({ enabled:['weather','givoni','sweet_spot'] });
+
+    const completeCount = Object.values(done).filter(Boolean).length;
+
+    const finish = (key) => {
+        setDone(d => ({...d, [key]:true}));
+        setRoute('hub');
+        setModal(null);
+    };
+
+    /* full-page Psy Chart editor */
+    if (route === 'psy') {
+        return <PsyChartSettingPage cfg={psyCfg} setCfg={setPsyCfg}
+                                    onBack={() => setRoute('hub')}
+                                    onSave={() => finish('psy')} />;
+    }
+
+    /* default: HUB screen */
+    return (
+        <div className="min-h-screen px-6 py-8">
+            {/* ------------- header ------------- */}
+            <div className="max-w-5xl mx-auto flex items-center justify-between mb-10 fade-up">
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-black italic uppercase tracking-tight">
+                        <span className="text-red-500">Red5</span> <span className="text-white">Studio</span>
+                        <span className="text-slate-500 font-normal italic"> &nbsp;/&nbsp; setup walk</span>
+                    </h1>
+                    <p className="text-slate-500 text-xs mt-1 font-mono tracking-wide">Configure once. Skip any step you don't need.</p>
+                </div>
+                <div className="flex items-center gap-4">
+                    <span className="pill bg-slate-800 text-slate-400">{completeCount}/4 DONE</span>
+                    <a href="/dashboard.html" className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-4">Skip all →</a>
+                </div>
+            </div>
+
+            {/* ------------- tile grid ------------- */}
+            <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-5 fade-up" style={{animationDelay:'.08s'}}>
+                {STEPS.map((s, i) => (
+                    <Tile key={s.key}
+                          step={s}
+                          done={done[s.key]}
+                          index={i+1}
+                          onClick={() => s.kind === 'page' ? setRoute(s.key) : setModal(s.key)} />
+                ))}
+            </div>
+
+            {/* ------------- footer CTA ------------- */}
+            <div className="max-w-5xl mx-auto mt-10 flex items-center justify-between fade-up" style={{animationDelay:'.18s'}}>
+                <p className="text-slate-500 text-xs font-mono">
+                    {completeCount === 0 && '↑ Pick a setting to start, or skip all and go straight to the dashboard.'}
+                    {completeCount > 0 && completeCount < 4 && `↑ ${4 - completeCount} step${4 - completeCount === 1 ? '' : 's'} remaining (optional).`}
+                    {completeCount === 4 && '✓ All steps configured.  Ready when you are.'}
+                </p>
+                <a href="/dashboard.html"
+                   className={`px-7 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all
+                              ${completeCount === 4
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'}`}>
+                    Open Dashboard →
+                </a>
+            </div>
+
+            {/* ------------- modals ------------- */}
+            {modal === 'location' && <LocationModal cfg={locCfg} setCfg={setLocCfg}
+                                                   onClose={() => setModal(null)}
+                                                   onSave={() => finish('location')} />}
+            {modal === 'language' && <LanguageModal cfg={langCfg} setCfg={setLangCfg}
+                                                   onClose={() => setModal(null)}
+                                                   onSave={() => finish('language')} />}
+            {modal === 'plugins'  && <PluginsModal  cfg={pluginCfg} setCfg={setPluginCfg}
+                                                   onClose={() => setModal(null)}
+                                                   onSave={() => finish('plugins')} />}
+        </div>
+    );
+}
+
+/* =========================================================================
+ * Tile (large easy-on-eyes button)
+ * ========================================================================= */
+function Tile({ step, done, index, onClick }) {
+    return (
+        <button onClick={onClick}
+                className={`tile-btn relative text-left bg-slate-900/70 border-2 border-slate-700/70
+                            rounded-2xl p-6 sm:p-7 ${done ? 'done' : ''}`}>
+            {done && <span className="check">✓</span>}
+            <div className="flex items-center gap-4 mb-3">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                     style={{background:`${step.iconColor}22`, border:`1px solid ${step.iconColor}55`}}>
+                    <TileIcon kind={step.key} color={step.iconColor} />
+                </div>
+                <div className="text-3xl font-black text-slate-700">0{index}</div>
+            </div>
+            <h3 className="text-lg sm:text-xl font-black uppercase tracking-wider mb-1"
+                style={{color:step.iconColor}}>{step.label}</h3>
+            <p className="text-slate-400 text-sm leading-snug">{step.sub}</p>
+            <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                <span className="pill bg-slate-800 text-slate-400">{step.kind === 'page' ? 'Full page' : 'Popup'}</span>
+                {done && <span className="pill bg-emerald-900/40 text-emerald-400">Configured</span>}
+            </div>
+        </button>
+    );
+}
+
+function TileIcon({ kind, color }) {
+    /* simple inline SVGs so we keep the file self-contained */
+    const stroke = { stroke:color, fill:'none', strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round' };
+    if (kind === 'psy')      return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M3 3v18h18"/><path d="M3 17c4-1 7-6 9-9s5-3 9-2"/></svg>;
+    if (kind === 'location') return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M12 22s-7-6.4-7-12a7 7 0 1 1 14 0c0 5.6-7 12-7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>;
+    if (kind === 'language') return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>;
+    if (kind === 'plugins')  return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M9 3v6M15 3v6"/><path d="M5 9h14v6a4 4 0 0 1-4 4h-1v3M9 19v3"/></svg>;
+    return null;
+}
+
+/* =========================================================================
+ * Psy Chart Setting -- FULL PAGE, live skeleton responds to controls
+ * ========================================================================= */
+function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
+    const update = (k, v) => setCfg(c => ({...c, [k]:v}));
+
+    return (
+        <div className="min-h-screen flex flex-col">
+            {/* header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+                <button onClick={onBack}
+                        className="text-slate-400 hover:text-white text-xs uppercase tracking-widest font-black">
+                    ← Back to setup
+                </button>
+                <h1 className="text-sm uppercase tracking-[0.3em] font-black text-indigo-400">Psy Chart Setting</h1>
+                <button onClick={onSave}
+                        className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs uppercase tracking-widest font-black">
+                    Save & return ✓
+                </button>
+            </div>
+
+            {/* body — chart left, controls right */}
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 p-6 max-w-7xl mx-auto w-full">
+                <PsySkeleton cfg={cfg} />
+                <PsyControlPanel cfg={cfg} update={update} />
+            </div>
+        </div>
+    );
+}
+
+/* Skeleton psy chart that reacts to cfg changes */
+function PsySkeleton({ cfg }) {
+    const W = 700, H = 460, padL = 50, padR = 30, padT = 30, padB = 50;
+    const xScale = (t) => padL + ((t - cfg.tLo) / (cfg.tHi - cfg.tLo)) * (W - padL - padR);
+    const yScale = (rh) => H - padB - ((rh - 0) / 100) * (H - padT - padB);
+
+    /* sweet-spot band */
+    const ssX1 = padL, ssX2 = W - padR;
+    const ssY1 = yScale(cfg.rhHi), ssY2 = yScale(cfg.rhLo);
+
+    /* Givoni regions (very rough placeholder polys) */
+    const givoniRegions = [
+        { name:'COMFORT',           color:'#10b981', d:`M ${xScale(20)} ${yScale(70)} L ${xScale(27)} ${yScale(70)} L ${xScale(27)} ${yScale(30)} L ${xScale(20)} ${yScale(30)} Z` },
+        { name:'NAT VENT',          color:'#eab308', d:`M ${xScale(20)} ${yScale(80)} L ${xScale(30)} ${yScale(80)} L ${xScale(30)} ${yScale(60)} L ${xScale(20)} ${yScale(60)} Z` },
+        { name:'EVAP',              color:'#a78bfa', d:`M ${xScale(28)} ${yScale(60)} L ${xScale(42)} ${yScale(40)} L ${xScale(42)} ${yScale(10)} L ${xScale(28)} ${yScale(10)} Z` },
+        { name:'MECH COOL',         color:'#06b6d4', d:`M ${xScale(27)} ${yScale(100)} L ${xScale(50)} ${yScale(100)} L ${xScale(50)} ${yScale(40)} L ${xScale(27)} ${yScale(40)} Z` },
+    ];
+
+    return (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 skeleton-bg">
+            <div className="flex items-center justify-between mb-3">
+                <span className="pill bg-slate-800 text-slate-400">SKELETON PREVIEW · live</span>
+                <span className="text-[10px] text-slate-500 font-mono">{cfg.tLo}°C → {cfg.tHi}°C  |  {cfg.rhLo}–{cfg.rhHi}% RH</span>
+            </div>
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{background:'#0b1220', borderRadius:8}}>
+                {/* axes */}
+                <line x1={padL} y1={padT} x2={padL} y2={H-padB} stroke="#475569" strokeWidth="1.5"/>
+                <line x1={padL} y1={H-padB} x2={W-padR} y2={H-padB} stroke="#475569" strokeWidth="1.5"/>
+                {/* x ticks based on axis range */}
+                {Array.from({length:8}).map((_,i) => {
+                    const t = cfg.tLo + (i/7) * (cfg.tHi - cfg.tLo);
+                    const x = xScale(t);
+                    return (<g key={i}>
+                        <line x1={x} y1={H-padB} x2={x} y2={H-padB+5} stroke="#475569"/>
+                        <text x={x} y={H-padB+18} fontSize="10" fill="#94a3b8" textAnchor="middle">{t.toFixed(0)}</text>
+                    </g>);
+                })}
+                {/* y ticks */}
+                {[0,20,40,60,80,100].map(rh => {
+                    const y = yScale(rh);
+                    return (<g key={rh}>
+                        <line x1={padL-5} y1={y} x2={padL} y2={y} stroke="#475569"/>
+                        <text x={padL-8} y={y+3} fontSize="10" fill="#94a3b8" textAnchor="end">{rh}</text>
+                    </g>);
+                })}
+                {/* axis labels */}
+                <text x={W/2} y={H-8} fontSize="11" fill="#cbd5e1" textAnchor="middle" fontWeight="700">DRY BULB TEMP (°C)</text>
+                <text x={14} y={H/2} fontSize="11" fill="#cbd5e1" textAnchor="middle" fontWeight="700"
+                      transform={`rotate(-90 14 ${H/2})`}>RELATIVE HUMIDITY (%)</text>
+
+                {/* RH sweet-spot band */}
+                <rect x={ssX1} y={ssY1} width={ssX2-ssX1} height={ssY2-ssY1}
+                      fill="#10b98122" stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 4"/>
+                <text x={ssX1+10} y={ssY1+16} fontSize="10" fill="#10b981" fontWeight="700">
+                    {cfg.rhLo}–{cfg.rhHi}% RH SWEET SPOT
+                </text>
+
+                {/* Givoni regions (only if enabled) */}
+                {cfg.givoni && givoniRegions.map(r => (
+                    <g key={r.name} className="chart-region" style={{opacity: cfg.givoni ? 0.6 : 0}}>
+                        <path d={r.d} fill={`${r.color}22`} stroke={r.color}/>
+                    </g>
+                ))}
+                {/* Givoni label */}
+                {cfg.givoni && (
+                    <text x={W-padR-10} y={padT+14} fontSize="10" fill="#818cf8" textAnchor="end" fontWeight="900"
+                          letterSpacing="2">GIVONI ENGINE ON</text>
+                )}
+            </svg>
+        </div>
+    );
+}
+
+function PsyControlPanel({ cfg, update }) {
+    return (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-6">
+            {/* Givoni toggle */}
+            <div>
+                <div className="field-label mb-2">Givoni Engine</div>
+                <button onClick={() => update('givoni', !cfg.givoni)}
+                        className={`w-full py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all
+                                    ${cfg.givoni
+                                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
+                                        : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
+                    {cfg.givoni ? 'Givoni ON' : 'Givoni OFF'}
+                </button>
+                <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                    Overlays the 4 climate-strategy regions (Comfort, Nat Vent, Evap, Mech Cool).
+                </p>
+            </div>
+
+            {/* RH range */}
+            <div>
+                <div className="field-label mb-2">RH Sweet-Spot Range</div>
+                <div className="flex items-center gap-3 mb-2">
+                    <span className="text-xs font-mono text-slate-400 w-10">{cfg.rhLo}%</span>
+                    <input type="range" min="20" max={cfg.rhHi-5} value={cfg.rhLo}
+                           onChange={(e) => update('rhLo', +e.target.value)}
+                           className="range-input flex-1"/>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono text-slate-400 w-10">{cfg.rhHi}%</span>
+                    <input type="range" min={cfg.rhLo+5} max="90" value={cfg.rhHi}
+                           onChange={(e) => update('rhHi', +e.target.value)}
+                           className="range-input flex-1"/>
+                </div>
+            </div>
+
+            {/* Axis range */}
+            <div>
+                <div className="field-label mb-2">Temperature Axis Range</div>
+                <div className="flex items-center gap-3 mb-2">
+                    <span className="text-xs font-mono text-slate-400 w-10">{cfg.tLo}°</span>
+                    <input type="range" min="-40" max={cfg.tHi-10} value={cfg.tLo}
+                           onChange={(e) => update('tLo', +e.target.value)}
+                           className="range-input flex-1"/>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono text-slate-400 w-10">{cfg.tHi}°</span>
+                    <input type="range" min={cfg.tLo+10} max="60" value={cfg.tHi}
+                           onChange={(e) => update('tHi', +e.target.value)}
+                           className="range-input flex-1"/>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                    Chart will be redrawn with this dry-bulb temperature window.
+                </p>
+            </div>
+
+            <div className="border-t border-slate-800 pt-4">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Changes preview live in the skeleton chart on the left.  Hit
+                    <span className="text-indigo-400 font-black"> Save & return </span>
+                    in the header when you're happy.
+                </p>
+            </div>
+        </div>
+    );
+}
+
+/* =========================================================================
+ * Location Setting -- modal
+ * ========================================================================= */
+function LocationModal({ cfg, setCfg, onClose, onSave }) {
+    return (
+        <ModalShell title="Location Setting" subtitle="Where is this building?" accent="amber" onClose={onClose} onSave={onSave}>
+            <div className="space-y-4">
+                <div>
+                    <div className="field-label mb-1.5">City / Site name</div>
+                    <input className="field-input" value={cfg.city}
+                           onChange={(e)=>setCfg({...cfg, city:e.target.value})}/>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <div className="field-label mb-1.5">Latitude</div>
+                        <input className="field-input" type="number" step="0.0001" value={cfg.lat}
+                               onChange={(e)=>setCfg({...cfg, lat:+e.target.value})}/>
+                    </div>
+                    <div>
+                        <div className="field-label mb-1.5">Longitude</div>
+                        <input className="field-input" type="number" step="0.0001" value={cfg.lon}
+                               onChange={(e)=>setCfg({...cfg, lon:+e.target.value})}/>
+                    </div>
+                </div>
+                <button className="w-full py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-xs font-black uppercase tracking-widest text-slate-300 hover:bg-slate-700">
+                    Use my IP location (mock)
+                </button>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Used for the Open-Meteo weather feed and sunrise/sunset estimation.
+                </p>
+            </div>
+        </ModalShell>
+    );
+}
+
+/* =========================================================================
+ * Language Setting -- modal
+ * ========================================================================= */
+function LanguageModal({ cfg, setCfg, onClose, onSave }) {
+    const langs = [
+        { code:'en', label:'English',    native:'English'  },
+        { code:'fr', label:'French',     native:'Français' },
+        { code:'es', label:'Spanish',    native:'Español'  },
+        { code:'zh', label:'Chinese',    native:'中文'      },
+        { code:'ja', label:'Japanese',   native:'日本語'    },
+        { code:'de', label:'German',     native:'Deutsch'  },
+    ];
+    return (
+        <ModalShell title="Language Setting" subtitle="Pick your default interface language" accent="emerald" onClose={onClose} onSave={onSave}>
+            <div className="grid grid-cols-2 gap-3">
+                {langs.map(l => (
+                    <button key={l.code} onClick={()=>setCfg({...cfg, lang:l.code})}
+                            className={`text-left p-3 rounded-xl border-2 transition-all
+                                ${cfg.lang === l.code
+                                    ? 'border-emerald-500 bg-emerald-900/20'
+                                    : 'border-slate-700 bg-slate-800/40 hover:bg-slate-800'}`}>
+                        <div className="text-[10px] uppercase tracking-widest font-black text-slate-500">{l.code}</div>
+                        <div className="text-sm font-black text-slate-200">{l.native}</div>
+                        <div className="text-[11px] text-slate-500">{l.label}</div>
+                    </button>
+                ))}
+            </div>
+        </ModalShell>
+    );
+}
+
+/* =========================================================================
+ * Plug-in Setting -- modal w/ list + upload zone
+ * ========================================================================= */
+function PluginsModal({ cfg, setCfg, onClose, onSave }) {
+    const ALL = [
+        { id:'weather',     name:'Weather',         desc:'Open-Meteo OA feed',          ver:'2.1.0' },
+        { id:'givoni',      name:'Givoni Engine',   desc:'Climate-strategy overlay',    ver:'1.3.4' },
+        { id:'sweet_spot',  name:'Sweet-Spot RH',   desc:'Adjustable RH band',          ver:'1.0.1' },
+        { id:'g36',         name:'G36 Sequences',   desc:'ASHRAE Guideline 36',         ver:'0.9.2' },
+        { id:'dibt',        name:'DIBT Bridge',     desc:'Distech telegrams',           ver:'0.4.0' },
+        { id:'lighting',    name:'Lighting (Red5)', desc:'V3.0 Modbus TCP client',      ver:'0.1.0-beta' },
+    ];
+    const toggle = (id) => setCfg(c => ({
+        ...c,
+        enabled: c.enabled.includes(id) ? c.enabled.filter(x => x !== id) : [...c.enabled, id]
+    }));
+    return (
+        <ModalShell title="Plug-in Setting" subtitle="Enable, upload or modify plug-ins" accent="pink" onClose={onClose} onSave={onSave} size="wide">
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {ALL.map(p => {
+                    const on = cfg.enabled.includes(p.id);
+                    return (
+                        <div key={p.id}
+                             className={`flex items-center justify-between p-3 rounded-xl border
+                                ${on ? 'border-pink-500/40 bg-pink-900/10' : 'border-slate-700 bg-slate-800/40'}`}>
+                            <div>
+                                <div className="text-sm font-black text-slate-100">{p.name}
+                                    <span className="ml-2 text-[10px] font-mono text-slate-500">v{p.ver}</span>
+                                </div>
+                                <div className="text-xs text-slate-400">{p.desc}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => toggle(p.id)}
+                                        className={`px-3 py-1 rounded-md text-[10px] uppercase tracking-widest font-black border
+                                            ${on ? 'border-pink-500/60 text-pink-300 bg-pink-900/30' : 'border-slate-600 text-slate-400 bg-slate-800'}`}>
+                                    {on ? 'Enabled' : 'Disabled'}
+                                </button>
+                                <button className="px-3 py-1 rounded-md text-[10px] uppercase tracking-widest font-black border border-slate-600 text-slate-400 hover:bg-slate-800">
+                                    Configure
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="mt-5 p-4 border-2 border-dashed border-slate-700 rounded-xl text-center hover:border-pink-500/40 transition-all cursor-pointer">
+                <div className="text-3xl mb-1">⤴</div>
+                <div className="text-sm font-black text-slate-300">Drop a .py / .zip / .red5 plug-in here</div>
+                <div className="text-[11px] text-slate-500 mt-1">or click to choose a file (mock — not wired)</div>
+            </div>
+        </ModalShell>
+    );
+}
+
+/* =========================================================================
+ * Modal Shell -- shared
+ * ========================================================================= */
+function ModalShell({ title, subtitle, accent='indigo', onClose, onSave, size='', children }) {
+    const colorMap = {
+        indigo:'#818cf8', amber:'#fbbf24', emerald:'#34d399', pink:'#f472b6'
+    };
+    const c = colorMap[accent] || '#818cf8';
+    const width = size === 'wide' ? 'max-w-2xl' : 'max-w-md';
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" onClick={onClose}>
+            <div className={`bg-slate-900 border-2 rounded-2xl w-full ${width} mx-4 p-6 fade-up`}
+                 onClick={(e) => e.stopPropagation()}
+                 style={{borderColor:`${c}66`}}>
+                <div className="flex items-start justify-between mb-5">
+                    <div>
+                        <h3 className="text-lg font-black uppercase tracking-widest" style={{color:c}}>{title}</h3>
+                        <p className="text-xs text-slate-500 mt-1">{subtitle}</p>
+                    </div>
+                    <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
+                </div>
+                {children}
+                <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
+                    <button onClick={onClose}
+                            className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs uppercase tracking-widest font-black text-slate-400 hover:bg-slate-700">
+                        Cancel
+                    </button>
+                    <button onClick={onSave}
+                            className="px-5 py-2 rounded-lg text-xs uppercase tracking-widest font-black text-white"
+                            style={{background:c, boxShadow:`0 0 12px ${c}55`}}>
+                        Save & return ✓
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* mount */
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

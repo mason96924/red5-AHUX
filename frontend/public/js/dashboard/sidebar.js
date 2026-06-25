@@ -230,7 +230,7 @@ function renderSidebar(ctx) {
                 "Custom" if the live sweetSpotRange doesn't match any preset.
                 Clicking it opens the setup walk so the operator can re-pick.    */}
             <button
-                onClick={() => { window.location.href = '/setup_walk_mockup.html'; }}
+                onClick={() => { window.location.href = '/setup.html?force=1'; }}
                 data-testid="venue-preset-chip"
                 title={venueChipTitle}
                 aria-label={venueChipTitle}

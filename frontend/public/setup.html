@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<!--
+  setup.html  —  PRODUCTION setup-walk page (1-time onboarding gate).
+  Compiled JSX bundle: /setup_walk.compiled.js  (built from
+  /app/frontend/src/setup-walk/setup_walk.jsx via build.sh).
+
+  Gate behaviour:
+    - First visit:         shows the 4-tile setup hub.
+    - Subsequent visits:   instant redirect to /dashboard.html (the flag
+                           "red5.setup.done" is set when the operator
+                           clicks Open Dashboard or Skip all).
+    - "?force=1" in URL:   bypass the gate (used by the dashboard's
+                           venue-preset chip so operators can re-edit).
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Red5 Studio — Setup</title>
+<!-- One-time gate.  Runs synchronously BEFORE any other script so we
+     never paint the setup UI just to redirect away on next tick. -->
+<script>
+(function(){
+    try {
+        var params = new URLSearchParams(location.search);
+        if (params.get('force') !== '1' &&
+            localStorage.getItem('red5.setup.done') === '1') {
+            location.replace('/dashboard.html');
+        }
+    } catch (e) { /* private mode / SSR -- fall through to UI */ }
+})();
+</script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<!-- Real psychrometric engine (getW, getH, buildComfortZonePoly, ...) -->
+<script src="js/psychrometric.js"></script>
+<!-- Leaflet: interactive map + OpenStreetMap tiles (free, no API key) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    body { background:#020617; color:#e2e8f0; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .tile-btn {
+        transition: transform .15s ease, border-color .15s ease, background .2s ease;
+    }
+    .tile-btn:hover {
+        transform: translateY(-2px);
+        background: rgba(99,102,241,0.08);
+    }
+    .tile-btn.done {
+        border-color: rgb(16,185,129) !important;
+        background: rgba(16,185,129,0.05) !important;
+    }
+    .check {
+        position:absolute; top:14px; right:14px;
+        width:28px; height:28px; border-radius:9999px;
+        background:rgb(16,185,129); display:flex; align-items:center; justify-content:center;
+        color:#fff; font-weight:900; font-size:14px;
+        box-shadow: 0 0 14px rgba(16,185,129,0.55);
+    }
+    .pill { padding:2px 10px; border-radius:9999px; font-size:10px; font-weight:900; letter-spacing:0.15em; }
+    .skeleton {
+        background:repeating-linear-gradient(45deg, #1e293b, #1e293b 6px, #0f172a 6px, #0f172a 12px);
+    }
+    .chart-region {
+        stroke-width:2; stroke-linejoin:round; transition: opacity .25s ease;
+    }
+    .modal-backdrop {
+        background: rgba(0,0,0,0.74); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    }
+    .field-label { font-size:10px; font-weight:900; letter-spacing:0.18em; color:#94a3b8; text-transform:uppercase; }
+    .field-input {
+        width:100%; background:#0f172a; border:1px solid #334155; color:#e2e8f0;
+        padding:10px 12px; border-radius:10px; font-size:14px; outline:none;
+        transition: border-color .15s ease;
+    }
+    .field-input:focus { border-color:#6366f1; }
+    .range-input { width:100%; accent-color:#6366f1; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:translateY(0);} }
+    .fade-up { animation: fadeUp .35s ease both; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Compiled offline by /app/frontend/src/setup-walk/build.sh — DO NOT
+     run @babel/standalone in the browser any more. -->
+<script src="/setup_walk.compiled.js"></script>
+</body>
+</html>

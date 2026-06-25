@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 13 — Pre-compiled setup walk + landing-to-setup gate wiring. All 10 functional requirements VERIFIED. Production readiness goals met: no @babel/standalone runtime loaded; /setup_walk.compiled.js served as application/javascript; React 18 mounts the bundle; first-visit hub renders 4 tiles; gate redirect to /dashboard.html when localStorage flag set; ?force=1 bypass works; Open Dashboard + Skip all both set red5.setup.done=1; landing.html Dashboard tile points at /setup.html; venue-preset-chip navigates to /setup.html?force=1; Psy chart editor, Language modal, Plug-in modal + Configure expand all functional in the compiled build.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/setup.html", "issues": ["Malformed HTML at lines 83-87: duplicate <body> tag and a misplaced </head> following the first <div id=\"root\"></div>. Browsers tolerate it (page renders correctly) but the markup should be cleaned up to: single </head>, single <body>, single #root, then the compiled <script>."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_13.json"],
+  "action_items": [
+    "Optional: Clean up /app/frontend/public/setup.html lines 83-87 — remove the duplicate <body> and stray </head> so the document is well-formed HTML (currently <body>/<div id=root>/</head>/<body>/<div id=root> appears twice). Render is unaffected but it's a copy-paste artifact.",
+    "Optional (out of scope for this iteration): dashboard.html still loads @babel/standalone for its own page (visible as 'in-browser Babel transformer' warning when navigating to /dashboard.html). Not a regression — pre-existing. Same production-readiness shuffle should be applied to dashboard.html in a future iteration."
+  ],
+  "critical_code_review_comments": [
+    "setup.html malformed HTML (duplicate <body>, stray </head>) — cosmetic but should be cleaned.",
+    "The synchronous gate IIFE in <head> is well-placed: runs BEFORE any UI script, uses location.replace (no history entry), gracefully falls through on localStorage exceptions (private-mode safe).",
+    "Both 'Open Dashboard →' and 'Skip all →' anchors correctly set red5.setup.done=1 in onClick before navigation — verified in DOM and by post-click localStorage assertion.",
+    "Compiled bundle (/setup_walk.compiled.js, ~213 KB) served with correct Content-Type application/javascript; window.Babel remains undefined on /setup.html.",
+    "Venue chip wiring in sidebar.js:233 correctly bypasses the gate via ?force=1."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (10/10 functional requirements verified)"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 10 review items verified PASS via Playwright on https://controller-dashboard-2.preview.emergentagent.com. Notes: (1) Earlier test run reported false-positives because (a) the substring '@babel/standalone' appears in a benign HTML COMMENT at setup.html lines 89-90 — NOT a script tag (script-src list confirmed: tailwind cdn, react@18, react-dom@18, psychrometric.js, leaflet, /setup_walk.compiled.js); (b) page.goto(dashboard.html, wait_until='networkidle') hangs because dashboard polls /api/weather-location which 401s — always use wait_until='domcontentloaded' + explicit wait_for_timeout when leaving /dashboard.html; (c) landing.html builds tiles dynamically — give it ~2.5s before querying anchors. (2) Only finding: setup.html has malformed HTML at lines 83-87 (duplicate <body>, stray </head>). Browsers self-heal it so render is correct. (3) dashboard.html still loads @babel/standalone for itself — pre-existing, not in scope of this iteration but a candidate for the same precompile treatment next.",
+  "rca of the issue": "n/a — no functional bugs found. The HTML markup duplication in setup.html (lines 83-87) is a benign copy-paste artifact during the gate IIFE addition; browsers' HTML5 parser auto-recovers (collapses duplicate body opens and ignores out-of-place </head>), so #root mounts once and React renders correctly. Suggested fix: replace lines 83-87 with a single '<body>\\n<div id=\"root\"></div>' block."
+}

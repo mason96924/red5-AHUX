@@ -107,9 +107,11 @@ function App() {
 function Tile({ step, done, index, onClick }) {
     return (
         <button onClick={onClick}
+                data-testid={`setup-tile-${step.key}`}
+                aria-label={`Open ${step.label}`}
                 className={`tile-btn relative text-left bg-slate-900/70 border-2 border-slate-700/70
                             rounded-2xl p-6 sm:p-7 ${done ? 'done' : ''}`}>
-            {done && <span className="check">✓</span>}
+            {done && <span className="check" data-testid={`setup-tile-${step.key}-done`}>✓</span>}
             <div className="flex items-center gap-4 mb-3">
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center"
                      style={{background:`${step.iconColor}22`, border:`1px solid ${step.iconColor}55`}}>

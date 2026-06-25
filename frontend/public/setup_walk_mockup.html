@@ -91,7 +91,7 @@ function App() {
     const [route, setRoute] = useState('hub');   // 'hub' | 'psy'
     const [modal, setModal] = useState(null);     // 'location' | 'language' | 'plugins' | null
 
-    const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhLo:40, rhHi:60, tLo:-15, tHi:50 });
+    const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhPreset:'office', rhLo:30, rhHi:60, tLo:-15, tHi:50 });
     const [locCfg, setLocCfg]         = useState({ city:'Toronto, ON', lat:43.6532, lon:-79.3832 });
     const [langCfg, setLangCfg]       = useState({ lang:'en' });
     const [pluginCfg, setPluginCfg]   = useState({ enabled:['weather','givoni','sweet_spot'] });
@@ -236,6 +236,22 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
         </div>
     );
 }
+
+/* RH band presets — recognised industry standards for each venue type.
+ * Sources: ASHRAE 55 (comfort), ASHRAE 170 (healthcare),
+ * AAM/NPS/Smithsonian guidance (collections), CIBSE TM40 (libraries). */
+const RH_PRESETS = [
+    { id:'custom',          label:'Custom (manual)',                 lo:null, hi:null, note:'' },
+    { id:'office',          label:'Office',                          lo:30,   hi:60,   note:'ASHRAE 55 comfort'                  },
+    { id:'museum',          label:'Museum',                          lo:40,   hi:55,   note:'AAM collection preservation'        },
+    { id:'hotel',           label:'Hotel guest room',                lo:30,   hi:60,   note:'general occupant comfort'           },
+    { id:'library',         label:'Library / Archive',               lo:40,   hi:55,   note:'paper & binding preservation'       },
+    { id:'hospital',        label:'Hospital (general)',              lo:30,   hi:60,   note:'ASHRAE 170 patient areas'           },
+    { id:'lecture',         label:'Lecture hall',                    lo:30,   hi:60,   note:'high occupancy comfort'             },
+    { id:'concert',         label:'Concert hall',                    lo:40,   hi:55,   note:'instrument tuning stability'        },
+    { id:'meeting',         label:'Meeting room',                    lo:30,   hi:60,   note:'small group comfort'                },
+    { id:'exhibition',      label:'Exhibition hall',                 lo:40,   hi:55,   note:'mixed art / artifact display'       },
+];
 
 /* Real psy chart — uses the SAME getW + GIVONI_COLORS + polygon math as the
  * production dashboard.  Source of truth:  js/psychrometric.js  and the
@@ -418,16 +434,42 @@ function PsyControlPanel({ cfg, update }) {
             {/* RH range */}
             <div>
                 <div className="field-label mb-2">RH Sweet-Spot Range</div>
+                <div className="mb-3">
+                    <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1 block">Venue preset</label>
+                    <select className="field-input cursor-pointer"
+                            value={cfg.rhPreset || 'custom'}
+                            onChange={(e) => {
+                                const p = RH_PRESETS.find(p => p.id === e.target.value);
+                                if (!p) return;
+                                if (p.id === 'custom') {
+                                    update('rhPreset', 'custom');
+                                } else {
+                                    setCfg(c => ({...c, rhPreset:p.id, rhLo:p.lo, rhHi:p.hi}));
+                                }
+                            }}>
+                        {RH_PRESETS.map(p => (
+                            <option key={p.id} value={p.id}>
+                                {p.label}{p.lo != null ? `  ·  ${p.lo}-${p.hi}% RH` : ''}
+                            </option>
+                        ))}
+                    </select>
+                    {(() => {
+                        const p = RH_PRESETS.find(x => x.id === (cfg.rhPreset || 'custom'));
+                        return p && p.note ? (
+                            <p className="text-[10px] text-slate-500 mt-1.5 italic">{p.note}</p>
+                        ) : null;
+                    })()}
+                </div>
                 <div className="flex items-center gap-3 mb-2">
                     <span className="text-xs font-mono text-slate-400 w-10">{cfg.rhLo}%</span>
                     <input type="range" min="20" max={cfg.rhHi-5} value={cfg.rhLo}
-                           onChange={(e) => update('rhLo', +e.target.value)}
+                           onChange={(e) => setCfg(c => ({...c, rhLo:+e.target.value, rhPreset:'custom'}))}
                            className="range-input flex-1"/>
                 </div>
                 <div className="flex items-center gap-3">
                     <span className="text-xs font-mono text-slate-400 w-10">{cfg.rhHi}%</span>
                     <input type="range" min={cfg.rhLo+5} max="90" value={cfg.rhHi}
-                           onChange={(e) => update('rhHi', +e.target.value)}
+                           onChange={(e) => setCfg(c => ({...c, rhHi:+e.target.value, rhPreset:'custom'}))}
                            className="range-input flex-1"/>
                 </div>
             </div>

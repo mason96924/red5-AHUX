@@ -95,7 +95,7 @@ function App() {
     const [modal, setModal] = useState(null);     // 'location' | 'language' | 'plugins' | null
 
     const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhPreset:'office', rhLo:30, rhHi:60, tLo:-15, tHi:50 });
-    const [locCfg, setLocCfg]         = useState({ city:'Toronto, ON', lat:43.6532, lon:-79.3832 });
+    const [locCfg, setLocCfg]         = useState({ siteName:'My Building', city:'Toronto, ON', lat:43.6532, lon:-79.3832 });
     const [langCfg, setLangCfg]       = useState({ lang:'en' });
     const [pluginCfg, setPluginCfg]   = useState({ enabled:['weather','givoni','sweet_spot'] });
 
@@ -520,6 +520,43 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
     const markerRef = React.useRef(null);
     const [geoBusy, setGeoBusy] = React.useState(false);
 
+    /* ----- search state ----- */
+    const [searchQ, setSearchQ]         = React.useState('');
+    const [searchHits, setSearchHits]   = React.useState([]);
+    const [searchBusy, setSearchBusy]   = React.useState(false);
+    const [searchOpen, setSearchOpen]   = React.useState(false);
+    const searchDebounceRef             = React.useRef(null);
+
+    /* Forward-geocode: query -> [{lat, lon, display_name, type, ...}] */
+    const runSearch = async (q) => {
+        if (!q || q.trim().length < 3) { setSearchHits([]); return; }
+        try {
+            setSearchBusy(true);
+            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`;
+            const r = await fetch(url, { headers:{ 'Accept':'application/json' } });
+            const j = await r.json();
+            setSearchHits(Array.isArray(j) ? j : []);
+            setSearchOpen(true);
+        } catch (e) { setSearchHits([]); }
+        finally { setSearchBusy(false); }
+    };
+
+    /* debounced search-on-type */
+    React.useEffect(() => {
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = setTimeout(() => runSearch(searchQ), 400);
+        return () => searchDebounceRef.current && clearTimeout(searchDebounceRef.current);
+    }, [searchQ]);
+
+    const pickSearchHit = (hit) => {
+        const lat = Math.round(+hit.lat * 10000) / 10000;
+        const lon = Math.round(+hit.lon * 10000) / 10000;
+        setCfg(c => ({...c, lat, lon, city:hit.display_name}));
+        if (mapRef.current) mapRef.current.setView([lat, lon], hit.type === 'city' ? 11 : 15);
+        setSearchOpen(false);
+        setSearchQ('');
+    };
+
     /* Reverse-geocode lat/lon -> city / country via Nominatim.  No API key. */
     const reverseGeocode = async (lat, lon) => {
         try {
@@ -598,16 +635,62 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
     return (
         <ModalShell title="Location Setting" subtitle="Click the map, drag the pin, or use your device" accent="amber" onClose={onClose} onSave={onSave} size="max">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full" style={{minHeight:'70vh'}}>
-                {/* MAP — fills the left side */}
-                <div ref={mapBoxRef}
-                     style={{ height:'100%', minHeight:'70vh', width:'100%', borderRadius:'12px',
-                              overflow:'hidden', border:'1px solid #334155', background:'#0b1220' }}/>
+                {/* MAP — fills the left side, with a search bar floating on top */}
+                <div className="relative">
+                    <div ref={mapBoxRef}
+                         style={{ height:'100%', minHeight:'70vh', width:'100%', borderRadius:'12px',
+                                  overflow:'hidden', border:'1px solid #334155', background:'#0b1220' }}/>
+
+                    {/* Search bar overlay — sits in the top-centre of the map */}
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500]" style={{width:'min(560px, calc(100% - 110px))'}}>
+                        <div className="relative">
+                            <input type="text"
+                                   value={searchQ}
+                                   onChange={(e) => setSearchQ(e.target.value)}
+                                   onFocus={() => searchHits.length && setSearchOpen(true)}
+                                   placeholder="🔎  Search by address, building, or place name…"
+                                   className="w-full px-4 py-2.5 rounded-xl bg-slate-900/95 border border-slate-600 text-slate-100 text-sm placeholder-slate-500 shadow-2xl backdrop-blur"
+                                   style={{outline:'none'}}/>
+                            {searchBusy && (
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400 text-xs">…</span>
+                            )}
+                            {searchOpen && searchHits.length > 0 && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900/97 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto backdrop-blur">
+                                    {searchHits.map((h, i) => (
+                                        <button key={h.place_id || i}
+                                                onClick={() => pickSearchHit(h)}
+                                                className="w-full text-left px-4 py-2.5 hover:bg-amber-900/30 border-b border-slate-800 last:border-b-0 transition-all">
+                                            <div className="text-sm text-slate-200 truncate">{h.display_name}</div>
+                                            <div className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
+                                                {h.type || h.class} · {(+h.lat).toFixed(3)}, {(+h.lon).toFixed(3)}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {searchOpen && searchHits.length === 0 && searchQ.length >= 3 && !searchBusy && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900/97 border border-slate-700 rounded-xl px-4 py-3 text-xs text-slate-400">
+                                    No results for "{searchQ}".  Try a more specific term.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
                 {/* SIDE PANEL */}
                 <div className="space-y-4 overflow-y-auto pr-1">
+                    {/* User-friendly site name (the one the operator uses to identify this location) */}
                     <div>
+                        <div className="field-label mb-1.5">Site name (saved)</div>
+                        <input className="field-input" value={cfg.siteName || ''}
+                               placeholder="e.g. HQ Tower, North Wing, Pavilion B…"
+                               onChange={(e) => setCfg({...cfg, siteName:e.target.value})}/>
+                        <p className="text-[10px] text-slate-500 mt-1 italic">Your label for this place — shown on the dashboard header.</p>
+                    </div>
+
+                    <div className="border-t border-slate-800 pt-3">
                         <div className="field-label mb-1.5">
-                            City / Site name
+                            Resolved address / city
                             {geoBusy && <span className="ml-2 text-amber-400 normal-case tracking-normal">… resolving</span>}
                         </div>
                         <input className="field-input" value={cfg.city}

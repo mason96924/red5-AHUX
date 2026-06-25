@@ -815,7 +815,7 @@ function PluginsModal({ cfg, setCfg, onClose, onSave }) {
         { id:'givoni',      name:'Givoni Engine',   desc:'Climate-strategy overlay',    ver:'1.3.4' },
         { id:'sweet_spot',  name:'Sweet-Spot RH',   desc:'Adjustable RH band',          ver:'1.0.1' },
         { id:'g36',         name:'G36 Sequences',   desc:'ASHRAE Guideline 36',         ver:'0.9.2' },
-        { id:'dibt',        name:'DIBT Bridge',     desc:'Distech telegrams',           ver:'0.4.0' },
+        { id:'dibt',        name:'DIBT Bridge',     desc:'Delta Controls (DIBT) BACnet bridge',           ver:'0.4.0' },
         { id:'lighting',    name:'Lighting (Red5)', desc:'V3.0 Modbus TCP client',      ver:'0.1.0-beta' },
     ];
     const toggle = (id) => setCfg(c => ({

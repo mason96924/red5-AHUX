@@ -1,6 +1,6 @@
 # Red5 Studio V1.9 — Update Runbook (Refactor Sync)
 
-> **Use this when**: you already have V1.9 running on a Distech / enteliWEB
+> **Use this when**: you already have V1.9 running on a Delta Controls / enteliWEB
 > controller (or any Flask host loading `red5_bundle.zip`), and you want to
 > push the latest modularized frontend (`js/dashboard/` — 16 ES-style files)
 > plus any other source changes since your last bundle.

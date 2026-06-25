@@ -5,7 +5,7 @@
 #   dashboard.html used to (a) load `@babel/standalone` (3 MB) at runtime,
 #   (b) `fetch()` each of the 20 .js sources, (c) concatenate them into a
 #   <script type="text/babel"> block, then (d) JIT-transpile.  That cost
-#   roughly 4 seconds of first-paint time on Distech hardware.  This
+#   roughly 4 seconds of first-paint time on Delta Controls hardware.  This
 #   offline build does the same concatenation + Babel transform ONCE
 #   into /app/frontend/public/dashboard.compiled.js, after which
 #   dashboard.html just loads that single file via <script src>.

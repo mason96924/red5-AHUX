@@ -12,7 +12,7 @@ exactly what an AHU, VAV, chiller, and boiler should do at each moment of the
 day — when to open the economizer, when to override the supply-air-temperature
 setpoint, when to switch occupancy modes, when to alarm.
 
-Most modern BAS contractors (Trane, Distech, JCI, Honeywell, Siemens) ship
+Most modern BAS contractors (Delta Controls, Trane, Distech, JCI, Honeywell, Siemens) ship
 "G36-compliant" sequences out of the box.  Red5 Studio's job is to (a) tell
 you whether your real-world controller is following them and (b) let you
 override them when site reality demands.
@@ -247,7 +247,7 @@ energy savings are hiding.
 | §5.5 alarms | Real-time alarm rollup in the diagnostic ribbon |
 
 Red5 is a **G36 observer**, not a G36 implementer.  The actual sequences
-run on the BAS controller (Distech ECP, Trane SC+, Honeywell N4, etc.).
+run on the BAS controller (Delta Controls O3/eBMGR, Distech ECP, Trane SC+, Honeywell N4, etc.).
 Red5's job is to tell you whether the BAS is doing what its sequence-of-
 operations document claims it does.
 

@@ -22,6 +22,8 @@
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
+<!-- Real psychrometric engine (getW, getH, buildComfortZonePoly, ...) -->
+<script src="js/psychrometric.js"></script>
 <style>
     body { background:#020617; color:#e2e8f0; font-family: ui-sans-serif, system-ui, sans-serif; }
     .tile-btn {
@@ -235,74 +237,161 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
     );
 }
 
-/* Skeleton psy chart that reacts to cfg changes */
+/* Real psy chart — uses the SAME getW + GIVONI_COLORS + polygon math as the
+ * production dashboard.  Source of truth:  js/psychrometric.js  and the
+ * renderGivoniOverlay() block at app.js:1641-1722.
+ * Anything you change in those files MUST be mirrored here. */
 function PsySkeleton({ cfg }) {
-    const W = 700, H = 460, padL = 50, padR = 30, padT = 30, padB = 50;
-    const xScale = (t) => padL + ((t - cfg.tLo) / (cfg.tHi - cfg.tLo)) * (W - padL - padR);
-    const yScale = (rh) => H - padB - ((rh - 0) / 100) * (H - padT - padB);
+    /* Canvas + padding */
+    const W = 760, H = 480;
+    const pad = { left: 56, right: 40, top: 28, bottom: 56 };
+    const gridW = W - pad.left - pad.right;
+    const gridH = H - pad.top  - pad.bottom;
 
-    /* sweet-spot band */
-    const ssX1 = padL, ssX2 = W - padR;
-    const ssY1 = yScale(cfg.rhHi), ssY2 = yScale(cfg.rhLo);
+    const T_MIN = cfg.tLo, T_MAX = cfg.tHi;
+    const W_MIN = 0,       W_MAX = 0.030;          // kg/kg
 
-    /* Givoni regions (very rough placeholder polys) */
-    const givoniRegions = [
-        { name:'COMFORT',           color:'#10b981', d:`M ${xScale(20)} ${yScale(70)} L ${xScale(27)} ${yScale(70)} L ${xScale(27)} ${yScale(30)} L ${xScale(20)} ${yScale(30)} Z` },
-        { name:'NAT VENT',          color:'#eab308', d:`M ${xScale(20)} ${yScale(80)} L ${xScale(30)} ${yScale(80)} L ${xScale(30)} ${yScale(60)} L ${xScale(20)} ${yScale(60)} Z` },
-        { name:'EVAP',              color:'#a78bfa', d:`M ${xScale(28)} ${yScale(60)} L ${xScale(42)} ${yScale(40)} L ${xScale(42)} ${yScale(10)} L ${xScale(28)} ${yScale(10)} Z` },
-        { name:'MECH COOL',         color:'#06b6d4', d:`M ${xScale(27)} ${yScale(100)} L ${xScale(50)} ${yScale(100)} L ${xScale(50)} ${yScale(40)} L ${xScale(27)} ${yScale(40)} Z` },
-    ];
+    /* axis scales -- match the live dashboard */
+    const x  = (t) => pad.left + ((t - T_MIN) / (T_MAX - T_MIN)) * gridW;
+    const y  = (w) => pad.top  + (1 - (w - W_MIN) / (W_MAX - W_MIN)) * gridH;
+    const _getW = (typeof getW === 'function') ? getW : ((t, rh) => 0);
+
+    const safePts = (arr) => arr.map(p => `${(x(p[0])||0).toFixed(2)},${(y(p[1])||0).toFixed(2)}`).join(' ');
+
+    /* ---- Givoni polygons -- COPIED VERBATIM from app.js:1643-1669 ---- */
+    const rh80 = []; for (let t=20; t<=25; t+=0.5) rh80.push([t, _getW(t, 80)]);
+    const rh100= []; for (let t=20; t<=27; t+=0.5) rh100.push([t, _getW(t, 100)]);
+    const rh20Line = []; for (let t=32; t>=20; t-=0.5) rh20Line.push([t, _getW(t, 20)]);
+    const rh20_CZ  = []; for (let t=27; t>=20; t-=0.5) rh20_CZ.push([t, _getW(t, 20)]);
+    const CZ   = [...rh80, [27, _getW(27, 50)], [27, _getW(27, 20)], ...rh20_CZ];
+
+    const rhHi_top = []; for (let tt=20; tt<=27; tt+=0.5) rhHi_top.push([tt, _getW(tt, cfg.rhHi)]);
+    const rhLo_bot = []; for (let tt=27; tt>=20; tt-=0.5) rhLo_bot.push([tt, _getW(tt, cfg.rhLo)]);
+    const SWEET = [...rhHi_top, ...rhLo_bot];
+
+    const NV   = [...rh100, [32, 15.4/1000], [32, 6.2/1000], ...rh20Line];
+    const Mass = [...rh80, [33, 16/1000], [37, _getW(37, 30)], [37, 3/1000], [20, _getW(20, 20)]];
+    const MCV  = [...rh80, [40, 16/1000], [44, _getW(44, 20)], [44, 3/1000], [20, _getW(20, 20)]];
+    const EVAP = [...rh80, [25, 16/1000], [36, _getW(36, 30)], [39, _getW(39, 20)],
+                  [41, _getW(41, 10)], [41, 0], [27.2, 0], [20, _getW(20, 20)]];
+
+    const winterRH80 = []; for (let t=18; t<=19.5; t+=0.5) winterRH80.push([t, _getW(t, 80)]);
+    const winterRH20 = []; for (let t=19.5; t>=18; t-=0.5) winterRH20.push([t, _getW(t, 20)]);
+    const WINTER = [...winterRH80, ...winterRH20];
+
+    /* RH isopleth curves for the chart grid */
+    const isopleths = [20, 40, 60, 80, 100];
 
     return (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 skeleton-bg">
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
             <div className="flex items-center justify-between mb-3">
-                <span className="pill bg-slate-800 text-slate-400">SKELETON PREVIEW · live</span>
-                <span className="text-[10px] text-slate-500 font-mono">{cfg.tLo}°C → {cfg.tHi}°C  |  {cfg.rhLo}–{cfg.rhHi}% RH</span>
+                <span className="pill bg-slate-800 text-slate-400">PSYCHROMETRIC CHART · live preview</span>
+                <span className="text-[10px] text-slate-500 font-mono">{T_MIN}°C → {T_MAX}°C  ·  {cfg.rhLo}–{cfg.rhHi}% RH</span>
             </div>
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{background:'#0b1220', borderRadius:8}}>
-                {/* axes */}
-                <line x1={padL} y1={padT} x2={padL} y2={H-padB} stroke="#475569" strokeWidth="1.5"/>
-                <line x1={padL} y1={H-padB} x2={W-padR} y2={H-padB} stroke="#475569" strokeWidth="1.5"/>
-                {/* x ticks based on axis range */}
-                {Array.from({length:8}).map((_,i) => {
-                    const t = cfg.tLo + (i/7) * (cfg.tHi - cfg.tLo);
-                    const x = xScale(t);
-                    return (<g key={i}>
-                        <line x1={x} y1={H-padB} x2={x} y2={H-padB+5} stroke="#475569"/>
-                        <text x={x} y={H-padB+18} fontSize="10" fill="#94a3b8" textAnchor="middle">{t.toFixed(0)}</text>
-                    </g>);
+                {/* ---- grid: vertical T lines, horizontal W lines ---- */}
+                {Array.from({length:11}).map((_,i) => {
+                    const t = T_MIN + (i/10) * (T_MAX - T_MIN);
+                    return (
+                        <g key={'vt'+i}>
+                            <line x1={x(t)} y1={pad.top} x2={x(t)} y2={pad.top+gridH}
+                                  stroke="#1e293b" strokeWidth="0.6"/>
+                            <text x={x(t)} y={pad.top+gridH+16} fontSize="9.5" fill="#94a3b8"
+                                  textAnchor="middle">{t.toFixed(0)}</text>
+                        </g>
+                    );
                 })}
-                {/* y ticks */}
-                {[0,20,40,60,80,100].map(rh => {
-                    const y = yScale(rh);
-                    return (<g key={rh}>
-                        <line x1={padL-5} y1={y} x2={padL} y2={y} stroke="#475569"/>
-                        <text x={padL-8} y={y+3} fontSize="10" fill="#94a3b8" textAnchor="end">{rh}</text>
-                    </g>);
+                {Array.from({length:7}).map((_,i) => {
+                    const w = W_MIN + (i/6) * (W_MAX - W_MIN);
+                    return (
+                        <g key={'hw'+i}>
+                            <line x1={pad.left} y1={y(w)} x2={pad.left+gridW} y2={y(w)}
+                                  stroke="#1e293b" strokeWidth="0.6"/>
+                            <text x={pad.left-8} y={y(w)+3} fontSize="9.5" fill="#94a3b8"
+                                  textAnchor="end">{(w*1000).toFixed(0)}</text>
+                        </g>
+                    );
                 })}
-                {/* axis labels */}
-                <text x={W/2} y={H-8} fontSize="11" fill="#cbd5e1" textAnchor="middle" fontWeight="700">DRY BULB TEMP (°C)</text>
-                <text x={14} y={H/2} fontSize="11" fill="#cbd5e1" textAnchor="middle" fontWeight="700"
-                      transform={`rotate(-90 14 ${H/2})`}>RELATIVE HUMIDITY (%)</text>
+                {/* ---- RH isopleths (curves) ---- */}
+                {isopleths.map(rh => {
+                    const pts = [];
+                    for (let t = T_MIN; t <= T_MAX; t += 0.5) {
+                        const ww = _getW(t, rh);
+                        if (ww >= W_MIN && ww <= W_MAX) pts.push([t, ww]);
+                    }
+                    return (
+                        <g key={'iso'+rh}>
+                            <polyline points={safePts(pts)} fill="none"
+                                      stroke={rh === 100 ? '#6366f1' : '#ec489955'} strokeWidth="0.8"
+                                      strokeDasharray={rh === 100 ? '' : '3,3'}/>
+                            {pts.length > 0 && (
+                                <text x={x(pts[Math.floor(pts.length*0.65)][0])}
+                                      y={y(pts[Math.floor(pts.length*0.65)][1]) - 4}
+                                      fontSize="9" fill="#ec489999" fontWeight="700">{rh}%</text>
+                            )}
+                        </g>
+                    );
+                })}
 
-                {/* RH sweet-spot band */}
-                <rect x={ssX1} y={ssY1} width={ssX2-ssX1} height={ssY2-ssY1}
-                      fill="#10b98122" stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 4"/>
-                <text x={ssX1+10} y={ssY1+16} fontSize="10" fill="#10b981" fontWeight="700">
-                    {cfg.rhLo}–{cfg.rhHi}% RH SWEET SPOT
-                </text>
-
-                {/* Givoni regions (only if enabled) */}
-                {cfg.givoni && givoniRegions.map(r => (
-                    <g key={r.name} className="chart-region" style={{opacity: cfg.givoni ? 0.6 : 0}}>
-                        <path d={r.d} fill={`${r.color}22`} stroke={r.color}/>
-                    </g>
-                ))}
-                {/* Givoni label */}
+                {/* ---- Givoni overlay (copied verbatim from app.js render order) ---- */}
                 {cfg.givoni && (
-                    <text x={W-padR-10} y={padT+14} fontSize="10" fill="#818cf8" textAnchor="end" fontWeight="900"
-                          letterSpacing="2">GIVONI ENGINE ON</text>
+                    <g className="pointer-events-none" opacity="0.9">
+                        <line x1={x(40)} y1={y(16/1000)} x2={x(50)} y2={y(16/1000)}
+                              stroke="#6366f1" strokeWidth="1.5" strokeDasharray="4,4"/>
+                        <line x1={x(50)} y1={y(16/1000)} x2={x(50)} y2={y(0)}
+                              stroke="#6366f1" strokeWidth="1.5" strokeDasharray="4,4"/>
+                        <line x1={x(41)} y1={y(0)} x2={x(50)} y2={y(0)}
+                              stroke="#6366f1" strokeWidth="1.5" strokeDasharray="4,4"/>
+
+                        <polygon points={safePts(MCV)}  fill="#ec4899" fillOpacity="0.05" stroke="#ec4899" strokeWidth="1"/>
+                        <polygon points={safePts(Mass)} fill="#8b5cf6" fillOpacity="0.05" stroke="#8b5cf6" strokeWidth="1"/>
+                        <polygon points={safePts(EVAP)} fill="#06b6d4" fillOpacity="0.08" stroke="#06b6d4" strokeWidth="1"/>
+                        <polygon points={safePts(NV)}   fill="#f59e0b" fillOpacity="0.05" stroke="#f59e0b" strokeWidth="1"/>
+                        <polygon points={safePts(CZ)}   fill="#10b981" fillOpacity="0.15" stroke="#10b981" strokeWidth="1.2"/>
+
+                        {/* Sweet-spot band, clipped to CZ */}
+                        <defs>
+                            <clipPath id="cz-clip-walk" clipPathUnits="userSpaceOnUse">
+                                <polygon points={safePts(CZ)}/>
+                            </clipPath>
+                        </defs>
+                        <polygon points={safePts(SWEET)} clipPath="url(#cz-clip-walk)"
+                                 fill="#059669" fillOpacity="0.32" stroke="#047857" strokeWidth="0.8" strokeDasharray="3,2"/>
+
+                        <polygon points={safePts(WINTER)} fill="#3b82f6" fillOpacity="0.15" stroke="none"/>
+                        <line x1={x(19)} y1={pad.top+18} x2={x(19)} y2={pad.top+gridH}
+                              stroke="#3b82f6" strokeWidth="2" strokeDasharray="6,4" opacity="0.8"/>
+
+                        {/* Region labels — same colors & spirit as live chart */}
+                        <text x={x(50)-10} y={y(8/1000)} fill="#6366f1" fontSize="10" fontWeight="900"
+                              textAnchor="middle" transform={`rotate(-90, ${x(50)-10}, ${y(8/1000)})`}
+                              letterSpacing="2">MECHANICAL COOLING</text>
+                        <text x={x(44)-2} y={y(8/1000)} fill="#ec4899" fontSize="9" fontWeight="900"
+                              textAnchor="middle" transform={`rotate(-90, ${x(44)-2}, ${y(8/1000)})`}
+                              letterSpacing="1.5">MASS COOLING</text>
+                        <text x={x(37)-10} y={y(8/1000)} fill="#8b5cf6" fontSize="9" fontWeight="900"
+                              textAnchor="middle" transform={`rotate(-90, ${x(37)-10}, ${y(8/1000)})`}
+                              letterSpacing="1.5">MASS COOLING</text>
+                        <text x={x(34)} y={y(0.5/1000)-8} fill="#06b6d4" fontSize="9" fontWeight="900"
+                              textAnchor="middle" letterSpacing="2">EVAPORATIVE</text>
+                        <text x={x(23.5)} y={y(_getW(23.5, 45))} fill="#10b981" fontSize="11"
+                              fontWeight="900" textAnchor="middle" letterSpacing="1.5">COMFORT</text>
+                        <text x={x(18.75)} y={y(_getW(18.75, 45))} fill="#3b82f6" fontSize="11"
+                              fontWeight="900" textAnchor="middle"
+                              transform={`rotate(-90, ${x(18.75)}, ${y(_getW(18.75, 45))})`}>WINTER</text>
+                        <text x={x(23.5)} y={y(_getW(23.5, (cfg.rhLo+cfg.rhHi)/2))}
+                              fill="#022c22" fontSize="8" fontWeight="900" textAnchor="middle"
+                              style={{paintOrder:'stroke', stroke:'#a7f3d0', strokeWidth:'2.5px', strokeLinejoin:'round'}}
+                              letterSpacing="1.5">{cfg.rhLo}-{cfg.rhHi}% RH</text>
+                    </g>
                 )}
+
+                {/* axis labels */}
+                <text x={pad.left + gridW/2} y={H-12} fontSize="11" fill="#cbd5e1"
+                      textAnchor="middle" fontWeight="800" letterSpacing="2">DRY BULB TEMP (°C)</text>
+                <text x={16} y={pad.top + gridH/2} fontSize="11" fill="#cbd5e1"
+                      textAnchor="middle" fontWeight="800" letterSpacing="2"
+                      transform={`rotate(-90 16 ${pad.top + gridH/2})`}>HUMIDITY RATIO (g/kg)</text>
             </svg>
         </div>
     );

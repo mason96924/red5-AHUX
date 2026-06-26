@@ -283,7 +283,35 @@
                 const id = setInterval(check, 60000);
                 return () => clearInterval(id);
             }, []);
-            const [tempRange, setTempRange] = useState({ min: -15, max: 50 });
+            const [tempRange, setTempRange] = useState(() => {
+                /* Lazy-init from the same key the setup walk's Psy Chart
+                 * page writes (`red5_temp_range`).  This is what propagates
+                 * the "Temperature Axis Range" sliders from the setup walk
+                 * into the live dashboard chart.  Default: -15..50 °C.  */
+                try {
+                    const raw = localStorage.getItem('red5_temp_range');
+                    if (raw) {
+                        const p = JSON.parse(raw);
+                        if (Number.isFinite(p.min) && Number.isFinite(p.max) && p.min < p.max) return p;
+                    }
+                } catch (e) { /* fall through */ }
+                return { min: -15, max: 50 };
+            });
+            useEffect(() => {
+                try { localStorage.setItem('red5_temp_range', JSON.stringify(tempRange)); } catch (e) {}
+            }, [tempRange]);
+            /* Live update — when the setup walk saves a new temp axis range,
+             * pick it up without requiring a page reload. */
+            useEffect(() => {
+                const onTempChange = (e) => {
+                    const d = e && e.detail;
+                    if (d && Number.isFinite(d.min) && Number.isFinite(d.max) && d.min < d.max) {
+                        setTempRange({ min: d.min, max: d.max });
+                    }
+                };
+                window.addEventListener('r5-temp-range-change', onTempChange);
+                return () => window.removeEventListener('r5-temp-range-change', onTempChange);
+            }, []);
             const [searchTerm, setSearchTerm] = useState('');
             const [ahuData, setAhuData] = useState([]);
             const [telemetryStatus, setTelemetryStatus] = useState(null);

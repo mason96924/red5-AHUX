@@ -181,6 +181,19 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
             if (th === 'light' || th === 'dark') patch.theme = th;
             const dl = parseFloat(localStorage.getItem('red5.darkLevel'));
             if (Number.isFinite(dl) && dl >= 1.5 && dl <= 3.0) patch.darkLevel = dl;
+            /* Temperature axis range — written by this same page's save
+             * handler; load it here so reopening the setup walk shows the
+             * current dashboard axis instead of always defaulting to -15..50. */
+            try {
+                const trRaw = localStorage.getItem('red5_temp_range');
+                if (trRaw) {
+                    const tr = JSON.parse(trRaw);
+                    if (Number.isFinite(tr.min) && Number.isFinite(tr.max) && tr.min < tr.max) {
+                        patch.tLo = tr.min;
+                        patch.tHi = tr.max;
+                    }
+                }
+            } catch (e) { /* ignore */ }
             if (Object.keys(patch).length) setCfg(c => ({...c, ...patch}));
         } catch (e) { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,10 +219,23 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
             if (Number.isFinite(cfg.darkLevel)) {
                 localStorage.setItem('red5.darkLevel', String(cfg.darkLevel));
             }
+            /* Temperature axis range — drives the dashboard's psy chart
+             * X axis (`tempRange.min/max` in app.js).  We write the same
+             * shape app.js reads (`{min, max}`) so its lazy useState init
+             * picks it up on next load, AND dispatch a custom event so
+             * any open dashboard tab updates live without a refresh. */
+            if (Number.isFinite(cfg.tLo) && Number.isFinite(cfg.tHi) && cfg.tLo < cfg.tHi) {
+                localStorage.setItem('red5_temp_range',
+                    JSON.stringify({ min: cfg.tLo, max: cfg.tHi }));
+                window.dispatchEvent(new CustomEvent('r5-temp-range-change', {
+                    detail: { min: cfg.tLo, max: cfg.tHi }
+                }));
+            }
             window.dispatchEvent(new CustomEvent('r5-rh-band-change', {
                 detail: { lo: cfg.rhLo, hi: cfg.rhHi }
             }));
-            console.info('[setup walk] psy chart saved -> RH', cfg.rhLo, '-', cfg.rhHi, '%  preset=', cfg.rhPreset);
+            console.info('[setup walk] psy chart saved -> RH', cfg.rhLo, '-', cfg.rhHi,
+                         '% T-axis', cfg.tLo, '..', cfg.tHi, '°C preset=', cfg.rhPreset);
         } catch (e) {
             console.warn('[setup walk] could not persist psy settings:', e);
         }

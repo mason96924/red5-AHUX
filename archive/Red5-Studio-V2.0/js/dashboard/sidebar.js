@@ -308,18 +308,14 @@ function renderSidebar(ctx) {
         })}
     </div>
     <div className={`p-4 border-b ${ui.border} bg-opacity-50`}>
-        <div className="flex gap-2">
-            <button onClick={() => setShowGivoni(!showGivoni)} className={`flex-1 py-2.5 rounded-xl text-[11px] font-black border transition-all ${showGivoni ? `bg-indigo-600 border-indigo-400 shadow-lg ${theme==='dark' ? 'text-slate-900' : 'text-slate-100'}` : ui.btnToggle}`}>{t('toggle_givoni')}</button>
-            <button
-                data-testid="toggle-sweet-spot"
-                onClick={() => setShowSweetSpot(!showSweetSpot)}
-                disabled={!showGivoni}
-                title={showGivoni
-                    ? (showSweetSpot ? 'Hide sweet-spot RH strip' : 'Show sweet-spot RH strip')
-                    : 'Enable Givoni first to use this overlay'}
-                className={`px-3 py-2.5 rounded-xl text-[10px] font-black border transition-all whitespace-nowrap ${!showGivoni ? 'bg-slate-700/30 border-slate-700 text-slate-600 cursor-not-allowed' : (showSweetSpot ? `bg-emerald-700 border-emerald-400 shadow-lg ${theme==='dark' ? 'text-slate-900' : 'text-slate-100'}` : ui.btnToggle)}`}
-            >{sweetSpotRange.lo}-{sweetSpotRange.hi}% RH</button>
-        </div>
+        {/* Givoni Engine toggle and RH-band indicator pill removed
+            2026-06-26 — both controls are now owned by the setup walk's
+            Psy Chart Setting page (left-side preview).  The overlay
+            stays ON by default (showGivoni/showSweetSpot initialised
+            true in app.js), so the chart still renders the Givoni
+            regions and the sweet-spot band; only the toggle UI is
+            gone from the dashboard.  The slider below remains. */}
+
         {/* Tier legend chip — relocated to the VAV Terminal Hub header
             (psy-chart-svg.js) so the colour key lives next to the table
             that uses it.  Sidebar no longer renders it. */}

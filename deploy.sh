@@ -62,7 +62,10 @@ echo
 # --- 2. sync static assets into nginx root --------------------------------
 bold "[2/5] rsync frontend/public/  →  $NGINX_ROOT/"
 # IMPORTANT: NO --delete  — would wipe CRA's bundled JS/CSS in build/
-rsync -ah --info=stats1 \
+# --force allows rsync to replace existing non-empty directories with
+# symlinks (public/ has assets/docs → ../docs and assets/js → ../js;
+# CRA's build/ may have copied those as real dirs on first build).
+rsync -ah --force --info=stats1 \
       "$REPO_DIR/frontend/public/" "$NGINX_ROOT/"
 echo
 

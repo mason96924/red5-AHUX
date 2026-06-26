@@ -59,10 +59,14 @@ const startDrag = (e, handle) => {
     ownerWin.addEventListener('mouseup', onUp);
 };
 const trackBg   = theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300';
-const handleCls = `absolute -top-1 w-4 h-4 -ml-2 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing ${theme==='dark'?'bg-emerald-400':'bg-emerald-500'}`;
-const labelCls  = `absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold whitespace-nowrap pointer-events-none ${theme==='dark'?'bg-slate-900 text-emerald-300 border border-emerald-500/40':'bg-white text-emerald-700 border border-emerald-300'}`;
+/* Larger thumb (24px) so the lo/hi value fits comfortably inside the
+ * circle.  Dark numerals on the emerald fill for readability on either
+ * theme.  flex centering keeps the digits exactly on the dot's centre
+ * regardless of 1- or 2-digit values. */
+const handleCls = `absolute -top-2 w-6 h-6 -ml-3 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing flex items-center justify-center select-none ${theme==='dark'?'bg-emerald-400':'bg-emerald-500'}`;
+const valueCls  = `text-[9px] leading-none font-mono font-black tabular-nums pointer-events-none ${theme==='dark'?'text-slate-900':'text-slate-950'}`;
 return (
-    <div data-testid="sweet-spot-range" className="mt-3 px-1 pt-6 pb-1 relative">
+    <div data-testid="sweet-spot-range" className="mt-3 px-1 pt-2 pb-1 relative">
         <div className={`relative h-2 ${trackBg} rounded-full`}
              onMouseDown={(e) => startDrag(e)}>
             <div className="absolute h-2 bg-emerald-500 rounded-full"
@@ -70,12 +74,12 @@ return (
             <div className={handleCls} style={{left:`${pct(sweetSpotRange.lo)}%`}}
                  data-testid="sweet-spot-lo-handle"
                  onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'lo'); }}>
-                <span className={labelCls} style={{left:'50%'}}>{sweetSpotRange.lo}%</span>
+                <span className={valueCls}>{sweetSpotRange.lo}</span>
             </div>
             <div className={handleCls} style={{left:`${pct(sweetSpotRange.hi)}%`}}
                  data-testid="sweet-spot-hi-handle"
                  onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'hi'); }}>
-                <span className={labelCls} style={{left:'50%'}}>{sweetSpotRange.hi}%</span>
+                <span className={valueCls}>{sweetSpotRange.hi}</span>
             </div>
         </div>
         <div className="flex justify-between text-[8px] font-mono mt-1.5 text-slate-500">

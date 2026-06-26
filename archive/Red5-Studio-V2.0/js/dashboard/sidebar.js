@@ -207,23 +207,27 @@ function renderSidebar(ctx) {
                 Lecture hall / Concert hall / Meeting room / Exhibition hall) or
                 "Custom" if the live sweetSpotRange doesn't match any preset.
                 Clicking it opens the setup walk so the operator can re-pick.    */}
+            {/* Venue-preset chip removed 2026-06-26 — global RH band
+                is no longer dashboard-editable; per-AHU presets live
+                in each AHU row (sidebar.js).  Replaced with an icon
+                button that jumps to the Psy Chart Setting page where
+                the operator manages defaults + axis + theme. */}
             <button
                 onClick={() => { window.location.href = '/setup.html?force=1'; }}
-                data-testid="venue-preset-chip"
-                title={venueChipTitle}
-                aria-label={venueChipTitle}
-                className={`flex items-center gap-1 px-2 py-1 rounded border text-[10px] font-black uppercase tracking-wider transition-all ${
-                    venuePreset
-                        ? (theme === 'dark'
-                            ? 'bg-emerald-900/30 border-emerald-600/60 text-emerald-300 hover:bg-emerald-800/40'
-                            : 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100')
-                        : (theme === 'dark'
-                            ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
-                            : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200')
+                data-testid="open-setup-btn"
+                title="Open Setup Walk (Psy Chart, Location, Language, Plug-ins)"
+                aria-label="Open Setup Walk"
+                className={`flex items-center justify-center w-8 h-8 rounded border text-base transition-all ${
+                    theme === 'dark'
+                        ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-indigo-300'
+                        : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:text-indigo-600'
                 }`}>
-                <span aria-hidden style={{fontSize:'11px'}}>{venueChipIcon}</span>
-                <span data-testid="venue-preset-chip-label">{venueChipLabel}</span>
-                <span className="font-mono opacity-70 tabular-nums">{sweetSpotRange.lo}-{sweetSpotRange.hi}%</span>
+                {/* Inline cog SVG — keeps the chip rendering with zero
+                    dependency on a font/icon loader.  16×16. */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
             </button>
             {/* Standards / Docs button — single entry point.
                 Opens the docs popup at whichever tab the
@@ -320,15 +324,11 @@ function renderSidebar(ctx) {
             (psy-chart-svg.js) so the colour key lives next to the table
             that uses it.  Sidebar no longer renders it. */}
 
-        {/* Sweet Spot Slider -- extracted to sweet-spot-slider.js (L.26) */}
-        {renderSweetSpotSlider({
-            showGivoni, showSweetSpot, sweetSpotRange, setSweetSpotRange, theme,
-            bandClampApplied, setBandClampApplied,
-            bandClampBusy, setBandClampBusy,
-            setBandClampModal,
-            clampSpark,
-            fetchJSON, toast,
-        })}
+        {/* Sweet Spot Slider + APPLY TO CONTROLLER row removed 2026-06-26.
+            Per-AHU RH bands (sidebar AHU row dropdowns) replace the
+            single global slider.  Future "APPLY N PENDING" button + per-AHU
+            apply chips will be added when the chart wires up to per-AHU
+            sweet-spot polygons. */}
 
         {/* T-CLIP dual-handle slider — bounds the 3D WX
             RH-band slab to the operator's occupied-space
@@ -403,63 +403,103 @@ function renderSidebar(ctx) {
         const m = getEnergyMetrics(ahu); 
         return ( 
             <div key={ahu.id} onClick={() => { setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(null); }} className={`p-3 rounded-xl border transition-all cursor-pointer ${isSelected ? ui.itemSelected : ui.border + ' bg-opacity-50 hover:bg-opacity-40'}`}>
-                <div className="flex justify-between items-center mb-1 font-black uppercase text-xs shadow-black">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* AHU ID is now a button: opens the AHU 3D equipment
-                            graphic modal in place (replaces the old floating
-                            "AHU detail card" on the chart, removed 2026-06-26). */}
-                        <button data-testid={`ahu-id-${ahu.id}`}
-                                onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowAhuModalFor(ahu.id); }}
-                                title="Open AHU 3D equipment graphic"
-                                className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-xs tracking-tighter`}>
-                            {ahu.id}
+                {/* Heading line: AHU id, DETAIL link, LOCK SA / PATH (when selected) */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-2 font-black uppercase text-xs shadow-black">
+                    <button data-testid={`ahu-id-${ahu.id}`}
+                            onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowAhuModalFor(ahu.id); }}
+                            title="Open AHU 3D equipment graphic"
+                            className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-xs tracking-tighter`}>
+                        {ahu.id}
+                    </button>
+                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`} className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-widest">DETAIL ↗</a>
+                    {isSelected && (
+                        <button data-testid={`ahu-lock-sa-${ahu.id}`}
+                                onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
+                                title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
+                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            {isLockedToSA ? 'SA LOCKED' : 'LOCK SA'}
                         </button>
-                        <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`} className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-widest">DETAIL ↗</a>
-                        {/* LOCK SA + PATH chips — visible only when this AHU is
-                            selected.  They replace the same-named buttons that
-                            used to live on the (now-removed) floating AHU
-                            detail card. */}
-                        {isSelected && (
-                            <button data-testid={`ahu-lock-sa-${ahu.id}`}
-                                    onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
-                                    title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                                {isLockedToSA ? 'SA LOCKED' : 'LOCK SA'}
-                            </button>
-                        )}
-                        {isSelected && (
-                            <button data-testid={`ahu-path-${ahu.id}`}
-                                    onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
-                                    title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                                PATH
-                            </button>
-                        )}
-                    </div>
-                    <div className="flex gap-1.5"><MetricBar theme={theme} val={m.exchange} color="#3b82f6" height="h-5" max={20}/><MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-5" max={20}/></div>
+                    )}
+                    {isSelected && (
+                        <button data-testid={`ahu-path-${ahu.id}`}
+                                onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
+                                title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
+                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            PATH
+                        </button>
+                    )}
                 </div>
-                <div className="space-y-0.5">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
-                    /* Per-point visibility toggle wired into the OA / SA / RA
-                     * label of each AHU row (replaces the sidebar's old
-                     * trio of giant coloured circles, removed 2026-06-26).
-                     * Click the label to hide that point on the chart;
-                     * row dims to 35% opacity + label strikes through for
-                     * clear visual feedback. */
-                    const active = pointVisibility[p.label] !== false;
-                    const toggleVis = (e) => {
-                        e.stopPropagation();
-                        setPointVisibility({ ...pointVisibility, [p.label]: !active });
-                    };
-                    return ( <div key={p.label} className={`flex items-center justify-between font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
-                        <button data-testid={`ahu-row-toggle-${ahu.id}-${p.label}`} onClick={toggleVis}
-                                title={active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`}
-                                style={{ color: p.color, background:'transparent', border:'none', padding:0 }}
-                                className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline ${active ? '' : 'line-through'}`}>
-                            {p.label}
-                        </button>
-                        <span className={`${ui.text} font-bold font-mono tracking-tighter`}>{tTxt} / {rhTxt} / {hTxt}</span>
-                    </div> );
-                })}</div>
+                {/* Body: OA/SA/RA values tight against their labels on the left,
+                    Exchange / Absorption metric bars enlarged and to the right
+                    with the value displayed inside each pill (2026-06-26).
+                    Middle column: per-AHU RH venue preset selector (2026-06-26
+                    mockup) — different rooms have different humidity targets
+                    so each AHU now picks its own.  This is currently local
+                    state only; full chart integration (per-AHU sweet-spot
+                    polygons) is a follow-up. */}
+                <div className="flex items-stretch gap-2">
+                    <div className="flex-1 space-y-0.5 min-w-0">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
+                        const active = pointVisibility[p.label] !== false;
+                        const toggleVis = (e) => { e.stopPropagation(); setPointVisibility({ ...pointVisibility, [p.label]: !active }); };
+                        return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
+                            <button data-testid={`ahu-row-toggle-${ahu.id}-${p.label}`} onClick={toggleVis}
+                                    title={active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`}
+                                    style={{ color: p.color, background:'transparent', border:'none', padding:0, width:'1.4rem' }}
+                                    className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline shrink-0 text-left ${active ? '' : 'line-through'}`}>
+                                {p.label}
+                            </button>
+                            <span className={`${ui.text} font-bold font-mono tracking-tighter whitespace-nowrap`}>{tTxt} / {rhTxt} / {hTxt}</span>
+                        </div> );
+                    })}</div>
+                    {/* Per-AHU RH venue preset (label + range + dropdown).
+                        Mockup: stores choice in localStorage under
+                        `red5_rh_preset_<ahuId>`; chart polygon wiring is a
+                        separate follow-up. */}
+                    {(() => {
+                        const PRESETS = [
+                            { id:'custom',     name:'Custom',      lo:40, hi:60 },
+                            { id:'office',     name:'Office',      lo:30, hi:60 },
+                            { id:'museum',     name:'Museum',      lo:40, hi:55 },
+                            { id:'hotel',      name:'Hotel',       lo:30, hi:60 },
+                            { id:'library',    name:'Library',     lo:40, hi:55 },
+                            { id:'hospital',   name:'Hospital',    lo:30, hi:60 },
+                            { id:'lecture',    name:'Lecture',     lo:30, hi:60 },
+                            { id:'concert',    name:'Concert',     lo:40, hi:55 },
+                            { id:'meeting',    name:'Meeting',     lo:30, hi:60 },
+                            { id:'exhibition', name:'Exhibition',  lo:40, hi:55 },
+                        ];
+                        let savedId = 'custom';
+                        try { savedId = localStorage.getItem(`red5_rh_preset_${ahu.id}`) || 'custom'; } catch (e) {}
+                        const cur = PRESETS.find(p => p.id === savedId) || PRESETS[0];
+                        const onPick = (e) => {
+                            e.stopPropagation();
+                            try {
+                                localStorage.setItem(`red5_rh_preset_${ahu.id}`, e.target.value);
+                                window.dispatchEvent(new Event('r5-ahu-preset-change'));
+                            } catch (err) {}
+                        };
+                        return (
+                            <div className={`flex flex-col items-center justify-center gap-0.5 px-1.5 py-1 rounded-lg border ${theme==='dark'?'bg-slate-950/50 border-slate-700/50':'bg-slate-50 border-slate-200'} shrink-0`}
+                                 style={{minWidth:'72px'}}
+                                 onClick={(e) => e.stopPropagation()}>
+                                <span className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-emerald-400':'text-emerald-600'}`} style={{lineHeight:'1'}}>{cur.name.toUpperCase()}</span>
+                                <span className={`text-[10px] font-mono font-black tabular-nums ${ui.text}`} style={{lineHeight:'1.1'}}>{cur.lo}-{cur.hi}%</span>
+                                <select data-testid={`ahu-rh-preset-${ahu.id}`}
+                                        defaultValue={savedId}
+                                        onChange={onPick}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={`text-[8px] mt-0.5 px-1 py-0.5 rounded border ${theme==='dark'?'bg-slate-900 border-slate-700 text-slate-300':'bg-white border-slate-300 text-slate-700'} font-mono font-black uppercase tracking-wider focus:outline-none`}
+                                        style={{maxWidth:'68px'}}>
+                                    {PRESETS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+                        );
+                    })()}
+                    <div className="flex gap-1.5 shrink-0 items-stretch">
+                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={20} showValue={true} />
+                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={20} showValue={true} />
+                    </div>
+                </div>
                 {ahu.g36 && (() => {
                     /* G36 chip — operating mode + request counts + reset values.
                        Color picked from the mode so a glance tells you what's

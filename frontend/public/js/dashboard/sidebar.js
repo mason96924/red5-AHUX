@@ -207,23 +207,27 @@ function renderSidebar(ctx) {
                 Lecture hall / Concert hall / Meeting room / Exhibition hall) or
                 "Custom" if the live sweetSpotRange doesn't match any preset.
                 Clicking it opens the setup walk so the operator can re-pick.    */}
+            {/* Venue-preset chip removed 2026-06-26 — global RH band
+                is no longer dashboard-editable; per-AHU presets live
+                in each AHU row (sidebar.js).  Replaced with an icon
+                button that jumps to the Psy Chart Setting page where
+                the operator manages defaults + axis + theme. */}
             <button
                 onClick={() => { window.location.href = '/setup.html?force=1'; }}
-                data-testid="venue-preset-chip"
-                title={venueChipTitle}
-                aria-label={venueChipTitle}
-                className={`flex items-center gap-1 px-2 py-1 rounded border text-[10px] font-black uppercase tracking-wider transition-all ${
-                    venuePreset
-                        ? (theme === 'dark'
-                            ? 'bg-emerald-900/30 border-emerald-600/60 text-emerald-300 hover:bg-emerald-800/40'
-                            : 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100')
-                        : (theme === 'dark'
-                            ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'
-                            : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200')
+                data-testid="open-setup-btn"
+                title="Open Setup Walk (Psy Chart, Location, Language, Plug-ins)"
+                aria-label="Open Setup Walk"
+                className={`flex items-center justify-center w-8 h-8 rounded border text-base transition-all ${
+                    theme === 'dark'
+                        ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-indigo-300'
+                        : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:text-indigo-600'
                 }`}>
-                <span aria-hidden style={{fontSize:'11px'}}>{venueChipIcon}</span>
-                <span data-testid="venue-preset-chip-label">{venueChipLabel}</span>
-                <span className="font-mono opacity-70 tabular-nums">{sweetSpotRange.lo}-{sweetSpotRange.hi}%</span>
+                {/* Inline cog SVG — keeps the chip rendering with zero
+                    dependency on a font/icon loader.  16×16. */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
             </button>
             {/* Standards / Docs button — single entry point.
                 Opens the docs popup at whichever tab the
@@ -320,15 +324,11 @@ function renderSidebar(ctx) {
             (psy-chart-svg.js) so the colour key lives next to the table
             that uses it.  Sidebar no longer renders it. */}
 
-        {/* Sweet Spot Slider -- extracted to sweet-spot-slider.js (L.26) */}
-        {renderSweetSpotSlider({
-            showGivoni, showSweetSpot, sweetSpotRange, setSweetSpotRange, theme,
-            bandClampApplied, setBandClampApplied,
-            bandClampBusy, setBandClampBusy,
-            setBandClampModal,
-            clampSpark,
-            fetchJSON, toast,
-        })}
+        {/* Sweet Spot Slider + APPLY TO CONTROLLER row removed 2026-06-26.
+            Per-AHU RH bands (sidebar AHU row dropdowns) replace the
+            single global slider.  Future "APPLY N PENDING" button + per-AHU
+            apply chips will be added when the chart wires up to per-AHU
+            sweet-spot polygons. */}
 
         {/* T-CLIP dual-handle slider — bounds the 3D WX
             RH-band slab to the operator's occupied-space

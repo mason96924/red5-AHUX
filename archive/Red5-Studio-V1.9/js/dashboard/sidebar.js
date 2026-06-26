@@ -345,7 +345,16 @@ function renderSidebar(ctx) {
         {renderTClipSlider({ tClipRange, setTClipRange, theme, activeView })}
 
     </div>
-    <div className={`p-4 border-b ${ui.border} bg-opacity-10 space-y-2`}><h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] px-1 font-black shadow-black">{t('asset_search')}</h2><input type="text" placeholder="Search ID (Wildcard *, ?)..." className={`w-full ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-xl py-2 px-4 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+    <div className={`p-4 border-b ${ui.border} bg-opacity-10`}>
+        {/* ASSET SEARCH — label + input on a single horizontal row to
+            reclaim vertical sidebar real-estate (2026-06-26). */}
+        <div className="flex items-center gap-2">
+            <h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] whitespace-nowrap shrink-0 shadow-black">{t('asset_search')}</h2>
+            <input type="text" placeholder="Search ID (*, ?)…" data-testid="asset-search-input"
+                   className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-lg py-1.5 px-3 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`}
+                   value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+        </div>
+    </div>
     {/* AXIS SETTINGS removed from dashboard 2026-06-26 — the dry-bulb
         temperature axis range is now owned by the setup walk's
         Psy Chart Setting page (/setup.html?force=1).  The dashboard

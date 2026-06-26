@@ -346,70 +346,13 @@ function renderSidebar(ctx) {
 
     </div>
     <div className={`p-4 border-b ${ui.border} bg-opacity-10 space-y-2`}><h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] px-1 font-black shadow-black">{t('asset_search')}</h2><input type="text" placeholder="Search ID (Wildcard *, ?)..." className={`w-full ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-xl py-2 px-4 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-    {/* AXIS SETTINGS — dual-handle range slider, bounded to [-15, 50] */}
-    <div className={`p-4 border-b ${ui.border} bg-opacity-20 space-y-3`}>
-        <h2 className="text-[10px] font-black uppercase text-pink-500 tracking-[0.2em] px-1 font-black shadow-black">{t('axis_settings')}</h2>
-        {(() => {
-            const ABS_MIN = -15, ABS_MAX = 50, GAP = 5;
-            const pct = (v) => ((v - ABS_MIN) / (ABS_MAX - ABS_MIN)) * 100;
-            const pickHandle = (clientX, trackEl) => {
-                const r = trackEl.getBoundingClientRect();
-                const v = ABS_MIN + ((clientX - r.left) / r.width) * (ABS_MAX - ABS_MIN);
-                return Math.abs(v - tempRange.min) <= Math.abs(v - tempRange.max) ? 'min' : 'max';
-            };
-            const startDrag = (e, handle) => {
-                e.preventDefault();
-                const trackEl = e.currentTarget.closest('[data-testid="axis-range-track"]');
-                const r = trackEl.getBoundingClientRect();
-                const which = handle || pickHandle(e.clientX, trackEl);
-                // Popout fix (2026-06-08): same rationale as the sweet-spot
-                // RH slider above -- attach drag listeners to the slider's
-                // own window, not the parent's.
-                const ownerWin = (e.view)
-                    || (e.target && e.target.ownerDocument && e.target.ownerDocument.defaultView)
-                    || window;
-                const onMove = (mv) => {
-                    const raw = ABS_MIN + ((mv.clientX - r.left) / r.width) * (ABS_MAX - ABS_MIN);
-                    const v = Math.round(Math.max(ABS_MIN, Math.min(ABS_MAX, raw)));
-                    setTempRange(prev => {
-                        if (which === 'min') return { ...prev, min: Math.min(v, prev.max - GAP) };
-                        return { ...prev, max: Math.max(v, prev.min + GAP) };
-                    });
-                };
-                const onUp = () => {
-                    ownerWin.removeEventListener('mousemove', onMove);
-                    ownerWin.removeEventListener('mouseup', onUp);
-                };
-                ownerWin.addEventListener('mousemove', onMove);
-                ownerWin.addEventListener('mouseup', onUp);
-            };
-            const trackBg = theme === 'dark' ? 'bg-slate-700' : 'bg-slate-300';
-            const handleCls = `absolute -top-1 w-4 h-4 -ml-2 rounded-full ring-2 ring-white shadow-md cursor-grab active:cursor-grabbing ${theme==='dark'?'bg-indigo-400':'bg-indigo-500'}`;
-            const labelCls = `absolute -top-7 -translate-x-1/2 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold whitespace-nowrap pointer-events-none ${theme==='dark'?'bg-slate-900 text-indigo-300 border border-indigo-500/40':'bg-white text-indigo-700 border border-indigo-300'}`;
-            return (
-                <div className="px-1 pt-6 pb-1">
-                    <div data-testid="axis-range-track" className={`relative h-2 ${trackBg} rounded-full`}
-                         onMouseDown={(e) => startDrag(e)}>
-                        <div className="absolute h-2 bg-indigo-500 rounded-full"
-                             style={{left:`${pct(tempRange.min)}%`, width:`${pct(tempRange.max)-pct(tempRange.min)}%`}} />
-                        <div className={handleCls} style={{left:`${pct(tempRange.min)}%`}}
-                             data-testid="axis-min-handle"
-                             onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'min'); }}>
-                            <span className={labelCls} style={{left:'50%'}}>{tempRange.min}°C</span>
-                        </div>
-                        <div className={handleCls} style={{left:`${pct(tempRange.max)}%`}}
-                             data-testid="axis-max-handle"
-                             onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'max'); }}>
-                            <span className={labelCls} style={{left:'50%'}}>{tempRange.max}°C</span>
-                        </div>
-                    </div>
-                    <div className="flex justify-between text-[8px] font-mono mt-1.5 text-slate-500">
-                        <span>−15°C</span><span>50°C</span>
-                    </div>
-                </div>
-            );
-        })()}
-    </div>
+    {/* AXIS SETTINGS removed from dashboard 2026-06-26 — the dry-bulb
+        temperature axis range is now owned by the setup walk's
+        Psy Chart Setting page (/setup.html?force=1).  The dashboard
+        reads `localStorage.red5_temp_range` lazily and listens for
+        `r5-temp-range-change` events for live updates, so removing
+        the inline slider here has no functional regression — only
+        the duplicate control is gone. */}
     <div className={`p-4 border-b ${ui.border} bg-opacity-5`}><div className="flex justify-between items-center px-2">{['OA', 'SA', 'RA'].map(p => { const configs = { OA: { rgb: '59, 130, 246' }, SA: { rgb: '16, 185, 129' }, RA: { rgb: '244, 63, 94' } }; const labels = { OA: t('oa'), SA: t('sa'), RA: t('ra') }; const active = pointVisibility[p]; const c = configs[p]; return <button key={p} onClick={() => setPointVisibility({...pointVisibility, [p]: !pointVisibility[p]})} className="w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center font-black text-[10px] shadow-black" style={{ backgroundColor: active ? `rgb(${c.rgb})` : `rgba(${c.rgb}, 0.15)`, borderColor: active ? (theme==='dark'?'#fff':'#000') : `rgb(${c.rgb})`, color: active ? '#fff' : `rgb(${c.rgb})`, opacity: active ? 1 : 0.6 }}>{labels[p]}</button>; })}</div></div>
     {/* ERV ROI badge — only shown when the 3D WX tab's ERV
         chip is ON. Click anywhere on the badge to jump

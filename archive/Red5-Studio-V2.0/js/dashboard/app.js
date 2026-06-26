@@ -1784,16 +1784,35 @@
                     }
                 });
                 
-                for(let h_val=-20; h_val<=120; h_val+=10){
-                    const pts = []; 
-                    for(let temp=T_MIN; temp<=T_MAX; temp+=1){ 
-                        const w=(h_val-1.006*temp)/(2501+1.86*temp); 
-                        if(w>=0 && w<= (W_MAX/1000 + 0.002)) pts.push(`${safe(x(temp))},${safe(y(w))}`); 
+                for(let h_val=0; h_val<=120; h_val+=10){
+                    const pts = [];
+                    for(let temp=T_MIN; temp<=T_MAX; temp+=1){
+                        const w=(h_val-1.006*temp)/(2501+1.86*temp);
+                        if(w>=0 && w<= (W_MAX/1000 + 0.002)) pts.push(`${safe(x(temp))},${safe(y(w))}`);
                     }
                     if(pts.length>1) {
                         els.push(<path key={`h-${h_val}`} d={`M ${pts.join(' L ')}`} fill="none" stroke="#f472b6" strokeWidth="0.6" strokeDasharray="6,4" opacity="0.4"/>);
-                        const lp = pts[0].split(','); 
-                        els.push(<text key={`hl-${h_val}`} x={safe(parseFloat(lp[0]) - 8)} y={safe(parseFloat(lp[1]) - 8)} fill="#f472b6" fontSize="9" fontWeight="900" textAnchor="end" opacity="0.8">{h_val}</text>);
+                        /* Label placement: enthalpy lines enter the chart from
+                         * either the LEFT edge (T = T_MIN, W small) when h is
+                         * low, or the TOP edge (W = W_MAX, T low) when h is
+                         * high.  Putting every label at pts[0] crams the low-h
+                         * labels into the Y-axis tick zone where they overlap
+                         * the humidity-ratio numerals (bug visible 2026-06-26).
+                         * Detect the entry edge and label at the appropriate
+                         * end so labels cascade along the top OR the bottom
+                         * edge -- never on top of Y-axis ticks. */
+                        const wAtTmin = (h_val - 1.006 * T_MIN) / (2501 + 1.86 * T_MIN);
+                        const entersFromTop = wAtTmin > (W_MAX / 1000 + 0.002);
+                        const labelPt = entersFromTop ? pts[0].split(',')
+                                                      : pts[pts.length - 1].split(',');
+                        const labelDX = entersFromTop ? -8 : 6;
+                        const labelDY = entersFromTop ? -8 : -4;
+                        const labelAnchor = entersFromTop ? 'end' : 'start';
+                        els.push(<text key={`hl-${h_val}`}
+                                       x={safe(parseFloat(labelPt[0]) + labelDX)}
+                                       y={safe(parseFloat(labelPt[1]) + labelDY)}
+                                       fill="#f472b6" fontSize="9" fontWeight="900"
+                                       textAnchor={labelAnchor} opacity="0.8">{h_val}</text>);
                     }
                 }
                 

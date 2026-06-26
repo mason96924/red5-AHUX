@@ -35,7 +35,7 @@ function renderSidebar(ctx) {
     const DARK_LEVEL_MIN = 1.5;
     const DARK_LEVEL_MAX = 3.0;
     const DARK_LEVEL_DEFAULT = 2.0;
-    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, t } = ctx;
+    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, t } = ctx;
 
     /* ---------------- Venue preset chip --------------------------------
        Mirror of the RH_PRESETS list in setup_walk_mockup.html (the source
@@ -403,7 +403,41 @@ function renderSidebar(ctx) {
         const m = getEnergyMetrics(ahu); 
         return ( 
             <div key={ahu.id} onClick={() => { setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(null); }} className={`p-3 rounded-xl border transition-all cursor-pointer ${isSelected ? ui.itemSelected : ui.border + ' bg-opacity-50 hover:bg-opacity-40'}`}>
-                <div className="flex justify-between items-center mb-1 font-black uppercase text-xs shadow-black"><div className="flex items-center gap-1.5">{ahu.id}<a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`} className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-widest">DETAIL ↗</a></div><div className="flex gap-1.5"><MetricBar theme={theme} val={m.exchange} color="#3b82f6" height="h-5" max={20}/><MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-5" max={20}/></div></div>
+                <div className="flex justify-between items-center mb-1 font-black uppercase text-xs shadow-black">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* AHU ID is now a button: opens the AHU 3D equipment
+                            graphic modal in place (replaces the old floating
+                            "AHU detail card" on the chart, removed 2026-06-26). */}
+                        <button data-testid={`ahu-id-${ahu.id}`}
+                                onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowAhuModalFor(ahu.id); }}
+                                title="Open AHU 3D equipment graphic"
+                                className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-xs tracking-tighter`}>
+                            {ahu.id}
+                        </button>
+                        <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`} className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-widest">DETAIL ↗</a>
+                        {/* LOCK SA + PATH chips — visible only when this AHU is
+                            selected.  They replace the same-named buttons that
+                            used to live on the (now-removed) floating AHU
+                            detail card. */}
+                        {isSelected && (
+                            <button data-testid={`ahu-lock-sa-${ahu.id}`}
+                                    onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
+                                    title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                                {isLockedToSA ? 'SA LOCKED' : 'LOCK SA'}
+                            </button>
+                        )}
+                        {isSelected && (
+                            <button data-testid={`ahu-path-${ahu.id}`}
+                                    onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
+                                    title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                                PATH
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex gap-1.5"><MetricBar theme={theme} val={m.exchange} color="#3b82f6" height="h-5" max={20}/><MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-5" max={20}/></div>
+                </div>
                 <div className="space-y-0.5">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
                     /* Per-point visibility toggle wired into the OA / SA / RA
                      * label of each AHU row (replaces the sidebar's old

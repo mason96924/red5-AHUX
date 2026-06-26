@@ -27,63 +27,19 @@ function renderPsyChartSvg(ctx) {
 <div className="flex-1 relative flex items-center justify-center overflow-hidden font-black shadow-black shadow-inner">
     <div className="absolute top-10 left-24 z-10 pointer-events-none font-black shadow-black"><h2 className={`text-3xl font-black italic uppercase ${ui.heading} tracking-tight font-black shadow-black shadow-black`}>{t('psychrometric_chart')}</h2></div>
     
-    {/* Selected AHU Info Card */}
-    {selectedAhuId && ahuData.find(a => a.id === selectedAhuId) && (
-        <div className={`absolute z-40 select-none shadow-2xl ${theme==='dark'?'shadow-black/80':'shadow-slate-300/80'}`} style={{ top: `${safe(pad.top + cardOffset.y)}px`, left: `${safe(pad.left + cardOffset.x)}px` }}>
-            <div className={`${ui.card} p-4 rounded-2xl border-l-[8px] border-l-indigo-50 border ${ui.cardBorder} shadow-2xl w-[320px] font-black shadow-black`}>
-                <div className={`flex justify-between gap-3 mb-3 pb-3 border-b ${theme==='dark'?'border-slate-800':'border-slate-200'} cursor-grab active:cursor-grabbing font-black items-stretch shadow-black`} onMouseDown={(e) => { setIsCardDragging(true); setDragStart({ x: e.clientX - cardOffset.x, y: e.clientY - cardOffset.y }); }}>
-                    <div className="flex-1 flex flex-col justify-between">
-                        <div>
-                            <div 
-                                className={`text-2xl font-black tracking-tight uppercase italic cursor-pointer hover:text-sky-400 hover:underline transition-colors ${theme==='dark'?'text-slate-100 shadow-black':'text-slate-900'}`}
-                                onMouseDown={(e) => { 
-                                    e.stopPropagation(); 
-                                    setShowFloorPlanForAhu(selectedAhuId); 
-                                }}
-                                title={window.t ? window.t("click_to_map_vavs") : "Click to map VAVs on Floor Plan"}
-                            >
-                                {selectedAhuId}
-                            </div>
-                            <div className="text-[9px] text-slate-500 uppercase tracking-widest mt-1 mb-2 font-black font-mono">{window.t ? window.t("real_time_diag_hub") : "Real-time Diagnostic Hub"}</div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-1 mt-2 h-full">
-                            {ahuData.find(a => a.id === selectedAhuId)?.points.map(p => {
-                                const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--°'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
-                                /* Point-visibility toggle (moved here from sidebar 2026-06-26):
-                                 * clicking the OA / SA / RA text label inside its data pill
-                                 * toggles that point on/off across the chart.  Visual cue:
-                                 * inactive labels dim to 35% opacity and add a strike-through. */
-                                const active = pointVisibility[p.label] !== false;
-                                const toggle = (e) => {
-                                    e.stopPropagation();
-                                    if (typeof setPointVisibility === 'function') {
-                                        setPointVisibility({ ...pointVisibility, [p.label]: !active });
-                                    }
-                                };
-                                return ( <div key={p.label} className={`flex flex-col justify-center ${ui.dataBlock} py-1.5 rounded-lg border text-center shadow-inner h-full transition-opacity ${active ? '' : 'opacity-40'}`}>
-                                    <button data-testid={`ahu-point-toggle-${p.label}`} onClick={toggle}
-                                            title={active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`}
-                                            className={`text-[9px] font-black mb-0.5 shadow-black uppercase tracking-wider cursor-pointer hover:underline ${active ? '' : 'line-through'}`}
-                                            style={{color: p.color, background:'transparent', border:'none'}}>
-                                        {p.label}
-                                    </button>
-                                    <span className={`text-[10px] font-mono ${theme==='dark'?'text-slate-200':'text-slate-700'}`}>{tTxt}</span>
-                                    <span className={`text-[8px] font-mono ${ui.textMuted}`}>{rhTxt}</span>
-                                    <span className="text-[8px] font-mono text-pink-400 mt-0.5">{hTxt}</span>
-                                </div> );
-                            })}
-                        </div>
-                    </div>
-                    <div className="flex gap-2 items-stretch">
-                        <div className="flex flex-col items-center gap-1 h-full flex-1"><MetricBar theme={theme} val={ahuMetrics.exchange} color="#3b82f6" max={25} height="flex-1 min-h-[90px] w-full" width="w-14" showValue={true} /><span className="text-[8px] text-blue-400 font-black tracking-tighter shadow-black">Exchange</span></div>
-                        <div className="flex flex-col items-center gap-1 h-full flex-1"><MetricBar theme={theme} val={ahuMetrics.absorption} color="#f472b6" max={25} height="flex-1 min-h-[90px] w-full" width="w-14" showValue={true} /><span className="text-[8px] text-pink-400 font-black tracking-tighter shadow-black">Absorption</span></div>
-                    </div>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 mb-3 font-black"><button onClick={() => setVecVis({...vecVis, enthalpy: !vecVis.enthalpy})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.enthalpy ? 'bg-pink-600/30 border-pink-500 text-pink-500' : ui.btnToggle}`}>{t('enthalpy')}</button><button onClick={() => setVecVis({...vecVis, sensible: !vecVis.sensible})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.sensible ? 'bg-blue-600/30 border-blue-500 text-blue-500' : ui.btnToggle}`}>{t('sensible')}</button><button onClick={() => setVecVis({...vecVis, latent: !vecVis.latent})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.latent ? 'bg-yellow-600/30 border-yellow-500 text-yellow-600' : ui.btnToggle}`}>{t('latent')}</button><button onClick={() => setVecVis({...vecVis, diagnostic: !vecVis.diagnostic})} className={`py-1.5 rounded border text-[9px] font-bold transition-all shadow-black ${vecVis.diagnostic ? 'bg-emerald-600/30 border-emerald-400 text-emerald-600' : ui.btnToggle}`}>{t('diagnostic')}</button></div>
-                <div className="flex gap-2 mt-1 text-xs font-black"><button onClick={() => {setSelectedAhuId(null); setLockedVavId(null);}} className={`flex-1 ${ui.btnToggle} py-2.5 rounded-xl uppercase shadow-lg font-black tracking-widest text-[9px]`}>Close</button><button onClick={() => setShowPath(!showPath)} className={`flex-1 py-2.5 rounded-xl border transition-all text-[9px] font-black shadow-black ${showPath ? 'bg-indigo-600 border-indigo-400 text-slate-100' : ui.btnToggle}`}>Path</button><button onClick={() => {setIsLockedToSA(!isLockedToSA); setLockedVavId(null);}} className={`flex-1 py-2.5 rounded-xl border transition-all text-[9px] font-black shadow-black ${isLockedToSA ? 'bg-emerald-600 border-emerald-400 text-slate-100 shadow-lg' : ui.btnLockedOff}`}>{isLockedToSA ? 'SA Locked' : 'Lock SA'}</button></div>
-            </div>
-        </div>
-    )}
+    {/* Selected AHU "info card" (the floating box on the chart that
+        previously showed OA/SA/RA pills + vector toggles + Close/Path/
+        Lock SA buttons + Exchange/Absorption bars) was REMOVED on
+        2026-06-26.  Its functions migrated as follows:
+          - vector visibility (enthalpy/latent/sensible/diagnostic)
+            → click the swatches in the vertical legend on the chart's left
+          - point visibility (OA/SA/RA)
+            → click the OA/SA/RA labels inside each sidebar AHU row
+          - Lock SA / Path / Close → chips on the sidebar AHU row
+            (appear when that AHU is selected)
+          - Exchange / Absorption bars → already shown on the sidebar row
+        Removing the card declutters the chart and avoids two parallel
+        controls for the same state. */}
 
     {/* VAV Terminal Table */}
     {selectedAhuId && ahuData.find(a => a.id === selectedAhuId) && (
@@ -212,10 +168,30 @@ function renderPsyChartSvg(ctx) {
         retain their original behaviour and data-testids. */}
     <div data-testid="psy-chart-legend"
          className={`absolute top-1/2 left-16 -translate-y-1/2 flex flex-col gap-2 p-3 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest backdrop-blur-sm`}>
-        <div className="flex items-center gap-2 whitespace-nowrap font-mono"><div className="w-6 h-0 border-t-2 border-dashed border-pink-400"></div> {t('enthalpy')}</div>
-        <div className="flex items-center gap-2 whitespace-nowrap font-mono"><div className="w-6 h-0 border-t-2 border-dashed border-yellow-400"></div> {t('latent')}</div>
-        <div className="flex items-center gap-2 whitespace-nowrap font-mono"><div className="w-6 h-0 border-t-2 border-dashed border-blue-400"></div> {t('sensible')}</div>
-        <div className="flex items-center gap-2 whitespace-nowrap font-mono"><div className="w-6 h-0 border-t-2 border-dashed border-emerald-500"></div> {t('diagnostic')}</div>
+        {/* Process-line swatches are now interactive toggles (2026-06-26):
+            clicking a row flips vecVis[key] so the corresponding vector
+            family hides/shows on the chart.  Dimmed + line-through =
+            currently hidden.  Replaces the old toggle buttons from the
+            removed floating AHU detail card. */}
+        {[
+            { key:'enthalpy',   label: t('enthalpy'),   color:'#f472b6', dotCls:'border-pink-400'    },
+            { key:'latent',     label: t('latent'),     color:'#facc15', dotCls:'border-yellow-400'  },
+            { key:'sensible',   label: t('sensible'),   color:'#60a5fa', dotCls:'border-blue-400'    },
+            { key:'diagnostic', label: t('diagnostic'), color:'#10b981', dotCls:'border-emerald-500' },
+        ].map(item => {
+            const on = !!(vecVis && vecVis[item.key]);
+            return (
+                <button key={item.key}
+                        data-testid={`legend-toggle-${item.key}`}
+                        onClick={() => setVecVis && setVecVis({ ...vecVis, [item.key]: !on })}
+                        title={on ? `Hide ${item.label} vectors` : `Show ${item.label} vectors`}
+                        className={`flex items-center gap-2 whitespace-nowrap font-mono bg-transparent border-0 p-0 cursor-pointer transition-opacity ${on ? '' : 'opacity-40 line-through'} hover:opacity-100`}
+                        style={{color:'inherit'}}>
+                    <span className={`inline-block w-6 h-0 border-t-2 border-dashed ${item.dotCls}`}></span>
+                    <span>{item.label}</span>
+                </button>
+            );
+        })}
         <div className={`h-px ${theme==='dark'?'bg-slate-700':'bg-slate-300'} my-0.5`}></div>
         <button data-testid="weather-toggle" onClick={() => { if (!weatherLocation) { setShowWeatherSettings(true); } setShowWeatherStrip(p => !p); }} className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all ${showWeatherStrip ? (theme==='dark'?'bg-indigo-600 text-slate-100':'bg-indigo-500 text-slate-100') : (theme==='dark'?'bg-slate-700 text-slate-400 border border-slate-600':'bg-slate-200 text-slate-500 border border-slate-300')}`}>{t('weather')}</button>
         {showWeatherStrip && <button onClick={() => setShowWeatherSettings(true)} className={`px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider transition-all ${theme==='dark'?'bg-slate-700 text-sky-400 border border-slate-600 hover:text-slate-100':'bg-slate-200 text-sky-600 border border-slate-300 hover:text-sky-800'}`}>{weatherLocation ? (weatherLocation.name || weatherLocation.lat + ',' + weatherLocation.lon) : t('set_location')}</button>}

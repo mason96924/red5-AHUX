@@ -35,7 +35,33 @@ function renderSidebar(ctx) {
     const DARK_LEVEL_MIN = 1.5;
     const DARK_LEVEL_MAX = 3.0;
     const DARK_LEVEL_DEFAULT = 2.0;
-    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, t } = ctx;
+    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, t } = ctx;
+
+    /* ---------------- Per-AHU Apply-to-Controller state ---------------
+       For each AHU in `ahuSweetSpots` (current local pick), compare its
+       lo/hi against `appliedAhuBands[ahuId]` (the last-applied band
+       returned by the backend).  Mismatch ⇒ this AHU's row is "dirty"
+       and the APPLY ↑ chip pulses until clicked.  Empty appliedAhuBands
+       ⇒ all rows with a non-default preset (preset_id !== 'custom') are
+       dirty so the operator can push their initial choices in one go.
+
+       (2026-06-26 — Phase L.37 hybrid Apply flow.) */
+    const pendingAhuBands = (ahuSweetSpots || []).filter(s => {
+        const a = (appliedAhuBands || {})[s.ahuId];
+        if (!a) return s.presetId && s.presetId !== 'custom';
+        return Math.abs((a.lo || 0) - s.lo) > 0.01 || Math.abs((a.hi || 0) - s.hi) > 0.01;
+    });
+    const isAhuDirty = (ahuId) => pendingAhuBands.some(p => p.ahuId === ahuId);
+    const applyOneAhu = async (spot) => {
+        if (!applyAhuBands) return;
+        await applyAhuBands([{ ahu_id: spot.ahuId, lo: spot.lo, hi: spot.hi, preset_id: spot.presetId }]);
+    };
+    const applyAllPending = async () => {
+        if (!applyAhuBands) return;
+        const list = pendingAhuBands.map(s => ({ ahu_id: s.ahuId, lo: s.lo, hi: s.hi, preset_id: s.presetId }));
+        await applyAhuBands(list);
+        if (setShowApplyModal) setShowApplyModal(false);
+    };
 
     /* ---------------- Venue preset chip --------------------------------
        Mirror of the RH_PRESETS list in setup_walk_mockup.html (the source
@@ -324,11 +350,28 @@ function renderSidebar(ctx) {
             (psy-chart-svg.js) so the colour key lives next to the table
             that uses it.  Sidebar no longer renders it. */}
 
-        {/* Sweet Spot Slider + APPLY TO CONTROLLER row removed 2026-06-26.
-            Per-AHU RH bands (sidebar AHU row dropdowns) replace the
-            single global slider.  Future "APPLY N PENDING" button + per-AHU
-            apply chips will be added when the chart wires up to per-AHU
-            sweet-spot polygons. */}
+        {/* APPLY N PENDING — pulses while there are dirty per-AHU bands
+            (sidebar dropdown choice differs from last-applied controller
+            value).  Click opens a summary modal where the operator can
+            review each band's BEFORE → AFTER and Apply All in one POST.
+            (2026-06-26 — Phase L.37 Hybrid Apply flow.) */}
+        {pendingAhuBands.length > 0 && (
+            <button data-testid="apply-pending-bands-btn"
+                    onClick={() => setShowApplyModal && setShowApplyModal(true)}
+                    disabled={applyBusy}
+                    title={`Push ${pendingAhuBands.length} per-AHU RH band(s) to the controller`}
+                    className={`mb-3 w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-[11px] font-black uppercase tracking-widest font-mono transition-all
+                                ${theme==='dark'
+                                    ? 'bg-emerald-600/20 border-emerald-400/60 text-emerald-300 hover:bg-emerald-600/30'
+                                    : 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100'}
+                                ${applyBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer animate-pulse'}`}>
+                <span className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/30 text-emerald-200 text-[10px] font-black">{pendingAhuBands.length}</span>
+                    <span>Apply Pending</span>
+                </span>
+                <span className="text-base leading-none">↑</span>
+            </button>
+        )}
 
         {/* T-CLIP dual-handle slider — bounds the 3D WX
             RH-band slab to the operator's occupied-space
@@ -428,6 +471,28 @@ function renderSidebar(ctx) {
                             PATH
                         </button>
                     )}
+                    {/* Per-AHU APPLY ↑ chip — only shows when this AHU's
+                        local preset differs from the last-applied band
+                        on the controller.  Click → POST a single band
+                        to /api/band-overrides/ahu-rh-bands.  Pulse-
+                        animates to draw the eye until applied. */}
+                    {isAhuDirty(ahu.id) && (() => {
+                        const spot = (ahuSweetSpots || []).find(s => s.ahuId === ahu.id);
+                        if (!spot) return null;
+                        return (
+                            <button data-testid={`ahu-apply-${ahu.id}`}
+                                    onClick={(e) => { e.stopPropagation(); applyOneAhu(spot); }}
+                                    disabled={applyBusy}
+                                    title={`Push ${spot.lo}-${spot.hi}% RH band to the controller for ${ahu.id}`}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-all leading-none font-black tracking-widest font-mono animate-pulse
+                                                ${theme==='dark'
+                                                    ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200 hover:bg-emerald-600/40'
+                                                    : 'bg-emerald-100 border-emerald-500 text-emerald-700 hover:bg-emerald-200'}
+                                                ${applyBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
+                                APPLY ↑
+                            </button>
+                        );
+                    })()}
                 </div>
                 {/* Body: OA/SA/RA values tight against their labels on the left,
                     Exchange / Absorption metric bars enlarged and to the right
@@ -496,8 +561,15 @@ function renderSidebar(ctx) {
                         );
                     })()}
                     <div className="flex gap-1.5 shrink-0 items-stretch">
-                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={20} showValue={true} />
-                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={20} showValue={true} />
+                        {/* Pills now scale on max=5 (kJ/kg) and use a 2%
+                            visual floor (vs the old 28% text-fitting floor)
+                            so small enthalpy deltas (e.g. 0.08 vs 2.81)
+                            render at clearly different heights.  Value
+                            label is absolutely-positioned at the pill
+                            top so it remains readable regardless of
+                            fill. */}
+                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={5} showValue={true} />
+                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={5} showValue={true} />
                     </div>
                 </div>
                 {ahu.g36 && (() => {
@@ -542,6 +614,72 @@ function renderSidebar(ctx) {
             </div> 
         ); 
     })}</div>
+    {/* APPLY-TO-CONTROLLER summary modal — opens from the top-of-
+        sidebar "Apply Pending" button.  Lists every dirty AHU with
+        before/after and a single Apply All action.  Rendered inside
+        the sidebar shell so it positions correctly in both docked
+        and floating modes. */}
+    {showApplyModal && pendingAhuBands.length > 0 && (
+        <div data-testid="apply-pending-modal-backdrop"
+             onClick={() => setShowApplyModal(false)}
+             className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div data-testid="apply-pending-modal"
+                 onClick={(e) => e.stopPropagation()}
+                 className={`max-w-[92%] w-[340px] rounded-xl border shadow-2xl overflow-hidden ${theme==='dark' ? 'bg-slate-900 border-emerald-500/40' : 'bg-white border-emerald-400'}`}>
+                <div className={`px-3 py-2 border-b ${theme==='dark' ? 'bg-emerald-600/15 border-emerald-500/30' : 'bg-emerald-50 border-emerald-200'} flex items-center justify-between`}>
+                    <span className={`text-[11px] font-black uppercase tracking-widest font-mono ${theme==='dark' ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                        Apply {pendingAhuBands.length} RH Band{pendingAhuBands.length === 1 ? '' : 's'} ↑
+                    </span>
+                    <button data-testid="apply-pending-modal-close"
+                            onClick={() => setShowApplyModal(false)}
+                            className={`text-[14px] leading-none font-black ${theme==='dark' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>×</button>
+                </div>
+                <div className={`px-3 py-2 max-h-[260px] overflow-y-auto custom-scrollbar font-mono text-[10px] ${ui.text}`}>
+                    <div className={`mb-2 text-[9px] uppercase tracking-widest ${theme==='dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                        Push selected per-AHU bands to the controller. Existing applied bands not listed here remain unchanged.
+                    </div>
+                    <table className="w-full text-left border-separate border-spacing-y-1">
+                        <thead>
+                            <tr className={`text-[9px] font-black uppercase ${theme==='dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                                <th className="px-1">AHU</th>
+                                <th className="px-1">Preset</th>
+                                <th className="px-1">From</th>
+                                <th className="px-1">To</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pendingAhuBands.map(p => {
+                                const prev = (appliedAhuBands || {})[p.ahuId];
+                                const prevTxt = prev ? `${prev.lo}-${prev.hi}%` : '—';
+                                return (
+                                    <tr key={p.ahuId} data-testid={`apply-pending-row-${p.ahuId}`}
+                                        className={`${theme==='dark' ? 'bg-slate-950/50' : 'bg-slate-50'} rounded`}>
+                                        <td className="px-1 py-1 font-black text-indigo-400">{p.ahuId}</td>
+                                        <td className="px-1 py-1 uppercase">{p.presetId}</td>
+                                        <td className={`px-1 py-1 ${theme==='dark' ? 'text-slate-500' : 'text-slate-400'}`}>{prevTxt}</td>
+                                        <td className="px-1 py-1 text-emerald-400 font-black">{p.lo}-{p.hi}%</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+                <div className={`px-3 py-2 border-t ${theme==='dark' ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-slate-50'} flex items-center justify-end gap-2`}>
+                    <button data-testid="apply-pending-cancel"
+                            onClick={() => setShowApplyModal(false)}
+                            className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${theme==='dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'}`}>
+                        Cancel
+                    </button>
+                    <button data-testid="apply-pending-confirm"
+                            onClick={applyAllPending}
+                            disabled={applyBusy}
+                            className={`px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${theme==='dark' ? 'bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500' : 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600'} ${applyBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
+                        {applyBusy ? 'Applying…' : `Apply All ↑`}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )}
 </div>
     );
     if (isPoppedToWin && sidebarPopoutHost) {

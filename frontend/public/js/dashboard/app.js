@@ -553,6 +553,58 @@
                 window.addEventListener('r5-ahu-preset-change', h);
                 return () => window.removeEventListener('r5-ahu-preset-change', h);
             }, []);
+
+            /* Per-AHU "applied to controller" bands — fetched from the
+               backend on mount.  Used by the sidebar to decide which AHU
+               rows are dirty (current preset !== applied preset) and so
+               which `APPLY ↑` chips should pulse.  Empty {} on anon /
+               demo mode (POST simply echoes back with applied=false). */
+            const [appliedAhuBands, setAppliedAhuBands] = useState({});
+            const [applyBusy, setApplyBusy] = useState(false);
+            const [showApplyModal, setShowApplyModal] = useState(false);
+            useEffect(() => {
+                let alive = true;
+                fetchJSON('/api/band-overrides/ahu-rh-bands')
+                    .then(j => {
+                        if (!alive) return;
+                        const bands = (j && j.ahu_rh_bands) || {};
+                        setAppliedAhuBands(bands);
+                    })
+                    .catch(() => {});
+                return () => { alive = false; };
+            }, []);
+            /* Apply one or more per-AHU bands to the controller.  Accepts
+               an array of {ahu_id, lo, hi, preset_id} and on success
+               merges the returned bands into appliedAhuBands so the
+               dirty-chip logic settles to "clean" without a refetch. */
+            const applyAhuBands = useCallback(async (bandsList) => {
+                if (!Array.isArray(bandsList) || bandsList.length === 0) return null;
+                setApplyBusy(true);
+                try {
+                    const API_URL = window.API_BASE_URL || window.location.origin;
+                    const r = await fetch(`${API_URL}/api/band-overrides/ahu-rh-bands`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ bands: bandsList }),
+                    });
+                    const j = await r.json();
+                    if (j && j.ahu_rh_bands) setAppliedAhuBands(j.ahu_rh_bands);
+                    if (window.toast) {
+                        if (j.applied) {
+                            window.toast(`Applied ${j.applied_count || bandsList.length} AHU band(s) to controller`, 'success');
+                        } else {
+                            window.toast(j.warning || 'Sign in to persist bands', 'info');
+                        }
+                    }
+                    return j;
+                } catch (e) {
+                    if (window.toast) window.toast('Failed to apply bands: ' + (e && e.message || e), 'error');
+                    return null;
+                } finally {
+                    setApplyBusy(false);
+                }
+            }, []);
             
             const [cardOffset, setCardOffset] = useState({ x: 200, y: 30 });
             const [vavTableOffset, setVavTableOffset] = useState({ x: 780, y: 20 });
@@ -2285,7 +2337,7 @@
                                         browser window for extended displays
                                         (mirrors AHU/VAV modal pattern). */}
                     {/* LEFT SIDEBAR -- extracted to sidebar.js (L.27) */}
-                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, t })}
+                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, t })}
 
                     {activeView === 'diagnostics' && React.createElement(DiagnosticsConsole)}
                     {activeView === 'dynamics' && (

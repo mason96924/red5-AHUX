@@ -37,7 +37,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import Cookie, Header
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -189,6 +189,72 @@ async def write_sa_rh_clamp(tenant: dict, sa_rh_clamp: Optional[dict]) -> dict:
         upsert=True,
     )
     return {"ok": True, "persisted": True, "tenant_id": tenant["tenant_id"]}
+
+
+# ---------------------------------------------------------------------------
+# Per-AHU RH-band overrides (Phase L.37 — 2026-06-26).
+#
+# Each AHU on the dashboard sidebar picks its own venue preset (museum,
+# office, hotel ...) which maps to a {lo, hi} RH band.  Operators stage
+# changes locally first; clicking "APPLY ↑" pushes the band to the
+# controller (== this collection).  The dashboard reads the applied set
+# back on load to flag which AHU rows are dirty (local choice differs
+# from the last-applied controller value) and pulse the chip until it
+# is applied.
+#
+# Schema (per tenant doc in `tenant_band_overrides`):
+#     {
+#       "ahu_rh_bands": {
+#         "AHU-01-E": {"lo": 40, "hi": 55, "preset_id": "museum", "updated_at": ...},
+#         ...
+#       }
+#     }
+# ---------------------------------------------------------------------------
+async def read_ahu_rh_bands(tenant: Optional[dict]) -> Dict[str, dict]:
+    if not tenant:
+        return {}
+    doc = await ten_bo_col.find_one({"tenant_id": tenant["tenant_id"]}, {"_id": 0})
+    if not doc:
+        return {}
+    bands = doc.get("ahu_rh_bands") or {}
+    return bands if isinstance(bands, dict) else {}
+
+
+async def write_ahu_rh_bands(tenant: dict, bands_in: list) -> dict:
+    """Upsert one or more per-AHU RH bands.  `bands_in` is a list of
+    {ahu_id, lo, hi, preset_id} entries (the API accepts both a single
+    band and a batch — the route normalises to a list before calling).
+
+    Returns the merged bands map (existing + new), with `updated_at` /
+    `applied_by_token` set on each upserted entry.  Safe to call with
+    an empty list (no-op).
+    """
+    now = datetime.now(timezone.utc)
+    existing = await read_ahu_rh_bands(tenant) or {}
+    merged = dict(existing)
+    for b in bands_in or []:
+        ahu_id = (b.get("ahu_id") or "").strip()
+        if not ahu_id:
+            continue
+        try:
+            lo = float(b.get("lo"))
+            hi = float(b.get("hi"))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= lo < hi <= 100):
+            continue
+        merged[ahu_id] = {
+            "lo": lo,
+            "hi": hi,
+            "preset_id": (b.get("preset_id") or "custom"),
+            "updated_at": now.isoformat(),
+        }
+    await ten_bo_col.update_one(
+        {"tenant_id": tenant["tenant_id"]},
+        {"$set": {"ahu_rh_bands": merged, "updated_at": now}},
+        upsert=True,
+    )
+    return merged
 
 
 async def read_weather_location(tenant: Optional[dict]) -> Optional[dict]:

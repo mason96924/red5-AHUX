@@ -1,5 +1,72 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.38 — Apply-to-Controller flow + MetricBar fix (2026-06-26)
+
+**Brief**: Two operator pain points addressed in this iteration.
+
+**Issue #1 — Per-AHU APPLY-to-Controller (Phase 2 of L.37 follow-up)**
+  * New `tenant_band_overrides.ahu_rh_bands` map (per-tenant) keyed by
+    AHU id holding `{lo, hi, preset_id, updated_at}`.
+  * New backend helpers `read_ahu_rh_bands` / `write_ahu_rh_bands` in
+    `tenants.py` with input validation (0≤lo<hi≤100, required ahu_id).
+  * New routes in `routes/bands.py`:
+      - `GET  /api/band-overrides/ahu-rh-bands` → current applied map
+      - `POST /api/band-overrides/ahu-rh-bands` → accepts single
+        `{ahu_id, lo, hi, preset_id}` OR batch `{bands:[...]}`; audits
+        every change; returns merged map + `applied_count`.
+    Anonymous callers get `applied:false` + a "Demo mode -- sign in"
+    warning that surfaces as a toast.
+  * Frontend (app.js):
+      - `appliedAhuBands` state hydrated on mount via GET.
+      - `applyAhuBands(list)` POSTs and merges echo'd bands into state.
+      - Threads `ahuSweetSpots`, `appliedAhuBands`, `applyAhuBands`,
+        `applyBusy`, `showApplyModal`/`setShowApplyModal` through to
+        `renderSidebar(ctx)`.
+  * Frontend (sidebar.js):
+      - `pendingAhuBands` derived array (current vs applied diff).
+      - Top-of-sidebar `APPLY N PENDING ↑` pulsing button — only
+        visible when there are dirty bands; clicking opens a modal
+        listing each dirty AHU with `PRESET / FROM → TO` and an
+        `APPLY ALL ↑` confirm.
+      - Per-AHU `APPLY ↑` chip in each dirty AHU header row (next to
+        DETAIL ↗ / LOCK SA / PATH); pulses, click POSTs just that
+        AHU's band.
+      - Modal: data-testid-rich (`apply-pending-modal`,
+        `apply-pending-row-<id>`, `apply-pending-confirm`,
+        `apply-pending-cancel`) for QA.
+  * Verified via screenshot tool: clean → dirty (chips + button
+    appear) → modal lists bands → Apply All toasts + clears chips.
+
+**Issue #2 — MetricBar pills looked identical across AHUs**
+  * Root cause: old MetricBar clamped the fill to a 28% minimum so
+    the value text would always fit inside the colour band — masked
+    all sub-kJ/kg differences (real values today: 0.08, 0.80, 2.41…
+    all rendered at ~28%).
+  * Fix in `dashboard-components.js`:
+      - Drop the 28% min to 2% so fill height reflects |val|/max
+        linearly.
+      - Move the numeric label to an absolutely-positioned overlay
+        at the pill top with a text-shadow → readable at any fill
+        height.
+      - 2-decimal precision for sub-10 values.
+  * Sidebar callers also dropped `max` from 20 → 5 to match the
+    typical enthalpy-delta range (kJ/kg, mostly 0-5).
+  * Verified: AHU-01 / AHU-02 / AHU-03 now show clearly different
+    bar heights matching their distinct exchange / absorption deltas.
+
+**Files**
+  * `backend/tenants.py` (added read/write_ahu_rh_bands)
+  * `backend/routes/bands.py` (added GET + POST ahu-rh-bands routes)
+  * `frontend/public/js/dashboard/app.js` (apply state + flow)
+  * `frontend/public/js/dashboard/sidebar.js` (chips + modal)
+  * `frontend/public/js/dashboard-components.js` (MetricBar overlay)
+  * `frontend/public/dashboard.compiled.js` (rebuilt, v=2558d24014)
+  * Archives V1.9 + V2.0 (mirrored)
+
+---
+
+
+
 ## Phase L.37 — Per-AHU Sweet-Spot RH Polygons on Psy Chart (2026-06-26)
 
 **Brief**: The sidebar per-AHU Venue-Preset dropdowns (added earlier this

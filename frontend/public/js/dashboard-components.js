@@ -26,12 +26,24 @@ const LockIcon = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="non
 
 const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "w-1.5", showValue = false, theme = 'dark' }) => {
     const safeVal = safe(val);
-    const pct = Math.max(showValue ? 28 : 5, Math.min(100, (Math.abs(safeVal) / max) * 100));
+    /* Fill height now reflects |val|/max linearly with a tiny 2% floor
+       so a value of "0.08" renders almost empty and "2.81" clearly
+       taller — fixes the 2026-06-26 issue where all three AHUs'
+       pills looked identical because of a 28% min-fill that hid the
+       differences between sub-kJ/kg enthalpy deltas.  When showValue
+       is on the numeric label is placed in an absolutely-positioned
+       overlay so it stays visible at the top of the pill regardless
+       of fill height. */
+    const pct = Math.max(2, Math.min(100, (Math.abs(safeVal) / max) * 100));
+    const valText = Math.abs(safeVal).toFixed(safeVal < 10 ? 2 : 1);
     return (
         <div className={`${width} ${height} ${theme==='dark'?'bg-slate-800/30':'bg-slate-200/60'} relative overflow-hidden flex flex-col justify-end shadow-inner rounded-full`}>
-            <div className={"w-full transition-all duration-700 ease-out flex justify-center pt-1 " + (theme==='dark'?'shadow-lg shadow-black':'')} style={{ height: pct + "%", backgroundColor: color }}>
-                {showValue && <span className="text-[9px] font-black text-white/90 drop-shadow-md tracking-tighter">{Math.abs(safeVal).toFixed(1)}</span>}
-            </div>
+            <div className={"w-full transition-all duration-700 ease-out " + (theme==='dark'?'shadow-lg shadow-black':'')} style={{ height: pct + "%", backgroundColor: color }} />
+            {showValue && (
+                <div className="absolute inset-x-0 top-0 flex justify-center pt-1 pointer-events-none">
+                    <span className={`text-[8px] font-black tracking-tighter ${theme==='dark'?'text-white/95 drop-shadow-md':'text-slate-900'}`} style={{textShadow: theme==='dark'?'0 1px 2px rgba(0,0,0,0.85)':'0 1px 1px rgba(255,255,255,0.6)'}}>{valText}</span>
+                </div>
+            )}
         </div>
     );
 };

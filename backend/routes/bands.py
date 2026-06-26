@@ -19,6 +19,7 @@ from tenants import (
     current_tenant_optional,
     read_equipment_types, write_equipment_types,
     read_sa_rh_clamp, write_sa_rh_clamp,
+    read_ahu_rh_bands, write_ahu_rh_bands,
     read_weather_location, write_weather_location,
     save_tenant_asset, read_tenant_asset, list_tenant_assets,
     delete_tenant_asset, delete_tenant_directory, create_tenant_directory,
@@ -130,6 +131,71 @@ async def set_sa_rh_clamp(payload: dict,
         "status": "ok",
         "sa_rh_clamp": new_clamp,
         "applied": True,
+        "tenant_id": tenant["tenant_id"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Per-AHU RH-band overrides (Phase L.37 — 2026-06-26).
+#
+# GET  -> { ahu_rh_bands: { "AHU-01-E": {lo,hi,preset_id,updated_at}, ... } }
+# POST -> body { bands: [{ahu_id, lo, hi, preset_id}, ...] } | single
+#         {ahu_id, lo, hi, preset_id}; returns merged map.
+# Anonymous callers get a Demo-mode response (applied=false) so the
+# sidebar UI can still chip-acknowledge the click without persisting.
+# ---------------------------------------------------------------------------
+@router.get("/api/band-overrides/ahu-rh-bands")
+async def get_ahu_rh_bands(tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    if not tenant:
+        return {"status": "ok", "ahu_rh_bands": {}, "applied": False}
+    bands = await read_ahu_rh_bands(tenant)
+    return {"status": "ok", "ahu_rh_bands": bands, "tenant_id": tenant["tenant_id"]}
+
+
+@router.post("/api/band-overrides/ahu-rh-bands")
+async def set_ahu_rh_bands(payload: dict,
+                            request: Request,
+                            tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
+    # Normalise: accept single band or {bands: [...]} batch.
+    if "bands" in payload and isinstance(payload["bands"], list):
+        bands_in = payload["bands"]
+    elif "ahu_id" in payload:
+        bands_in = [payload]
+    else:
+        bands_in = []
+    if not tenant:
+        return {
+            "status": "ok",
+            "ahu_rh_bands": {b.get("ahu_id"): {"lo": b.get("lo"),
+                                                "hi": b.get("hi"),
+                                                "preset_id": b.get("preset_id", "custom")}
+                              for b in bands_in if b.get("ahu_id")},
+            "applied": False,
+            "warning": "Demo mode -- sign in to persist per-AHU RH bands to the controller.",
+        }
+    prev_bands = await read_ahu_rh_bands(tenant)
+    new_bands  = await write_ahu_rh_bands(tenant, bands_in)
+    # Audit each applied band so the operator can trace any change back
+    # to the user + IP.  Single audit row per batch keeps log volume
+    # sane when the operator "Apply All"s a dozen AHUs at once.
+    try:
+        from auth import _resolve_session_token  # noqa: WPS433
+        token = request.cookies.get("session_token")
+        user = await _resolve_session_token(token) if token else None
+    except Exception:  # noqa: BLE001
+        user = None
+    await record_audit(
+        request, user, tenant,
+        action="ahu-rh-bands",
+        resource=f"tenant:{tenant['tenant_id']}",
+        before={"ahu_rh_bands": prev_bands},
+        after={"ahu_rh_bands": new_bands},
+    )
+    return {
+        "status": "ok",
+        "ahu_rh_bands": new_bands,
+        "applied": True,
+        "applied_count": len([b for b in bands_in if b.get("ahu_id")]),
         "tenant_id": tenant["tenant_id"],
     }
 

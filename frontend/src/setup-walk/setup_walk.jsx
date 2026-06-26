@@ -688,32 +688,63 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
      * `active` and `default` means the weather strip on the dashboard
      * loads this location immediately on next page load (and stays pinned
      * for any future fresh sessions).  Anonymous users get a soft warning
-     * back from the server -- we still call onSave() either way. */
+     * back from the server (persisted:false) -- we surface that as a toast
+     * so the operator knows they need to sign in to keep the pick across
+     * page reloads.  We always also write to localStorage so the SAME
+     * tab keeps the chosen location for the current session. */
+    const [saveMsg, setSaveMsg] = React.useState(null);
     const persistAndSave = async () => {
         const loc = { lat: cfg.lat, lon: cfg.lon, name: cfg.siteName || cfg.city };
+        /* Local fallback — works for anonymous users so the dashboard at
+         * least sees the new lat/lon in the same browser. */
+        try {
+            localStorage.setItem('red5.weather_location', JSON.stringify(loc));
+        } catch (e) { /* private mode -- ignore */ }
+
+        let persisted = false, warning = '';
         try {
             const r = await fetch('/api/weather-location', {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type':'application/json' },
                 body: JSON.stringify({ active: loc, default: loc }),
             });
             const j = await r.json();
             window._lastWeatherLocationSave = j;
+            persisted = !!j.persisted;
+            warning   = j.warning || '';
             console.info('[setup walk] /api/weather-location <-', j);
         } catch (e) {
+            warning = 'Network error — saved locally only.';
             console.warn('[setup walk] could not persist location:', e);
         }
-        onSave();
+
+        if (persisted) {
+            onSave();           // happy path: close + mark step done
+        } else {
+            /* Surface the warning, hold the modal open for 1.6s so the
+             * operator reads it, then close.  The local copy is already
+             * written, so the dashboard will still see the new location
+             * in this browser session. */
+            setSaveMsg(warning || 'Saved locally only — sign in to save server-side.');
+            setTimeout(() => { setSaveMsg(null); onSave(); }, 1600);
+        }
     };
 
 
     return (
         <ModalShell title="Location Setting" subtitle="Click the map, drag the pin, or use your device" accent="amber" onClose={onClose} onSave={persistAndSave} size="max">
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full" style={{minHeight:'70vh'}}>
+            {saveMsg && (
+                <div data-testid="loc-save-msg"
+                     className="mb-3 px-4 py-2.5 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-200 text-xs font-mono">
+                    ⚠  {saveMsg}
+                </div>
+            )}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full" style={{minHeight:'56vh'}}>
                 {/* MAP — fills the left side, with a search bar floating on top */}
-                <div className="relative">
+                <div className="relative" style={{minHeight:'56vh'}}>
                     <div ref={mapBoxRef}
-                         style={{ height:'100%', minHeight:'70vh', width:'100%', borderRadius:'12px',
+                         style={{ height:'100%', minHeight:'56vh', width:'100%', borderRadius:'12px',
                                   overflow:'hidden', border:'1px solid #334155', background:'#0b1220' }}/>
 
                     {/* Search bar overlay — sits in the top-centre of the map */}
@@ -1043,23 +1074,28 @@ function ModalShell({ title, subtitle, accent='indigo', onClose, onSave, size=''
     const width = sizeMap[size] || 'max-w-md';
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" onClick={onClose}>
-            <div className={`bg-slate-900 border-2 rounded-2xl w-full ${width} mx-4 p-6 fade-up`}
+            {/* Flex-column shell: header (fixed) + scrollable content + sticky footer.
+                Critical for size="max" where children alone exceed the modal height
+                and would otherwise push the Save & return button below the viewport. */}
+            <div className={`bg-slate-900 border-2 rounded-2xl w-full ${width} mx-4 fade-up flex flex-col`}
                  onClick={(e) => e.stopPropagation()}
-                 style={{borderColor:`${c}66`}}>
-                <div className="flex items-start justify-between mb-5">
+                 style={{borderColor:`${c}66`, maxHeight: '92vh'}}>
+                <div className="flex items-start justify-between p-6 pb-4 border-b border-slate-800/60 shrink-0">
                     <div>
                         <h3 className="text-lg font-black uppercase tracking-widest" style={{color:c}}>{title}</h3>
                         <p className="text-xs text-slate-500 mt-1">{subtitle}</p>
                     </div>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
+                    <button data-testid="modal-close" onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
                 </div>
-                {children}
-                <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
-                    <button onClick={onClose}
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
+                    {children}
+                </div>
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800 shrink-0 bg-slate-900 rounded-b-2xl">
+                    <button data-testid="modal-cancel" onClick={onClose}
                             className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs uppercase tracking-widest font-black text-slate-400 hover:bg-slate-700">
                         Cancel
                     </button>
-                    <button onClick={onSave}
+                    <button data-testid="modal-save" onClick={onSave}
                             className="px-5 py-2 rounded-lg text-xs uppercase tracking-widest font-black text-white"
                             style={{background:c, boxShadow:`0 0 12px ${c}55`}}>
                         Save & return ✓

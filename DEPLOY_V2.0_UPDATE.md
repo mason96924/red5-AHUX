@@ -21,6 +21,28 @@ is unchanged from the last deploy.
 
 ---
 
+## ⚡ The 1-line update (recommended for routine pulls)
+
+For everyday "I just clicked Save to GitHub and want PROD to catch up", skip
+the manual rsync/restart dance and run the bundled deploy script instead:
+
+```bash
+~/red5-studio/deploy.sh
+```
+
+It runs the full sequence: `git pull --ff-only` → rsync `frontend/public/`
+into nginx's actual root (auto-detected from `/etc/nginx/sites-available/red5`)
+→ restart `red5-backend.service` → reload nginx → print the served
+`setup.html` fingerprint so you can confirm the cache-busting hash made it
+through.  Safe to re-run; no `--delete` flag (so CRA's `build/static/` is
+preserved).
+
+The phased procedure below is still the source of truth for **structural**
+changes (new env vars, new directories, schema work).  Use `deploy.sh` for
+everything else.
+
+---
+
 ## Phase 0 — Snapshot before you touch anything (60 s)
 
 On the prod server:

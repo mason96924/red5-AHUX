@@ -524,6 +524,35 @@
             const [showPath, setShowPath] = useState(true);
             const [vecVis, setVecVis] = useState({ enthalpy: true, sensible: true, latent: true, diagnostic: true });
             const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true });
+
+            /* Per-AHU venue-preset → RH band map.  MUST stay byte-identical
+               to the PRESETS list inside sidebar.js so a venue picked in
+               the sidebar dropdown maps to the same lo/hi here when the
+               psychrometric chart draws that AHU's sweet-spot polygon.
+               (2026-06-26 — wired per-AHU sweet-spot polygons feature.) */
+            const VENUE_PRESET_MAP = {
+                custom:     { lo: 40, hi: 60 },
+                office:     { lo: 30, hi: 60 },
+                museum:     { lo: 40, hi: 55 },
+                hotel:      { lo: 30, hi: 60 },
+                library:    { lo: 40, hi: 55 },
+                hospital:   { lo: 30, hi: 60 },
+                lecture:    { lo: 30, hi: 60 },
+                concert:    { lo: 40, hi: 55 },
+                meeting:    { lo: 30, hi: 60 },
+                exhibition: { lo: 40, hi: 55 },
+            };
+            /* Version counter bumped whenever the sidebar dispatches
+               `r5-ahu-preset-change`.  Used as a useMemo dependency so
+               `ahuSweetSpots` recomputes from localStorage on every
+               dropdown pick without us having to lift the per-AHU
+               preset choices into React state. */
+            const [ahuPresetVersion, setAhuPresetVersion] = useState(0);
+            useEffect(() => {
+                const h = () => setAhuPresetVersion(v => v + 1);
+                window.addEventListener('r5-ahu-preset-change', h);
+                return () => window.removeEventListener('r5-ahu-preset-change', h);
+            }, []);
             
             const [cardOffset, setCardOffset] = useState({ x: 200, y: 30 });
             const [vavTableOffset, setVavTableOffset] = useState({ x: 780, y: 20 });
@@ -1666,6 +1695,21 @@
                 return getEnergyMetrics(ahu);
             }, [selectedAhuId, ahuData]);
 
+            /* Per-AHU sweet-spot bands — one entry per AHU, derived from
+               `localStorage.red5_rh_preset_<ahuId>` + VENUE_PRESET_MAP.
+               Recomputes whenever ahuData changes OR the sidebar
+               dispatches r5-ahu-preset-change (via the version counter).
+               renderGivoniOverlay reads this to draw a polygon per
+               visible/selected AHU instead of one global polygon. */
+            const ahuSweetSpots = useMemo(() => {
+                return ahuData.map(ahu => {
+                    let id = 'custom';
+                    try { id = localStorage.getItem(`red5_rh_preset_${ahu.id}`) || 'custom'; } catch (e) {}
+                    const band = VENUE_PRESET_MAP[id] || VENUE_PRESET_MAP.custom;
+                    return { ahuId: ahu.id, presetId: id, lo: band.lo, hi: band.hi, color: ahu.procColor || '#10b981' };
+                });
+            }, [ahuData, ahuPresetVersion]);
+
             const renderGivoniOverlay = () => {
                 if (!showGivoni) return null;
                 const rh80 = []; for(let t=20; t<=25; t+=0.5) rh80.push([t, getW(t, 80)]);
@@ -1674,19 +1718,35 @@
                 const rh20_CZ = []; for(let t=27; t>=20; t-=0.5) rh20_CZ.push([t, getW(t, 20)]);
 
                 const CZ = [...rh80, [27, getW(27, 50)], [27, getW(27, 20)], ...rh20_CZ];
-                // Operator-defined "sweet spot" sub-strip — default is
-                // ASHRAE 55 / ISO 7730's 40-60% RH band but the operator
-                // can tighten it (e.g. 45-55% for cleanrooms / archives)
-                // or widen it via the inline number inputs next to the
-                // Givoni toggle.  Rendered as a darker emerald shade
-                // inside the CZ polygon; geometric intersection with
-                // the CZ is enforced via SVG <clipPath> below so any
-                // configured band stays visually clipped at the CZ's
-                // slanted upper-right boundary.
-                const _ssLo = sweetSpotRange.lo, _ssHi = sweetSpotRange.hi;
-                const rhHi_top = []; for (let tt = 20; tt <= 27; tt += 0.5) rhHi_top.push([tt, getW(tt, _ssHi)]);
-                const rhLo_bot = []; for (let tt = 27; tt >= 20; tt -= 0.5) rhLo_bot.push([tt, getW(tt, _ssLo)]);
-                const SWEET = [...rhHi_top, ...rhLo_bot];
+                // Operator-defined "sweet spot" sub-strip — now driven by
+                // the PER-AHU venue-preset dropdowns in the sidebar
+                // (2026-06-26).  Option B: when an AHU is selected, only
+                // its band is drawn; otherwise all distinct bands across
+                // AHUs are drawn (deduped by lo/hi).  Geometric
+                // intersection with the CZ is enforced via SVG <clipPath>
+                // below so any configured band stays visually clipped at
+                // the CZ's slanted upper-right boundary.
+                const visibleSpots = (() => {
+                    if (!ahuSweetSpots || ahuSweetSpots.length === 0) return [];
+                    if (selectedAhuId) {
+                        return ahuSweetSpots.filter(s => s.ahuId === selectedAhuId);
+                    }
+                    const seen = new Set();
+                    const out = [];
+                    for (const s of ahuSweetSpots) {
+                        const k = s.lo + '-' + s.hi;
+                        if (seen.has(k)) continue;
+                        seen.add(k);
+                        out.push(s);
+                    }
+                    return out;
+                })();
+                const buildSweetPoly = (lo, hi) => {
+                    const top = [], bot = [];
+                    for (let tt = 20; tt <= 27; tt += 0.5) top.push([tt, getW(tt, hi)]);
+                    for (let tt = 27; tt >= 20; tt -= 0.5) bot.push([tt, getW(tt, lo)]);
+                    return [...top, ...bot];
+                };
                 const NV = [...rh100, [32, 15.4/1000], [32, 6.2/1000], ...rh20Line];
                 const Mass = [...rh80, [33, 16/1000], [37, getW(37, 30)], [37, 3/1000], [20, getW(20, 20)]];
                 const MCV = [...rh80, [40, 16/1000], [44, getW(44, 20)], [44, 3/1000], [20, getW(20, 20)]];
@@ -1711,27 +1771,51 @@
                         <polygon points={safePts(EVAP)} fill="#06b6d4" fillOpacity="0.08" stroke="#06b6d4" strokeWidth="1" />
                         <polygon points={safePts(NV)} fill="#f59e0b" fillOpacity="0.05" stroke="#f59e0b" strokeWidth="1" />
                         <polygon points={safePts(CZ)} fill="#10b981" fillOpacity="0.15" stroke="#10b981" strokeWidth="1.2" />
-                        {/* 40-60% RH sweet-spot sub-strip — darker emerald
-                            inside the CZ polygon.  Geometric clipping via
-                            SVG <clipPath> guarantees pixel-perfect
-                            intersection with the CZ at the slanted upper-
-                            right boundary (where the 60% RH isopleth
-                            crosses the 80%→50% CZ ceiling around T~26.3). */}
-                        {showSweetSpot && (
+                        {/* Per-AHU sweet-spot sub-strips — darker emerald
+                            (or AHU process colour) inside the CZ polygon.
+                            Geometric clipping via SVG <clipPath>
+                            guarantees pixel-perfect intersection with the
+                            CZ at the slanted upper-right boundary (where
+                            the 60% RH isopleth crosses the 80%→50% CZ
+                            ceiling around T~26.3). */}
+                        {showSweetSpot && visibleSpots.length > 0 && (
                             <g>
                                 <defs>
                                     <clipPath id="cz-clip-path" clipPathUnits="userSpaceOnUse">
                                         <polygon points={safePts(CZ)} />
                                     </clipPath>
                                 </defs>
-                                <polygon data-testid="givoni-sweet-strip" points={safePts(SWEET)} clipPath="url(#cz-clip-path)" fill="#059669" fillOpacity="0.32" stroke="#047857" strokeWidth="0.8" strokeDasharray="3,2" />
-                                <text x={safe(x(23.5))} y={safe(y(getW(23.5, (sweetSpotRange.lo + sweetSpotRange.hi) / 2)))}
-                                      fill="#022c22" fontSize="8" fontWeight="900"
-                                      textAnchor="middle"
-                                      className="uppercase font-black font-mono tracking-widest pointer-events-none"
-                                      style={{paintOrder:'stroke', stroke:'#a7f3d0', strokeWidth:'2.5px', strokeLinejoin:'round'}}>
-                                    {sweetSpotRange.lo}-{sweetSpotRange.hi}% RH
-                                </text>
+                                {visibleSpots.map((spot, i) => {
+                                    const poly = buildSweetPoly(spot.lo, spot.hi);
+                                    // Stagger label X across multiple bands so
+                                    // 30-60 vs 40-55 labels don't collide when
+                                    // no AHU is focused.  Single-band view
+                                    // (selected AHU) just centres at 23.5°C.
+                                    const labelTemp = selectedAhuId
+                                        ? 23.5
+                                        : (21.5 + i * 1.8);
+                                    const labelClamped = Math.min(26.5, Math.max(20.5, labelTemp));
+                                    const ringColor = spot.color || '#10b981';
+                                    return (
+                                        <g key={`sweet-${spot.ahuId}-${i}`}>
+                                            <polygon data-testid={`givoni-sweet-strip-${spot.ahuId}`}
+                                                     points={safePts(poly)}
+                                                     clipPath="url(#cz-clip-path)"
+                                                     fill="#059669"
+                                                     fillOpacity={selectedAhuId ? "0.32" : "0.22"}
+                                                     stroke={ringColor}
+                                                     strokeWidth="0.9"
+                                                     strokeDasharray="3,2" />
+                                            <text x={safe(x(labelClamped))} y={safe(y(getW(labelClamped, (spot.lo + spot.hi) / 2)))}
+                                                  fill="#022c22" fontSize="8" fontWeight="900"
+                                                  textAnchor="middle"
+                                                  className="uppercase font-black font-mono tracking-widest pointer-events-none"
+                                                  style={{paintOrder:'stroke', stroke:'#a7f3d0', strokeWidth:'2.5px', strokeLinejoin:'round'}}>
+                                                {selectedAhuId ? `${spot.ahuId} · ${spot.lo}-${spot.hi}% RH` : `${spot.lo}-${spot.hi}% RH`}
+                                            </text>
+                                        </g>
+                                    );
+                                })}
                             </g>
                         )}
                         <polygon points={safePts(WINTER)} fill="#3b82f6" fillOpacity="0.15" stroke="none" />

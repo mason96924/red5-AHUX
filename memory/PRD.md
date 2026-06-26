@@ -1,5 +1,43 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.37 — Per-AHU Sweet-Spot RH Polygons on Psy Chart (2026-06-26)
+
+**Brief**: The sidebar per-AHU Venue-Preset dropdowns (added earlier this
+session) were write-only — the chart still drew one global 40-60% RH band
+regardless of each AHU's chosen preset.  Operators couldn't visually
+verify their venue selections.
+
+**Implementation (app.js + psy-chart-svg.js)**
+  * New `VENUE_PRESET_MAP` (custom/office/museum/hotel/library/hospital/
+    lecture/concert/meeting/exhibition → {lo,hi}) — mirror of the
+    PRESETS list in `sidebar.js`.  Keep both in sync.
+  * New `ahuPresetVersion` state + `r5-ahu-preset-change` window listener
+    so a dropdown pick in the sidebar triggers a React re-render without
+    lifting per-AHU state out of localStorage.
+  * New `ahuSweetSpots` useMemo — derives `{ahuId, lo, hi, color}` per
+    AHU from `localStorage.red5_rh_preset_<ahuId>` + VENUE_PRESET_MAP.
+  * `renderGivoniOverlay` now iterates `visibleSpots` (Option B):
+      - selectedAhuId set → draws only that AHU's band
+      - selectedAhuId null → draws all distinct bands (dedup by lo/hi)
+    with staggered labels and an SVG `<clipPath>` to keep each band
+    geometrically clipped to the Givoni Comfort Zone polygon.
+
+**Verified via screenshot tool (3 cases)**
+  * No AHU selected + AHU-01=museum / AHU-02=office / AHU-03=custom:
+    chart shows overlapping 40-55% + 30-60% + 40-60% polygons with labels.
+  * Click AHU-01 row → only the Museum 40-55% band remains visible.
+  * Click AHU-02 row → only the Office 30-60% band remains visible.
+
+**Files**
+  * `frontend/public/js/dashboard/app.js` (edited)
+  * `frontend/public/dashboard.compiled.js` (rebuilt, cache-bust v=81cc3c0173)
+  * `archive/Red5-Studio-V1.9/{dashboard.compiled.js,dashboard.html,js/dashboard/app.js}` (mirrored)
+  * `archive/Red5-Studio-V2.0/{dashboard.compiled.js,dashboard.html,js/dashboard/app.js}` (mirrored)
+
+---
+
+
+
 ## Phase L.36 — Dim/Light preview wired into chart + `deploy.sh` (2026-06-26)
 
 **Brief**: The Display Mode toggle on the Psy Chart setting page was

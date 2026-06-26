@@ -198,7 +198,9 @@ function renderSidebar(ctx) {
             </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            {i18nReady && window.LangSelector && <LangSelector />}
+            {/* Language selector relocated to /setup.html → Language Setting
+                (2026-06-26).  The setup walk now writes localStorage.i18n_lang
+                directly, so the dashboard simply reads whatever is current. */}
             {/* ----- Venue Preset chip ------------------------------------------------
                 Tiny pill that shows the operator which industry-standard RH band
                 is currently active (Office / Museum / Hotel / Library / Hospital /

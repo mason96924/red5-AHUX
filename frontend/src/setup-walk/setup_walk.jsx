@@ -21,7 +21,17 @@ function App() {
 
     const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhPreset:'office', rhLo:30, rhHi:60, tLo:-15, tHi:50, theme:'dark', darkLevel:2.0 });
     const [locCfg, setLocCfg]         = useState({ siteName:'My Building', city:'Toronto, ON', lat:43.6532, lon:-79.3832 });
-    const [langCfg, setLangCfg]       = useState({ lang:'en' });
+    const [langCfg, setLangCfg]       = useState(() => {
+        /* Lazy init from the same localStorage key the dashboard reads, so
+         * reopening the setup walk shows the currently-active language
+         * rather than always defaulting to English. */
+        try {
+            const v = localStorage.getItem('i18n_lang');
+            const allowed = ['en','zh-CN','zh-TW','ja','ko'];
+            if (v && allowed.indexOf(v) !== -1) return { lang: v };
+        } catch (e) { /* private mode -> fall through */ }
+        return { lang:'en' };
+    });
     const [pluginCfg, setPluginCfg]   = useState({ enabled:['weather','givoni','sweet_spot'] });
 
     const completeCount = Object.values(done).filter(Boolean).length;
@@ -864,8 +874,27 @@ function LanguageModal({ cfg, setCfg, onClose, onSave }) {
         { code:'ja',    label:'Japanese',               native:'日本語'      },
         { code:'ko',    label:'Korean',                 native:'한국어'      },
     ];
+
+    /* On Save & return: write the picked language code to the same
+     * localStorage key the dashboard's i18n.js reads (`i18n_lang`), and
+     * dispatch the `langchange` event so any open dashboard/config tab
+     * picks it up live.  This is what makes the setup walk's language
+     * choice actually drive the dashboard / config / mapper UI -- the
+     * sidebar selector that used to live in the dashboard header has
+     * been removed (2026-06-26) and the setup walk is now the single
+     * source of truth for UI language. */
+    const persistAndSave = () => {
+        try {
+            localStorage.setItem('i18n_lang', cfg.lang);
+            window.dispatchEvent(new Event('langchange'));
+            console.info('[setup walk] i18n_lang <-', cfg.lang);
+        } catch (e) {
+            console.warn('[setup walk] could not persist language:', e);
+        }
+        onSave();
+    };
     return (
-        <ModalShell title="Language Setting" subtitle="Pick your default interface language" accent="emerald" onClose={onClose} onSave={onSave}>
+        <ModalShell title="Language Setting" subtitle="Pick your default interface language" accent="emerald" onClose={onClose} onSave={persistAndSave}>
             <div className="grid grid-cols-2 gap-3">
                 {langs.map(l => (
                     <button key={l.code} onClick={()=>setCfg({...cfg, lang:l.code})}

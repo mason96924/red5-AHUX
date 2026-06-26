@@ -82,7 +82,12 @@ cd "$FRONTEND_DIR"
 if [[ ! -d node_modules ]] || \
    [[ package.json -nt node_modules ]] || \
    [[ yarn.lock    -nt node_modules ]]; then
-    yarn install --frozen-lockfile
+    # NOTE: NO --frozen-lockfile.  This script runs on the PROD box where
+    # ad-hoc `yarn add` history can leave lockfile drift; we'd rather
+    # auto-heal the lockfile than fail the deploy.  CI/CD pipelines that
+    # need strict reproducibility should use `yarn install --frozen-lockfile`
+    # explicitly, not this script.
+    yarn install --network-timeout 600000
 else
     echo "       node_modules already current — skipping"
 fi

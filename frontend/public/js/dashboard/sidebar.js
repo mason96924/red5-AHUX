@@ -403,63 +403,54 @@ function renderSidebar(ctx) {
         const m = getEnergyMetrics(ahu); 
         return ( 
             <div key={ahu.id} onClick={() => { setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(null); }} className={`p-3 rounded-xl border transition-all cursor-pointer ${isSelected ? ui.itemSelected : ui.border + ' bg-opacity-50 hover:bg-opacity-40'}`}>
-                <div className="flex justify-between items-center mb-1 font-black uppercase text-xs shadow-black">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* AHU ID is now a button: opens the AHU 3D equipment
-                            graphic modal in place (replaces the old floating
-                            "AHU detail card" on the chart, removed 2026-06-26). */}
-                        <button data-testid={`ahu-id-${ahu.id}`}
-                                onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowAhuModalFor(ahu.id); }}
-                                title="Open AHU 3D equipment graphic"
-                                className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-xs tracking-tighter`}>
-                            {ahu.id}
+                {/* Heading line: AHU id, DETAIL link, LOCK SA / PATH (when selected) */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-2 font-black uppercase text-xs shadow-black">
+                    <button data-testid={`ahu-id-${ahu.id}`}
+                            onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowAhuModalFor(ahu.id); }}
+                            title="Open AHU 3D equipment graphic"
+                            className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-xs tracking-tighter`}>
+                        {ahu.id}
+                    </button>
+                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`} className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-widest">DETAIL ↗</a>
+                    {isSelected && (
+                        <button data-testid={`ahu-lock-sa-${ahu.id}`}
+                                onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
+                                title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
+                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            {isLockedToSA ? 'SA LOCKED' : 'LOCK SA'}
                         </button>
-                        <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`} className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-widest">DETAIL ↗</a>
-                        {/* LOCK SA + PATH chips — visible only when this AHU is
-                            selected.  They replace the same-named buttons that
-                            used to live on the (now-removed) floating AHU
-                            detail card. */}
-                        {isSelected && (
-                            <button data-testid={`ahu-lock-sa-${ahu.id}`}
-                                    onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
-                                    title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                                {isLockedToSA ? 'SA LOCKED' : 'LOCK SA'}
-                            </button>
-                        )}
-                        {isSelected && (
-                            <button data-testid={`ahu-path-${ahu.id}`}
-                                    onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
-                                    title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                                PATH
-                            </button>
-                        )}
-                    </div>
-                    <div className="flex gap-1.5"><MetricBar theme={theme} val={m.exchange} color="#3b82f6" height="h-5" max={20}/><MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-5" max={20}/></div>
+                    )}
+                    {isSelected && (
+                        <button data-testid={`ahu-path-${ahu.id}`}
+                                onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
+                                title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
+                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            PATH
+                        </button>
+                    )}
                 </div>
-                <div className="space-y-0.5">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
-                    /* Per-point visibility toggle wired into the OA / SA / RA
-                     * label of each AHU row (replaces the sidebar's old
-                     * trio of giant coloured circles, removed 2026-06-26).
-                     * Click the label to hide that point on the chart;
-                     * row dims to 35% opacity + label strikes through for
-                     * clear visual feedback. */
-                    const active = pointVisibility[p.label] !== false;
-                    const toggleVis = (e) => {
-                        e.stopPropagation();
-                        setPointVisibility({ ...pointVisibility, [p.label]: !active });
-                    };
-                    return ( <div key={p.label} className={`flex items-center justify-between font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
-                        <button data-testid={`ahu-row-toggle-${ahu.id}-${p.label}`} onClick={toggleVis}
-                                title={active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`}
-                                style={{ color: p.color, background:'transparent', border:'none', padding:0 }}
-                                className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline ${active ? '' : 'line-through'}`}>
-                            {p.label}
-                        </button>
-                        <span className={`${ui.text} font-bold font-mono tracking-tighter`}>{tTxt} / {rhTxt} / {hTxt}</span>
-                    </div> );
-                })}</div>
+                {/* Body: OA/SA/RA values tight against their labels on the left,
+                    Exchange / Absorption metric bars enlarged and to the right
+                    with the value displayed inside each pill (2026-06-26). */}
+                <div className="flex items-stretch gap-3">
+                    <div className="flex-1 space-y-0.5 min-w-0">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
+                        const active = pointVisibility[p.label] !== false;
+                        const toggleVis = (e) => { e.stopPropagation(); setPointVisibility({ ...pointVisibility, [p.label]: !active }); };
+                        return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
+                            <button data-testid={`ahu-row-toggle-${ahu.id}-${p.label}`} onClick={toggleVis}
+                                    title={active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`}
+                                    style={{ color: p.color, background:'transparent', border:'none', padding:0, width:'1.4rem' }}
+                                    className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline shrink-0 text-left ${active ? '' : 'line-through'}`}>
+                                {p.label}
+                            </button>
+                            <span className={`${ui.text} font-bold font-mono tracking-tighter whitespace-nowrap`}>{tTxt} / {rhTxt} / {hTxt}</span>
+                        </div> );
+                    })}</div>
+                    <div className="flex gap-1.5 shrink-0 items-stretch">
+                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={20} showValue={true} />
+                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={20} showValue={true} />
+                    </div>
+                </div>
                 {ahu.g36 && (() => {
                     /* G36 chip — operating mode + request counts + reset values.
                        Color picked from the mode so a glance tells you what's

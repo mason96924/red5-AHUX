@@ -446,50 +446,67 @@ function renderSidebar(ctx) {
         const m = getEnergyMetrics(ahu); 
         return ( 
             <div key={ahu.id} onClick={() => { setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(null); }} className={`p-3 rounded-xl border transition-all cursor-pointer ${isSelected ? ui.itemSelected : ui.border + ' bg-opacity-50 hover:bg-opacity-40'}`}>
-                {/* Heading line: AHU id, DETAIL link, LOCK SA / PATH (when selected) */}
-                <div className="flex items-center gap-1.5 flex-wrap mb-2 font-black uppercase text-xs shadow-black">
+                {/* Heading line: AHU id + DETAIL / LOCK SA / PATH / APPLY
+                    chips all in ONE line (2026-06-26).  Chips shrunk to
+                    text-[8px] px-1 so they fit in a ~250 px-wide docked
+                    sidebar without wrapping.  APPLY chip is ALWAYS
+                    rendered now (Phase L.38 polish): greyed/disabled
+                    when this AHU's band matches the controller, pulsing
+                    emerald when dirty, giving operators a uniform
+                    "controller status" column at a glance. */}
+                <div className="flex items-center gap-1 flex-nowrap mb-2 font-black uppercase shadow-black">
                     <button data-testid={`ahu-id-${ahu.id}`}
                             onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowAhuModalFor(ahu.id); }}
                             title="Open AHU 3D equipment graphic"
-                            className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-xs tracking-tighter`}>
+                            className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-[11px] tracking-tighter mr-1 shrink-0`}>
                         {ahu.id}
                     </button>
-                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`} className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-widest">DETAIL ↗</a>
+                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`}
+                       className="shrink-0 text-[8px] px-1 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-wider">DETAIL ↗</a>
                     {isSelected && (
                         <button data-testid={`ahu-lock-sa-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
                                 title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
-                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                            {isLockedToSA ? 'SA LOCKED' : 'LOCK SA'}
+                                className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-colors leading-none font-bold tracking-wider ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            {isLockedToSA ? 'SA LOCK' : 'LOCK SA'}
                         </button>
                     )}
                     {isSelected && (
                         <button data-testid={`ahu-path-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
                                 title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
-                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors leading-none font-bold tracking-widest ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                                className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-colors leading-none font-bold tracking-wider ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
                             PATH
                         </button>
                     )}
-                    {/* Per-AHU APPLY ↑ chip — only shows when this AHU's
-                        local preset differs from the last-applied band
-                        on the controller.  Click → POST a single band
-                        to /api/band-overrides/ahu-rh-bands.  Pulse-
-                        animates to draw the eye until applied. */}
-                    {isAhuDirty(ahu.id) && (() => {
+                    {/* APPLY chip — ALWAYS rendered for uniform layout.
+                        Dirty → pulsing emerald + clickable.
+                        Clean → greyed + disabled + tooltip "in sync". */}
+                    {(() => {
                         const spot = (ahuSweetSpots || []).find(s => s.ahuId === ahu.id);
-                        if (!spot) return null;
+                        const dirty = isAhuDirty(ahu.id) && !!spot;
+                        const onClick = (e) => {
+                            e.stopPropagation();
+                            if (!dirty || !spot) return;
+                            applyOneAhu(spot);
+                        };
                         return (
                             <button data-testid={`ahu-apply-${ahu.id}`}
-                                    onClick={(e) => { e.stopPropagation(); applyOneAhu(spot); }}
-                                    disabled={applyBusy}
-                                    title={`Push ${spot.lo}-${spot.hi}% RH band to the controller for ${ahu.id}`}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-all leading-none font-black tracking-widest font-mono animate-pulse
-                                                ${theme==='dark'
-                                                    ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200 hover:bg-emerald-600/40'
-                                                    : 'bg-emerald-100 border-emerald-500 text-emerald-700 hover:bg-emerald-200'}
-                                                ${applyBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}>
-                                APPLY ↑
+                                    onClick={onClick}
+                                    disabled={!dirty || applyBusy}
+                                    title={dirty
+                                        ? `Push ${spot.lo}-${spot.hi}% RH band to the controller for ${ahu.id}`
+                                        : `${ahu.id} band is already in sync with the controller`}
+                                    className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-all leading-none font-black tracking-wider font-mono
+                                                ${dirty
+                                                    ? (theme==='dark'
+                                                        ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200 hover:bg-emerald-600/40 cursor-pointer animate-pulse'
+                                                        : 'bg-emerald-100 border-emerald-500 text-emerald-700 hover:bg-emerald-200 cursor-pointer animate-pulse')
+                                                    : (theme==='dark'
+                                                        ? 'border-slate-700/60 text-slate-600 bg-transparent cursor-default'
+                                                        : 'border-slate-300 text-slate-400 bg-transparent cursor-default')}
+                                                ${applyBusy ? 'opacity-60 cursor-wait' : ''}`}>
+                                {dirty ? 'APPLY ↑' : 'SYNCED'}
                             </button>
                         );
                     })()}

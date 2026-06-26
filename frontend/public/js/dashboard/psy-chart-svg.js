@@ -21,7 +21,7 @@
  * ------------------------------------------------------------------ */
 
 function renderPsyChartSvg(ctx) {
-    const { width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t } = ctx;
+    const { width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t } = ctx;
 
     return (
 <div className="flex-1 relative flex items-center justify-center overflow-hidden font-black shadow-black shadow-inner">
@@ -48,7 +48,29 @@ function renderPsyChartSvg(ctx) {
                         </div>
                         <div className="grid grid-cols-3 gap-1 mt-2 h-full">
                             {ahuData.find(a => a.id === selectedAhuId)?.points.map(p => {
-                                const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--°'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h'; return ( <div key={p.label} className={`flex flex-col justify-center ${ui.dataBlock} py-1.5 rounded-lg border text-center shadow-inner h-full`}><span className="text-[9px] font-black mb-0.5 shadow-black" style={{color: p.color}}>{p.label}</span><span className={`text-[10px] font-mono ${theme==='dark'?'text-slate-200':'text-slate-700'}`}>{tTxt}</span><span className={`text-[8px] font-mono ${ui.textMuted}`}>{rhTxt}</span><span className="text-[8px] font-mono text-pink-400 mt-0.5">{hTxt}</span></div> );
+                                const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--°'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
+                                /* Point-visibility toggle (moved here from sidebar 2026-06-26):
+                                 * clicking the OA / SA / RA text label inside its data pill
+                                 * toggles that point on/off across the chart.  Visual cue:
+                                 * inactive labels dim to 35% opacity and add a strike-through. */
+                                const active = pointVisibility[p.label] !== false;
+                                const toggle = (e) => {
+                                    e.stopPropagation();
+                                    if (typeof setPointVisibility === 'function') {
+                                        setPointVisibility({ ...pointVisibility, [p.label]: !active });
+                                    }
+                                };
+                                return ( <div key={p.label} className={`flex flex-col justify-center ${ui.dataBlock} py-1.5 rounded-lg border text-center shadow-inner h-full transition-opacity ${active ? '' : 'opacity-40'}`}>
+                                    <button data-testid={`ahu-point-toggle-${p.label}`} onClick={toggle}
+                                            title={active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`}
+                                            className={`text-[9px] font-black mb-0.5 shadow-black uppercase tracking-wider cursor-pointer hover:underline ${active ? '' : 'line-through'}`}
+                                            style={{color: p.color, background:'transparent', border:'none'}}>
+                                        {p.label}
+                                    </button>
+                                    <span className={`text-[10px] font-mono ${theme==='dark'?'text-slate-200':'text-slate-700'}`}>{tTxt}</span>
+                                    <span className={`text-[8px] font-mono ${ui.textMuted}`}>{rhTxt}</span>
+                                    <span className="text-[8px] font-mono text-pink-400 mt-0.5">{hTxt}</span>
+                                </div> );
                             })}
                         </div>
                     </div>

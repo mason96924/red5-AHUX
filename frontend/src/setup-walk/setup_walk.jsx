@@ -858,12 +858,11 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
  * ========================================================================= */
 function LanguageModal({ cfg, setCfg, onClose, onSave }) {
     const langs = [
-        { code:'en', label:'English',    native:'English'  },
-        { code:'fr', label:'French',     native:'Français' },
-        { code:'es', label:'Spanish',    native:'Español'  },
-        { code:'zh', label:'Chinese',    native:'中文'      },
-        { code:'ja', label:'Japanese',   native:'日本語'    },
-        { code:'de', label:'German',     native:'Deutsch'  },
+        { code:'en',    label:'English',                native:'English'    },
+        { code:'zh-CN', label:'Chinese (Simplified)',   native:'简体中文'    },
+        { code:'zh-TW', label:'Chinese (Traditional)',  native:'繁體中文'    },
+        { code:'ja',    label:'Japanese',               native:'日本語'      },
+        { code:'ko',    label:'Korean',                 native:'한국어'      },
     ];
     return (
         <ModalShell title="Language Setting" subtitle="Pick your default interface language" accent="emerald" onClose={onClose} onSave={onSave}>

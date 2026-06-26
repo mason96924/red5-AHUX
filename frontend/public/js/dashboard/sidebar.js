@@ -431,8 +431,13 @@ function renderSidebar(ctx) {
                 </div>
                 {/* Body: OA/SA/RA values tight against their labels on the left,
                     Exchange / Absorption metric bars enlarged and to the right
-                    with the value displayed inside each pill (2026-06-26). */}
-                <div className="flex items-stretch gap-3">
+                    with the value displayed inside each pill (2026-06-26).
+                    Middle column: per-AHU RH venue preset selector (2026-06-26
+                    mockup) — different rooms have different humidity targets
+                    so each AHU now picks its own.  This is currently local
+                    state only; full chart integration (per-AHU sweet-spot
+                    polygons) is a follow-up. */}
+                <div className="flex items-stretch gap-2">
                     <div className="flex-1 space-y-0.5 min-w-0">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
                         const active = pointVisibility[p.label] !== false;
                         const toggleVis = (e) => { e.stopPropagation(); setPointVisibility({ ...pointVisibility, [p.label]: !active }); };
@@ -446,6 +451,50 @@ function renderSidebar(ctx) {
                             <span className={`${ui.text} font-bold font-mono tracking-tighter whitespace-nowrap`}>{tTxt} / {rhTxt} / {hTxt}</span>
                         </div> );
                     })}</div>
+                    {/* Per-AHU RH venue preset (label + range + dropdown).
+                        Mockup: stores choice in localStorage under
+                        `red5_rh_preset_<ahuId>`; chart polygon wiring is a
+                        separate follow-up. */}
+                    {(() => {
+                        const PRESETS = [
+                            { id:'custom',     name:'Custom',      lo:40, hi:60 },
+                            { id:'office',     name:'Office',      lo:30, hi:60 },
+                            { id:'museum',     name:'Museum',      lo:40, hi:55 },
+                            { id:'hotel',      name:'Hotel',       lo:30, hi:60 },
+                            { id:'library',    name:'Library',     lo:40, hi:55 },
+                            { id:'hospital',   name:'Hospital',    lo:30, hi:60 },
+                            { id:'lecture',    name:'Lecture',     lo:30, hi:60 },
+                            { id:'concert',    name:'Concert',     lo:40, hi:55 },
+                            { id:'meeting',    name:'Meeting',     lo:30, hi:60 },
+                            { id:'exhibition', name:'Exhibition',  lo:40, hi:55 },
+                        ];
+                        let savedId = 'custom';
+                        try { savedId = localStorage.getItem(`red5_rh_preset_${ahu.id}`) || 'custom'; } catch (e) {}
+                        const cur = PRESETS.find(p => p.id === savedId) || PRESETS[0];
+                        const onPick = (e) => {
+                            e.stopPropagation();
+                            try {
+                                localStorage.setItem(`red5_rh_preset_${ahu.id}`, e.target.value);
+                                window.dispatchEvent(new Event('r5-ahu-preset-change'));
+                            } catch (err) {}
+                        };
+                        return (
+                            <div className={`flex flex-col items-center justify-center gap-0.5 px-1.5 py-1 rounded-lg border ${theme==='dark'?'bg-slate-950/50 border-slate-700/50':'bg-slate-50 border-slate-200'} shrink-0`}
+                                 style={{minWidth:'72px'}}
+                                 onClick={(e) => e.stopPropagation()}>
+                                <span className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-emerald-400':'text-emerald-600'}`} style={{lineHeight:'1'}}>{cur.name.toUpperCase()}</span>
+                                <span className={`text-[10px] font-mono font-black tabular-nums ${ui.text}`} style={{lineHeight:'1.1'}}>{cur.lo}-{cur.hi}%</span>
+                                <select data-testid={`ahu-rh-preset-${ahu.id}`}
+                                        defaultValue={savedId}
+                                        onChange={onPick}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={`text-[8px] mt-0.5 px-1 py-0.5 rounded border ${theme==='dark'?'bg-slate-900 border-slate-700 text-slate-300':'bg-white border-slate-300 text-slate-700'} font-mono font-black uppercase tracking-wider focus:outline-none`}
+                                        style={{maxWidth:'68px'}}>
+                                    {PRESETS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+                        );
+                    })()}
                     <div className="flex gap-1.5 shrink-0 items-stretch">
                         <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={20} showValue={true} />
                         <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={20} showValue={true} />

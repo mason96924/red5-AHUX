@@ -1,5 +1,49 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.36 — Dim/Light preview wired into chart + `deploy.sh` (2026-06-26)
+
+**Brief**: The Display Mode toggle on the Psy Chart setting page was
+previously a write-only setter — it persisted `red5.theme` / `red5.darkLevel`
+to localStorage but produced no visible change on the chart itself.  Operators
+mistook this for "the bar isn't doing anything".
+
+**Setup-walk chart now reactive (`setup_walk.jsx` PsySkeleton)**
+  * Derives a `palette` object from `cfg.theme` ('light' | 'dark') driving:
+    background, grid lines, axis tick text, axis labels, panel background,
+    panel border, pill bg/fg, meta text.
+  * In dim/dark mode applies a CSS `filter: brightness(X)` to the SVG where
+    `X = darkLevel / 2.0` (1.5→0.75, 2.0→1.0, 2.8→1.4) so the brightness
+    slider has immediate visible feedback.
+  * Smooth `transition-colors duration-300` / `transition-[filter] duration-300`
+    so theme flips feel intentional, not jarring.
+
+**`deploy.sh` (repo root)**
+  Single-command V2.0 PROD update.  Eliminates the "git pulled but the site
+  still looks old" trap that bit the operator three times this session.
+  Auto-detects:
+    * `NGINX_ROOT` from `/etc/nginx/sites-available/red5` (grep on `^\s*root\s`)
+    * `BACKEND_SVC` (default `red5-backend`)
+    * `REPO_DIR` (default `$HOME/red5-studio`)
+  Pipeline: `git pull --ff-only` → `rsync -ah --force frontend/public/ →
+  $NGINX_ROOT/` (no `--delete`, so CRA build artefacts survive) →
+  `systemctl restart $BACKEND_SVC` → `nginx -t && reload` → prints the served
+  `setup.html` cache-busting fingerprint so a green check is visible without
+  needing to curl.  Idempotent + safe to re-run.
+
+  `DEPLOY_V2.0_UPDATE.md` now opens with a "⚡ 1-line update" block pointing
+  operators at `./deploy.sh` for routine pulls; the phased runbook is reserved
+  for structural changes (new env vars / deps / schema).
+
+**Why this happened**
+  CRA serves from `frontend/build/`, but `git pull` only touches
+  `frontend/public/`.  The deploy runbook documented a manual rsync to bridge
+  the gap, which was easy to forget — and the cache-busting hash + dim/light
+  changes never reached the served tree as a result.  `deploy.sh` makes the
+  rsync mandatory and self-verifying.
+
+---
+
+
 ## Phase L.34 — `/api/data` Pydantic response model + OpenAPI bonus fix (2026-06-24)
 
 **Brief**: Added typed response shape to the dashboard's single largest

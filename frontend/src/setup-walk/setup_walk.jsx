@@ -291,21 +291,39 @@ function PsySkeleton({ cfg }) {
     /* RH isopleth curves for the chart grid */
     const isopleths = [20, 40, 60, 80, 100];
 
+    /* Theme palette — drives the live preview so the dim/light controls
+     * have visible feedback right on the chart.  In dim/dark mode we also
+     * apply a CSS brightness filter mapped from cfg.darkLevel (1.5 .. 2.8
+     * → 0.6 .. 1.4) so the user can SEE the brightness slider working. */
+    const isLight = cfg.theme === 'light';
+    const palette = isLight
+        ? { bg:'#f8fafc', grid:'#cbd5e1', tick:'#475569', axis:'#1e293b',
+            panelBg:'rgba(248,250,252,0.85)', panelBorder:'#cbd5e1',
+            pillBg:'#e2e8f0', pillFg:'#475569', metaFg:'#64748b' }
+        : { bg:'#0b1220', grid:'#1e293b', tick:'#94a3b8', axis:'#cbd5e1',
+            panelBg:'rgba(15,23,42,0.6)', panelBorder:'#1e293b',
+            pillBg:'#1e293b', pillFg:'#94a3b8', metaFg:'#64748b' };
+    const dimFilter = isLight
+        ? 'none'
+        : `brightness(${(Math.max(1.5, Math.min(2.8, cfg.darkLevel || 2.0)) / 2.0).toFixed(2)})`;
+
     return (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+        <div className="rounded-2xl p-4 border transition-colors duration-300"
+             style={{background: palette.panelBg, borderColor: palette.panelBorder}}>
             <div className="flex items-center justify-between mb-3">
-                <span className="pill bg-slate-800 text-slate-400">PSYCHROMETRIC CHART · live preview</span>
-                <span className="text-[10px] text-slate-500 font-mono">{T_MIN}°C → {T_MAX}°C  ·  {cfg.rhLo}–{cfg.rhHi}% RH</span>
+                <span className="pill" style={{background:palette.pillBg, color:palette.pillFg}}>PSYCHROMETRIC CHART · live preview</span>
+                <span className="text-[10px] font-mono" style={{color:palette.metaFg}}>{T_MIN}°C → {T_MAX}°C  ·  {cfg.rhLo}–{cfg.rhHi}% RH</span>
             </div>
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{background:'#0b1220', borderRadius:8}}>
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto transition-[filter] duration-300"
+                 style={{background: palette.bg, borderRadius:8, filter: dimFilter}}>
                 {/* ---- grid: vertical T lines, horizontal W lines ---- */}
                 {Array.from({length:11}).map((_,i) => {
                     const t = T_MIN + (i/10) * (T_MAX - T_MIN);
                     return (
                         <g key={'vt'+i}>
                             <line x1={x(t)} y1={pad.top} x2={x(t)} y2={pad.top+gridH}
-                                  stroke="#1e293b" strokeWidth="0.6"/>
-                            <text x={x(t)} y={pad.top+gridH+16} fontSize="9.5" fill="#94a3b8"
+                                  stroke={palette.grid} strokeWidth="0.6"/>
+                            <text x={x(t)} y={pad.top+gridH+16} fontSize="9.5" fill={palette.tick}
                                   textAnchor="middle">{t.toFixed(0)}</text>
                         </g>
                     );
@@ -315,8 +333,8 @@ function PsySkeleton({ cfg }) {
                     return (
                         <g key={'hw'+i}>
                             <line x1={pad.left} y1={y(w)} x2={pad.left+gridW} y2={y(w)}
-                                  stroke="#1e293b" strokeWidth="0.6"/>
-                            <text x={pad.left-8} y={y(w)+3} fontSize="9.5" fill="#94a3b8"
+                                  stroke={palette.grid} strokeWidth="0.6"/>
+                            <text x={pad.left-8} y={y(w)+3} fontSize="9.5" fill={palette.tick}
                                   textAnchor="end">{(w*1000).toFixed(0)}</text>
                         </g>
                     );
@@ -396,9 +414,9 @@ function PsySkeleton({ cfg }) {
                 )}
 
                 {/* axis labels */}
-                <text x={pad.left + gridW/2} y={H-12} fontSize="11" fill="#cbd5e1"
+                <text x={pad.left + gridW/2} y={H-12} fontSize="11" fill={palette.axis}
                       textAnchor="middle" fontWeight="800" letterSpacing="2">DRY BULB TEMP (°C)</text>
-                <text x={16} y={pad.top + gridH/2} fontSize="11" fill="#cbd5e1"
+                <text x={16} y={pad.top + gridH/2} fontSize="11" fill={palette.axis}
                       textAnchor="middle" fontWeight="800" letterSpacing="2"
                       transform={`rotate(-90 16 ${pad.top + gridH/2})`}>HUMIDITY RATIO (g/kg)</text>
             </svg>

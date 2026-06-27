@@ -1128,6 +1128,8 @@ def repair_upload_plugin():
         ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                     'landing.html', 'psy_3d.html',
                     'dashboard.compiled.js',   # 2026-06-27: compiled React bundle
+                    'setup.html',              # 2026-06-27: setup walk entry HTML
+                    'setup_walk.compiled.js',  # 2026-06-27: setup walk JSX bundle
                     # docs + configs (added 2026-02-09):
                     'data_bridges_guide.md', 'opt_sa_insight.md',
                     'configs/bridges.json'}
@@ -1209,6 +1211,7 @@ def repair_download_plugin(plugin_name):
     ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                 'landing.html', 'psy_3d.html',
                 'dashboard.compiled.js',
+                'setup.html', 'setup_walk.compiled.js',
                 'data_bridges_guide.md', 'opt_sa_insight.md',
                 'configs/bridges.json'}
     name = (plugin_name or '').strip()

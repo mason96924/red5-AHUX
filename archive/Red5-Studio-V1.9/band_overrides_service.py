@@ -219,3 +219,92 @@ def register(app, ctx):
                      _delete_clamp, methods=['DELETE'])
     app.add_url_rule('/api/band-overrides/preview', 'band_overrides_preview',
                      _preview_clamp, methods=['GET'])
+    # Per-AHU RH bands -- V2.0 parity (backend/routes/bands.py:147+155).
+    app.add_url_rule('/api/band-overrides/ahu-rh-bands', 'get_ahu_rh_bands',
+                     get_ahu_rh_bands, methods=['GET'])
+    app.add_url_rule('/api/band-overrides/ahu-rh-bands', 'post_ahu_rh_bands',
+                     post_ahu_rh_bands, methods=['POST'])
+
+# ---------------------------------------------------------------------------
+# /api/band-overrides/ahu-rh-bands   (GET + POST)  -- V2.0 parity.
+# Per-AHU RH preset bands powering the sidebar's "Apply to Controller"
+# flow.  V2.0 persists to MongoDB scoped to a tenant; V1.9 has no tenant
+# system so we persist to ahu_rh_bands.json on disk (same pattern as
+# band_overrides.json above).  Response shape is byte-identical to V2.0
+# so the shared dashboard JS works unchanged.
+# ---------------------------------------------------------------------------
+def _ahu_rh_bands_path():
+    return os.path.join(DATA_ROOT, 'configs', 'ahu_rh_bands.json')
+
+
+def _read_ahu_rh_bands():
+    """Load ahu_rh_bands.json or return an empty map."""
+    p = _ahu_rh_bands_path()
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, 'r') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_ahu_rh_bands_atomic(data):
+    p = _ahu_rh_bands_path()
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    tmp = p + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, p)
+
+
+def get_ahu_rh_bands():
+    """GET /api/band-overrides/ahu-rh-bands -- return the per-AHU RH-band map."""
+    return jsonify({
+        'status':        'ok',
+        'ahu_rh_bands':  _read_ahu_rh_bands(),
+        'applied':       True,
+    })
+
+
+def post_ahu_rh_bands():
+    """POST /api/band-overrides/ahu-rh-bands -- merge incoming bands.
+
+    Accepts either a single band ``{ahu_id, lo, hi, preset_id}`` or a
+    batch ``{bands: [...]}``.  Returns the merged map plus an
+    ``applied_count`` for the dashboard's confirm-modal copy.
+    """
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    if 'bands' in payload and isinstance(payload['bands'], list):
+        bands_in = payload['bands']
+    elif 'ahu_id' in payload:
+        bands_in = [payload]
+    else:
+        bands_in = []
+
+    current = _read_ahu_rh_bands()
+    now_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    applied = 0
+    for b in bands_in:
+        aid = b.get('ahu_id')
+        if not aid:
+            continue
+        current[aid] = {
+            'lo':         b.get('lo'),
+            'hi':         b.get('hi'),
+            'preset_id':  b.get('preset_id', 'custom'),
+            'updated_at': now_iso,
+        }
+        applied += 1
+    if applied:
+        _write_ahu_rh_bands_atomic(current)
+    return jsonify({
+        'status':         'ok',
+        'ahu_rh_bands':   current,
+        'applied':        True,
+        'applied_count':  applied,
+    })

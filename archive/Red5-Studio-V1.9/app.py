@@ -280,6 +280,13 @@ ahu_records = generate_seed_data()
 # (see weather_service.register(app, ...) call at the bottom of this file).
 
 
+@app.route('/api/health')
+def health_probe():
+    """k8s liveness probe (V2.0 parity, backend/routes/health.py:92)."""
+    from flask import jsonify
+    return jsonify({"ok": True, "version": "1.9.0", "mode": "legacy"})
+
+
 @app.route('/api/download-bundle/<path:filename>')
 def download_bundle_file(filename):
     """Utility endpoint: lets operators download the latest server-side copy of

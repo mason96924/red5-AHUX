@@ -6529,3 +6529,35 @@ User confirmed: keep FULL-mode tabs as TEXT (`PSYCH / DIAG / DYNAM / 3D WX`), on
 **Build + mirror**: `dashboard.compiled.js?v=38edd80876`, md5 `38edd80876b032e7d4228b91b8c9ea10` identical across /public, V1.9, V2.0.
 
 **Open items**: V3.0 Modbus Phase 2.
+
+---
+## 2026-06-27 (cont) — All 4 V1.9 Parity Gaps Closed
+
+Ported every V2.0-only `/api/*` route into V1.9 Flask so the deploy gate passes and PROD users stop hitting 404s.
+
+### 1. `/api/band-guide` -> `band_service.py`
+JSON view of band_guide.csv with 10 NUMERIC columns float-coerced (`OA_T_Lo`, `OA_T_Hi`, `OA_RH_Lo`, `OA_RH_Hi`, `SA_T_CC_SP`, `SA_T_Delivery`, `SA_W_SP_gkg`, `SA_RH_Delivery`, `OA_Damper_SP`, `Energy_Rank`). Uses existing `_resolve_csv()` + `_no_cache()` helpers. Response shape `{"bands": [...], "count": N}` byte-identical to V2.0.
+
+### 2. `/api/ahu-history/<ahu_id>` -> `telemetry_service.py`
+Self-contained per-AHU time-series generator. Inlined `_ahu_history_oa(ts)` (diurnal OA state) and `_ahu_history_w(t, rh)` (Goff-Gratch humidity-ratio approximation) so no new model dependencies on V1.9. Query params `window_min` (15..43200, default 1440) and `step_s` (15..900, default 60). Deterministic seeded by `(ahu_id, ts)` so identical windows replay identical waveforms across restarts. Response shape `{ahu_id, window_min, step_s, samples: [{ts, sa_t, sa_rh, sa_w, ra_t, ra_rh, oa_t, oa_rh, airflow_pct}]}` matches V2.0.
+
+### 3. `/api/band-overrides/ahu-rh-bands` GET + POST -> `band_overrides_service.py`
+V2.0 persists per-AHU RH bands to MongoDB scoped to a tenant; V1.9 has no tenant system so persistence falls back to `<DATA_ROOT>/configs/ahu_rh_bands.json` (same atomic-rename pattern as `band_overrides.json` next to it). POST accepts single band or batch (`{bands: [...]}`); response `{status, ahu_rh_bands, applied, applied_count}` matches V2.0. Audit log dropped (V1.9 already logs writes through the standard pipeline).
+
+### 4. `/api/health` -> `app.py`
+Trivial k8s liveness probe: `{"ok": True, "version": "1.9.0", "mode": "legacy"}`.
+
+### port-route.py bug fix
+Discovered + fixed during the port: the `flask_route` second assignment was overwriting the first using `route` instead of `flask_route`, so `{foo}` -> `<foo>` conversion was lost. Now does `{foo:path}` -> `<path:foo>` first, then `{foo}` -> `<foo>` on the result.
+
+### Final state
+```
+V2.0 routes: 46    V1.9 routes: 75    shared: 46
+[OK] V1.9 implements every V2.0 /api/* route.
+```
+- `deploy.sh` parity gate: passes
+- pre-commit hook: passes
+- V1.9 boot warning: silent
+- Lint clean across all 3 touched service files
+
+**Open items**: V3.0 Modbus Phase 2.

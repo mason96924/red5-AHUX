@@ -995,3 +995,83 @@ def register(app, ctx):
                      ahu_rolling_avg_single, methods=['GET'])
     app.add_url_rule('/api/ahu-rolling-avgs',             'ahu_rolling_avgs_batch',
                      ahu_rolling_avgs_batch, methods=['GET'])
+    # Auto-scaffolded by port-route.py -- TODO move next to its siblings
+    app.add_url_rule('/api/ahu-history/<ahu_id>', 'ahu_history',
+                     ahu_history, methods=['GET'])
+
+# ---------------------------------------------------------------------------
+# /api/ahu-history/<ahu_id>   (GET)  -- V2.0 parity (backend/routes/history.py:121).
+# Deterministic per-AHU time-series for the drill-down detail page.
+# Query params:
+#   window_min (15..43200, default 1440)  -- total window in minutes
+#   step_s     (15..900,   default 60)    -- sample cadence in seconds
+# Self-contained: inlines the OA-state generator + humidity-ratio formula
+# so we don't pull in models/* from V2.0.  Seeded from (ahu_id, ts) so
+# the same window replays identical waveforms across server restarts.
+# ---------------------------------------------------------------------------
+def _ahu_history_oa(ts):
+    """Diurnal OA state matching V2.0 _demo_oa_state shape."""
+    _dt = datetime.datetime.fromtimestamp(ts)
+    h = _dt.hour + _dt.minute / 60.0
+    t  = 18.0 + 8.0 * math.sin((h - 9.0) * math.pi / 12.0)
+    rh = 65.0 - 18.0 * math.sin((h - 11.0) * math.pi / 12.0)
+    return {'t': round(t, 2), 'rh': round(max(20.0, min(95.0, rh)), 1)}
+
+
+def _ahu_history_w(t_c, rh_pct):
+    """Humidity ratio g/kg from temp + RH (ASHRAE Goff-Gratch approximation)."""
+    # Saturation pressure (kPa)
+    es = 0.6108 * math.exp(17.27 * t_c / (t_c + 237.3))
+    # Partial pressure (kPa)
+    pw = es * (rh_pct / 100.0)
+    # Humidity ratio (g/kg dry air), assume atmospheric pressure 101.325 kPa
+    w = 0.622 * pw / max(0.001, (101.325 - pw))
+    return w * 1000.0
+
+
+def ahu_history(ahu_id):
+    """V2.0 parity: synthesised per-AHU time-series for the drill-down page."""
+    try:
+        window_min = int(request.args.get('window_min', 1440))
+        step_s     = int(request.args.get('step_s',     60))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'window_min and step_s must be integers'}), 400
+    window_min = max(15, min(43200, window_min))
+    step_s     = max(15, min(900,   step_s))
+
+    now = time.time()
+    samples_n = max(1, window_min * 60 // step_s)
+    seed_base = hash(ahu_id) % 1000
+    samples = []
+    for i in range(samples_n, 0, -1):
+        ts = now - i * step_s
+        oa = _ahu_history_oa(ts)
+        seed = seed_base + (int(ts) % 86400) / 86400.0
+        wave_slow  = math.sin(ts / 7200.0 + seed * 0.6)
+        wave_fast  = math.sin(ts / 1800.0 + seed * 1.3)
+        wave_micro = math.sin(ts /  360.0 + seed * 2.7) * 0.4
+        sa_t  = 13.5 + 1.8 * wave_slow + 0.6 * wave_fast + wave_micro
+        sa_rh = 58.0 + 6.0 * wave_slow + 2.5 * wave_fast
+        ra_t  = 23.0 + 0.9 * wave_slow + 0.4 * wave_fast
+        ra_rh = 48.0 - 4.0 * wave_slow + 1.6 * wave_fast
+        hour = (datetime.datetime.fromtimestamp(ts).hour + datetime.datetime.fromtimestamp(ts).minute / 60.0)
+        occ_curve = max(0.25, min(1.0,
+            0.30 + 0.65 * math.exp(-((hour - 13.0) ** 2) / 18.0)))
+        airflow = occ_curve * (1.0 + 0.08 * wave_fast + 0.04 * wave_micro)
+        samples.append({
+            'ts':          int(ts),
+            'sa_t':        round(sa_t, 2),
+            'sa_rh':       round(sa_rh, 1),
+            'sa_w':        round(_ahu_history_w(sa_t, sa_rh) / 1000.0, 5),
+            'ra_t':        round(ra_t, 2),
+            'ra_rh':       round(ra_rh, 1),
+            'oa_t':        oa['t'],
+            'oa_rh':       oa['rh'],
+            'airflow_pct': round(airflow * 100.0, 1),
+        })
+    return jsonify({
+        'ahu_id':     ahu_id,
+        'window_min': window_min,
+        'step_s':     step_s,
+        'samples':    samples,
+    })

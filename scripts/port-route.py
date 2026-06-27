@@ -163,11 +163,13 @@ def _flask_route(route: str) -> str:
 def write_stub(v19_path: str, route: str, verb: str, func_name: str,
                v20_path: str, v20_line: int) -> str:
     """Append the stub.  Returns the snippet that was written."""
-    flask_route = _flask_route(route)
-    # If FastAPI used {foo:path}, mirror to Flask's <path:foo>
+    # Convert FastAPI placeholders to Flask path syntax:
+    #   {foo:path} -> <path:foo>     (must run first, more specific)
+    #   {foo}      -> <foo>
     flask_route = re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*):path\}", r"<path:\1>", route)
+    flask_route = re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}",      r"<\1>",      flask_route)
 
-    # Path params from the route (Flask <foo>, <path:foo>)
+    # Path params from the Flask-flavoured route (<foo>, <path:foo>)
     params = re.findall(r"<(?:[a-z]+:)?([A-Za-z_][A-Za-z0-9_]*)>", flask_route)
     py_args = ", ".join(params) if params else ""
 

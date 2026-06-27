@@ -137,6 +137,51 @@ def register(app, ctx):
                      get_band_guide, methods=['GET'])
     app.add_url_rule('/api/band-csv/<ahu_id>',   'get_band_csv',
                      get_band_csv, methods=['GET'])
+    # /api/band-guide -- JSON view of band_guide.csv (V2.0 parity).
+    # The /api/band-csv/guide route above serves the raw CSV; this one
+    # returns rows parsed + numeric columns coerced to float so the
+    # dashboard frontend doesn't have to parseFloat() every cell.
+    app.add_url_rule('/api/band-guide',          'get_band_guide_json',
+                     get_band_guide_json, methods=['GET'])
 
     if ctx.get('start_band_thread', True):
         _start_background_band_generator()
+
+# ---------------------------------------------------------------------------
+# /api/band-guide   (GET)  -- V2.0 parity (backend/routes/bands.py:247).
+# Returns the 10-band SA strategy matrix as a JSON array with NUMERIC
+# columns coerced to float.  Powers the per-AHU detail page's band table.
+# Frontend highlights the row matching the AHU's current OA conditions.
+# ---------------------------------------------------------------------------
+_BAND_GUIDE_NUMERIC = {
+    'OA_T_Lo', 'OA_T_Hi', 'OA_RH_Lo', 'OA_RH_Hi',
+    'SA_T_CC_SP', 'SA_T_Delivery', 'SA_W_SP_gkg',
+    'SA_RH_Delivery', 'OA_Damper_SP', 'Energy_Rank',
+}
+
+
+def get_band_guide_json():
+    """Return band_guide.csv as JSON rows with numeric columns float-coerced."""
+    import csv as _csv
+    directory, filename = _resolve_csv('band_guide.csv')
+    csv_path = os.path.join(directory, filename)
+    if not os.path.exists(csv_path):
+        return jsonify({'error': 'band_guide.csv not found -- trigger /api/band-csv/regenerate first',
+                        'bands': [], 'count': 0}), 404
+    out = []
+    with open(csv_path, 'r', encoding='utf-8', newline='') as fh:
+        for row in _csv.DictReader(fh):
+            clean = {}
+            for k, v in row.items():
+                if k in _BAND_GUIDE_NUMERIC:
+                    try:
+                        clean[k] = float(v)
+                    except (TypeError, ValueError):
+                        clean[k] = v
+                else:
+                    clean[k] = v
+            out.append(clean)
+    resp = jsonify({'bands': out, 'count': len(out)})
+    if _no_cache:
+        _no_cache(resp)
+    return resp

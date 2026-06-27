@@ -297,14 +297,15 @@ function renderSidebar(ctx) {
                 data-testid="open-setup-btn"
                 title="Open Setup Walk (Psy Chart, Location, Language, Plug-ins)"
                 aria-label="Open Setup Walk"
-                className={`flex items-center justify-center w-8 h-8 rounded border text-base transition-all ${
+                className={`flex items-center justify-center w-7 h-7 rounded border text-base transition-all ${
                     theme === 'dark'
                         ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-indigo-300'
                         : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:text-indigo-600'
                 }`}>
                 {/* Inline cog SVG — keeps the chip rendering with zero
-                    dependency on a font/icon loader.  16×16. */}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    dependency on a font/icon loader.  Shrunk to 12 px
+                    (was 14) so all six chips survive in SLIM mode. */}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                     <circle cx="12" cy="12" r="3"/>
                 </svg>
@@ -319,14 +320,14 @@ function renderSidebar(ctx) {
                 data-testid="standards-btn"
                 title="Open Standards — ASHRAE Guideline 36 cross-walk, Band Guide, Control Algorithms, B-Shift Insight, Psych Design Workflow"
                 aria-label="Open Standards"
-                className={`p-1.5 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
-                <Icon name="book-open" />
+                className={`p-1 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
+                <Icon name="book-open" size={12} />
             </button>
-            <button onClick={openCollectorCfg} className={`p-1.5 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"} aria-label="Collector Configuration">
-                <Icon name="radio-tower" />
+            <button onClick={openCollectorCfg} className={`p-1 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"} aria-label="Collector Configuration">
+                <Icon name="radio-tower" size={12} />
             </button>
-            <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`p-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded transition-all`} title={t('config')} aria-label={t('config')}>
-                <Icon name="settings" />
+            <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`p-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded transition-all`} title={t('config')} aria-label={t('config')}>
+                <Icon name="settings" size={12} />
             </button>
             {/* Reset Modal Sizes: clears localStorage entries
                 for the AHU / VAV / Floor Plan modal dimensions
@@ -360,8 +361,8 @@ function renderSidebar(ctx) {
                     }}
                     title="Reset AHU / VAV / Floor Plan modal sizes to their defaults. Clears the stored sizes from local storage."
                     aria-label="Reset modal sizes"
-                    className={`p-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded transition-all`}>
-                <Icon name="rotate-ccw" />
+                    className={`p-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded transition-all`}>
+                <Icon name="rotate-ccw" size={12} />
             </button>
         </div>
     </div>

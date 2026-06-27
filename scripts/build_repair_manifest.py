@@ -44,6 +44,12 @@ ENTRIES = [
     ('modbus_bridge_service.py',    'plugin', 'Modbus TCP Bridge',        'Expose telemetry as holding registers (needs pymodbus)'),
     ('ws_bridge_service.py',        'plugin', 'WebSocket Bridge',         'Push telemetry to live clients (needs websockets)'),
     ('bacnet_diag_service.py',      'plugin', 'BACnet Diagnose Service',  '/api/bacnet/diagnose-config -- detect name-based BACnet targets'),
+    # The manifest itself -- listed so the operator can always replace
+    # it from the UI.  sha256 is intentionally None (set at the bottom)
+    # because a hash that referenced itself would be a fixed-point
+    # problem; upload_service.py treats `name == 'repair_manifest.json'`
+    # as integrity-check-exempt anyway.
+    ('repair_manifest.json',        'ui',     'repair_manifest.json',     'Repair Mode allow-list + sha256 source of truth (this file)'),
     # UI / static files
     ('update.html',                 'ui',     'update.html',              'This page (Repair Mode + Data Bridges UI)'),
     ('dashboard.html',              'ui',     'dashboard.html',           'Main dashboard shell'),
@@ -91,13 +97,17 @@ def main():
             continue
         with open(path, 'rb') as f:
             data = f.read()
+        # The manifest cannot embed its OWN sha256 -- that would create a
+        # fixed-point problem (the hash changes the moment we write it).
+        # Mark it `null` and special-case it in the verifier instead.
+        is_self = (name == 'repair_manifest.json')
         manifest['files'].append({
             'name': name,
             'kind': kind,
             'label': label,
             'desc': desc,
-            'size': len(data),
-            'sha256': hashlib.sha256(data).hexdigest(),
+            'size': None if is_self else len(data),
+            'sha256': None if is_self else hashlib.sha256(data).hexdigest(),
             'show_in_ui': (name, kind, label, desc) in ui_set,
             'hot_reload': name in HOT_RELOADABLE,
         })

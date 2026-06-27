@@ -36,6 +36,10 @@ def main():
         if not os.path.isfile(path):
             missing.append(name)
             continue
+        # repair_manifest.json carries sha256=null (would be a fixed
+        # point against itself); existence is the only check.
+        if entry.get('sha256') is None:
+            continue
         with open(path, 'rb') as f:
             data = f.read()
         sha = hashlib.sha256(data).hexdigest()

@@ -1484,6 +1484,17 @@ def repair_verify_deploy():
             n_missing += 1
             results.append(item)
             continue
+        # Manifest self-reference: sha256 is None (can't hash a value
+        # that includes itself).  File-on-disk is sufficient proof.
+        if entry.get('sha256') is None:
+            try:
+                item['got_size'] = os.path.getsize(path)
+            except OSError:
+                pass
+            item['status'] = 'ok'
+            n_pass += 1
+            results.append(item)
+            continue
         try:
             h = hashlib.sha256()
             size = 0

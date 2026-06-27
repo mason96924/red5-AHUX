@@ -179,12 +179,37 @@ function renderPsyChartSvg(ctx) {
             catch (_) { return {x:0,y:0}; }
         });
         const [legendDrag, setLegendDrag] = React.useState(null);
+        const legendRef = React.useRef(null);
+        /* Clamp the offset so the legend always stays fully inside the
+           chart host frame (Phase L.43 follow-up, 2026-06-27).  Computed
+           on every mousemove from the *live* legend + host bounds, so
+           it also recovers gracefully if the operator resizes the
+           browser mid-drag.  A 6 px margin keeps the legend off the
+           frame edges. */
+        const clampOffset = (dx, dy) => {
+            const el = legendRef.current;
+            if (!el) return { x: dx, y: dy };
+            const host = el.closest('.red5-graphic-zone') || el.parentElement;
+            if (!host) return { x: dx, y: dy };
+            const hb = host.getBoundingClientRect();
+            const lb = el.getBoundingClientRect();
+            // Convert proposed offset into a hypothetical bounding box.
+            const proposedLeft  = lb.left + (dx - legendOffset.x);
+            const proposedTop   = lb.top  + (dy - legendOffset.y);
+            const M = 6;
+            let outX = dx, outY = dy;
+            if (proposedLeft < hb.left + M)                outX = dx + (hb.left + M - proposedLeft);
+            if (proposedLeft + lb.width > hb.right - M)    outX = dx - (proposedLeft + lb.width - (hb.right - M));
+            if (proposedTop  < hb.top + M)                 outY = dy + (hb.top + M - proposedTop);
+            if (proposedTop  + lb.height > hb.bottom - M)  outY = dy - (proposedTop + lb.height - (hb.bottom - M));
+            return { x: outX, y: outY };
+        };
         React.useEffect(() => {
             if (!legendDrag) return;
             const onMove = (e) => {
-                const dx = (e.clientX - legendDrag.startX);
-                const dy = (e.clientY - legendDrag.startY);
-                setLegendOffset({ x: legendDrag.baseX + dx, y: legendDrag.baseY + dy });
+                const proposedX = legendDrag.baseX + (e.clientX - legendDrag.startX);
+                const proposedY = legendDrag.baseY + (e.clientY - legendDrag.startY);
+                setLegendOffset(clampOffset(proposedX, proposedY));
             };
             const onUp = () => {
                 setLegendDrag(null);
@@ -194,6 +219,18 @@ function renderPsyChartSvg(ctx) {
             window.addEventListener('mouseup',   onUp);
             return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
         }, [legendDrag, legendOffset]);
+        /* Listen for an app-wide reset event (fired by the gear menu /
+           Setup walk "↺ Reset Legend Position" link) so operators who
+           accidentally drag the legend off the visible area can
+           recover with one click.  Clears state + localStorage. */
+        React.useEffect(() => {
+            const onReset = () => {
+                setLegendOffset({x:0,y:0});
+                try { localStorage.removeItem('red5.legendOffset'); } catch (_) {}
+            };
+            window.addEventListener('r5-reset-legend-position', onReset);
+            return () => window.removeEventListener('r5-reset-legend-position', onReset);
+        }, []);
         const startDrag = (e) => {
             // Don't start drag if the click landed on an interactive
             // child (button, select, anchor) — those should retain
@@ -210,11 +247,30 @@ function renderPsyChartSvg(ctx) {
         };
         return (
     <div data-testid="psy-chart-legend"
+         ref={legendRef}
          onMouseDown={startDrag}
          style={{transform: `translate(${legendOffset.x}px, calc(-50% + ${legendOffset.y}px))`, cursor: legendDrag ? 'grabbing' : 'grab'}}
          className={`absolute top-1/2 left-16 flex flex-col gap-2 p-3 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest backdrop-blur-sm select-none`}>
         {/* Tiny grab affordance so operators discover the drag. */}
-        <div className={`absolute -top-1 left-1/2 -translate-x-1/2 w-6 h-1 rounded-full ${theme==='dark'?'bg-slate-700':'bg-slate-300'} opacity-60`} title="Drag the legend to reposition" />
+        <div className={`absolute -top-1 left-1/2 -translate-x-1/2 w-6 h-1 rounded-full ${theme==='dark'?'bg-slate-700':'bg-slate-300'} opacity-60`} title="Drag the legend to reposition (it can't leave the chart frame)" />
+        {/* Reset-position icon — only shows when the legend has been
+            moved.  One click restores the default mid-left-gutter
+            parking spot and clears localStorage so the legend stays
+            put next time the dashboard loads. */}
+        {(legendOffset.x !== 0 || legendOffset.y !== 0) && (
+            <button
+                data-testid="legend-reset-position"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setLegendOffset({x:0,y:0});
+                    try { localStorage.removeItem('red5.legendOffset'); } catch (_) {}
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="Reset legend to its default position"
+                className={`absolute -top-2 -right-2 w-5 h-5 flex items-center justify-center rounded-full border text-[10px] font-black transition-all ${theme==='dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-indigo-600 hover:text-white hover:border-indigo-400' : 'bg-white border-slate-300 text-slate-600 hover:bg-indigo-500 hover:text-white hover:border-indigo-500'}`}>
+                {'\u21BA'}
+            </button>
+        )}
         {/* Process-line swatches are now interactive toggles (2026-06-26):
             clicking a row flips vecVis[key] so the corresponding vector
             family hides/shows on the chart.  Dimmed + line-through =

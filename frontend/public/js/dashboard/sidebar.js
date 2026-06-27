@@ -530,8 +530,16 @@ function renderSidebar(ctx) {
                             className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-[11px] tracking-tighter mr-1 shrink-0`}>
                         {ahu.id}
                     </button>
-                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`}
-                       className="shrink-0 text-[8px] px-1 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-wider">DETAIL ↗</a>
+                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" aria-label="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`}
+                       className="shrink-0 p-1 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none">
+                        {/* Lucide-style external-link arrow (slant-up).  Replaces
+                            the previous "DETAIL ↗" text label per operator
+                            request to free up sidebar width (2026-06-27). */}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M7 17 17 7"/>
+                            <path d="M8 7h9v9"/>
+                        </svg>
+                    </a>
                     {isSelected && !isCompact && (
                         <button data-testid={`ahu-lock-sa-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
@@ -588,10 +596,11 @@ function renderSidebar(ctx) {
                             <button data-testid={`ahu-apply-${ahu.id}`}
                                     onClick={onClick}
                                     disabled={!dirty || applyBusy}
+                                    aria-label={dirty ? `Apply band to ${ahu.id}` : `${ahu.id} synced`}
                                     title={dirty
                                         ? `Push ${spot.lo}-${spot.hi}% RH band to the controller for ${ahu.id}`
                                         : `${ahu.id} band is already in sync with the controller`}
-                                    className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-all leading-none font-black tracking-wider font-mono
+                                    className={`shrink-0 p-1 rounded border transition-all leading-none
                                                 ${dirty
                                                     ? (theme==='dark'
                                                         ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200 hover:bg-emerald-600/40 cursor-pointer animate-pulse'
@@ -600,7 +609,26 @@ function renderSidebar(ctx) {
                                                         ? 'border-slate-700/60 text-slate-600 bg-transparent cursor-default'
                                                         : 'border-slate-300 text-slate-400 bg-transparent cursor-default')}
                                                 ${applyBusy ? 'opacity-60 cursor-wait' : ''}`}>
-                                {dirty ? 'APPLY ↑' : 'SYNCED'}
+                                {dirty ? (
+                                    /* Lucide-style "upload" glyph: arrow rising
+                                       into a tray.  High-attention state -- pairs
+                                       with the pulse animation already on this
+                                       button.  12 px to match siblings. */
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <path d="M17 8l-5-5-5 5"/>
+                                        <path d="M12 3v12"/>
+                                    </svg>
+                                ) : (
+                                    /* Lucide-style "check-circle-2": tick inside
+                                       a circle.  Low-attention "matches the
+                                       controller" state -- visually quieter so
+                                       the operator's eye is drawn to dirty rows. */
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <path d="m9 12 2 2 4-4"/>
+                                    </svg>
+                                )}
                             </button>
                         );
                     })()}

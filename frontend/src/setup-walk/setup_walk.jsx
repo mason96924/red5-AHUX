@@ -203,7 +203,7 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
                                 : 'bg-slate-900/70 hover:bg-slate-800/90'}`}
                 style={{
                     left:`${leftPct}%`, top:`${topPct}%`,
-                    width:'min(27%, 200px)', aspectRatio:'1/1',
+                    width:'min(35%, 260px)', aspectRatio:'1/1',
                     transform:'translate(-50%, -50%)',
                     border:`6px solid ${ringColor}`,
                     boxShadow:`0 0 0 1px ${ringColor}33, 0 8px 28px -8px ${ringColor}55`,

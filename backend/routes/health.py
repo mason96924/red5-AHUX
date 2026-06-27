@@ -172,7 +172,55 @@ async def get_data(tenant: Optional[dict] = Depends(current_tenant_optional)) ->
                 "dsp_reset_pa":     g36.get("dsp_reset_pa"),
                 "last_tick_at":     g36.get("last_tick_at"),
             }
+
+    # Phase L.39 — feed the per-AHU EWMA accumulator for the pill trend
+    # arrows.  alpha = poll-interval / 24h, so the EWMA closely tracks
+    # a true 24h moving average while needing only three floats per AHU
+    # (exchange, absorption, sample-count).  Bootstrap: first sample
+    # seeds at current value so initial delta = 0.
+    try:
+        _update_rolling_avgs(snapshot)
+    except Exception:   # noqa: BLE001 — never let a stats blip break /api/data
+        pass
+
     return snapshot
+
+
+def _update_rolling_avgs(snapshot: list) -> None:
+    """Update `_ROLLING_AVGS` in place from the freshly-built snapshot.
+
+    Reads OA/SA/RA from each AHU's `points` array and computes the same
+    exchange/absorption deltas the dashboard's MetricBar pills display
+    (h_SA − h_OA and h_RA − h_SA respectively).  Uses the simulator's
+    `_enthalpy` helper so the maths matches what the frontend renders.
+    """
+    from models.state import _ROLLING_AVGS, _ROLLING_ALPHA
+    for ahu in snapshot:
+        aid = ahu.get("id")
+        pts = {p.get("label"): p for p in (ahu.get("points") or []) if isinstance(p, dict)}
+        oa, sa, ra = pts.get("OA"), pts.get("SA"), pts.get("RA")
+        if not (aid and oa and sa and ra):
+            continue
+        try:
+            # `w` in the snapshot is stored as kg/kg (e.g. 0.00824),
+            # matching what _enthalpy expects.
+            h_oa = _enthalpy(float(oa["t"]), float(oa["w"]))
+            h_sa = _enthalpy(float(sa["t"]), float(sa["w"]))
+            h_ra = _enthalpy(float(ra["t"]), float(ra["w"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        ex = h_sa - h_oa
+        ab = h_ra - h_sa
+        prev = _ROLLING_AVGS.get(aid)
+        if not prev:
+            _ROLLING_AVGS[aid] = {"exchange": ex, "absorption": ab, "n": 1}
+        else:
+            a = _ROLLING_ALPHA
+            _ROLLING_AVGS[aid] = {
+                "exchange":   a * ex + (1.0 - a) * prev["exchange"],
+                "absorption": a * ab + (1.0 - a) * prev["absorption"],
+                "n":          prev.get("n", 0) + 1,
+            }
 
 
 @router.post("/api/data-mode")

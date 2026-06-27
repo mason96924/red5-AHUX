@@ -35,7 +35,7 @@ function renderSidebar(ctx) {
     const DARK_LEVEL_MIN = 1.5;
     const DARK_LEVEL_MAX = 3.0;
     const DARK_LEVEL_DEFAULT = 2.0;
-    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, t } = ctx;
+    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t } = ctx;
 
     /* ---------------- Per-AHU Apply-to-Controller state ---------------
        For each AHU in `ahuSweetSpots` (current local pick), compare its
@@ -534,14 +534,24 @@ function renderSidebar(ctx) {
                     })()}
                     <div className="flex gap-1.5 shrink-0 items-stretch">
                         {/* Pills scale on max=15 kJ/kg with a 2% visual
-                            floor so the 0–15 typical range of exchange
-                            (h_SA − h_OA) / absorption (h_RA − h_SA) maps
-                            linearly to fill height — 8 → 53%, 11 → 73%,
-                            15 → 100%.  Same max for both pills so the
-                            two-pill comparison is honest.  Tweak this
-                            value if a site routinely runs > 15. */}
-                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={15} showValue={true} />
-                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={15} showValue={true} />
+                            floor.  Trend arrows (Phase L.39, 2026-06-27)
+                            now derive from the real backend EWMA — see
+                            app.js `ahuRollingAvgs` + `/api/ahu-rolling-
+                            avgs` endpoint.  Delta = current value − 24h
+                            rolling avg.  When the avg hasn't been seeded
+                            yet (first poll of a fresh restart) we pass
+                            null and MetricBar renders no arrow. */}
+                        {(() => {
+                            const avg = (ahuRollingAvgs || {})[ahu.id];
+                            const dEx = avg && Number.isFinite(m.exchange)   && (avg.n_samples || 0) >= 2 ? (m.exchange   - avg.exchange)   : null;
+                            const dAb = avg && Number.isFinite(m.absorption) && (avg.n_samples || 0) >= 2 ? (m.absorption - avg.absorption) : null;
+                            return (
+                                <React.Fragment>
+                                    <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-9" max={15} showValue={true} delta={dEx} />
+                                    <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-9" max={15} showValue={true} delta={dAb} />
+                                </React.Fragment>
+                            );
+                        })()}
                     </div>
                 </div>
                 {ahu.g36 && (() => {

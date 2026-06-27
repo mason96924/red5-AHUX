@@ -78,3 +78,18 @@ _LAST_WEATHER_TS: Optional[float] = None
 # ---------------------------------------------------------------------------
 _WEATHER_NOW_CACHE: Dict[tuple, tuple] = {}
 _WEATHER_NOW_TTL_S: int = 5 * 60   # 5 minutes
+
+
+
+# ---------------------------------------------------------------------------
+# Per-AHU EWMA accumulator for exchange / absorption (Phase L.39 — 2026-06-27).
+#
+# Hook in routes/health.py `/api/data` updates this on every poll with
+# `alpha = 5 min / 24 h ⇒ 0.00347`, so the EWMA closely tracks the true
+# 24h moving average while only requiring three floats per AHU.  Shape:
+#     {ahu_id: {"exchange": float, "absorption": float, "n": int}}
+# Routes/history.py exposes the values via /api/ahu-rolling-avgs and
+# /api/ahu/<id>/rolling-avg for the dashboard's pill trend arrows.
+# ---------------------------------------------------------------------------
+_ROLLING_AVGS: Dict[str, Dict[str, float]] = {}
+_ROLLING_ALPHA: float = 5.0 / (24.0 * 60.0)   # poll interval / 24 h

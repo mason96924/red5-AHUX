@@ -24,7 +24,7 @@ class ErrorBoundary extends React.Component {
 
 const LockIcon = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>;
 
-const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "w-1.5", showValue = false, theme = 'dark' }) => {
+const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "w-1.5", showValue = false, delta = null, theme = 'dark' }) => {
     const safeVal = safe(val);
     /* Fill height now reflects |val|/max linearly with a tiny 2% floor
        so a value of "0.08" renders almost empty and "2.81" clearly
@@ -33,9 +33,33 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
        differences between sub-kJ/kg enthalpy deltas.  When showValue
        is on the numeric label is placed in an absolutely-positioned
        overlay so it stays visible at the top of the pill regardless
-       of fill height. */
+       of fill height.  Optional `delta` (number) renders a tiny
+       trend arrow at the bottom of the pill — ▲ green when current
+       is above the rolling avg, ▼ rose when below; near-zero
+       deltas (|d| < 0.2) render as a dim "·" so we don't cry wolf
+       for AHUs that are basically steady. */
     const pct = Math.max(2, Math.min(100, (Math.abs(safeVal) / max) * 100));
     const valText = Math.abs(safeVal).toFixed(safeVal < 10 ? 2 : 1);
+    let deltaEl = null;
+    if (delta !== null && delta !== undefined && Number.isFinite(delta)) {
+        const flat = Math.abs(delta) < 0.2;
+        const up   = !flat && delta > 0;
+        const arrow = flat ? '\u00B7' : (up ? '\u25B2' : '\u25BC');
+        const dColor = flat
+            ? (theme==='dark' ? '#64748b' : '#94a3b8')
+            : (up
+                ? (theme==='dark' ? '#34d399' : '#059669')
+                : (theme==='dark' ? '#fb7185' : '#e11d48'));
+        const dTxt = flat ? '' : (Math.abs(delta) < 10 ? delta.toFixed(1) : delta.toFixed(0));
+        const dSign = !flat && up ? '+' : '';
+        deltaEl = (
+            <div className="absolute inset-x-0 bottom-0 flex justify-center pb-0.5 pointer-events-none" title={`Δ vs 24 h rolling avg: ${delta > 0 ? '+' : ''}${delta.toFixed(2)} kJ/kg`}>
+                <span className="text-[10px] font-black font-mono tracking-tight tabular-nums leading-none" style={{ color: dColor, textShadow: theme==='dark'?'0 1px 2px rgba(0,0,0,0.85)':'0 1px 1px rgba(255,255,255,0.6)' }}>
+                    {arrow}{dTxt ? ' ' + dSign + dTxt : ''}
+                </span>
+            </div>
+        );
+    }
     return (
         <div className={`${width} ${height} ${theme==='dark'?'bg-slate-800/30':'bg-slate-200/60'} relative overflow-hidden flex flex-col justify-end shadow-inner rounded-full`}>
             <div className={"w-full transition-all duration-700 ease-out " + (theme==='dark'?'shadow-lg shadow-black':'')} style={{ height: pct + "%", backgroundColor: color }} />
@@ -44,6 +68,7 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
                     <span className={`text-[8px] font-black tracking-tighter ${theme==='dark'?'text-white/95 drop-shadow-md':'text-slate-900'}`} style={{textShadow: theme==='dark'?'0 1px 2px rgba(0,0,0,0.85)':'0 1px 1px rgba(255,255,255,0.6)'}}>{valText}</span>
                 </div>
             )}
+            {deltaEl}
         </div>
     );
 };

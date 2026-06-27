@@ -1791,6 +1791,26 @@
                 });
             }, [ahuData, ahuPresetVersion]);
 
+            /* Per-AHU 24h rolling averages of exchange / absorption —
+               source for the pill trend arrows (Phase L.39).  Fetched
+               on mount + refreshed every 5 min from the EWMA the backend
+               maintains in `models.state._ROLLING_AVGS`.  Empty {} until
+               the first GET resolves, in which case MetricBar receives
+               null delta and renders no arrow.  Once data is in,
+               sidebar.js computes delta = current − avg per pill. */
+            const [ahuRollingAvgs, setAhuRollingAvgs] = useState({});
+            useEffect(() => {
+                let alive = true;
+                const load = () => {
+                    fetchJSON('/api/ahu-rolling-avgs')
+                        .then(j => { if (alive && j && j.averages) setAhuRollingAvgs(j.averages); })
+                        .catch(() => {});
+                };
+                load();
+                const handle = setInterval(load, 5 * 60 * 1000);  // 5 min
+                return () => { alive = false; clearInterval(handle); };
+            }, []);
+
             const renderGivoniOverlay = () => {
                 if (!showGivoni) return null;
                 const rh80 = []; for(let t=20; t<=25; t+=0.5) rh80.push([t, getW(t, 80)]);
@@ -2366,7 +2386,7 @@
                                         browser window for extended displays
                                         (mirrors AHU/VAV modal pattern). */}
                     {/* LEFT SIDEBAR -- extracted to sidebar.js (L.27) */}
-                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, t })}
+                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t })}
 
                     {activeView === 'diagnostics' && React.createElement(DiagnosticsConsole)}
                     {activeView === 'dynamics' && (

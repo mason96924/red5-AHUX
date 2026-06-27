@@ -179,3 +179,52 @@ async def ahu_history(ahu_id: str,
         "now":        int(now),
         "samples":    samples,
     }
+
+
+# ---------------------------------------------------------------------------
+# 24h rolling average of exchange / absorption for the pill trend arrows
+# (Phase L.39 — 2026-06-27).
+#
+# Frontend (sidebar.js MetricBar `delta` prop) renders a tiny ▲ green / ▼
+# rose marker at the bottom of each pill once it knows whether the current
+# value is above or below the 24h mean.  This batch endpoint returns the
+# mean for every AHU in one round-trip so the dashboard doesn't fire N
+# parallel /api/ahu/<id>/rolling-avg requests.
+#
+# Implementation: an exponentially-weighted moving average (EWMA) is
+# updated server-side on every /api/data call (see routes/health.py
+# `_update_rolling_avgs`).  Alpha = 5 min / 24 h ⇒ half-life ≈ 24 h,
+# so the EWMA closely tracks a true 24h moving average while only
+# requiring two floats per AHU.  Bootstrap: first poll seeds the
+# EWMA at current value, so the trend arrow starts at "steady" and
+# diverges as real history accumulates.
+# ---------------------------------------------------------------------------
+from models.state import _ROLLING_AVGS  # noqa: E402
+
+
+@router.get("/api/ahu/{ahu_id}/rolling-avg")
+async def ahu_rolling_avg_single(ahu_id: str) -> dict:
+    ra = _ROLLING_AVGS.get(ahu_id) or {}
+    return {
+        "ahu_id":     ahu_id,
+        "exchange":   round(ra.get("exchange",   0.0), 3),
+        "absorption": round(ra.get("absorption", 0.0), 3),
+        "n_samples":  ra.get("n", 0),
+        "method":     "ewma",
+    }
+
+
+@router.get("/api/ahu-rolling-avgs")
+async def ahu_rolling_avgs_batch() -> dict:
+    """Batch 24h rolling-average lookup for every AHU the backend has
+    sampled so far.  Returns a map keyed by ahu_id; an AHU absent from
+    the map simply hasn't been polled yet via /api/data."""
+    out = {
+        aid: {
+            "exchange":   round(d.get("exchange",   0.0), 3),
+            "absorption": round(d.get("absorption", 0.0), 3),
+            "n_samples":  d.get("n", 0),
+        }
+        for aid, d in (_ROLLING_AVGS or {}).items()
+    }
+    return {"averages": out, "n_ahus": len(out), "method": "ewma"}

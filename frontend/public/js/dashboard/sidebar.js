@@ -77,112 +77,9 @@ function renderSidebar(ctx) {
     const DARK_LEVEL_MAX = 3.0;
     const DARK_LEVEL_DEFAULT = 2.0;
 
-    // OA-condition -> B1..B10 band classifier.  Mirror of the rules
-    // defined in psy-3d-engine.js (_bandLabelOf, lines 185-197) -- kept
-    // duplicated here rather than imported because the two files load
-    // as independent script blobs on the V1.9 controller (no module
-    // graph).  Keep in sync if either side is retuned.
-    //
-    // Rules are evaluated top-to-bottom, first match wins -- so the
-    // overlapping windows (e.g. B4 30-50%RH vs B5 40-60%RH) are
-    // resolved by the order below, not by mutual exclusion.
-    const _bandLabelOf = (t, rh) => {
-        if (!Number.isFinite(t) || !Number.isFinite(rh)) return '?';
-        if (t < 5  && rh < 30)                          return 'B1';
-        if (t >= 5  && t <  15 && rh >= 30 && rh <= 60) return 'B2';
-        if (t >= 15 && t <  20 && rh < 30)              return 'B3';
-        if (t >= 18 && t <  22 && rh >= 30 && rh <= 50) return 'B4';
-        if (t >= 22 && t <= 25 && rh >= 40 && rh <= 60) return 'B5';
-        if (t >  25 && t <= 27 && rh >= 50 && rh <= 70) return 'B6';
-        if (t >  27 && t <= 32 && rh >  60 && rh <= 80) return 'B7';
-        if (t >  32 && t <= 38 && rh >  70)             return 'B8';
-        if (t >  35 && rh < 30)                         return 'B9';
-        if (t >  30 && rh > 85)                         return 'B10';
-        return '?';
-    };
-
-    // Band -> tint for the AHU-row chip.  Cool side stays blue, mid
-    // bands emerald (comfort), hot side red/orange.  The `?` fallback
-    // is amber/orange to signal SAFE-MODE -- the OA is outside all
-    // defined B1..B10 windows, so the controller should fall back to
-    // ASHRAE 55 Cat A baseline setpoints rather than guess.  Amber
-    // (not red) because nothing is broken; the operator just hasn't
-    // pre-tuned this OA corner yet.
-    const _bandTint = (b) => {
-        switch (b) {
-            case 'B1': case 'B2': case 'B3': return 'border-sky-500/50 text-sky-300 bg-sky-500/10';
-            case 'B4': case 'B5':            return 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10';
-            case 'B6':                       return 'border-amber-500/50 text-amber-300 bg-amber-500/10';
-            case 'B7': case 'B8': case 'B10':return 'border-rose-500/60 text-rose-300 bg-rose-500/10';
-            case 'B9':                       return 'border-red-500/60 text-red-300 bg-red-500/10';
-            default:                         return 'border-amber-500/60 text-amber-200 bg-amber-500/15 animate-pulse';
-        }
-    };
-
-    // Plain-language description per band for the hover tooltip.
-    // Aimed at a "6th-grade reading level" operator: what does the
-    // weather feel like, and what is the AHU doing about it?
-    // Setpoints are mirrors of psy-3d-engine.js BANDS[] (lines 1065-1076);
-    // keep both copies in sync if the design table is retuned.
-    const _bandStory = (b) => {
-        switch (b) {
-            case 'B1': return {
-                weather: 'Freezing and dry outside (under 5 deg C, under 30 % RH). Think winter morning.',
-                plan:    'Keep most outside air OUT. Heat the supply air to ~21 deg C and add a little moisture.',
-                set:     'SA = 21.0 deg C @ 40 % RH   |   OA damper = 15 % (minimum)'
-            };
-            case 'B2': return {
-                weather: 'Cool and comfortable outside (5-15 deg C, 30-60 % RH). Think spring or fall.',
-                plan:    'Bring in just enough outside air. Gentle heating.',
-                set:     'SA = 19.5 deg C @ 35 % RH   |   OA damper = 15 %'
-            };
-            case 'B3': return {
-                weather: 'Mild but very dry outside (15-20 deg C, under 30 % RH). Think dry mild day.',
-                plan:    'Open the damper a little to use the cool outside air. Add some moisture.',
-                set:     'SA = 19.0 deg C @ 45 % RH   |   OA damper = 30 %'
-            };
-            case 'B4': return {
-                weather: 'Outside air is almost perfect (18-22 deg C, 30-50 % RH).',
-                plan:    'Open the damper WIDE and let the outside air do the cooling for free.',
-                set:     'SA = 20.0 deg C @ 40 % RH   |   OA damper = 100 % (free cooling)'
-            };
-            case 'B5': return {
-                weather: 'Outside feels exactly like a comfortable room (22-25 deg C, 40-60 % RH).',
-                plan:    'Blow outside air straight in. Almost no work for the AHU.',
-                set:     'SA = 23.5 deg C @ 50 % RH   |   OA damper = 100 % (free cooling)'
-            };
-            case 'B6': return {
-                weather: 'Outside is warm and a bit humid (25-27 deg C, 50-70 % RH).',
-                plan:    'Mix some outside air with return air. Light cooling.',
-                set:     'SA = 25.0 deg C @ 55 % RH   |   OA damper = 50 %'
-            };
-            case 'B7': return {
-                weather: 'Outside is hot and sticky (27-32 deg C, 60-80 % RH). Typical summer.',
-                plan:    'Close the damper. Run the AC hard to cool AND pull moisture out.',
-                set:     'SA = 12.0 deg C @ 95 % RH   |   OA damper = 15 %'
-            };
-            case 'B8': return {
-                weather: 'Very hot and very humid outside (32-38 deg C, over 70 % RH). Heat wave.',
-                plan:    'Lock outside air out. Push cooling and dehumidifying to the max.',
-                set:     'SA = 13.0 deg C @ 95 % RH   |   OA damper = 15 %'
-            };
-            case 'B9': return {
-                weather: 'Very hot but bone dry outside (over 35 deg C, under 30 % RH). Desert.',
-                plan:    'Cool the air down -- don\u2019t waste energy removing humidity that isn\u2019t there.',
-                set:     'SA = 15.0 deg C @ 40 % RH   |   OA damper = 15 %'
-            };
-            case 'B10': return {
-                weather: 'Tropical outside (over 30 deg C, over 85 % RH). Air feels like soup.',
-                plan:    'Close the damper tight. Cool aggressively and squeeze moisture out.',
-                set:     'SA = 11.0 deg C @ 95 % RH   |   OA damper = 15 %'
-            };
-            default:   return {  // '?' -- outside all 10 bands
-                weather: 'Outside conditions do not match any of the 10 pre-tuned bands.',
-                plan:    'AHU should run in SAFE-MODE: ASHRAE 55 Cat A defaults until weather moves back into a band.',
-                set:     'SA = 21.0 deg C @ 50 % RH   |   OA damper = minimum for indoor air quality   |   economizer ON when outside is cooler than inside'
-            };
-        }
-    };
+    // OA -> band helpers (bandLabelOf / bandTint / bandStory) now live
+    // in dashboard-helpers.js so the sidebar chip and the AHU modal
+    // overlay share a single source of truth.
 
     const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t } = ctx;
 
@@ -734,11 +631,11 @@ function renderSidebar(ctx) {
                         floor-plan colour without opening the chart. */}
                     {(() => {
                         const oa = ahu.points && ahu.points[0];
-                        const band = oa ? _bandLabelOf(Number(oa.t), Number(oa.rh)) : '?';
-                        const tintCls = _bandTint(band);
+                        const band = oa ? bandLabelOf(Number(oa.t), Number(oa.rh)) : '?';
+                        const tintCls = bandTint(band);
                         const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' deg C' : '--';
                         const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
-                        const story = _bandStory(band);
+                        const story = bandStory(band);
                         const header = (band === '?')
                             ? 'BAND ?  -- SAFE-MODE'
                             : 'BAND ' + band;

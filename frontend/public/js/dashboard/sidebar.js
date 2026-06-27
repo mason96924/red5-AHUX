@@ -28,6 +28,33 @@
  * ------------------------------------------------------------------ */
 
 function renderSidebar(ctx) {
+    /* Self-tuning SLIM width (Phase L.43 — 2026-06-27).  Read the
+       chevron icon's right edge at first paint, add a 4-px breath,
+       cache to localStorage.red5.slimWidth.  Default 224 stays as a
+       fallback for the first-ever load (and for English).  Re-measures
+       on locale change so a Korean / Japanese H1 doesn't push the
+       chevron beyond the cached SLIM number. */
+    const chevronRef = React.useRef(null);
+    React.useEffect(() => {
+        if (!chevronRef.current) return;
+        // Measure twice: once on mount, once after the next paint, so
+        // font fallbacks that resolve a tick late still get the right
+        // width.
+        const measure = () => {
+            const el = chevronRef.current;
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            const w = Math.ceil(r.right) + 4;
+            if (Number.isFinite(w) && w >= 180 && w <= 320) {
+                window.__red5_slim_width = w;
+                try { localStorage.setItem('red5.slimWidth', String(w)); } catch (_) {}
+            }
+        };
+        measure();
+        const id = setTimeout(measure, 200);
+        return () => clearTimeout(id);
+    }, [ctx.i18nReady]);
+
     // Dark-mode brightness slider bounds.  Mirror of the constants in app.js
     // (lines 77-78); duplicated here because the sidebar's dark-level UI was
     // extracted into its own module and can no longer see App's closure

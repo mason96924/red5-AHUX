@@ -297,14 +297,16 @@ function renderSidebar(ctx) {
                 data-testid="open-setup-btn"
                 title="Open Setup Walk (Psy Chart, Location, Language, Plug-ins)"
                 aria-label="Open Setup Walk"
-                className={`flex items-center justify-center w-7 h-7 rounded border text-base transition-all ${
+                className={`p-1 rounded border transition-all ${
                     theme === 'dark'
-                        ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-indigo-300'
+                        ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-indigo-300 hover:border-indigo-400'
                         : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:text-indigo-600'
                 }`}>
-                {/* Inline cog SVG — keeps the chip rendering with zero
-                    dependency on a font/icon loader.  Shrunk to 12 px
-                    (was 14) so all six chips survive in SLIM mode. */}
+                {/* Inline cog SVG -- 12 px to match the lucide icons
+                    used by the other 4 chips on this row.  Previously
+                    this button used `w-7 h-7` which made the cog
+                    visibly larger than its neighbours; now everyone
+                    is `p-1` + 12 px glyph for a uniform row. */}
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                     <circle cx="12" cy="12" r="3"/>

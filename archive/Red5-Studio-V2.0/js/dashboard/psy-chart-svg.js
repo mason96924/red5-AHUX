@@ -165,9 +165,56 @@ function renderPsyChartSvg(ctx) {
         numbers (HUMIDITY RATIO) on the left edge or the ENTHALPY
         diagonals at the top.  All controls (weather toggle, location
         chip, fetch-status pill, save-error pill, tomorrow forecast)
-        retain their original behaviour and data-testids. */}
+        retain their original behaviour and data-testids.
+
+        Phase L.43 (2026-06-27): legend is now draggable — the operator
+        can park it anywhere the chart background isn't busy.  Drag
+        handle = the legend body itself (process-line rows still
+        toggle on click; the drag starts only if the pointer moves
+        > 4 px before mouseup).  Position persisted to localStorage
+        under `red5.legendOffset`. */}
+    {(() => {
+        const [legendOffset, setLegendOffset] = React.useState(() => {
+            try { return JSON.parse(localStorage.getItem('red5.legendOffset') || 'null') || {x:0,y:0}; }
+            catch (_) { return {x:0,y:0}; }
+        });
+        const [legendDrag, setLegendDrag] = React.useState(null);
+        React.useEffect(() => {
+            if (!legendDrag) return;
+            const onMove = (e) => {
+                const dx = (e.clientX - legendDrag.startX);
+                const dy = (e.clientY - legendDrag.startY);
+                setLegendOffset({ x: legendDrag.baseX + dx, y: legendDrag.baseY + dy });
+            };
+            const onUp = () => {
+                setLegendDrag(null);
+                try { localStorage.setItem('red5.legendOffset', JSON.stringify(legendOffset)); } catch (_) {}
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup',   onUp);
+            return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+        }, [legendDrag, legendOffset]);
+        const startDrag = (e) => {
+            // Don't start drag if the click landed on an interactive
+            // child (button, select, anchor) — those should retain
+            // their own click semantics.
+            const tag = (e.target && e.target.tagName || '').toUpperCase();
+            if (tag === 'BUTTON' || tag === 'SELECT' || tag === 'A' || tag === 'INPUT') return;
+            setLegendDrag({
+                startX: e.clientX,
+                startY: e.clientY,
+                baseX:  legendOffset.x,
+                baseY:  legendOffset.y,
+            });
+            e.stopPropagation();
+        };
+        return (
     <div data-testid="psy-chart-legend"
-         className={`absolute top-1/2 left-16 -translate-y-1/2 flex flex-col gap-2 p-3 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest backdrop-blur-sm`}>
+         onMouseDown={startDrag}
+         style={{transform: `translate(${legendOffset.x}px, calc(-50% + ${legendOffset.y}px))`, cursor: legendDrag ? 'grabbing' : 'grab'}}
+         className={`absolute top-1/2 left-16 flex flex-col gap-2 p-3 ${theme==='dark'?'bg-slate-900/80 shadow-black/40 border-slate-800':'bg-white/90 shadow-slate-300/60 border-slate-200'} rounded-xl border shadow-2xl z-30 font-black text-[10px] ${ui.textMuted} uppercase tracking-widest backdrop-blur-sm select-none`}>
+        {/* Tiny grab affordance so operators discover the drag. */}
+        <div className={`absolute -top-1 left-1/2 -translate-x-1/2 w-6 h-1 rounded-full ${theme==='dark'?'bg-slate-700':'bg-slate-300'} opacity-60`} title="Drag the legend to reposition" />
         {/* Process-line swatches are now interactive toggles (2026-06-26):
             clicking a row flips vecVis[key] so the corresponding vector
             family hides/shows on the chart.  Dimmed + line-through =
@@ -211,6 +258,8 @@ function renderPsyChartSvg(ctx) {
             <span className="text-pink-400">{forecast.h_min}/{forecast.h_max}kJ</span>
         </div>}
     </div>
+        );
+    })()}
 </div>
     );
 }

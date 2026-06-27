@@ -555,7 +555,7 @@ function renderSidebar(ctx) {
                     state only; full chart integration (per-AHU sweet-spot
                     polygons) is a follow-up. */}
                 <div className="flex items-stretch gap-2">
-                    <div className="flex-1 space-y-0.5 min-w-0">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const pw = Number(p.w); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%'; const hTxt = (Number.isFinite(pt) && Number.isFinite(pw)) ? getH(pt, pw).toFixed(1) + 'h' : '--h';
+                    <div className="flex-1 space-y-0.5 min-w-0">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%';
                         const active = pointVisibility[p.label] !== false;
                         const toggleVis = (e) => { e.stopPropagation(); setPointVisibility({ ...pointVisibility, [p.label]: !active }); };
                         return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
@@ -565,7 +565,14 @@ function renderSidebar(ctx) {
                                     className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline shrink-0 text-left ${active ? '' : 'line-through'}`}>
                                 {p.label}
                             </button>
-                            <span className={`${ui.text} font-bold font-mono tracking-tighter whitespace-nowrap`}>{tTxt} / {rhTxt} / {hTxt}</span>
+                            {/* Per-point inline strip dropped the enthalpy
+                                value (Phase L.43, 2026-06-27) — it was
+                                eating ~35 px and colliding with the
+                                preset card at FULL + the pills at SLIM.
+                                The enthalpy is still available on the
+                                pill (top label) and via the chart, so
+                                no information is actually lost. */}
+                            <span className={`${ui.text} font-bold font-mono tracking-tighter whitespace-nowrap`}>{tTxt} / {rhTxt}</span>
                         </div> );
                     })}</div>
                     {/* Per-AHU RH venue preset (label + range + dropdown).

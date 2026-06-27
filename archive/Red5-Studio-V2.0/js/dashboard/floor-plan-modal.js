@@ -29,7 +29,7 @@ function renderFloorPlanModal(ctx) {
         setShowAhuModalFor,
         setSelectedVavForModal, setVavCfm, setIsLockedToSA,
         // Data
-        ahuData, mapConfig, floorImage,
+        ahuData, mapConfig, setMapConfig, floorImage,
         buildingLatLon, sunState, setSunState,
         comfortZonePoly,
         // Helpers + look-up tables
@@ -273,8 +273,63 @@ const floorModalTree = (
                             {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
                                 <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
                             )}
-                            <div className={`absolute top-4 left-4 z-10 text-sm font-mono px-3 py-1.5 rounded ${theme === 'dark' ? 'text-amber-400 bg-slate-900/80' : 'text-amber-700 bg-white/80'}`}>
-                                No map_config.json — using fallback layout
+                            <div className={`absolute top-4 left-4 z-10 flex items-center gap-2 text-sm font-mono px-3 py-1.5 rounded ${theme === 'dark' ? 'text-amber-400 bg-slate-900/80' : 'text-amber-700 bg-white/80'}`}>
+                                <span>No map_config.json — using fallback layout</span>
+                                {/* Snapshot helper (Phase L.43, 2026-06-27) —
+                                    converts the hard-coded fallback positions
+                                    of this view into a starter map_config.json
+                                    so operators don't have to hand-author JSON
+                                    when rolling the floor view out to a new
+                                    building.  Anonymous callers get a warning
+                                    toast; signed-in users get the layout
+                                    persisted + the modal reloads against the
+                                    new real config. */}
+                                <button
+                                    data-testid="floor-snapshot-btn"
+                                    onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const ahuPos = [{x:25,y:25},{x:75,y:25},{x:25,y:75},{x:75,y:75}];
+                                        const vavPos = [{x:50,y:50},{x:40,y:30},{x:60,y:30},{x:40,y:70},{x:60,y:70},{x:12,y:50},{x:88,y:50},{x:50,y:15},{x:50,y:85},{x:25,y:50},{x:75,y:50},{x:35,y:50},{x:65,y:50},{x:50,y:33},{x:50,y:67},{x:35,y:15},{x:65,y:15},{x:35,y:85},{x:65,y:85}];
+                                        const markers = [];
+                                        ahuData.slice(0,4).forEach((a, i) => {
+                                            const p = ahuPos[i];
+                                            markers.push({ type:'ahu', id:a.id, name:a.id, x:p.x, y:p.y });
+                                            (a.vavs || []).forEach((v, j) => {
+                                                const q = vavPos[j % vavPos.length];
+                                                markers.push({ type:'vav', id:v.id, name:v.id, ahu_id:a.id, x:q.x, y:q.y });
+                                            });
+                                        });
+                                        const newCfg = {
+                                            version: '1.0',
+                                            floors: [{
+                                                id: 'floor1',
+                                                name: 'Floor 1',
+                                                markers,
+                                            }],
+                                        };
+                                        try {
+                                            const API_URL = window.API_BASE_URL || window.location.origin;
+                                            const r = await fetch(`${API_URL}/api/save-config`, {
+                                                method: 'POST',
+                                                headers: {'Content-Type':'application/json'},
+                                                credentials: 'include',
+                                                body: JSON.stringify({ map_config: newCfg, image_manifest: {} }),
+                                            });
+                                            const j = await r.json();
+                                            if (j && j.success && setMapConfig) {
+                                                setMapConfig(newCfg);
+                                                if (window.toast) window.toast(`Saved ${markers.length} markers across ${newCfg.floors.length} floor — you can drag them in the Equipment Mapper.`, 'success');
+                                            } else {
+                                                if (window.toast) window.toast(j.error || 'Sign in to save the floor plan to the controller.', 'info');
+                                            }
+                                        } catch (err) {
+                                            if (window.toast) window.toast('Save failed: ' + (err && err.message || err), 'error');
+                                        }
+                                    }}
+                                    className={`px-2 py-0.5 rounded border text-[10px] font-black uppercase tracking-wider transition-all ${theme==='dark' ? 'bg-amber-500/10 border-amber-500/40 text-amber-200 hover:bg-amber-500/20' : 'bg-amber-100 border-amber-400 text-amber-700 hover:bg-amber-200'}`}
+                                    title="Save the current fallback marker positions as a starter map_config.json on the controller — you can fine-tune them in the Equipment Mapper afterwards.">
+                                    Use This View ↑
+                                </button>
                             </div>
                             
                             {/* Fallback: hardcoded 4-corner AHU layout */}

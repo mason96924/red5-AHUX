@@ -2473,7 +2473,7 @@
                         lockedVavId, setLockedVavId,
                         setShowAhuModalFor,
                         setSelectedVavForModal, setVavCfm, setIsLockedToSA,
-                        ahuData, mapConfig, floorImage,
+                        ahuData, mapConfig, setMapConfig, floorImage,
                         buildingLatLon, sunState, setSunState,
                         comfortZonePoly,
                         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal,

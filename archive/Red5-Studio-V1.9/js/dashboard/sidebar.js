@@ -450,8 +450,8 @@ function renderSidebar(ctx) {
                     "controller status" column at a glance. */}
                 <div className="flex items-center gap-1 flex-nowrap mb-2 font-black uppercase shadow-black">
                     <button data-testid={`ahu-id-${ahu.id}`}
-                            onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowAhuModalFor(ahu.id); }}
-                            title="Open AHU 3D equipment graphic"
+                            onClick={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(ahu.id); }}
+                            title="Open floor plan (AHU equipment graphic available from inside the floor view)"
                             className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-[11px] tracking-tighter mr-1 shrink-0`}>
                         {ahu.id}
                     </button>

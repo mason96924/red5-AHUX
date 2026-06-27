@@ -2478,6 +2478,7 @@
                     ccNewVav, setCcNewVav,
                     saveCollectorCfg,
                     dataMode, setDataMode,
+                    pluginHealth,
                     API_URL, theme,
                 })}
 

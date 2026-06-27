@@ -23,6 +23,7 @@ function renderCollectorConfigModal(ctx) {
         ccNewVav, setCcNewVav,
         saveCollectorCfg,
         dataMode, setDataMode,
+        pluginHealth,
         API_URL, theme,
     } = ctx;
 
@@ -36,8 +37,8 @@ function renderCollectorConfigModal(ctx) {
             <button onClick={() => setShowCollectorCfg(false)} className={`w-7 h-7 rounded-full flex items-center justify-center text-lg font-bold ${theme==='dark'?'bg-slate-800 text-slate-400 hover:text-slate-100':'bg-slate-100 text-slate-500 hover:text-slate-800'} transition-all`}>&times;</button>
         </div>
         <div className={`flex border-b ${theme==='dark'?'border-slate-700':'border-slate-200'}`}>
-            {['groups','types','settings'].map(tb => (
-                <button key={tb} onClick={() => setCcTab(tb)} className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all ${ccTab===tb ? (theme==='dark'?'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/5':'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50') : (theme==='dark'?'text-slate-500 hover:text-slate-300':'text-slate-400 hover:text-slate-600')}`}>{tb === 'groups' ? 'AHU Groups' : tb === 'types' ? 'Equipment Types' : 'Settings'}</button>
+            {['groups','types','settings','plugins'].map(tb => (
+                <button key={tb} onClick={() => setCcTab(tb)} className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all ${ccTab===tb ? (theme==='dark'?'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/5':'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50') : (theme==='dark'?'text-slate-500 hover:text-slate-300':'text-slate-400 hover:text-slate-600')}`}>{tb === 'groups' ? 'AHU Groups' : tb === 'types' ? 'Equipment Types' : tb === 'settings' ? 'Settings' : 'Plug-Ins'}</button>
             ))}
         </div>
         {ccMsg && <div className={`px-5 py-2 text-[10px] font-bold ${ccMsg.includes('Error')||ccMsg.includes('fail') ? 'text-red-400 bg-red-500/10' : 'text-emerald-400 bg-emerald-500/10'}`}>{ccMsg}</div>}
@@ -165,6 +166,75 @@ function renderCollectorConfigModal(ctx) {
                     <div className="flex justify-end pt-2">
                         <button onClick={() => saveCollectorCfg(ccConfig)} disabled={ccSaving} className="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-100 font-black text-[10px] uppercase tracking-widest rounded-lg transition-all">{ccSaving ? 'Saving...' : 'Save Config'}</button>
                     </div>
+                </div>
+            ) : ccTab === 'plugins' ? (
+                /* PLUG-INS tab — relocated 2026-06-27 from the sidebar
+                   header chip.  Shows live Flask plug-in registration
+                   state (polled by app.js into pluginHealth): summary
+                   pill + list of every plug-in with OK / WARN / ERR
+                   colour-coding + recovery hints for any missing
+                   plug-ins (upload location, restart command). */
+                <div className="space-y-4" data-testid="plugins-tab">
+                    {(() => {
+                        const h = pluginHealth || { state: 'unknown', total: 0 };
+                        const isOk    = h.state === 'ok';
+                        const isWarn  = h.state === 'warn';
+                        const isErr   = !isOk && !isWarn && h.state !== 'unknown';
+                        const pillCls = isOk
+                            ? (theme==='dark' ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300' : 'bg-emerald-50 border-emerald-300 text-emerald-700')
+                            : isWarn
+                              ? (theme==='dark' ? 'bg-amber-900/40 border-amber-700/50 text-amber-300' : 'bg-amber-50 border-amber-300 text-amber-700')
+                              : isErr
+                                ? (theme==='dark' ? 'bg-rose-900/40 border-rose-700/50 text-rose-300' : 'bg-rose-50 border-rose-300 text-rose-700')
+                                : (theme==='dark' ? 'bg-slate-800 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-300 text-slate-500');
+                        const label = h.state === 'unknown' ? 'CHECKING…' : (isOk ? 'ALL OK' : (isWarn ? 'WARN' : (h.missing && h.missing.length ? 'PLUGIN MISSING' : 'ERROR')));
+                        return (
+                            <div className={`flex items-center gap-3 p-4 rounded-xl border ${pillCls}`} data-testid="plugins-summary">
+                                <span className="text-[11px] font-black uppercase tracking-widest font-mono">{label}</span>
+                                <span className={`text-[10px] font-mono ${theme==='dark'?'text-slate-400':'text-slate-500'}`}>
+                                    {h.total ? `${h.total} plug-in${h.total === 1 ? '' : 's'} registered` : 'No plug-ins discovered yet'}
+                                </span>
+                            </div>
+                        );
+                    })()}
+                    {pluginHealth && pluginHealth.missing && pluginHealth.missing.length > 0 && (
+                        <div className={`p-4 rounded-xl border ${theme==='dark'?'border-rose-700/40 bg-rose-900/20':'border-rose-200 bg-rose-50'}`} data-testid="plugins-missing">
+                            <div className={`text-[10px] font-black uppercase tracking-widest mb-2 ${theme==='dark'?'text-rose-300':'text-rose-700'}`}>Missing ({pluginHealth.missing.length})</div>
+                            <ul className="space-y-1 font-mono text-[10px]">
+                                {pluginHealth.missing.map(name => (
+                                    <li key={name} className={`flex items-baseline gap-2 ${theme==='dark'?'text-rose-200':'text-rose-800'}`}>
+                                        <span>×</span>
+                                        <span className="font-black">{name}</span>
+                                        <span className={`text-[9px] ${theme==='dark'?'text-slate-400':'text-slate-500'}`}>upload to <code>/root/data/pgpy/</code> + restart Flask</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {pluginHealth && pluginHealth.failed && pluginHealth.failed.length > 0 && (
+                        <div className={`p-4 rounded-xl border ${theme==='dark'?'border-amber-700/40 bg-amber-900/20':'border-amber-200 bg-amber-50'}`} data-testid="plugins-failed">
+                            <div className={`text-[10px] font-black uppercase tracking-widest mb-2 ${theme==='dark'?'text-amber-300':'text-amber-700'}`}>Loaded but Not OK ({pluginHealth.failed.length})</div>
+                            <ul className="space-y-1 font-mono text-[10px]">
+                                {pluginHealth.failed.map(f => (
+                                    <li key={f.name} className={theme==='dark'?'text-amber-200':'text-amber-800'}>
+                                        <span className="font-black">{f.name}</span>
+                                        <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] ${theme==='dark'?'bg-amber-800/40':'bg-amber-200'}`}>{f.state}</span>
+                                        {f.detail && <span className={`ml-2 ${theme==='dark'?'text-slate-400':'text-slate-600'}`}>— {f.detail}</span>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {pluginHealth && pluginHealth.detail && (
+                        <div className={`p-3 rounded-xl border font-mono text-[10px] ${theme==='dark'?'border-slate-700 bg-slate-800/50 text-slate-300':'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                            <span className="font-black uppercase tracking-widest mr-2">Probe error:</span>
+                            {pluginHealth.detail}
+                        </div>
+                    )}
+                    <p className={`text-[9px] font-mono ${theme==='dark'?'text-slate-500':'text-slate-400'}`}>
+                        Status polled once on dashboard load (<code>GET /api/services</code>). Reload the page after uploading
+                        new plug-ins to <code>/root/data/pgpy/</code> + restarting Flask to refresh this list.
+                    </p>
                 </div>
             ) : null}
         </div>

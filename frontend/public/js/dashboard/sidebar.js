@@ -145,58 +145,13 @@ function renderSidebar(ctx) {
                 </div>
             </div>
             <div className="flex items-center gap-1 flex-wrap justify-end">
-            {/* Plugin-health chip - polls /api/services once on
-                mount.  Surfaces missing or failed plugins at a
-                glance so the operator does not discover them
-                only by clicking a feature and getting a
-                PLUGIN_MISSING error (e.g. the band-overrides
-                case). */}
-            {(() => {
-                const h = pluginHealth;
-                if (h.state === 'unknown') return null;
-                const isOk    = h.state === 'ok';
-                const isWarn  = h.state === 'warn';
-                // Tailwind JIT only picks up CLASS NAMES that appear as
-                // complete literal strings in the source -- dynamic
-                // interpolation like `bg-${color}-900/40` would compile
-                // to runtime bytes that JIT never sees, so the chip
-                // would render unstyled.  Enumerate every variant.
-                const cls = isOk
-                    ? (theme === 'dark'
-                        ? 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300 hover:bg-emerald-900/60'
-                        : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100')
-                    : (isWarn
-                        ? (theme === 'dark'
-                            ? 'bg-amber-900/40 border-amber-700/50 text-amber-300 hover:bg-amber-900/60'
-                            : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100')
-                        : (theme === 'dark'
-                            ? 'bg-rose-900/40 border-rose-700/50 text-rose-300 hover:bg-rose-900/60'
-                            : 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100'));
-                const dot   = isOk ? '\u25CF' : (isWarn ? '\u25B2' : '\u2716');
-                const lines = [];
-                if (h.missing && h.missing.length) {
-                    lines.push('Missing (' + h.missing.length + '):');
-                    for (const m of h.missing) lines.push('  - ' + m + ' (upload to /root/data/pgpy/ + restart Flask)');
-                }
-                if (h.failed && h.failed.length) {
-                    lines.push('Loaded but not OK (' + h.failed.length + '):');
-                    for (const f of h.failed) lines.push('  - ' + f.name + ' [' + f.state + '] ' + (f.detail || ''));
-                }
-                if (h.detail) lines.push('Probe error: ' + h.detail);
-                if (!lines.length) lines.push('All ' + h.total + ' Flask plug-ins registered OK');
-                const tip = lines.join('\n');
-                return (
-                    <button
-                        data-testid="plugin-health-chip"
-                        data-state={h.state}
-                        title={tip}
-                        onClick={() => toast(tip)}
-                        className={`flex-shrink-0 px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${cls}`}
-                    >
-                        {dot} {isOk ? 'OK' : (isWarn ? 'WARN' : (h.missing && h.missing.length ? 'PLUGIN' : 'ERR'))}
-                    </button>
-                );
-            })()}
+            {/* Plug-in health chip relocated 2026-06-27 to the Collector
+                Configuration modal → Plug-Ins tab.  The chip lived here
+                as a glance-able status indicator but rarely needed
+                attention (Flask plug-ins almost never fail post-deploy),
+                so the sidebar real estate is better used by other
+                always-visible controls.  Operators who need the
+                detailed list open the settings cog → Plug-Ins tab. */}
             {/* Cross-window pop-out - opens a separate
                 browser window the operator can drag to an
                 extended display.  Mirrors the AHU / VAV /
@@ -578,15 +533,15 @@ function renderSidebar(ctx) {
                         );
                     })()}
                     <div className="flex gap-1.5 shrink-0 items-stretch">
-                        {/* Pills now scale on max=5 (kJ/kg) and use a 2%
-                            visual floor (vs the old 28% text-fitting floor)
-                            so small enthalpy deltas (e.g. 0.08 vs 2.81)
-                            render at clearly different heights.  Value
-                            label is absolutely-positioned at the pill
-                            top so it remains readable regardless of
-                            fill. */}
-                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={5} showValue={true} />
-                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={5} showValue={true} />
+                        {/* Pills scale on max=15 kJ/kg with a 2% visual
+                            floor so the 0–15 typical range of exchange
+                            (h_SA − h_OA) / absorption (h_RA − h_SA) maps
+                            linearly to fill height — 8 → 53%, 11 → 73%,
+                            15 → 100%.  Same max for both pills so the
+                            two-pill comparison is honest.  Tweak this
+                            value if a site routinely runs > 15. */}
+                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={15} showValue={true} />
+                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={15} showValue={true} />
                     </div>
                 </div>
                 {ahu.g36 && (() => {

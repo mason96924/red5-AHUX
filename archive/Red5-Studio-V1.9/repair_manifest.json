@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "generated_from": "archive/Red5-Studio-V1.9/",
+  "note": "Single source of truth for the Repair Mode allow-list. Regenerate with scripts/build_repair_manifest.py.",
+  "files": [
+    {
+      "name": "upload_service.py",
+      "kind": "plugin",
+      "label": "Upload Service",
+      "desc": "Bundle upload + chunked endpoints + disk-status + Repair Mode",
+      "size": 82477,
+      "sha256": "ab6b8eed65799a683abc0938c200b865b5b8aaf40f2a46c99b9834cbd87fcfa9",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "weather_service.py",
+      "kind": "plugin",
+      "label": "Weather Service",
+      "desc": "Open-Meteo + tomorrow forecast routes",
+      "size": 40231,
+      "sha256": "238aae2704103dc55b47104c05ee349b9146aa0bed52446ca7b440b7fe6c6063",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "band_service.py",
+      "kind": "plugin",
+      "label": "Band Service",
+      "desc": "B1-B10 CSV generator + guide download",
+      "size": 7371,
+      "sha256": "6a91335cac2b0cfc0afb6705d09dd7afc91fb67d8b9c5ab411d4b097b6fe430c",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "band_overrides_service.py",
+      "kind": "plugin",
+      "label": "Band Overrides Service",
+      "desc": "Per-tenant AHU RH band overrides + apply-to-controller",
+      "size": 10334,
+      "sha256": "93df7cd6d5b6e7bcbfd118c85b087aac5649d6d0bb90fe1449a1594eebb102f2",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "telemetry_service.py",
+      "kind": "plugin",
+      "label": "Telemetry Service",
+      "desc": "/api/data, /api/write-point, collector config",
+      "size": 47515,
+      "sha256": "26baf9bb9b1942c19006890c6546a99c39cc2111123421f283f1a1758624e381",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "_bridges_lib.py",
+      "kind": "plugin",
+      "label": "_bridges_lib.py",
+      "desc": "Shared helpers (telemetry tap, write-queue ACL, status registry)",
+      "size": 6883,
+      "sha256": "d1e124d4b10cd7466f5af6c210e8a2ecaf4fc193047671d33cb110bf3890d102",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "bridges_admin_service.py",
+      "kind": "plugin",
+      "label": "Bridges Admin",
+      "desc": "/api/bridges/{config,status,test} endpoints",
+      "size": 3220,
+      "sha256": "fbf77a7181db4467d4990b94efbd4d26464acd899c6ba72ce100e47b4af2a722",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "webhook_bridge_service.py",
+      "kind": "plugin",
+      "label": "Webhook Bridge",
+      "desc": "POST telemetry to a URL (stdlib only, no extra deps)",
+      "size": 3996,
+      "sha256": "2e687f5b4d7813d34c5f1833effcbe9c8f7f9c657fd3ba97f58659945c47e9ce",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "mqtt_bridge_service.py",
+      "kind": "plugin",
+      "label": "MQTT Bridge",
+      "desc": "Publish/subscribe (needs paho-mqtt)",
+      "size": 6905,
+      "sha256": "c5991caca635b1788d802673d47edecfa0ce3f2cc9b2ce7a95b4ceaab1e13cdf",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "modbus_bridge_service.py",
+      "kind": "plugin",
+      "label": "Modbus TCP Bridge",
+      "desc": "Expose telemetry as holding registers (needs pymodbus)",
+      "size": 6922,
+      "sha256": "f835d17645002b8517e06d97b3c52fed64f4ff06000336a6ff7a29714e12cb42",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "ws_bridge_service.py",
+      "kind": "plugin",
+      "label": "WebSocket Bridge",
+      "desc": "Push telemetry to live clients (needs websockets)",
+      "size": 6400,
+      "sha256": "b3f58dd6a9e6090a0362d21857d40b1d963fb74c01b8bb8399ae50e0d82abd28",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "bacnet_diag_service.py",
+      "kind": "plugin",
+      "label": "BACnet Diagnose Service",
+      "desc": "/api/bacnet/diagnose-config -- detect name-based BACnet targets",
+      "size": 7288,
+      "sha256": "5239d6b4ac271a7f75636dd9f918ced3c781edcd74c4a0f92310be105a6e9848",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
+      "name": "update.html",
+      "kind": "ui",
+      "label": "update.html",
+      "desc": "This page (Repair Mode + Data Bridges UI)",
+      "size": 80275,
+      "sha256": "f01792acb62ed1d83ca9b49cafbffcd47d376045d65747b2c60ac9147badb523",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "dashboard.html",
+      "kind": "ui",
+      "label": "dashboard.html",
+      "desc": "Main dashboard shell",
+      "size": 30968,
+      "sha256": "3b4fc18254d022b2cb12c8450cd4cb06f92ec6e23544ddd64c405f736408ab4b",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "dashboard.compiled.js",
+      "kind": "ui",
+      "label": "dashboard.compiled.js",
+      "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
+      "size": 384928,
+      "sha256": "fb4becd41c8139bdb21c2f5464b27ae36eae31157108ce695cd4eb8b30034452",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "equipment_mapper.html",
+      "kind": "ui",
+      "label": "equipment_mapper.html",
+      "desc": "Config Tool",
+      "size": 444572,
+      "sha256": "8d2c34ba302d22d1410421c9195f6970c57eb527a6bd10e09d9e9100250a5df8",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "landing.html",
+      "kind": "ui",
+      "label": "landing.html",
+      "desc": "Landing page (password / login screen)",
+      "size": 12606,
+      "sha256": "597f20c7c94dc7bce841ade3b4b9a97462fe244c90546f0beb0f54e968113ddb",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "setup.html",
+      "kind": "ui",
+      "label": "setup.html",
+      "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
+      "size": 3968,
+      "sha256": "93e16c5633f5b5c87bb195a65ad27d4c14189707bb23a97f7f79004dc4ad0841",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "setup_walk.compiled.js",
+      "kind": "ui",
+      "label": "setup_walk.compiled.js",
+      "desc": "Setup Walk compiled React bundle (loaded by setup.html)",
+      "size": 250450,
+      "sha256": "29b2840b9f44d7e9df7becf5512206acb39b97f51592d95375bf563bb890ccce",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "data_bridges_guide.md",
+      "kind": "ui",
+      "label": "data_bridges_guide.md",
+      "desc": "Plain-language Data Bridges setup guide",
+      "size": 7280,
+      "sha256": "3f418b5ed238f95f6bb31f86742457b3a04ac451428feb0a41a42088cf76b42d",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "opt_sa_insight.md",
+      "kind": "ui",
+      "label": "opt_sa_insight.md",
+      "desc": "Opt-SA strategy explainer (6th-grader mode)",
+      "size": 10224,
+      "sha256": "7c41184f628859f7465992b307a131bc4fb18cff072dde4a6cfdca7a4098e4ec",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "configs/bridges.json",
+      "kind": "ui",
+      "label": "bridges.json",
+      "desc": "Bridge config (broker URLs, write_allowlist, etc.)",
+      "size": 905,
+      "sha256": "24fc6f528666ddb0ab5c893875566fbe98871bc9fa06c124cddb9619c46f7218",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "psy_3d.html",
+      "kind": "ui",
+      "label": "psy_3d.html",
+      "desc": "3D psychrometric chart (niche tool)",
+      "size": 77322,
+      "sha256": "fbce2307f67ebc7ae8499f833d72da7735d0d7a23f4a6fbddff9c38082c215af",
+      "show_in_ui": false,
+      "hot_reload": false
+    }
+  ]
+}

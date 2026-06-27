@@ -83,3 +83,30 @@ case "$RC" in
     *)  echo -e "${RED}[parity-hook] scanner unexpected exit $RC -- allowing commit${OFF}"
         exit 0 ;;
 esac
+
+# ---------------------------------------------------------------------------
+# 4. Repair-manifest consistency check.  Runs only when files inside
+#    archive/Red5-Studio-V1.9/ are staged (covers every file that could
+#    appear in the manifest -- .py, .html, .js, .md, .json, configs/).
+#    The manifest is the single source of truth for the Repair Mode
+#    allow-list + sha256 hashes; a stale manifest = stale uploads
+#    accepted at deploy time.
+# ---------------------------------------------------------------------------
+if git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+        | grep -E '^archive/Red5-Studio-V1\.9/' \
+        >/dev/null; then
+    MANIFEST_SCRIPT="$REPO_ROOT/scripts/check_repair_manifest.py"
+    if [[ -f "$MANIFEST_SCRIPT" ]]; then
+        echo -e "${BLD}[manifest-hook] Repair manifest consistency check...${OFF}"
+        set +e
+        python3 "$MANIFEST_SCRIPT"
+        MRC=$?
+        set -e
+        if [[ "$MRC" != "0" ]]; then
+            echo -e "${RED}[manifest-hook] BLOCKED -- repair_manifest.json is stale.${OFF}"
+            echo -e "${YEL}Fix:  python3 scripts/build_repair_manifest.py && git add archive/Red5-Studio-V1.9/repair_manifest.json${OFF}"
+            exit 1
+        fi
+        echo -e "${GRN}[manifest-hook] ok${OFF}"
+    fi
+fi

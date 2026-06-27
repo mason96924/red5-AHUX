@@ -79,6 +79,142 @@ UPLOADS_SCRATCH_DIR = None  # populated by register() once DATA_ROOT is known
 
 _UPLOAD_ID_RE = None  # lazy
 
+
+# ----------------------------------------------------------------------
+# Repair Mode manifest — SINGLE source of truth.
+#
+# `/root/data/repair_manifest.json` holds the canonical list of files
+# Repair Mode can flash, plus each file's expected sha256 + byte-count.
+# Both the upload allow-list and the download allow-list derive from it
+# at request time, and uploads are rejected if the content's sha256 does
+# not match the manifest.  This catches the "operator dragged an outdated
+# local file into the picker" failure mode (the 2 MB stale dashboard
+# bundle that bit us on controller .208).
+#
+# Cache for ~5 s so a burst of upload validations doesn't re-read disk
+# per request, but a fresh manifest upload still goes live quickly.
+# ----------------------------------------------------------------------
+
+_MANIFEST_CACHE = {'data': None, 'mtime': 0, 'fetched_at': 0}
+
+# Fallback allow-list used when the manifest file is absent (e.g. fresh
+# controller that has not yet had a manifest uploaded).  Lets the
+# operator upload `repair_manifest.json` itself + the other files for
+# the very first time.  After that the manifest becomes authoritative.
+_FALLBACK_PLUGIN_FILES = {
+    'upload_service.py', 'weather_service.py',
+    'band_service.py', 'band_overrides_service.py',
+    'telemetry_service.py',
+    'webhook_bridge_service.py', 'mqtt_bridge_service.py',
+    'modbus_bridge_service.py', 'ws_bridge_service.py',
+    'bridges_admin_service.py', '_bridges_lib.py',
+    'bacnet_diag_service.py',
+}
+_FALLBACK_UI_FILES = {
+    'update.html', 'dashboard.html', 'dashboard.compiled.js',
+    'equipment_mapper.html', 'landing.html', 'psy_3d.html',
+    'setup.html', 'setup_walk.compiled.js',
+    'data_bridges_guide.md', 'opt_sa_insight.md',
+    'configs/bridges.json',
+    'repair_manifest.json',  # so the manifest itself can be flashed
+}
+_FALLBACK_HOT_RELOAD = set(_FALLBACK_PLUGIN_FILES)  # all plug-ins by default
+
+
+def _manifest_path():
+    """Where the manifest lives on disk.  Returns None until DATA_ROOT
+    has been populated by register()."""
+    if DATA_ROOT is None:
+        return None
+    return os.path.join(DATA_ROOT, 'repair_manifest.json')
+
+
+def _load_manifest(force=False):
+    """Return the parsed manifest dict (or None if absent / unreadable).
+
+    Cached in-memory for 5 s so a flurry of /api/repair/* calls doesn't
+    hammer the SD card.  `force=True` skips the cache (used by an
+    explicit /api/repair/manifest/reload route)."""
+    import json as _json
+    p = _manifest_path()
+    if p is None:
+        return None
+    try:
+        st = os.stat(p)
+    except OSError:
+        _MANIFEST_CACHE['data'] = None
+        return None
+    now = time.time()
+    if (not force
+        and _MANIFEST_CACHE['data'] is not None
+        and _MANIFEST_CACHE['mtime'] == st.st_mtime
+        and now - _MANIFEST_CACHE['fetched_at'] < 5.0):
+        return _MANIFEST_CACHE['data']
+    try:
+        with open(p, 'r') as f:
+            data = _json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or 'files' not in data:
+        return None
+    # Build O(1) lookup indexes.
+    by_name = {}
+    for entry in data.get('files', []) or []:
+        n = entry.get('name')
+        if isinstance(n, str) and n:
+            by_name[n] = entry
+    data['_by_name'] = by_name
+    _MANIFEST_CACHE['data'] = data
+    _MANIFEST_CACHE['mtime'] = st.st_mtime
+    _MANIFEST_CACHE['fetched_at'] = now
+    return data
+
+
+def _manifest_allow_set(kind=None):
+    """Set of file names (basenames) the manifest currently permits.
+    `kind` filters by 'plugin' / 'ui'; None = all.  Falls back to the
+    static set when no manifest is present so a fresh controller still
+    has a path to flash the first manifest."""
+    m = _load_manifest()
+    if m is None:
+        if kind == 'plugin':
+            return set(_FALLBACK_PLUGIN_FILES)
+        if kind == 'ui':
+            return set(_FALLBACK_UI_FILES)
+        return set(_FALLBACK_PLUGIN_FILES) | set(_FALLBACK_UI_FILES)
+    out = set()
+    for e in m.get('files', []) or []:
+        if kind is None or e.get('kind') == kind:
+            out.add(e.get('name'))
+    out.discard(None)
+    # Always allow the manifest itself to be uploaded so a corrupt
+    # manifest can be replaced without ssh access.
+    out.add('repair_manifest.json')
+    return out
+
+
+def _manifest_hot_reload_set():
+    """Set of plug-in basenames the manifest marks as hot-reloadable.
+    Falls back to the static set when no manifest is present."""
+    m = _load_manifest()
+    if m is None:
+        return set(_FALLBACK_HOT_RELOAD)
+    out = set()
+    for e in m.get('files', []) or []:
+        if e.get('hot_reload') and e.get('kind') == 'plugin':
+            out.add(e.get('name'))
+    out.discard(None)
+    return out
+
+
+def _manifest_lookup(name):
+    """Return the manifest entry for `name` (basename) or None."""
+    m = _load_manifest()
+    if m is None:
+        return None
+    return m.get('_by_name', {}).get(name)
+
+
 def _safe_upload_id(s):
     """Validate an upload-id is a short alphanumeric / hyphen string we
     can safely use as a filename.  Defends against path-traversal or any
@@ -1105,34 +1241,16 @@ def repair_upload_plugin():
             return jsonify({'success': False, 'error': 'Missing filename'}), 400
 
         # Strip any path components -- we only care about the basename.
-        name = os.path.basename(name)
+        # configs/bridges.json keeps its subpath; everything else is leaf.
+        if not name.startswith('configs/'):
+            name = os.path.basename(name)
 
-        # Allow-list -- narrow attack surface.  These map to a specific dest root.
-        # NOTE: keep in sync with the corresponding lists in repair_download_plugin()
-        # and repair_reload_module() below.
-        plugin_files = {
-            'upload_service.py',
-            'weather_service.py',
-            'band_service.py',
-            'band_overrides_service.py',  # 2026-06-27: lifted from bundle-only
-            'telemetry_service.py',
-            # AHU data bridges (added 2026-02-09):
-            'webhook_bridge_service.py',
-            'mqtt_bridge_service.py',
-            'modbus_bridge_service.py',
-            'ws_bridge_service.py',
-            'bridges_admin_service.py',
-            '_bridges_lib.py',          # shared helper, not a plug-in (no register())
-            'bacnet_diag_service.py',   # BACnet config diagnose/remediate (added 2026-02-10)
-        }
-        ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
-                    'landing.html', 'psy_3d.html',
-                    'dashboard.compiled.js',   # 2026-06-27: compiled React bundle
-                    'setup.html',              # 2026-06-27: setup walk entry HTML
-                    'setup_walk.compiled.js',  # 2026-06-27: setup walk JSX bundle
-                    # docs + configs (added 2026-02-09):
-                    'data_bridges_guide.md', 'opt_sa_insight.md',
-                    'configs/bridges.json'}
+        # Allow-list is now derived from /root/data/repair_manifest.json
+        # at request time -- single source of truth shared with the UI
+        # rows in update.html and the download / reload endpoints.
+        plugin_files = _manifest_allow_set('plugin')
+        ui_files     = _manifest_allow_set('ui')
+
         if name == 'app.py':
             return jsonify({'success': False, 'error': 'app.py is the bootloader — refused. Replace via enteliWEB script editor.'}), 403
         if name in plugin_files:
@@ -1170,6 +1288,52 @@ def repair_upload_plugin():
             bytes_written = _stream_save_request_to_file(f.stream, tmp_path,
                                                          max_bytes=10 * 1024 * 1024,
                                                          chunk=65536)
+            # ----- Content integrity check ----------------------------
+            # Compare sha256 of the uploaded bytes to the expected hash
+            # baked into repair_manifest.json.  Catches the "operator
+            # picked a stale local file" failure mode that bricked the
+            # cog-icon redirect on .208 with a 2 MB pre-minified bundle.
+            # Skipped (a) when no manifest is present (fresh controller),
+            # (b) for the manifest itself (chicken-and-egg), or
+            # (c) when the operator sends the explicit X-Force-Override
+            # header (escape hatch for one-off field hotfixes).
+            entry = _manifest_lookup(name)
+            force_override = (request.headers.get('X-Force-Override', '').lower()
+                              in ('1', 'true', 'yes'))
+            if (entry is not None
+                    and name != 'repair_manifest.json'
+                    and not force_override):
+                expected_sha = entry.get('sha256')
+                expected_size = entry.get('size')
+                try:
+                    h = hashlib.sha256()
+                    with open(tmp_path, 'rb') as _fh:
+                        while True:
+                            chunk = _fh.read(65536)
+                            if not chunk:
+                                break
+                            h.update(chunk)
+                    got_sha = h.hexdigest()
+                except OSError as ex:
+                    got_sha = None
+                    return jsonify({'success': False,
+                                    'error': 'integrity check failed: cannot read spool ('+str(ex)+')'}), 500
+                if expected_sha and got_sha != expected_sha:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    return jsonify({
+                        'success': False,
+                        'error': ('sha256 mismatch -- your local copy is out of date or corrupted. '
+                                  'Pull the latest commit and try again, or send '
+                                  'X-Force-Override: 1 to bypass.'),
+                        'filename': name,
+                        'expected_sha256': expected_sha,
+                        'got_sha256': got_sha,
+                        'expected_size': expected_size,
+                        'got_size': bytes_written,
+                    }), 409
             os.replace(tmp_path, dest_path)
         except Exception:
             try:
@@ -1183,11 +1347,19 @@ def repair_upload_plugin():
         if name.endswith('.py'):
             _purge_pycache()
 
+        # If the manifest itself just landed, drop the cache so the new
+        # allow-list / hashes go live immediately.
+        if name == 'repair_manifest.json':
+            _MANIFEST_CACHE['data'] = None
+            _MANIFEST_CACHE['mtime'] = 0
+            _MANIFEST_CACHE['fetched_at'] = 0
+
         return jsonify({
             'success': True,
             'dest': dest_label + '/' + name,
             'bytes': bytes_written,
             'root': dest_label,
+            'sha256_verified': bool(_manifest_lookup(name)) and name != 'repair_manifest.json',
             'note': 'Restart Flask (or toggle the app.py enteliWEB script object) for Python to re-import the new module.',
         })
     except Exception as e:
@@ -1197,23 +1369,11 @@ def repair_upload_plugin():
 def repair_download_plugin(plugin_name):
     """Out-of-band repair download: serve the current copy of a plug-in
     file directly so the operator can see what's deployed before deciding
-    to overwrite.  Same allow-list as the upload counterpart.
+    to overwrite.  Allow-list is derived from repair_manifest.json --
+    same source of truth as the upload counterpart.
     """
-    plugin_files = {
-        'upload_service.py', 'weather_service.py',
-        'band_service.py', 'band_overrides_service.py',
-        'telemetry_service.py',
-        'webhook_bridge_service.py', 'mqtt_bridge_service.py',
-        'modbus_bridge_service.py', 'ws_bridge_service.py',
-        'bridges_admin_service.py', '_bridges_lib.py',
-        'bacnet_diag_service.py',
-    }
-    ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
-                'landing.html', 'psy_3d.html',
-                'dashboard.compiled.js',
-                'setup.html', 'setup_walk.compiled.js',
-                'data_bridges_guide.md', 'opt_sa_insight.md',
-                'configs/bridges.json'}
+    plugin_files = _manifest_allow_set('plugin')
+    ui_files     = _manifest_allow_set('ui')
     name = (plugin_name or '').strip()
     # Preserve configs/ subpath; basename-strip everything else.
     if name not in ui_files:
@@ -1223,10 +1383,7 @@ def repair_download_plugin(plugin_name):
     if name in plugin_files:
         path = os.path.join(PLUGINS_ROOT, name)
     elif name in ui_files:
-        if name.startswith('configs/'):
-            path = os.path.join(DATA_ROOT, name)
-        else:
-            path = os.path.join(DATA_ROOT, name)
+        path = os.path.join(DATA_ROOT, name)
     else:
         return jsonify({'success': False, 'error': 'not in repair allow-list'}), 403
     if not os.path.isfile(path):
@@ -1242,6 +1399,82 @@ def repair_download_plugin(plugin_name):
     return _no_cache(send_from_directory(os.path.dirname(path),
                                          os.path.basename(path),
                                          mimetype=mime, as_attachment=False))
+
+
+def repair_manifest():
+    """GET /api/repair/manifest -- expose the active manifest JSON so the
+    update.html UI can render Repair Mode rows dynamically AND
+    operators can run a one-shot verification snippet against it.
+    Returns the live manifest on disk (`{"absent": true}` if missing)."""
+    m = _load_manifest()
+    if m is None:
+        return jsonify({'absent': True, 'note': 'No repair_manifest.json on disk; fallback allow-list in use.'}), 200
+    # Strip private cache fields before returning.
+    out = {k: v for k, v in m.items() if not k.startswith('_')}
+    return _no_cache(jsonify(out))
+
+
+def repair_verify_deploy():
+    """GET /api/repair/verify -- compute sha256 of every manifest-listed
+    file on disk, compare to the expected hash, return a per-file pass /
+    fail report.  Lets the operator click ONE button on /update and see
+    which controller files are out-of-date or corrupt."""
+    m = _load_manifest()
+    if m is None:
+        return jsonify({'absent': True, 'error': 'No manifest deployed; cannot verify.'}), 404
+    results = []
+    n_pass = n_fail = n_missing = 0
+    for entry in m.get('files', []) or []:
+        name = entry.get('name')
+        if not name:
+            continue
+        kind = entry.get('kind')
+        if kind == 'plugin':
+            path = os.path.join(PLUGINS_ROOT, name)
+        else:
+            path = os.path.join(DATA_ROOT, name)
+        item = {'name': name, 'kind': kind, 'expected_sha256': entry.get('sha256'),
+                'expected_size': entry.get('size')}
+        if not os.path.isfile(path):
+            item['status'] = 'missing'
+            n_missing += 1
+            results.append(item)
+            continue
+        try:
+            h = hashlib.sha256()
+            size = 0
+            with open(path, 'rb') as f:
+                while True:
+                    buf = f.read(65536)
+                    if not buf:
+                        break
+                    h.update(buf)
+                    size += len(buf)
+        except OSError as ex:
+            item['status'] = 'unreadable'
+            item['error'] = str(ex)
+            n_fail += 1
+            results.append(item)
+            continue
+        got = h.hexdigest()
+        item['got_sha256'] = got
+        item['got_size'] = size
+        if got == entry.get('sha256'):
+            item['status'] = 'ok'
+            n_pass += 1
+        else:
+            item['status'] = 'mismatch'
+            n_fail += 1
+        results.append(item)
+    return jsonify({
+        'success': True,
+        'manifest_version': m.get('version'),
+        'total': len(results),
+        'pass': n_pass,
+        'fail': n_fail,
+        'missing': n_missing,
+        'files': results,
+    })
 
 
 def _rollback_added_routes(app, endpoints):
@@ -1339,16 +1572,9 @@ def _reload_module_core(plugin_name):
         re-spawned in case (a) (we suppress them via start_*_thread=False
         during the rebind call).
     """
-    # Restrict to the same plug-in allow-list as repair_upload_plugin.
-    plugin_files = {
-        'upload_service.py', 'weather_service.py',
-        'band_service.py', 'band_overrides_service.py',
-        'telemetry_service.py',
-        'webhook_bridge_service.py', 'mqtt_bridge_service.py',
-        'modbus_bridge_service.py', 'ws_bridge_service.py',
-        'bridges_admin_service.py',
-        'bacnet_diag_service.py',
-    }
+    # Restrict to the same plug-in allow-list as repair_upload_plugin,
+    # now derived from repair_manifest.json (single source of truth).
+    plugin_files = _manifest_hot_reload_set()
     name = os.path.basename(plugin_name or '').strip()
     if not name.endswith('.py'):
         name = name + '.py'
@@ -1633,6 +1859,14 @@ def register(app, ctx):
     app.add_url_rule('/api/repair/reload-module/<path:plugin_name>',
                      'repair_reload_module',
                      repair_reload_module,   methods=['POST'])
+    # Manifest = single source of truth for which files Repair Mode can
+    # flash + their expected sha256.  /manifest exposes it for the
+    # update.html UI to render rows dynamically; /verify re-hashes every
+    # file on disk and reports OK / mismatch / missing per row.
+    app.add_url_rule('/api/repair/manifest',        'repair_manifest',
+                     repair_manifest,        methods=['GET'])
+    app.add_url_rule('/api/repair/verify',          'repair_verify_deploy',
+                     repair_verify_deploy,   methods=['GET'])
     app.add_url_rule('/update',                     'serve_update_page',
                      serve_update_page,      methods=['GET'])
     # Multi-file / directory zip downloads (called from equipment_mappers

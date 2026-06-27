@@ -159,9 +159,16 @@ h1 span{color:#ef4444;font-style:italic}
 
 <div class="card">
 <h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>Repair Mode</span>
-  <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#422006;color:#fbbf24;border:1px solid #b45309;vertical-align:middle">Out-of-Band</span>
+  <span style="display:flex;gap:6px;align-items:center">
+    <button id="repairVerifyBtn" class="btn" data-testid="repair-verify-btn"
+      style="padding:6px 12px;font-size:10px;background:#064e3b;color:#34d399;border:1px solid #047857;text-transform:uppercase;letter-spacing:.08em"
+      onclick="verifyDeploy()"
+      title="Hash every manifest-listed file on disk and compare to expected sha256. Catches stale uploads.">Verify Deploy</button>
+    <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#422006;color:#fbbf24;border:1px solid #b45309;vertical-align:middle">Out-of-Band</span>
+  </span>
 </h2>
-<p class="note" style="margin-bottom:12px">Direct single-file replacement &mdash; bypasses the bundle/decrypt/extract pipeline. Use when the regular bundle upload is blocked by <code style="background:#1e293b;padding:1px 4px;border-radius:3px">Low disk headroom</code> or you need to hotfix one plug-in without re-uploading the full bundle. Each upload writes via tmp+rename so a corrupted transfer can never leave a half-written plug-in on disk.</p>
+<p class="note" style="margin-bottom:12px">Direct single-file replacement &mdash; bypasses the bundle/decrypt/extract pipeline. Use when the regular bundle upload is blocked by <code style="background:#1e293b;padding:1px 4px;border-radius:3px">Low disk headroom</code> or you need to hotfix one plug-in without re-uploading the full bundle. Each upload writes via tmp+rename so a corrupted transfer can never leave a half-written plug-in on disk. <b>Uploads are now sha256-checked against <code style="background:#1e293b;padding:1px 4px;border-radius:3px">repair_manifest.json</code></b> &mdash; stale local files are refused with HTTP 409 before they overwrite a known-good controller file.</p>
+<div id="repairVerifyResults" data-testid="repair-verify-results" style="margin-bottom:10px;font-size:11px"></div>
 <div id="repairList" style="display:flex;flex-direction:column;gap:6px"></div>
 <p class="note" style="margin-top:12px;font-style:normal;color:#fbbf24"><b>One-click flow:</b> click <b>Replace</b> &rarr; pick file &rarr; the new module is auto hot-reloaded into the running Flask process &mdash; no enteliWEB script-toggle needed. The standalone <b>Reload</b> button re-imports a plug-in without a fresh upload (useful after editing on disk via SCP). For changes that <i>add or remove routes</i>, a full Flask restart is still required (the live <code>app.url_map</code> only rebuilds on full process boot).</p>
 <div id="repairStatus" style="margin-top:10px;font-size:12px"></div>
@@ -469,6 +476,9 @@ function checkServer() {
         // saves a click and surfaces ENOSPC risk before the operator
         // even drops a bundle in the upload zone.
         refreshDiskStatus();
+        // Also pull the repair manifest so the Repair Mode rows + hot-
+        // reload dropdown reflect THIS controller's allow-list.
+        _loadManifest();
     })
     .catch(function() {
         dot.className = 'dot';
@@ -783,33 +793,126 @@ function downloadBundle(mode) {
 }
 
 // ---------- Repair Mode (out-of-band single-file plug-in upload) ----------
-var REPAIR_FILES = [
-    // -- Core plug-ins --
-    {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status + Repair Mode', kind: 'plugin'},
-    {name: 'weather_service.py',   label: 'Weather Service',   desc: 'Open-Meteo + tomorrow forecast routes',           kind: 'plugin'},
-    {name: 'band_service.py',      label: 'Band Service',      desc: 'B1-B10 CSV generator + guide download',           kind: 'plugin'},
-    {name: 'band_overrides_service.py', label: 'Band Overrides Service', desc: 'Per-tenant AHU RH band overrides + apply-to-controller', kind: 'plugin'},
-    {name: 'telemetry_service.py', label: 'Telemetry Service', desc: '/api/data, /api/write-point, collector config',   kind: 'plugin'},
-    // -- AHU data bridges (added 2026-02-09) --
-    {name: '_bridges_lib.py',           label: '_bridges_lib.py',           desc: 'Shared helpers (telemetry tap, write-queue ACL, status registry) — replace BEFORE the bridges below', kind: 'plugin'},
-    {name: 'bridges_admin_service.py',  label: 'Bridges Admin',             desc: '/api/bridges/{config,status,test} endpoints',                  kind: 'plugin'},
-    {name: 'webhook_bridge_service.py', label: 'Webhook Bridge',            desc: 'POST telemetry to a URL (stdlib only, no extra deps)',         kind: 'plugin'},
-    {name: 'mqtt_bridge_service.py',    label: 'MQTT Bridge',               desc: 'Publish/subscribe (needs paho-mqtt — graceful no-op if missing)', kind: 'plugin'},
-    {name: 'modbus_bridge_service.py',  label: 'Modbus TCP Bridge',         desc: 'Expose telemetry as holding registers (needs pymodbus)',       kind: 'plugin'},
-    {name: 'ws_bridge_service.py',      label: 'WebSocket Bridge',          desc: 'Push telemetry to live clients (needs websockets)',            kind: 'plugin'},
-    {name: 'bacnet_diag_service.py',    label: 'BACnet Diagnose Service',   desc: '/api/bacnet/diagnose-config — detect name-based BACnet targets', kind: 'plugin'},
-    // -- UI / static files --
-    {name: 'update.html',          label: 'update.html',       desc: 'This page (Repair Mode + Data Bridges UI)',       kind: 'ui'},
-    {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
-    {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
-    {name: 'landing.html',         label: 'landing.html',      desc: 'Landing page (password / login screen)',          kind: 'ui'},
-    {name: 'setup.html',           label: 'setup.html',        desc: 'Setup Walk entry HTML (post-login landing on V1.9)', kind: 'ui'},
-    {name: 'setup_walk.compiled.js', label: 'setup_walk.compiled.js', desc: 'Setup Walk compiled React bundle (loaded by setup.html)', kind: 'ui'},
-    {name: 'dashboard.compiled.js', label: 'dashboard.compiled.js', desc: 'Compiled React dashboard bundle (loaded by dashboard.html)', kind: 'ui'},
-    {name: 'data_bridges_guide.md',label: 'data_bridges_guide.md', desc: 'Plain-language Data Bridges setup guide',     kind: 'ui'},
-    {name: 'opt_sa_insight.md',   label: 'opt_sa_insight.md',    desc: 'Opt-SA strategy explainer (6th-grader mode)',  kind: 'ui'},
-    {name: 'configs/bridges.json', label: 'bridges.json',      desc: 'Bridge config (broker URLs, write_allowlist, etc.)', kind: 'ui'},
+//
+// REPAIR_FILES is populated dynamically from /api/repair/manifest -- the
+// SINGLE source of truth shared with upload_service.py.  No more
+// hand-maintained hardcoded list to drift out of sync.  If the manifest
+// endpoint is missing (very old controller), we fall back to a minimal
+// static seed so the operator can still flash the manifest itself.
+var REPAIR_FILES = [];
+var REPAIR_MANIFEST = null;  // raw manifest payload (also holds hashes)
+var REPAIR_FALLBACK = [
+    {name:'repair_manifest.json', label:'repair_manifest.json', desc:'Manifest (allow-list + sha256 source of truth) -- upload this FIRST on a fresh controller', kind:'ui'},
+    {name:'upload_service.py', label:'Upload Service', desc:'Bundle upload + Repair Mode (carries the manifest-loading code)', kind:'plugin'},
+    {name:'update.html', label:'update.html', desc:'This page', kind:'ui'},
 ];
+
+function _kindOf(name){ return name.endsWith('.py') ? 'plugin' : 'ui'; }
+
+function _loadManifest(){
+    var base = (document.getElementById('serverUrl').value || '').replace(/\/$/, '');
+    if (!base) {
+        // Page loaded without a controller URL yet -- seed with the
+        // fallback so at least repair_manifest.json + upload_service.py
+        // are reachable.  Will be rebuilt as soon as the operator clicks
+        // Test on the Controller row.
+        REPAIR_FILES = REPAIR_FALLBACK.slice();
+        REPAIR_MANIFEST = null;
+        _renderRepairList();
+        _renderHotReloadDropdown();
+        return;
+    }
+    fetch(base + '/api/repair/manifest', {mode:'cors'})
+        .then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(m){
+            if (m && m.files && m.files.length){
+                REPAIR_MANIFEST = m;
+                REPAIR_FILES = m.files
+                    .filter(function(e){ return e.show_in_ui !== false; })
+                    .map(function(e){ return {name:e.name, label:e.label||e.name, desc:e.desc||'', kind:e.kind||_kindOf(e.name), size:e.size, sha256:e.sha256, hot_reload:!!e.hot_reload}; });
+            } else {
+                REPAIR_MANIFEST = null;
+                REPAIR_FILES = REPAIR_FALLBACK.slice();
+            }
+            _renderRepairList();
+            _renderHotReloadDropdown();
+        })
+        .catch(function(){
+            REPAIR_MANIFEST = null;
+            REPAIR_FILES = REPAIR_FALLBACK.slice();
+            _renderRepairList();
+            _renderHotReloadDropdown();
+        });
+}
+
+function _renderHotReloadDropdown(){
+    var sel = document.getElementById('hotReloadPlugin');
+    if (!sel) return;
+    // Build options from the manifest (plug-ins with hot_reload:true).
+    var opts = [];
+    if (REPAIR_MANIFEST && REPAIR_MANIFEST.files){
+        REPAIR_MANIFEST.files.forEach(function(e){
+            if (e.kind === 'plugin' && e.hot_reload){
+                opts.push(e.name.replace(/\.py$/, ''));
+            }
+        });
+    }
+    if (!opts.length){
+        // Minimal fallback so the dropdown is never empty.
+        opts = ['upload_service', 'weather_service', 'band_service', 'telemetry_service'];
+    }
+    var current = sel.value;
+    sel.innerHTML = opts.map(function(o){ return '<option value="'+o+'">'+o+'</option>'; }).join('');
+    if (opts.indexOf(current) >= 0) sel.value = current;
+}
+
+function verifyDeploy(){
+    var base = (document.getElementById('serverUrl').value || '').replace(/\/$/, '');
+    var box = document.getElementById('repairVerifyResults');
+    if (!base) {
+        box.innerHTML = '<span style="color:#fca5a5">Set Controller URL first.</span>';
+        return;
+    }
+    var btn = document.getElementById('repairVerifyBtn');
+    if (btn){ btn.disabled = true; btn.textContent = 'Verifying...'; }
+    box.innerHTML = '<span style="color:#fbbf24">Hashing files on controller...</span>';
+    fetch(base + '/api/repair/verify', {mode:'cors'})
+        .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return {status:r.status, body:j}; }); })
+        .then(function(out){
+            if (btn){ btn.disabled = false; btn.textContent = 'Verify Deploy'; }
+            if (!out.body || out.body.success !== true){
+                box.innerHTML = '<span style="color:#fca5a5">Verify endpoint not available on this controller (HTTP '+out.status+'). Upload the latest upload_service.py + repair_manifest.json, then retry.</span>';
+                return;
+            }
+            var d = out.body;
+            var summary = '<div style="margin-bottom:6px;font-family:Menlo,Consolas,monospace">' +
+                '<span style="color:#34d399;font-weight:700">PASS ' + d.pass + '</span> &nbsp; ' +
+                '<span style="color:' + (d.fail ? '#fca5a5' : '#64748b') + ';font-weight:700">FAIL ' + d.fail + '</span> &nbsp; ' +
+                '<span style="color:' + (d.missing ? '#fbbf24' : '#64748b') + ';font-weight:700">MISSING ' + d.missing + '</span> &nbsp; ' +
+                '<span style="color:#64748b">total: ' + d.total + ' &middot; manifest v' + (d.manifest_version || '?') + '</span>' +
+                '</div>';
+            var rows = '<div style="background:#020617;border:1px solid #1e293b;border-radius:6px;padding:8px;font-family:Menlo,Consolas,monospace;font-size:10px;max-height:240px;overflow-y:auto">';
+            d.files.forEach(function(f){
+                var icon, color;
+                if (f.status === 'ok'){ icon = '\u2713'; color = '#34d399'; }
+                else if (f.status === 'missing'){ icon = '?'; color = '#fbbf24'; }
+                else { icon = '\u2717'; color = '#fca5a5'; }
+                var detail = '';
+                if (f.status === 'mismatch'){
+                    detail = ' &mdash; expected ' + (f.expected_size||'?') + 'B / got ' + (f.got_size||'?') + 'B';
+                } else if (f.status === 'missing'){
+                    detail = ' &mdash; not on disk';
+                }
+                rows += '<div style="color:'+color+';padding:1px 0">' + icon + ' ' + f.name + detail + '</div>';
+            });
+            rows += '</div>';
+            box.innerHTML = summary + rows;
+        })
+        .catch(function(err){
+            if (btn){ btn.disabled = false; btn.textContent = 'Verify Deploy'; }
+            box.innerHTML = '<span style="color:#fca5a5">Network error: ' + err.message + '</span>';
+        });
+}
 
 function _renderRepairList(){
     var box = document.getElementById('repairList');
@@ -996,6 +1099,9 @@ function _doRepairUpload(name, file){
         });
 }
 _renderRepairList();
+// Try to load the manifest immediately. If serverUrl is blank we fall back
+// to the static seed list so the operator can at least see the upload UI.
+_loadManifest();
 
 // ---------- Data Bridges UI ----------
 var BRIDGE_DEFS = [

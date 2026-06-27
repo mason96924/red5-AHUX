@@ -1,5 +1,31 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.41 — Force-bypass setup.html one-time-gate (2026-06-27)
+
+**User report**: After completing the L.39 + L.40 rollout on controller
+192.168.1.208, every login skipped the Setup Walk and went straight to
+the dashboard, while 192.168.1.158 worked as expected.
+
+**Root cause**: `setup.html` (lines 22-32) has a per-browser one-time-gate
+that auto-redirects to `/dashboard.html` if `localStorage['red5.setup.done']
+=== '1'`, UNLESS `?force=1` is in the URL.  The L.39 `landing.html`
+redirect targeted `/api/assets/setup.html` *without* `?force=1`, so as
+soon as the operator had ever clicked "Open Dashboard" / "Skip all" on
+that origin, every subsequent login bounced straight to the dashboard.
+
+Controller 158 looked fine because its browser had not yet flipped the
+flag on that origin — first-time-login behaviour masked the bug.
+
+**Fix in `archive/Red5-Studio-V1.9/landing.html`**:
+  * `goToSetup()` now redirects to `/api/assets/setup.html?force=1`.
+  * Legacy engineer-menu card href also updated to `?force=1`.
+  This matches the dashboard sidebar's cog-icon URL exactly — both
+  entry points now bypass the gate, so EVERY login lands on Setup.
+
+**Roll-out**: Operator uploads the fresh `landing.html` via Repair Mode
+on every controller.  No other files need re-flashing.
+
+
 ## Phase L.40 — V1.9 Repair Mode UI parity fix (2026-06-27)
 
 **Brief**: User correctly flagged that even after the L.39 `landing.html`

@@ -345,32 +345,36 @@ function renderAhuEquipmentModal(ctx) {
                                             const oaT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' \u00B0C' : '--';
                                             const oaR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
                                             const badgeCls = bandTint(band);
+                                            // Lower opacity than v1 so the equipment
+                                            // graphic underneath stays clearly visible.
+                                            // Heavier backdrop-blur compensates for the
+                                            // lower alpha so the text remains readable.
                                             const panelBg = dk
-                                                ? 'bg-slate-900/55 border-slate-600/60 text-slate-200'
-                                                : 'bg-white/65 border-slate-400/60 text-slate-800';
+                                                ? 'bg-slate-900/30 border-slate-500/40 text-slate-100'
+                                                : 'bg-white/35 border-slate-400/40 text-slate-900';
                                             return (
                                                 <div data-testid={`ahu-modal-band-${showAhuModalFor}`}
-                                                     className={`absolute top-2 right-2 z-40 px-3 py-2 rounded-lg border backdrop-blur-md shadow-lg max-w-xs ${panelBg}`}
-                                                     style={{fontSize: '11px', lineHeight: 1.4}}>
-                                                    <div className="flex items-center gap-2 mb-1.5">
-                                                        <span className={`shrink-0 px-1.5 py-0.5 rounded border leading-none font-black tracking-wider font-mono text-[10px] ${badgeCls}`}>
+                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border backdrop-blur-lg shadow-md max-w-[240px] ${panelBg}`}
+                                                     style={{fontSize: '9px', lineHeight: 1.4}}>
+                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                        <span className={`shrink-0 px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono text-[8px] ${badgeCls}`}>
                                                             {band}
                                                         </span>
-                                                        <span className="font-bold uppercase tracking-[0.12em] text-[9px] opacity-70">
+                                                        <span className="font-bold uppercase tracking-[0.12em] text-[7px] opacity-70">
                                                             OA-band &middot; {oaT} / {oaR}
                                                         </span>
                                                     </div>
-                                                    <div className="mb-1.5">
-                                                        <div className="text-[9px] uppercase font-bold opacity-60 tracking-wider">Outside</div>
+                                                    <div className="mb-1">
+                                                        <div className="text-[7px] uppercase font-bold opacity-60 tracking-wider">Outside</div>
                                                         <div>{story.weather}</div>
                                                     </div>
-                                                    <div className="mb-1.5">
-                                                        <div className="text-[9px] uppercase font-bold opacity-60 tracking-wider">What the AHU does</div>
+                                                    <div className="mb-1">
+                                                        <div className="text-[7px] uppercase font-bold opacity-60 tracking-wider">What the AHU does</div>
                                                         <div>{story.plan}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-[9px] uppercase font-bold opacity-60 tracking-wider">Setpoints</div>
-                                                        <div className="font-mono text-[10px]">{story.set}</div>
+                                                        <div className="text-[7px] uppercase font-bold opacity-60 tracking-wider">Setpoints</div>
+                                                        <div className="font-mono text-[8px]">{story.set}</div>
                                                     </div>
                                                 </div>
                                             );

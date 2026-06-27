@@ -37,16 +37,38 @@ set -euo pipefail
 # --- config -----------------------------------------------------------------
 REPO_DIR="${REPO_DIR:-$HOME/red5-studio}"
 FRONTEND_DIR="${FRONTEND_DIR:-$REPO_DIR/frontend}"
-NGINX_ROOT="${NGINX_ROOT:-$(grep -E '^\s*root\s' /etc/nginx/sites-available/red5 \
+NGINX_ROOT="${NGINX_ROOT:-$( (grep -E '^\s*root\s' /etc/nginx/sites-available/red5 2>/dev/null || true) \
                           | head -1 | awk '{print $2}' | tr -d ';')}"
 BACKEND_SVC="${BACKEND_SVC:-red5-backend}"
 
 # --- pretty output ----------------------------------------------------------
-bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
-green() { printf '\033[32m%s\033[0m\n' "$*"; }
-red()   { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+bold()   { printf '\033[1m%s\033[0m\n' "$*"; }
+green()  { printf '\033[32m%s\033[0m\n' "$*"; }
+red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
 trap 'red "✗ deploy.sh failed on line $LINENO"' ERR
+
+# --- CLI flags --------------------------------------------------------------
+SKIP_PARITY=0
+for arg in "$@"; do
+    case "$arg" in
+        --skip-parity-check)
+            SKIP_PARITY=1
+            ;;
+        -h|--help)
+            grep '^#' "$0" | head -33 | sed 's/^# \{0,1\}//'
+            echo
+            echo "Flags:"
+            echo "  --skip-parity-check   skip the V1.9/V2.0 endpoint-parity preflight"
+            echo "                        (emergency hot-fix only -- you SHOULD NOT use this routinely)"
+            exit 0
+            ;;
+        *)
+            red "unknown flag: $arg (try --help)"; exit 1
+            ;;
+    esac
+done
 
 bold "──────────────────────────────────────────────────────────────"
 bold " Red5 Studio V2.0 — PROD update"
@@ -55,6 +77,7 @@ echo "REPO_DIR     = $REPO_DIR"
 echo "FRONTEND_DIR = $FRONTEND_DIR"
 echo "NGINX_ROOT   = $NGINX_ROOT"
 echo "BACKEND_SVC  = $BACKEND_SVC"
+[[ "$SKIP_PARITY" == "1" ]] && yellow "PARITY CHECK = SKIPPED (--skip-parity-check)"
 echo
 
 # --- sanity -----------------------------------------------------------------
@@ -62,6 +85,53 @@ echo
 [[ -d "$FRONTEND_DIR/public" ]]            || { red "frontend/public missing"; exit 1; }
 [[ -n "$NGINX_ROOT" && -d "$NGINX_ROOT" ]] || { red "NGINX_ROOT '$NGINX_ROOT' missing"; exit 1; }
 command -v yarn >/dev/null                 || { red "yarn not installed (sudo apt-get install yarn)"; exit 1; }
+
+# --- 0. parity preflight ----------------------------------------------------
+# Static scan of /app/backend/routes/*.py (V2.0 FastAPI) vs
+# /app/archive/Red5-Studio-V1.9/*.py (the Flask app PROD actually serves)
+# to catch the class of bug where a route is added to V2.0 but never
+# ported back to V1.9 -- PROD then 404s on the new endpoint and a UI
+# feature silently disappears (e.g. the 2026-06-27 missing
+# /api/ahu-rolling-avgs that hid every pill Delta-arrow on PROD).
+#
+# Failure exits with code 4 BEFORE any side effects (git pull / yarn /
+# nginx reload), so a drifted deploy is impossible without --skip-parity-check.
+PARITY_SCRIPT="$REPO_DIR/scripts/check_v19_v20_parity.py"
+bold "[0/7] V1.9/V2.0 endpoint-parity preflight"
+if [[ "$SKIP_PARITY" == "1" ]]; then
+    yellow "       SKIPPED via --skip-parity-check (you SHOULD circle back and fix the drift)"
+elif [[ ! -f "$PARITY_SCRIPT" ]]; then
+    yellow "       SKIPPED -- $PARITY_SCRIPT not found (older checkout?)"
+else
+    # Run the audit.  Exit codes: 0=ok, 2=drift, 3=scan error.
+    # The ERR trap can fire from a non-zero exit inside $(...) even with
+    # `set +e`, so disable it for this block and reinstate after.
+    trap - ERR
+    set +e
+    PARITY_JSON="$(python3 "$PARITY_SCRIPT" --json --log /var/log/red5/parity_warnings.log 2>/dev/null)"
+    PARITY_RC=$?
+    set -e
+    trap 'red "✗ deploy.sh failed on line $LINENO"' ERR
+    case "$PARITY_RC" in
+        0) green "       ✓ parity OK -- V1.9 implements every V2.0 /api/* route" ;;
+        2)
+            red "       ✗ V1.9 IS MISSING V2.0 ROUTE(S):"
+            echo "$PARITY_JSON" \
+                | python3 -c "import json,sys; d=json.load(sys.stdin); [print('         - '+r) for r in d.get('v20_only',[])]" >&2
+            red ""
+            red "       Refusing to deploy.  Port the missing routes to"
+            red "       /app/archive/Red5-Studio-V1.9/ then re-run.  In an"
+            red "       absolute emergency you can override with"
+            red "       \"deploy.sh --skip-parity-check\" (logged + dangerous)."
+            trap - ERR
+            exit 4
+            ;;
+        3) yellow "       ⚠  parity scanner couldn't find source trees -- continuing anyway"
+            echo "       (exit 3 from $PARITY_SCRIPT)" ;;
+        *) red "       ✗ parity scanner unexpected exit $PARITY_RC"; trap - ERR; exit 4 ;;
+    esac
+fi
+echo
 
 # --- 1. git pull -----------------------------------------------------------
 bold "[1/7] git pull --ff-only"

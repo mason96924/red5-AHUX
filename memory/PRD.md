@@ -6474,3 +6474,30 @@ V1.9 also has 29 legacy-only routes (bridges/, bacnet/, band-csv/, mobile, etc.)
 **Open items**:
 - Plug the 3 remaining drift gaps in V1.9: `band-overrides/ahu-rh-bands`, `ahu-history`, `band-guide`. (Add to backlog -- not blocking but `band-overrides/ahu-rh-bands` is the highest priority since it's the Apply-to-Controller flow.)
 - V3.0 Modbus Phase 2.
+
+---
+## 2026-06-27 (cont) — deploy.sh Hard-Gate on Parity Drift (Phase L.46)
+
+**Wraps** `/app/scripts/check_v19_v20_parity.py` in `/app/deploy.sh` as preflight step **[0/7]** that runs BEFORE git pull / yarn install / yarn build / nginx reload — so a drifted deploy is impossible without explicit override.
+
+**Behaviour**:
+- Parity OK → green tick, proceed to step [1/7] git pull.
+- Drift detected → red error listing missing V2.0 routes, "Refusing to deploy", **exit 4** with no side effects.
+- Scanner error (exit 3) → yellow warn, proceed (don't block deploy on a buggy scanner).
+- ERR trap temporarily disabled around the parity block — bash fires ERR from `$(…)` failures even under `set +e`, which printed a misleading "failed on line N" before the real error.
+
+**Override**: `./deploy.sh --skip-parity-check` (logged + yellow header warning).
+
+**Other small fixes folded in**:
+- Added `--help` flag (prints script header + flag table).
+- Added `yellow()` colour helper.
+- `NGINX_ROOT` default now tolerates a missing `/etc/nginx/sites-available/red5` (was silently exiting under `set -e` + `pipefail` in non-PROD test envs).
+
+**Verified**:
+- `bash -n /app/deploy.sh` → clean.
+- `./deploy.sh --help` → prints usage.
+- `./deploy.sh --bogus` → rejects unknown flag, exit 1.
+- `REPO_DIR=/app NGINX_ROOT=/tmp ./deploy.sh` → fires preflight, lists 4 missing routes, exits 4 with no side effects.
+- `REPO_DIR=/app NGINX_ROOT=/tmp ./deploy.sh --skip-parity-check` → preflight skipped with yellow warning, proceeds to step [1/7].
+
+**Open items**: port `/api/band-overrides/ahu-rh-bands`, `/api/ahu-history`, `/api/band-guide` to V1.9 so the next PROD deploy passes the gate.

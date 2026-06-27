@@ -10,6 +10,15 @@
 
 Every phase ends with a **CHECKPOINT** — do not move past it until the verification passes. If a checkpoint fails, stop and ask before continuing.
 
+> **Tunnel / Cloudflare upgrade?**
+> If this server fronts the dashboard through a Cloudflare Tunnel and
+> you've been seeing intermittent **Error 1033** ("tunnel not connected
+> to Cloudflare's network"), run `sudo ./upgrade-cloudflared.sh` from
+> the repo root — see [`UPGRADE_CLOUDFLARED.md`](./UPGRADE_CLOUDFLARED.md)
+> for what it does + how to roll back.  The script is idempotent and
+> safe to re-run; do it once after each `./deploy.sh` until you're on
+> 2026.6.0.
+
 ---
 
 ## Phase 0 — Pre-flight (gather, do not execute)

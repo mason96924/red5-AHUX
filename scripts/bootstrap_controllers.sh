@@ -1,51 +1,65 @@
 #!/usr/bin/env bash
-# bootstrap_controllers.sh -- one-shot push of `upload_service.py` +
-# `repair_manifest.json` to a list of V1.9 controllers.
+# bootstrap_controllers.sh -- one-shot push of upload_service.py +
+# repair_manifest.json + dashboard UI files to a list of V1.9 controllers.
 #
-# What it does, per controller:
-#   1. POST upload_service.py with X-Force-Override (sha256 mismatch is
-#      expected -- we are TRYING to upgrade the very module that does
-#      the integrity check, so we cannot also satisfy it).
-#   2. POST /api/repair/reload-module/upload_service so the new routing
-#      code goes live without a Flask restart.
-#   3. POST repair_manifest.json.  The reloaded upload_service routes
-#      this to DATA_ROOT correctly (previous version misrouted it to
-#      PLUGINS_ROOT, leaving the manifest endpoint serving the stale
-#      on-disk copy).
-#   4. GET /api/repair/manifest and confirm the file count matches
-#      the freshly-built manifest in this repo.
+# What it does, per controller (in order):
+#   1. upload_service.py            (X-Force-Override -- self-upgrade)
+#   2. /api/repair/reload-module    (new routing code goes live)
+#   3. repair_manifest.json         (now lands in DATA_ROOT correctly)
+#   4. dashboard.compiled.js
+#   5. dashboard.html
+#   6. update.html
+#   7. GET /api/repair/verify       (per-file PASS / FAIL summary)
 #
-# Idempotent: re-running on an already-bootstrapped controller is a
-# no-op (X-Force-Override silently overwrites with identical bytes,
-# reload re-imports, manifest upload writes the same content).
+# Each step's sha256 is checked by the controller against the freshly
+# uploaded manifest (step 3) -- so steps 4-6 fail loudly if local files
+# are out of date.
+#
+# Idempotent: re-running on an already-current controller is a no-op
+# (every upload writes identical bytes, the integrity check passes,
+# nothing breaks).
+#
+# Flags:
+#   --bootstrap-only    Stop after step 3 (skip pushing UI files).
+#                       Useful for very old controllers where you want
+#                       to bring the integrity-checker live first and
+#                       eyeball the UI rows in /update before pushing
+#                       the bigger bundles.
+#   --ui-only           Skip steps 1-2 (assume upload_service.py +
+#                       reload have already been done in a previous
+#                       run).  Useful for the routine post-rebuild
+#                       flow once every controller is bootstrapped.
+#   (no flag)           Run all 7 steps.  Safe default.
 #
 # Usage:
-#   bash scripts/bootstrap_controllers.sh 192.168.1.158 192.168.1.208 ...
-#   bash scripts/bootstrap_controllers.sh                      (uses controllers.txt)
+#   bash scripts/bootstrap_controllers.sh 192.168.1.158 192.168.1.208
+#   bash scripts/bootstrap_controllers.sh --ui-only          (controllers.txt)
+#   bash scripts/bootstrap_controllers.sh --bootstrap-only 192.168.1.158
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCHIVE="$REPO_ROOT/archive/Red5-Studio-V1.9"
-MANIFEST="$ARCHIVE/repair_manifest.json"
-UPLOAD_SVC="$ARCHIVE/upload_service.py"
 LIST_FILE="$REPO_ROOT/controllers.txt"
 
-if [[ ! -f "$MANIFEST" ]]; then
-    echo "FATAL: $MANIFEST is missing.  Run scripts/build_repair_manifest.py first."
-    exit 2
-fi
-if [[ ! -f "$UPLOAD_SVC" ]]; then
-    echo "FATAL: $UPLOAD_SVC is missing."
-    exit 2
-fi
+# ---- parse flags ----------------------------------------------------------
+MODE='all'
+ARGS=()
+for a in "$@"; do
+    case "$a" in
+        --bootstrap-only)  MODE='bootstrap' ;;
+        --ui-only)         MODE='ui' ;;
+        --help|-h)
+            sed -n '2,33p' "$0"; exit 0 ;;
+        --*)               echo "unknown flag: $a" >&2; exit 2 ;;
+        *)                 ARGS+=("$a") ;;
+    esac
+done
 
-EXPECTED=$(grep -c '"name":' "$MANIFEST")
-
-# Collect controller IPs.
+# ---- collect target IPs ---------------------------------------------------
 TARGETS=()
-if [[ $# -gt 0 ]]; then
-    TARGETS=("$@")
+if [[ ${#ARGS[@]} -gt 0 ]]; then
+    TARGETS=("${ARGS[@]}")
 elif [[ -f "$LIST_FILE" ]]; then
     while IFS= read -r line; do
         line="${line%%#*}"
@@ -54,84 +68,165 @@ elif [[ -f "$LIST_FILE" ]]; then
         TARGETS+=("$line")
     done < "$LIST_FILE"
 else
-    cat <<EOF >&2
-Usage:  $0 <ip1> [ip2 ...]
-   or:  echo -e "192.168.1.158\n192.168.1.208" > controllers.txt && $0
-
-No controllers specified and no controllers.txt found.
-EOF
+    echo "Usage:  $0 [--bootstrap-only|--ui-only] <ip1> [ip2 ...]" >&2
+    echo "   or:  put IPs in $LIST_FILE (one per line)" >&2
     exit 2
 fi
 
-# ANSI colours when stdout is a tty.
+# ---- file lookups & sanity ------------------------------------------------
+MANIFEST="$ARCHIVE/repair_manifest.json"
+UPLOAD_SVC="$ARCHIVE/upload_service.py"
+
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "FATAL: $MANIFEST is missing.  Run scripts/build_repair_manifest.py first." >&2
+    exit 2
+fi
+if [[ ! -f "$UPLOAD_SVC" ]]; then
+    echo "FATAL: $UPLOAD_SVC is missing." >&2
+    exit 2
+fi
+
+# UI files to push in mode=all and mode=ui.  Anything missing on disk is
+# silently skipped (so older trees that haven't built the bundle yet
+# don't break this script).
+UI_FILES=()
+for f in dashboard.compiled.js dashboard.html update.html; do
+    p="$ARCHIVE/$f"
+    [[ -f "$p" ]] && UI_FILES+=("$p")
+done
+
+EXPECTED=$(grep -c '"name":' "$MANIFEST")
+
+# ---- colours --------------------------------------------------------------
 if [[ -t 1 ]]; then
-    R=$'\033[31m'; G=$'\033[32m'; Y=$'\033[33m'; B=$'\033[1m'; X=$'\033[0m'
+    R=$'\033[31m'; G=$'\033[32m'; Y=$'\033[33m'; B=$'\033[1m'; D=$'\033[2m'; X=$'\033[0m'
 else
-    R=''; G=''; Y=''; B=''; X=''
+    R=''; G=''; Y=''; B=''; D=''; X=''
 fi
 
 success_in() {
-    # Match "success":true with or without whitespace.
     grep -qE '"success":\s*true' <<< "$1" 2>/dev/null
 }
 
-echo "${B}Pushing upload_service.py + repair_manifest.json ($EXPECTED entries) to ${#TARGETS[@]} controller(s):${X}"
+# Push one file via /api/repair/upload-plugin.  Returns 0 = OK, 1 = fail.
+# Args: <ip> <local_path> [force-override-1|""]
+push_file() {
+    local ip="$1" path="$2" force="${3:-}"
+    local name
+    name="$(basename "$path")"
+    local hdr=()
+    [[ -n "$force" ]] && hdr=(-H "X-Force-Override: 1")
+    local resp
+    resp=$(curl -s --max-time 30 -X POST \
+                 "${hdr[@]}" \
+                 -F "file=@${path}" \
+                 "http://${ip}:5001/api/repair/upload-plugin" \
+                 2>&1 || true)
+    if success_in "$resp"; then
+        return 0
+    fi
+    # On sha256 mismatch the controller returns the expected vs got hash --
+    # surface it so the operator knows their local file is stale.
+    local why
+    why=$(grep -oE '"error":"[^"]*"' <<< "$resp" | head -1 || true)
+    echo "${R}FAIL${X}    $name -- ${why:-$resp}"
+    return 1
+}
+
+reload_module() {
+    local ip="$1" mod="$2"
+    local resp
+    resp=$(curl -s --max-time 30 -X POST \
+                 "http://${ip}:5001/api/repair/reload-module/${mod}" \
+                 2>&1 || true)
+    success_in "$resp"
+}
+
+verify_controller() {
+    local ip="$1"
+    curl -s --max-time 15 "http://${ip}:5001/api/repair/verify" 2>/dev/null
+}
+
+echo "${B}mode=${MODE}  controllers=${#TARGETS[@]}  ui-files=${#UI_FILES[@]}  manifest-entries=${EXPECTED}${X}"
 
 PASS=0; FAIL=0
 for ip in "${TARGETS[@]}"; do
-    printf '  %-18s ' "$ip"
+    echo ""
+    echo "${B}[${ip}]${X}"
+    ok=1
 
-    # ---- step 1: upload_service.py (forced -- we change the integrity
-    # checker, so we cannot also satisfy its check) ------------------
-    UP_RESP=$(curl -s --max-time 15 -X POST \
-                   -H "X-Force-Override: 1" \
-                   -F "file=@${UPLOAD_SVC}" \
-                   "http://${ip}:5001/api/repair/upload-plugin" \
-                   2>&1 || true)
-    if ! success_in "$UP_RESP"; then
-        echo "${R}FAIL${X}  upload_service.py -- $UP_RESP"
-        FAIL=$((FAIL+1)); continue
+    if [[ "$MODE" != "ui" ]]; then
+        # Step 1+2 : upgrade upload_service.py and hot-reload it.
+        printf '  %-30s ... ' "upload_service.py"
+        if push_file "$ip" "$UPLOAD_SVC" "force"; then
+            echo "${G}OK${X} (forced)"
+        else
+            ok=0
+        fi
+        if [[ "$ok" == "1" ]]; then
+            printf '  %-30s ... ' "reload upload_service"
+            if reload_module "$ip" "upload_service"; then
+                echo "${G}OK${X}"
+            else
+                echo "${R}FAIL${X}"
+                ok=0
+            fi
+        fi
     fi
 
-    # ---- step 2: hot-reload so the new routing code goes live ------
-    RL_RESP=$(curl -s --max-time 15 -X POST \
-                   "http://${ip}:5001/api/repair/reload-module/upload_service" \
-                   2>&1 || true)
-    if ! success_in "$RL_RESP"; then
-        echo "${R}FAIL${X}  reload upload_service -- $RL_RESP"
-        FAIL=$((FAIL+1)); continue
+    # Step 3 : manifest (regardless of mode).
+    if [[ "$ok" == "1" ]]; then
+        printf '  %-30s ... ' "repair_manifest.json"
+        if push_file "$ip" "$MANIFEST" ""; then
+            echo "${G}OK${X}"
+        else
+            ok=0
+        fi
     fi
 
-    # ---- step 3: now upload the manifest.  Reloaded upload_service
-    # routes it to DATA_ROOT correctly. ------------------------------
-    MAN_RESP=$(curl -s --max-time 15 -X POST \
-                    -F "file=@${MANIFEST}" \
-                    "http://${ip}:5001/api/repair/upload-plugin" \
-                    2>&1 || true)
-    if ! success_in "$MAN_RESP"; then
-        echo "${R}FAIL${X}  repair_manifest.json -- $MAN_RESP"
-        FAIL=$((FAIL+1)); continue
-    fi
-    # Sanity-check the dest field -- previous routing bug sent it to
-    # pgpy/.  A correctly-routed manifest reports `data/`.
-    if ! grep -q '"dest":"data/repair_manifest.json"' <<< "$MAN_RESP"; then
-        echo "${Y}WARN${X}  manifest landed at $(grep -oE '"dest":"[^"]*"' <<< "$MAN_RESP")"
+    # Steps 4-6 : UI files, unless we are in bootstrap-only mode.
+    if [[ "$MODE" != "bootstrap" && "$ok" == "1" ]]; then
+        for ui in "${UI_FILES[@]}"; do
+            printf '  %-30s ... ' "$(basename "$ui")"
+            if push_file "$ip" "$ui" ""; then
+                echo "${G}OK${X}"
+            else
+                ok=0
+                break
+            fi
+        done
     fi
 
-    # ---- step 4: read back and confirm count ------------------------
-    GOT_COUNT=$(curl -s --max-time 10 "http://${ip}:5001/api/repair/manifest" \
-                    | python3 -c 'import json,sys; m=json.load(sys.stdin); print(len(m.get("files") or []))' \
-                    2>/dev/null || echo 0)
-
-    if [[ "$GOT_COUNT" == "$EXPECTED" ]]; then
-        echo "${G}OK${X}  (manifest now reports $GOT_COUNT files)"
-        PASS=$((PASS+1))
+    # Step 7 : verify report (a single one-shot diff vs manifest).
+    if [[ "$ok" == "1" ]]; then
+        printf '  %-30s ... ' "verify"
+        REPORT=$(verify_controller "$ip")
+        SUMMARY=$(python3 - "$EXPECTED" <<EOF 2>/dev/null
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    pp = d.get('pass', 0); ff = d.get('fail', 0); mm = d.get('missing', 0)
+    if ff == 0 and mm == 0:
+        print(f"OK  pass={pp} fail=0 miss=0")
+    else:
+        bad = [f['name'] for f in d.get('files') or [] if f.get('status') != 'ok']
+        print(f"PARTIAL  pass={pp} fail={ff} miss={mm}  bad={','.join(bad[:5])}{'...' if len(bad)>5 else ''}")
+except Exception as ex:
+    print(f"UNREACHABLE  ({ex})")
+EOF
+<<< "$REPORT")
+        if [[ "$SUMMARY" == OK* ]]; then
+            echo "${G}${SUMMARY}${X}"
+            PASS=$((PASS+1))
+        else
+            echo "${Y}${SUMMARY}${X}"
+            FAIL=$((FAIL+1))
+        fi
     else
-        echo "${Y}MISMATCH${X}  (controller reports $GOT_COUNT, expected $EXPECTED)"
         FAIL=$((FAIL+1))
     fi
 done
 
-echo
+echo ""
 echo "${B}Summary:${X}  ${G}PASS $PASS${X}  ${R}FAIL $FAIL${X}"
 [[ "$FAIL" -eq 0 ]] || exit 1

@@ -1282,9 +1282,25 @@ def repair_upload_plugin():
             return jsonify({'success': False, 'error': 'Missing filename'}), 400
 
         # Strip any path components -- we only care about the basename.
-        # configs/bridges.json keeps its subpath; everything else is leaf.
-        if not name.startswith('configs/'):
+        # configs/* and js/* keep their subpath; everything else is leaf.
+        if not (name.startswith('configs/') or name.startswith('js/')):
             name = os.path.basename(name)
+
+        # Manifest basename rescue: a multipart upload carries only the
+        # leaf filename (e.g. "audit_log.js"), but the manifest may list
+        # it under a subdir ("js/audit_log.js").  If the bare leaf is
+        # NOT in the allow-list yet matches exactly one manifest entry
+        # by basename, substitute the canonical name so the upload
+        # routes to the right directory.
+        if '/' not in name:
+            m = _load_manifest()
+            if m is not None:
+                cands = [e['name'] for e in (m.get('files') or [])
+                         if isinstance(e.get('name'), str)
+                         and '/' in e['name']
+                         and os.path.basename(e['name']) == name]
+                if len(cands) == 1:
+                    name = cands[0]
 
         # Allow-list is now derived from /root/data/repair_manifest.json
         # at request time -- single source of truth shared with the UI

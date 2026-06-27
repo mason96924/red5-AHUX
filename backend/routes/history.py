@@ -218,13 +218,20 @@ async def ahu_rolling_avg_single(ahu_id: str) -> dict:
 async def ahu_rolling_avgs_batch() -> dict:
     """Batch 24h rolling-average lookup for every AHU the backend has
     sampled so far.  Returns a map keyed by ahu_id; an AHU absent from
-    the map simply hasn't been polled yet via /api/data."""
-    out = {
-        aid: {
-            "exchange":   round(d.get("exchange",   0.0), 3),
-            "absorption": round(d.get("absorption", 0.0), 3),
-            "n_samples":  d.get("n", 0),
+    the map simply hasn't been polled yet via /api/data.
+
+    Phase L.42 — also returns the 1h EWMA + short sample-buffer per
+    metric so the dashboard can render the 1h-vs-24h sparkline next
+    to the SYNCED/APPLY chip."""
+    out = {}
+    for aid, d in (_ROLLING_AVGS or {}).items():
+        out[aid] = {
+            "exchange":      round(d.get("exchange",      0.0), 3),
+            "absorption":    round(d.get("absorption",    0.0), 3),
+            "exchange_1h":   round(d.get("exchange_1h",   d.get("exchange",   0.0)), 3),
+            "absorption_1h": round(d.get("absorption_1h", d.get("absorption", 0.0)), 3),
+            "ex_hist":       [round(v, 3) for v in (d.get("ex_hist") or [])],
+            "ab_hist":       [round(v, 3) for v in (d.get("ab_hist") or [])],
+            "n_samples":     d.get("n", 0),
         }
-        for aid, d in (_ROLLING_AVGS or {}).items()
-    }
     return {"averages": out, "n_ahus": len(out), "method": "ewma"}

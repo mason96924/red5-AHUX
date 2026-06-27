@@ -193,8 +193,16 @@ def _update_rolling_avgs(snapshot: list) -> None:
     exchange/absorption deltas the dashboard's MetricBar pills display
     (h_SA − h_OA and h_RA − h_SA respectively).  Uses the simulator's
     `_enthalpy` helper so the maths matches what the frontend renders.
+
+    Phase L.42 (2026-06-27): also maintains a 1-hour EWMA (alpha ≈
+    poll-interval / 1 h ⇒ 0.0833) and a short circular buffer of the
+    last 24 raw samples per metric.  The dashboard renders a mini
+    sparkline using the buffer and surfaces 1h-vs-24h divergence by
+    comparing the two EWMAs.
     """
     from models.state import _ROLLING_AVGS, _ROLLING_ALPHA
+    ALPHA_1H = 5.0 / 60.0    # poll-interval / 1 h
+    BUF_LEN  = 24
     for ahu in snapshot:
         aid = ahu.get("id")
         pts = {p.get("label"): p for p in (ahu.get("points") or []) if isinstance(p, dict)}
@@ -213,13 +221,27 @@ def _update_rolling_avgs(snapshot: list) -> None:
         ab = h_ra - h_sa
         prev = _ROLLING_AVGS.get(aid)
         if not prev:
-            _ROLLING_AVGS[aid] = {"exchange": ex, "absorption": ab, "n": 1}
-        else:
-            a = _ROLLING_ALPHA
             _ROLLING_AVGS[aid] = {
-                "exchange":   a * ex + (1.0 - a) * prev["exchange"],
-                "absorption": a * ab + (1.0 - a) * prev["absorption"],
-                "n":          prev.get("n", 0) + 1,
+                "exchange":      ex, "absorption":      ab,
+                "exchange_1h":   ex, "absorption_1h":   ab,
+                "ex_hist": [ex],     "ab_hist": [ab],
+                "n":             1,
+            }
+        else:
+            a24 = _ROLLING_ALPHA
+            ex_hist = list(prev.get("ex_hist") or [])
+            ab_hist = list(prev.get("ab_hist") or [])
+            ex_hist.append(ex); ab_hist.append(ab)
+            if len(ex_hist) > BUF_LEN: ex_hist = ex_hist[-BUF_LEN:]
+            if len(ab_hist) > BUF_LEN: ab_hist = ab_hist[-BUF_LEN:]
+            _ROLLING_AVGS[aid] = {
+                "exchange":      a24 * ex + (1.0 - a24) * prev["exchange"],
+                "absorption":    a24 * ab + (1.0 - a24) * prev["absorption"],
+                "exchange_1h":   ALPHA_1H * ex + (1.0 - ALPHA_1H) * prev.get("exchange_1h",   prev["exchange"]),
+                "absorption_1h": ALPHA_1H * ab + (1.0 - ALPHA_1H) * prev.get("absorption_1h", prev["absorption"]),
+                "ex_hist":       ex_hist,
+                "ab_hist":       ab_hist,
+                "n":             prev.get("n", 0) + 1,
             }
 
 

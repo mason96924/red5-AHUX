@@ -175,6 +175,26 @@ function renderSidebar(ctx) {
                             {'\u29C9 WIN'}
                         </button>
                     )}
+                    {/* SLIM ◀▶ FULL toggle pill (Phase L.41, 2026-06-27)
+                        — click-target alternative to the drag handle for
+                        flipping between the two sidebar widths.  Hides
+                        when the sidebar is popped out / floating (the
+                        operator picked their own surface in those
+                        modes). */}
+                    {!isPopped && (
+                        <button
+                            onClick={() => {
+                                const next = isCompact ? 320 : 205;
+                                setSidebarWidth(next);
+                                try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
+                            }}
+                            className={`px-1.5 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 leading-none ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
+                            title={isCompact ? "Expand sidebar to full width (320 px)" : "Collapse sidebar to slim width (205 px)"}
+                            data-testid="sidebar-width-toggle-btn"
+                        >
+                            {isCompact ? 'FULL \u25B6' : '\u25C0 SLIM'}
+                        </button>
+                    )}
                 </div>
             </div>
             <div className="flex items-center gap-1 flex-wrap justify-end">
@@ -482,6 +502,47 @@ function renderSidebar(ctx) {
                                                 ${applyBusy ? 'opacity-60 cursor-wait' : ''}`}>
                                 {dirty ? 'APPLY ↑' : 'SYNCED'}
                             </button>
+                        );
+                    })()}
+                    {/* 1h vs 24h sparkline (Phase L.42, 2026-06-27) — a
+                        tiny SVG strip to the right of the SYNCED chip
+                        showing the last ~24 raw exchange samples + the
+                        24h EWMA as a dashed horizontal baseline.  When
+                        the recent line drifts above/below the baseline
+                        the operator can spot short-term anomalies that
+                        the EWMA naturally smooths out.  Line colour
+                        encodes 1h vs 24h direction (emerald = warmer,
+                        rose = cooler, sky-blue = within ±0.2 kJ/kg).
+                        Only renders once we have ≥3 samples so a fresh
+                        restart doesn't show a meaningless flat line. */}
+                    {(() => {
+                        const avg = (ahuRollingAvgs || {})[ahu.id];
+                        const hist = (avg && avg.ex_hist) || [];
+                        if (hist.length < 3) return null;
+                        const w = 36, h = 14;
+                        const lo = Math.min.apply(null, hist.concat([avg.exchange]));
+                        const hi = Math.max.apply(null, hist.concat([avg.exchange]));
+                        const span = Math.max(hi - lo, 0.1);
+                        const yOf = (v) => h - 2 - ((v - lo) / span) * (h - 4);
+                        const xOf = (i) => (i / (hist.length - 1)) * (w - 2) + 1;
+                        const points = hist.map((v, i) => xOf(i).toFixed(1) + ',' + yOf(v).toFixed(1)).join(' ');
+                        const baselineY = yOf(avg.exchange).toFixed(1);
+                        const last = hist[hist.length - 1];
+                        const d1h24h = (avg.exchange_1h || avg.exchange) - avg.exchange;
+                        const lineColor = d1h24h > 0.2 ? '#34d399' : (d1h24h < -0.2 ? '#fb7185' : '#60a5fa');
+                        const tip = `1h: ${(avg.exchange_1h || 0).toFixed(2)}  |  24h: ${avg.exchange.toFixed(2)}  |  now: ${last.toFixed(2)} kJ/kg`;
+                        return (
+                            <svg width={w} height={h}
+                                 data-testid={`ahu-sparkline-${ahu.id}`}
+                                 className="shrink-0">
+                                <title>{tip}</title>
+                                <line x1="0" y1={baselineY} x2={w} y2={baselineY}
+                                      stroke={theme==='dark'?'#475569':'#cbd5e1'} strokeWidth="0.6" strokeDasharray="2,1.5" />
+                                <polyline points={points}
+                                          fill="none" stroke={lineColor} strokeWidth="1.2"
+                                          strokeLinejoin="round" strokeLinecap="round" />
+                                <circle cx={xOf(hist.length - 1)} cy={yOf(last)} r="1.4" fill={lineColor} />
+                            </svg>
                         );
                     })()}
                 </div>

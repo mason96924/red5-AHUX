@@ -4,10 +4,15 @@ const { useState, useMemo } = React;
  * STEP DEFINITIONS — the 4 walk paths the user described
  * ========================================================================= */
 const STEPS = [
-    { key:'psy',      label:'Psy Chart Setting',    sub:'Givoni · RH range · axis range', kind:'page',  iconColor:'#818cf8', accent:'indigo' },
-    { key:'location', label:'Location Setting',     sub:'City name & lat / long',         kind:'modal', iconColor:'#fbbf24', accent:'amber' },
-    { key:'language', label:'Language Setting',     sub:'EN · FR · ES · ZH · …',          kind:'modal', iconColor:'#34d399', accent:'emerald' },
-    { key:'plugins',  label:'Plug-in Setting',      sub:'List · upload · modify',         kind:'modal', iconColor:'#f472b6', accent:'pink' },
+    /* Walk order is the pentagon traversal: top → upper-right → lower-right → lower-left → upper-left */
+    { key:'psy',      label:'Psy Chart Setting',    sub:'Givoni · RH range · axis',  kind:'page',  iconColor:'#818cf8', accent:'indigo' },
+    { key:'location', label:'Location Setting',     sub:'City · lat / long',         kind:'modal', iconColor:'#fbbf24', accent:'amber'  },
+    { key:'language', label:'Language Setting',     sub:'EN · FR · ES · ZH · …',     kind:'modal', iconColor:'#34d399', accent:'emerald'},
+    { key:'plugins',  label:'Plug-in Setting',      sub:'List · upload · modify',    kind:'modal', iconColor:'#f472b6', accent:'pink'   },
+    /* 5th vertex: Update / Repair -- jumps to /update.html (Repair Mode) which exists on
+       both V1.9 and V2.0.  Opens in a new tab so the operator can flash a plugin or apply
+       an OTA without losing their Setup Walk progress. */
+    { key:'repair',   label:'Update & Repair',      sub:'Plug-in flash · controller OTA', kind:'link', iconColor:'#fb7185', accent:'rose', href:'/update.html' },
 ];
 
 /* =========================================================================
@@ -15,7 +20,7 @@ const STEPS = [
  * ========================================================================= */
 function App() {
     /* completion + per-step config -- mockup state, never persisted */
-    const [done, setDone] = useState({ psy:false, location:false, language:false, plugins:false });
+    const [done, setDone] = useState({ psy:false, location:false, language:false, plugins:false, repair:false });
     const [route, setRoute] = useState('hub');   // 'hub' | 'psy'
     const [modal, setModal] = useState(null);     // 'location' | 'language' | 'plugins' | null
 
@@ -62,35 +67,68 @@ function App() {
                     <p className="text-slate-500 text-xs mt-1 font-mono tracking-wide">Configure once. Skip any step you don't need.</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <span className="pill bg-slate-800 text-slate-400">{completeCount}/4 DONE</span>
+                    <span className="pill bg-slate-800 text-slate-400">{completeCount}/5 DONE</span>
                     <a href="/dashboard.html"
                        onClick={() => { try { localStorage.setItem('red5.setup.done','1'); } catch(e){} }}
                        className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-4">Skip all →</a>
                 </div>
             </div>
 
-            {/* ------------- tile grid ------------- */}
-            <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-5 fade-up" style={{animationDelay:'.08s'}}>
-                {STEPS.map((s, i) => (
-                    <Tile key={s.key}
-                          step={s}
-                          done={done[s.key]}
-                          index={i+1}
-                          onClick={() => s.kind === 'page' ? setRoute(s.key) : setModal(s.key)} />
-                ))}
+            {/* ------------- pentagon layout -------------
+                5 circular tiles arranged at the corners of a regular
+                pentagon.  Polar maths: angle starts at -90deg (top) and
+                steps by +72deg clockwise.  The container is height-locked
+                via aspect ratio so the pentagon stays circular on every
+                viewport.  Radius is 38 % of the container width (leaves
+                enough margin for circles' own ~22 % radius + shadow). */}
+            <div className="relative mx-auto fade-up"
+                 style={{ width:'min(640px, 88vw)', aspectRatio:'1 / 1', animationDelay:'.08s' }}>
+                {STEPS.map((s, i) => {
+                    const angleDeg = -90 + i * 72;
+                    const angle = angleDeg * Math.PI / 180;
+                    const r = 38;                        // % of container half-side
+                    const x = 50 + r * Math.cos(angle);  // %
+                    const y = 50 + r * Math.sin(angle);  // %
+                    return (
+                        <CircleTile key={s.key}
+                                    step={s}
+                                    done={done[s.key]}
+                                    index={i+1}
+                                    leftPct={x}
+                                    topPct={y}
+                                    onClick={() => {
+                                        if (s.kind === 'page')      setRoute(s.key);
+                                        else if (s.kind === 'link') window.open(s.href, '_blank', 'noopener');
+                                        else                        setModal(s.key);
+                                    }} />
+                    );
+                })}
+                {/* Optional faint pentagon-edge connector (purely decorative) */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none"
+                     viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <polygon
+                        points={STEPS.map((_, i) => {
+                            const a = (-90 + i * 72) * Math.PI / 180;
+                            return (50 + 38*Math.cos(a)) + ',' + (50 + 38*Math.sin(a));
+                        }).join(' ')}
+                        fill="none"
+                        stroke="rgba(148,163,184,0.10)"
+                        strokeWidth="0.18"
+                        strokeDasharray="0.8 0.8" />
+                </svg>
             </div>
 
             {/* ------------- footer CTA ------------- */}
             <div className="max-w-5xl mx-auto mt-10 flex items-center justify-between fade-up" style={{animationDelay:'.18s'}}>
                 <p className="text-slate-500 text-xs font-mono">
                     {completeCount === 0 && '↑ Pick a setting to start, or skip all and go straight to the dashboard.'}
-                    {completeCount > 0 && completeCount < 4 && `↑ ${4 - completeCount} step${4 - completeCount === 1 ? '' : 's'} remaining (optional).`}
-                    {completeCount === 4 && '✓ All steps configured.  Ready when you are.'}
+                    {completeCount > 0 && completeCount < 5 && `↑ ${5 - completeCount} step${5 - completeCount === 1 ? '' : 's'} remaining (optional).`}
+                    {completeCount === 5 && '✓ All steps configured.  Ready when you are.'}
                 </p>
                 <a href="/dashboard.html"
                    onClick={() => { try { localStorage.setItem('red5.setup.done','1'); } catch(e){} }}
                    className={`px-7 py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all
-                              ${completeCount === 4
+                              ${completeCount === 5
                                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
                                   : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'}`}>
                     Open Dashboard →
@@ -112,7 +150,8 @@ function App() {
 }
 
 /* =========================================================================
- * Tile (large easy-on-eyes button)
+ * Tile (large easy-on-eyes button) -- kept for back-compat, no longer used
+ * by the pentagon hub.
  * ========================================================================= */
 function Tile({ step, done, index, onClick }) {
     return (
@@ -140,6 +179,54 @@ function Tile({ step, done, index, onClick }) {
     );
 }
 
+/* =========================================================================
+ * CircleTile -- pentagon-corner round button.  Sized in % of its container
+ * so the whole layout scales with viewport.  Each circle is anchored by its
+ * centre (translate -50%/-50%) on the polar-computed (left%, top%).
+ * ========================================================================= */
+function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
+    return (
+        <button onClick={onClick}
+                data-testid={`setup-tile-${step.key}`}
+                aria-label={`Open ${step.label}`}
+                className={`circle-tile group absolute rounded-full text-center
+                            flex flex-col items-center justify-center
+                            border-2 transition-all duration-200
+                            ${done
+                                ? 'border-emerald-500/70 bg-slate-900/80 shadow-[0_0_24px_-6px_rgba(16,185,129,0.55)]'
+                                : 'border-slate-700/70 bg-slate-900/70 hover:bg-slate-800/80'}`}
+                style={{
+                    left:`${leftPct}%`, top:`${topPct}%`,
+                    width:'min(22%, 168px)', aspectRatio:'1/1',
+                    transform:'translate(-50%, -50%)',
+                    boxShadow: done ? undefined : `0 0 0 0 ${step.iconColor}00`,
+                }}>
+            {done && (
+                <span data-testid={`setup-tile-${step.key}-done`}
+                      className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-bold shadow">
+                    ✓
+                </span>
+            )}
+            <div className="rounded-xl flex items-center justify-center mb-1"
+                 style={{
+                    width:'34%', aspectRatio:'1/1',
+                    background:`${step.iconColor}22`,
+                    border:`1px solid ${step.iconColor}55`,
+                 }}>
+                <TileIcon kind={step.key} color={step.iconColor} />
+            </div>
+            <div className="text-[10px] font-black text-slate-600 tracking-wider">0{index}</div>
+            <h3 className="text-[11px] sm:text-[12px] font-black uppercase tracking-wider px-2 leading-tight mt-0.5"
+                style={{color:step.iconColor}}>
+                {step.label}
+            </h3>
+            <p className="text-slate-500 text-[9px] sm:text-[10px] leading-snug px-2 mt-0.5 line-clamp-2">
+                {step.sub}
+            </p>
+        </button>
+    );
+}
+
 function TileIcon({ kind, color }) {
     /* simple inline SVGs so we keep the file self-contained */
     const stroke = { stroke:color, fill:'none', strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round' };
@@ -147,6 +234,8 @@ function TileIcon({ kind, color }) {
     if (kind === 'location') return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M12 22s-7-6.4-7-12a7 7 0 1 1 14 0c0 5.6-7 12-7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>;
     if (kind === 'language') return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>;
     if (kind === 'plugins')  return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M9 3v6M15 3v6"/><path d="M5 9h14v6a4 4 0 0 1-4 4h-1v3M9 19v3"/></svg>;
+    /* Update & Repair -- wrench + tiny gear bump, signalling "tools" */
+    if (kind === 'repair')   return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.8 2.8L13 11l-1.1-1.9 2.8-2.8z"/></svg>;
     return null;
 }
 

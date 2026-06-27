@@ -564,7 +564,7 @@
             const [showApplyModal, setShowApplyModal] = useState(false);
             useEffect(() => {
                 let alive = true;
-                fetchJSON('/api/band-overrides/ahu-rh-bands')
+                fetchJSON('/api/band-overrides/ahu-rh-bands', { credentials: 'include' })
                     .then(j => {
                         if (!alive) return;
                         const bands = (j && j.ahu_rh_bands) || {};
@@ -576,19 +576,21 @@
             /* Apply one or more per-AHU bands to the controller.  Accepts
                an array of {ahu_id, lo, hi, preset_id} and on success
                merges the returned bands into appliedAhuBands so the
-               dirty-chip logic settles to "clean" without a refetch. */
+               dirty-chip logic settles to "clean" without a refetch.
+               (Uses the relative-URL `fetchJSON` form proven by the
+               sa-rh-clamp Apply flow — absolute URL + credentials:
+               include round-trips lose the session_token cookie in
+               some PROD reverse-proxy setups even when same-origin.) */
             const applyAhuBands = useCallback(async (bandsList) => {
                 if (!Array.isArray(bandsList) || bandsList.length === 0) return null;
                 setApplyBusy(true);
                 try {
-                    const API_URL = window.API_BASE_URL || window.location.origin;
-                    const r = await fetch(`${API_URL}/api/band-overrides/ahu-rh-bands`, {
+                    const j = await fetchJSON('/api/band-overrides/ahu-rh-bands', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'include',
                         body: JSON.stringify({ bands: bandsList }),
                     });
-                    const j = await r.json();
                     if (j && j.ahu_rh_bands) setAppliedAhuBands(j.ahu_rh_bands);
                     if (window.toast) {
                         if (j.applied) {

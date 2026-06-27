@@ -1114,6 +1114,7 @@ def repair_upload_plugin():
             'upload_service.py',
             'weather_service.py',
             'band_service.py',
+            'band_overrides_service.py',  # 2026-06-27: lifted from bundle-only
             'telemetry_service.py',
             # AHU data bridges (added 2026-02-09):
             'webhook_bridge_service.py',
@@ -1126,6 +1127,7 @@ def repair_upload_plugin():
         }
         ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                     'landing.html', 'psy_3d.html',
+                    'dashboard.compiled.js',   # 2026-06-27: compiled React bundle
                     # docs + configs (added 2026-02-09):
                     'data_bridges_guide.md', 'opt_sa_insight.md',
                     'configs/bridges.json'}
@@ -1197,7 +1199,8 @@ def repair_download_plugin(plugin_name):
     """
     plugin_files = {
         'upload_service.py', 'weather_service.py',
-        'band_service.py', 'telemetry_service.py',
+        'band_service.py', 'band_overrides_service.py',
+        'telemetry_service.py',
         'webhook_bridge_service.py', 'mqtt_bridge_service.py',
         'modbus_bridge_service.py', 'ws_bridge_service.py',
         'bridges_admin_service.py', '_bridges_lib.py',
@@ -1205,6 +1208,7 @@ def repair_download_plugin(plugin_name):
     }
     ui_files = {'update.html', 'dashboard.html', 'equipment_mapper.html',
                 'landing.html', 'psy_3d.html',
+                'dashboard.compiled.js',
                 'data_bridges_guide.md', 'opt_sa_insight.md',
                 'configs/bridges.json'}
     name = (plugin_name or '').strip()
@@ -1335,7 +1339,8 @@ def _reload_module_core(plugin_name):
     # Restrict to the same plug-in allow-list as repair_upload_plugin.
     plugin_files = {
         'upload_service.py', 'weather_service.py',
-        'band_service.py', 'telemetry_service.py',
+        'band_service.py', 'band_overrides_service.py',
+        'telemetry_service.py',
         'webhook_bridge_service.py', 'mqtt_bridge_service.py',
         'modbus_bridge_service.py', 'ws_bridge_service.py',
         'bridges_admin_service.py',

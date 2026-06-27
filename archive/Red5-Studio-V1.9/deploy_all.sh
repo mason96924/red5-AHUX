@@ -26,10 +26,15 @@ CONTROLLER="${CONTROLLER%/}"
 
 # Files to deploy.  Plug-ins land in /root/data/pgpy via the allow-list;
 # UI/static files land in /root/data; configs/bridges.json into /root/data/configs.
+#
+# IMPORTANT: upload_service.py is uploaded FIRST.  Today's release expands the
+# allow-list to accept band_overrides_service.py and dashboard.compiled.js,
+# so we must update upload_service.py before pushing those two.
 FILES="
 upload_service.py
 weather_service.py
 band_service.py
+band_overrides_service.py
 telemetry_service.py
 _bridges_lib.py
 bridges_admin_service.py
@@ -39,6 +44,7 @@ modbus_bridge_service.py
 ws_bridge_service.py
 update.html
 dashboard.html
+dashboard.compiled.js
 equipment_mapper.html
 data_bridges_guide.md
 configs/bridges.json

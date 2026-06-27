@@ -74,6 +74,106 @@ COLLECTOR_CONFIG_PATH = None
 _write_history = []
 WRITE_HISTORY_MAX = 100
 
+# ---------------------------------------------------------------------------
+# Phase L.39 / L.42 parity port (2026-06-27).  V2.0's FastAPI backend keeps a
+# per-AHU EWMA of exchange (h_SA - h_OA) and absorption (h_RA - h_SA) plus a
+# 24-sample circular buffer so the dashboard's MetricBar pills can render
+# Δ-trend arrows and the AHU row's 1h-vs-24h sparkline.  V1.9 PROD didn't
+# have either endpoint, so the dashboard's `delta` prop was always null and
+# no trend pill / no delta enthalpy ever rendered (which is what the user
+# saw on www.dcred5-studio.com).  Mirror the V2.0 logic verbatim so PROD
+# matches the preview.
+# ---------------------------------------------------------------------------
+_ROLLING_AVGS = {}                # ahu_id -> {exchange, absorption, exchange_1h, absorption_1h, ex_hist, ab_hist, n}
+_ROLLING_ALPHA = 5.0 / (60.0 * 24.0)   # poll-interval (5 min) / 24h -> ~24h half-life
+_ROLLING_ALPHA_1H = 5.0 / 60.0         # poll-interval (5 min) / 1h
+_ROLLING_BUF_LEN = 24
+
+
+def _update_rolling_avgs(snapshot):
+    """Update ``_ROLLING_AVGS`` in place from a freshly-built /api/data snapshot.
+
+    ``snapshot`` is the list of AHU dicts produced by :func:`api_data` (each
+    item has an ``id`` and a ``points`` list with OA/SA/RA entries carrying
+    ``t`` and ``w``).  Uses the V1.9 ``get_h`` enthalpy helper so the maths
+    matches what the frontend renders.  Wrapped at the caller in a
+    try/except so a stats blip never breaks /api/data.
+    """
+    if not get_h:
+        return
+    for ahu in snapshot or []:
+        aid = ahu.get('id') if isinstance(ahu, dict) else None
+        if not aid:
+            continue
+        pts = {p.get('label'): p for p in (ahu.get('points') or []) if isinstance(p, dict)}
+        oa, sa, ra = pts.get('OA'), pts.get('SA'), pts.get('RA')
+        if not (oa and sa and ra):
+            continue
+        try:
+            h_oa = get_h(float(oa['t']), float(oa['w']))
+            h_sa = get_h(float(sa['t']), float(sa['w']))
+            h_ra = get_h(float(ra['t']), float(ra['w']))
+        except (KeyError, TypeError, ValueError):
+            continue
+        ex = h_sa - h_oa
+        ab = h_ra - h_sa
+        prev = _ROLLING_AVGS.get(aid)
+        if not prev:
+            _ROLLING_AVGS[aid] = {
+                'exchange':      ex, 'absorption':      ab,
+                'exchange_1h':   ex, 'absorption_1h':   ab,
+                'ex_hist':       [ex], 'ab_hist':       [ab],
+                'n':             1,
+            }
+        else:
+            a24 = _ROLLING_ALPHA
+            a1h = _ROLLING_ALPHA_1H
+            ex_hist = list(prev.get('ex_hist') or [])
+            ab_hist = list(prev.get('ab_hist') or [])
+            ex_hist.append(ex); ab_hist.append(ab)
+            if len(ex_hist) > _ROLLING_BUF_LEN:
+                ex_hist = ex_hist[-_ROLLING_BUF_LEN:]
+            if len(ab_hist) > _ROLLING_BUF_LEN:
+                ab_hist = ab_hist[-_ROLLING_BUF_LEN:]
+            _ROLLING_AVGS[aid] = {
+                'exchange':      a24 * ex + (1.0 - a24) * prev['exchange'],
+                'absorption':    a24 * ab + (1.0 - a24) * prev['absorption'],
+                'exchange_1h':   a1h * ex + (1.0 - a1h) * prev.get('exchange_1h',   prev['exchange']),
+                'absorption_1h': a1h * ab + (1.0 - a1h) * prev.get('absorption_1h', prev['absorption']),
+                'ex_hist':       ex_hist,
+                'ab_hist':       ab_hist,
+                'n':             prev.get('n', 0) + 1,
+            }
+
+
+def ahu_rolling_avg_single(ahu_id):
+    """GET /api/ahu/<id>/rolling-avg  -- single-AHU 24h EWMA lookup."""
+    ra = _ROLLING_AVGS.get(ahu_id) or {}
+    return jsonify({
+        'ahu_id':     ahu_id,
+        'exchange':   round(ra.get('exchange',   0.0), 3),
+        'absorption': round(ra.get('absorption', 0.0), 3),
+        'n_samples':  ra.get('n', 0),
+        'method':     'ewma',
+    })
+
+
+def ahu_rolling_avgs_batch():
+    """GET /api/ahu-rolling-avgs  -- batch lookup for every sampled AHU."""
+    out = {}
+    for aid, d in (_ROLLING_AVGS or {}).items():
+        out[aid] = {
+            'exchange':      round(d.get('exchange',      0.0), 3),
+            'absorption':    round(d.get('absorption',    0.0), 3),
+            'exchange_1h':   round(d.get('exchange_1h',   d.get('exchange',   0.0)), 3),
+            'absorption_1h': round(d.get('absorption_1h', d.get('absorption', 0.0)), 3),
+            'ex_hist':       [round(v, 3) for v in (d.get('ex_hist') or [])],
+            'ab_hist':       [round(v, 3) for v in (d.get('ab_hist') or [])],
+            'n_samples':     d.get('n', 0),
+        }
+    return jsonify({'averages': out, 'n_ahus': len(out), 'method': 'ewma'})
+
+
 # Sim-mode write overrides: persists UI-originated writes so they reflect in /api/data
 # while the background simulator keeps regenerating random values. Keyed by
 # (equipment_name -> {label: (value, timestamp)}). Entries persist until explicitly
@@ -367,6 +467,10 @@ def api_data():
             if _active_band:
                 ahu_entry["active_band"] = _active_band
             output.append(ahu_entry); color_idx += 1
+        try:
+            _update_rolling_avgs(output)
+        except Exception:
+            pass
         return jsonify(output)
 
     # --- Simulator fallback (telemetry.json not yet written) ---
@@ -437,6 +541,10 @@ def _sim_fallback_from_config(collector_config):
             _entry["active_band"] = _active_band
         output.append(_entry)
         color_idx += 1
+    try:
+        _update_rolling_avgs(output)
+    except Exception:
+        pass
     return jsonify(output)
 
 
@@ -501,6 +609,10 @@ def _mock_14_ahus():
         if _active_band:
             _entry["active_band"] = _active_band
         output.append(_entry)
+    try:
+        _update_rolling_avgs(output)
+    except Exception:
+        pass
     return jsonify(output)
 
 
@@ -876,3 +988,10 @@ def register(app, ctx):
                      write_history, methods=['GET'])
     app.add_url_rule('/api/trend-history',                'trend_history',
                      trend_history, methods=['GET'])
+    # Phase L.39 / L.42 parity port (2026-06-27).  Pill trend arrows + 1h-vs-24h
+    # sparkline endpoints — V2.0 has had these since L.39, V1.9 was missing
+    # them which left every dashboard pill on PROD without a Δ-trend.
+    app.add_url_rule('/api/ahu/<ahu_id>/rolling-avg',     'ahu_rolling_avg_single',
+                     ahu_rolling_avg_single, methods=['GET'])
+    app.add_url_rule('/api/ahu-rolling-avgs',             'ahu_rolling_avgs_batch',
+                     ahu_rolling_avgs_batch, methods=['GET'])

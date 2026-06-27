@@ -6416,3 +6416,26 @@ The trend arrow at the bottom of each metric pill used emerald (▲) or rose (�
 - `data-testid="metric-pill-alarm-pulse"` exposed for future E2E.
 
 **Open items**: V3.0 Modbus Phase 2.
+
+---
+## 2026-06-27 (cont) — V1.9 / V2.0 Parity Bug: missing /api/ahu-rolling-avgs
+
+**User report**: "I do not see the trend pill" and "I do not see delta enthalpy in the pill metrics" on www.dcred5-studio.com (PROD).
+
+**Root cause**: V2.0 has had `/api/ahu-rolling-avgs` (batch) and `/api/ahu/<id>/rolling-avg` (single) since Phase L.39. The frontend was migrated to consume those endpoints. V1.9 Flask (which PROD runs) was never updated, so PROD returned 404s → `ahuRollingAvgs` map was empty → `dEx` / `dAb` resolved to `null` → MetricBar rendered no Δ arrow and no 1h-vs-24h sparkline next to the SYNCED chip.
+
+**Fix** in `/app/archive/Red5-Studio-V1.9/telemetry_service.py`:
+1. Added `_ROLLING_AVGS` dict + `_ROLLING_ALPHA` (24h half-life) + `_ROLLING_ALPHA_1H` (1h half-life) + `_ROLLING_BUF_LEN=24`.
+2. `_update_rolling_avgs(snapshot)` — reads OA/SA/RA enthalpies via V1.9's injected `get_h`, computes `exchange = h_SA - h_OA` and `absorption = h_RA - h_SA`, updates the per-AHU EWMA + 24-sample circular buffer.
+3. Hooked the update into all three `return jsonify(output)` sites in `api_data()` (telemetry path, sim fallback) and `_mock_14_ahus()`.
+4. Added two endpoints: `ahu_rolling_avg_single(ahu_id)` and `ahu_rolling_avgs_batch()` — response shape byte-identical to V2.0's `routes/history.py`.
+5. Registered both routes in `register(app, ctx)` next to `/api/trend-history`.
+
+**Verification**:
+- `python3 -c "import ast; ast.parse(...)"` → `Parses OK`.
+- Lint warnings: 11 style-only (E702/E701/E722) — all pre-existing patterns or mirror V2.0's identical patterns (e.g. `ex_hist.append(ex); ab_hist.append(ab)` semicolon line).
+- Preview env (V2.0) screenshot reconfirms deltas + sparkline render correctly when the endpoint is alive: AHU-01-E pills show `-1.6` ▼ and `+0.7` ▲ at the bottom, SYNCED chip has the 1h-vs-24h sparkline.
+
+**Action required by user**: deploy V1.9 to PROD via `/app/deploy.sh` so the new endpoints become reachable on www.dcred5-studio.com.
+
+**Open items**: V3.0 Modbus Phase 2.

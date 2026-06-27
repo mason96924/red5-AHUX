@@ -119,6 +119,71 @@ function renderSidebar(ctx) {
         }
     };
 
+    // Plain-language description per band for the hover tooltip.
+    // Aimed at a "6th-grade reading level" operator: what does the
+    // weather feel like, and what is the AHU doing about it?
+    // Setpoints are mirrors of psy-3d-engine.js BANDS[] (lines 1065-1076);
+    // keep both copies in sync if the design table is retuned.
+    const _bandStory = (b) => {
+        switch (b) {
+            case 'B1': return {
+                weather: 'Freezing and dry outside (under 5 deg C, under 30 % RH). Think winter morning.',
+                plan:    'Keep most outside air OUT. Heat the supply air to ~21 deg C and add a little moisture.',
+                set:     'SA = 21.0 deg C @ 40 % RH   |   OA damper = 15 % (minimum)'
+            };
+            case 'B2': return {
+                weather: 'Cool and comfortable outside (5-15 deg C, 30-60 % RH). Think spring or fall.',
+                plan:    'Bring in just enough outside air. Gentle heating.',
+                set:     'SA = 19.5 deg C @ 35 % RH   |   OA damper = 15 %'
+            };
+            case 'B3': return {
+                weather: 'Mild but very dry outside (15-20 deg C, under 30 % RH). Think dry mild day.',
+                plan:    'Open the damper a little to use the cool outside air. Add some moisture.',
+                set:     'SA = 19.0 deg C @ 45 % RH   |   OA damper = 30 %'
+            };
+            case 'B4': return {
+                weather: 'Outside air is almost perfect (18-22 deg C, 30-50 % RH).',
+                plan:    'Open the damper WIDE and let the outside air do the cooling for free.',
+                set:     'SA = 20.0 deg C @ 40 % RH   |   OA damper = 100 % (free cooling)'
+            };
+            case 'B5': return {
+                weather: 'Outside feels exactly like a comfortable room (22-25 deg C, 40-60 % RH).',
+                plan:    'Blow outside air straight in. Almost no work for the AHU.',
+                set:     'SA = 23.5 deg C @ 50 % RH   |   OA damper = 100 % (free cooling)'
+            };
+            case 'B6': return {
+                weather: 'Outside is warm and a bit humid (25-27 deg C, 50-70 % RH).',
+                plan:    'Mix some outside air with return air. Light cooling.',
+                set:     'SA = 25.0 deg C @ 55 % RH   |   OA damper = 50 %'
+            };
+            case 'B7': return {
+                weather: 'Outside is hot and sticky (27-32 deg C, 60-80 % RH). Typical summer.',
+                plan:    'Close the damper. Run the AC hard to cool AND pull moisture out.',
+                set:     'SA = 12.0 deg C @ 95 % RH   |   OA damper = 15 %'
+            };
+            case 'B8': return {
+                weather: 'Very hot and very humid outside (32-38 deg C, over 70 % RH). Heat wave.',
+                plan:    'Lock outside air out. Push cooling and dehumidifying to the max.',
+                set:     'SA = 13.0 deg C @ 95 % RH   |   OA damper = 15 %'
+            };
+            case 'B9': return {
+                weather: 'Very hot but bone dry outside (over 35 deg C, under 30 % RH). Desert.',
+                plan:    'Cool the air down -- don\u2019t waste energy removing humidity that isn\u2019t there.',
+                set:     'SA = 15.0 deg C @ 40 % RH   |   OA damper = 15 %'
+            };
+            case 'B10': return {
+                weather: 'Tropical outside (over 30 deg C, over 85 % RH). Air feels like soup.',
+                plan:    'Close the damper tight. Cool aggressively and squeeze moisture out.',
+                set:     'SA = 11.0 deg C @ 95 % RH   |   OA damper = 15 %'
+            };
+            default:   return {  // '?' -- outside all 10 bands
+                weather: 'Outside conditions do not match any of the 10 pre-tuned bands.',
+                plan:    'AHU should run in SAFE-MODE: ASHRAE 55 Cat A defaults until weather moves back into a band.',
+                set:     'SA = 21.0 deg C @ 50 % RH   |   OA damper = minimum for indoor air quality   |   economizer ON when outside is cooler than inside'
+            };
+        }
+    };
+
     const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t } = ctx;
 
     /* ---------------- Per-AHU Apply-to-Controller state ---------------
@@ -671,25 +736,24 @@ function renderSidebar(ctx) {
                         const oa = ahu.points && ahu.points[0];
                         const band = oa ? _bandLabelOf(Number(oa.t), Number(oa.rh)) : '?';
                         const tintCls = _bandTint(band);
-                        const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' °C' : '--';
-                        const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + '% RH' : '--';
-                        // Tooltip text differs for `?` (safe-mode) vs a
-                        // real band so the operator knows whether the
-                        // controller is running a pre-tuned recipe or
-                        // the ASHRAE 55 Cat A fall-back.
-                        const tip = (band === '?')
-                            ? ('OA outside all defined B1-B10 windows -- controller is in SAFE-MODE\n' +
-                               '   OA = ' + tipT + ' / ' + tipR + '\n' +
-                               'Safe-mode defaults (ASHRAE 55 Cat A baseline):\n' +
-                               '   SA dry-bulb = 21.0 deg C\n' +
-                               '   SA RH target = 50 %\n' +
-                               '   OA damper = minimum-IAQ position\n' +
-                               '   Economizer enabled iff OA enthalpy < RA enthalpy\n' +
-                               'If this AHU spends a lot of time in `?`, the band rules need\n' +
-                               'to be extended to cover this OA corner.')
-                            : ('Outdoor-air band classification: ' + band + '\n' +
-                               'OA = ' + tipT + ' / ' + tipR + '\n' +
-                               'Rules mirror psy-3d-engine.js _bandLabelOf().');
+                        const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' deg C' : '--';
+                        const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
+                        const story = _bandStory(band);
+                        const header = (band === '?')
+                            ? 'BAND ?  -- SAFE-MODE'
+                            : 'BAND ' + band;
+                        // Tooltip is rendered via the native `title`
+                        // attribute, so we stick to plain ASCII and \n.
+                        // 4 short blocks: header, current OA, weather
+                        // description, what the AHU does, and the setpoints.
+                        const tip = header + '\n'
+                                  + '------------------------\n'
+                                  + 'Current OA:  ' + tipT + ' / ' + tipR + '\n\n'
+                                  + 'Outside:  ' + story.weather + '\n\n'
+                                  + 'What the AHU does:\n'
+                                  + '  ' + story.plan + '\n\n'
+                                  + 'Setpoints:\n'
+                                  + '  ' + story.set;
                         return (
                             <span data-testid={`ahu-band-${ahu.id}`}
                                   title={tip}

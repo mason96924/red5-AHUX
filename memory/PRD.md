@@ -6439,3 +6439,38 @@ The trend arrow at the bottom of each metric pill used emerald (▲) or rose (�
 **Action required by user**: deploy V1.9 to PROD via `/app/deploy.sh` so the new endpoints become reachable on www.dcred5-studio.com.
 
 **Open items**: V3.0 Modbus Phase 2.
+
+---
+## 2026-06-27 (cont) — V1.9/V2.0 Endpoint-Parity Audit (Phase L.45)
+
+**Tool**: `/app/scripts/check_v19_v20_parity.py` — static scan of `/app/backend/routes/*.py` (FastAPI `@router.get/post/put/delete/patch`) vs `/app/archive/Red5-Studio-V1.9/*.py` (Flask `@app.route` + `app.add_url_rule`). Canonicalizes Flask `<int:foo>` / `<path:bar>` and FastAPI `{foo:path}` placeholders to a `{*}` wildcard so name-only differences (e.g. `<path:filename>` vs `{path:path}`) don't trigger false positives.
+
+**Exit codes**: `0`=ok, `2`=parity drift, `3`=scan error. Suitable for CI / `deploy.sh` gating.
+
+**Flags**:
+- `--json` machine-readable
+- `--log PATH` append a one-line `WARN` to `PATH` on drift (idempotent; best-effort)
+
+**Boot integration** (`/app/archive/Red5-Studio-V1.9/app.py` just before `app.run`):
+- Loads the script via `importlib.util.spec_from_file_location` (no need to pip-install or modify PYTHONPATH).
+- Calls `audit()` + `_append_log("/var/log/red5/parity_warnings.log", result)`.
+- Prints any missing V2.0 routes to stdout (visible in supervisor log + Cloudflare tail).
+- Wrapped in a top-level try/except — never blocks boot.
+
+**First-run results (2026-06-27)** — 4 real parity gaps surfaced:
+1. `/api/band-overrides/ahu-rh-bands` ← contradicts handoff which claimed this was added to V1.9. "Apply to Controller" likely 404s on PROD.
+2. `/api/ahu-history/{*}`
+3. `/api/band-guide`
+4. `/api/health`  (low priority — k8s probe)
+
+V1.9 also has 29 legacy-only routes (bridges/, bacnet/, band-csv/, mobile, etc.) — informational, not actionable.
+
+**Verified**:
+- `python3 -c "import ast; ast.parse(...)"` → `app.py parses OK`.
+- `--log` writes `2026-06-27T...  WARN  parity-drift  v20_only=[...]` lines.
+- `--json` round-trips with correct `ok=False` and `v20_only` list.
+- Boot hook resolves to `/app/scripts/check_v19_v20_parity.py` correctly from V1.9's archive location.
+
+**Open items**:
+- Plug the 3 remaining drift gaps in V1.9: `band-overrides/ahu-rh-bands`, `ahu-history`, `band-guide`. (Add to backlog -- not blocking but `band-overrides/ahu-rh-bands` is the highest priority since it's the Apply-to-Controller flow.)
+- V3.0 Modbus Phase 2.

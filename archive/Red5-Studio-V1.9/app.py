@@ -1989,4 +1989,29 @@ try:
 except:
     print(f"\n* Controller Online at: http://127.0.0.1:{PORT}")
 
+# Phase L.45 (2026-06-27) -- V1.9/V2.0 endpoint-parity audit.
+# Static scan of /app/backend/routes/*.py (FastAPI) and this archive
+# (Flask) to surface any V2.0 route that's missing here.  Runs at boot,
+# best-effort: never blocks startup, never raises.  Warnings are
+# appended to ``/var/log/red5/parity_warnings.log`` for ops review and
+# also echoed to stdout so they show up in the same supervisor log
+# Cloudflare tail captures.
+try:
+    import importlib.util as _ilu
+    _parity_path = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "check_v19_v20_parity.py")
+    _parity_path = os.path.abspath(_parity_path)
+    if os.path.isfile(_parity_path):
+        _spec = _ilu.spec_from_file_location("_red5_parity_check", _parity_path)
+        _mod  = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+        _result = _mod.audit()
+        _mod._append_log("/var/log/red5/parity_warnings.log", _result)
+        if not _result.get("ok", True) and _result.get("v20_only"):
+            print(f"\n* [PARITY-WARN] V1.9 is missing {len(_result['v20_only'])} V2.0 /api/* route(s):")
+            for _r in _result["v20_only"]:
+                print(f"    - {_r}")
+            print(f"  See /var/log/red5/parity_warnings.log and /app/scripts/check_v19_v20_parity.py.")
+except Exception as _e:
+    # Audit must never block boot.  Print but swallow.
+    print(f"\n* [parity-check skipped: {_e!r}]")
+
 app.run(host=HOST, port=PORT, threaded=True, debug=False)

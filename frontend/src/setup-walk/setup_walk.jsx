@@ -844,21 +844,35 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         );
     };
 
-    /* When user clicks "Save & return", POST the selection to the same
-     * /api/weather-location endpoint the dashboard reads.  Setting BOTH
-     * `active` and `default` means the weather strip on the dashboard
-     * loads this location immediately on next page load (and stays pinned
-     * for any future fresh sessions).  Anonymous users get a soft warning
-     * back from the server (persisted:false) -- we surface that as a toast
-     * so the operator knows they need to sign in to keep the pick across
-     * page reloads.  We always also write to localStorage so the SAME
-     * tab keeps the chosen location for the current session. */
+    /* When user clicks "Save & return", mirror EXACTLY what the dashboard's
+     * Weather button does in weather-settings-modal.js#selectLocation:
+     *   1. localStorage['weatherLocation']        = chosen loc (canonical key
+     *                                              the dashboard reads on
+     *                                              mount, NOT 'red5.weather_location').
+     *   2. localStorage['savedWeatherLocations']  = [loc, ...others] deduped
+     *                                              by lat/lon, capped at 20.
+     *   3. POST /api/weather-location with active+default+saved so the same
+     *      list survives cross-device sessions for signed-in tenants.
+     *
+     * Without step 1 the dashboard's `weatherLocation` state silently keeps
+     * its old value -- which is exactly the bug operators reported after
+     * picking a location in Setup Walk and seeing the dashboard's weather
+     * strip refuse to update. */
     const [saveMsg, setSaveMsg] = React.useState(null);
     const persistAndSave = async () => {
         const loc = { lat: cfg.lat, lon: cfg.lon, name: cfg.siteName || cfg.city };
-        /* Local fallback — works for anonymous users so the dashboard at
-         * least sees the new lat/lon in the same browser. */
+
+        // De-dup the existing saved list by lat/lon (same key the dashboard
+        // uses) and put the new pick at the top.  Cap at 20 to match the
+        // dashboard's behaviour.
+        const key = loc.lat.toFixed(4) + ',' + loc.lon.toFixed(4);
+        const deduped = savedLocs.filter(l => (l.lat.toFixed(4) + ',' + l.lon.toFixed(4)) !== key);
+        const nextSaved = [loc, ...deduped].slice(0, 20);
+
         try {
+            localStorage.setItem('weatherLocation', JSON.stringify(loc));
+            localStorage.setItem('savedWeatherLocations', JSON.stringify(nextSaved));
+            // Keep the old key too -- some legacy plug-ins still look at it.
             localStorage.setItem('red5.weather_location', JSON.stringify(loc));
         } catch (e) { /* private mode -- ignore */ }
 
@@ -868,7 +882,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type':'application/json' },
-                body: JSON.stringify({ active: loc, default: loc }),
+                body: JSON.stringify({ active: loc, default: loc, saved: nextSaved }),
             });
             const j = await r.json();
             window._lastWeatherLocationSave = j;
@@ -879,6 +893,17 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
             warning = 'Network error — saved locally only.';
             console.warn('[setup walk] could not persist location:', e);
         }
+
+        // Tell any open dashboard tab to re-hydrate.  The dashboard
+        // already listens for `storage` events when another tab writes to
+        // localStorage, but on V1.9 some browsers DON'T fire `storage` for
+        // same-origin writes from this same tab.  An explicit custom event
+        // makes the dashboard's polling pick the change up immediately if
+        // it's already mounted in another tab/window.
+        try {
+            window.dispatchEvent(new CustomEvent('red5:weatherLocationChanged',
+                { detail: { active: loc, saved: nextSaved } }));
+        } catch (e) { /* IE-less environments -- no-op */ }
 
         if (persisted) {
             onSave();           // happy path: close + mark step done

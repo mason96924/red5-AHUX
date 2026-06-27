@@ -592,9 +592,36 @@
                         body: JSON.stringify({ bands: bandsList }),
                     });
                     if (j && j.ahu_rh_bands) setAppliedAhuBands(j.ahu_rh_bands);
+                    /* Diagnostic logging — leave on for now so the next time
+                       Apply silently degrades to "Demo mode" we can read
+                       Network tab + console to find out whether the cookie
+                       reached the server (j.tenant_id present ⇒ auth OK). */
+                    try {
+                        console.log('[apply-rh-bands] POST response:', {
+                            applied:     j && j.applied,
+                            applied_cnt: j && j.applied_count,
+                            tenant_id:   j && j.tenant_id,
+                            warning:     j && j.warning,
+                            signed_in:   !!window.__v2_signed_in,
+                            user_email:  window.__v2_user_email || null,
+                        });
+                    } catch (_) {}
                     if (window.toast) {
                         if (j.applied) {
                             window.toast(`Applied ${j.applied_count || bandsList.length} AHU band(s) to controller`, 'success');
+                        } else if (window.__v2_signed_in) {
+                            /* Auth pill says we're signed in but the POST got
+                               Demo mode back ⇒ the session cookie did NOT
+                               reach the band-overrides handler.  Surface a
+                               sharper hint than "Sign in to persist..." so
+                               the operator immediately checks DevTools
+                               Network → Request Headers for a Cookie line. */
+                            window.toast(
+                                'Signed in (' + (window.__v2_user_email || 'unknown')
+                                + ') but POST returned Demo mode — session cookie not reaching the controller. '
+                                + 'Open DevTools Network → this POST → Request Headers and check for "Cookie: session_token=...".',
+                                'error'
+                            );
                         } else {
                             window.toast(j.warning || 'Sign in to persist bands', 'info');
                         }

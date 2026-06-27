@@ -6342,3 +6342,35 @@ Fix: both build scripts now `md5sum` the freshly-compiled bundle and `sed -E` in
 - No React crash, dashboard renders fully (chart, AHU rows, telemetry)
 
 **Open items**: V3.0 Red5-Modbus Phase 2 (async TCP client) — paused while UI refactors land. Optional: pre-extract Tailwind to drop the cdn.tailwindcss.com runtime warning.
+
+---
+## 2026-06-27 (cont) — VAV Color Parity + Auto-Tuned Badge
+
+### Fix 1: VAV pin color mismatch (floor-plan vs VAV list)
+User reported VAV-02-N showed ORANGE in the floor-plan graphic but GREEN in the VAV list table.
+
+**Root cause**: divergent classifiers.
+- `psy-chart-svg.js` VAV list (line 111) uses `getGivoniTier(t, w, rh, comfortPoly, sweetSpot, showGivoni)` → A/B/C+/C− tier colors (green/teal/orange/blue).
+- `floor-plan-modal.js` (line 171) used `getVavDiagnostic(liveVav, saP, comfortPoly)` → 4-state optimal/comfort/warning/alarm (green/amber/red).
+The list was migrated to Givoni in Phase L.35; the floor plan was missed.
+
+**Fix**:
+- `app.js` line 2483: pass `showGivoni, showSweetSpot, sweetSpotRange` to `renderFloorPlanModal`.
+- `floor-plan-modal.js`: destructure new ctx props; replace 4-state Tailwind class switch with `getGivoniTier()` call producing inline `{backgroundColor: gv.dotFill}` style (same as the list). Tooltip now reads `Tier A (Comfort)` etc.
+- Sun-exposure ring branch merges `dotStyle` (fill) with `{borderColor: ring, boxShadow}` via `Object.assign` so both classifications coexist.
+
+### Fix 2: Auto-tuned chevron badge for non-English locales
+**Request**: surface the dynamic measurement so operators know it fired.
+
+**Implementation** (`sidebar.js`):
+- Read `window.getLang()` (i18n.js global) at render.
+- When `_lang !== 'en'` AND `slimWidth !== 224`, paint a tiny 1.5×1.5 indigo dot in the top-right corner of the chevron + append "· auto-tuned for KO title" (uppercase locale) to the tooltip.
+- New attribute `data-auto-tuned` + testid `sidebar-width-auto-tuned-badge` for E2E.
+
+**Build + mirror**: dashboard.compiled.js?v=712c3db61f (2027.3 KB), md5 712c3db61f6e2824dffb03c582d3a550 — identical in /public, V1.9 archive, V2.0 archive.
+
+**Verified by mcp_screenshot_tool**:
+- Korean locale → measured 186 px (vs English 225), badge rendered, tooltip "Collapse sidebar to slim width (186 px) · auto-tuned for KO title", `data-auto-tuned="true"`.
+- Floor plan VAV dots now use Givoni tier fills (same source-of-truth call as the list).
+
+**Open items**: V3.0 Modbus Phase 2.

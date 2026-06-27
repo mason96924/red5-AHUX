@@ -2480,6 +2480,7 @@
                         ahuData, mapConfig, setMapConfig, floorImage,
                         buildingLatLon, sunState, setSunState,
                         comfortZonePoly,
+                        showGivoni, showSweetSpot, sweetSpotRange,
                         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal,
                     })}
 

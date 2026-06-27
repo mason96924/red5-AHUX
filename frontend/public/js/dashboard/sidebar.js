@@ -202,7 +202,18 @@ function renderSidebar(ctx) {
                         « = collapse).  Hidden in popped-out modes
                         because the operator already picked their own
                         surface. */}
-                    {!isPopped && (
+                    {!isPopped && (() => {
+                        // Auto-tuned badge: when a non-English locale is active
+                        // AND the measured chevron right edge produced a SLIM
+                        // width different from the 224 px English default, mark
+                        // the toggle so the operator can see the dynamic
+                        // measurement actually fired (otherwise the change is
+                        // invisible — same icon, same colour).  A subtle indigo
+                        // dot in the top-right corner + tooltip note do the job
+                        // without adding a second control.
+                        const _lang = (typeof window.getLang === 'function') ? window.getLang() : 'en';
+                        const _isAutoTuned = _lang !== 'en' && slimWidth !== 224;
+                        return (
                         <button
                             ref={chevronRef}
                             onClick={() => {
@@ -210,13 +221,23 @@ function renderSidebar(ctx) {
                                 setSidebarWidth(next);
                                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
                             }}
-                            className={`w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
-                            title={isCompact ? "Expand sidebar to full width (320 px)" : `Collapse sidebar to slim width (${slimWidth} px)`}
+                            className={`relative w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
+                            title={isCompact
+                                ? "Expand sidebar to full width (320 px)"
+                                : `Collapse sidebar to slim width (${slimWidth} px)${_isAutoTuned ? ` · auto-tuned for ${_lang.toUpperCase()} title` : ''}`}
                             data-testid="sidebar-width-toggle-btn"
+                            data-auto-tuned={_isAutoTuned ? 'true' : 'false'}
                         >
                             {isCompact ? '\u00BB' : '\u00AB'}
+                            {_isAutoTuned && (
+                                <span
+                                    className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-[0_0_4px_rgba(129,140,248,0.9)]"
+                                    data-testid="sidebar-width-auto-tuned-badge"
+                                ></span>
+                            )}
                         </button>
-                    )}
+                        );
+                    })()}
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                     <p className="text-[9px] text-slate-500 tracking-widest uppercase">by Delta Controls</p>

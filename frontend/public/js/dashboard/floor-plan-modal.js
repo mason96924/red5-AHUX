@@ -32,6 +32,7 @@ function renderFloorPlanModal(ctx) {
         ahuData, mapConfig, setMapConfig, floorImage,
         buildingLatLon, sunState, setSunState,
         comfortZonePoly,
+        showGivoni, showSweetSpot, sweetSpotRange,
         // Helpers + look-up tables
         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal,
     } = ctx;
@@ -165,15 +166,26 @@ const floorModalTree = (
                             {floorData.vavMarkers.map(marker => {
                                 const liveVav = activeAhu && activeAhu.vavs ? activeAhu.vavs.find(v => v.id === marker.name) : null;
                                 const isLocked = lockedVavId === marker.name;
-                                // Use the SAME 4-state diagnostic as the VAV list so map and list agree:
-                                //   optimal/comfort → green, warning → amber, alarm → red, no-data → slate
+                                // Use the SAME Givoni-tier resolver as the VAV list
+                                // (psy-chart-svg.js line ~111).  Single source of
+                                // truth for dot colour so the floor-plan pin and
+                                // the VAV table row bullet always agree:
+                                //   A → green (in CZ & sweet-spot)
+                                //   B → teal (in CZ, outside sweet-spot)
+                                //   C+H/D → red/orange (warm, outside CZ)
+                                //   C-W/D → blue (cool, outside CZ)
+                                // Previously this used `getVavDiagnostic` (a
+                                // 4-state optimal/comfort/warning/alarm classifier)
+                                // which diverged from the list after the VAV
+                                // table migrated to Givoni tiers in Phase L.35.
+                                const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                                const gv = liveVav ? getGivoniTier(liveVav.t, liveVav.w, liveVav.rh, comfortZonePoly, _gvSweet, showGivoni) : null;
                                 const saP = activeAhu && activeAhu.points ? activeAhu.points[1] : null;
                                 const diag = liveVav ? getVavDiagnostic(liveVav, saP, comfortZonePoly) : null;
-                                const dotColor = !liveVav ? 'bg-slate-500'
-                                    : diag.status === 'optimal' ? 'bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.8)]'
-                                    : diag.status === 'comfort' ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]'
-                                    : diag.status === 'warning' ? 'bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.8)]'
-                                    : 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)]';
+                                const dotStyle = gv
+                                    ? { backgroundColor: gv.dotFill, boxShadow: '0 0 12px ' + gv.dotFill + 'cc' }
+                                    : null;
+                                const dotColor = !liveVav ? 'bg-slate-500' : '';
 
                                 // Sun-Path → B1-B10 band trim (P0 hook).  Compute once per VAV
                                 // so both the ring tooltip path and the plain-marker path can
@@ -217,15 +229,16 @@ const floorModalTree = (
                                             return (
                                                 <div
                                                     className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : ''}`}
-                                                    style={{borderColor: ring, boxShadow: `0 0 15px ${ring}`}}
-                                                    title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${diag ? ' — ' + diag.status : ''}` : marker.name) + ' · sun-exposed' + trimSuffix}
+                                                    style={Object.assign({}, dotStyle || {}, {borderColor: ring, boxShadow: `0 0 15px ${ring}`})}
+                                                    title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + ' · sun-exposed' + trimSuffix}
                                                     onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                                 ></div>
                                             );
                                         })() || (
                                         <div 
                                             className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : 'border-white'}`}
-                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${diag ? ' — ' + diag.status : ''}` : marker.name) + trimSuffix}
+                                            style={dotStyle || undefined}
+                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + trimSuffix}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         ></div>)}
                                         <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono cursor-pointer transition-colors ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'} ${isLocked ? '!border-cyan-400' : 'group-hover:border-indigo-400'}`}

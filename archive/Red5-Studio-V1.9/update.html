@@ -786,6 +786,7 @@ var REPAIR_FILES = [
     {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status + Repair Mode', kind: 'plugin'},
     {name: 'weather_service.py',   label: 'Weather Service',   desc: 'Open-Meteo + tomorrow forecast routes',           kind: 'plugin'},
     {name: 'band_service.py',      label: 'Band Service',      desc: 'B1-B10 CSV generator + guide download',           kind: 'plugin'},
+    {name: 'band_overrides_service.py', label: 'Band Overrides Service', desc: 'SA-RH clamp + per-AHU RH bands (Apply to Controller)', kind: 'plugin'},
     {name: 'telemetry_service.py', label: 'Telemetry Service', desc: '/api/data, /api/write-point, collector config',   kind: 'plugin'},
     // -- AHU data bridges (added 2026-02-09) --
     {name: '_bridges_lib.py',           label: '_bridges_lib.py',           desc: 'Shared helpers (telemetry tap, write-queue ACL, status registry) — replace BEFORE the bridges below', kind: 'plugin'},
@@ -798,6 +799,7 @@ var REPAIR_FILES = [
     // -- UI / static files --
     {name: 'update.html',          label: 'update.html',       desc: 'This page (Repair Mode + Data Bridges UI)',       kind: 'ui'},
     {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
+    {name: 'dashboard.compiled.js',label: 'dashboard.compiled.js', desc: 'Compiled React bundle for the dashboard',     kind: 'ui'},
     {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
     {name: 'landing.html',         label: 'landing.html',      desc: 'Landing page',                                    kind: 'ui'},
     {name: 'data_bridges_guide.md',label: 'data_bridges_guide.md', desc: 'Plain-language Data Bridges setup guide',     kind: 'ui'},

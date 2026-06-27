@@ -201,20 +201,24 @@ for ip in "${TARGETS[@]}"; do
     if [[ "$ok" == "1" ]]; then
         printf '  %-30s ... ' "verify"
         REPORT=$(verify_controller "$ip")
-        SUMMARY=$(python3 - "$EXPECTED" <<EOF 2>/dev/null
+        SUMMARY=$(printf '%s' "$REPORT" | python3 -c '
 import json, sys
 try:
-    d = json.loads(sys.stdin.read())
-    pp = d.get('pass', 0); ff = d.get('fail', 0); mm = d.get('missing', 0)
+    raw = sys.stdin.read()
+    if not raw.strip():
+        print("UNREACHABLE  (empty response from /api/repair/verify)")
+        sys.exit(0)
+    d = json.loads(raw)
+    pp = d.get("pass", 0); ff = d.get("fail", 0); mm = d.get("missing", 0)
     if ff == 0 and mm == 0:
         print(f"OK  pass={pp} fail=0 miss=0")
     else:
-        bad = [f['name'] for f in d.get('files') or [] if f.get('status') != 'ok']
-        print(f"PARTIAL  pass={pp} fail={ff} miss={mm}  bad={','.join(bad[:5])}{'...' if len(bad)>5 else ''}")
+        bad = [f["name"] for f in (d.get("files") or []) if f.get("status") != "ok"]
+        suffix = "..." if len(bad) > 5 else ""
+        print(f"PARTIAL  pass={pp} fail={ff} miss={mm}  bad={chr(44).join(bad[:5])}{suffix}")
 except Exception as ex:
     print(f"UNREACHABLE  ({ex})")
-EOF
-<<< "$REPORT")
+' 2>/dev/null)
         if [[ "$SUMMARY" == OK* ]]; then
             echo "${G}${SUMMARY}${X}"
             PASS=$((PASS+1))

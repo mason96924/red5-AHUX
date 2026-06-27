@@ -749,8 +749,19 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         }
     }, [cfg.lat, cfg.lon]);
 
+    /* Geolocation: silently no-op'd before -- if the browser blocked the
+     * request (HTTP origin = not a secure context on field controllers, or
+     * the user denied permission earlier) the button just sat there.
+     * Now we surface a state (busy / err) so the operator can see WHY it
+     * failed and act on it (switch to HTTPS, re-prompt, or use the map). */
+    const [geoState, setGeoState] = React.useState(null);   // null | 'busy' | {err}
     const useMyLocation = () => {
-        if (!navigator.geolocation) return;
+        setGeoState('busy');
+        // navigator.geolocation is `undefined` on HTTP origins (Chrome 50+).
+        if (!navigator.geolocation) {
+            setGeoState({ err:'Browser blocked location access — open this page via HTTPS.' });
+            return;
+        }
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 const lat = Math.round(pos.coords.latitude  * 10000) / 10000;
@@ -758,8 +769,20 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                 setCfg(c => ({...c, lat, lon}));
                 if (mapRef.current) mapRef.current.setView([lat, lon], 11);
                 reverseGeocode(lat, lon);
+                setGeoState(null);
             },
-            (err) => { /* user denied or unavailable -> no-op */ }
+            (err) => {
+                // err.code: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+                const msg = err && err.code === 1
+                    ? 'Location permission denied — click the lock icon in the address bar and allow location.'
+                    : err && err.code === 2
+                        ? 'Location currently unavailable — the device has no GPS / Wi-Fi fix yet.'
+                        : err && err.code === 3
+                            ? 'Location request timed out — try again, or use the map / search bar.'
+                            : (err && err.message) || 'Could not read device location.';
+                setGeoState({ err: msg });
+            },
+            { enableHighAccuracy:true, timeout:10000, maximumAge:0 }
         );
     };
 
@@ -928,9 +951,31 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                     </div>
 
                     <button onClick={useMyLocation}
-                            className="w-full py-2.5 rounded-lg bg-amber-700/70 border border-amber-500/40 text-xs font-black uppercase tracking-widest text-amber-50 hover:bg-amber-600/70">
-                        📍  Use my device location
+                            disabled={geoState === 'busy'}
+                            data-testid="loc-use-my-location"
+                            className={`w-full py-2.5 rounded-lg border text-xs font-black uppercase tracking-widest transition-colors
+                                ${geoState === 'busy'
+                                    ? 'bg-amber-900/40 border-amber-700/40 text-amber-200 cursor-wait'
+                                    : (geoState && geoState.err
+                                        ? 'bg-rose-900/40 border-rose-500/50 text-rose-100 hover:bg-rose-800/40'
+                                        : 'bg-amber-700/70 border-amber-500/40 text-amber-50 hover:bg-amber-600/70')}`}>
+                        {geoState === 'busy'
+                            ? '⏳  Reading device location…'
+                            : '📍  Use my device location'}
                     </button>
+                    {geoState && geoState.err && (
+                        <div data-testid="loc-geo-error"
+                             className="-mt-2 px-3 py-2 rounded-md bg-rose-950/50 border border-rose-700/40 text-[11px] leading-snug text-rose-200">
+                            <b className="text-rose-100">Couldn't read location.</b><br/>
+                            <span className="text-rose-200/90">{geoState.err}</span>
+                            {/* Specific HTTP-origin call-out: most likely cause on a V1.9 controller. */}
+                            {typeof window !== 'undefined' && window.location && window.location.protocol === 'http:' && (
+                                <div className="mt-1.5 text-[10px] text-rose-300/80 font-mono">
+                                    tip: browsers require HTTPS for geolocation.  Pick the location on the map or search bar instead.
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <div className="border-t border-slate-800 pt-3 mt-2">
                         <div className="field-label mb-2">Quick jumps</div>

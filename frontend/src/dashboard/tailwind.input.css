@@ -1,0 +1,20 @@
+/* ---------------------------------------------------------------------------
+ * Pre-extract Tailwind input for the legacy dashboard bundle.
+ *
+ * Compiled by /app/frontend/src/dashboard/build.sh into
+ *   /app/frontend/public/dashboard.tailwind.css
+ *
+ * Loaded by dashboard.html / setup.html / landing.html etc. as
+ *   <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=HASH">
+ * which replaces the ~200 KB cdn.tailwindcss.com runtime JIT.
+ * --------------------------------------------------------------------------- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tiny global stripe -- the CDN runtime quietly applied this; preserve it so
+   nothing visually regresses when we swap the runtime for the static file. */
+html, body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}

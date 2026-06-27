@@ -113,6 +113,7 @@ _FALLBACK_PLUGIN_FILES = {
 }
 _FALLBACK_UI_FILES = {
     'update.html', 'dashboard.html', 'dashboard.compiled.js',
+    'dashboard.tailwind.css',
     'equipment_mapper.html', 'landing.html', 'psy_3d.html',
     'setup.html', 'setup_walk.compiled.js',
     'data_bridges_guide.md', 'opt_sa_insight.md',

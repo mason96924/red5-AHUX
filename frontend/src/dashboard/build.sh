@@ -90,3 +90,42 @@ sed -i -E "s|(/api)?/(assets/)?dashboard\.compiled\.js(\?v=[a-f0-9]+)?|/api/asse
 echo "Cache-bust dashboard.html → /api/assets/dashboard.compiled.js?v=$HASH"
 
 echo "Built $DST  ($(wc -c < "$DST" | awk '{printf "%.1f KB", $1/1024}'),  $(wc -l < "$DST") lines)"
+
+# ---------------------------------------------------------------------------
+# Tailwind pre-extract (2026-06-27).
+#   Replaces the ~200 KB cdn.tailwindcss.com runtime JIT with a static CSS
+#   file containing ONLY the utility classes actually referenced anywhere
+#   under public/.  Trimmed to ~80-90 KB minified (~20 KB gzipped).
+#
+#   Run AFTER the JS bundle is built so the scanner sees the latest
+#   minified class strings; otherwise a fresh utility added today would
+#   miss this CSS rebuild and the page would render without it.
+#
+#   Cache-busts every HTML shell that USED to load the CDN <script>.
+# ---------------------------------------------------------------------------
+TW_CFG="$SRC/tailwind.config.cjs"
+TW_IN="$SRC/tailwind.input.css"
+TW_OUT="$PUB/dashboard.tailwind.css"
+if [ -f "$TW_CFG" ] && [ -f "$TW_IN" ]; then
+    node_modules/.bin/tailwindcss \
+        -c "$TW_CFG" \
+        -i "$TW_IN" \
+        -o "$TW_OUT" \
+        --minify 2>&1 | grep -vE '^(Browserslist|  npx |  Why |Rebuilding|Done in|$)' || true
+
+    TW_HASH=$(md5sum "$TW_OUT" | cut -c1-10)
+    # Rewrite every HTML shell that loads Tailwind: swap the CDN script
+    # for a static <link>.  Idempotent -- already-static links are just
+    # cache-bust-updated each run.
+    for HTML in dashboard.html setup.html landing.html equipment_mapper.html sun_preview.html update.html; do
+        TARGET="$PUB/$HTML"
+        [ -f "$TARGET" ] || continue
+        # Replace the CDN <script> with a static <link> (first pass only).
+        sed -i -E 's|<script src="https://cdn\.tailwindcss\.com"></script>|<link rel="stylesheet" href="/api/assets/dashboard.tailwind.css">|g' "$TARGET"
+        # Update / inject the ?v= cache-bust on the static link.
+        sed -i -E "s|/api/assets/dashboard\.tailwind\.css(\?v=[a-f0-9]+)?|/api/assets/dashboard.tailwind.css?v=$TW_HASH|g" "$TARGET"
+    done
+    echo "Built $TW_OUT  ($(wc -c < "$TW_OUT" | awk '{printf "%.1f KB", $1/1024}'))   cache-bust v=$TW_HASH"
+else
+    echo "WARN: Tailwind extract config / input missing ($TW_CFG / $TW_IN) -- CSS rebuild skipped"
+fi

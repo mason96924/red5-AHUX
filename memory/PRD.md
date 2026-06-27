@@ -1,5 +1,45 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.44 — Tailwind pre-extract (kill the CDN runtime, 2026-06-27)
+
+**Brief**: Replaces the ~200 KB `cdn.tailwindcss.com` runtime JIT with a
+static, dependency-free CSS file built once at deploy time.  Removes
+"what classes did the JIT happen to see this session" as a class of
+silent UI regressions on the V1.9 controllers.
+
+**New artefacts**:
+  * `frontend/src/dashboard/tailwind.config.cjs` — dedicated content-scan
+    config for the legacy bundle (separate from CRA's own
+    `frontend/tailwind.config.js` so the shadcn HSL-variable theme
+    extensions don't leak in).  Scans every HTML + JS file under
+    `frontend/public/` and the compiled bundles.  Safelists the band
+    badge colour permutations the JSX builds at runtime.
+  * `frontend/src/dashboard/tailwind.input.css` — three `@tailwind`
+    directives + the antialias rule the CDN used to apply globally.
+  * `frontend/public/dashboard.tailwind.css` — the build output
+    (~85 KB minified, ~18 KB gzipped).
+
+**Wired through `build.sh`**: every dashboard rebuild now also runs
+`tailwindcss -c ... -i ... -o public/dashboard.tailwind.css --minify`
+and rewrites the `<link rel="stylesheet">` hash in every HTML shell
+that used to pull from the CDN (dashboard, setup, landing,
+equipment_mapper, sun_preview).
+
+**Wired through the manifest**: `dashboard.tailwind.css` is a new entry
+in `repair_manifest.json` (27 entries total) and in
+`upload_service.py`'s `_FALLBACK_UI_FILES` (so a fresh controller can
+flash it before the manifest is uploaded).  `bootstrap_controllers.sh`'s
+`UI_FILES` list also includes it now -- the diff-only push routine
+catches stale copies via `/api/repair/verify` like every other UI file.
+
+**Why this matters for the controllers**:
+  * `dashboard.html` first paint drops from ~4 s (CDN JIT) to <1 s.
+  * No more "I added `text-amber-400` to a switch branch and the JIT
+    didn't see it" surprises after a Repair Mode upload.
+  * V1.9 + V2.0 stay byte-identical -- same static CSS file under
+    `/api/assets/dashboard.tailwind.css` on both backends.
+
+
 ## Phase L.43 — Sidebar Lock/Path icon buttons (2026-06-27)
 
 **Brief**: Replaces the text labels "LOCK SA" and "PATH" on the per-AHU

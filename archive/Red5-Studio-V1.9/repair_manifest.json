@@ -158,8 +158,8 @@
       "kind": "ui",
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
-      "size": 30968,
-      "sha256": "9ddc03791933a2a452f5d998b2c54ed781416ba7f0c5589b9d3bf51ed844b40e",
+      "size": 30995,
+      "sha256": "4c98ced854673d331918580617c00bbbc4dbb8779671eeec9339996d54db08d2",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -174,12 +174,22 @@
       "hot_reload": false
     },
     {
+      "name": "dashboard.tailwind.css",
+      "kind": "ui",
+      "label": "dashboard.tailwind.css",
+      "desc": "Pre-extracted Tailwind CSS (replaces cdn.tailwindcss.com runtime)",
+      "size": 87461,
+      "sha256": "1a315fba1eddcec304d0d1f1df1d0322627103e281f702c0189a04da730db3e7",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
       "name": "equipment_mapper.html",
       "kind": "ui",
       "label": "equipment_mapper.html",
       "desc": "Config Tool",
-      "size": 444572,
-      "sha256": "8d2c34ba302d22d1410421c9195f6970c57eb527a6bd10e09d9e9100250a5df8",
+      "size": 444599,
+      "sha256": "4043bd28b7b8b15c05feb152172057becd3e54e2e41fa88162e007fad60f9f94",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -188,8 +198,8 @@
       "kind": "ui",
       "label": "landing.html",
       "desc": "Landing page (password / login screen)",
-      "size": 12606,
-      "sha256": "597f20c7c94dc7bce841ade3b4b9a97462fe244c90546f0beb0f54e968113ddb",
+      "size": 11963,
+      "sha256": "357facdb5d9249f1be26995094aca210b5b5a43d3ba31df7aed542d6c959ad5e",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -198,8 +208,8 @@
       "kind": "ui",
       "label": "setup.html",
       "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
-      "size": 3968,
-      "sha256": "93e16c5633f5b5c87bb195a65ad27d4c14189707bb23a97f7f79004dc4ad0841",
+      "size": 3995,
+      "sha256": "6e9338a0f53f57b4499fc21c652abe8a090473fc21df6a78018043f844a864f1",
       "show_in_ui": true,
       "hot_reload": false
     },

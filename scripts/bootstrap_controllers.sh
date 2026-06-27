@@ -93,7 +93,7 @@ fi
 # are in the manifest but not in this list are still picked up via
 # the $ARCHIVE/$n fallback in the push loop below.
 UI_FILES=()
-for f in dashboard.compiled.js dashboard.html update.html \
+for f in dashboard.compiled.js dashboard.html dashboard.tailwind.css update.html \
          band_overrides_service.py telemetry_service.py \
          audit_log_service.py weather_service.py band_service.py \
          bridges_admin_service.py bacnet_diag_service.py \

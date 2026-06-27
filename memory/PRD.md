@@ -1,5 +1,34 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.43 — Sidebar Lock/Path icon buttons (2026-06-27)
+
+**Brief**: Replaces the text labels "LOCK SA" and "PATH" on the per-AHU
+sidebar databoxes with compact Lucide-style 12px SVG icon buttons so the
+heading row fits cleanly in the ~250 px-wide docked sidebar without
+wrapping, even with the DETAIL / SYNCED / sparkline / Band chips also
+present.
+
+**Changes**:
+  * `frontend/public/js/dashboard/sidebar.js` (lines 535-575):
+    - Lock button now renders a closed-padlock SVG when locked and an
+      open-padlock SVG when unlocked (state-driven), preserving
+      data-testid `ahu-lock-sa-<id>` and the existing toggle behaviour.
+    - Path button now renders a Lucide "git-fork" style glyph (three
+      nodes + connecting lines) suggesting the OA -> SA -> RA flow it
+      toggles.  Keeps data-testid `ahu-path-<id>` intact.
+    - Both icons use `currentColor` stroke so they inherit the
+      emerald (active) / slate (idle) classes already on the button.
+  * Compiled into `dashboard.compiled.js` (build hash `853263ba99`).
+  * Synced to `archive/Red5-Studio-V1.9/dashboard.compiled.js` and
+    `dashboard.html`; manifest regenerated; integrity check PASS.
+
+**Deploy**:
+```
+bash scripts/bootstrap_controllers.sh --ui-only \
+    192.168.1.158 192.168.1.208 192.168.1.167 192.168.1.169
+```
+
+
 ## Phase L.42 — Single-source-of-truth manifest + sha256 integrity check (2026-06-27)
 
 **Brief**: Eliminates the two failure modes that produced today's

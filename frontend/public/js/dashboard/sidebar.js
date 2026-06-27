@@ -536,16 +536,41 @@ function renderSidebar(ctx) {
                         <button data-testid={`ahu-lock-sa-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
                                 title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
-                                className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-colors leading-none font-bold tracking-wider ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                            {isLockedToSA ? 'SA LOCK' : 'LOCK SA'}
+                                aria-label={isLockedToSA ? 'SA point locked' : 'Lock viewport to SA point'}
+                                className={`shrink-0 p-1 rounded border transition-colors leading-none ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            {/* Inline padlock SVG -- closed when locked,
+                                open when unlocked.  12 px to match the
+                                other icon buttons on this row. */}
+                            {isLockedToSA ? (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                </svg>
+                            ) : (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                    <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                                </svg>
+                            )}
                         </button>
                     )}
                     {isSelected && !isCompact && (
                         <button data-testid={`ahu-path-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
                                 title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
-                                className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-colors leading-none font-bold tracking-wider ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                            PATH
+                                aria-label={showPath ? 'OA-SA-RA path visible' : 'Show OA-SA-RA path'}
+                                className={`shrink-0 p-1 rounded border transition-colors leading-none ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            {/* Lucide-style "git-fork" / process-path glyph:
+                                three nodes connected by lines suggesting the
+                                OA -> SA -> RA flow that the toggle visualises.
+                                12 px to match the lock icon next to it. */}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <circle cx="5"  cy="5"  r="2.2"/>
+                                <circle cx="19" cy="12" r="2.2"/>
+                                <circle cx="5"  cy="19" r="2.2"/>
+                                <path d="M7 6.5 17 10.8"/>
+                                <path d="M17 13.2 7 17.5"/>
+                            </svg>
                         </button>
                     )}
                     {/* APPLY chip — ALWAYS rendered for uniform layout.

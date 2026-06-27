@@ -67,6 +67,12 @@ git commit --no-verify -m "..."           # skip ALL hooks
 
 ## Recipe — porting a route from V2.0 → V1.9
 
+> **Shortcut**: just run
+> ```bash
+> python3 /app/scripts/port-route.py /api/your-new-thing --diff
+> ```
+> and skip steps 1-3 below — the scaffolder finds the V2.0 source, picks the right V1.9 service file, appends a TODO stub + `app.add_url_rule(...)` next to its siblings inside `register()`, and saves a `.before` backup. You only need to fill in the body (step 2) before committing.
+
 You added a `@router.get("/api/my-new-thing")` to V2.0. Now do this **in the same commit**:
 
 1. **Find the matching V1.9 service file**. Group endpoints by feature:
@@ -128,6 +134,7 @@ Path placeholders are canonicalized to `{*}` so `<int:foo>` ≡ `{foo}` ≡ `<pa
 | File                                                | Role                                |
 | --------------------------------------------------- | ----------------------------------- |
 | `scripts/check_v19_v20_parity.py`                   | Static scanner (the brain)          |
+| `scripts/port-route.py`                             | Scaffold the V1.9 side of a V2.0 route |
 | `.emergent/pre-commit-parity.sh`                    | Git pre-commit wrapper              |
 | `deploy.sh`                                         | PROD deploy with `[0/7]` parity gate|
 | `archive/Red5-Studio-V1.9/app.py`                   | Boot-time best-effort warning       |

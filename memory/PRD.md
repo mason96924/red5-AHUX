@@ -1,5 +1,53 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.40 — V1.9 Repair Mode UI parity fix (2026-06-27)
+
+**Brief**: User correctly flagged that even after the L.39 `landing.html`
+fix, the Repair Mode UI on the controller did NOT list `setup.html` or
+`setup_walk.compiled.js`, so they could not actually flash the new files.
+Previous agent added these names to the Python upload allow-list but
+forgot to surface them in `update.html`'s `REPAIR_FILES` array.
+
+**Root cause inventory (all four lists were drifting independently)**:
+  1. `REPAIR_FILES` (UI table in `update.html`)
+  2. `<select id="hotReloadPlugin">` dropdown in `update.html`
+  3. `repair_upload_plugin` / `repair_download_plugin` allow-lists in
+     `upload_service.py`
+  4. `_reload_module_core` reload allow-list in `upload_service.py`
+
+  Each user-facing list was missing entries that the other lists allowed.
+
+**Fixes in `archive/Red5-Studio-V1.9/update.html`**:
+  * Added `setup.html`, `setup_walk.compiled.js`, `dashboard.compiled.js`,
+    `band_overrides_service.py` rows to `REPAIR_FILES`.
+  * Added `band_overrides_service` + `bacnet_diag_service` to the
+    Hot-Reload dropdown.
+  * Broadened file picker `accept=".py,.html"` → `.py,.html,.js,.md,.json`
+    so the .js / .md / .json rows that already existed could actually
+    accept their target file types (previously broken silently).
+
+**Fixes in `archive/Red5-Studio-V1.9/upload_service.py`**:
+  * Added `bacnet_diag_service.py` to `_reload_module_core` allow-list
+    (it could be uploaded but not hot-reloaded — silent gap).
+
+**Audit script result** (paste of automated check):
+  - REPAIR_FILES rows: 22  ↔  upload allow-list: 22 (excl. `app.py`,
+    `psy_3d.html` which is intentionally niche)  ✓
+  - Hot-Reload dropdown: 11  ↔  reload allow-list: 11  ✓ MATCH
+
+**Required user action**: After `git pull`, the user uploads:
+  1. `update.html`        (so the controller learns about the new rows)
+  2. `upload_service.py`  (so the Hot-Reload dropdown for bacnet_diag works)
+  3. `landing.html`       (the original L.39 fix)
+  4. `setup.html`         (target of the new redirect)
+  5. `setup_walk.compiled.js`  (loaded by setup.html)
+
+  Order matters: upload `update.html` first so the Repair UI gains its
+  new rows; THEN reload the page; THEN upload the rest using the new
+  rows.
+
+
+
 ## Phase L.39 — V1.9 Login → Setup Walk routing fix (2026-06-27)
 
 **Brief**: User reported that on V1.9 (physical controllers), every login

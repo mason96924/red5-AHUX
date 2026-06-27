@@ -81,12 +81,14 @@ h1 span{color:#ef4444;font-style:italic}
     <option value="upload_service">upload_service</option>
     <option value="weather_service">weather_service</option>
     <option value="band_service">band_service</option>
+    <option value="band_overrides_service">band_overrides_service</option>
     <option value="telemetry_service">telemetry_service</option>
     <option value="webhook_bridge_service">webhook_bridge_service</option>
     <option value="mqtt_bridge_service">mqtt_bridge_service</option>
     <option value="modbus_bridge_service">modbus_bridge_service</option>
     <option value="ws_bridge_service">ws_bridge_service</option>
     <option value="bridges_admin_service">bridges_admin_service</option>
+    <option value="bacnet_diag_service">bacnet_diag_service</option>
   </select>
   <button class="btn" id="hotReloadBtn" data-testid="hot-reload-btn"
     style="padding:8px 16px;font-size:11px;background:#1e1b4b;color:#a5b4fc;border:1px solid #4f46e5;text-transform:uppercase;letter-spacing:.08em"
@@ -786,6 +788,7 @@ var REPAIR_FILES = [
     {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status + Repair Mode', kind: 'plugin'},
     {name: 'weather_service.py',   label: 'Weather Service',   desc: 'Open-Meteo + tomorrow forecast routes',           kind: 'plugin'},
     {name: 'band_service.py',      label: 'Band Service',      desc: 'B1-B10 CSV generator + guide download',           kind: 'plugin'},
+    {name: 'band_overrides_service.py', label: 'Band Overrides Service', desc: 'Per-tenant AHU RH band overrides + apply-to-controller', kind: 'plugin'},
     {name: 'telemetry_service.py', label: 'Telemetry Service', desc: '/api/data, /api/write-point, collector config',   kind: 'plugin'},
     // -- AHU data bridges (added 2026-02-09) --
     {name: '_bridges_lib.py',           label: '_bridges_lib.py',           desc: 'Shared helpers (telemetry tap, write-queue ACL, status registry) — replace BEFORE the bridges below', kind: 'plugin'},
@@ -799,7 +802,10 @@ var REPAIR_FILES = [
     {name: 'update.html',          label: 'update.html',       desc: 'This page (Repair Mode + Data Bridges UI)',       kind: 'ui'},
     {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
     {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
-    {name: 'landing.html',         label: 'landing.html',      desc: 'Landing page',                                    kind: 'ui'},
+    {name: 'landing.html',         label: 'landing.html',      desc: 'Landing page (password / login screen)',          kind: 'ui'},
+    {name: 'setup.html',           label: 'setup.html',        desc: 'Setup Walk entry HTML (post-login landing on V1.9)', kind: 'ui'},
+    {name: 'setup_walk.compiled.js', label: 'setup_walk.compiled.js', desc: 'Setup Walk compiled React bundle (loaded by setup.html)', kind: 'ui'},
+    {name: 'dashboard.compiled.js', label: 'dashboard.compiled.js', desc: 'Compiled React dashboard bundle (loaded by dashboard.html)', kind: 'ui'},
     {name: 'data_bridges_guide.md',label: 'data_bridges_guide.md', desc: 'Plain-language Data Bridges setup guide',     kind: 'ui'},
     {name: 'opt_sa_insight.md',   label: 'opt_sa_insight.md',    desc: 'Opt-SA strategy explainer (6th-grader mode)',  kind: 'ui'},
     {name: 'configs/bridges.json', label: 'bridges.json',      desc: 'Bridge config (broker URLs, write_allowlist, etc.)', kind: 'ui'},
@@ -820,7 +826,7 @@ function _renderRepairList(){
         head.innerHTML = ''
             + '<span style="display:inline-block;padding:2px 6px;border-radius:3px;background:' + bg + ';color:' + color + ';font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">' + f.kind + '</span>'
             + '<span style="flex:1"><span style="color:#e2e8f0;font-size:12px;font-weight:700">' + f.name + '</span><span style="color:#64748b;font-size:10px;display:block;margin-top:1px">' + f.desc + '</span></span>'
-            + '<input type="file" accept=".py,.html" id="rf_' + safeId + '" style="display:none">'
+            + '<input type="file" accept=".py,.html,.js,.md,.json" id="rf_' + safeId + '" style="display:none">'
             + '<button class="btn" data-act="pick" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em">Replace</button>'
             + (f.kind === 'plugin'
                 ? '<button class="btn" data-act="reload" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#312e81;color:#a5b4fc;border:1px solid #4338ca;text-transform:uppercase;letter-spacing:.05em" title="Hot-reload — re-imports the module without restarting Flask">Reload</button>'

@@ -1347,6 +1347,7 @@ def _reload_module_core(plugin_name):
         'webhook_bridge_service.py', 'mqtt_bridge_service.py',
         'modbus_bridge_service.py', 'ws_bridge_service.py',
         'bridges_admin_service.py',
+        'bacnet_diag_service.py',
     }
     name = os.path.basename(plugin_name or '').strip()
     if not name.endswith('.py'):

@@ -53,26 +53,25 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
     };
     let deltaEl = null;
     if (delta !== null && delta !== undefined && Number.isFinite(delta)) {
+        // 2026-06-27: the up/down arrow glyph was redundant -- the
+        // explicit "+"/"-" sign on the number already conveys
+        // direction.  Show JUST the signed number; suppress the row
+        // entirely when |delta| < 0.2 to keep the pill quiet when an
+        // AHU is basically steady.
         const flat = Math.abs(delta) < 0.2;
-        const up   = !flat && delta > 0;
-        const arrow = flat ? '\u00B7' : (up ? '\u25B2' : '\u25BC');
-        // Trend arrow colour: darker shade of the fill so it reads on
-        // top of the pill's own colour band.  In light theme we darken
-        // less (0.55) so it stays readable against the pale pill body;
-        // in dark theme we darken more (0.40) so it doesn't get lost
-        // against the brighter saturated fill.
-        const dColor = flat
-            ? (theme==='dark' ? '#64748b' : '#94a3b8')
-            : _darken(color, theme === 'dark' ? 0.40 : 0.55);
-        const dTxt = flat ? '' : (Math.abs(delta) < 10 ? delta.toFixed(1) : delta.toFixed(0));
-        const dSign = !flat && up ? '+' : '';
-        deltaEl = (
-            <div className="absolute inset-x-0 bottom-0 flex justify-center pb-0.5 pointer-events-none" title={`Δ vs 24 h rolling avg: ${delta > 0 ? '+' : ''}${delta.toFixed(2)} kJ/kg`}>
-                <span className="text-[10px] font-black font-mono tracking-tight tabular-nums leading-none" style={{ color: dColor, textShadow: theme==='dark'?'0 1px 2px rgba(255,255,255,0.25)':'0 1px 1px rgba(0,0,0,0.15)' }}>
-                    {arrow}{dTxt ? ' ' + dSign + dTxt : ''}
-                </span>
-            </div>
-        );
+        if (!flat) {
+            const up = delta > 0;
+            const dColor = _darken(color, theme === 'dark' ? 0.40 : 0.55);
+            const dTxt   = Math.abs(delta) < 10 ? delta.toFixed(1) : delta.toFixed(0);
+            const dSign  = up ? '+' : '';   // dTxt already carries '-' for negatives
+            deltaEl = (
+                <div className="absolute inset-x-0 bottom-0 flex justify-center pb-0.5 pointer-events-none" title={`Δ vs 24 h rolling avg: ${up?'+':''}${delta.toFixed(2)} kJ/kg`}>
+                    <span className="text-[9px] font-bold font-mono tracking-tight tabular-nums leading-none" style={{ color: dColor, textShadow: theme==='dark'?'0 1px 2px rgba(255,255,255,0.25)':'0 1px 1px rgba(0,0,0,0.15)' }}>
+                        {dSign}{dTxt}
+                    </span>
+                </div>
+            );
+        }
     }
     const alarming = Math.abs(delta || 0) >= 3;
     return (

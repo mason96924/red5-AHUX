@@ -6501,3 +6501,31 @@ V1.9 also has 29 legacy-only routes (bridges/, bacnet/, band-csv/, mobile, etc.)
 - `REPO_DIR=/app NGINX_ROOT=/tmp ./deploy.sh --skip-parity-check` → preflight skipped with yellow warning, proceeds to step [1/7].
 
 **Open items**: port `/api/band-overrides/ahu-rh-bands`, `/api/ahu-history`, `/api/band-guide` to V1.9 so the next PROD deploy passes the gate.
+
+---
+## 2026-06-27 (cont) — Pre-commit Parity Hook + Tab Label Revert (Phase L.47)
+
+### Pre-commit hook
+`/app/.emergent/pre-commit-parity.sh` (executable, set -euo pipefail safe):
+- Skips silently if no `backend/routes/` or `archive/Red5-Studio-V1.9/*.py` files are staged (frontend-only / docs-only commits stay fast).
+- Otherwise runs `/app/scripts/check_v19_v20_parity.py --json` and BLOCKS the commit (exit 1) on drift, printing the missing-route list and pointing the operator at the V1.9 archive.
+- Bypass: `PARITY_SKIP=1 git commit ...` (logged + yellow) or `git commit --no-verify` (git's escape hatch).
+- ANSI colours only on a tty; plain text in CI pipes.
+- Bug found + fixed: `set -e` was killing the script before `RC=$?` could capture python's exit-2 — wrapped in `set +e ... set -e`.
+
+**Wiring (one-time)**:
+```
+ln -sf /app/.emergent/pre-commit-parity.sh /app/.git/hooks/pre-commit
+```
+
+**Verified (cd /app; stage backend/routes/history.py)**:
+- No staged backend changes -> silent exit 0.
+- Drift detected -> exit 1, prints 4 missing routes.
+- `PARITY_SKIP=1` -> yellow skipped message, exit 0.
+
+### Tab label revert
+User confirmed: keep FULL-mode tabs as TEXT (`PSYCH / DIAG / DYNAM / 3D WX`), only iconify in SLIM/compact mode. My one-turn change adding icon+text to FULL mode was reverted. Verified via screenshot: `svgCount=0` inside every tab button in FULL mode.
+
+**Build + mirror**: `dashboard.compiled.js?v=38edd80876`, md5 `38edd80876b032e7d4228b91b8c9ea10` identical across /public, V1.9, V2.0.
+
+**Open items**: V3.0 Modbus Phase 2.

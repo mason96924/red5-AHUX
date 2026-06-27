@@ -378,6 +378,7 @@ function renderSidebar(ctx) {
             /* Compact-mode tab strip (Phase L.41, 2026-06-27):
                 drop the text label, keep just the colored dot + icon
                 so the four tabs survive at 205 px sidebar widths.
+                FULL mode keeps text labels (per user 2026-06-27).
                 Tooltip carries the full readable name. */
             return React.createElement('button', {
                 key: tab.id,

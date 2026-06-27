@@ -601,43 +601,75 @@ function PsyControlPanel({ cfg, update, setCfg }) {
  * Manual lat/lon edits re-centre the marker.  City name is auto-populated
  * via OpenStreetMap Nominatim (no key required, rate-limited to ~1 req/s).
  * ========================================================================= */
+
+/* De-dup + sanity-check a raw saved-locations array (from server or
+ * localStorage).  Drops entries missing a name or with non-finite lat/lon,
+ * keeps the FIRST occurrence of each unique name.  Used by LocationModal's
+ * Site-name datalist below. */
+function _normalizeLocs(arr) {
+    const seen = new Set();
+    const out = [];
+    for (const l of (arr || [])) {
+        if (!l || typeof l.name !== 'string') continue;
+        const lat = +l.lat, lon = +l.lon;
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        const key = l.name.trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ name:key, lat, lon });
+    }
+    return out;
+}
+
 function LocationModal({ cfg, setCfg, onClose, onSave }) {
     const mapBoxRef = React.useRef(null);
     const mapRef    = React.useRef(null);
     const markerRef = React.useRef(null);
     const [geoBusy, setGeoBusy] = React.useState(false);
 
-    /* ----- saved locations from the dashboard's Weather button -----
-     * The dashboard persists its location list to
-     *   localStorage['savedWeatherLocations']
-     * each time the operator picks a location from the weather settings
-     * modal (see public/js/dashboard/weather-settings-modal.js).  The
-     * Setup Walk should surface that SAME list here as a datalist on the
-     * Site-name input, so the operator can re-use any place they've
-     * already used on the dashboard without re-typing it.
+    /* ----- saved locations -- mirror what the Dashboard's Weather button shows.
      *
-     * Free-form typing still works for fresh labels (e.g. "Pavilion B")
-     * -- the datalist is suggestion-only, the input never restricts. */
-    const [savedLocs, setSavedLocs] = React.useState([]);
-    React.useEffect(() => {
+     * The dashboard reads them from `${API_URL}/api/weather-location`'s
+     * `saved` array and mirrors that into localStorage['savedWeatherLocations']
+     * on mount (see public/js/dashboard/app.js#hydrateWeatherState).  We do
+     * the SAME thing here so the Setup Walk's Site-name dropdown stays
+     * byte-identical with the dashboard's location list -- including when the
+     * operator visits Setup Walk BEFORE ever opening the dashboard (fresh
+     * device case where localStorage is empty).
+     *
+     * Strategy:
+     *   1) Read localStorage first (instant, no flicker if already hydrated).
+     *   2) Then GET /api/weather-location (canonical, cross-device source).
+     *   3) Whichever is non-empty wins; server wins ties.
+     *
+     * Free-form typing in the input still works -- the datalist is suggestion
+     * only, the input never restricts the value. */
+    const [savedLocs, setSavedLocs] = React.useState(() => {
         try {
             const raw = localStorage.getItem('savedWeatherLocations');
-            if (!raw) return;
+            if (!raw) return [];
             const arr = JSON.parse(raw);
-            if (!Array.isArray(arr)) return;
-            // De-dup by name (keep first occurrence) and require a name+lat+lon.
-            const seen = new Set();
-            const cleaned = [];
-            for (const l of arr) {
-                if (!l || typeof l.name !== 'string') continue;
-                if (!Number.isFinite(+l.lat) || !Number.isFinite(+l.lon)) continue;
-                const key = l.name.trim();
-                if (!key || seen.has(key)) continue;
-                seen.add(key);
-                cleaned.push({ name:key, lat:+l.lat, lon:+l.lon });
-            }
-            setSavedLocs(cleaned);
-        } catch (e) { /* corrupt JSON / private mode -- no dropdown, no biggie */ }
+            return Array.isArray(arr) ? _normalizeLocs(arr) : [];
+        } catch (e) { return []; }
+    });
+    React.useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = await fetch('/api/weather-location', { credentials:'include', cache:'no-store' });
+                if (!r.ok) return;
+                const j = await r.json();
+                const saved = _normalizeLocs(Array.isArray(j.saved) ? j.saved : []);
+                if (cancelled) return;
+                if (saved.length > 0) {
+                    setSavedLocs(saved);
+                    // Mirror to localStorage so the dashboard sees the same list
+                    // even if its own hydrate hasn't run yet this session.
+                    try { localStorage.setItem('savedWeatherLocations', JSON.stringify(saved)); } catch (e) {}
+                }
+            } catch (e) { /* offline -> localStorage value already in state */ }
+        })();
+        return () => { cancelled = true; };
     }, []);
 
     /* When the user picks a name from the datalist (or types one that

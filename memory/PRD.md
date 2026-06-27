@@ -6374,3 +6374,24 @@ The list was migrated to Givoni in Phase L.35; the floor plan was missed.
 - Floor plan VAV dots now use Givoni tier fills (same source-of-truth call as the list).
 
 **Open items**: V3.0 Modbus Phase 2.
+
+---
+## 2026-06-27 (cont) — Delta-Enthalpy Trend Visibility
+
+**User request**: "The delta enthalpy in the metric pill graphs is not visible at all. Change that to the darker color of the filled color."
+
+**Root cause** (`dashboard-components.js` MetricBar lines 47-52):
+The trend arrow at the bottom of each metric pill used emerald (▲) or rose (▼). On the absorption pill — whose fill is pink #f472b6 — the rose ▼ blended in and was effectively invisible. Same problem to a lesser extent on the blue exchange pill.
+
+**Fix**:
+- Added an inline `_darken(hex, factor)` helper that scales RGB by `factor` (clamped).
+- Replaced the up/down green/rose colour switch with `_darken(color, 0.40)` (dark theme) or `_darken(color, 0.55)` (light theme), where `color` is the pill's own fill. The direction of the trend is still conveyed by the arrow shape ▲ vs ▼.
+- Flat (|delta| < 0.2) case still uses slate-500/400 so it doesn't shout.
+- Inverted the `textShadow` so the dark arrow now reads against the saturated fill rather than the slate background — small subtle white/black shadow for AA-ish contrast.
+
+**Build + mirror**: `dashboard.compiled.js?v=7d62522784` (2031.3 KB), md5 `7d625227843221b8e9a73a3710e79fb9` identical across /public, V1.9, V2.0 archives.
+
+**Verified by screenshot**:
+- Exchange pill (blue) ▼ now renders in dark blue (#173367) — readable
+- Absorption pill (pink) ▲ now renders in dark plum (#612448) — readable
+- Top numeric value (white) still legible at the top of each pill

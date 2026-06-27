@@ -34,27 +34,41 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
        is on the numeric label is placed in an absolutely-positioned
        overlay so it stays visible at the top of the pill regardless
        of fill height.  Optional `delta` (number) renders a tiny
-       trend arrow at the bottom of the pill — ▲ green when current
-       is above the rolling avg, ▼ rose when below; near-zero
-       deltas (|d| < 0.2) render as a dim "·" so we don't cry wolf
-       for AHUs that are basically steady. */
+       trend arrow at the bottom of the pill — ▲/▼ in a DARKER SHADE
+       of the pill's own fill colour (2026-06-27 fix: was emerald/rose
+       which blended into the pink absorption pill and was invisible);
+       near-zero deltas (|d| < 0.2) render as a dim "·" so we don't
+       cry wolf for AHUs that are basically steady. */
     const pct = Math.max(2, Math.min(100, (Math.abs(safeVal) / max) * 100));
     const valText = Math.abs(safeVal).toFixed(safeVal < 10 ? 2 : 1);
+    // Darken helper: multiply RGB by `factor` (clamped) so we get a
+    // readable shade of the pill's own fill colour for the trend
+    // arrow.  Works on #rrggbb hex only; non-hex inputs pass through.
+    const _darken = (hex, factor) => {
+        if (typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return hex;
+        const r = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(1,3), 16) * factor)));
+        const g = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(3,5), 16) * factor)));
+        const b = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(5,7), 16) * factor)));
+        return '#' + [r,g,b].map(n => n.toString(16).padStart(2,'0')).join('');
+    };
     let deltaEl = null;
     if (delta !== null && delta !== undefined && Number.isFinite(delta)) {
         const flat = Math.abs(delta) < 0.2;
         const up   = !flat && delta > 0;
         const arrow = flat ? '\u00B7' : (up ? '\u25B2' : '\u25BC');
+        // Trend arrow colour: darker shade of the fill so it reads on
+        // top of the pill's own colour band.  In light theme we darken
+        // less (0.55) so it stays readable against the pale pill body;
+        // in dark theme we darken more (0.40) so it doesn't get lost
+        // against the brighter saturated fill.
         const dColor = flat
             ? (theme==='dark' ? '#64748b' : '#94a3b8')
-            : (up
-                ? (theme==='dark' ? '#34d399' : '#059669')
-                : (theme==='dark' ? '#fb7185' : '#e11d48'));
+            : _darken(color, theme === 'dark' ? 0.40 : 0.55);
         const dTxt = flat ? '' : (Math.abs(delta) < 10 ? delta.toFixed(1) : delta.toFixed(0));
         const dSign = !flat && up ? '+' : '';
         deltaEl = (
             <div className="absolute inset-x-0 bottom-0 flex justify-center pb-0.5 pointer-events-none" title={`Δ vs 24 h rolling avg: ${delta > 0 ? '+' : ''}${delta.toFixed(2)} kJ/kg`}>
-                <span className="text-[10px] font-black font-mono tracking-tight tabular-nums leading-none" style={{ color: dColor, textShadow: theme==='dark'?'0 1px 2px rgba(0,0,0,0.85)':'0 1px 1px rgba(255,255,255,0.6)' }}>
+                <span className="text-[10px] font-black font-mono tracking-tight tabular-nums leading-none" style={{ color: dColor, textShadow: theme==='dark'?'0 1px 2px rgba(255,255,255,0.25)':'0 1px 1px rgba(0,0,0,0.15)' }}>
                     {arrow}{dTxt ? ' ' + dSign + dTxt : ''}
                 </span>
             </div>

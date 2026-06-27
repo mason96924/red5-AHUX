@@ -539,9 +539,29 @@ function renderSidebar(ctx) {
                             linearly to fill height — 8 → 53%, 11 → 73%,
                             15 → 100%.  Same max for both pills so the
                             two-pill comparison is honest.  Tweak this
-                            value if a site routinely runs > 15. */}
-                        <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-6" max={15} showValue={true} />
-                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-6" max={15} showValue={true} />
+                            value if a site routinely runs > 15.
+
+                            DELTA (2026-06-27 mock): each pill shows a
+                            tiny ▲/▼ trend arrow vs a 24 h rolling
+                            average.  For now the delta is a
+                            deterministic hash of (ahu.id + label) so
+                            you can see the visual treatment.  Once
+                            approved I'll wire it to a real rolling
+                            average computed from the existing
+                            /api/data poll loop (no new endpoint
+                            needed). */}
+                        {(() => {
+                            const seed = (ahu.id || '').split('').reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+                            // Pseudo-deltas in [-2.5, +2.5] range, distinct per pill.
+                            const dEx = (((seed % 53) / 53) * 5 - 2.5);
+                            const dAb = ((((seed * 17) % 47) / 47) * 5 - 2.5);
+                            return (
+                                <React.Fragment>
+                                    <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-9" max={15} showValue={true} delta={dEx} />
+                                    <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-9" max={15} showValue={true} delta={dAb} />
+                                </React.Fragment>
+                            );
+                        })()}
                     </div>
                 </div>
                 {ahu.g36 && (() => {

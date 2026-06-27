@@ -830,6 +830,20 @@ function _loadManifest(){
                 REPAIR_FILES = m.files
                     .filter(function(e){ return e.show_in_ui !== false; })
                     .map(function(e){ return {name:e.name, label:e.label||e.name, desc:e.desc||'', kind:e.kind||_kindOf(e.name), size:e.size, sha256:e.sha256, hot_reload:!!e.hot_reload}; });
+                // SAFETY NET: even if an older manifest forgot to list
+                // itself, ALWAYS surface a repair_manifest.json row so
+                // the operator can replace the manifest through the UI.
+                // Without this the chicken-and-egg trap of "old manifest
+                // has no self-entry -> UI hides the row -> can't upload
+                // the new manifest" recurs forever.
+                if (!REPAIR_FILES.some(function(f){ return f.name === 'repair_manifest.json'; })){
+                    REPAIR_FILES.unshift({
+                        name:'repair_manifest.json',
+                        label:'repair_manifest.json',
+                        desc:'Repair Mode allow-list + sha256 source of truth',
+                        kind:'ui'
+                    });
+                }
             } else {
                 REPAIR_MANIFEST = null;
                 REPAIR_FILES = REPAIR_FALLBACK.slice();

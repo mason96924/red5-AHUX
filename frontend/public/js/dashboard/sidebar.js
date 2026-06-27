@@ -35,19 +35,33 @@ function renderSidebar(ctx) {
        on locale change so a Korean / Japanese H1 doesn't push the
        chevron beyond the cached SLIM number. */
     const chevronRef = React.useRef(null);
-    React.useEffect(() => {
+    const [slimWidth, setSlimWidth] = React.useState(() => {
+        // Seed from localStorage so the first paint after a hard reload
+        // already snaps to the right width instead of flashing 224.
+        try {
+            const cached = parseInt(localStorage.getItem('red5.slimWidth') || '', 10);
+            if (Number.isFinite(cached) && cached >= 180 && cached <= 320) return cached;
+        } catch (_) {}
+        return 224;
+    });
+    React.useLayoutEffect(() => {
         if (!chevronRef.current) return;
         // Measure twice: once on mount, once after the next paint, so
         // font fallbacks that resolve a tick late still get the right
-        // width.
+        // width.  Sidebar's own left edge (the host frame) is the
+        // reference point so the number stays correct even when the
+        // sidebar itself is floated / popped to a sub-pixel offset.
         const measure = () => {
             const el = chevronRef.current;
             if (!el) return;
             const r = el.getBoundingClientRect();
-            const w = Math.ceil(r.right) + 4;
+            const host = el.closest('[data-testid^="left-sidebar"]');
+            const left = host ? host.getBoundingClientRect().left : 0;
+            const w = Math.ceil(r.right - left) + 4;
             if (Number.isFinite(w) && w >= 180 && w <= 320) {
                 window.__red5_slim_width = w;
                 try { localStorage.setItem('red5.slimWidth', String(w)); } catch (_) {}
+                setSlimWidth(prev => (prev === w ? prev : w));
             }
         };
         measure();
@@ -160,7 +174,7 @@ function renderSidebar(ctx) {
                    instead of dragging through awkward in-between
                    widths. */
                 const continuous = startW + (mv.clientX - startX);
-                const SLIM = 224, FULL = 320, MID = (SLIM + FULL) / 2;
+                const SLIM = slimWidth, FULL = 320, MID = (SLIM + FULL) / 2;
                 const next = continuous < MID ? SLIM : FULL;
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
@@ -190,13 +204,14 @@ function renderSidebar(ctx) {
                         surface. */}
                     {!isPopped && (
                         <button
+                            ref={chevronRef}
                             onClick={() => {
-                                const next = isCompact ? 320 : 224;
+                                const next = isCompact ? 320 : slimWidth;
                                 setSidebarWidth(next);
                                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
                             }}
                             className={`w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
-                            title={isCompact ? "Expand sidebar to full width (320 px)" : "Collapse sidebar to slim width (224 px)"}
+                            title={isCompact ? "Expand sidebar to full width (320 px)" : `Collapse sidebar to slim width (${slimWidth} px)`}
                             data-testid="sidebar-width-toggle-btn"
                         >
                             {isCompact ? '\u00BB' : '\u00AB'}

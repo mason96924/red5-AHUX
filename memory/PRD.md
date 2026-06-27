@@ -6315,3 +6315,30 @@ Fix: both build scripts now `md5sum` the freshly-compiled bundle and `sed -E` in
 **Verified by iteration_17**: 7/7 PASS. Determinism confirmed — consecutive rebuilds with no source changes produce byte-identical HTMLs. Display Mode block is verified present in the bundle. Zero regressions.
 
 **Open items**: V3.0 Modbus Phase 2 (async TCP client), Tailwind extraction (drop cdn.tailwindcss.com runtime warning).
+
+---
+## 2026-06-27 — Self-Tuning SLIM Sidebar Width (Phase L.43 complete)
+
+**User request**: future-proof the chevron-snap sidebar so non-English titles don't push the chevron beyond the cached SLIM width. Use a ref-based `getBoundingClientRect().right` measurement on mount.
+
+**Changes**:
+- `/app/frontend/public/js/dashboard/sidebar.js`
+  * Added `const chevronRef = React.useRef(null)` + `const [slimWidth, setSlimWidth] = React.useState(…)` seeded from `localStorage['red5.slimWidth']`.
+  * `React.useLayoutEffect` measures chevron right edge minus host sidebar's left edge, +4 px breath. Stores to `window.__red5_slim_width` and `localStorage['red5.slimWidth']`. Re-measures on `i18nReady` change and 200 ms later (catches late font fallbacks). Bounds-clamped to [180, 320].
+  * `ref={chevronRef}` attached to the «/» chevron button.
+  * Drag-snap MID midpoint, onClick toggle, and tooltip now use `slimWidth` instead of hardcoded `224`.
+  * `isCompact` threshold (`< 270`) preserved — safely between dynamic SLIM range (180-260) and FULL (320).
+
+**Build + mirror**:
+- `bash /app/frontend/src/dashboard/build.sh` → `dashboard.compiled.js?v=fae4ee0471` (2020.9 KB, 1450 lines)
+- Mirrored to `/app/archive/Red5-Studio-V1.9/` and `/app/archive/Red5-Studio-V2.0/` (md5 = fae4ee0471f7a790ffeb00b3b8dd162a, all three identical).
+
+**Verified by mcp_screenshot_tool**:
+- `window.__red5_slim_width = 225` (auto-measured, was hardcoded 224)
+- `localStorage.red5.slimWidth = 225` (cached)
+- Chevron right edge x = 220.2; expected ≈ 224, measured 225 (1 px breath rounding) ✓
+- Click FULL→SLIM landed at 225 px (proves dynamic value drives the snap, not the constant)
+- Click SLIM→FULL landed at 320 px ✓
+- No React crash, dashboard renders fully (chart, AHU rows, telemetry)
+
+**Open items**: V3.0 Red5-Modbus Phase 2 (async TCP client) — paused while UI refactors land. Optional: pre-extract Tailwind to drop the cdn.tailwindcss.com runtime warning.

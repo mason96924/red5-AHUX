@@ -86,11 +86,24 @@ if [[ ! -f "$UPLOAD_SVC" ]]; then
     exit 2
 fi
 
-# UI files to push in mode=all and mode=ui.  Anything missing on disk is
-# silently skipped (so older trees that haven't built the bundle yet
-# don't break this script).
+# Candidate files to push when the controller's verify report flags
+# them as stale or missing.  Anything in this list is eligible; the
+# script consults /api/repair/verify after step 3 and only sends the
+# subset the controller actually needs.  Newly-introduced files that
+# are in the manifest but not in this list are still picked up via
+# the $ARCHIVE/$n fallback in the push loop below.
 UI_FILES=()
-for f in dashboard.compiled.js dashboard.html update.html; do
+for f in dashboard.compiled.js dashboard.html update.html \
+         band_overrides_service.py telemetry_service.py \
+         audit_log_service.py weather_service.py band_service.py \
+         bridges_admin_service.py bacnet_diag_service.py \
+         _bridges_lib.py \
+         webhook_bridge_service.py mqtt_bridge_service.py \
+         modbus_bridge_service.py ws_bridge_service.py \
+         landing.html setup.html setup_walk.compiled.js \
+         equipment_mapper.html psy_3d.html \
+         data_bridges_guide.md opt_sa_insight.md \
+         configs/bridges.json js/audit_log.js; do
     p="$ARCHIVE/$f"
     [[ -f "$p" ]] && UI_FILES+=("$p")
 done
@@ -185,11 +198,66 @@ for ip in "${TARGETS[@]}"; do
     fi
 
     # Steps 4-6 : UI files, unless we are in bootstrap-only mode.
+    # The list of files to push is driven by the controller's verify
+    # report -- we ask it which files are stale or missing and only
+    # send those (plus the locally-buildable subset).  This catches
+    # newly-added plug-ins / static assets that pre-dated changes to
+    # the script's hard-coded UI_FILES list.
     if [[ "$MODE" != "bootstrap" && "$ok" == "1" ]]; then
+        REPORT=$(verify_controller "$ip")
+        STALE=$(printf '%s' "$REPORT" | python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    out = []
+    for f in (d.get("files") or []):
+        if f.get("status") != "ok":
+            out.append(f.get("name"))
+    print("\n".join(out))
+except Exception:
+    pass
+' 2>/dev/null)
+        # Build the push set: every stale file that exists in our
+        # local archive AND is not upload_service.py (already pushed)
+        # AND not repair_manifest.json (already pushed).
+        TO_PUSH=()
+        # Preserve declared display order from UI_FILES for files that
+        # ARE stale, then append any other stale files at the end.
+        declare -A STALE_SET=()
+        while IFS= read -r n; do [[ -n "$n" ]] && STALE_SET["$n"]=1; done <<< "$STALE"
         for ui in "${UI_FILES[@]}"; do
-            printf '  %-30s ... ' "$(basename "$ui")"
+            n="$(basename "$ui")"
+            if [[ -n "${STALE_SET[$n]:-}" ]]; then
+                TO_PUSH+=("$ui")
+                unset 'STALE_SET[$n]'
+            fi
+        done
+        # Anything still in STALE_SET wasn't in UI_FILES (e.g. .py
+        # plug-ins, js/audit_log.js).  Look them up under $ARCHIVE.
+        for n in "${!STALE_SET[@]}"; do
+            [[ "$n" == "upload_service.py" || "$n" == "repair_manifest.json" ]] && continue
+            p="$ARCHIVE/$n"
+            [[ -f "$p" ]] && TO_PUSH+=("$p")
+        done
+        for ui in "${TO_PUSH[@]}"; do
+            bn="$(basename "$ui")"
+            printf '  %-30s ... ' "$bn"
             if push_file "$ip" "$ui" ""; then
-                echo "${G}OK${X}"
+                # Auto hot-reload every *_service.py we just replaced so
+                # the new code goes live without a manual "Reload" click.
+                # bacnet_diag_service is the only allow-listed plug-in
+                # that doesn't ship a hot-reload-safe register() yet --
+                # silently skip on a 4xx so we don't break the push loop.
+                if [[ "$bn" == *_service.py ]]; then
+                    mod="${bn%.py}"
+                    if reload_module "$ip" "$mod"; then
+                        echo "${G}OK${X} (reloaded)"
+                    else
+                        echo "${G}OK${X} ${D}(reload skipped)${X}"
+                    fi
+                else
+                    echo "${G}OK${X}"
+                fi
             else
                 ok=0
                 break

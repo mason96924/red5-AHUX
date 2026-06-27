@@ -1,5 +1,39 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase L.39 — V1.9 Login → Setup Walk routing fix (2026-06-27)
+
+**Brief**: User reported that on V1.9 (physical controllers), every login
+should jump directly to the Setup Walk page (`setup.html`) — same flow as
+V2.0's "Try Dashboard" button — rather than the legacy engineer menu with
+Dashboard/Configuration cards.
+
+**Root cause**: The previous edit only rewrote `handleSkip` and the menu
+card href to point at `setup.html`. The success branches of `handleAuth`
+(master key, first-time password, correct password) all still called
+`setView('menu')`, which rendered the deprecated engineer menu.
+
+**Fix in `archive/Red5-Studio-V1.9/landing.html`**:
+  * Added `goToSetup()` helper that navigates to `/api/assets/setup.html`
+    (the `/api/assets/` prefix is mandatory on V1.9 because `app.py` has no
+    root route for HTML files).
+  * All three `handleAuth` success paths now call `goToSetup()` instead of
+    `setView('menu')`.
+  * `handleSkip` delegates to the same helper.
+  * Legacy menu card href hardened to `/api/assets/setup.html` for safety.
+
+**Parity status**: `python3 scripts/check_v19_v20_parity.py` → 100% GREEN
+(46/46 V2.0 routes implemented in V1.9).
+
+**Deployment**: User uploads the updated `landing.html` via the V1.9
+controller's `/update` page → Repair Mode → Replace `landing.html`. The
+allow-list in `upload_service.py` already permits this file. No other
+files need re-uploading for this fix.
+
+**Verification pending**: User to confirm on the physical controller that
+(a) entering a correct password lands on the Setup page, and (b) clicking
+"Continue to Dashboard" from there opens the dashboard normally.
+
+
 ## Phase L.38 — Apply-to-Controller flow + MetricBar fix (2026-06-26)
 
 **Brief**: Two operator pain points addressed in this iteration.

@@ -59,14 +59,22 @@
                 return () => clearInterval(iv);
             }, []);
 
+            // V1.9 controllers: every successful authentication routes
+            // straight to the Setup Walk page.  The setup page itself has a
+            // "Continue to Dashboard" button, so the legacy engineer-menu
+            // (Dashboard / Configuration cards) is bypassed entirely on V1.9.
+            // Parity target: V2.0 'Try Dashboard' also lands on setup.html
+            // before the dashboard renders.
+            const goToSetup = () => {
+                window.location.href = '/api/assets/setup.html';
+            };
+
             const handleAuth = async () => {
                 if (!passwordInput.trim()) return;
 
                 if (passwordInput === MASTER_KEY) {
                     sessionStorage.setItem('engineerAuthenticated', 'true');
-                    setView('menu');
-                    setPasswordInput('');
-                    setError('');
+                    goToSetup();
                     return;
                 }
 
@@ -76,14 +84,10 @@
                     localStorage.setItem('configPasswordHash', hashed);
                     setConfigPassword(hashed);
                     sessionStorage.setItem('engineerAuthenticated', 'true');
-                    setView('menu');
-                    setPasswordInput('');
-                    setError('');
+                    goToSetup();
                 } else if (hashed === configPassword) {
                     sessionStorage.setItem('engineerAuthenticated', 'true');
-                    setView('menu');
-                    setPasswordInput('');
-                    setError('');
+                    goToSetup();
                 } else {
                     setError(t('incorrect_password'));
                     setTimeout(() => setError(''), 2000);
@@ -91,7 +95,7 @@
             };
 
             const handleSkip = () => {
-                window.location.href = '/setup.html';
+                goToSetup();
             };
 
             if (view === 'menu') {
@@ -106,7 +110,7 @@
                             <p className="text-slate-600 text-xs font-mono mb-12 animate-fade-up" style={{animationDelay:'0.15s'}}>{t('building_diag_cmd_center')}</p>
 
                             <div className="flex gap-8 justify-center">
-                                <a href="/setup.html"
+                                <a href="/api/assets/setup.html"
                                    className="animate-fade-up card-hover block w-72 bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-indigo-500/40 rounded-2xl p-8 text-center cursor-pointer"
                                    style={{animationDelay:'0.2s'}}>
                                     <div className="w-16 h-16 mx-auto mb-5 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center" style={{animation:'pulse-glow 3s ease-in-out infinite'}}>

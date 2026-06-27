@@ -74,9 +74,21 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
             </div>
         );
     }
+    const alarming = Math.abs(delta || 0) >= 3;
     return (
         <div className={`${width} ${height} ${theme==='dark'?'bg-slate-800/30':'bg-slate-200/60'} relative overflow-hidden flex flex-col justify-end shadow-inner rounded-full`}>
             <div className={"w-full transition-all duration-700 ease-out " + (theme==='dark'?'shadow-lg shadow-black':'')} style={{ height: pct + "%", backgroundColor: color }} />
+            {alarming && (
+                /* Peripheral-vision cue.  This empty overlay is rendered
+                   ONLY when |delta| >= 3, with a key that flips between
+                   "up" and "dn".  React mounts a fresh node whenever the
+                   alarm boundary is crossed OR the direction flips, so
+                   the 600 ms CSS keyframe (.red5-pill-pulse) plays once
+                   on transition and stays silent during steady alarm. */
+                <div key={(delta || 0) > 0 ? 'up' : 'dn'}
+                     className="red5-pill-pulse absolute inset-0 rounded-full pointer-events-none"
+                     data-testid="metric-pill-alarm-pulse"></div>
+            )}
             {showValue && (
                 <div className="absolute inset-x-0 top-0 flex justify-center pt-1 pointer-events-none">
                     <span className={`text-[8px] font-black tracking-tighter ${theme==='dark'?'text-white/95 drop-shadow-md':'text-slate-900'}`} style={{textShadow: theme==='dark'?'0 1px 2px rgba(0,0,0,0.85)':'0 1px 1px rgba(255,255,255,0.6)'}}>{valText}</span>

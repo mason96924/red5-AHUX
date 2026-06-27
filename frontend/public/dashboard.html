@@ -17,7 +17,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
          js/dashboard/* are now pre-compiled offline into the single bundle
-         /dashboard.compiled.js?v=7d62522784 (built via /app/frontend/src/dashboard/build.sh).
+         /dashboard.compiled.js?v=978d0908ea (built via /app/frontend/src/dashboard/build.sh).
          Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
@@ -103,6 +103,18 @@
         .trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
         @keyframes fadeGlow { 0%{opacity:0.4} 50%{opacity:1} 100%{opacity:0.4} }
         .anim-glow { animation: fadeGlow 2s ease-in-out infinite; }
+        /* MetricBar peripheral-vision cue (Phase L.44, 2026-06-27).
+           Fires ONCE for 600 ms when a pill enters / leaves an "alarming"
+           bucket (|delta| >= 3 kJ/kg).  Runs on the wrapper div whose
+           React `key` flips between calm / alarm-up / alarm-dn, so React
+           remounts the node and the CSS animation replays naturally —
+           no JS timers, no setInterval, no extra renders. */
+        @keyframes red5-pill-pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.65), inset 0 0 0 0 rgba(255,255,255,0); }
+            40%  { box-shadow: 0 0 14px 5px rgba(99, 102, 241, 0.85), inset 0 0 6px 0 rgba(255,255,255,0.25); }
+            100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0),    inset 0 0 0 0 rgba(255,255,255,0); }
+        }
+        .red5-pill-pulse { animation: red5-pill-pulse 600ms ease-out 1; }
         .rw-input { background:transparent; border:none; outline:none; width:50px; text-align:right; font-family:monospace; font-weight:900; font-size:11px; padding:0; }
         .rw-input:hover { background:rgba(6,182,212,0.1); border-radius:3px; }
         .rw-input:focus { background:rgba(6,182,212,0.2); border-radius:3px; box-shadow:0 0 0 1px rgba(6,182,212,0.5); }
@@ -467,6 +479,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/dashboard.compiled.js?v=7d62522784"></script>
+    <script src="/dashboard.compiled.js?v=978d0908ea"></script>
 </body>
 </html>

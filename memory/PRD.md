@@ -6395,3 +6395,24 @@ The trend arrow at the bottom of each metric pill used emerald (▲) or rose (�
 - Exchange pill (blue) ▼ now renders in dark blue (#173367) — readable
 - Absorption pill (pink) ▲ now renders in dark plum (#612448) — readable
 - Top numeric value (white) still legible at the top of each pill
+
+---
+## 2026-06-27 (cont) — MetricBar Peripheral-Vision Pulse (Phase L.44)
+
+**User request**: a faint flash/glow when an AHU's enthalpy delta crosses a threshold (|Δh| ≥ 3 kJ/kg) so operators get a peripheral-vision cue.
+
+**Implementation** (pure CSS, zero JS):
+- `dashboard.html`: added `@keyframes red5-pill-pulse` (3-stop indigo box-shadow halo, 600 ms ease-out, 1 iteration) + `.red5-pill-pulse` class.
+- `dashboard-components.js` `MetricBar`: when `|delta| >= 3`, render an empty absolute overlay `<div key={delta>0?'up':'dn'} class="red5-pill-pulse absolute inset-0 …">`. The overlay is conditional, so React mounts a fresh node whenever the alarm boundary is crossed OR the direction flips → CSS animation replays naturally. Steady-state alarms don't loop the animation. Calm state renders no overlay (zero DOM cost).
+
+**Why this works**: React reconciles a conditional child by mount/unmount. A different `key` on a conditional child also forces remount. Together they produce "fire once on each crossing" semantics without `setInterval`, `setTimeout`, or React state.
+
+**Build + mirror**: `dashboard.compiled.js?v=978d0908ea` (2033.3 KB), md5 `978d0908ea255fbd0616531d5d3c4c4c` — identical across /public, V1.9, V2.0.
+
+**Verified by screenshot**:
+- Keyframe + class present in CSSOM (`document.styleSheets` introspection).
+- Manually injected `.red5-pill-pulse` overlay reports `animation: 0.6s ease-out red5-pill-pulse` (1 iteration, 600 ms).
+- No overlays rendered when all AHUs are in calm (|Δh| < 3) — no false positives.
+- `data-testid="metric-pill-alarm-pulse"` exposed for future E2E.
+
+**Open items**: V3.0 Modbus Phase 2.

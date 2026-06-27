@@ -218,14 +218,19 @@ const bandLabelOf = (t, rh) => {
 // Tailwind classes for the band-status chip.  Cool side blue, mid
 // bands emerald (comfort), hot side red/orange.  `?` is amber +
 // pulsing to signal SAFE-MODE (no pre-tuned recipe for this OA).
+// Text shades bumped one tier darker (300 -> 400, 200 -> 300) on
+// 2026-06-27 per operator request: the lighter tier read as washed-out
+// against the translucent 10% fill, especially the amber/rose chips on
+// a bright monitor.  Hue is preserved so the band-to-colour mapping
+// stays consistent with the 3D WX overlay legend.
 const bandTint = (b) => {
     switch (b) {
-        case 'B1': case 'B2': case 'B3': return 'border-sky-500/50 text-sky-300 bg-sky-500/10';
-        case 'B4': case 'B5':            return 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10';
-        case 'B6':                       return 'border-amber-500/50 text-amber-300 bg-amber-500/10';
-        case 'B7': case 'B8': case 'B10':return 'border-rose-500/60 text-rose-300 bg-rose-500/10';
-        case 'B9':                       return 'border-red-500/60 text-red-300 bg-red-500/10';
-        default:                         return 'border-amber-500/60 text-amber-200 bg-amber-500/15 animate-pulse';
+        case 'B1': case 'B2': case 'B3': return 'border-sky-500/50 text-sky-400 bg-sky-500/10';
+        case 'B4': case 'B5':            return 'border-emerald-500/50 text-emerald-400 bg-emerald-500/10';
+        case 'B6':                       return 'border-amber-500/50 text-amber-400 bg-amber-500/10';
+        case 'B7': case 'B8': case 'B10':return 'border-rose-500/60 text-rose-400 bg-rose-500/10';
+        case 'B9':                       return 'border-red-500/60 text-red-400 bg-red-500/10';
+        default:                         return 'border-amber-500/60 text-amber-300 bg-amber-500/15 animate-pulse';
     }
 };
 

@@ -123,6 +123,35 @@ const Icon = ({ name, size = 14, strokeWidth = 2, className = '' }) => {
                 <path d="M3 3v5h5" />
             </>
         ),
+        /* Tab icons added 2026-06-27 (Phase L.41) — used when the
+           sidebar is in compact mode and the PSYCH / DIAG / DYNAM /
+           3D WX tabs collapse from text labels to icons-only.  Paths
+           are lifted from lucide-react so they sit naturally next to
+           the existing book-open / radio-tower / settings family. */
+        'line-chart': (
+            <>
+                <path d="M3 3v18h18" />
+                <path d="m19 9-5 5-4-4-3 3" />
+            </>
+        ),
+        'search': (
+            <>
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+            </>
+        ),
+        'activity': (
+            <>
+                <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.96 0L9.24 2.18a.5.5 0 0 0-.96 0l-2.35 8.36A2 2 0 0 1 4 12H2" />
+            </>
+        ),
+        'box': (
+            <>
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <path d="m3.3 7 8.7 5 8.7-5" />
+                <path d="M12 22V12" />
+            </>
+        ),
     };
     return (
         <svg width={size} height={size} viewBox="0 0 24 24"

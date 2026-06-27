@@ -124,13 +124,17 @@ function renderSidebar(ctx) {
             const startX = e.clientX;
             const startW = sidebarWidth;
             const onMove = (mv) => {
-                /* Min is 205 px — the smallest width that keeps all 5
-                   top-icon buttons (cog · book · radio · settings ·
-                   rotate-ccw) on a single row.  Below ~270 px the
-                   sidebar enters "compact mode" and hides the per-AHU
-                   venue preset dropdown + LOCK SA / PATH chips so each
-                   AHU row stays a single line (Phase L.40, 2026-06-27). */
-                const next = Math.max(205, Math.min(400, startW + (mv.clientX - startX)));
+                /* Snap to two discrete widths (Phase L.41, 2026-06-27):
+                     SLIM (205 px)  — compact mode: AHU rows + icon tabs
+                     FULL (320 px)  — full mode: labels + preset + chips
+                   Threshold is the midpoint between the two so the
+                   sidebar jumps as soon as the operator crosses it
+                   instead of dragging through awkward in-between
+                   widths.  Anything in the 206-319 range that legacy
+                   localStorage keys may still hold is normalised here. */
+                const continuous = startW + (mv.clientX - startX);
+                const SLIM = 205, FULL = 320, MID = (SLIM + FULL) / 2;
+                const next = continuous < MID ? SLIM : FULL;
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
             };
@@ -277,14 +281,18 @@ function renderSidebar(ctx) {
     </div>
     <div className={`flex border-b ${ui.border}`} data-testid="view-tabs" style={{gap:'1px'}}>
         {[
-            {id:'chart',     label:t('psych_tab'),     color:'indigo', full:t('psychrometric_chart')},
-            {id:'diagnostics',label:t('diag'),  color:'emerald',full:t('diagnostics_console')},
-            {id:'dynamics',  label:t('dynam_tab'),     color:'violet', full:t('dynamics_animation')},
-            {id:'weather3d', label:t('weather_3d_short'), color:'sky', full:t('weather_3d')}
+            {id:'chart',     label:t('psych_tab'),     color:'indigo', full:t('psychrometric_chart'),  icon:'line-chart'},
+            {id:'diagnostics',label:t('diag'),  color:'emerald',full:t('diagnostics_console'),  icon:'search'},
+            {id:'dynamics',  label:t('dynam_tab'),     color:'violet', full:t('dynamics_animation'),  icon:'activity'},
+            {id:'weather3d', label:t('weather_3d_short'), color:'sky', full:t('weather_3d'),         icon:'box'}
         ].map(tab => {
             const active = activeView === tab.id;
             const colorMap = {indigo:'99,102,241',emerald:'52,211,153',violet:'167,139,250',sky:'56,189,248'};
             const rgb = colorMap[tab.color];
+            /* Compact-mode tab strip (Phase L.41, 2026-06-27):
+                drop the text label, keep just the colored dot + icon
+                so the four tabs survive at 205 px sidebar widths.
+                Tooltip carries the full readable name. */
             return React.createElement('button', {
                 key: tab.id,
                 onClick: () => setActiveView(tab.id),
@@ -296,8 +304,10 @@ function renderSidebar(ctx) {
                         : (theme==='dark' ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600')),
                 style: active ? {color:'rgb('+rgb+')', borderBottomColor:'rgb('+rgb+')', background:'rgba('+rgb+',0.08)'} : {}
             },
-                React.createElement('span', {style:{width:6,height:6,borderRadius:'50%',flexShrink:0,background: active ? 'rgb('+rgb+')' : (theme==='dark'?'#334155':'#cbd5e1')}})  ,
-                React.createElement('span', {style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, tab.label)
+                React.createElement('span', {key:'dot', style:{width:6,height:6,borderRadius:'50%',flexShrink:0,background: active ? 'rgb('+rgb+')' : (theme==='dark'?'#334155':'#cbd5e1')}}),
+                isCompact
+                    ? React.createElement(Icon, {key:'ico', name: tab.icon, size: 14})
+                    : React.createElement('span', {key:'lbl', style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, tab.label)
             );
         })}
     </div>

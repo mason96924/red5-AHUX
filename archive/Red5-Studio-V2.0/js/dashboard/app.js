@@ -109,7 +109,14 @@
             // ("AHU DIAGNOSTIC HUB" + theme toggle) keeps a small gap at min,
             // and the original baseline (320 px) stays the comfortable max.
             const [sidebarWidth, setSidebarWidth] = useState(() => {
-                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(205, Math.min(400, v)); } catch (e) {}
+                /* Sidebar now snaps to one of two widths (Phase L.41
+                   2026-06-27): SLIM (205) or FULL (320).  Any legacy
+                   in-between value in localStorage is normalised to
+                   whichever side it's closest to. */
+                try {
+                    const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10);
+                    if (!Number.isNaN(v)) return v < 262 ? 205 : 320;
+                } catch (e) {}
                 return 320;
             });
             const API_URL = window.API_BASE_URL || window.location.origin;

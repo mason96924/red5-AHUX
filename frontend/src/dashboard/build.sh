@@ -82,8 +82,11 @@ rm -f "$TMP"
 
 # Cache-bust dashboard.html's <script src> with a short MD5 of the compiled
 # bundle.  Every rebuild produces a new hash → browsers forced to re-fetch.
+# Route the bundle through /api/assets/ -- V1.9 + V2.0 both serve this path
+# from /root/data/ and /app/frontend/public/ respectively, so the shared
+# dashboard.html works on either backend with zero divergence.
 HASH=$(md5sum "$DST" | cut -c1-10)
-sed -i -E "s|(/dashboard\.compiled\.js)(\?v=[a-f0-9]+)?|\1?v=$HASH|g" "$PUB/dashboard.html"
-echo "Cache-bust dashboard.html → /dashboard.compiled.js?v=$HASH"
+sed -i -E "s|(/api)?/(assets/)?dashboard\.compiled\.js(\?v=[a-f0-9]+)?|/api/assets/dashboard.compiled.js?v=$HASH|g" "$PUB/dashboard.html"
+echo "Cache-bust dashboard.html → /api/assets/dashboard.compiled.js?v=$HASH"
 
 echo "Built $DST  ($(wc -c < "$DST" | awk '{printf "%.1f KB", $1/1024}'),  $(wc -l < "$DST") lines)"

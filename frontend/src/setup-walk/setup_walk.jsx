@@ -672,8 +672,25 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         return () => { cancelled = true; };
     }, []);
 
-    /* When the user picks a name from the datalist (or types one that
-     * exactly matches a saved entry), pull its lat/lon and recentre the
+    /* ----- saved-locations dropdown open/close state.
+     * Native <datalist> hides its chevron in most browsers (especially in
+     * a dark theme), which made the "drop down" invisible to operators
+     * who clearly had multiple saved locations.  Replaced with a custom
+     * popdown panel that has an ALWAYS-VISIBLE chevron button -- click it
+     * to toggle, click outside to dismiss. */
+    const [savedOpen, setSavedOpen] = React.useState(false);
+    const savedRef = React.useRef(null);
+    React.useEffect(() => {
+        if (!savedOpen) return;
+        const onDocClick = (e) => {
+            if (savedRef.current && !savedRef.current.contains(e.target)) setSavedOpen(false);
+        };
+        document.addEventListener('mousedown', onDocClick);
+        return () => document.removeEventListener('mousedown', onDocClick);
+    }, [savedOpen]);
+
+    /* When the user picks a name from the dropdown OR types one that
+     * exactly matches a saved entry, pull its lat/lon and recentre the
      * map.  Free-form typing still works -- the name is just kept as the
      * site label.  Avoids surprising the operator who types "Pavilion B"
      * (a label they invented) and expects the map NOT to jump. */
@@ -686,6 +703,10 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
             setCfg(c => ({...c, siteName:newName, lat, lon, city:newName}));
             if (mapRef.current) mapRef.current.setView([lat, lon], 11);
         }
+    };
+    const pickSavedLoc = (loc) => {
+        setSavedOpen(false);
+        onSiteNameChange(loc.name);
     };
 
     /* ----- search state ----- */
@@ -925,12 +946,14 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
 
                 {/* SIDE PANEL */}
                 <div className="space-y-4 overflow-y-auto pr-1">
-                    {/* User-friendly site name (the one the operator uses to identify this location).
-                        Phase L.44+ : when /api/weather-location returns one or more
-                        operator-curated entries (i.e. anything outside the bundled demo
-                        set), surface them as a native <datalist> dropdown inside this
-                        input.  Picking one auto-fills lat/lon and recentres the map;
-                        free-form typing still works for fresh labels. */}
+                    {/* Site name combo-input.  Free-form typing for fresh
+                        labels; a visible chevron button on the right opens
+                        a custom popdown listing every saved location pulled
+                        from /api/weather-location (i.e. the SAME list the
+                        Dashboard's Weather button surfaces).  This replaces
+                        the earlier native <datalist> which was too subtle
+                        in dark themes -- operators with N>0 saved entries
+                        could not tell a dropdown existed. */}
                     <div>
                         <div className="field-label mb-1.5">
                             Site name (saved)
@@ -941,24 +964,48 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                                 </span>
                             )}
                         </div>
-                        <input className="field-input" value={cfg.siteName || ''}
-                               list={savedLocs.length > 0 ? 'red5-saved-locations' : undefined}
-                               data-testid="loc-site-name-input"
-                               placeholder={savedLocs.length > 0
-                                   ? 'Pick a saved location, or type a new one…'
-                                   : 'e.g. HQ Tower, North Wing, Pavilion B…'}
-                               onChange={(e) => onSiteNameChange(e.target.value)}/>
-                        {savedLocs.length > 0 && (
-                            <datalist id="red5-saved-locations">
-                                {savedLocs.map(loc => (
-                                    <option key={loc.name} value={loc.name}>
-                                        {Number.isFinite(loc.lat) && Number.isFinite(loc.lon)
-                                            ? `${(+loc.lat).toFixed(2)}, ${(+loc.lon).toFixed(2)}`
-                                            : ''}
-                                    </option>
-                                ))}
-                            </datalist>
-                        )}
+                        <div className="relative" ref={savedRef}>
+                            <input className="field-input pr-9" value={cfg.siteName || ''}
+                                   data-testid="loc-site-name-input"
+                                   placeholder={savedLocs.length > 0
+                                       ? 'Pick a saved location, or type a new one…'
+                                       : 'e.g. HQ Tower, North Wing, Pavilion B…'}
+                                   onChange={(e) => onSiteNameChange(e.target.value)}
+                                   onFocus={() => savedLocs.length > 0 && setSavedOpen(true)}/>
+                            {savedLocs.length > 0 && (
+                                <button type="button"
+                                        data-testid="loc-saved-chevron"
+                                        onClick={() => setSavedOpen(v => !v)}
+                                        aria-label="Open saved locations"
+                                        title="Pick from saved locations"
+                                        className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-md flex items-center justify-center bg-amber-700/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                                         style={{transform: savedOpen ? 'rotate(180deg)' : 'none', transition:'transform .15s'}}>
+                                        <polyline points="6 9 12 15 18 9"/>
+                                    </svg>
+                                </button>
+                            )}
+                            {savedOpen && savedLocs.length > 0 && (
+                                <div data-testid="loc-saved-dropdown"
+                                     className="absolute z-[600] left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-2xl max-h-64 overflow-y-auto">
+                                    {savedLocs.map(loc => {
+                                        const isActive = (cfg.siteName || '').trim() === loc.name;
+                                        return (
+                                            <button key={loc.name} type="button"
+                                                    onClick={() => pickSavedLoc(loc)}
+                                                    data-testid={`loc-saved-opt-${loc.name}`}
+                                                    className={`w-full text-left px-3 py-2 border-b border-slate-800 last:border-b-0 hover:bg-amber-900/30 transition-colors
+                                                        ${isActive ? 'bg-amber-900/50' : ''}`}>
+                                                <div className="text-sm text-slate-100 truncate">{loc.name}</div>
+                                                <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                                    {loc.lat.toFixed(2)}, {loc.lon.toFixed(2)}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                         <p className="text-[10px] text-slate-500 mt-1 italic">
                             {savedLocs.length > 0
                                 ? 'Pick a previously-saved location, or type a new label for this place.'

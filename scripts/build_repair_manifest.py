@@ -44,6 +44,7 @@ ENTRIES = [
     ('modbus_bridge_service.py',    'plugin', 'Modbus TCP Bridge',        'Expose telemetry as holding registers (needs pymodbus)'),
     ('ws_bridge_service.py',        'plugin', 'WebSocket Bridge',         'Push telemetry to live clients (needs websockets)'),
     ('bacnet_diag_service.py',      'plugin', 'BACnet Diagnose Service',  '/api/bacnet/diagnose-config -- detect name-based BACnet targets'),
+    ('audit_log_service.py',        'plugin', 'Audit Log Service',        '/api/audit-log -- band-apply / write-point / repair-mode log (100 KB rotating)'),
     # The manifest itself -- listed so the operator can always replace
     # it from the UI.  sha256 is intentionally None (set at the bottom)
     # because a hash that referenced itself would be a fixed-point
@@ -61,6 +62,7 @@ ENTRIES = [
     ('data_bridges_guide.md',       'ui',     'data_bridges_guide.md',    'Plain-language Data Bridges setup guide'),
     ('opt_sa_insight.md',           'ui',     'opt_sa_insight.md',        'Opt-SA strategy explainer (6th-grader mode)'),
     ('configs/bridges.json',        'ui',     'bridges.json',             'Bridge config (broker URLs, write_allowlist, etc.)'),
+    ('js/audit_log.js',             'ui',     'audit_log.js',             'Audit-log toolbar button + popup (loaded by dashboard.html)'),
 ]
 
 # Files allow-listed for upload/download but NOT shown in the operator UI.
@@ -77,6 +79,7 @@ HOT_RELOADABLE = {
     'webhook_bridge_service.py', 'mqtt_bridge_service.py',
     'modbus_bridge_service.py',  'ws_bridge_service.py',
     'bridges_admin_service.py',  'bacnet_diag_service.py',
+    'audit_log_service.py',
 }
 
 

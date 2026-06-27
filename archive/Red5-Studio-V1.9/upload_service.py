@@ -109,6 +109,7 @@ _FALLBACK_PLUGIN_FILES = {
     'modbus_bridge_service.py', 'ws_bridge_service.py',
     'bridges_admin_service.py', '_bridges_lib.py',
     'bacnet_diag_service.py',
+    'audit_log_service.py',
 }
 _FALLBACK_UI_FILES = {
     'update.html', 'dashboard.html', 'dashboard.compiled.js',
@@ -116,6 +117,7 @@ _FALLBACK_UI_FILES = {
     'setup.html', 'setup_walk.compiled.js',
     'data_bridges_guide.md', 'opt_sa_insight.md',
     'configs/bridges.json',
+    'js/audit_log.js',
     'repair_manifest.json',  # so the manifest itself can be flashed
 }
 _FALLBACK_HOT_RELOAD = set(_FALLBACK_PLUGIN_FILES)  # all plug-ins by default
@@ -238,7 +240,7 @@ def _resolve_ui_path(name):
     if DATA_ROOT is None:
         return name
     # configs subpath is encoded directly in the manifest name.
-    if name.startswith('configs/'):
+    if name.startswith('configs/') or name.startswith('js/'):
         return os.path.join(DATA_ROOT, name)
     candidates = [os.path.join(DATA_ROOT, name)]
     if name.endswith('.md'):
@@ -1296,10 +1298,16 @@ def repair_upload_plugin():
             dest_root = PLUGINS_ROOT
             dest_label = 'pgpy'
         elif name in ui_files:
-            # configs/bridges.json lives in DATA_ROOT/configs/ -- preserve the subdir.
+            # configs/* and js/* live under their respective subdirs --
+            # preserve the subdir on disk so dashboard.html's relative
+            # `<script src="js/audit_log.js">` still resolves.
             if name.startswith('configs/'):
                 dest_root  = os.path.join(DATA_ROOT, 'configs')
                 dest_label = 'data/configs'
+                name       = os.path.basename(name)
+            elif name.startswith('js/'):
+                dest_root  = os.path.join(DATA_ROOT, 'js')
+                dest_label = 'data/js'
                 name       = os.path.basename(name)
             elif name.endswith('.md'):
                 # Resolver returns the existing file's location if one
@@ -1403,6 +1411,19 @@ def repair_upload_plugin():
             _MANIFEST_CACHE['data'] = None
             _MANIFEST_CACHE['mtime'] = 0
             _MANIFEST_CACHE['fetched_at'] = 0
+
+        # Audit-log every Repair Mode upload.  No-op when the audit
+        # plug-in isn't loaded.  Logged AFTER os.replace so we don't
+        # record the upload of a file that failed to land.
+        _als = sys.modules.get('audit_log_service')
+        if _als is not None and hasattr(_als, 'record'):
+            _als.record(
+                action='repair_upload',
+                resource=dest_label + '/' + name,
+                after={'bytes': bytes_written,
+                       'sha256_verified': bool(_manifest_lookup(name)) and name != 'repair_manifest.json',
+                       'force_override': force_override},
+            )
 
         return jsonify({
             'success': True,
@@ -1787,6 +1808,15 @@ def repair_reload_module(plugin_name):
     """HTTP wrapper around ``_reload_module_core``.  See that function's
     docstring for the full reload semantics."""
     body, code = _reload_module_core(plugin_name)
+    # Audit-log every reload (no-op if audit_log_service is not loaded).
+    _als = sys.modules.get('audit_log_service')
+    if _als is not None and hasattr(_als, 'record'):
+        _als.record(
+            action='repair_reload',
+            resource=str(plugin_name),
+            after={'http_status': code,
+                   'ok': bool(isinstance(body, dict) and body.get('success'))},
+        )
     return jsonify(body), code
 
 

@@ -829,6 +829,17 @@ def write_point():
         # The optimistic UI override is still applied (the helper checks
         # `success`, not `mock`, when caching).
         _record_write(equip_name, writes, csv_object, csv_value, True, mock=False, queued=True)
+        # Audit-log every write-point queue (no-op if audit_log_service
+        # is not loaded; failures inside record() are swallowed so the
+        # write-point response is never blocked).
+        _als = sys.modules.get('audit_log_service')
+        if _als is not None and hasattr(_als, 'record'):
+            _als.record(
+                action='write_point',
+                resource=str(equip_name),
+                after={'csv_object': csv_object, 'csv_value': csv_value,
+                       'writes': writes, 'queue_id': entry['id']},
+            )
         return jsonify({
             'success': True,
             'message': 'Queued for collector to write to ' + csv_object,

@@ -96,6 +96,28 @@
     }
   });
 
+  /* V1.9 fallback: V1.9 controllers have no /api/auth/me endpoint, so
+   * `red5-auth-resolved` never fires and the AUDIT chip would stay
+   * hidden.  Probe /api/audit-log/summary instead -- if it responds
+   * with 200 we know audit_log_service is loaded on this controller
+   * and the chip should be shown.  V1.9 has no per-user identity so
+   * the "admin only" guard does not apply (operators reach the
+   * dashboard only after the landing-page password gate). */
+  (function probeV19AuditLog() {
+    var probeBase = (window.RED5_API_BASE || '').replace(/\/$/, '') || '';
+    fetch(probeBase + '/api/audit-log/summary', { credentials: 'include' })
+      .then(function (r) {
+        if (r.status !== 200) return;
+        // Mount idempotently (the _mountButton implementation short-
+        // circuits if the button already exists, so this is safe even
+        // when /api/auth/me also resolves and fires the admin event).
+        setTimeout(_mountButton, 0);
+        setTimeout(_mountButton, 600);
+        setTimeout(_mountButton, 1500);
+      })
+      .catch(function () { /* swallow -- preview / V2.0 use the event */ });
+  })();
+
   /* ---------------- popup ----------------------------------------- */
   var _popup = null;
   var _pos   = null;

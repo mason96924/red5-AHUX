@@ -22,6 +22,7 @@ collector picks up the change on its next cycle via mtime watch).
 _service_dependencies = ['DATA_ROOT']
 
 import os
+import sys
 import json
 import time
 from flask import jsonify, request
@@ -289,10 +290,14 @@ def post_ahu_rh_bands():
     current = _read_ahu_rh_bands()
     now_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     applied = 0
+    # Snapshot the pre-apply state per AHU so the audit-log "before"
+    # column shows the operator exactly what they overwrote.
+    _audit_before_by_aid = {}
     for b in bands_in:
         aid = b.get('ahu_id')
         if not aid:
             continue
+        _audit_before_by_aid[aid] = dict(current.get(aid) or {})
         current[aid] = {
             'lo':         b.get('lo'),
             'hi':         b.get('hi'),
@@ -302,6 +307,21 @@ def post_ahu_rh_bands():
         applied += 1
     if applied:
         _write_ahu_rh_bands_atomic(current)
+        # Audit-log every successful band apply (no-op if the audit
+        # plug-in isn't loaded -- failures are swallowed inside record()).
+        _als = sys.modules.get('audit_log_service')
+        if _als is not None and hasattr(_als, 'record'):
+            for b in bands_in:
+                aid = b.get('ahu_id')
+                if not aid:
+                    continue
+                _als.record(
+                    action='band_apply',
+                    resource=str(aid),
+                    before=_audit_before_by_aid.get(aid) or None,
+                    after={'lo': b.get('lo'), 'hi': b.get('hi'),
+                           'preset_id': b.get('preset_id', 'custom')},
+                )
     return jsonify({
         'status':         'ok',
         'ahu_rh_bands':   current,

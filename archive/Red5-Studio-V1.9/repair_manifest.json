@@ -8,8 +8,8 @@
       "kind": "plugin",
       "label": "Upload Service",
       "desc": "Bundle upload + chunked endpoints + disk-status + Repair Mode",
-      "size": 85312,
-      "sha256": "857888f407551a856568213952906653c037c82a6f9289b4780070052e40111f",
+      "size": 86746,
+      "sha256": "ce9257d134f9ab546e9e92f8a1e88c38f21d43256a331d70f35a5ace6a75eb03",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -38,8 +38,8 @@
       "kind": "plugin",
       "label": "Band Overrides Service",
       "desc": "Per-tenant AHU RH band overrides + apply-to-controller",
-      "size": 10334,
-      "sha256": "93df7cd6d5b6e7bcbfd118c85b087aac5649d6d0bb90fe1449a1594eebb102f2",
+      "size": 11277,
+      "sha256": "5de368297a58662338f55186dbc1afe08eb8ff0b8b65cc304bc60bd63fdde3a8",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -48,8 +48,8 @@
       "kind": "plugin",
       "label": "Telemetry Service",
       "desc": "/api/data, /api/write-point, collector config",
-      "size": 47515,
-      "sha256": "26baf9bb9b1942c19006890c6546a99c39cc2111123421f283f1a1758624e381",
+      "size": 48076,
+      "sha256": "efd9604fad20f798c58bdda3988bec5babde993eae335a1b409bf9c162fc9923",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -124,6 +124,16 @@
       "hot_reload": true
     },
     {
+      "name": "audit_log_service.py",
+      "kind": "plugin",
+      "label": "Audit Log Service",
+      "desc": "/api/audit-log -- band-apply / write-point / repair-mode log (100 KB rotating)",
+      "size": 9712,
+      "sha256": "7dd053840593e9b93d01dc97140abfa296a96e621162457f0495225d6fc63d01",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
       "name": "repair_manifest.json",
       "kind": "ui",
       "label": "repair_manifest.json",
@@ -149,7 +159,7 @@
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
       "size": 30968,
-      "sha256": "b13e357ffc3b7b4c14602e1196989a297d39732cd020746c31a007a1be58a3f9",
+      "sha256": "f489ea2bd20b41f940f635fb7ce39881e6a060870c452cf124dcb0978472414b",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -230,6 +240,16 @@
       "desc": "Bridge config (broker URLs, write_allowlist, etc.)",
       "size": 905,
       "sha256": "24fc6f528666ddb0ab5c893875566fbe98871bc9fa06c124cddb9619c46f7218",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "js/audit_log.js",
+      "kind": "ui",
+      "label": "audit_log.js",
+      "desc": "Audit-log toolbar button + popup (loaded by dashboard.html)",
+      "size": 15289,
+      "sha256": "d4f0600ad8d0cc7ef2d5f102860cbad59ef0d8eae8fd7f76f002b918f031c996",
       "show_in_ui": true,
       "hot_reload": false
     },

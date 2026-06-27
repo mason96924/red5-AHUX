@@ -76,6 +76,44 @@ function renderSidebar(ctx) {
     const DARK_LEVEL_MIN = 1.5;
     const DARK_LEVEL_MAX = 3.0;
     const DARK_LEVEL_DEFAULT = 2.0;
+
+    // OA-condition -> B1..B10 band classifier.  Mirror of the rules
+    // defined in psy-3d-engine.js (_bandLabelOf, lines 185-197) -- kept
+    // duplicated here rather than imported because the two files load
+    // as independent script blobs on the V1.9 controller (no module
+    // graph).  Keep in sync if either side is retuned.
+    //
+    // Rules are evaluated top-to-bottom, first match wins -- so the
+    // overlapping windows (e.g. B4 30-50%RH vs B5 40-60%RH) are
+    // resolved by the order below, not by mutual exclusion.
+    const _bandLabelOf = (t, rh) => {
+        if (!Number.isFinite(t) || !Number.isFinite(rh)) return '?';
+        if (t < 5  && rh < 30)                          return 'B1';
+        if (t >= 5  && t <  15 && rh >= 30 && rh <= 60) return 'B2';
+        if (t >= 15 && t <  20 && rh < 30)              return 'B3';
+        if (t >= 18 && t <  22 && rh >= 30 && rh <= 50) return 'B4';
+        if (t >= 22 && t <= 25 && rh >= 40 && rh <= 60) return 'B5';
+        if (t >  25 && t <= 27 && rh >= 50 && rh <= 70) return 'B6';
+        if (t >  27 && t <= 32 && rh >  60 && rh <= 80) return 'B7';
+        if (t >  32 && t <= 38 && rh >  70)             return 'B8';
+        if (t >  35 && rh < 30)                         return 'B9';
+        if (t >  30 && rh > 85)                         return 'B10';
+        return '?';
+    };
+
+    // Band -> tint for the AHU-row chip.  Cool side stays blue, mid
+    // bands emerald (comfort), hot side red/orange.  Outliers grey.
+    const _bandTint = (b) => {
+        switch (b) {
+            case 'B1': case 'B2': case 'B3': return 'border-sky-500/50 text-sky-300 bg-sky-500/10';
+            case 'B4': case 'B5':            return 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10';
+            case 'B6':                       return 'border-amber-500/50 text-amber-300 bg-amber-500/10';
+            case 'B7': case 'B8': case 'B10':return 'border-rose-500/60 text-rose-300 bg-rose-500/10';
+            case 'B9':                       return 'border-red-500/60 text-red-300 bg-red-500/10';
+            default:                         return 'border-slate-500/40 text-slate-400 bg-slate-500/10';
+        }
+    };
+
     const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t } = ctx;
 
     /* ---------------- Per-AHU Apply-to-Controller state ---------------
@@ -613,6 +651,29 @@ function renderSidebar(ctx) {
                                           strokeLinejoin="round" strokeLinecap="round" />
                                 <circle cx={xOf(hist.length - 1)} cy={yOf(last)} r="1.4" fill={lineColor} />
                             </svg>
+                        );
+                    })()}
+                    {/* Band-status chip (Phase L.43, 2026-06-27) -- shows
+                        which B1..B10 band this AHU's OUTDOOR-air sample
+                        currently falls into.  `ml-auto` keeps the chip
+                        pinned to the far-right edge of the heading row
+                        even when the optional sparkline / LOCK SA /
+                        PATH chips above it are absent.  Mirrors the
+                        band rules used by the 3D WX overlay so the
+                        operator can correlate sidebar row colour with
+                        floor-plan colour without opening the chart. */}
+                    {(() => {
+                        const oa = ahu.points && ahu.points[0];
+                        const band = oa ? _bandLabelOf(Number(oa.t), Number(oa.rh)) : '?';
+                        const tintCls = _bandTint(band);
+                        const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' °C' : '--';
+                        const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + '% RH' : '--';
+                        return (
+                            <span data-testid={`ahu-band-${ahu.id}`}
+                                  title={`Outdoor-air band classification: ${band}\nOA = ${tipT} / ${tipR}\nRules mirror psy-3d-engine.js _bandLabelOf().`}
+                                  className={`ml-auto shrink-0 text-[8px] px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono ${tintCls}`}>
+                                {band}
+                            </span>
                         );
                     })()}
                 </div>

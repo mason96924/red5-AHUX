@@ -185,21 +185,26 @@ function Tile({ step, done, index, onClick }) {
  * centre (translate -50%/-50%) on the polar-computed (left%, top%).
  * ========================================================================= */
 function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
+    /* Thick coloured ring per tile -- each step keeps its accent colour
+     * (indigo/amber/emerald/pink/rose), reinforcing the colour-coded SVG
+     * icon and the heading text. */
+    const ringColor = step.iconColor;
     return (
         <button onClick={onClick}
                 data-testid={`setup-tile-${step.key}`}
                 aria-label={`Open ${step.label}`}
                 className={`circle-tile group absolute rounded-full text-center
                             flex flex-col items-center justify-center
-                            border-2 transition-all duration-200
+                            transition-all duration-200
                             ${done
-                                ? 'border-emerald-500/70 bg-slate-900/80 shadow-[0_0_24px_-6px_rgba(16,185,129,0.55)]'
-                                : 'border-slate-700/70 bg-slate-900/70 hover:bg-slate-800/80'}`}
+                                ? 'bg-slate-900/80 shadow-[0_0_30px_-6px_rgba(16,185,129,0.55)]'
+                                : 'bg-slate-900/70 hover:bg-slate-800/90'}`}
                 style={{
                     left:`${leftPct}%`, top:`${topPct}%`,
                     width:'min(22%, 168px)', aspectRatio:'1/1',
                     transform:'translate(-50%, -50%)',
-                    boxShadow: done ? undefined : `0 0 0 0 ${step.iconColor}00`,
+                    border:`6px solid ${ringColor}`,
+                    boxShadow:`0 0 0 1px ${ringColor}33, 0 8px 28px -8px ${ringColor}55`,
                 }}>
             {done && (
                 <span data-testid={`setup-tile-${step.key}-done`}

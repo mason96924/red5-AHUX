@@ -102,7 +102,12 @@ function renderSidebar(ctx) {
     };
 
     // Band -> tint for the AHU-row chip.  Cool side stays blue, mid
-    // bands emerald (comfort), hot side red/orange.  Outliers grey.
+    // bands emerald (comfort), hot side red/orange.  The `?` fallback
+    // is amber/orange to signal SAFE-MODE -- the OA is outside all
+    // defined B1..B10 windows, so the controller should fall back to
+    // ASHRAE 55 Cat A baseline setpoints rather than guess.  Amber
+    // (not red) because nothing is broken; the operator just hasn't
+    // pre-tuned this OA corner yet.
     const _bandTint = (b) => {
         switch (b) {
             case 'B1': case 'B2': case 'B3': return 'border-sky-500/50 text-sky-300 bg-sky-500/10';
@@ -110,7 +115,7 @@ function renderSidebar(ctx) {
             case 'B6':                       return 'border-amber-500/50 text-amber-300 bg-amber-500/10';
             case 'B7': case 'B8': case 'B10':return 'border-rose-500/60 text-rose-300 bg-rose-500/10';
             case 'B9':                       return 'border-red-500/60 text-red-300 bg-red-500/10';
-            default:                         return 'border-slate-500/40 text-slate-400 bg-slate-500/10';
+            default:                         return 'border-amber-500/60 text-amber-200 bg-amber-500/15 animate-pulse';
         }
     };
 
@@ -668,9 +673,26 @@ function renderSidebar(ctx) {
                         const tintCls = _bandTint(band);
                         const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' °C' : '--';
                         const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + '% RH' : '--';
+                        // Tooltip text differs for `?` (safe-mode) vs a
+                        // real band so the operator knows whether the
+                        // controller is running a pre-tuned recipe or
+                        // the ASHRAE 55 Cat A fall-back.
+                        const tip = (band === '?')
+                            ? ('OA outside all defined B1-B10 windows -- controller is in SAFE-MODE\n' +
+                               '   OA = ' + tipT + ' / ' + tipR + '\n' +
+                               'Safe-mode defaults (ASHRAE 55 Cat A baseline):\n' +
+                               '   SA dry-bulb = 21.0 deg C\n' +
+                               '   SA RH target = 50 %\n' +
+                               '   OA damper = minimum-IAQ position\n' +
+                               '   Economizer enabled iff OA enthalpy < RA enthalpy\n' +
+                               'If this AHU spends a lot of time in `?`, the band rules need\n' +
+                               'to be extended to cover this OA corner.')
+                            : ('Outdoor-air band classification: ' + band + '\n' +
+                               'OA = ' + tipT + ' / ' + tipR + '\n' +
+                               'Rules mirror psy-3d-engine.js _bandLabelOf().');
                         return (
                             <span data-testid={`ahu-band-${ahu.id}`}
-                                  title={`Outdoor-air band classification: ${band}\nOA = ${tipT} / ${tipR}\nRules mirror psy-3d-engine.js _bandLabelOf().`}
+                                  title={tip}
                                   className={`ml-auto shrink-0 text-[8px] px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono ${tintCls}`}>
                                 {band}
                             </span>

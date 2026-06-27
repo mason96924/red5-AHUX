@@ -188,8 +188,14 @@ def _manifest_allow_set(kind=None):
             out.add(e.get('name'))
     out.discard(None)
     # Always allow the manifest itself to be uploaded so a corrupt
-    # manifest can be replaced without ssh access.
-    out.add('repair_manifest.json')
+    # manifest can be replaced without ssh access -- but ONLY as a UI
+    # file, never as a plug-in.  Without this guard the upload
+    # classifier would route repair_manifest.json into PLUGINS_ROOT
+    # because plug-in is checked before ui in repair_upload_plugin,
+    # leaving DATA_ROOT/repair_manifest.json untouched and the manifest
+    # endpoint still serving the stale on-disk copy.
+    if kind in (None, 'ui'):
+        out.add('repair_manifest.json')
     return out
 
 

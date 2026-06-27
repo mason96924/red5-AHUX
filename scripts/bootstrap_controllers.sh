@@ -1,45 +1,55 @@
 #!/usr/bin/env bash
-# bootstrap_controllers.sh -- one-shot push of `repair_manifest.json` to a
-# list of V1.9 controllers.  Designed for the one-time bootstrap when
-# upgrading from a controller whose update.html does not yet have a
-# manifest row in its UI (so the operator literally cannot click Replace).
+# bootstrap_controllers.sh -- one-shot push of `upload_service.py` +
+# `repair_manifest.json` to a list of V1.9 controllers.
+#
+# What it does, per controller:
+#   1. POST upload_service.py with X-Force-Override (sha256 mismatch is
+#      expected -- we are TRYING to upgrade the very module that does
+#      the integrity check, so we cannot also satisfy it).
+#   2. POST /api/repair/reload-module/upload_service so the new routing
+#      code goes live without a Flask restart.
+#   3. POST repair_manifest.json.  The reloaded upload_service routes
+#      this to DATA_ROOT correctly (previous version misrouted it to
+#      PLUGINS_ROOT, leaving the manifest endpoint serving the stale
+#      on-disk copy).
+#   4. GET /api/repair/manifest and confirm the file count matches
+#      the freshly-built manifest in this repo.
+#
+# Idempotent: re-running on an already-bootstrapped controller is a
+# no-op (X-Force-Override silently overwrites with identical bytes,
+# reload re-imports, manifest upload writes the same content).
 #
 # Usage:
 #   bash scripts/bootstrap_controllers.sh 192.168.1.158 192.168.1.208 ...
-#
-# Or, if a controllers.txt file exists in the repo root (one IP per line,
-# blank lines and `#` comments ignored):
-#   bash scripts/bootstrap_controllers.sh
-#
-# Each push:
-#   1. POSTs the freshly-built repair_manifest.json to /api/repair/upload-plugin
-#   2. Reads the controller's manifest back and prints PASS / FAIL based on
-#      whether it now reports the expected file count
-#
-# Idempotent.  Re-running on an already-bootstrapped controller is a no-op.
+#   bash scripts/bootstrap_controllers.sh                      (uses controllers.txt)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MANIFEST="$REPO_ROOT/archive/Red5-Studio-V1.9/repair_manifest.json"
+ARCHIVE="$REPO_ROOT/archive/Red5-Studio-V1.9"
+MANIFEST="$ARCHIVE/repair_manifest.json"
+UPLOAD_SVC="$ARCHIVE/upload_service.py"
 LIST_FILE="$REPO_ROOT/controllers.txt"
 
 if [[ ! -f "$MANIFEST" ]]; then
     echo "FATAL: $MANIFEST is missing.  Run scripts/build_repair_manifest.py first."
     exit 2
 fi
+if [[ ! -f "$UPLOAD_SVC" ]]; then
+    echo "FATAL: $UPLOAD_SVC is missing."
+    exit 2
+fi
 
-# Expected entry count = lines containing `"name":` in the manifest.
 EXPECTED=$(grep -c '"name":' "$MANIFEST")
 
-# Collect controller IPs from $@ or $LIST_FILE.
+# Collect controller IPs.
 TARGETS=()
 if [[ $# -gt 0 ]]; then
     TARGETS=("$@")
 elif [[ -f "$LIST_FILE" ]]; then
     while IFS= read -r line; do
-        line="${line%%#*}"           # strip trailing comments
-        line="${line//[[:space:]]/}" # strip whitespace
+        line="${line%%#*}"
+        line="${line//[[:space:]]/}"
         [[ -z "$line" ]] && continue
         TARGETS+=("$line")
     done < "$LIST_FILE"
@@ -60,24 +70,55 @@ else
     R=''; G=''; Y=''; B=''; X=''
 fi
 
-echo "${B}Pushing $MANIFEST ($EXPECTED entries) to ${#TARGETS[@]} controller(s):${X}"
+success_in() {
+    # Match "success":true with or without whitespace.
+    grep -qE '"success":\s*true' <<< "$1" 2>/dev/null
+}
+
+echo "${B}Pushing upload_service.py + repair_manifest.json ($EXPECTED entries) to ${#TARGETS[@]} controller(s):${X}"
 
 PASS=0; FAIL=0
 for ip in "${TARGETS[@]}"; do
-    printf '  %-18s ... ' "$ip"
+    printf '  %-18s ' "$ip"
 
-    # 1. Upload the manifest.
-    UP_RESP=$(curl -s --max-time 10 -X POST \
-                   -F "file=@${MANIFEST}" \
+    # ---- step 1: upload_service.py (forced -- we change the integrity
+    # checker, so we cannot also satisfy its check) ------------------
+    UP_RESP=$(curl -s --max-time 15 -X POST \
+                   -H "X-Force-Override: 1" \
+                   -F "file=@${UPLOAD_SVC}" \
                    "http://${ip}:5001/api/repair/upload-plugin" \
                    2>&1 || true)
-    if ! grep -q '"success": true' <<< "$UP_RESP" 2>/dev/null; then
-        echo "${R}FAIL${X} (upload)  -- $UP_RESP"
-        FAIL=$((FAIL+1))
-        continue
+    if ! success_in "$UP_RESP"; then
+        echo "${R}FAIL${X}  upload_service.py -- $UP_RESP"
+        FAIL=$((FAIL+1)); continue
     fi
 
-    # 2. Read the manifest back and confirm the file count matches.
+    # ---- step 2: hot-reload so the new routing code goes live ------
+    RL_RESP=$(curl -s --max-time 15 -X POST \
+                   "http://${ip}:5001/api/repair/reload-module/upload_service" \
+                   2>&1 || true)
+    if ! success_in "$RL_RESP"; then
+        echo "${R}FAIL${X}  reload upload_service -- $RL_RESP"
+        FAIL=$((FAIL+1)); continue
+    fi
+
+    # ---- step 3: now upload the manifest.  Reloaded upload_service
+    # routes it to DATA_ROOT correctly. ------------------------------
+    MAN_RESP=$(curl -s --max-time 15 -X POST \
+                    -F "file=@${MANIFEST}" \
+                    "http://${ip}:5001/api/repair/upload-plugin" \
+                    2>&1 || true)
+    if ! success_in "$MAN_RESP"; then
+        echo "${R}FAIL${X}  repair_manifest.json -- $MAN_RESP"
+        FAIL=$((FAIL+1)); continue
+    fi
+    # Sanity-check the dest field -- previous routing bug sent it to
+    # pgpy/.  A correctly-routed manifest reports `data/`.
+    if ! grep -q '"dest":"data/repair_manifest.json"' <<< "$MAN_RESP"; then
+        echo "${Y}WARN${X}  manifest landed at $(grep -oE '"dest":"[^"]*"' <<< "$MAN_RESP")"
+    fi
+
+    # ---- step 4: read back and confirm count ------------------------
     GOT_COUNT=$(curl -s --max-time 10 "http://${ip}:5001/api/repair/manifest" \
                     | python3 -c 'import json,sys; m=json.load(sys.stdin); print(len(m.get("files") or []))' \
                     2>/dev/null || echo 0)

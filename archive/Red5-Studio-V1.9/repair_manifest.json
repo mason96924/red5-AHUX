@@ -8,8 +8,8 @@
       "kind": "plugin",
       "label": "Upload Service",
       "desc": "Bundle upload + chunked endpoints + disk-status + Repair Mode",
-      "size": 84936,
-      "sha256": "7ec8d13bd8356f25f57cb5fd416ff37ec5a4163df2d47fa0bd99a6ca9ec88aa5",
+      "size": 85312,
+      "sha256": "857888f407551a856568213952906653c037c82a6f9289b4780070052e40111f",
       "show_in_ui": true,
       "hot_reload": true
     },

@@ -215,6 +215,39 @@ def _manifest_lookup(name):
     return m.get('_by_name', {}).get(name)
 
 
+def _resolve_ui_path(name):
+    """Where does a UI / static file actually live on disk?
+
+    Mirrors app.py's `_find_standards_doc()` fallback chain so verify
+    and download don't report `.md` files as missing when they're
+    actually under `/root/data/docs/`.  Returns the first existing
+    path, or the default write location if none exists yet.
+
+    Layout reality on V1.9 controllers:
+      * `.md` standards docs  -> /root/data/docs/<name>  (preferred)
+                              -> /root/data/<name>       (legacy install)
+      * configs/bridges.json  -> /root/data/configs/bridges.json
+      * everything else       -> /root/data/<name>
+    """
+    if DATA_ROOT is None:
+        return name
+    # configs subpath is encoded directly in the manifest name.
+    if name.startswith('configs/'):
+        return os.path.join(DATA_ROOT, name)
+    candidates = [os.path.join(DATA_ROOT, name)]
+    if name.endswith('.md'):
+        # Preferred location first so writes land there if nothing on
+        # disk yet, but if the file already lives in legacy /root/data
+        # we'll keep it there to avoid orphan copies.
+        candidates.insert(0, os.path.join(DATA_ROOT, 'docs', name))
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    # Nothing on disk yet -- pick the FIRST candidate as the write
+    # destination (docs/ for .md, root for everything else).
+    return candidates[0]
+
+
 def _safe_upload_id(s):
     """Validate an upload-id is a short alphanumeric / hyphen string we
     can safely use as a filename.  Defends against path-traversal or any
@@ -1262,6 +1295,17 @@ def repair_upload_plugin():
                 dest_root  = os.path.join(DATA_ROOT, 'configs')
                 dest_label = 'data/configs'
                 name       = os.path.basename(name)
+            elif name.endswith('.md'):
+                # Resolver returns the existing file's location if one
+                # is already on disk (e.g. /root/data/docs/foo.md) so
+                # we OVERWRITE rather than create a duplicate at the
+                # legacy path.  For fresh installs this lands the file
+                # under /root/data/docs/ by default.
+                _resolved = _resolve_ui_path(name)
+                dest_root = os.path.dirname(_resolved)
+                dest_label = ('data/docs'
+                              if dest_root.rstrip('/').endswith('/docs')
+                              else 'data')
             else:
                 dest_root = DATA_ROOT
                 dest_label = 'data'
@@ -1383,7 +1427,7 @@ def repair_download_plugin(plugin_name):
     if name in plugin_files:
         path = os.path.join(PLUGINS_ROOT, name)
     elif name in ui_files:
-        path = os.path.join(DATA_ROOT, name)
+        path = _resolve_ui_path(name)
     else:
         return jsonify({'success': False, 'error': 'not in repair allow-list'}), 403
     if not os.path.isfile(path):
@@ -1432,7 +1476,7 @@ def repair_verify_deploy():
         if kind == 'plugin':
             path = os.path.join(PLUGINS_ROOT, name)
         else:
-            path = os.path.join(DATA_ROOT, name)
+            path = _resolve_ui_path(name)
         item = {'name': name, 'kind': kind, 'expected_sha256': entry.get('sha256'),
                 'expected_size': entry.get('size')}
         if not os.path.isfile(path):

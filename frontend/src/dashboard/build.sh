@@ -65,10 +65,17 @@ for m in "${MODULES[@]}"; do
 done
 
 # Babel transform (preset-env + preset-react).
+# 2026-06-27: production bundle for embedded Delta controllers.
+#   --minified   -- strip whitespace + shorten identifiers
+#   --no-comments-- drop JSDoc / banner comments
+#   (no --source-maps) -- inline source maps roughly DOUBLE the bundle
+#                         and are useless on the controller (no devtools).
+# Result: 2.1 MB -> ~380 KB, comfortably under tight flash quotas.
 node_modules/.bin/babel \
     --config-file "$CFG" \
     --no-babelrc \
-    --source-maps inline \
+    --minified \
+    --no-comments \
     "$TMP" -o "$DST"
 
 rm -f "$TMP"

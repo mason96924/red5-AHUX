@@ -110,12 +110,16 @@
             // and the original baseline (320 px) stays the comfortable max.
             const [sidebarWidth, setSidebarWidth] = useState(() => {
                 /* Sidebar now snaps to one of two widths (Phase L.41
-                   2026-06-27): SLIM (205) or FULL (320).  Any legacy
-                   in-between value in localStorage is normalised to
-                   whichever side it's closest to. */
+                   2026-06-27): SLIM (224) or FULL (320).  SLIM was
+                   bumped from 205 → 224 px so the «/» chevron icon
+                   next to the H1 title fully fits inside the
+                   sidebar (chevron's right edge sits at ~220 px from
+                   the sidebar's left edge; 224 leaves a 4 px breath).
+                   Any legacy in-between value in localStorage is
+                   normalised to whichever side it's closest to. */
                 try {
                     const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10);
-                    if (!Number.isNaN(v)) return v < 262 ? 205 : 320;
+                    if (!Number.isNaN(v)) return v < 272 ? 224 : 320;
                 } catch (e) {}
                 return 320;
             });

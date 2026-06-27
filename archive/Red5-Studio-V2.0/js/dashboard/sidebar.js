@@ -125,15 +125,15 @@ function renderSidebar(ctx) {
             const startW = sidebarWidth;
             const onMove = (mv) => {
                 /* Snap to two discrete widths (Phase L.41, 2026-06-27):
-                     SLIM (205 px)  — compact mode: AHU rows + icon tabs
-                     FULL (320 px)  — full mode: labels + preset + chips
+                     SLIM (224 px) — clipped to where the «/» chevron
+                                     icon next to the H1 title ends
+                     FULL (320 px) — full mode: labels + preset + chips
                    Threshold is the midpoint between the two so the
                    sidebar jumps as soon as the operator crosses it
                    instead of dragging through awkward in-between
-                   widths.  Anything in the 206-319 range that legacy
-                   localStorage keys may still hold is normalised here. */
+                   widths. */
                 const continuous = startW + (mv.clientX - startX);
-                const SLIM = 205, FULL = 320, MID = (SLIM + FULL) / 2;
+                const SLIM = 224, FULL = 320, MID = (SLIM + FULL) / 2;
                 const next = continuous < MID ? SLIM : FULL;
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
@@ -164,12 +164,12 @@ function renderSidebar(ctx) {
                     {!isPopped && (
                         <button
                             onClick={() => {
-                                const next = isCompact ? 320 : 205;
+                                const next = isCompact ? 320 : 224;
                                 setSidebarWidth(next);
                                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
                             }}
                             className={`w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
-                            title={isCompact ? "Expand sidebar to full width (320 px)" : "Collapse sidebar to slim width (205 px)"}
+                            title={isCompact ? "Expand sidebar to full width (320 px)" : "Collapse sidebar to slim width (224 px)"}
                             data-testid="sidebar-width-toggle-btn"
                         >
                             {isCompact ? '\u00BB' : '\u00AB'}

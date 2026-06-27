@@ -152,7 +152,30 @@ function renderSidebar(ctx) {
     <div className="p-4 pb-3 border-b border-slate-800 font-black" style={{overflow:'visible'}}>
         <div className="flex justify-between items-start">
             <div>
-                <h1 className="text-lg font-black italic uppercase tracking-tighter text-indigo-400 font-mono shadow-black whitespace-nowrap">{t('ahu_diagnostic_hub')}</h1>
+                <div className="flex items-center gap-1.5">
+                    <h1 className="text-lg font-black italic uppercase tracking-tighter text-indigo-400 font-mono shadow-black whitespace-nowrap">{t('ahu_diagnostic_hub')}</h1>
+                    {/* SLIM ↔ FULL icon-toggle (Phase L.43, 2026-06-27)
+                        — relocated next to the H1 title and stripped
+                        of its text label.  Symbol flips so the icon
+                        always points at "the OTHER mode" (» = expand,
+                        « = collapse).  Hidden in popped-out modes
+                        because the operator already picked their own
+                        surface. */}
+                    {!isPopped && (
+                        <button
+                            onClick={() => {
+                                const next = isCompact ? 320 : 205;
+                                setSidebarWidth(next);
+                                try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
+                            }}
+                            className={`w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
+                            title={isCompact ? "Expand sidebar to full width (320 px)" : "Collapse sidebar to slim width (205 px)"}
+                            data-testid="sidebar-width-toggle-btn"
+                        >
+                            {isCompact ? '\u00BB' : '\u00AB'}
+                        </button>
+                    )}
+                </div>
                 <div className="flex items-center gap-2 mt-1">
                     <p className="text-[9px] text-slate-500 tracking-widest uppercase">by Delta Controls</p>
                     {/* Telemetry Status Badge -- extracted to telemetry-status-badge.js (L.26) */}
@@ -173,26 +196,6 @@ function renderSidebar(ctx) {
                             data-testid="popout-sidebar-window-btn"
                         >
                             {'\u29C9 WIN'}
-                        </button>
-                    )}
-                    {/* SLIM ◀▶ FULL toggle pill (Phase L.41, 2026-06-27)
-                        — click-target alternative to the drag handle for
-                        flipping between the two sidebar widths.  Hides
-                        when the sidebar is popped out / floating (the
-                        operator picked their own surface in those
-                        modes). */}
-                    {!isPopped && (
-                        <button
-                            onClick={() => {
-                                const next = isCompact ? 320 : 205;
-                                setSidebarWidth(next);
-                                try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
-                            }}
-                            className={`px-1.5 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 leading-none ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
-                            title={isCompact ? "Expand sidebar to full width (320 px)" : "Collapse sidebar to slim width (205 px)"}
-                            data-testid="sidebar-width-toggle-btn"
-                        >
-                            {isCompact ? 'FULL \u25B6' : '\u25C0 SLIM'}
                         </button>
                     )}
                 </div>

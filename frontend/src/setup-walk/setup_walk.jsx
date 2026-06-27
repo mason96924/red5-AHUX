@@ -105,18 +105,18 @@ function App() {
                                     }} />
                     );
                 })}
-                {/* Optional faint pentagon-edge connector (purely decorative) */}
+                {/* Decorative ring: a single circle whose centre coincides
+                    with the centre of the pentagon and whose radius equals
+                    the pentagon vertex radius -- so its boundary passes
+                    cleanly through the centre of each tile, visually
+                    "joining" the five circles into a constellation. */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none"
                      viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                    <polygon
-                        points={STEPS.map((_, i) => {
-                            const a = (-90 + i * 72) * Math.PI / 180;
-                            return (50 + 40*Math.cos(a)) + ',' + (50 + 40*Math.sin(a));
-                        }).join(' ')}
-                        fill="none"
-                        stroke="rgba(148,163,184,0.10)"
-                        strokeWidth="0.18"
-                        strokeDasharray="0.8 0.8" />
+                    <circle cx="50" cy="50" r="40"
+                            fill="none"
+                            stroke="rgba(148,163,184,0.22)"
+                            strokeWidth="0.56"
+                            strokeDasharray="1.4 1.4" />
                 </svg>
             </div>
 
@@ -205,7 +205,7 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
                     left:`${leftPct}%`, top:`${topPct}%`,
                     width:'min(35%, 260px)', aspectRatio:'1/1',
                     transform:'translate(-50%, -50%)',
-                    border:`6px solid ${ringColor}`,
+                    border:`10px solid ${ringColor}`,
                     boxShadow:`0 0 0 1px ${ringColor}33, 0 8px 28px -8px ${ringColor}55`,
                 }}>
             {done && (

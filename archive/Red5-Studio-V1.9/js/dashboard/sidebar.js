@@ -101,6 +101,12 @@ function renderSidebar(ctx) {
     const isPoppedToWin   = !!sidebarPopoutWin;
     const isPoppedFloat   = sidebarFloating && !isPoppedToWin;
     const isPopped        = isPoppedFloat || isPoppedToWin;
+    /* Compact-mode breakpoint (Phase L.40 — 2026-06-27).  When the
+       sidebar is dragged below ~270 px, hide the per-AHU venue-preset
+       dropdown + LOCK SA / PATH chips so each AHU row collapses to a
+       single legible line.  Popped/floating mode always renders the
+       full set because the operator manually picked a larger surface. */
+    const isCompact = !isPopped && sidebarWidth < 270;
     const sidebarTree = (
 <div
     className={`${ui.sidebar} ${ui.text} ${isPopped ? '' : 'border-r ' + ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
@@ -118,7 +124,13 @@ function renderSidebar(ctx) {
             const startX = e.clientX;
             const startW = sidebarWidth;
             const onMove = (mv) => {
-                const next = Math.max(250, Math.min(400, startW + (mv.clientX - startX)));
+                /* Min is 205 px — the smallest width that keeps all 5
+                   top-icon buttons (cog · book · radio · settings ·
+                   rotate-ccw) on a single row.  Below ~270 px the
+                   sidebar enters "compact mode" and hides the per-AHU
+                   venue preset dropdown + LOCK SA / PATH chips so each
+                   AHU row stays a single line (Phase L.40, 2026-06-27). */
+                const next = Math.max(205, Math.min(400, startW + (mv.clientX - startX)));
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
             };
@@ -141,34 +153,31 @@ function renderSidebar(ctx) {
                     <p className="text-[9px] text-slate-500 tracking-widest uppercase">by Delta Controls</p>
                     {/* Telemetry Status Badge -- extracted to telemetry-status-badge.js (L.26) */}
                     {renderTelemetryStatusBadge({ telemetryStatus })}
-
+                    {/* WIN pop-out — relocated 2026-06-27 from top-right
+                        to right next to the LIVE / SIM badge so the
+                        header's right edge is free + the icon row at the
+                        top of the sidebar can shrink to its content
+                        width (used as the new 200 px min sidebar
+                        width).  Same behaviour as before: opens the
+                        sidebar in a separate window the operator can
+                        drag to an extended display. */}
+                    {!sidebarPopoutWin && (
+                        <button
+                            onClick={popOutSidebarToWindow}
+                            className={`px-1.5 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 leading-none ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-violet-500 hover:text-violet-700'}`}
+                            title="Pop the sidebar out to a separate browser window (extended display)"
+                            data-testid="popout-sidebar-window-btn"
+                        >
+                            {'\u29C9 WIN'}
+                        </button>
+                    )}
                 </div>
             </div>
             <div className="flex items-center gap-1 flex-wrap justify-end">
             {/* Plug-in health chip relocated 2026-06-27 to the Collector
-                Configuration modal → Plug-Ins tab.  The chip lived here
-                as a glance-able status indicator but rarely needed
-                attention (Flask plug-ins almost never fail post-deploy),
-                so the sidebar real estate is better used by other
-                always-visible controls.  Operators who need the
-                detailed list open the settings cog → Plug-Ins tab. */}
-            {/* Cross-window pop-out - opens a separate
-                browser window the operator can drag to an
-                extended display.  Mirrors the AHU / VAV /
-                Floor-Plan modal pattern.  Hidden when the
-                sidebar is already in a popout window
-                (operator brings it back via the "Bring
-                Back" button in the docked placeholder). */}
-            {!sidebarPopoutWin && (
-            <button
-                onClick={popOutSidebarToWindow}
-                className={`px-1.5 py-1 border rounded text-[8px] font-black uppercase tracking-wider transition-all flex-shrink-0 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:border-violet-500 hover:text-violet-700'}`}
-                title="Pop the sidebar out to a separate browser window (extended display)"
-                data-testid="popout-sidebar-window-btn"
-            >
-                {'\u29C9 WIN'}
-            </button>
-            )}
+                Configuration modal → Plug-Ins tab.  WIN button moved on
+                the same date to sit next to the LIVE / SIM badge so the
+                top-right of the sidebar header is free. */}
             {/* DIM slider relocated 2026-06-25 to the setup walk's
                 "Psy Chart Setting" page (theme + brightness now live
                 under the same RH/Givoni configuration screen).  The
@@ -418,7 +427,7 @@ function renderSidebar(ctx) {
                     </button>
                     <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`}
                        className="shrink-0 text-[8px] px-1 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-wider">DETAIL ↗</a>
-                    {isSelected && (
+                    {isSelected && !isCompact && (
                         <button data-testid={`ahu-lock-sa-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
                                 title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
@@ -426,7 +435,7 @@ function renderSidebar(ctx) {
                             {isLockedToSA ? 'SA LOCK' : 'LOCK SA'}
                         </button>
                     )}
-                    {isSelected && (
+                    {isSelected && !isCompact && (
                         <button data-testid={`ahu-path-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
                                 title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
@@ -489,10 +498,13 @@ function renderSidebar(ctx) {
                         </div> );
                     })}</div>
                     {/* Per-AHU RH venue preset (label + range + dropdown).
-                        Mockup: stores choice in localStorage under
-                        `red5_rh_preset_<ahuId>`; chart polygon wiring is a
-                        separate follow-up. */}
-                    {(() => {
+                        Hidden in compact-sidebar mode (Phase L.40 —
+                        2026-06-27) so each AHU row collapses to a
+                        single legible line when the sidebar is dragged
+                        narrow.  Stores choice in localStorage under
+                        `red5_rh_preset_<ahuId>`; the chart polygon
+                        wiring lives in renderGivoniOverlay. */}
+                    {!isCompact && (() => {
                         const PRESETS = [
                             { id:'custom',     name:'Custom',      lo:40, hi:60 },
                             { id:'office',     name:'Office',      lo:30, hi:60 },

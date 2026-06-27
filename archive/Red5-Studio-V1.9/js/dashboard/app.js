@@ -109,7 +109,7 @@
             // ("AHU DIAGNOSTIC HUB" + theme toggle) keeps a small gap at min,
             // and the original baseline (320 px) stays the comfortable max.
             const [sidebarWidth, setSidebarWidth] = useState(() => {
-                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(250, Math.min(400, v)); } catch (e) {}
+                try { const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10); if (!Number.isNaN(v)) return Math.max(205, Math.min(400, v)); } catch (e) {}
                 return 320;
             });
             const API_URL = window.API_BASE_URL || window.location.origin;

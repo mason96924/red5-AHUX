@@ -240,7 +240,7 @@ function renderSidebar(ctx) {
                     })()}
                 </div>
                 <div className="flex items-center gap-2 mt-1">
-                    <p className="text-[9px] text-slate-500 tracking-widest uppercase">DBIT</p>
+                    <p className="text-[10px] font-black text-blue-500 tracking-widest uppercase">By DIBT</p>
                     {/* Telemetry Status Badge -- extracted to telemetry-status-badge.js (L.26) */}
                     {renderTelemetryStatusBadge({ telemetryStatus })}
                     {/* WIN pop-out — relocated 2026-06-27 from top-right

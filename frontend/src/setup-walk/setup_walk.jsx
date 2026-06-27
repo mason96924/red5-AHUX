@@ -4,15 +4,15 @@ const { useState, useMemo } = React;
  * STEP DEFINITIONS — the 4 walk paths the user described
  * ========================================================================= */
 const STEPS = [
-    /* Walk order is the pentagon traversal: top → upper-right → lower-right → lower-left → upper-left */
-    { key:'psy',      label:'Psy Chart Setting',    sub:'Givoni · RH range · axis',  kind:'page',  iconColor:'#818cf8', accent:'indigo' },
-    { key:'location', label:'Location Setting',     sub:'City · lat / long',         kind:'modal', iconColor:'#fbbf24', accent:'amber'  },
-    { key:'language', label:'Language Setting',     sub:'EN · CS · CT · JP · KO · …', kind:'modal', iconColor:'#34d399', accent:'emerald'},
-    { key:'plugins',  label:'Plug-in Setting',      sub:'List · upload · modify',    kind:'modal', iconColor:'#f472b6', accent:'pink'   },
-    /* 5th vertex: Update / Repair -- jumps to /update.html (Repair Mode) which exists on
-       both V1.9 and V2.0.  Opens in a new tab so the operator can flash a plugin or apply
-       an OTA without losing their Setup Walk progress. */
-    { key:'repair',   label:'Update & Repair',      sub:'Plug-in flash · controller OTA', kind:'link', iconColor:'#fb7185', accent:'rose', href:'/update.html' },
+    /* Walk order is the pentagon traversal: top → upper-right → lower-right → lower-left → upper-left.
+       Labels intentionally drop the redundant "Setting" suffix so the
+       main heading inside each circle can render in one line at a larger
+       font weight. */
+    { key:'psy',      label:'Psy Chart',       sub:'Givoni · RH range · axis',       kind:'page',  iconColor:'#818cf8', accent:'indigo' },
+    { key:'location', label:'Location',        sub:'City · lat / long',              kind:'modal', iconColor:'#fbbf24', accent:'amber'  },
+    { key:'language', label:'Language',        sub:'EN · CS · CT · JP · KO · …',     kind:'modal', iconColor:'#34d399', accent:'emerald'},
+    { key:'plugins',  label:'Plug-in',         sub:'List · upload · modify',         kind:'modal', iconColor:'#f472b6', accent:'pink'   },
+    { key:'repair',   label:'Update & Repair', sub:'Plug-in flash · controller OTA', kind:'link', iconColor:'#fb7185', accent:'rose', href:'/update.html' },
 ];
 
 /* =========================================================================
@@ -223,11 +223,11 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
                 <TileIcon kind={step.key} color={step.iconColor} />
             </div>
             <div className="text-[10px] font-black text-slate-600 tracking-wider">0{index}</div>
-            <h3 className="text-[11px] sm:text-[12px] font-black uppercase tracking-wider px-2 leading-tight mt-0.5"
+            <h3 className="text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none mt-1.5"
                 style={{color:step.iconColor}}>
                 {step.label}
             </h3>
-            <p className="text-slate-500 text-[9px] sm:text-[10px] leading-snug px-2 mt-0.5 line-clamp-2">
+            <p className="text-slate-500 text-[10px] sm:text-[11px] leading-snug px-3 mt-1 line-clamp-2">
                 {step.sub}
             </p>
         </button>

@@ -7,13 +7,14 @@
 # It exits non-zero if V1.9 is missing any V2.0 /api/* route, blocking the
 # commit until the drift is closed.
 #
-# WIRING (one-time, on the dev machine):
+# WIRING (one-time, on the dev machine -- run from inside your checkout):
 #
-#   ln -sf /app/.emergent/pre-commit-parity.sh /app/.git/hooks/pre-commit
+#   cd <your-checkout-root>           # e.g. ~/red5-studio
+#   ln -sf "$(pwd)/.emergent/pre-commit-parity.sh" .git/hooks/pre-commit
 #
 # or if you already have a pre-commit hook, append:
 #
-#   bash /app/.emergent/pre-commit-parity.sh || exit 1
+#   bash "$(git rev-parse --show-toplevel)/.emergent/pre-commit-parity.sh" || exit 1
 #
 # OVERRIDES:
 #   - Set PARITY_SKIP=1 in env  ->  skip the check entirely (emergency only).

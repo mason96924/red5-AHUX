@@ -7,7 +7,7 @@ const STEPS = [
     /* Walk order is the pentagon traversal: top → upper-right → lower-right → lower-left → upper-left */
     { key:'psy',      label:'Psy Chart Setting',    sub:'Givoni · RH range · axis',  kind:'page',  iconColor:'#818cf8', accent:'indigo' },
     { key:'location', label:'Location Setting',     sub:'City · lat / long',         kind:'modal', iconColor:'#fbbf24', accent:'amber'  },
-    { key:'language', label:'Language Setting',     sub:'EN · FR · ES · ZH · …',     kind:'modal', iconColor:'#34d399', accent:'emerald'},
+    { key:'language', label:'Language Setting',     sub:'EN · CS · CT · JP · KO · …', kind:'modal', iconColor:'#34d399', accent:'emerald'},
     { key:'plugins',  label:'Plug-in Setting',      sub:'List · upload · modify',    kind:'modal', iconColor:'#f472b6', accent:'pink'   },
     /* 5th vertex: Update / Repair -- jumps to /update.html (Repair Mode) which exists on
        both V1.9 and V2.0.  Opens in a new tab so the operator can flash a plugin or apply
@@ -79,14 +79,16 @@ function App() {
                 pentagon.  Polar maths: angle starts at -90deg (top) and
                 steps by +72deg clockwise.  The container is height-locked
                 via aspect ratio so the pentagon stays circular on every
-                viewport.  Radius is 38 % of the container width (leaves
-                enough margin for circles' own ~22 % radius + shadow). */}
+                viewport.  Radius is 40 % of the container half-side, circle
+                diameter ~27 % of the container width -- gives a clearly
+                visible gap (~28 % of container width) between adjacent
+                circles regardless of screen size. */}
             <div className="relative mx-auto fade-up"
-                 style={{ width:'min(640px, 88vw)', aspectRatio:'1 / 1', animationDelay:'.08s' }}>
+                 style={{ width:'min(760px, 92vw)', aspectRatio:'1 / 1', animationDelay:'.08s' }}>
                 {STEPS.map((s, i) => {
                     const angleDeg = -90 + i * 72;
                     const angle = angleDeg * Math.PI / 180;
-                    const r = 38;                        // % of container half-side
+                    const r = 40;                        // % of container half-side
                     const x = 50 + r * Math.cos(angle);  // %
                     const y = 50 + r * Math.sin(angle);  // %
                     return (
@@ -109,7 +111,7 @@ function App() {
                     <polygon
                         points={STEPS.map((_, i) => {
                             const a = (-90 + i * 72) * Math.PI / 180;
-                            return (50 + 38*Math.cos(a)) + ',' + (50 + 38*Math.sin(a));
+                            return (50 + 40*Math.cos(a)) + ',' + (50 + 40*Math.sin(a));
                         }).join(' ')}
                         fill="none"
                         stroke="rgba(148,163,184,0.10)"
@@ -201,7 +203,7 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
                                 : 'bg-slate-900/70 hover:bg-slate-800/90'}`}
                 style={{
                     left:`${leftPct}%`, top:`${topPct}%`,
-                    width:'min(22%, 168px)', aspectRatio:'1/1',
+                    width:'min(27%, 200px)', aspectRatio:'1/1',
                     transform:'translate(-50%, -50%)',
                     border:`6px solid ${ringColor}`,
                     boxShadow:`0 0 0 1px ${ringColor}33, 0 8px 28px -8px ${ringColor}55`,

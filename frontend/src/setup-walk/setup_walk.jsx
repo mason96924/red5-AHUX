@@ -607,6 +607,50 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
     const markerRef = React.useRef(null);
     const [geoBusy, setGeoBusy] = React.useState(false);
 
+    /* ----- saved locations (operator-added, surfaced as a datalist on the
+     * Site-name input).  We fetch /api/weather-location once on mount and
+     * filter out the bundled demo cities so the dropdown shows ONLY what
+     * the operator has personally curated -- otherwise the suggestion list
+     * is dominated by the seed entries and feels like noise. */
+    const BUNDLED_DEFAULT_NAMES = React.useMemo(() => new Set([
+        'NRAH (Adelaide)', 'Perth Children Hospital',
+        'Hanyang Univ Hospital (Seoul)', 'Beijing Geriatric Hospital',
+        "Seattle Children's", 'New York', 'London', 'Berlin',
+        'Vancouver', 'Tokyo', 'Ulaanbaatar', 'Taipei',
+        'Hong Kong', 'Singapore', 'Sydney',
+    ]), []);
+    const [customLocs, setCustomLocs] = React.useState([]);
+    React.useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = await fetch('/api/weather-location', { credentials:'include' });
+                if (!r.ok) return;
+                const j = await r.json();
+                const saved = Array.isArray(j.saved) ? j.saved : [];
+                const customs = saved.filter(s => s && s.name && !BUNDLED_DEFAULT_NAMES.has(s.name));
+                if (!cancelled) setCustomLocs(customs);
+            } catch (e) { /* offline / anon -> no dropdown, no biggie */ }
+        })();
+        return () => { cancelled = true; };
+    }, [BUNDLED_DEFAULT_NAMES]);
+
+    /* When the user picks a name from the datalist (or types one that
+     * exactly matches a saved entry), pull its lat/lon and recentre the
+     * map.  Free-form typing still works -- the name is just kept as the
+     * site label.  Avoids surprising the operator who types "Pavilion B"
+     * (a label they invented) and expects the map NOT to jump. */
+    const onSiteNameChange = (newName) => {
+        setCfg(c => ({...c, siteName:newName}));
+        const hit = customLocs.find(s => s.name === newName);
+        if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lon)) {
+            const lat = Math.round(+hit.lat * 10000) / 10000;
+            const lon = Math.round(+hit.lon * 10000) / 10000;
+            setCfg(c => ({...c, siteName:newName, lat, lon, city:newName}));
+            if (mapRef.current) mapRef.current.setView([lat, lon], 11);
+        }
+    };
+
     /* ----- search state ----- */
     const [searchQ, setSearchQ]         = React.useState('');
     const [searchHits, setSearchHits]   = React.useState([]);
@@ -821,13 +865,45 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
 
                 {/* SIDE PANEL */}
                 <div className="space-y-4 overflow-y-auto pr-1">
-                    {/* User-friendly site name (the one the operator uses to identify this location) */}
+                    {/* User-friendly site name (the one the operator uses to identify this location).
+                        Phase L.44+ : when /api/weather-location returns one or more
+                        operator-curated entries (i.e. anything outside the bundled demo
+                        set), surface them as a native <datalist> dropdown inside this
+                        input.  Picking one auto-fills lat/lon and recentres the map;
+                        free-form typing still works for fresh labels. */}
                     <div>
-                        <div className="field-label mb-1.5">Site name (saved)</div>
+                        <div className="field-label mb-1.5">
+                            Site name (saved)
+                            {customLocs.length > 0 && (
+                                <span className="ml-2 text-amber-400/80 normal-case tracking-normal text-[10px]"
+                                      data-testid="loc-saved-hint">
+                                    ▾ {customLocs.length} saved
+                                </span>
+                            )}
+                        </div>
                         <input className="field-input" value={cfg.siteName || ''}
-                               placeholder="e.g. HQ Tower, North Wing, Pavilion B…"
-                               onChange={(e) => setCfg({...cfg, siteName:e.target.value})}/>
-                        <p className="text-[10px] text-slate-500 mt-1 italic">Your label for this place — shown on the dashboard header.</p>
+                               list={customLocs.length > 0 ? 'red5-saved-locations' : undefined}
+                               data-testid="loc-site-name-input"
+                               placeholder={customLocs.length > 0
+                                   ? 'Pick a saved location, or type a new one…'
+                                   : 'e.g. HQ Tower, North Wing, Pavilion B…'}
+                               onChange={(e) => onSiteNameChange(e.target.value)}/>
+                        {customLocs.length > 0 && (
+                            <datalist id="red5-saved-locations">
+                                {customLocs.map(loc => (
+                                    <option key={loc.name} value={loc.name}>
+                                        {Number.isFinite(loc.lat) && Number.isFinite(loc.lon)
+                                            ? `${(+loc.lat).toFixed(2)}, ${(+loc.lon).toFixed(2)}`
+                                            : ''}
+                                    </option>
+                                ))}
+                            </datalist>
+                        )}
+                        <p className="text-[10px] text-slate-500 mt-1 italic">
+                            {customLocs.length > 0
+                                ? 'Pick a previously-saved location, or type a new label for this place.'
+                                : 'Your label for this place — shown on the dashboard header.'}
+                        </p>
                     </div>
 
                     <div className="border-t border-slate-800 pt-3">

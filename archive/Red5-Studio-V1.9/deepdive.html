@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Cache-control: psy_3d.html and friends have no compiled bundle to ?v=-stamp, so the HTML itself must opt-out of browser caching. Without this, PROD users see stale UI after every deploy until they hard-refresh.  Sentinel data-cache-policy attribute is used by scripts/inject_no_cache_meta.py and deploy.sh preflight to detect missing tags.  Do NOT remove. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Delta Red5 · Deep Dive — B1–B10 Control Bands + BT1–BT12 Building Playbook</title>

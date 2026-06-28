@@ -86,6 +86,40 @@ echo
 [[ -n "$NGINX_ROOT" && -d "$NGINX_ROOT" ]] || { red "NGINX_ROOT '$NGINX_ROOT' missing"; exit 1; }
 command -v yarn >/dev/null                 || { red "yarn not installed (sudo apt-get install yarn)"; exit 1; }
 
+# --- 0a. no-cache meta preflight --------------------------------------------
+# Every *.html in frontend/public/ must carry the sentinel attribute
+# `data-cache-policy="no-cache"`.  Without it, browsers cache the HTML
+# indefinitely and PROD users see stale UI after every deploy until
+# they hard-refresh -- the 2026-06-28 psy_3d.html SA-toggle invisibility
+# bug that prompted this gate.
+#
+# Restore the tags by running:
+#   python3 scripts/inject_no_cache_meta.py
+bold "[0a/7] no-cache meta preflight (frontend/public/*.html)"
+MISSING_CACHE=()
+shopt -s nullglob
+for html in "$FRONTEND_DIR"/public/*.html; do
+    if ! grep -q 'data-cache-policy="no-cache"' "$html"; then
+        MISSING_CACHE+=("$(basename "$html")")
+    fi
+done
+shopt -u nullglob
+if [[ ${#MISSING_CACHE[@]} -gt 0 ]]; then
+    red "       ✗ ${#MISSING_CACHE[@]} HTML file(s) missing the no-cache meta tag:"
+    for f in "${MISSING_CACHE[@]}"; do
+        red "         - $f"
+    done
+    red ""
+    red "       Refusing to deploy.  Run:"
+    red "           python3 scripts/inject_no_cache_meta.py"
+    red "       commit + push, then re-run deploy.sh."
+    trap - ERR
+    exit 4
+else
+    green "       ✓ all $(ls "$FRONTEND_DIR"/public/*.html 2>/dev/null | wc -l) HTML pages tagged"
+fi
+echo
+
 # --- 0. parity preflight ----------------------------------------------------
 # Static scan of /app/backend/routes/*.py (V2.0 FastAPI) vs
 # /app/archive/Red5-Studio-V1.9/*.py (the Flask app PROD actually serves)

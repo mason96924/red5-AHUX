@@ -39,7 +39,7 @@
 
     /* ── HVAC Core Terms ── */
     ahu_diagnostic_hub:    ['AHU Diagnostic Hub','空调机组诊断中心','空調機組診斷中心','空調機診断ハブ','공조기 진단 허브'],
-    by_delta_controls:     ['by Delta Controls','by Delta Controls','by Delta Controls','by Delta Controls','by Delta Controls'],
+    by_delta_controls:     ['By DIBT','By DIBT','By DIBT','By DIBT','By DIBT'],
     oa:                    ['OA','新风','外氣','外気','외기'],
     sa:                    ['SA','送风','送風','給気','급기'],
     ra:                    ['RA','回风','回風','還気','환기'],

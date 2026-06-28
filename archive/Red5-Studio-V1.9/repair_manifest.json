@@ -274,6 +274,16 @@
       "hot_reload": false
     },
     {
+      "name": "js/i18n.js",
+      "kind": "ui",
+      "label": "i18n.js",
+      "desc": "i18n translation table (loaded by landing.html and dashboard)",
+      "size": 36011,
+      "sha256": "d8f921da5734674d4a513315abe7dac174c8cb70407fc46ad1b4326f9d1d03eb",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
       "name": "psy_3d.html",
       "kind": "ui",
       "label": "psy_3d.html",

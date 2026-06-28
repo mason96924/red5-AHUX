@@ -65,6 +65,7 @@ ENTRIES = [
     ('opt_sa_insight.md',           'ui',     'opt_sa_insight.md',        'Opt-SA strategy explainer (6th-grader mode)'),
     ('configs/bridges.json',        'ui',     'bridges.json',             'Bridge config (broker URLs, write_allowlist, etc.)'),
     ('js/audit_log.js',             'ui',     'audit_log.js',             'Audit-log toolbar button + popup (loaded by dashboard.html)'),
+    ('js/i18n.js',                  'ui',     'i18n.js',                  'i18n translation table (loaded by landing.html and dashboard)'),
 ]
 
 # Files allow-listed for upload/download but NOT shown in the operator UI.

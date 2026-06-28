@@ -1,5 +1,33 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase V2.0 — 3D Modal SA Badge (2026-02)
+
+**Brief**: User asked to plot AHU SA "matching OA" inside the 3D modal next
+to the existing OA trajectory, as a mockup. Previous agent built a standalone
+`/oa_sa_mockup.html` page which was rejected — the change must land in the
+actual 3D modal page (`/psy_3d.html`).
+
+**Delivered** (`/app/frontend/public/psy_3d.html` only):
+  * New **SA Path** toggle badge in `#toggles` (bottom-left), amber `#f59e0b`,
+    matches the styling of existing Psy Chart / Weather Path / ΔH Strip /
+    VAV CZ badges. `data-testid="psy3d-tgl-sa"`.
+  * New `saGroup` THREE.Group + `buildSAPath()` function:
+    - Plots SA as a constant point at (T_sa, W_sa) repeated along the full
+      time axis → renders as a vertical amber column through the scene.
+    - Synthesizes SA from the existing ΔH SETTINGS sliders (T_sa, RH_sa)
+      already in the control panel (defaults 13°C / 95% RH) — option (a).
+    - Adds thin amber connector segments from ~40 sampled OA points to
+      the corresponding SA timestamp ("matching OA" visual link).
+    - SA label badge `SA 13°C / 95%` floats at the top of the SA column.
+  * Hooked into `buildWeatherVis()` (auto-build on Fetch) and
+    `rebuildDeltaH()` (rebuild when SA setpoint sliders change).
+  * Registered `sa: saGroup` in the `layers` toggle map.
+  * Existing W×TIME / ΔH×TIME / T×TIME camera buttons left untouched
+    per user clarification ("do nothing on this").
+
+**Verified**: Live preview, fetch NYC 2025 year of data, SA column +
+fan-out connectors render correctly alongside the existing OA path.
+
 ## Phase V3.0-ε — Stress demo / 100-relay grid (2026-02)
 
 **Brief**: Visual + headless stress harness so the V3.0 backend can be

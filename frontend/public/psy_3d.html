@@ -186,6 +186,7 @@ canvas{display:block}
     <div class="tgl" id="tgl-comfort" onclick="toggle('comfort')"><span class="td" style="background:#10b981"></span>Comfort Zone 3D</div>
     <div class="tgl" id="tgl-dhFloor" onclick="toggle('dhFloor')"><span class="td" style="background:#f59e0b"></span>&Delta;H Strip</div>
     <div class="tgl" id="tgl-vav" onclick="toggle('vav')"><span class="td" style="background:#a78bfa"></span>VAV CZ</div>
+    <div class="tgl" id="tgl-sa" data-testid="psy3d-tgl-sa" onclick="toggle('sa')"><span class="td" style="background:#f59e0b"></span>SA Path</div>
   </div>
 
   <div id="controls">
@@ -488,6 +489,7 @@ var pathGroup=new THREE.Group();scene.add(pathGroup);
 var projGroup=new THREE.Group();scene.add(projGroup);
 var dhFloorGroup=new THREE.Group();scene.add(dhFloorGroup);
 var vavGroup=new THREE.Group();scene.add(vavGroup);
+var saGroup=new THREE.Group();scene.add(saGroup);
 var timeLabels=[];
 var weatherData=[];/* {t,rh,w,ts,frac} */
 var vavData=[];
@@ -682,6 +684,60 @@ function buildWeatherVis(locName,fromD,toD){
   });
   buildDeltaH();
   buildVAVScatter();
+  buildSAPath();
+}
+
+/* ================================================================
+   SA PATH (Supply Air trajectory matching OA time axis)
+   Synthesized from SA setpoint sliders (T_sa, RH_sa) — option (a)
+   ================================================================ */
+function buildSAPath(){
+  while(saGroup.children.length)saGroup.remove(saGroup.children[0]);
+  if(weatherData.length<2)return;
+
+  var T_sa=parseFloat(document.getElementById('in-sa-t').value)||13;
+  var RH_sa=parseFloat(document.getElementById('in-sa-rh').value)||95;
+  var W_sa=getW(T_sa,RH_sa);
+
+  var x=t2sx(T_sa),z=w2sz(W_sa);
+  var sV=[],sC=[];
+  /* SA color (amber matches existing ΔH SA reference) */
+  var col=[0.961,0.620,0.043];
+  weatherData.forEach(function(p){
+    var y=frac2sy(p.frac);
+    sV.push(x,y,z);
+    sC.push(col[0],col[1],col[2]);
+  });
+
+  /* SA points + connecting line — runs parallel to TIME axis at the SA setpoint */
+  var ptGeo=new THREE.BufferGeometry();
+  ptGeo.setAttribute('position',new THREE.Float32BufferAttribute(sV,3));
+  ptGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
+  saGroup.add(new THREE.Points(ptGeo,new THREE.PointsMaterial({size:2.4,vertexColors:true,transparent:true,opacity:.9,sizeAttenuation:true,depthWrite:false})));
+
+  var lnGeo=new THREE.BufferGeometry();
+  lnGeo.setAttribute('position',new THREE.Float32BufferAttribute(sV,3));
+  lnGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
+  saGroup.add(new THREE.Line(lnGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85})));
+
+  /* SA badge label floating at top of the SA line */
+  var lbl=mkT('SA '+T_sa.toFixed(0)+'\u00b0C / '+RH_sa.toFixed(0)+'%','#f59e0b',13);
+  lbl.position.set(x,SY+6,z);
+  saGroup.add(lbl);
+
+  /* thin connectors from a few OA samples to the SA line — visually shows the "matching OA" link */
+  var stride=Math.max(1,Math.floor(weatherData.length/40));
+  var cV=[],cC=[];
+  for(var i=0;i<weatherData.length;i+=stride){
+    var p=weatherData[i];
+    var ox=t2sx(p.t),oz=w2sz(p.w),oy=frac2sy(p.frac);
+    cV.push(ox,oy,oz, x,oy,z);
+    cC.push(col[0],col[1],col[2], col[0],col[1],col[2]);
+  }
+  var cGeo=new THREE.BufferGeometry();
+  cGeo.setAttribute('position',new THREE.Float32BufferAttribute(cV,3));
+  cGeo.setAttribute('color',new THREE.Float32BufferAttribute(cC,3));
+  saGroup.add(new THREE.LineSegments(cGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.18})));
 }
 
 /* ================================================================
@@ -878,7 +934,7 @@ function buildVAVScatter(){
 }
 
 window.rebuildDeltaH=function(){
-  if(weatherData.length>0){buildDeltaH();buildVAVScatter();}
+  if(weatherData.length>0){buildDeltaH();buildVAVScatter();buildSAPath();}
 };
 
 /* ================================================================
@@ -895,7 +951,7 @@ document.getElementById('panel-header').onclick=function(){
    CAMERA, TOGGLES, SPIN
    ================================================================ */
 var spinning=false;
-var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup};
+var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,sa:saGroup};
 
 window.toggle=function(k){var o=layers[k];if(!o)return;o.visible=!o.visible;document.getElementById('tgl-'+k).classList.toggle('off',!o.visible);};
 

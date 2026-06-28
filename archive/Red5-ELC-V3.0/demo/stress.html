@@ -170,6 +170,7 @@
       <button class="btn"         data-act="toggle">TOGGLE EACH</button>
       <button class="btn"         data-act="random">RANDOMIZE</button>
       <button class="btn chaos"   data-act="chaos" id="chaos-btn">CHAOS START</button>
+      <button class="btn danger"  data-act="panic" id="panic-btn">PANIC · ABORT ALL</button>
       <span style="flex:1"></span>
       <label style="display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
         N=<input id="n-input" type="number" min="4" max="400" value="100" style="width:60px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 8px; font-family:var(--mono);" />
@@ -262,7 +263,13 @@
   let lastSecondBucket = 0;
   let currentBucket = 0;
   let inFlight = 0;
+  let throttled = 0;
   let chaosTimer = null;
+
+  // Hard cap on concurrent in-flight fetches to prevent the browser
+  // connection pool from saturating (which makes buttons unresponsive).
+  const MAX_IN_FLIGHT = 50;
+  const pendingControllers = new Set();
 
   // ---- Grid construction --------------------------------------------
   function buildGrid() {
@@ -315,18 +322,27 @@
 
   // ---- HTTP firing --------------------------------------------------
   async function fireRelay(id, state) {
+    if (inFlight >= MAX_IN_FLIGHT) {
+      throttled++;
+      $queue.textContent = `${inFlight} in-flight · ${throttled} throttled`;
+      return;
+    }
     inFlight++;
-    $queue.textContent = `${inFlight} in-flight`;
+    $queue.textContent = `${inFlight} in-flight${throttled ? " · " + throttled + " throttled" : ""}`;
+    const ctrl = new AbortController();
+    pendingControllers.add(ctrl);
     try {
       await fetch(`/api/elc/devices/${id}/relay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state }),
+        signal: ctrl.signal,
       });
-    } catch (e) { /* WS will reveal failures */ }
+    } catch (e) { /* WS will reveal failures; aborts land here too */ }
     finally {
+      pendingControllers.delete(ctrl);
       inFlight--;
-      $queue.textContent = `${inFlight} in-flight`;
+      $queue.textContent = `${inFlight} in-flight${throttled ? " · " + throttled + " throttled" : ""}`;
     }
   }
 
@@ -355,6 +371,7 @@
         case "toggle":   fireBatch((_i, s) => s === true ? false : true); break;
         case "random":   fireBatch(() => Math.random() < 0.5); break;
         case "chaos":    toggleChaos(); break;
+        case "panic":    panic(); break;
         case "resize":   resize(); break;
       }
     });
@@ -377,8 +394,10 @@
     }
     $chaosBtn.classList.add("on");
     $chaosBtn.textContent = "CHAOS STOP";
-    // Pick a few random cells every 200ms and flip them.
+    // Pick a few random cells every 200ms and flip them — but skip the
+    // burst if we're already saturated, so in-flight can't grow unbounded.
     chaosTimer = setInterval(() => {
+      if (inFlight > MAX_IN_FLIGHT * 0.6) return;
       const k = Math.max(1, Math.floor(N / 20));
       for (let j = 0; j < k; j++) {
         const i = Math.floor(Math.random() * N);
@@ -386,6 +405,18 @@
         fireRelay(id, !(cells.get(id)?.state));
       }
     }, 200);
+  }
+
+  function panic() {
+    // Stop chaos if running.
+    if (chaosTimer) { clearInterval(chaosTimer); chaosTimer = null; $chaosBtn.classList.remove("on"); $chaosBtn.textContent = "CHAOS START"; }
+    // Abort every in-flight fetch.
+    const n = pendingControllers.size;
+    for (const ctrl of pendingControllers) { try { ctrl.abort(); } catch {} }
+    pendingControllers.clear();
+    inFlight = 0;
+    throttled = 0;
+    $queue.textContent = `0 in-flight  · aborted ${n}`;
   }
 
   // ---- WS -----------------------------------------------------------

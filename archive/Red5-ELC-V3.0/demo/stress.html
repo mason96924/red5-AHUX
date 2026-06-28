@@ -263,13 +263,34 @@
   let lastSecondBucket = 0;
   let currentBucket = 0;
   let inFlight = 0;
-  let throttled = 0;
   let chaosTimer = null;
 
-  // Hard cap on concurrent in-flight fetches to prevent the browser
-  // connection pool from saturating (which makes buttons unresponsive).
+  // Concurrency limit: at most MAX_IN_FLIGHT fetches on the network at
+  // once.  Excess calls QUEUE (semaphore-style) — they don't get dropped.
   const MAX_IN_FLIGHT = 50;
   const pendingControllers = new Set();
+  let semAvailable = MAX_IN_FLIGHT;
+  const semWaiters = [];
+
+  function semAcquire() {
+    if (semAvailable > 0) {
+      semAvailable--;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => semWaiters.push(resolve));
+  }
+  function semRelease() {
+    if (semWaiters.length > 0) {
+      semWaiters.shift()();
+    } else {
+      semAvailable++;
+    }
+  }
+  function semReset() {
+    // Reject anyone waiting (PANIC).
+    while (semWaiters.length > 0) semWaiters.shift()();   // wake them
+    semAvailable = MAX_IN_FLIGHT;
+  }
 
   // ---- Grid construction --------------------------------------------
   function buildGrid() {
@@ -322,13 +343,9 @@
 
   // ---- HTTP firing --------------------------------------------------
   async function fireRelay(id, state) {
-    if (inFlight >= MAX_IN_FLIGHT) {
-      throttled++;
-      $queue.textContent = `${inFlight} in-flight · ${throttled} throttled`;
-      return;
-    }
+    await semAcquire();
     inFlight++;
-    $queue.textContent = `${inFlight} in-flight${throttled ? " · " + throttled + " throttled" : ""}`;
+    $queue.textContent = `${inFlight} in-flight${semWaiters.length ? " · " + semWaiters.length + " queued" : ""}`;
     const ctrl = new AbortController();
     pendingControllers.add(ctrl);
     try {
@@ -342,7 +359,8 @@
     finally {
       pendingControllers.delete(ctrl);
       inFlight--;
-      $queue.textContent = `${inFlight} in-flight${throttled ? " · " + throttled + " throttled" : ""}`;
+      semRelease();
+      $queue.textContent = `${inFlight} in-flight${semWaiters.length ? " · " + semWaiters.length + " queued" : ""}`;
     }
   }
 
@@ -411,11 +429,11 @@
     // Stop chaos if running.
     if (chaosTimer) { clearInterval(chaosTimer); chaosTimer = null; $chaosBtn.classList.remove("on"); $chaosBtn.textContent = "CHAOS START"; }
     // Abort every in-flight fetch.
-    const n = pendingControllers.size;
+    const n = pendingControllers.size + semWaiters.length;
     for (const ctrl of pendingControllers) { try { ctrl.abort(); } catch {} }
     pendingControllers.clear();
+    semReset();
     inFlight = 0;
-    throttled = 0;
     $queue.textContent = `0 in-flight  · aborted ${n}`;
   }
 

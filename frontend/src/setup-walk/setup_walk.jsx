@@ -904,6 +904,28 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         if (next.length === 0) setSavedOpen(false);
     };
 
+    /* Inline rename: typing into a row's name input updates the in-memory
+     * `savedLocs` list (NOT persisted until "Save & Return").  Keyed by the
+     * row's lat/lon so two same-named entries at different coordinates can
+     * be renamed independently.  Trim is delayed until persist so the
+     * operator can keep typing without the field "snapping" mid-edit. */
+    const renameSavedLoc = (origLoc, newName) => {
+        const key = origLoc.lat.toFixed(4) + ',' + origLoc.lon.toFixed(4);
+        setSavedLocs(prev => prev.map(s =>
+            (s.lat.toFixed(4) + ',' + s.lon.toFixed(4)) === key
+                ? { ...s, name: newName }
+                : s
+        ));
+        /* If the operator is renaming the entry that is currently the
+         * "active" pick (siteName matches), keep the picker in sync. */
+        const stillSelected = (cfg.siteName || '').trim() === origLoc.name
+            && Math.abs(cfg.lat - origLoc.lat) < 1e-4
+            && Math.abs(cfg.lon - origLoc.lon) < 1e-4;
+        if (stillSelected) {
+            setCfg(c => ({...c, siteName:newName, city:newName}));
+        }
+    };
+
     /* ----- search state ----- */
     const [searchQ, setSearchQ]         = React.useState('');
     const [searchHits, setSearchHits]   = React.useState([]);
@@ -1215,11 +1237,16 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                                         /* Row is a <div role="button"> instead of <button>
                                            so the in-row trash <button> isn't nested
                                            inside another interactive element. */
-                                        const rowKey = `${loc.name}__${loc.lat.toFixed(4)},${loc.lon.toFixed(4)}`;
+                                        const rowKey = `${loc.lat.toFixed(4)},${loc.lon.toFixed(4)}`;
                                         return (
-                                            <div key={rowKey}
+                            <div key={rowKey}
                                                  role="button" tabIndex={0}
-                                                 onClick={() => pickSavedLoc(loc)}
+                                                 onClick={(e) => {
+                                                     /* Pick the row only when the operator clicks the
+                                                        coord/whitespace area, not the rename input or
+                                                        the trash button (those stopPropagation). */
+                                                     pickSavedLoc(loc);
+                                                 }}
                                                  onKeyDown={(e) => {
                                                      if (e.key === 'Enter' || e.key === ' ') {
                                                          e.preventDefault();
@@ -1230,7 +1257,30 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                                                  className={`group flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-b-0 hover:bg-amber-900/30 transition-colors cursor-pointer
                                                             ${isActive ? 'bg-amber-900/50' : ''}`}>
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="text-sm text-slate-100 truncate">{loc.name}</div>
+                                                    {/* Inline rename input -- typing here updates the
+                                                        in-memory savedLocs entry; clicking Save & Return
+                                                        persists the whole list to localStorage AND the
+                                                        server.  stopPropagation keeps a click on the input
+                                                        from triggering the row's pick handler. */}
+                                                    <input type="text"
+                                                           data-testid={`loc-saved-rename-${rowKey}`}
+                                                           value={loc.name}
+                                                           onChange={(e) => renameSavedLoc(loc, e.target.value)}
+                                                           onClick={(e) => e.stopPropagation()}
+                                                           onKeyDown={(e) => {
+                                                               /* Enter while editing keeps the dropdown
+                                                                  open -- finalising rename happens at
+                                                                  Save & Return, not on Enter. */
+                                                               if (e.key === 'Enter') {
+                                                                   e.preventDefault();
+                                                                   e.stopPropagation();
+                                                               }
+                                                           }}
+                                                           aria-label={`Rename saved location ${loc.name}`}
+                                                           className="w-full bg-transparent border-0 outline-none text-sm text-slate-100 font-medium px-0 py-0
+                                                                      focus:bg-slate-800/60 focus:px-1 focus:rounded
+                                                                      hover:bg-slate-800/40 hover:px-1 hover:rounded
+                                                                      transition-all"/>
                                                     <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                                                         {loc.lat.toFixed(2)}, {loc.lon.toFixed(2)}
                                                     </div>

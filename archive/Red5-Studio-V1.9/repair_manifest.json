@@ -148,8 +148,8 @@
       "kind": "ui",
       "label": "update.html",
       "desc": "This page (Repair Mode + Data Bridges UI)",
-      "size": 78162,
-      "sha256": "62b6f7e577abd1420bcedc9a603d16378ca9fdf7a61a05ffd425a8bd3794ea9a",
+      "size": 78173,
+      "sha256": "44a6cbad45eab610bcf5820a5fd7a988d6d11bb9e633df55f8ef617d3d32f376",
       "show_in_ui": true,
       "hot_reload": false
     },

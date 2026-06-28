@@ -760,9 +760,13 @@ function PsyControlPanel({ cfg, update, setCfg }) {
  * ========================================================================= */
 
 /* De-dup + sanity-check a raw saved-locations array (from server or
- * localStorage).  Drops entries missing a name or with non-finite lat/lon,
- * keeps the FIRST occurrence of each unique name.  Used by LocationModal's
- * Site-name datalist below. */
+ * localStorage).  Dedup key is `lat.toFixed(4),lon.toFixed(4)` -- the
+ * SAME key the dashboard's weather-settings-modal.js uses -- so the
+ * Setup Walk dropdown shows the exact same set the operator sees in
+ * the dashboard's 3D-Wx Weather button.  Two entries that share a name
+ * (e.g. "HOME" at the office and "HOME" at the apartment) but have
+ * different coordinates are BOTH kept; only true coord duplicates are
+ * collapsed.  Drops entries missing a name or with non-finite lat/lon. */
 function _normalizeLocs(arr) {
     const seen = new Set();
     const out = [];
@@ -770,10 +774,12 @@ function _normalizeLocs(arr) {
         if (!l || typeof l.name !== 'string') continue;
         const lat = +l.lat, lon = +l.lon;
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-        const key = l.name.trim();
-        if (!key || seen.has(key)) continue;
+        const name = l.name.trim();
+        if (!name) continue;
+        const key = lat.toFixed(4) + ',' + lon.toFixed(4);
+        if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ name:key, lat, lon });
+        out.push({ name, lat, lon });
     }
     return out;
 }
@@ -1193,6 +1199,33 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                                 ? 'Pick a previously-saved location, or type a new label for this place.'
                                 : 'Your label for this place — shown on the dashboard header.'}
                         </p>
+                        {/* Soft duplicate-name warning -- if the operator typed
+                            a name that already exists in the saved list AT
+                            DIFFERENT COORDINATES, surface that so they don't
+                            silently end up with two "HOME"s pointing to two
+                            different addresses (the bug operator-reported on
+                            2026-06-28: dashboard had 2× HOME, Setup Walk
+                            showed only 1).  Same coords = no warning, it's
+                            just re-selecting a known site. */}
+                        {(() => {
+                            const typed = (cfg.siteName || '').trim();
+                            if (!typed) return null;
+                            const round = (n) => (Math.round(n * 10000) / 10000).toFixed(4);
+                            const cur = round(cfg.lat) + ',' + round(cfg.lon);
+                            const conflict = savedLocs.find(s => s.name === typed
+                                                                && (round(s.lat) + ',' + round(s.lon)) !== cur);
+                            if (!conflict) return null;
+                            return (
+                                <div data-testid="loc-dup-name-warn"
+                                     className="mt-2 px-2.5 py-2 rounded-md bg-amber-950/40 border border-amber-700/50 text-[10.5px] text-amber-200 leading-snug">
+                                    <b className="text-amber-100">Same name already saved</b> at
+                                    <code className="mx-1 font-mono text-amber-100">
+                                        {conflict.lat.toFixed(2)}, {conflict.lon.toFixed(2)}
+                                    </code>.
+                                    Saving keeps both; pick from the dropdown above to switch to the existing one instead.
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     <div className="border-t border-slate-800 pt-3">

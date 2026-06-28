@@ -219,7 +219,7 @@
       "label": "setup.html",
       "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
       "size": 3995,
-      "sha256": "24dd5be3d9e1ede1b05b171169ea78d7f81ca43bd8e8b9a9b3864b025c587e83",
+      "sha256": "ed564ed0fc6535e23aa8e051a8c163d26a53b3e96e6f27777c89307e20e5827e",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -228,8 +228,8 @@
       "kind": "ui",
       "label": "setup_walk.compiled.js",
       "desc": "Setup Walk compiled React bundle (loaded by setup.html)",
-      "size": 317674,
-      "sha256": "f033705af49efca4ec8bf3505bc839b195db416bd0994c92a0048e0f10f38664",
+      "size": 323686,
+      "sha256": "782f408d5154594c37e7c13c3e61127c356eb0e89b03d5c16e0a0c506adc0dc5",
       "show_in_ui": true,
       "hot_reload": false
     },

@@ -872,6 +872,38 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         onSiteNameChange(loc.name);
     };
 
+    /* Remove a saved location from the list.  Dedup-keyed by lat/lon so two
+     * entries that share a name (e.g. "HOME" at the office vs the apartment)
+     * are addressed individually -- removing one keeps the other.  Mirrors
+     * the change to localStorage AND the server so the dashboard's Weather
+     * button sees the deletion on its next read. */
+    const removeSavedLoc = (loc) => {
+        const key = loc.lat.toFixed(4) + ',' + loc.lon.toFixed(4);
+        const next = savedLocs.filter(s => (s.lat.toFixed(4) + ',' + s.lon.toFixed(4)) !== key);
+        setSavedLocs(next);
+        try {
+            localStorage.setItem('savedWeatherLocations', JSON.stringify(next));
+        } catch (e) { /* private mode */ }
+        try {
+            window.dispatchEvent(new CustomEvent('red5:weatherLocationChanged',
+                { detail: { saved: next } }));
+        } catch (e) {}
+        /* Best-effort server sync.  Anonymous users get persisted:false back,
+         * which is fine -- the local copy already reflects the removal. */
+        fetch('/api/weather-location', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify({ saved: next }),
+        }).catch(() => { /* offline -- localStorage already updated */ });
+        /* If the operator just deleted the entry currently in the input,
+         * blank the input so a stale selection isn't accidentally saved. */
+        if ((cfg.siteName || '').trim() === loc.name) {
+            setCfg(c => ({...c, siteName:''}));
+        }
+        if (next.length === 0) setSavedOpen(false);
+    };
+
     /* ----- search state ----- */
     const [searchQ, setSearchQ]         = React.useState('');
     const [searchHits, setSearchHits]   = React.useState([]);
@@ -1177,18 +1209,51 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                                 <div data-testid="loc-saved-dropdown"
                                      className="absolute z-[600] left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-2xl max-h-64 overflow-y-auto">
                                     {savedLocs.map(loc => {
-                                        const isActive = (cfg.siteName || '').trim() === loc.name;
+                                        const isActive = (cfg.siteName || '').trim() === loc.name
+                                            && Math.abs(cfg.lat - loc.lat) < 1e-4
+                                            && Math.abs(cfg.lon - loc.lon) < 1e-4;
+                                        /* Row is a <div role="button"> instead of <button>
+                                           so the in-row trash <button> isn't nested
+                                           inside another interactive element. */
+                                        const rowKey = `${loc.name}__${loc.lat.toFixed(4)},${loc.lon.toFixed(4)}`;
                                         return (
-                                            <button key={loc.name} type="button"
-                                                    onClick={() => pickSavedLoc(loc)}
-                                                    data-testid={`loc-saved-opt-${loc.name}`}
-                                                    className={`w-full text-left px-3 py-2 border-b border-slate-800 last:border-b-0 hover:bg-amber-900/30 transition-colors
-                                                        ${isActive ? 'bg-amber-900/50' : ''}`}>
-                                                <div className="text-sm text-slate-100 truncate">{loc.name}</div>
-                                                <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                                    {loc.lat.toFixed(2)}, {loc.lon.toFixed(2)}
+                                            <div key={rowKey}
+                                                 role="button" tabIndex={0}
+                                                 onClick={() => pickSavedLoc(loc)}
+                                                 onKeyDown={(e) => {
+                                                     if (e.key === 'Enter' || e.key === ' ') {
+                                                         e.preventDefault();
+                                                         pickSavedLoc(loc);
+                                                     }
+                                                 }}
+                                                 data-testid={`loc-saved-opt-${loc.name}`}
+                                                 className={`group flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-b-0 hover:bg-amber-900/30 transition-colors cursor-pointer
+                                                            ${isActive ? 'bg-amber-900/50' : ''}`}>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm text-slate-100 truncate">{loc.name}</div>
+                                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                                        {loc.lat.toFixed(2)}, {loc.lon.toFixed(2)}
+                                                    </div>
                                                 </div>
-                                            </button>
+                                                {/* Trash button -- always rendered, faded until row-hover so it
+                                                    doesn't clutter the resting state.  stopPropagation prevents
+                                                    the row's pick handler from firing. */}
+                                                <button type="button"
+                                                        data-testid={`loc-saved-remove-${loc.name}`}
+                                                        aria-label={`Remove ${loc.name}`}
+                                                        title={`Remove ${loc.name} from saved locations`}
+                                                        onClick={(e) => { e.stopPropagation(); removeSavedLoc(loc); }}
+                                                        className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center
+                                                                   text-slate-500 hover:text-rose-300 hover:bg-rose-900/30
+                                                                   opacity-40 group-hover:opacity-100 transition-opacity">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                        <path d="M3 6h18"/>
+                                                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                                        <path d="M19 6l-1.5 13.2a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5 6"/>
+                                                        <path d="M10 11v6M14 11v6"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         );
                                     })}
                                 </div>

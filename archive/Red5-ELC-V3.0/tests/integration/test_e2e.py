@@ -85,7 +85,7 @@ async def e2e(mock_scu_server):
 async def test_ws_pushes_relaystate_event(e2e, mock_scu_server) -> None:
     stack, server = e2e
     base = f"http://127.0.0.1:{server.port}"
-    ws_url = f"ws://127.0.0.1:{server.port}/ws/elc/events"
+    ws_url = f"ws://127.0.0.1:{server.port}/api/elc/events"
 
     # Mock SCU echoes an unsolicited RelayState in response to anything.
     async def push_state(frame, writer):  # type: ignore[no-untyped-def]
@@ -125,7 +125,7 @@ async def test_ws_multiple_clients_each_get_event(e2e, mock_scu_server) -> None:
     """Fan-out must reach every connected WS client independently."""
     stack, server = e2e
     base = f"http://127.0.0.1:{server.port}"
-    ws_url = f"ws://127.0.0.1:{server.port}/ws/elc/events"
+    ws_url = f"ws://127.0.0.1:{server.port}/api/elc/events"
 
     async def push_state(frame, writer):  # type: ignore[no-untyped-def]
         wire = encode(
@@ -155,7 +155,7 @@ async def test_ws_multiple_clients_each_get_event(e2e, mock_scu_server) -> None:
 async def test_ws_disconnect_releases_subscription(e2e, mock_scu_server) -> None:
     """Closing a WS must unsubscribe from the replica."""
     stack, server = e2e
-    ws_url = f"ws://127.0.0.1:{server.port}/ws/elc/events"
+    ws_url = f"ws://127.0.0.1:{server.port}/api/elc/events"
 
     initial = stack.replica.events.subscriber_count
     async with websockets.connect(ws_url):

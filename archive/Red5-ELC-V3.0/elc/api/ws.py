@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 PER_CLIENT_QUEUE_MAX = 256
 
 
-def attach_ws(app: FastAPI, replica: Replica, *, path: str = "/ws/elc/events") -> None:
+def attach_ws(app: FastAPI, replica: Replica, *, path: str = "/api/elc/events") -> None:
     """Mount the WebSocket endpoint on `app`, subscribing to `replica`."""
 
     @app.websocket(path)

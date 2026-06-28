@@ -239,7 +239,7 @@
   let ws;
   function connectWS() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const url = `${proto}://${location.host}/ws/elc/events`;
+    const url = `${proto}://${location.host}/api/elc/events`;
     $wsFooter.textContent = `${url} · connecting…`;
     $wsPill.classList.remove("ok", "bad", "warn");
     $wsPill.classList.add("warn");

@@ -573,3 +573,99 @@ from routes.mapper import router as mapper_router  # noqa: E402
 app.include_router(mapper_router)
 from routes.maintenance import router as maintenance_router  # noqa: E402
 app.include_router(maintenance_router)
+
+
+# ---------------------------------------------------------------------------
+# Phase V3.0-δ — Red5-ELC demo mount (2026-02)
+# ---------------------------------------------------------------------------
+# Adds the V3.0 ELC protocol stack to the running backend so the demo
+# console is reachable through the existing public preview URL.  In demo
+# mode a `MockScuServer` stands in for real SCU hardware.
+#
+# Lives at:
+#   GET  /api/elc-demo/              → live console (HTML)
+#   GET  /api/elc/link               → link/connection status JSON
+#   GET  /api/elc/devices            → list of known device snapshots
+#   POST /api/elc/devices/{id}/relay → toggle a relay
+#   WS   /api/elc/events             → live event stream
+#
+# To swap MockScu for a real device, point `_build_link_kwargs()` at the
+# SCU's host/port and skip starting MockScuServer.
+# ---------------------------------------------------------------------------
+import sys as _sys  # noqa: E402
+_sys.path.insert(0, "/app/archive/Red5-ELC-V3.0")
+_sys.path.insert(0, "/app/archive/Red5-ELC-V3.0/tests")
+
+from fastapi.responses import FileResponse as _FileResponse  # noqa: E402
+from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
+
+from elc.api.rest import build_router as _build_elc_router  # noqa: E402
+from elc.api.ws import attach_ws as _attach_elc_ws  # noqa: E402
+from elc.codec import encode as _elc_encode  # noqa: E402
+from elc.codec.messages import RelaySet as _RelaySet, RelayState as _RelayState  # noqa: E402
+from elc.codec.registry import default_registry as _elc_registry  # noqa: E402
+from elc.domain.replica import Replica as _ElcReplica  # noqa: E402
+from elc.drivers.srm import SrmDriver as _SrmDriver  # noqa: E402
+from elc.transport import ScuLink as _ScuLink  # noqa: E402
+
+# MockScuServer is a test fixture, but it's import-safe (pure asyncio).
+from conftest import MockScuServer as _MockScuServer  # type: ignore  # noqa: E402
+
+_elc_state: dict[str, object] = {}
+
+
+@app.on_event("startup")
+async def _elc_startup() -> None:
+    scu = _MockScuServer()
+    await scu.start()
+
+    # Echo every RelaySet back as a RelayState so toggles light up instantly.
+    async def _echo_relay(frame, writer):  # type: ignore[no-untyped-def]
+        if frame.msg_type == _RelaySet.FLAG:
+            cmd = _RelaySet.decode(frame.payload)
+            reply = _elc_registry.encode_message(
+                _RelayState(device=cmd.device, state=cmd.state)
+            )
+            writer.write(_elc_encode(reply))
+            await writer.drain()
+    scu.on_frame(_echo_relay)
+
+    link = _ScuLink("127.0.0.1", scu.port, name="demo-scu", initial_backoff=0.2)
+    driver = _SrmDriver(link)
+    replica = _ElcReplica()
+    replica.attach(driver)
+    await link.start()
+    try:
+        await link.wait_connected(timeout=3.0)
+    except Exception as e:  # noqa: BLE001
+        print(f"[elc] link did not connect: {e}")
+
+    app.include_router(
+        _build_elc_router(driver=driver, replica=replica, link=link)
+    )
+    _attach_elc_ws(app, replica, path="/api/elc/events")
+
+    _ELC_DEMO_DIR = "/app/archive/Red5-ELC-V3.0/demo"
+    app.mount(
+        "/api/elc-demo/static",
+        _StaticFiles(directory=_ELC_DEMO_DIR),
+        name="elc-demo-static",
+    )
+
+    @app.get("/api/elc-demo/", include_in_schema=False)
+    async def _elc_demo_index() -> _FileResponse:
+        return _FileResponse(f"{_ELC_DEMO_DIR}/index.html")
+
+    _elc_state["scu"] = scu
+    _elc_state["link"] = link
+    print(f"[elc] demo mounted at /api/elc-demo/  (fake SCU on :{scu.port})")
+
+
+@app.on_event("shutdown")
+async def _elc_shutdown() -> None:
+    link = _elc_state.get("link")
+    scu = _elc_state.get("scu")
+    if link is not None:
+        await link.stop()  # type: ignore[attr-defined]
+    if scu is not None:
+        await scu.stop()  # type: ignore[attr-defined]

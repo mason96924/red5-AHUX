@@ -144,7 +144,7 @@ async def main() -> None:
 ║  Swagger UI      http://127.0.0.1:{p}/docs
 ║  Link status     http://127.0.0.1:{p}/api/elc/link
 ║  Device list     http://127.0.0.1:{p}/api/elc/devices
-║  Live events     ws://127.0.0.1:{p}/ws/elc/events
+║  Live events     ws://127.0.0.1:{p}/api/elc/events
 ╠══════════════════════════════════════════════════════════════╣
 ║  Fake SCU        127.0.0.1:{s}  (MockScuServer)
 ║  Ctrl-C to stop.

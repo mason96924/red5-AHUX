@@ -45,6 +45,23 @@ V20_ROUTES_DIR = os.path.join(REPO_ROOT, "backend", "routes")
 V19_ROOT       = os.path.join(REPO_ROOT, "archive", "Red5-Studio-V1.9")
 
 
+# ---------------------------------------------------------------------------
+# Intentional V2.0-only routes (do NOT trigger parity drift).
+#
+# V1.9 controllers are field-deployed embedded devices with strict disk
+# limits, no FastAPI runtime, and no V3.0 ELC protocol stack.  A handful
+# of /api/* endpoints exist in V2.0 *by design* and must NEVER be ported
+# back to V1.9.  Each entry below MUST carry a one-line justification.
+#
+# Add a new entry here when (and only when) you ship a V2.0-only route
+# that you have explicitly decided not to support on the embedded fleet.
+# ---------------------------------------------------------------------------
+V20_ONLY_ALLOWLIST: dict[str, str] = {
+    "/api/elc-demo":         "V3.0 ELC dev demo console (server.py mount) -- not a PROD feature",
+    "/api/elc-demo/stress":  "V3.0 100-relay stress test (server.py mount) -- not a PROD feature",
+}
+
+
 # V2.0 FastAPI decorator pattern:  @router.get("/api/foo")  or  @app.get("/api/foo")
 # captures the HTTP verb + path.  Multiline tolerant (DOTALL not needed because
 # decorators are on a single line in this codebase).
@@ -126,6 +143,13 @@ def audit() -> dict:
     if not v19:
         return {"ok": False, "error": "no V1.9 routes found -- check REPO_ROOT", "v19_dir": V19_ROOT}
 
+    # Drop intentional V2.0-only routes BEFORE diffing -- they would
+    # otherwise look like drift forever.  Keep a copy so we can show
+    # them in the report under a separate "allowlisted" section.
+    allowlist_keys = set(V20_ONLY_ALLOWLIST.keys())
+    intentional_v20_only = sorted(v20 & allowlist_keys)
+    v20 = v20 - allowlist_keys
+
     v20_only = sorted(v20 - v19)
     v19_only = sorted(v19 - v20)
     shared   = sorted(v20 & v19)
@@ -138,6 +162,7 @@ def audit() -> dict:
         "shared_count":     len(shared),
         "v20_only":         v20_only,   # routes PROD (V1.9) is missing -- the real bugs
         "v19_only":         v19_only,   # routes V2.0 doesn't have (less critical)
+        "v20_only_allowlisted": intentional_v20_only,  # by-design V2.0-only routes
     }
 
 
@@ -166,6 +191,13 @@ def _format_report(result: dict) -> str:
             lines.append("    - " + r)
         if len(result["v19_only"]) > 12:
             lines.append("    ... +" + str(len(result["v19_only"]) - 12) + " more")
+    allow = result.get("v20_only_allowlisted") or []
+    if allow:
+        lines.append("")
+        lines.append(f"[info] {len(allow)} intentional V2.0-only route(s) exempt from parity:")
+        for r in allow:
+            why = V20_ONLY_ALLOWLIST.get(r, "(no justification)")
+            lines.append(f"    - {r}    -- {why}")
     return "\n".join(lines)
 
 

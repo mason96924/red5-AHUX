@@ -1,5 +1,54 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## DEPLOYMENT TOOLING — ALWAYS REFERENCE WHEN DISCUSSING DEPLOY/PULL/GIT
+> Future agents: this app has FIRST-PARTY deployment scripts.  When the
+> user asks about pulling, deploying, restarting, or pushing to
+> controllers, ALWAYS reference these by name.  Do NOT invent generic
+> systemctl/rsync instructions.
+>
+> - **V2.0 PROD update**: `~/red5-studio/deploy.sh` (7-step pipeline:
+>   parity preflight → git pull → yarn install/build → nginx mirror →
+>   backend restart → nginx reload → health fingerprint).
+>   `--skip-parity-check` is the documented (dangerous) override.
+> - **V1.9 controller fleet push**: `scripts/bootstrap_controllers.sh`
+>   reads `controllers.txt` (one IP per line) and pushes
+>   `upload_service.py` + `repair_manifest.json` + UI files (psy_3d.html
+>   is in the UI_FILES list).  Flags: `--ui-only`, `--bootstrap-only`.
+> - **Manifest rebuild after a V1.9 file changes**:
+>   `python3 scripts/build_repair_manifest.py` (regenerates sha256s so
+>   the bootstrap script's integrity check passes).
+> - **Parity audit (used by deploy.sh step 0/7 and CI)**:
+>   `scripts/check_v19_v20_parity.py` -- intentional V2.0-only routes
+>   live in the `V20_ONLY_ALLOWLIST` dict at the top of that file with
+>   a one-line justification each.  Add an entry there (NEVER use
+>   `--skip-parity-check`) when shipping a route that is V2.0-only by
+>   design (e.g. V3.0 ELC dev console).
+
+## Phase V2.0 — Parity preflight allowlist (2026-02)
+
+**Brief**: `deploy.sh` step `[0/7] V1.9/V2.0 endpoint-parity preflight`
+was blocking every PROD deploy because the V3.0 ELC developer demo
+routes (`/api/elc-demo`, `/api/elc-demo/stress`) are intentionally
+V2.0-only -- they cannot run on V1.9 embedded controllers (no FastAPI,
+no V3.0 stack, strict disk budget).
+
+**Delivered** (`scripts/check_v19_v20_parity.py`):
+  * New `V20_ONLY_ALLOWLIST: dict[str, str]` of intentional V2.0-only
+    routes, each with a one-line justification.
+  * `audit()` subtracts the allowlist from the V2.0 set BEFORE diffing
+    -- intentional drift no longer triggers parity failure.
+  * Human report + JSON report both surface allowlisted routes under
+    an `[info] N intentional V2.0-only route(s) exempt from parity`
+    section so operators can see what is exempt and why.
+  * `deploy.sh` consumes the same JSON, so step 0/7 now passes with
+    `ok=true` while still gating real drift.
+
+**Verified**:
+  * `python3 scripts/check_v19_v20_parity.py` -> exit 0,
+    `[OK] V1.9 implements every V2.0 /api/* route.`
+  * `--json` mode: `ok=True`, `v20_only=[]`,
+    `v20_only_allowlisted=['/api/elc-demo','/api/elc-demo/stress']`.
+
 ## Phase V2.0 — 3D Modal SA Badge (2026-02)
 
 **Brief**: User asked to plot AHU SA "matching OA" inside the 3D modal next

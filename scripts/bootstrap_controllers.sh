@@ -103,7 +103,7 @@ for f in dashboard.compiled.js dashboard.html dashboard.tailwind.css update.html
          landing.html setup.html setup_walk.compiled.js \
          equipment_mapper.html psy_3d.html \
          data_bridges_guide.md opt_sa_insight.md \
-         configs/bridges.json js/audit_log.js; do
+         configs/bridges.json js/audit_log.js img/psy_silhouette.jpg; do
     p="$ARCHIVE/$f"
     [[ -f "$p" ]] && UI_FILES+=("$p")
 done

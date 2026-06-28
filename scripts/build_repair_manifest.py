@@ -56,6 +56,7 @@ ENTRIES = [
     ('dashboard.html',              'ui',     'dashboard.html',           'Main dashboard shell'),
     ('dashboard.compiled.js',       'ui',     'dashboard.compiled.js',    'Compiled React dashboard bundle (loaded by dashboard.html)'),
     ('dashboard.tailwind.css',      'ui',     'dashboard.tailwind.css',   'Pre-extracted Tailwind CSS (replaces cdn.tailwindcss.com runtime)'),
+    ('img/psy_silhouette.jpg',      'ui',     'img/psy_silhouette.jpg',   '3D psy-chart snapshot used as Setup Walk centre piece'),
     ('equipment_mapper.html',       'ui',     'equipment_mapper.html',    'Config Tool'),
     ('landing.html',                'ui',     'landing.html',             'Landing page (password / login screen)'),
     ('setup.html',                  'ui',     'setup.html',               'Setup Walk entry HTML (post-login landing on V1.9)'),

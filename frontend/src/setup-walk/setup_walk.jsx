@@ -84,6 +84,25 @@ function App() {
                 circles regardless of screen size. */}
             <div className="relative mx-auto fade-up"
                  style={{ width:'min(760px, 92vw)', aspectRatio:'1 / 1', animationDelay:'.08s' }}>
+
+                {/* Background psy-chart layer -- sized to fill the constellation
+                    circle (~78 % of container = just inside the constellation
+                    arc that joins the 5 tile centres).  Rendered FIRST so the
+                    5 tile circles (next in DOM) sit on top and obscure the
+                    portion of the chart that overlaps them.  That gives the
+                    "image recedes behind the 5 circles" effect. */}
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none overflow-hidden rounded-full"
+                     aria-hidden="true"
+                     style={{width:'78%', aspectRatio:'1/1'}}>
+                    <img src="/api/assets/img/psy_silhouette.jpg" alt=""
+                         className="absolute inset-0 w-full h-full object-cover"
+                         style={{opacity:0.78}} />
+                    {/* Dark vignette / lens -- pulls the centre down so the
+                        N/5 DONE counter that lives ON TOP stays readable. */}
+                    <div className="absolute inset-0"
+                         style={{background:'radial-gradient(circle at center, rgba(2,6,23,0.60) 0%, rgba(2,6,23,0.35) 55%, rgba(2,6,23,0.10) 100%)'}}/>
+                </div>
+
                 {STEPS.map((s, i) => {
                     const angleDeg = -90 + i * 72;
                     const angle = angleDeg * Math.PI / 180;
@@ -141,71 +160,23 @@ function App() {
                             mask="url(#pentagon-ring-mask)" />
                 </svg>
 
-                {/* Centred completion counter -- sits at the centroid of
-                    the constellation, font weight matched to the per-tile
-                    heading so the eye reads it as the dominant status.
-                    A translucent psy-chart silhouette sits BEHIND it for
-                    brand reinforcement (the dashboard's psychrometric
-                    chart is the core visual identity of Red5). */}
+                {/* Centred completion counter -- sits at the centroid of the
+                    pentagon, font weight matched to the per-tile heading so the
+                    eye reads it as the dominant status.  Rendered LAST so it
+                    sits on top of both the psy-chart silhouette and the tile
+                    circles. */}
+                {/* N/5 DONE text -- own absolute layer rendered AFTER the
+                    tile circles so it always sits on top. */}
                 <div data-testid="setup-progress-center"
-                     className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none flex flex-col items-center justify-center"
-                     style={{width:'70%', maxWidth:'460px', aspectRatio:'200 / 160'}}>
-                    {/* Psy-chart silhouette layer.  Inline SVG (no external
-                        asset needed) drawn at ~60 % opacity so the chart is
-                        clearly readable as Red5's psy chart while still
-                        sitting *behind* the N/5 DONE counter. */}
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none"
-                         viewBox="0 0 200 160" preserveAspectRatio="xMidYMid meet" aria-hidden="true"
-                         style={{opacity:0.60}}>
-                        {/* 3D perspective floor (trapezoid) */}
-                        <polygon points="40,110 160,110 175,135 25,135"
-                                 fill="rgba(56,189,248,0.18)"
-                                 stroke="rgba(148,163,184,0.85)" strokeWidth="0.8"/>
-                        {/* Back wall outline */}
-                        <polygon points="40,40 160,40 160,110 40,110"
-                                 fill="none" stroke="rgba(148,163,184,0.75)" strokeWidth="0.8"/>
-                        {/* Saturation curve (signature shape of every psy chart) */}
-                        <path d="M40,108 Q70,80 100,55 T160,30"
-                              fill="none" stroke="rgba(56,189,248,1.0)" strokeWidth="2.0" strokeLinecap="round"/>
-                        {/* Constant-RH curves underneath the saturation line */}
-                        <path d="M40,114 Q72,95 102,75 T160,55"
-                              fill="none" stroke="rgba(56,189,248,0.75)" strokeWidth="1.1"/>
-                        <path d="M40,118 Q74,108 104,93 T160,78"
-                              fill="none" stroke="rgba(56,189,248,0.55)" strokeWidth="1.0"/>
-                        {/* Givoni comfort polygon -- the bread & butter of Red5 */}
-                        <polygon points="80,82 110,82 118,98 96,104 75,98"
-                                 fill="rgba(34,197,94,0.45)"
-                                 stroke="rgba(34,197,94,1.0)" strokeWidth="1.1"/>
-                        {/* Faint enthalpy diagonals */}
-                        <line x1="40" y1="108" x2="92" y2="40"
-                              stroke="rgba(251,191,36,0.55)" strokeWidth="0.6" strokeDasharray="2 2"/>
-                        <line x1="60" y1="108" x2="120" y2="40"
-                              stroke="rgba(251,191,36,0.55)" strokeWidth="0.6" strokeDasharray="2 2"/>
-                        <line x1="80" y1="108" x2="148" y2="40"
-                              stroke="rgba(251,191,36,0.55)" strokeWidth="0.6" strokeDasharray="2 2"/>
-                        {/* Sun corner glyph (tiny, top-right) */}
-                        <circle cx="150" cy="48" r="3.5" fill="rgba(251,191,36,1.0)"/>
-                        <g stroke="rgba(251,191,36,0.95)" strokeWidth="0.9" strokeLinecap="round">
-                            <line x1="150" y1="40" x2="150" y2="42"/>
-                            <line x1="150" y1="54" x2="150" y2="56"/>
-                            <line x1="142" y1="48" x2="144" y2="48"/>
-                            <line x1="156" y1="48" x2="158" y2="48"/>
-                            <line x1="144.5" y1="42.5" x2="146" y2="44"/>
-                            <line x1="154" y1="52" x2="155.5" y2="53.5"/>
-                            <line x1="155.5" y1="42.5" x2="154" y2="44"/>
-                            <line x1="146" y1="52" x2="144.5" y2="53.5"/>
-                        </g>
-                    </svg>
-
-                    {/* N/5 DONE text on top */}
-                    <div className="relative">
-                        <div className={`text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none
-                                         ${completeCount === 5 ? 'text-emerald-400' : 'text-slate-200'}`}>
-                            {completeCount}/5
-                        </div>
-                        <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.3em] text-slate-500 mt-2">
-                            Done
-                        </div>
+                     className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none">
+                    <div className={`text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none
+                                     ${completeCount === 5 ? 'text-emerald-400' : 'text-white'}`}
+                         style={{textShadow:'0 2px 12px rgba(2,6,23,0.85), 0 0 4px rgba(2,6,23,0.85)'}}>
+                        {completeCount}/5
+                    </div>
+                    <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.3em] text-slate-300 mt-2"
+                         style={{textShadow:'0 1px 6px rgba(2,6,23,0.85)'}}>
+                        Done
                     </div>
                 </div>
             </div>
@@ -289,8 +260,8 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
                             flex flex-col items-center justify-center
                             transition-all duration-200
                             ${done
-                                ? 'bg-slate-900/80 shadow-[0_0_30px_-6px_rgba(16,185,129,0.55)]'
-                                : 'bg-slate-900/70 hover:bg-slate-800/90'}`}
+                                ? 'bg-slate-900 shadow-[0_0_30px_-6px_rgba(16,185,129,0.55)]'
+                                : 'bg-slate-900 hover:bg-slate-800'}`}
                 style={{
                     left:`${leftPct}%`, top:`${topPct}%`,
                     width:'min(35%, 260px)', aspectRatio:'1/1',

@@ -107,16 +107,35 @@ function App() {
                 })}
                 {/* Decorative ring: a single circle whose centre coincides
                     with the centre of the pentagon and whose radius equals
-                    the pentagon vertex radius -- so its boundary passes
-                    cleanly through the centre of each tile, visually
-                    "joining" the five circles into a constellation. */}
+                    the pentagon vertex radius -- its boundary passes
+                    cleanly through the centre of each tile.  The mask
+                    cuts out the disk of every tile circle so the ring is
+                    visible ONLY in the gaps between tiles, never crossing
+                    a tile interior. */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none"
                      viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <defs>
+                        <mask id="pentagon-ring-mask" maskUnits="userSpaceOnUse"
+                              x="0" y="0" width="100" height="100">
+                            <rect x="0" y="0" width="100" height="100" fill="white" />
+                            {STEPS.map((_, i) => {
+                                const a = (-90 + i * 72) * Math.PI / 180;
+                                const cx = 50 + 40 * Math.cos(a);
+                                const cy = 50 + 40 * Math.sin(a);
+                                /* 17.5 % radius = same as the tile circle's
+                                   half-width (35 % diameter); +0.5 % nudge
+                                   keeps the mask edge inside the coloured
+                                   ring so the white arc doesn't ALMOST-touch
+                                   the ring border with anti-aliased fringe. */
+                                return <circle key={i} cx={cx} cy={cy} r="18" fill="black" />;
+                            })}
+                        </mask>
+                    </defs>
                     <circle cx="50" cy="50" r="40"
                             fill="none"
-                            stroke="rgba(148,163,184,0.22)"
+                            stroke="rgba(255,255,255,0.85)"
                             strokeWidth="0.56"
-                            strokeDasharray="1.4 1.4" />
+                            mask="url(#pentagon-ring-mask)" />
                 </svg>
             </div>
 

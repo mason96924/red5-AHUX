@@ -1326,6 +1326,13 @@ def repair_upload_plugin():
                 dest_root  = os.path.join(DATA_ROOT, 'js')
                 dest_label = 'data/js'
                 name       = os.path.basename(name)
+            elif name.startswith('img/'):
+                # img/* lives under /root/data/img/ -- preserve the subdir so
+                # dashboard.html's `<img src="/api/assets/img/...">` resolves
+                # via the existing /api/assets/<path:filename> route.
+                dest_root  = os.path.join(DATA_ROOT, 'img')
+                dest_label = 'data/img'
+                name       = os.path.basename(name)
             elif name.endswith('.md'):
                 # Resolver returns the existing file's location if one
                 # is already on disk (e.g. /root/data/docs/foo.md) so

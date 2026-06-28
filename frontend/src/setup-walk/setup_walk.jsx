@@ -143,15 +143,69 @@ function App() {
 
                 {/* Centred completion counter -- sits at the centroid of
                     the constellation, font weight matched to the per-tile
-                    heading so the eye reads it as the dominant status. */}
+                    heading so the eye reads it as the dominant status.
+                    A translucent psy-chart silhouette sits BEHIND it for
+                    brand reinforcement (the dashboard's psychrometric
+                    chart is the core visual identity of Red5). */}
                 <div data-testid="setup-progress-center"
-                     className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none">
-                    <div className={`text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none
-                                     ${completeCount === 5 ? 'text-emerald-400' : 'text-slate-300'}`}>
-                        {completeCount}/5
-                    </div>
-                    <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.3em] text-slate-500 mt-2">
-                        Done
+                     className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none flex flex-col items-center justify-center"
+                     style={{width:'58%', maxWidth:'400px', aspectRatio:'200 / 160'}}>
+                    {/* Psy-chart silhouette layer.  Inline SVG (no external
+                        asset needed) drawn at ~32 % opacity so the N/5 DONE
+                        text on top stays the dominant element but the
+                        chart shape is clearly readable as "Red5's psy chart". */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none"
+                         viewBox="0 0 200 160" preserveAspectRatio="xMidYMid meet" aria-hidden="true"
+                         style={{opacity:0.35}}>
+                        {/* 3D perspective floor (trapezoid) */}
+                        <polygon points="40,110 160,110 175,135 25,135"
+                                 fill="rgba(56,189,248,0.10)"
+                                 stroke="rgba(148,163,184,0.55)" strokeWidth="0.6"/>
+                        {/* Back wall outline */}
+                        <polygon points="40,40 160,40 160,110 40,110"
+                                 fill="none" stroke="rgba(148,163,184,0.45)" strokeWidth="0.6"/>
+                        {/* Saturation curve (signature shape of every psy chart) */}
+                        <path d="M40,108 Q70,80 100,55 T160,30"
+                              fill="none" stroke="rgba(56,189,248,0.95)" strokeWidth="1.4" strokeLinecap="round"/>
+                        {/* Constant-RH curves underneath the saturation line */}
+                        <path d="M40,114 Q72,95 102,75 T160,55"
+                              fill="none" stroke="rgba(56,189,248,0.55)" strokeWidth="0.8"/>
+                        <path d="M40,118 Q74,108 104,93 T160,78"
+                              fill="none" stroke="rgba(56,189,248,0.35)" strokeWidth="0.8"/>
+                        {/* Givoni comfort polygon -- the bread & butter of Red5 */}
+                        <polygon points="80,82 110,82 118,98 96,104 75,98"
+                                 fill="rgba(34,197,94,0.30)"
+                                 stroke="rgba(34,197,94,0.85)" strokeWidth="0.8"/>
+                        {/* Faint enthalpy diagonals */}
+                        <line x1="40" y1="108" x2="92" y2="40"
+                              stroke="rgba(251,191,36,0.30)" strokeWidth="0.4" strokeDasharray="2 2"/>
+                        <line x1="60" y1="108" x2="120" y2="40"
+                              stroke="rgba(251,191,36,0.30)" strokeWidth="0.4" strokeDasharray="2 2"/>
+                        <line x1="80" y1="108" x2="148" y2="40"
+                              stroke="rgba(251,191,36,0.30)" strokeWidth="0.4" strokeDasharray="2 2"/>
+                        {/* Sun corner glyph (tiny, top-right) */}
+                        <circle cx="150" cy="48" r="3" fill="rgba(251,191,36,0.85)"/>
+                        <g stroke="rgba(251,191,36,0.75)" strokeWidth="0.6" strokeLinecap="round">
+                            <line x1="150" y1="40" x2="150" y2="42"/>
+                            <line x1="150" y1="54" x2="150" y2="56"/>
+                            <line x1="142" y1="48" x2="144" y2="48"/>
+                            <line x1="156" y1="48" x2="158" y2="48"/>
+                            <line x1="144.5" y1="42.5" x2="146" y2="44"/>
+                            <line x1="154" y1="52" x2="155.5" y2="53.5"/>
+                            <line x1="155.5" y1="42.5" x2="154" y2="44"/>
+                            <line x1="146" y1="52" x2="144.5" y2="53.5"/>
+                        </g>
+                    </svg>
+
+                    {/* N/5 DONE text on top */}
+                    <div className="relative">
+                        <div className={`text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none
+                                         ${completeCount === 5 ? 'text-emerald-400' : 'text-slate-200'}`}>
+                            {completeCount}/5
+                        </div>
+                        <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.3em] text-slate-500 mt-2">
+                            Done
+                        </div>
                     </div>
                 </div>
             </div>

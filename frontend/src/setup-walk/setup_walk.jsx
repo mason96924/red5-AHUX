@@ -277,11 +277,11 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
             )}
             <div className="rounded-xl flex items-center justify-center mb-1"
                  style={{
-                    width:'34%', aspectRatio:'1/1',
+                    width:'50%', aspectRatio:'1/1',
                     background:`${step.iconColor}22`,
                     border:`1px solid ${step.iconColor}55`,
                  }}>
-                <TileIcon kind={step.key} color={step.iconColor} />
+                <TileIcon kind={step.key} color={step.iconColor} size={44} />
             </div>
             <div className="text-[10px] font-black text-slate-600 tracking-wider">0{index}</div>
             <h3 className="text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none mt-1.5"
@@ -295,15 +295,17 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
     );
 }
 
-function TileIcon({ kind, color }) {
-    /* simple inline SVGs so we keep the file self-contained */
+function TileIcon({ kind, color, size = 22 }) {
+    /* simple inline SVGs so we keep the file self-contained.  `size`
+       prop lets the pentagon CircleTile request a 2× icon (44 px) while
+       keeping the older grid Tile at the original 22 px. */
     const stroke = { stroke:color, fill:'none', strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round' };
-    if (kind === 'psy')      return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M3 3v18h18"/><path d="M3 17c4-1 7-6 9-9s5-3 9-2"/></svg>;
-    if (kind === 'location') return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M12 22s-7-6.4-7-12a7 7 0 1 1 14 0c0 5.6-7 12-7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>;
-    if (kind === 'language') return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>;
-    if (kind === 'plugins')  return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M9 3v6M15 3v6"/><path d="M5 9h14v6a4 4 0 0 1-4 4h-1v3M9 19v3"/></svg>;
+    if (kind === 'psy')      return <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}><path d="M3 3v18h18"/><path d="M3 17c4-1 7-6 9-9s5-3 9-2"/></svg>;
+    if (kind === 'location') return <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}><path d="M12 22s-7-6.4-7-12a7 7 0 1 1 14 0c0 5.6-7 12-7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>;
+    if (kind === 'language') return <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>;
+    if (kind === 'plugins')  return <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}><path d="M9 3v6M15 3v6"/><path d="M5 9h14v6a4 4 0 0 1-4 4h-1v3M9 19v3"/></svg>;
     /* Update & Repair -- wrench + tiny gear bump, signalling "tools" */
-    if (kind === 'repair')   return <svg width="22" height="22" viewBox="0 0 24 24" {...stroke}><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.8 2.8L13 11l-1.1-1.9 2.8-2.8z"/></svg>;
+    if (kind === 'repair')   return <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.8 2.8L13 11l-1.1-1.9 2.8-2.8z"/></svg>;
     return null;
 }
 

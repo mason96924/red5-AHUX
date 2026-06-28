@@ -101,7 +101,7 @@ for f in dashboard.compiled.js dashboard.html dashboard.tailwind.css update.html
          webhook_bridge_service.py mqtt_bridge_service.py \
          modbus_bridge_service.py ws_bridge_service.py \
          landing.html setup.html setup_walk.compiled.js \
-         equipment_mapper.html psy_3d.html \
+         equipment_mapper.html psy_3d.html js/psy-3d-engine.js \
          data_bridges_guide.md opt_sa_insight.md \
          configs/bridges.json js/audit_log.js js/i18n.js img/psy_silhouette.jpg; do
     p="$ARCHIVE/$f"

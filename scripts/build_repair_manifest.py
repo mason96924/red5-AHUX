@@ -71,6 +71,7 @@ ENTRIES = [
 # Files allow-listed for upload/download but NOT shown in the operator UI.
 EXTRA_ALLOWED_NOT_IN_UI = [
     ('psy_3d.html',                 'ui',     'psy_3d.html',              '3D psychrometric chart (niche tool)'),
+    ('js/psy-3d-engine.js',         'ui',     'psy-3d-engine.js',         '3D psychrometric engine (loaded by dashboard.html 3D-WX tab + psy_3d.html)'),
 ]
 
 # Subset of plug-ins whose register() functions are safe to hot-reload via

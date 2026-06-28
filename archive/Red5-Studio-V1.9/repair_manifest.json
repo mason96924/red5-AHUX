@@ -48,8 +48,8 @@
       "kind": "plugin",
       "label": "Telemetry Service",
       "desc": "/api/data, /api/write-point, collector config",
-      "size": 48076,
-      "sha256": "efd9604fad20f798c58bdda3988bec5babde993eae335a1b409bf9c162fc9923",
+      "size": 50721,
+      "sha256": "35d5c258200af62fecfd92610c65e3b348cbec5af63c15e4120f76fe686a0b48",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -148,8 +148,8 @@
       "kind": "ui",
       "label": "update.html",
       "desc": "This page (Repair Mode + Data Bridges UI)",
-      "size": 78173,
-      "sha256": "44a6cbad45eab610bcf5820a5fd7a988d6d11bb9e633df55f8ef617d3d32f376",
+      "size": 78733,
+      "sha256": "2e52c7e8c84104d7b0f4b62b8808ba13acf05144a46a1bc419798e5d52787e37",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -158,8 +158,8 @@
       "kind": "ui",
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
-      "size": 30995,
-      "sha256": "42438397b16a2eb65d57204c20ec0ee66f99396ccc55c2aafde3731f39e62366",
+      "size": 31555,
+      "sha256": "50fe40e468482150fd5b8cfb9024f916159b9703d941af98778effd7b84ebe97",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -198,8 +198,8 @@
       "kind": "ui",
       "label": "equipment_mapper.html",
       "desc": "Config Tool",
-      "size": 444599,
-      "sha256": "4043bd28b7b8b15c05feb152172057becd3e54e2e41fa88162e007fad60f9f94",
+      "size": 445159,
+      "sha256": "028e12ed2a6ab9e3039902480f76348ad48fce8ee369bad5668fd68af28a8bef",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -208,8 +208,8 @@
       "kind": "ui",
       "label": "landing.html",
       "desc": "Landing page (password / login screen)",
-      "size": 12633,
-      "sha256": "c1669a0ab5460f41af6780972d4a5af96cb446a2000ad41ac2e00ee21272f0e1",
+      "size": 13193,
+      "sha256": "dfe9d7bd766766f51b2a070aa14c5222155399842bba508cd481b87c4ac3640c",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -218,8 +218,8 @@
       "kind": "ui",
       "label": "setup.html",
       "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
-      "size": 3995,
-      "sha256": "acc75ad426e15656059d7ec61d2616a478af73782fda31f5f6a5d0b35341665c",
+      "size": 4555,
+      "sha256": "a7c56d0ff4cd4ef64d05a935ba349bd8da25913f6088aa59616ae57cf77fe016",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -288,8 +288,18 @@
       "kind": "ui",
       "label": "psy_3d.html",
       "desc": "3D psychrometric chart (niche tool)",
-      "size": 77322,
-      "sha256": "fbce2307f67ebc7ae8499f833d72da7735d0d7a23f4a6fbddff9c38082c215af",
+      "size": 80556,
+      "sha256": "1270a7f61782d6550c62fe828d3cb2df11806dcd9c41d51c7b7d45fbd581d271",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/psy-3d-engine.js",
+      "kind": "ui",
+      "label": "psy-3d-engine.js",
+      "desc": "3D psychrometric engine (loaded by dashboard.html 3D-WX tab + psy_3d.html)",
+      "size": 430935,
+      "sha256": "ccd8f403ce49fdb7562b36a0d7a03ab3728f16a535210cec79d22c372956cdcf",
       "show_in_ui": false,
       "hot_reload": false
     }

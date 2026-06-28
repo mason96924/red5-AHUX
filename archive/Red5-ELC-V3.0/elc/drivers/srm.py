@@ -6,7 +6,7 @@ import asyncio
 import inspect
 from typing import ClassVar
 
-from elc.codec.device_id import DeviceId
+from elc.codec.device_id import ADDR_BITS, SUBADDR_BITS, DeviceId, DeviceType
 from elc.codec.messages import FailReport, RelaySet, RelayState, StatusQuery
 from elc.domain.bus import EventBus
 from elc.drivers.base import AbstractDevice
@@ -42,6 +42,30 @@ class SrmDriver(AbstractDevice):
         authoritative confirmation per architecture §7 Q3.
         """
         frame = self._registry.encode_message(RelaySet(device=device, state=state))
+        await self._link.send(frame)
+
+    async def broadcast(
+        self,
+        state: bool,
+        *,
+        scu: int = 1,
+        dev_type: DeviceType = DeviceType.SRM,
+    ) -> None:
+        """Broadcast set to every device of `dev_type` on the given SCU.
+
+        Uses the wildcard DeviceId (`Addr` + `SubAddr` all-ones) per
+        architecture §2.  One frame on the wire regardless of how many
+        physical relays it lands on.  Each affected device still emits
+        its own unsolicited `RelayState` echo, so the live replica and
+        WS feed remain authoritative.
+        """
+        wildcard = DeviceId(
+            dev_type=dev_type,
+            scu=scu,
+            address=(1 << ADDR_BITS) - 1,
+            sub_address=(1 << SUBADDR_BITS) - 1,
+        )
+        frame = self._registry.encode_message(RelaySet(device=wildcard, state=state))
         await self._link.send(frame)
 
     async def query(

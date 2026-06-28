@@ -616,18 +616,63 @@ _elc_state: dict[str, object] = {}
 
 @app.on_event("startup")
 async def _elc_startup() -> None:
+    from elc.codec.device_id import ADDR_BITS as _ADDR_BITS  # noqa: PLC0415
+    from elc.codec.device_id import SUBADDR_BITS as _SUBADDR_BITS  # noqa: PLC0415
+    from elc.codec.device_id import DeviceId as _ElcDeviceId  # noqa: PLC0415
+    from elc.codec.device_id import DeviceType as _ElcDeviceType  # noqa: PLC0415
+
+    _ADDR_BCAST = (1 << _ADDR_BITS) - 1
+    _SUB_BCAST = (1 << _SUBADDR_BITS) - 1
+
     scu = _MockScuServer()
     await scu.start()
 
-    # Echo every RelaySet back as a RelayState so toggles light up instantly.
+    # Pre-seed the MockScu with the demo's known devices so the very
+    # first broadcast (before any individual writes) has targets to
+    # echo for.  Matches the device-id range used by demo/stress.html
+    # (SRM/1/100..199/0) plus the main console's 4 devices.
+    seen_devices: set[_ElcDeviceId] = set()
+    for addr in (10, 20, 30, 40):
+        seen_devices.add(_ElcDeviceId(
+            dev_type=_ElcDeviceType.SRM, scu=1, address=addr, sub_address=0,
+        ))
+    for i in range(400):
+        seen_devices.add(_ElcDeviceId(
+            dev_type=_ElcDeviceType.SRM, scu=1, address=100 + i, sub_address=0,
+        ))
+    seen_state: dict[_ElcDeviceId, bool] = {d: False for d in seen_devices}
+
     async def _echo_relay(frame, writer):  # type: ignore[no-untyped-def]
-        if frame.msg_type == _RelaySet.FLAG:
-            cmd = _RelaySet.decode(frame.payload)
+        if frame.msg_type != _RelaySet.FLAG:
+            return
+        cmd = _RelaySet.decode(frame.payload)
+        is_broadcast = (
+            cmd.device.address == _ADDR_BCAST
+            and cmd.device.sub_address == _SUB_BCAST
+        )
+        if is_broadcast:
+            # Echo a RelayState for every known device of the same
+            # (dev_type, scu) — that's the broadcast semantics.
+            targets = [
+                d for d in seen_devices
+                if d.dev_type == cmd.device.dev_type and d.scu == cmd.device.scu
+            ]
+            for dev in targets:
+                seen_state[dev] = cmd.state
+                reply = _elc_registry.encode_message(
+                    _RelayState(device=dev, state=cmd.state)
+                )
+                writer.write(_elc_encode(reply))
+            await writer.drain()
+        else:
+            seen_devices.add(cmd.device)
+            seen_state[cmd.device] = cmd.state
             reply = _elc_registry.encode_message(
                 _RelayState(device=cmd.device, state=cmd.state)
             )
             writer.write(_elc_encode(reply))
             await writer.drain()
+
     scu.on_frame(_echo_relay)
 
     link = _ScuLink("127.0.0.1", scu.port, name="demo-scu", initial_backoff=0.2)

@@ -82,4 +82,14 @@ def build_router(
         await driver.set_relay(dev, body.state)
         return {"ok": True, "device": str(dev), "state": body.state}
 
+    @router.post("/broadcast")
+    async def broadcast(body: _RelayBody) -> dict[str, Any]:
+        if link.state is not LinkState.CONNECTED:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"link {link.name} not connected (state={link.state.value})",
+            )
+        await driver.broadcast(body.state)
+        return {"ok": True, "broadcast": True, "state": body.state}
+
     return router

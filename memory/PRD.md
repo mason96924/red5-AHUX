@@ -1,5 +1,48 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase V3.0-δ — Demo console (2026-02)
+
+**Brief**: Quick-look surface added on top of the V3.0 stack so the
+work is *visible* without real hardware.  Pure dev tooling — no
+production code touched.
+
+**Delivered**:
+  * `scripts/demo.py` — single command (`python scripts/demo.py`)
+    that boots a `MockScuServer`, the full ELC stack
+    (`build_stack`), uvicorn on `:8765`, and mounts `demo/index.html`
+    at `/`.  MockScu echoes every `RelaySet` back as a `RelayState`
+    so toggles show up immediately; a tiny chaos-monkey loop emits
+    random `FailReport` events every 15-30 s so the WS log has
+    variety.  Port overridable via `DEMO_PORT=…`.
+  * `demo/index.html` — single-file dark-themed console:
+    `link · connected · attempt#N` and `ws · live/down` pills at top,
+    a left-hand live-scrolling event log keyed by colour (green
+    `relay_state` ON, red OFF, amber `fail_report`), and a
+    right-hand device panel with `TOGGLE` buttons for four SRM
+    devices.  Auto-reconnects the WS on drop; refreshes the link
+    pill every 2 s.  No build step, no JS framework — vanilla.
+
+**How to view**:
+```
+python scripts/demo.py           # then open http://127.0.0.1:8765/
+```
+Three shortcuts on the same port:
+  * `/`             → live event log + toggle buttons
+  * `/docs`         → Swagger UI (clickable form for every endpoint)
+  * `/api/elc/link` → JSON link status
+
+**Verified**: REST POST → ScuLink → MockScu → echo → Replica → WS
+push round-trip confirmed via Python websockets client:
+```
+E1: {"type":"relay_state","device":"SRM/1/10/0","state":true,...}
+E2: {"type":"relay_state","device":"SRM/1/20/0","state":false,...}
+```
+Pytest suite unchanged (152 pass, 97 % coverage); ruff clean.
+
+**Next**: Phase 5 — Mongo audit-log mirror as a second
+`Replica.events` subscriber, then driver expansion (DSW/DALI/…).
+
+
 ## Phase V3.0-γ — SrmDriver + REST/WS (2026-02)
 
 **Brief**: Phases 3 + 4 of the V3.0 ELC stack delivered in one drop —

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Red5-ELC · Demo Console</title>
+<style>
+  :root {
+    --bg: #0c0f13;
+    --panel: #13181f;
+    --panel-2: #1a2029;
+    --line: #232b36;
+    --text: #d8dde4;
+    --muted: #6b7684;
+    --accent: #d97a30;       /* Red5 orange */
+    --accent-2: #f5a25b;
+    --ok: #4ecb71;
+    --warn: #e3b341;
+    --bad: #ec5b56;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto; }
+  ::selection { background: var(--accent); color: var(--bg); }
+  a { color: var(--accent-2); }
+
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 22px 28px 14px; border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .04em; font-weight: 600; }
+  header h1 .sub { color: var(--muted); font-weight: 400; margin-left: 10px; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .2s; }
+  .pill.ok .dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(78,203,113,.15); }
+  .pill.bad .dot { background: var(--bad); }
+  .pill.warn .dot { background: var(--warn); }
+
+  main {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 20px; padding: 20px 28px; height: calc(100% - 64px);
+  }
+
+  section.panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  section.panel > h2 {
+    margin: 0; padding: 14px 18px; border-bottom: 1px solid var(--line);
+    font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  section.panel > h2 .count {
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+  }
+
+  /* Event log */
+  #log { flex: 1; overflow-y: auto; padding: 8px 0; font-family: var(--mono); font-size: 12.5px; }
+  #log .row { display: grid; grid-template-columns: 80px 110px 1fr; gap: 16px; padding: 6px 18px; border-bottom: 1px solid #181d24; }
+  #log .row:nth-child(odd) { background: rgba(255,255,255,.012); }
+  #log .row .ts { color: var(--muted); }
+  #log .row .kind { color: var(--accent-2); }
+  #log .row .body { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #log .row.state-on  .body .v { color: var(--ok); }
+  #log .row.state-off .body .v { color: var(--bad); }
+
+  /* Devices */
+  .devices { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .dev {
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px;
+  }
+  .dev .id { font-family: var(--mono); font-size: 13px; }
+  .dev .id .label { color: var(--muted); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .dev .state {
+    font-family: var(--mono); font-size: 12px; padding: 4px 10px; border-radius: 4px;
+    background: #222932; color: var(--muted); border: 1px solid var(--line); min-width: 50px; text-align: center;
+  }
+  .dev .state.on  { background: rgba(78,203,113,.12); color: var(--ok);  border-color: rgba(78,203,113,.4); }
+  .dev .state.off { background: rgba(236,91,86,.10); color: var(--bad);  border-color: rgba(236,91,86,.35); }
+  .dev .toggle {
+    background: var(--accent); color: #1a0e02; border: 0; border-radius: 4px;
+    padding: 9px 16px; font-weight: 600; cursor: pointer; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+    transition: transform .08s ease, background .15s ease;
+  }
+  .dev .toggle:hover { background: var(--accent-2); }
+  .dev .toggle:active { transform: translateY(1px); }
+  .dev .toggle[disabled] { background: #2a313b; color: var(--muted); cursor: not-allowed; }
+
+  footer { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 10px 18px; border-top: 1px solid var(--line); }
+
+  .empty { padding: 22px 18px; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>RED5-ELC <span class="sub">V3.0 · Demo Console</span></h1>
+    <div style="display:flex; gap: 10px;">
+      <span class="pill" id="link-pill"><span class="dot"></span><span id="link-text">link …</span></span>
+      <span class="pill" id="ws-pill"><span class="dot"></span><span id="ws-text">ws …</span></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Live events <span class="count" id="event-count">0</span></h2>
+      <div id="log"><div class="empty">Waiting for events… click a Toggle button on the right.</div></div>
+      <footer id="ws-footer">ws://… · disconnected</footer>
+    </section>
+
+    <section class="panel">
+      <h2>Devices</h2>
+      <div class="devices" id="devices"></div>
+      <footer>POST /api/elc/devices/{id}/relay</footer>
+    </section>
+  </main>
+
+<script>
+(() => {
+  const DEVICES = ["SRM/1/10/0", "SRM/1/20/0", "SRM/1/30/0", "SRM/1/40/0"];
+  const MAX_LOG = 200;
+
+  const $log = document.getElementById("log");
+  const $devices = document.getElementById("devices");
+  const $count = document.getElementById("event-count");
+  const $linkPill = document.getElementById("link-pill");
+  const $linkText = document.getElementById("link-text");
+  const $wsPill = document.getElementById("ws-pill");
+  const $wsText = document.getElementById("ws-text");
+  const $wsFooter = document.getElementById("ws-footer");
+
+  let eventCount = 0;
+  const deviceCards = new Map();
+  const knownState = new Map();   // device → bool|null
+
+  // ---------- device cards ------------------------------------------
+  function renderDevices() {
+    $devices.innerHTML = "";
+    for (const id of DEVICES) {
+      const card = document.createElement("div");
+      card.className = "dev";
+      card.innerHTML = `
+        <div class="id"><span class="label">device</span>${id}</div>
+        <div class="state" data-state>—</div>
+        <button class="toggle" data-toggle>TOGGLE</button>`;
+      const $state = card.querySelector("[data-state]");
+      const $btn = card.querySelector("[data-toggle]");
+      $btn.addEventListener("click", () => toggleRelay(id, $btn));
+      deviceCards.set(id, { $state, $btn });
+      $devices.appendChild(card);
+    }
+  }
+
+  function paintDeviceState(id, state) {
+    knownState.set(id, state);
+    const card = deviceCards.get(id);
+    if (!card) return;
+    card.$state.classList.remove("on", "off");
+    if (state === true)  { card.$state.classList.add("on");  card.$state.textContent = "ON"; }
+    else if (state === false) { card.$state.classList.add("off"); card.$state.textContent = "OFF"; }
+    else { card.$state.textContent = "—"; }
+  }
+
+  async function toggleRelay(id, $btn) {
+    const cur = knownState.get(id);
+    const next = cur === true ? false : true;
+    $btn.disabled = true;
+    try {
+      const r = await fetch(`/api/elc/devices/${id}/relay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: next }),
+      });
+      if (!r.ok) {
+        const body = await r.text();
+        pushLog({ type: "http_error", device: id, code: r.status, body });
+      }
+    } catch (e) {
+      pushLog({ type: "http_error", device: id, body: String(e) });
+    } finally {
+      $btn.disabled = false;
+    }
+  }
+
+  // ---------- event log ---------------------------------------------
+  function pushLog(ev) {
+    if (eventCount === 0) $log.innerHTML = "";
+    eventCount += 1;
+    $count.textContent = eventCount;
+
+    const ts = new Date().toTimeString().slice(0, 8);
+    const row = document.createElement("div");
+    row.className = "row";
+    let body = "";
+    if (ev.type === "relay_state") {
+      row.classList.add(ev.state ? "state-on" : "state-off");
+      body = `<span class="d">${ev.device}</span> → <span class="v">${ev.state ? "ON" : "OFF"}</span>`;
+    } else if (ev.type === "fail_report") {
+      body = `<span class="d">${ev.device}</span> fail_code=<span class="v">0x${(ev.fail_code||0).toString(16)}</span>`;
+    } else if (ev.type === "http_error") {
+      body = `${ev.device || ""} ${ev.code || ""} ${ev.body || ""}`;
+    } else {
+      body = JSON.stringify(ev);
+    }
+    row.innerHTML = `<span class="ts">${ts}</span><span class="kind">${ev.type}</span><span class="body">${body}</span>`;
+    $log.prepend(row);
+    while ($log.children.length > MAX_LOG) $log.removeChild($log.lastChild);
+
+    if (ev.type === "relay_state") paintDeviceState(ev.device, ev.state);
+  }
+
+  // ---------- link status poll --------------------------------------
+  async function pollLink() {
+    try {
+      const r = await fetch("/api/elc/link");
+      const j = await r.json();
+      $linkText.textContent = `link · ${j.state} · attempt#${j.connect_attempts}`;
+      $linkPill.classList.remove("ok", "bad", "warn");
+      if (j.state === "connected") $linkPill.classList.add("ok");
+      else if (j.state === "connecting") $linkPill.classList.add("warn");
+      else $linkPill.classList.add("bad");
+    } catch (e) {
+      $linkText.textContent = "link · unreachable";
+      $linkPill.classList.add("bad");
+    }
+  }
+
+  // ---------- prime device states from REST -------------------------
+  async function primeStates() {
+    try {
+      const r = await fetch("/api/elc/devices");
+      const list = await r.json();
+      for (const row of list) paintDeviceState(row.device, row.relay_state);
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---------- WS ----------------------------------------------------
+  let ws;
+  function connectWS() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const url = `${proto}://${location.host}/ws/elc/events`;
+    $wsFooter.textContent = `${url} · connecting…`;
+    $wsPill.classList.remove("ok", "bad", "warn");
+    $wsPill.classList.add("warn");
+    $wsText.textContent = "ws · connecting";
+
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      $wsPill.classList.remove("warn", "bad");
+      $wsPill.classList.add("ok");
+      $wsText.textContent = "ws · live";
+      $wsFooter.textContent = `${url} · connected`;
+    };
+    ws.onmessage = (m) => {
+      try { pushLog(JSON.parse(m.data)); }
+      catch { pushLog({ type: "raw", body: m.data }); }
+    };
+    ws.onclose = () => {
+      $wsPill.classList.remove("ok", "warn");
+      $wsPill.classList.add("bad");
+      $wsText.textContent = "ws · down";
+      $wsFooter.textContent = `${url} · disconnected · retrying in 1s`;
+      setTimeout(connectWS, 1000);
+    };
+    ws.onerror = () => { /* close handler will reconnect */ };
+  }
+
+  // ---------- boot --------------------------------------------------
+  renderDevices();
+  primeStates();
+  connectWS();
+  pollLink();
+  setInterval(pollLink, 2000);
+})();
+</script>
+</body>
+</html>

@@ -67,7 +67,6 @@ function App() {
                     <p className="text-slate-500 text-xs mt-1 font-mono tracking-wide">Configure once. Skip any step you don't need.</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <span className="pill bg-slate-800 text-slate-400">{completeCount}/5 DONE</span>
                     <a href="/dashboard.html"
                        onClick={() => { try { localStorage.setItem('red5.setup.done','1'); } catch(e){} }}
                        className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-4">Skip all →</a>
@@ -137,6 +136,20 @@ function App() {
                             strokeWidth="0.56"
                             mask="url(#pentagon-ring-mask)" />
                 </svg>
+
+                {/* Centred completion counter -- sits at the centroid of
+                    the constellation, font weight matched to the per-tile
+                    heading so the eye reads it as the dominant status. */}
+                <div data-testid="setup-progress-center"
+                     className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none">
+                    <div className={`text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none
+                                     ${completeCount === 5 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {completeCount}/5
+                    </div>
+                    <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.3em] text-slate-500 mt-2">
+                        Done
+                    </div>
+                </div>
             </div>
 
             {/* ------------- footer CTA ------------- */}

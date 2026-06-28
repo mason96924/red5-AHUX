@@ -149,43 +149,43 @@ function App() {
                     chart is the core visual identity of Red5). */}
                 <div data-testid="setup-progress-center"
                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none flex flex-col items-center justify-center"
-                     style={{width:'58%', maxWidth:'400px', aspectRatio:'200 / 160'}}>
+                     style={{width:'70%', maxWidth:'460px', aspectRatio:'200 / 160'}}>
                     {/* Psy-chart silhouette layer.  Inline SVG (no external
-                        asset needed) drawn at ~32 % opacity so the N/5 DONE
-                        text on top stays the dominant element but the
-                        chart shape is clearly readable as "Red5's psy chart". */}
+                        asset needed) drawn at ~60 % opacity so the chart is
+                        clearly readable as Red5's psy chart while still
+                        sitting *behind* the N/5 DONE counter. */}
                     <svg className="absolute inset-0 w-full h-full pointer-events-none"
                          viewBox="0 0 200 160" preserveAspectRatio="xMidYMid meet" aria-hidden="true"
-                         style={{opacity:0.35}}>
+                         style={{opacity:0.60}}>
                         {/* 3D perspective floor (trapezoid) */}
                         <polygon points="40,110 160,110 175,135 25,135"
-                                 fill="rgba(56,189,248,0.10)"
-                                 stroke="rgba(148,163,184,0.55)" strokeWidth="0.6"/>
+                                 fill="rgba(56,189,248,0.18)"
+                                 stroke="rgba(148,163,184,0.85)" strokeWidth="0.8"/>
                         {/* Back wall outline */}
                         <polygon points="40,40 160,40 160,110 40,110"
-                                 fill="none" stroke="rgba(148,163,184,0.45)" strokeWidth="0.6"/>
+                                 fill="none" stroke="rgba(148,163,184,0.75)" strokeWidth="0.8"/>
                         {/* Saturation curve (signature shape of every psy chart) */}
                         <path d="M40,108 Q70,80 100,55 T160,30"
-                              fill="none" stroke="rgba(56,189,248,0.95)" strokeWidth="1.4" strokeLinecap="round"/>
+                              fill="none" stroke="rgba(56,189,248,1.0)" strokeWidth="2.0" strokeLinecap="round"/>
                         {/* Constant-RH curves underneath the saturation line */}
                         <path d="M40,114 Q72,95 102,75 T160,55"
-                              fill="none" stroke="rgba(56,189,248,0.55)" strokeWidth="0.8"/>
+                              fill="none" stroke="rgba(56,189,248,0.75)" strokeWidth="1.1"/>
                         <path d="M40,118 Q74,108 104,93 T160,78"
-                              fill="none" stroke="rgba(56,189,248,0.35)" strokeWidth="0.8"/>
+                              fill="none" stroke="rgba(56,189,248,0.55)" strokeWidth="1.0"/>
                         {/* Givoni comfort polygon -- the bread & butter of Red5 */}
                         <polygon points="80,82 110,82 118,98 96,104 75,98"
-                                 fill="rgba(34,197,94,0.30)"
-                                 stroke="rgba(34,197,94,0.85)" strokeWidth="0.8"/>
+                                 fill="rgba(34,197,94,0.45)"
+                                 stroke="rgba(34,197,94,1.0)" strokeWidth="1.1"/>
                         {/* Faint enthalpy diagonals */}
                         <line x1="40" y1="108" x2="92" y2="40"
-                              stroke="rgba(251,191,36,0.30)" strokeWidth="0.4" strokeDasharray="2 2"/>
+                              stroke="rgba(251,191,36,0.55)" strokeWidth="0.6" strokeDasharray="2 2"/>
                         <line x1="60" y1="108" x2="120" y2="40"
-                              stroke="rgba(251,191,36,0.30)" strokeWidth="0.4" strokeDasharray="2 2"/>
+                              stroke="rgba(251,191,36,0.55)" strokeWidth="0.6" strokeDasharray="2 2"/>
                         <line x1="80" y1="108" x2="148" y2="40"
-                              stroke="rgba(251,191,36,0.30)" strokeWidth="0.4" strokeDasharray="2 2"/>
+                              stroke="rgba(251,191,36,0.55)" strokeWidth="0.6" strokeDasharray="2 2"/>
                         {/* Sun corner glyph (tiny, top-right) */}
-                        <circle cx="150" cy="48" r="3" fill="rgba(251,191,36,0.85)"/>
-                        <g stroke="rgba(251,191,36,0.75)" strokeWidth="0.6" strokeLinecap="round">
+                        <circle cx="150" cy="48" r="3.5" fill="rgba(251,191,36,1.0)"/>
+                        <g stroke="rgba(251,191,36,0.95)" strokeWidth="0.9" strokeLinecap="round">
                             <line x1="150" y1="40" x2="150" y2="42"/>
                             <line x1="150" y1="54" x2="150" y2="56"/>
                             <line x1="142" y1="48" x2="144" y2="48"/>

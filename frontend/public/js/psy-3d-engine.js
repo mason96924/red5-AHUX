@@ -1212,7 +1212,7 @@ global.initPsy3D = function(container, opts){
   });
 
   /* ---------- SCENE ---------- */
-  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup,saDropGroup,rhBandGroup;
+  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup,saDropGroup,saPathGroup,rhBandGroup;
   var _p3RedrawPsyTex = null; /* populated by buildScene so theme listener can redraw floor chart */
   var weatherData=[],timeLabels=[],vavData=[];
 
@@ -1632,6 +1632,7 @@ global.initPsy3D = function(container, opts){
        lines descend to each point's computed SA on the basePlane (Y=0).
        Hidden by default so existing scenes stay uncluttered. */
     saDropGroup=new THREE.Group();saDropGroup.visible=false;scene.add(saDropGroup);
+    saPathGroup=new THREE.Group();saPathGroup.visible=false;scene.add(saPathGroup);
 
     /* ---- RH-BAND SLAB --------------------------------------------------
        Translucent magenta volume bounded by the two RH curves
@@ -1925,8 +1926,8 @@ global.initPsy3D = function(container, opts){
 
     /* toggles */
     var tgEl=$('#p3-toggles');
-    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,saDrop:saDropGroup,rhBand:rhBandGroup};
-    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['rhBand','#ec4899','RH Band'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ'],['saDrop','#22d3ee','OA\u2192SA Drops']].forEach(function(t){
+    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,saDrop:saDropGroup,saPath:saPathGroup,rhBand:rhBandGroup};
+    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['rhBand','#ec4899','RH Band'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ'],['saDrop','#22d3ee','OA\u2192SA Drops'],['saPath','#f59e0b','SA Path']].forEach(function(t){
       var div=document.createElement('div');div.className='p3-tgl';div.id='p3-tgl-'+t[0];
       div.innerHTML='<span class="p3td" style="background:'+t[1]+'"></span>'+t[2];
       // Sync initial off-state for layers that start hidden (saDropGroup).
@@ -4498,11 +4499,51 @@ global.initPsy3D = function(container, opts){
     _buildSaDropGeometry();
   }
 
+  /* ---------- SA PATH (Supply Air timeline) -------------------------------
+     Companion to OA→SA Drops.  Drops are *prescriptive* (where SA should
+     land for each OA condition per the 10-band controller).  SA Path is
+     *descriptive/temporal*: the SA trajectory pulled up along the Time
+     axis -- one amber polyline that mirrors the OA Weather Path but for
+     SA.  Uses _saReset() (the same band model that drives Drops) so the
+     two views stay coherent.
+     Hidden by default (saPathGroup.visible=false at scene init); the
+     user enables it via the "SA Path" toggle in the layer panel.
+     ------------------------------------------------------------------ */
+  function _buildSaPathGeometry(){
+    var THREE = window.THREE;
+    if (!saPathGroup || !weatherData || !weatherData.length) return;
+    while (saPathGroup.children.length) saPathGroup.remove(saPathGroup.children[0]);
+    var sV=[], sC=[];
+    /* Amber #f59e0b = rgb(245,158,11) → /255 */
+    var col=[0.961, 0.620, 0.043];
+    weatherData.forEach(function(p){
+      var bi=_bandInputFor(p);
+      var sa=_saReset(bi.T, bi.RH, bi.W);
+      var x=t2sx(sa.t), y=frac2sy(p.frac), z=w2sz(sa.w);
+      sV.push(x, y, z);
+      sC.push(col[0], col[1], col[2]);
+    });
+    var ptGeo=new THREE.BufferGeometry();
+    ptGeo.setAttribute('position', new THREE.Float32BufferAttribute(sV, 3));
+    ptGeo.setAttribute('color',    new THREE.Float32BufferAttribute(sC, 3));
+    saPathGroup.add(new THREE.Points(ptGeo, new THREE.PointsMaterial({
+      size:2.4, vertexColors:true, transparent:true, opacity:.9,
+      sizeAttenuation:true, depthWrite:false
+    })));
+    var lnGeo=new THREE.BufferGeometry();
+    lnGeo.setAttribute('position', new THREE.Float32BufferAttribute(sV, 3));
+    lnGeo.setAttribute('color',    new THREE.Float32BufferAttribute(sC, 3));
+    saPathGroup.add(new THREE.Line(lnGeo, new THREE.LineBasicMaterial({
+      vertexColors:true, transparent:true, opacity:.85
+    })));
+  }
+
   function buildWeatherVis(locName,fromD,toD){
     var THREE=window.THREE;
     while(pathGroup.children.length)pathGroup.remove(pathGroup.children[0]);
     while(projGroup.children.length)projGroup.remove(projGroup.children[0]);
     if(saDropGroup) while(saDropGroup.children.length)saDropGroup.remove(saDropGroup.children[0]);
+    if(saPathGroup) while(saPathGroup.children.length)saPathGroup.remove(saPathGroup.children[0]);
     timeLabels.forEach(function(s){scene.remove(s);});timeLabels=[];
     if(!weatherData.length)return;
     /* Stash the args so the RH-band slider listener can rebuild the
@@ -4603,6 +4644,7 @@ global.initPsy3D = function(container, opts){
        enables it via the "OA→SA Drops" toggle in the layer panel.
        ----------------------------------------------------------------------- */
     _buildSaDropGeometry();
+    _buildSaPathGeometry();
 
     /* time labels */
     function mkTl(text,col,sz){var c=document.createElement('canvas'),x=c.getContext('2d');c.width=512;c.height=64;x.font='bold 30px monospace';x.fillStyle=col||'#94a3b8';x.textAlign='center';x.textBaseline='middle';x.fillText(text,256,32);var t=new THREE.CanvasTexture(c);var s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(sz||28,(sz||28)*.125,1);return s;}

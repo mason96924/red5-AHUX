@@ -178,8 +178,8 @@
       "kind": "ui",
       "label": "dashboard.tailwind.css",
       "desc": "Pre-extracted Tailwind CSS (replaces cdn.tailwindcss.com runtime)",
-      "size": 88902,
-      "sha256": "da6e0bcdf0a4c5ca51d1f5b66959fd14015bd8a40b6b1fd7f78215f8a258893a",
+      "size": 89030,
+      "sha256": "f98253589e35f8caf5652a92bc05426a77dc0a407f704e4efbfbd88987922550",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -219,7 +219,7 @@
       "label": "setup.html",
       "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
       "size": 3995,
-      "sha256": "8c66ad0311105c505b33db9d117bb7212edbef17d345da0bd2426b3bf626cc33",
+      "sha256": "acc75ad426e15656059d7ec61d2616a478af73782fda31f5f6a5d0b35341665c",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -228,8 +228,8 @@
       "kind": "ui",
       "label": "setup_walk.compiled.js",
       "desc": "Setup Walk compiled React bundle (loaded by setup.html)",
-      "size": 346092,
-      "sha256": "f9702370d86cb45afe46400f4ea8591b8a17888a5f7254bb18758f1712b26991",
+      "size": 346744,
+      "sha256": "29af075ddacb8fc6f8d4e2e7681c11dab62ab6b484a4b8210a1a8c9e13b141f5",
       "show_in_ui": true,
       "hot_reload": false
     },

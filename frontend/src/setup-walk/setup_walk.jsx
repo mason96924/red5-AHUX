@@ -169,13 +169,13 @@ function App() {
                     tile circles so it always sits on top. */}
                 <div data-testid="setup-progress-center"
                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none">
-                    <div className={`text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none
+                    <div className={`text-[66px] sm:text-[78px] font-black uppercase tracking-tight whitespace-nowrap leading-none
                                      ${completeCount === 5 ? 'text-emerald-400' : 'text-white'}`}
-                         style={{textShadow:'0 2px 12px rgba(2,6,23,0.85), 0 0 4px rgba(2,6,23,0.85)'}}>
+                         style={{textShadow:'0 4px 24px rgba(2,6,23,0.95), 0 0 8px rgba(2,6,23,0.95)'}}>
                         {completeCount}/5
                     </div>
-                    <div className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.3em] text-slate-300 mt-2"
-                         style={{textShadow:'0 1px 6px rgba(2,6,23,0.85)'}}>
+                    <div className="text-[30px] sm:text-[33px] font-black uppercase tracking-[0.3em] text-slate-300 mt-3"
+                         style={{textShadow:'0 2px 12px rgba(2,6,23,0.9)'}}>
                         Done
                     </div>
                 </div>

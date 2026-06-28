@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Red5-ELC · Stress Console</title>
+<style>
+  :root {
+    --bg: #0c0f13;
+    --panel: #13181f;
+    --panel-2: #1a2029;
+    --line: #232b36;
+    --text: #d8dde4;
+    --muted: #6b7684;
+    --accent: #d97a30;
+    --accent-2: #f5a25b;
+    --ok: #4ecb71;
+    --warn: #e3b341;
+    --bad: #ec5b56;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto; }
+
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 22px 28px 14px; border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .04em; font-weight: 600; }
+  header h1 .sub { color: var(--muted); font-weight: 400; margin-left: 10px; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; }
+  header a.back { color: var(--accent-2); text-decoration: none; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+  header a.back:hover { color: var(--accent); }
+
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .2s; }
+  .pill.ok .dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(78,203,113,.15); }
+  .pill.bad .dot { background: var(--bad); }
+  .pill.warn .dot { background: var(--warn); }
+
+  .topbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  main {
+    padding: 20px 28px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+    min-height: calc(100% - 64px);
+  }
+
+  /* Controls bar */
+  .controls {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .btn {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    transition: background .12s, border-color .12s, transform .06s;
+    font-family: ui-sans-serif, system-ui;
+  }
+  .btn:hover { background: #222a35; border-color: #3a4555; }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); color: #1a0e02; border-color: var(--accent); }
+  .btn.primary:hover { background: var(--accent-2); }
+  .btn.danger { background: rgba(236,91,86,.15); color: var(--bad); border-color: rgba(236,91,86,.4); }
+  .btn.danger:hover { background: rgba(236,91,86,.25); }
+  .btn.chaos { background: rgba(227,179,65,.15); color: var(--warn); border-color: rgba(227,179,65,.4); }
+  .btn.chaos:hover { background: rgba(227,179,65,.25); }
+  .btn.chaos.on { background: var(--warn); color: #1a1100; border-color: var(--warn); }
+
+  /* Grid */
+  .grid-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .grid-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px;
+  }
+  .grid-meta .right { display: flex; gap: 18px; }
+  .grid-meta strong { color: var(--text); font-weight: 600; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 6px;
+  }
+  .cell {
+    aspect-ratio: 1;
+    background: #181d24;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    transition: background .12s, border-color .12s, transform .08s;
+    overflow: hidden;
+  }
+  .cell .lbl { opacity: .7; line-height: 1; }
+  .cell .state {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #2a313b; margin-top: 4px;
+    box-shadow: inset 0 0 4px rgba(0,0,0,.35);
+    transition: background .15s, box-shadow .25s;
+  }
+  .cell.on { background: rgba(78,203,113,.08); border-color: rgba(78,203,113,.45); }
+  .cell.on .state { background: var(--ok); box-shadow: 0 0 8px rgba(78,203,113,.55), inset 0 0 2px rgba(255,255,255,.4); }
+  .cell.on .lbl { color: var(--ok); opacity: .85; }
+  .cell.off { background: rgba(236,91,86,.06); border-color: rgba(236,91,86,.3); }
+  .cell.off .state { background: var(--bad); box-shadow: 0 0 4px rgba(236,91,86,.4); }
+  .cell.off .lbl { color: var(--bad); opacity: .7; }
+  .cell.pulse { animation: pulse .25s ease; }
+  @keyframes pulse {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.12); }
+    100% { transform: scale(1); }
+  }
+  .cell:hover { border-color: var(--accent); }
+
+  /* Sidebar */
+  aside { display: flex; flex-direction: column; gap: 14px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .stat h3 {
+    margin: 0 0 10px;
+    font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); font-weight: 500;
+  }
+  .stat .big {
+    font-family: var(--mono); font-size: 28px; line-height: 1; color: var(--text);
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .stat .big .u { font-size: 13px; color: var(--muted); }
+  .stat .row { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-family: var(--mono); font-size: 13px; }
+  .stat .row span:last-child { color: var(--text); }
+  .stat .bar { height: 6px; border-radius: 3px; background: #181d24; overflow: hidden; margin-top: 10px; display: flex; }
+  .stat .bar .on  { background: var(--ok); height: 100%; transition: width .25s ease; }
+  .stat .bar .off { background: var(--bad); height: 100%; transition: width .25s ease; }
+
+  footer { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 10px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>RED5-ELC <span class="sub">Stress Console · N relays</span></h1>
+    <div style="margin-top:6px;"><a class="back" href="/api/elc-demo/">&larr; back to console</a></div>
+  </div>
+  <div class="topbar">
+    <span class="pill" id="link-pill"><span class="dot"></span><span id="link-text">link …</span></span>
+    <span class="pill" id="ws-pill"><span class="dot"></span><span id="ws-text">ws …</span></span>
+  </div>
+</header>
+
+<main>
+  <div>
+    <div class="controls">
+      <button class="btn primary" data-act="all-on">ALL ON</button>
+      <button class="btn danger"  data-act="all-off">ALL OFF</button>
+      <button class="btn"         data-act="toggle">TOGGLE EACH</button>
+      <button class="btn"         data-act="random">RANDOMIZE</button>
+      <button class="btn chaos"   data-act="chaos" id="chaos-btn">CHAOS START</button>
+      <span style="flex:1"></span>
+      <label style="display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--muted);">
+        N=<input id="n-input" type="number" min="4" max="400" value="100" style="width:60px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 8px; font-family:var(--mono);" />
+        <button class="btn" data-act="resize">REBUILD</button>
+      </label>
+    </div>
+
+    <div class="grid-wrap">
+      <div class="grid-meta">
+        <span><strong id="grid-n">100</strong> relays · click a cell to toggle</span>
+        <div class="right">
+          <span><strong id="last-batch-time">—</strong> last batch</span>
+          <span><strong id="last-batch-count">—</strong> writes</span>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="stat">
+      <h3>Live throughput</h3>
+      <div class="big"><span id="eps">0.0</span><span class="u">events/sec</span></div>
+      <div class="row"><span>Total events</span><span id="ev-total">0</span></div>
+      <div class="row"><span>Peak rate</span><span id="ev-peak">0.0</span></div>
+    </div>
+
+    <div class="stat">
+      <h3>Relay distribution</h3>
+      <div class="big"><span id="on-count">0</span><span class="u" id="on-pct">/ 0 ON</span></div>
+      <div class="bar"><div class="on" id="bar-on" style="width:0%"></div><div class="off" id="bar-off" style="width:0%"></div></div>
+      <div class="row"><span>ON</span><span id="row-on">0</span></div>
+      <div class="row"><span>OFF</span><span id="row-off">0</span></div>
+      <div class="row"><span>Unknown</span><span id="row-unk">0</span></div>
+    </div>
+
+    <div class="stat">
+      <h3>Connection</h3>
+      <div class="row"><span>WS</span><span id="ws-detail">—</span></div>
+      <div class="row"><span>ScuLink</span><span id="link-detail">—</span></div>
+      <div class="row"><span>Queue depth</span><span id="queue-detail">0 in-flight</span></div>
+    </div>
+
+    <footer id="ws-footer">ws://… · disconnected</footer>
+  </aside>
+</main>
+
+<script>
+(() => {
+  // ---- Config -------------------------------------------------------
+  const urlN = parseInt(new URLSearchParams(location.search).get("n"), 10);
+  let N = Number.isFinite(urlN) && urlN > 0 ? urlN : 100;
+  document.getElementById("n-input").value = N;
+
+  function deviceId(i) {
+    // Layout: SRM / 1 / (100 + i) / 0 — keeps SCU=1 and avoids collisions
+    // with the main console's demo devices (10, 20, 30, 40).
+    return `SRM/1/${100 + i}/0`;
+  }
+
+  // ---- DOM refs -----------------------------------------------------
+  const $grid = document.getElementById("grid");
+  const $gridN = document.getElementById("grid-n");
+  const $linkPill = document.getElementById("link-pill");
+  const $linkText = document.getElementById("link-text");
+  const $linkDetail = document.getElementById("link-detail");
+  const $wsPill = document.getElementById("ws-pill");
+  const $wsText = document.getElementById("ws-text");
+  const $wsDetail = document.getElementById("ws-detail");
+  const $wsFooter = document.getElementById("ws-footer");
+  const $eps = document.getElementById("eps");
+  const $evTotal = document.getElementById("ev-total");
+  const $evPeak = document.getElementById("ev-peak");
+  const $onCount = document.getElementById("on-count");
+  const $onPct = document.getElementById("on-pct");
+  const $barOn = document.getElementById("bar-on");
+  const $barOff = document.getElementById("bar-off");
+  const $rowOn = document.getElementById("row-on");
+  const $rowOff = document.getElementById("row-off");
+  const $rowUnk = document.getElementById("row-unk");
+  const $lastTime = document.getElementById("last-batch-time");
+  const $lastCount = document.getElementById("last-batch-count");
+  const $queue = document.getElementById("queue-detail");
+  const $chaosBtn = document.getElementById("chaos-btn");
+
+  // ---- State --------------------------------------------------------
+  const cells = new Map();      // deviceId → { $el, state: bool|null }
+  let eventsTotal = 0;
+  let peakRate = 0;
+  let lastSecondBucket = 0;
+  let currentBucket = 0;
+  let inFlight = 0;
+  let chaosTimer = null;
+
+  // ---- Grid construction --------------------------------------------
+  function buildGrid() {
+    $grid.innerHTML = "";
+    cells.clear();
+    // Make the grid square-ish.
+    const cols = Math.max(4, Math.round(Math.sqrt(N)));
+    $grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    for (let i = 0; i < N; i++) {
+      const id = deviceId(i);
+      const $el = document.createElement("div");
+      $el.className = "cell";
+      $el.innerHTML = `<div class="lbl">${i + 1}</div><div class="state"></div>`;
+      $el.addEventListener("click", () => fireRelay(id, !(cells.get(id)?.state)));
+      $el.title = id;
+      cells.set(id, { $el, state: null });
+      $grid.appendChild($el);
+    }
+    $gridN.textContent = N;
+    paintTallies();
+  }
+
+  function paintCell(id, state) {
+    const c = cells.get(id);
+    if (!c) return;
+    c.state = state;
+    c.$el.classList.remove("on", "off", "pulse");
+    if (state === true)  c.$el.classList.add("on");
+    else if (state === false) c.$el.classList.add("off");
+    // Restart the animation by toggling the class on the next frame.
+    requestAnimationFrame(() => c.$el.classList.add("pulse"));
+  }
+
+  function paintTallies() {
+    let on = 0, off = 0, unk = 0;
+    for (const c of cells.values()) {
+      if (c.state === true)  on++;
+      else if (c.state === false) off++;
+      else unk++;
+    }
+    const total = on + off + unk || 1;
+    $onCount.textContent = on;
+    $onPct.textContent = `/ ${N} ON`;
+    $rowOn.textContent = on;
+    $rowOff.textContent = off;
+    $rowUnk.textContent = unk;
+    $barOn.style.width  = `${(on  * 100 / total).toFixed(1)}%`;
+    $barOff.style.width = `${(off * 100 / total).toFixed(1)}%`;
+  }
+
+  // ---- HTTP firing --------------------------------------------------
+  async function fireRelay(id, state) {
+    inFlight++;
+    $queue.textContent = `${inFlight} in-flight`;
+    try {
+      await fetch(`/api/elc/devices/${id}/relay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      });
+    } catch (e) { /* WS will reveal failures */ }
+    finally {
+      inFlight--;
+      $queue.textContent = `${inFlight} in-flight`;
+    }
+  }
+
+  async function fireBatch(planFn) {
+    const t0 = performance.now();
+    const promises = [];
+    for (let i = 0; i < N; i++) {
+      const id = deviceId(i);
+      const next = planFn(i, cells.get(id)?.state);
+      if (next === null) continue;
+      promises.push(fireRelay(id, next));
+    }
+    $lastCount.textContent = promises.length;
+    await Promise.all(promises);
+    const dt = performance.now() - t0;
+    $lastTime.textContent = `${dt.toFixed(0)} ms`;
+  }
+
+  // ---- Controls -----------------------------------------------------
+  document.querySelectorAll(".btn[data-act]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const act = btn.getAttribute("data-act");
+      switch (act) {
+        case "all-on":   fireBatch(() => true); break;
+        case "all-off":  fireBatch(() => false); break;
+        case "toggle":   fireBatch((_i, s) => s === true ? false : true); break;
+        case "random":   fireBatch(() => Math.random() < 0.5); break;
+        case "chaos":    toggleChaos(); break;
+        case "resize":   resize(); break;
+      }
+    });
+  });
+
+  function resize() {
+    const v = parseInt(document.getElementById("n-input").value, 10);
+    if (!Number.isFinite(v) || v < 4 || v > 400) { alert("N must be 4..400"); return; }
+    N = v;
+    buildGrid();
+  }
+
+  function toggleChaos() {
+    if (chaosTimer) {
+      clearInterval(chaosTimer);
+      chaosTimer = null;
+      $chaosBtn.classList.remove("on");
+      $chaosBtn.textContent = "CHAOS START";
+      return;
+    }
+    $chaosBtn.classList.add("on");
+    $chaosBtn.textContent = "CHAOS STOP";
+    // Pick a few random cells every 200ms and flip them.
+    chaosTimer = setInterval(() => {
+      const k = Math.max(1, Math.floor(N / 20));
+      for (let j = 0; j < k; j++) {
+        const i = Math.floor(Math.random() * N);
+        const id = deviceId(i);
+        fireRelay(id, !(cells.get(id)?.state));
+      }
+    }, 200);
+  }
+
+  // ---- WS -----------------------------------------------------------
+  let ws;
+  function connectWS() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const url = `${proto}://${location.host}/api/elc/events`;
+    $wsFooter.textContent = `${url} · connecting…`;
+    $wsPill.classList.remove("ok", "bad", "warn");
+    $wsPill.classList.add("warn");
+    $wsText.textContent = "ws · connecting";
+    $wsDetail.textContent = "connecting…";
+
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      $wsPill.classList.remove("warn", "bad");
+      $wsPill.classList.add("ok");
+      $wsText.textContent = "ws · live";
+      $wsDetail.textContent = "live";
+      $wsFooter.textContent = `${url} · connected`;
+    };
+    ws.onmessage = (m) => {
+      let ev; try { ev = JSON.parse(m.data); } catch { return; }
+      eventsTotal++;
+      currentBucket++;
+      $evTotal.textContent = eventsTotal.toLocaleString();
+      if (ev.type === "relay_state") {
+        paintCell(ev.device, ev.state);
+      }
+    };
+    ws.onclose = () => {
+      $wsPill.classList.remove("ok", "warn");
+      $wsPill.classList.add("bad");
+      $wsText.textContent = "ws · down";
+      $wsDetail.textContent = "disconnected";
+      $wsFooter.textContent = `${url} · disconnected · retrying…`;
+      setTimeout(connectWS, 1000);
+    };
+    ws.onerror = () => { /* close handles reconnect */ };
+  }
+
+  // ---- Rate sampling (1Hz) + tally repaint --------------------------
+  setInterval(() => {
+    lastSecondBucket = currentBucket;
+    currentBucket = 0;
+    if (lastSecondBucket > peakRate) peakRate = lastSecondBucket;
+    $eps.textContent = lastSecondBucket.toFixed(1);
+    $evPeak.textContent = peakRate.toFixed(1);
+    paintTallies();
+  }, 1000);
+
+  // ---- Link status poll ---------------------------------------------
+  async function pollLink() {
+    try {
+      const r = await fetch("/api/elc/link");
+      const j = await r.json();
+      $linkText.textContent = `link · ${j.state}`;
+      $linkDetail.textContent = `${j.state} (attempt #${j.connect_attempts})`;
+      $linkPill.classList.remove("ok", "bad", "warn");
+      if (j.state === "connected") $linkPill.classList.add("ok");
+      else if (j.state === "connecting") $linkPill.classList.add("warn");
+      else $linkPill.classList.add("bad");
+    } catch {
+      $linkText.textContent = "link · unreachable";
+      $linkDetail.textContent = "unreachable";
+      $linkPill.classList.add("bad");
+    }
+  }
+
+  // ---- Boot ---------------------------------------------------------
+  buildGrid();
+  connectWS();
+  pollLink();
+  setInterval(pollLink, 3000);
+})();
+</script>
+</body>
+</html>

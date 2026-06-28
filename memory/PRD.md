@@ -1,5 +1,39 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase V3.0-ε — Stress demo / 100-relay grid (2026-02)
+
+**Brief**: Visual + headless stress harness so the V3.0 backend can be
+exercised under load before real hardware ships.
+
+**Delivered**:
+  * `demo/stress.html` — 10×10 (configurable N=4..400) live grid:
+    cells light up green/red on WS `relay_state` events, sidebar
+    shows live events/sec + peak + ON/OFF tally + queue depth.
+    Controls: ALL ON / ALL OFF / TOGGLE EACH / RANDOMIZE / CHAOS
+    (continuous random flips at ~25 ops/s) / REBUILD with new N.
+    No build step, vanilla JS.
+  * `scripts/stress.py` — headless CLI: `--mode {onoff,random,toggle,chaos}`,
+    `--n`, `--rounds`, `--duration`, `--base`.  Reports POST/s per
+    batch *and* the number of WS events received, so a missing event
+    is immediately visible (full round-trip correctness check, not
+    just HTTP).
+  * Backend mount: `/api/elc-demo/stress` serves the page; main
+    console now has a "stress (100 relays) →" pill link.
+  * Local demo script (`scripts/demo.py`) gains `/stress` route too.
+
+**Verified**:
+  * 100 parallel POSTs through the public preview URL in 3.1 s
+    (~32 POST/s end-to-end through TLS + ingress + ScuLink).
+  * All 100 device snapshots recorded with correct state via
+    `/api/elc/devices`.
+  * Stress page renders, both connection pills green, grid built.
+
+**Open questions for the user before Phase 5**:
+  * Should the audit log live in Mongo alongside the existing
+    `tenant_state` / `tenant_assets`, or in a new dedicated
+    collection (`elc_audit_log`)?  Capped-collection size budget?
+
+
 ## Phase V3.0-δ — Demo console (2026-02)
 
 **Brief**: Quick-look surface added on top of the V3.0 stack so the

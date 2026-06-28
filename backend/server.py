@@ -656,6 +656,10 @@ async def _elc_startup() -> None:
     async def _elc_demo_index() -> _FileResponse:
         return _FileResponse(f"{_ELC_DEMO_DIR}/index.html")
 
+    @app.get("/api/elc-demo/stress", include_in_schema=False)
+    async def _elc_demo_stress() -> _FileResponse:
+        return _FileResponse(f"{_ELC_DEMO_DIR}/stress.html")
+
     _elc_state["scu"] = scu
     _elc_state["link"] = link
     print(f"[elc] demo mounted at /api/elc-demo/  (fake SCU on :{scu.port})")

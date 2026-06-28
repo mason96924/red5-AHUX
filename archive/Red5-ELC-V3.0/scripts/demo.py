@@ -99,6 +99,10 @@ async def main() -> None:
     async def index() -> FileResponse:
         return FileResponse(str(demo_dir / "index.html"))
 
+    @stack.app.get("/stress", include_in_schema=False)
+    async def stress() -> FileResponse:
+        return FileResponse(str(demo_dir / "stress.html"))
+
     # ---- Sprinkle a few random failures so the WS log shows variety -
     async def chaos_monkey() -> None:
         await asyncio.sleep(8)

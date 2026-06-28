@@ -688,28 +688,78 @@ function buildWeatherVis(locName,fromD,toD){
 }
 
 /* ================================================================
-   SA PATH (Supply Air trajectory matching OA time axis)
-   Synthesized from SA setpoint sliders (T_sa, RH_sa) — option (a)
+   SA PATH (Supply Air trajectory)
+   Mixed-air + coil model — option (c)
+     1. RA assumed constant (24°C / 50% RH zone setpoint)
+     2. Outside-air damper α set by economizer logic on enthalpy
+        (free cooling when h_oa < h_sa_set, min ventilation otherwise,
+         freeze lockout if T_oa < 5°C)
+     3. Mixed Air = α·OA + (1-α)·RA (linear blend of T and W)
+     4. Coil:
+          - if MA enthalpy > SA setpoint enthalpy → cooling+dehumid
+            coil pulls 90% of the way toward (T_sa_set, W_sa_set)
+          - else → heating coil raises T to T_sa_set, W stays at W_ma
+   Result: SA varies with OA / season, drifts between MA cloud and
+   the setpoint depending on operating mode.
    ================================================================ */
 function buildSAPath(){
   while(saGroup.children.length)saGroup.remove(saGroup.children[0]);
   if(weatherData.length<2)return;
 
-  var T_sa=parseFloat(document.getElementById('in-sa-t').value)||13;
-  var RH_sa=parseFloat(document.getElementById('in-sa-rh').value)||95;
-  var W_sa=getW(T_sa,RH_sa);
+  var T_sa_set=parseFloat(document.getElementById('in-sa-t').value)||13;
+  var RH_sa_set=parseFloat(document.getElementById('in-sa-rh').value)||95;
+  var W_sa_set=getW(T_sa_set,RH_sa_set);
+  var h_sa_set=enthalpy(T_sa_set,W_sa_set);
 
-  var x=t2sx(T_sa),z=w2sz(W_sa);
-  var sV=[],sC=[];
+  /* Return Air assumption (constant zone setpoint) */
+  var T_ra=24, RH_ra=50;
+  var W_ra=getW(T_ra,RH_ra);
+  var h_ra=enthalpy(T_ra,W_ra);
+
   /* SA color (amber matches existing ΔH SA reference) */
   var col=[0.961,0.620,0.043];
+  var sV=[],sC=[];
+  var saPts=[];
+
   weatherData.forEach(function(p){
-    var y=frac2sy(p.frac);
+    var h_oa=enthalpy(p.t,p.w);
+
+    /* Outside-air damper position — enthalpy-based economizer */
+    var alpha;
+    if(p.t<5){
+      alpha=0.20;                              /* freeze lockout: min vent */
+    }else if(h_oa<h_sa_set){
+      alpha=0.90;                              /* full free cooling */
+    }else if(h_oa<h_ra){
+      alpha=0.55;                              /* partial economizer */
+    }else{
+      alpha=0.20;                              /* min vent (OA worse than RA) */
+    }
+
+    /* Mixed Air */
+    var T_ma=alpha*p.t + (1-alpha)*T_ra;
+    var W_ma=alpha*p.w + (1-alpha)*W_ra;
+    var h_ma=enthalpy(T_ma,W_ma);
+
+    /* Coil action — 90% effectiveness */
+    var T_sa,W_sa;
+    if(h_ma>h_sa_set){
+      /* cooling + dehumidification */
+      T_sa=T_ma + 0.9*(T_sa_set-T_ma);
+      W_sa=W_ma + 0.9*(W_sa_set-W_ma);
+    }else{
+      /* heating only — sensible heat, no humidification */
+      T_sa=T_sa_set;
+      W_sa=W_ma;
+    }
+
+    var x=t2sx(T_sa),y=frac2sy(p.frac),z=w2sz(W_sa);
     sV.push(x,y,z);
     sC.push(col[0],col[1],col[2]);
+    saPts.push({x:x,y:y,z:z});
   });
 
-  /* SA points + connecting line — runs parallel to TIME axis at the SA setpoint */
+  /* SA points + connecting polyline (varies with time / season) */
   var ptGeo=new THREE.BufferGeometry();
   ptGeo.setAttribute('position',new THREE.Float32BufferAttribute(sV,3));
   ptGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
@@ -720,18 +770,20 @@ function buildSAPath(){
   lnGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
   saGroup.add(new THREE.Line(lnGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85})));
 
-  /* SA badge label floating at top of the SA line */
-  var lbl=mkT('SA '+T_sa.toFixed(0)+'\u00b0C / '+RH_sa.toFixed(0)+'%','#f59e0b',13);
-  lbl.position.set(x,SY+6,z);
+  /* SA badge label floating at top of the SA path */
+  var top=saPts[saPts.length-1];
+  var lbl=mkT('SA (MA+COIL, set '+T_sa_set.toFixed(0)+'\u00b0C / '+RH_sa_set.toFixed(0)+'%)','#f59e0b',13);
+  lbl.position.set(top.x,SY+6,top.z);
   saGroup.add(lbl);
 
-  /* thin connectors from a few OA samples to the SA line — visually shows the "matching OA" link */
+  /* OA→SA connectors at sampled timestamps — visualises the "matching OA" link */
   var stride=Math.max(1,Math.floor(weatherData.length/40));
   var cV=[],cC=[];
   for(var i=0;i<weatherData.length;i+=stride){
     var p=weatherData[i];
+    var sp=saPts[i];
     var ox=t2sx(p.t),oz=w2sz(p.w),oy=frac2sy(p.frac);
-    cV.push(ox,oy,oz, x,oy,z);
+    cV.push(ox,oy,oz, sp.x,sp.y,sp.z);
     cC.push(col[0],col[1],col[2], col[0],col[1],col[2]);
   }
   var cGeo=new THREE.BufferGeometry();

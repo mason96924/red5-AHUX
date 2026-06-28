@@ -462,7 +462,9 @@ function renderSidebar(ctx) {
             reclaim vertical sidebar real-estate (2026-06-26). */}
         <div className="flex items-center gap-2">
             <h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] whitespace-nowrap shrink-0 shadow-black">{t('asset_search')}</h2>
-            <input type="text" placeholder="Search ID (*, ?)…" data-testid="asset-search-input"
+            <input type="text"
+                   placeholder={isCompact ? '*.?....' : 'Search(*.?)...'}
+                   data-testid="asset-search-input"
                    className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-lg py-1.5 px-3 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`}
                    value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>

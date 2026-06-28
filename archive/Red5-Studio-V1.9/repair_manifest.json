@@ -159,7 +159,7 @@
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
       "size": 30995,
-      "sha256": "4c98ced854673d331918580617c00bbbc4dbb8779671eeec9339996d54db08d2",
+      "sha256": "42438397b16a2eb65d57204c20ec0ee66f99396ccc55c2aafde3731f39e62366",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -168,8 +168,8 @@
       "kind": "ui",
       "label": "dashboard.compiled.js",
       "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
-      "size": 393621,
-      "sha256": "e09ba2cb3a14b02ed35427b9787e6b22b6a0a02dc8eb9bca189a1bc8533f0fc3",
+      "size": 393633,
+      "sha256": "5ed7c79d9c40ab7d95559c9db8ab82b566379cb0bcc88ac0c645f976ac84d880",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -178,8 +178,8 @@
       "kind": "ui",
       "label": "dashboard.tailwind.css",
       "desc": "Pre-extracted Tailwind CSS (replaces cdn.tailwindcss.com runtime)",
-      "size": 87461,
-      "sha256": "1a315fba1eddcec304d0d1f1df1d0322627103e281f702c0189a04da730db3e7",
+      "size": 88902,
+      "sha256": "da6e0bcdf0a4c5ca51d1f5b66959fd14015bd8a40b6b1fd7f78215f8a258893a",
       "show_in_ui": true,
       "hot_reload": false
     },

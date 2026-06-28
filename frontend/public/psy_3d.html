@@ -496,6 +496,31 @@ var vavData=[];
 
 /* enthalpy helper: h in kJ/kg, W in kg/kg */
 function enthalpy(T,W){return 1.006*T+W*(2501+1.86*T);}
+
+/* ================================================================
+   SHARED SA MODEL — 10-band OA→SA lookup
+   Returns {t, w} for any OA (T, RH, W).  Same logic as the 2D X-Y
+   detail view so the 3D SA path and the 2D OA→SA landings are
+   guaranteed to agree.
+   ================================================================ */
+function computeSA_band(t,rh,w){
+  var st,sw;
+  if(t<5&&rh<30){st=Math.min(22,Math.max(20,20+(5-t)*.15));sw=getW(st,40);}
+  else if(t>=5&&t<15&&rh>=30&&rh<=60){st=Math.min(21,Math.max(18,18+(15-t)*.3));sw=w<.004?getW(st,35):w;}
+  else if(t>=15&&t<20&&rh<30){st=Math.min(21,Math.max(18.5,t+1));sw=getW(st,45);}
+  else if(t>=18&&t<22&&rh>=30&&rh<=50){st=t;sw=w;}
+  else if(t>=22&&t<=25&&rh>=40&&rh<=60){st=t;sw=w;}
+  else if(t>25&&t<=27&&rh>=50&&rh<=70){st=Math.min(26,Math.max(23.5,t-1));sw=rh>65?getW(st,55):w;}
+  else if(t>27&&t<=32&&rh>60&&rh<=80){st=12;sw=getW(12,95);}
+  else if(t>32&&t<=38&&rh>70){st=13;sw=getW(13,95);}
+  else if(t>35&&rh<30){st=15;sw=w<.004?getW(15,40):w;}
+  else if(t>30&&rh>85){st=11;sw=getW(11,95);}
+  else{var h=1.006*t+w*(2501+1.86*t);if(h<30){st=19;sw=getW(19,35);}else if(h<50){st=t;sw=w;}else if(h<65){st=Math.max(23.5,t-1);sw=getW(st,55);}else{st=13;sw=getW(13,95);}}
+  /* saturation cap — SA humidity ratio cannot exceed saturation at SA temp */
+  var wSat=getW(st,100);if(sw>wSat)sw=wSat*0.98;
+  return{t:st,w:sw};
+}
+window.computeSA_band=computeSA_band;
 var DH_MAX=80;/* kJ/kg scale */
 
 /* ================================================================
@@ -689,32 +714,14 @@ function buildWeatherVis(locName,fromD,toD){
 
 /* ================================================================
    SA PATH (Supply Air trajectory)
-   Mixed-air + coil model — option (c)
-     1. RA assumed constant (24°C / 50% RH zone setpoint)
-     2. Outside-air damper α set by economizer logic on enthalpy
-        (free cooling when h_oa < h_sa_set, min ventilation otherwise,
-         freeze lockout if T_oa < 5°C)
-     3. Mixed Air = α·OA + (1-α)·RA (linear blend of T and W)
-     4. Coil:
-          - if MA enthalpy > SA setpoint enthalpy → cooling+dehumid
-            coil pulls 90% of the way toward (T_sa_set, W_sa_set)
-          - else → heating coil raises T to T_sa_set, W stays at W_ma
-   Result: SA varies with OA / season, drifts between MA cloud and
-   the setpoint depending on operating mode.
+   Uses the SHARED 10-band OA→SA lookup (computeSA_band) — same as
+   the 2D X-Y "OA→SA Lines" view, so the 3D and 2D representations
+   are guaranteed to agree.  SA T can range ~11–26°C depending on
+   which band each OA point falls into.
    ================================================================ */
 function buildSAPath(){
   while(saGroup.children.length)saGroup.remove(saGroup.children[0]);
   if(weatherData.length<2)return;
-
-  var T_sa_set=parseFloat(document.getElementById('in-sa-t').value)||13;
-  var RH_sa_set=parseFloat(document.getElementById('in-sa-rh').value)||95;
-  var W_sa_set=getW(T_sa_set,RH_sa_set);
-  var h_sa_set=enthalpy(T_sa_set,W_sa_set);
-
-  /* Return Air assumption (constant zone setpoint) */
-  var T_ra=24, RH_ra=50;
-  var W_ra=getW(T_ra,RH_ra);
-  var h_ra=enthalpy(T_ra,W_ra);
 
   /* SA color (amber matches existing ΔH SA reference) */
   var col=[0.961,0.620,0.043];
@@ -722,44 +729,14 @@ function buildSAPath(){
   var saPts=[];
 
   weatherData.forEach(function(p){
-    var h_oa=enthalpy(p.t,p.w);
-
-    /* Outside-air damper position — enthalpy-based economizer */
-    var alpha;
-    if(p.t<5){
-      alpha=0.20;                              /* freeze lockout: min vent */
-    }else if(h_oa<h_sa_set){
-      alpha=0.90;                              /* full free cooling */
-    }else if(h_oa<h_ra){
-      alpha=0.55;                              /* partial economizer */
-    }else{
-      alpha=0.20;                              /* min vent (OA worse than RA) */
-    }
-
-    /* Mixed Air */
-    var T_ma=alpha*p.t + (1-alpha)*T_ra;
-    var W_ma=alpha*p.w + (1-alpha)*W_ra;
-    var h_ma=enthalpy(T_ma,W_ma);
-
-    /* Coil action — 90% effectiveness */
-    var T_sa,W_sa;
-    if(h_ma>h_sa_set){
-      /* cooling + dehumidification */
-      T_sa=T_ma + 0.9*(T_sa_set-T_ma);
-      W_sa=W_ma + 0.9*(W_sa_set-W_ma);
-    }else{
-      /* heating only — sensible heat, no humidification */
-      T_sa=T_sa_set;
-      W_sa=W_ma;
-    }
-
-    var x=t2sx(T_sa),y=frac2sy(p.frac),z=w2sz(W_sa);
+    var sa=window.computeSA_band(p.t,p.rh,p.w);
+    var x=t2sx(sa.t),y=frac2sy(p.frac),z=w2sz(sa.w);
     sV.push(x,y,z);
     sC.push(col[0],col[1],col[2]);
-    saPts.push({x:x,y:y,z:z});
+    saPts.push({x:x,y:y,z:z,t:sa.t,w:sa.w});
   });
 
-  /* SA points + connecting polyline (varies with time / season) */
+  /* SA points + connecting polyline (varies with OA band / season) */
   var ptGeo=new THREE.BufferGeometry();
   ptGeo.setAttribute('position',new THREE.Float32BufferAttribute(sV,3));
   ptGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
@@ -770,9 +747,9 @@ function buildSAPath(){
   lnGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
   saGroup.add(new THREE.Line(lnGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85})));
 
-  /* SA badge label floating at top of the SA path */
+  /* SA badge label floating at top of the path */
   var top=saPts[saPts.length-1];
-  var lbl=mkT('SA (MA+COIL, set '+T_sa_set.toFixed(0)+'\u00b0C / '+RH_sa_set.toFixed(0)+'%)','#f59e0b',13);
+  var lbl=mkT('SA (10-band)','#f59e0b',13);
   lbl.position.set(top.x,SY+6,top.z);
   saGroup.add(lbl);
 
@@ -1177,23 +1154,7 @@ function render2D(){
 
   /* OA → SA projection (per-band strategy) — supports Lines (A), Landing Zones (B), VAV Delivery (C) */
   if(weatherData.length>0){
-    function computeSA(t,rh,w){
-      var st,sw;
-      if(t<5&&rh<30){st=Math.min(22,Math.max(20,20+(5-t)*.15));sw=getW(st,40);}
-      else if(t>=5&&t<15&&rh>=30&&rh<=60){st=Math.min(21,Math.max(18,18+(15-t)*.3));sw=w<.004?getW(st,35):w;}
-      else if(t>=15&&t<20&&rh<30){st=Math.min(21,Math.max(18.5,t+1));sw=getW(st,45);}
-      else if(t>=18&&t<22&&rh>=30&&rh<=50){st=t;sw=w;}
-      else if(t>=22&&t<=25&&rh>=40&&rh<=60){st=t;sw=w;}
-      else if(t>25&&t<=27&&rh>=50&&rh<=70){st=Math.min(26,Math.max(23.5,t-1));sw=rh>65?getW(st,55):w;}
-      else if(t>27&&t<=32&&rh>60&&rh<=80){st=12;sw=getW(12,95);}
-      else if(t>32&&t<=38&&rh>70){st=13;sw=getW(13,95);}
-      else if(t>35&&rh<30){st=15;sw=w<.004?getW(15,40):w;}
-      else if(t>30&&rh>85){st=11;sw=getW(11,95);}
-      else{var h=1.006*t+w*(2501+1.86*t);if(h<30){st=19;sw=getW(19,35);}else if(h<50){st=t;sw=w;}else if(h<65){st=Math.max(23.5,t-1);sw=getW(st,55);}else{st=13;sw=getW(13,95);}}
-      /* saturation cap — SA humidity ratio cannot exceed saturation at SA temp */
-      var wSat=getW(st,100);if(sw>wSat)sw=wSat*0.98;
-      return{t:st,w:sw};
-    }
+    var computeSA=window.computeSA_band;
     function bandCol(t,rh,alpha){
       var a=alpha||.35;
       if(t<5&&rh<30)return'rgba(59,130,246,'+a+')';

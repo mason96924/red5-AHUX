@@ -1,5 +1,66 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase V3.0-α — ELC codec scaffolded (2026-02)
+
+**Brief**: First code drop for the Red5-ELC V3.0 protocol stack that will
+replace the SCU's PC counterpart.  Closes the "5 open questions" from
+the architecture doc with confirmed-by-user defaults and lands Phase 0
+(scaffold) + Phase 1 (codec) per `/app/archive/Red5-ELC-V3.0/docs/ARCHITECTURE.md`.
+
+**User-confirmed assumptions (2026-02)**:
+1. Checksum = `sum(bytes_before_checksum) & 0xFF` everywhere; revisit
+   once Wireshark capture from demo gear is available.
+2. TCP port: no default committed — configurable per-SCU; placeholder
+   `7000` until capture confirms.
+3. Multi-master writes: assumed yes; every unsolicited event from the
+   SCU is treated as authoritative.
+4. Frame fragmentation: `decode()` is a streaming parser — one
+   socket-read ≠ one frame.
+5. Time-master role: Red5 broadcasts `0x01 TimeDateSet` on every SCU
+   (re)connect using its NTP-synced clock.
+
+**Phase 0 — Scaffold**:
+  * `/app/archive/Red5-ELC-V3.0/` skeleton per ARCHITECTURE.md §9.
+  * `pyproject.toml` with pytest / pytest-asyncio / pytest-cov / ruff
+    in `[dev]`; installable via `pip install -e ".[dev]"`.
+  * `tests/conftest.py` exposes a `MockScu` fake (round-trips frames
+    in memory) + a shared `default_registry` fixture — reused
+    unmodified by Phase 2 transport tests.
+
+**Phase 1 — Codec (100 % coverage)**:
+  * `elc/codec/frame.py` — `Frame` dataclass, `encode()`,
+    streaming `decode()` (handles fragmentation, garbage-before-preamble,
+    bad-checksum recovery, oversize-length resync), `checksum()`.
+  * `elc/codec/device_id.py` — 32-bit hierarchical address packed
+    `DevType(10) / SCU(6) / Addr(10) / SubAddr(6)`.  Spec doc labels
+    SubAddr "8 bits"; layout follows the bit positions (sum to 32) and
+    notes the inconsistency for re-confirmation.
+  * `elc/codec/messages.py` — 10 typed dataclasses:
+    `TimeDateSet` (0x01), `RelaySet` (0x14), `RelayState` (0x15),
+    `StatusQuery` (0x16), `DemandResponse` (0x22), `FailReport` (0x23),
+    `DaliArcPower` (0x30), `SceneRecall` (0x40), `PowerUp` (0x50),
+    `Heartbeat` (0x60).  Each `encode()`/`decode()` round-trips the
+    *payload* only; framing is the codec's job.
+  * `elc/codec/registry.py` — `FlagRegistry` with `decode_frame()` and
+    `encode_message()`; `default_registry` pre-populated with all 10.
+
+**Tests**: `pytest -q` → 106 passed in <1 s.  Coverage: **322/322
+statements, 80/80 branches = 100 %** on every codec module.  Ruff
+clean.
+
+**Why it matters**: With the codec sealed behind a contract, Phase 2
+(`ScuLink` asyncio transport) can be built and tested against the
+`MockScu` fake without touching real hardware, and Phase 3 drivers
+just import dataclasses — never bytes.
+
+**Open questions not blocking Phase 2**:
+  * Per-message byte layouts (esp. `DaliArcPower` fade encoding,
+    `PowerUp` firmware-string format, `FailReport` detail block) are
+    draft.  Marked clearly in `messages.py`; re-confirm against demo
+    captures and adjust dataclasses in place — registry + transport
+    stay unchanged.
+
+
 ## Phase L.44 — Tailwind pre-extract (kill the CDN runtime, 2026-06-27)
 
 **Brief**: Replaces the ~200 KB `cdn.tailwindcss.com` runtime JIT with a

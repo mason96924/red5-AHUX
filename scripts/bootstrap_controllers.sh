@@ -162,6 +162,33 @@ verify_controller() {
 
 echo "${B}mode=${MODE}  controllers=${#TARGETS[@]}  ui-files=${#UI_FILES[@]}  manifest-entries=${EXPECTED}${X}"
 
+# ---- no-cache meta preflight ---------------------------------------------
+# Every *.html under $ARCHIVE must carry the sentinel attribute
+# `data-cache-policy="no-cache"`.  Without it, browsers cache the controller's
+# HTML indefinitely and field users see stale UI after every push until they
+# hard-refresh -- the 2026-06-28 psy_3d.html SA-toggle invisibility bug that
+# prompted this gate (mirrored from V2.0 deploy.sh step [0a/7]).
+#
+# Restore the tags by running:
+#   python3 scripts/inject_no_cache_meta.py
+MISSING_CACHE=()
+shopt -s nullglob
+for html in "$ARCHIVE"/*.html; do
+    grep -q 'data-cache-policy="no-cache"' "$html" || MISSING_CACHE+=("$(basename "$html")")
+done
+shopt -u nullglob
+if [[ ${#MISSING_CACHE[@]} -gt 0 ]]; then
+    echo "${R}[!] ${#MISSING_CACHE[@]} V1.9 HTML file(s) missing the no-cache meta tag:${X}"
+    for f in "${MISSING_CACHE[@]}"; do echo "    - $f"; done
+    echo ""
+    echo "${R}Refusing to push to controllers.  Run:"
+    echo "    python3 scripts/inject_no_cache_meta.py"
+    echo "    python3 scripts/build_repair_manifest.py"
+    echo "then commit + push + re-run this script.${X}"
+    exit 4
+fi
+echo "${G}no-cache meta preflight  : OK ($(ls "$ARCHIVE"/*.html 2>/dev/null | wc -l) HTML files tagged)${X}"
+
 PASS=0; FAIL=0
 for ip in "${TARGETS[@]}"; do
     echo ""

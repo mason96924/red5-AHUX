@@ -1,5 +1,71 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase V3.0-γ — SrmDriver + REST/WS (2026-02)
+
+**Brief**: Phases 3 + 4 of the V3.0 ELC stack delivered in one drop —
+the first device driver, an in-memory live-state replica, the public
+REST router and the WebSocket fan-out.  End-to-end smoke flow proven
+against `MockScuServer`: `POST /api/elc/devices/{id}/relay` ⇒ frame
+on the wire ⇒ mock SCU echoes RelayState ⇒ replica updates ⇒ every
+connected WS client receives a JSON `relay_state` event.
+
+**Delivered**:
+  * `elc/domain/bus.py` — `EventBus[T]` (sync + async handlers, one
+    bad handler never breaks dispatch).
+  * `elc/drivers/base.py` — `AbstractDevice` that declares
+    `HANDLED_MESSAGES` and routes inbound frames to `_on_<Class>`
+    methods.
+  * `elc/drivers/srm.py` — `SrmDriver`:
+    - `set_relay(device, state)` (fire-and-forget; SCU's
+      unsolicited 0x15 is treated as authoritative confirmation per
+      §7-Q3),
+    - `query(device, timeout=2.0)` (sends `StatusQuery`, awaits the
+      next matching `RelayState`, cleans up pending Futures on
+      timeout),
+    - `on_state_change` + `on_fail` event buses.
+  * `elc/codec/device_id.py` — added `DeviceId.from_string("SRM/1/2/3")`
+    for the REST URL form.
+  * `elc/domain/replica.py` — `Replica` + `DeviceSnapshot`; subscribes
+    to driver buses via `attach(driver)` and republishes every change
+    as JSON-shaped events on its own `events` bus.
+  * `elc/api/rest.py` — `/api/elc/{link, devices, devices/{id},
+    devices/{id}/relay}`.  `503` when the link isn't `CONNECTED`,
+    `400` on malformed device id, `404` for never-seen devices.
+  * `elc/api/ws.py` — `/ws/elc/events`.  Per-client bounded queue,
+    drops *oldest* on overflow; parallel `send_loop` + `recv_loop`
+    so client disconnect promptly unsubscribes from the bus (no
+    handler leak).
+  * `elc/api/app.py` — `build_stack(host, port)` factory returning
+    `ElcStack{app, link, driver, replica}`.  Single composition
+    root; reused by tests and the V2.0 host app.
+
+**Tests** (152 total, 7.13 s, **97 % coverage**, ruff clean):
+  * `tests/drivers/test_srm.py` — set_relay frame format, query
+    happy-path / timeout / cross-device isolation, 0x15 + 0x23
+    surfacing via event bus, unknown flags ignored.
+  * `tests/drivers/test_domain.py` — EventBus semantics,
+    DeviceId.from_string round-trip & validation, Replica records +
+    publishes both relay-state and fail events, snapshot
+    serialisation, `attach()` wiring.
+  * `tests/integration/test_rest.py` — every REST endpoint via
+    in-memory `httpx.ASGITransport`: link state, set_relay,
+    bad device id (400), link-down (503), devices list / get / 404.
+  * `tests/integration/test_e2e.py` — real uvicorn on an ephemeral
+    port + the `websockets` client: full REST → wire → MockScu →
+    replica → WS push round-trip; multiple WS clients each receive
+    the same event; client disconnect releases the EventBus
+    subscription.
+
+**Known dev-env quirk**: uvicorn 0.49 + websockets 16 emit benign
+`DeprecationWarning` about the `websockets.legacy` import paths;
+filtered in `pyproject.toml` so they don't trip
+`filterwarnings = ["error"]`.
+
+**Next**: Phase 5 — persistent audit log + Mongo mirror as a second
+`Replica.events` subscriber, schedule engine, scene & area-group
+domain, then DSW/DALI/WGM/SHG/ELCC48 drivers in priority order.
+
+
 ## Phase V3.0-β — ScuLink transport (2026-02)
 
 **Brief**: Phase 2 of the V3.0 ELC stack lands the L1 transport layer

@@ -111,3 +111,26 @@ class DeviceId:
         return (
             f"{self.dev_type.name}/{self.scu}/{self.address}/{self.sub_address}"
         )
+
+    @classmethod
+    def from_string(cls, s: str) -> DeviceId:
+        """Parse the canonical string form `DEVTYPE/SCU/ADDR/SUB`.
+
+        Used by the REST layer where the device id is a URL segment.
+        Raises `ValueError` on any malformed input.
+        """
+        parts = s.split("/")
+        if len(parts) != 4:
+            raise ValueError(f"expected DEVTYPE/SCU/ADDR/SUB, got {s!r}")
+        type_str, scu_str, addr_str, sub_str = parts
+        try:
+            dev_type = DeviceType[type_str]
+        except KeyError as e:
+            raise ValueError(f"unknown DeviceType {type_str!r}") from e
+        try:
+            scu = int(scu_str)
+            addr = int(addr_str)
+            sub = int(sub_str)
+        except ValueError as e:
+            raise ValueError(f"non-integer field in {s!r}") from e
+        return cls(dev_type=dev_type, scu=scu, address=addr, sub_address=sub)

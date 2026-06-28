@@ -4648,19 +4648,45 @@ global.initPsy3D = function(container, opts){
       return frac2sy(frac);
     }
 
-    /* --- Modeled path (amber) --------------------------------- */
+    /* --- Modeled path (amber) ---------------------------------
+       Apples-to-apples ribbon (2026-02): when measured telemetry is
+       available, build the modeled path on the SAME timestamps as the
+       measured samples AND use the AHU's own OA sensor (oa_t/oa_rh)
+       as the band input.  That removes microclimate / sensor-calibration
+       drift between Open-Meteo and the AHU's OA from the ribbon, so the
+       residual gap is pure controller error.
+
+       Fallback (Modeled-only mode, or Both mode before measured data
+       arrives): iterate weatherData and use Open-Meteo OA -- the wider
+       trajectory is still useful for design review even though it can't
+       be ribboned. */
     var modeledPts = null;
     if (mode === 'modeled' || mode === 'both') {
       modeledPts = [];
       var mV = [], mC = [];
-      weatherData.forEach(function(p){
-        var bi = _bandInputFor(p);
-        var sa = _saReset(bi.T, bi.RH, bi.W);
-        var x = t2sx(sa.t), y = frac2sy(p.frac), z = w2sz(sa.w);
-        mV.push(x, y, z);
-        mC.push(amber[0], amber[1], amber[2]);
-        modeledPts.push({x:x, y:y, z:z, ts:new Date(p.ts).getTime()/1000});
-      });
+      var useMeasuredOa = (mode !== 'modeled' && measured && measured.length);
+      if (useMeasuredOa) {
+        measured.forEach(function(s){
+          /* Synthesise a "p-shaped" object for _bandInputFor.  _saReset
+             is the same band model; feeding it the AHU's OA -> apples-
+             to-apples comparison against this same sample's measured SA. */
+          var bi = _bandInputFor({t:s.oa_t, rh:s.oa_rh, w:s.oa_w});
+          var sa = _saReset(bi.T, bi.RH, bi.W);
+          var x = t2sx(sa.t), y = _tsToY(s.ts), z = w2sz(sa.w);
+          mV.push(x, y, z);
+          mC.push(amber[0], amber[1], amber[2]);
+          modeledPts.push({x:x, y:y, z:z, ts:s.ts});
+        });
+      } else {
+        weatherData.forEach(function(p){
+          var bi = _bandInputFor(p);
+          var sa = _saReset(bi.T, bi.RH, bi.W);
+          var x = t2sx(sa.t), y = frac2sy(p.frac), z = w2sz(sa.w);
+          mV.push(x, y, z);
+          mC.push(amber[0], amber[1], amber[2]);
+          modeledPts.push({x:x, y:y, z:z, ts:new Date(p.ts).getTime()/1000});
+        });
+      }
       var pGeo = new THREE.BufferGeometry();
       pGeo.setAttribute('position', new THREE.Float32BufferAttribute(mV, 3));
       pGeo.setAttribute('color',    new THREE.Float32BufferAttribute(mC, 3));

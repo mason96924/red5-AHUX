@@ -24,6 +24,41 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V2.0/V1.9 — Apples-to-Apples Ribbon + Tailwind Sync (2026-02)
+
+**Brief**: Two follow-ups from the real-SA wiring phase: (1) make the
+Modeled-vs-Measured drift ribbon a true apples-to-apples comparison so
+the residual gap is *only* controller error; (2) keep the legacy
+`dashboard.tailwind.css` in sync with `setup_walk.jsx` so arbitrary
+utility classes (`text-[15px]`, etc.) added there don't silently
+fall back to defaults in PROD.
+
+**Delivered**:
+  * `_buildSaPathGeometry()` in `psy-3d-engine.js`:
+      - In Modeled-only mode: unchanged (iterates `weatherData`, uses
+        Open-Meteo OA, full-year design-review view).
+      - In **Measured / Both** modes: modeled path now iterates the
+        measured sample buffer (`_saMeasured`) and feeds each sample's
+        own `oa_t/oa_rh/oa_w` (from `/api/ahu/{id}/sa-timeseries`) into
+        `_bandInputFor` + `_saReset`.  Modeled and measured points are
+        therefore 1:1 aligned by ts → the drift ribbon visualises
+        controller error only, with microclimate / OA-sensor calibration
+        drift factored out.
+  * `setup-walk/build.sh`: appended a Tailwind compile + cache-bust
+    block that mirrors `dashboard/build.sh`.  Configs/inputs/outputs
+    reused (`tailwind.config.cjs`, `tailwind.input.css`,
+    `dashboard.tailwind.css`).  Updates the `?v=<hash>` cache-bust on
+    every HTML shell that loads the static stylesheet.
+  * Engine mirrored byte-identical across all three trees.
+
+**Verified**:
+  * `setup-walk/build.sh` syntax OK; tailwind step runs standalone
+    (87 KB output, finishes in ~6.5 s).
+  * Live preview: Both-mode ribbon renders with 1:1 aligned points;
+    drift is small (deterministic-synth backend) -- expected to grow
+    when real Mongo telemetry replaces the synth body.
+  * `js` lint clean; parity audit clean.
+
 ## Phase V2.0/V1.9 — Real-SA Telemetry Wiring (2026-02)
 
 **Brief**: Wired the dashboard 3D modal's SA Path layer to real (currently

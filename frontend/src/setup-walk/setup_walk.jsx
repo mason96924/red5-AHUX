@@ -277,7 +277,7 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
             )}
             <div className="rounded-xl flex items-center justify-center mb-1"
                  style={{
-                    width:'50%', aspectRatio:'1/1',
+                    width:'34%', aspectRatio:'1/1',
                     background:`${step.iconColor}22`,
                     border:`1px solid ${step.iconColor}55`,
                  }}>

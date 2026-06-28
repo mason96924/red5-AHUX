@@ -44,6 +44,57 @@ h1 span{color:#ef4444;font-style:italic}
 </style>
 </head>
 <body>
+<!-- Return-to-Setup badge: only shown when this page was opened from the
+     Setup Walk's pentagon hub.  Detected via ?from=setup in the URL.
+     Floats top-left, fixed position, so it stays visible while scrolling. -->
+<a id="returnToSetupBadge" href="/setup.html?force=1"
+   style="display:none;align-items:center;gap:6px;position:fixed;top:16px;left:16px;z-index:9999;
+          padding:8px 14px 8px 10px;border-radius:999px;
+          background:#1e293b;border:1px solid #334155;
+          color:#cbd5e1;font-family:'Courier New',monospace;font-size:12px;
+          font-weight:700;text-decoration:none;letter-spacing:.04em;
+          box-shadow:0 4px 18px -6px rgba(99,102,241,0.45);
+          transition:background .15s, border-color .15s;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+    </svg>
+    Return to Setup
+</a>
+<script>
+    /* Surface the badge only if we arrived from the Setup Walk (or there's
+       a sticky session flag set by it).  Setting the sessionStorage flag
+       too means the badge survives a hard-refresh of update.html. */
+    (function () {
+        try {
+            var qs = new URLSearchParams(window.location.search);
+            var fromSetup = qs.get('from') === 'setup' ||
+                            sessionStorage.getItem('red5.return_to_setup') === '1';
+            if (fromSetup) {
+                sessionStorage.setItem('red5.return_to_setup', '1');
+                var el = document.getElementById('returnToSetupBadge');
+                if (el) el.style.display = 'inline-flex';
+                /* Hover styling without bloating the inline CSS */
+                if (el) {
+                    el.addEventListener('mouseenter', function () {
+                        el.style.background    = '#312e81';
+                        el.style.borderColor   = '#6366f1';
+                        el.style.color         = '#e0e7ff';
+                    });
+                    el.addEventListener('mouseleave', function () {
+                        el.style.background    = '#1e293b';
+                        el.style.borderColor   = '#334155';
+                        el.style.color         = '#cbd5e1';
+                    });
+                }
+            } else {
+                /* Direct visit (operator typed /update.html) -- clear any
+                   stale flag so the badge doesn't bleed into a fresh session. */
+                sessionStorage.removeItem('red5.return_to_setup');
+            }
+        } catch (e) { /* private mode -- no-op */ }
+    })();
+</script>
 <h1><span>RED5</span> PLATFORM UPDATE</h1>
 <p class="sub">Standalone update tool — upload or download encrypted bundles (.red5)</p>
 

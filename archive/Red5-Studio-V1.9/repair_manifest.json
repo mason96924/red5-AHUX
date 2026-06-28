@@ -148,8 +148,8 @@
       "kind": "ui",
       "label": "update.html",
       "desc": "This page (Repair Mode + Data Bridges UI)",
-      "size": 81097,
-      "sha256": "d5865513b2fee05342fef8452f1258e640d79fa8d157f90af19bfef4aaea5992",
+      "size": 78162,
+      "sha256": "62b6f7e577abd1420bcedc9a603d16378ca9fdf7a61a05ffd425a8bd3794ea9a",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -209,7 +209,7 @@
       "label": "setup.html",
       "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
       "size": 3995,
-      "sha256": "eb4e4ac1151cb28fcdcbc6387cb4e5d722b0f3a3ef210ff4571f9916a3fe0ce4",
+      "sha256": "eef95825e5a0ee99f06ef1ff88dccbf68e536669b044d6de8abf11f280492051",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -218,8 +218,8 @@
       "kind": "ui",
       "label": "setup_walk.compiled.js",
       "desc": "Setup Walk compiled React bundle (loaded by setup.html)",
-      "size": 313207,
-      "sha256": "bf6dc83b77472f6a200da62d6911c3c1fd932f0046569835567e54802e048088",
+      "size": 313803,
+      "sha256": "362b65a750b7639a8e19b7f4fe03e3e4282e4d294a152bc030dfb098fe4563cf",
       "show_in_ui": true,
       "hot_reload": false
     },

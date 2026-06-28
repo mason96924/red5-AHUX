@@ -12,7 +12,7 @@ const STEPS = [
     { key:'location', label:'Location',        sub:'City · lat / long',              kind:'modal', iconColor:'#fbbf24', accent:'amber'  },
     { key:'language', label:'Language',        sub:'EN · CS · CT · JP · KO · …',     kind:'modal', iconColor:'#34d399', accent:'emerald'},
     { key:'plugins',  label:'Plug-in',         sub:'List · upload · modify',         kind:'modal', iconColor:'#f472b6', accent:'pink'   },
-    { key:'repair',   label:'Update & Repair', sub:'Plug-in flash · controller OTA', kind:'link', iconColor:'#fb7185', accent:'rose', href:'/update.html' },
+    { key:'repair',   label:'Update & Repair', sub:'Plug-in flash · controller OTA', kind:'link', iconColor:'#fb7185', accent:'rose', href:'/update.html?from=setup' },
 ];
 
 /* =========================================================================
@@ -99,8 +99,12 @@ function App() {
                                     topPct={y}
                                     onClick={() => {
                                         if (s.kind === 'page')      setRoute(s.key);
-                                        else if (s.kind === 'link') window.open(s.href, '_blank', 'noopener');
-                                        else                        setModal(s.key);
+                                        else if (s.kind === 'link') {
+                                            /* Same-tab nav so the return badge on
+                                               update.html can simply window.location
+                                               back here when the operator is done. */
+                                            window.location.href = s.href;
+                                        } else                      setModal(s.key);
                                     }} />
                     );
                 })}

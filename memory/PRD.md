@@ -1,5 +1,57 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## Phase V3.0-β — ScuLink transport (2026-02)
+
+**Brief**: Phase 2 of the V3.0 ELC stack lands the L1 transport layer
+that the codec sits on top of.  `ScuLink` is a single-event-loop,
+single-link asyncio TCP client that owns connect / reader / writer
+lifecycles and reconnects with exponential back-off on any failure.
+
+**Delivered**:
+  * `elc/transport/tcp_scu.py` — `ScuLink` + `LinkState` enum
+    (`DOWN / CONNECTING / CONNECTED / CLOSED`).  Public surface:
+    `start()`, `stop()`, `send(frame)`, `feed(handler)`,
+    `wait_connected(timeout)`, `state` property, `connect_attempts`
+    counter.  Sync and async handlers both supported; one bad handler
+    never breaks the link or its siblings.
+  * `tests/conftest.py` — added `MockScuServer` (asyncio TCP server
+    speaking ELC, ephemeral port, `on_frame(handler)` hook,
+    `disconnect_all()` to simulate SCU resets) as an
+    `async`-fixture.  Reused by every Phase 2+ transport test.
+  * `tests/transport/test_tcp_scu.py` — 16 tests covering:
+    construction validation, idempotent `start()`, the
+    **TimeDateSet → Heartbeat ack round-trip** (the milestone),
+    multi-frame ordering, server-drop → reconnect, back-off on
+    unreachable host, back-off reset after success, clean
+    `stop()` (including before connected), sync + async handler
+    fan-out, handler-exception isolation (both flavours),
+    and TCP fragmentation of inbound frames.
+
+**Concurrency model**: one supervisor task per link → fans out into a
+reader task (`decode()` over a bytearray, fed straight to handlers)
+and a writer task (drains a bounded `asyncio.Queue` of encoded
+frames).  On any session-level error the supervisor cancels its
+peers, closes the socket, sleeps `backoff`, and reconnects.
+Back-off resets to `initial_backoff` after every successful connect.
+
+**Tests**: `pytest --cov=elc` → **122 passed in 1.84 s.  99 % total
+coverage** (100 % on every codec module; 95 % on `tcp_scu.py` —
+remaining lines are defensive paths only reachable by injecting
+exceptions, not worth contorting tests for).  Ruff clean.
+
+**What changed since Phase V3.0-α**:
+  * `tests/conftest.py` grew the `MockScuServer` + `mock_scu_server`
+    async fixture.  Codec tests still use the in-memory `MockScu`
+    unchanged.
+  * `pyproject.toml` already declared `pytest-asyncio` with
+    `asyncio_mode = "auto"` — transport tests just needed
+    `pytestmark = pytest.mark.asyncio` for explicit clarity.
+
+**Next**: Phase 3 — `SrmDriver` (relay set / query + 0x15 unsolicited
+events) wired onto `ScuLink`.  First end-to-end "FastAPI POST /api/elc
+/devices/{id}/relay → wire → MockScu → audit log" smoke flow.
+
+
 ## Phase V3.0-α — ELC codec scaffolded (2026-02)
 
 **Brief**: First code drop for the Red5-ELC V3.0 protocol stack that will

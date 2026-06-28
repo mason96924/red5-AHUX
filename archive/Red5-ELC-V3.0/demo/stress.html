@@ -394,6 +394,11 @@
 
   async function fireBroadcast(state) {
     const t0 = performance.now();
+    // Optimistic UI: paint every cell immediately in one render frame.
+    // The WS confirmations that follow are then visual no-ops, which is
+    // exactly what we want — the relays *did* flip in unison on the wire
+    // (1 frame), only the feedback channel is per-device.
+    for (const id of cells.keys()) paintCell(id, state);
     inFlight++;
     $queue.textContent = `${inFlight} in-flight`;
     const ctrl = new AbortController();

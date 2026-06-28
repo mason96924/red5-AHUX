@@ -24,6 +24,53 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V2.0/V1.9 — Dashboard 3D modal SA Path + cache fix (2026-02)
+
+**Brief**: User noticed the SA Path toggle added to standalone `psy_3d.html`
+was NOT showing up in the dashboard's "3D WX" modal, because the modal is
+driven by `frontend/public/js/psy-3d-engine.js`, an entirely separate
+code path that builds its own toggle list.  Also: every HTML page was
+caching forever in normal browsers, requiring hard-refreshes after every
+deploy.
+
+**Delivered**:
+  * **SA Path layer in the engine** (`psy-3d-engine.js`):
+    - New `saPathGroup` + `_buildSaPathGeometry()` function (amber polyline
+      tracing SA T/W timeline via `_saReset()` per OA timestamp).
+    - New "SA Path" toggle pill alongside the existing "OA→SA Drops".
+    - Visualisation philosophy: OA→SA Drops = *prescriptive* (where SA
+      should land per the 10-band controller), SA Path = *descriptive/
+      temporal* (the trajectory pulled up the Time axis).  Both share
+      `_saReset()` today so they line up exactly -- gaps will appear
+      only when real AHU telemetry replaces `_saReset()` in the path
+      builder, which becomes the killer commissioning/diagnostic view.
+    - Engine copy synced byte-identical across all three mirrors
+      (frontend/public, V2.0 archive, V1.9 archive).
+  * **Universal HTML cache opt-out**:
+    - New `scripts/inject_no_cache_meta.py` -- idempotent script that
+      injects `<meta http-equiv="Cache-Control" content="no-cache, ...">`
+      + sentinel `data-cache-policy="no-cache"` into every `*.html`
+      under all three mirrors.  Ran once; 42 files patched.
+    - `deploy.sh` new step `[0a/7] no-cache meta preflight` -- refuses
+      to deploy (exit 4) if any `frontend/public/*.html` is missing
+      the sentinel.
+    - `bootstrap_controllers.sh` mirror preflight -- refuses to push
+      to V1.9 controllers if any `archive/Red5-Studio-V1.9/*.html` is
+      missing the sentinel.
+    - Result: stale-HTML-after-deploy is now structurally impossible
+      on both PROD and the embedded fleet.
+
+**Next milestone (when real AHU telemetry is wired)**:
+  * V2.0 + V1.9 backend: `GET /api/ahu/{id}/sa-timeseries?from=&to=`
+    returning `[{ts, sa_t, sa_rh}]` from historian.
+  * Engine: parallel-fetch SA alongside OA in the existing weather fetch;
+    swap the `_saReset()` call in `_buildSaPathGeometry()` for the
+    measured `(sa_t, sa_w)` per timestamp.
+  * UI toggle: `[●] Modeled SA   [○] Measured SA   [○] Both side-by-side`
+    -- "Both" mode draws modeled in amber, measured in a 2nd color,
+    with a translucent deviation ribbon between them.  Becomes the
+    primary commissioning / fault-detection view.
+
 ## Phase V2.0 — Parity preflight allowlist (2026-02)
 
 **Brief**: `deploy.sh` step `[0/7] V1.9/V2.0 endpoint-parity preflight`

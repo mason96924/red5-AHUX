@@ -24,6 +24,58 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V2.0/V1.9 — Real-SA Telemetry Wiring (2026-02)
+
+**Brief**: Wired the dashboard 3D modal's SA Path layer to real (currently
+synthesised, ready-for-Mongo) per-AHU telemetry, so the amber polyline
+can be compared against the controller's prescriptive 10-band SA setpoints
+(OA→SA Drops).  Three render modes + an optional drift ribbon turn the
+3D view into a commissioning + fault-detection tool.
+
+**Delivered**:
+  * **Backend (V2.0)** `routes/history.py`: new
+    `GET /api/ahu/{ahu_id}/sa-timeseries?from_ts=&to_ts=&step_s=`
+    returning `{ahu_id, from_ts, to_ts, step_s, samples[ts,sa_t,sa_rh,
+    sa_w,ra_t,ra_rh,oa_t,oa_rh,oa_w]}`.  Time window is anchored on
+    absolute unix-epoch seconds (not "now - window_min") so the engine
+    can request exactly the OA date range the user loaded from
+    Open-Meteo.  Body is deterministic synthesis today; swap for a
+    Mongo query when telemetry persistence ships -- frontend contract
+    unchanged.
+  * **Backend (V1.9)** `telemetry_service.py`: byte-equivalent Flask
+    mirror.  `check_v19_v20_parity.py` now reports 47/47 shared.
+  * **Engine** `psy-3d-engine.js`: new "SA PATH (MEASURED TELEMETRY)"
+    panel section -- AHU dropdown (auto-populated from `/api/data`),
+    Source dropdown (Modeled / Measured / Both), and a Drift Ribbon
+    sub-toggle that only appears in Both mode.  `_buildSaPathGeometry`
+    refactored into a 3-mode renderer:
+      - **Modeled** (amber): existing `_saReset()` per OA timestamp.
+      - **Measured** (cyan): fetched samples mapped onto the Time
+        axis by absolute ts → Y, regardless of cadence mismatch with
+        Open-Meteo OA.
+      - **Both**: both polylines + (optional) triangle-strip ribbon
+        connecting paired timestamps so controller drift becomes
+        scannable at a glance.
+    Auto-refetch via `window.__psy3dRefreshSaPath` whenever a new OA
+    window is loaded, so the cyan layer always covers the current
+    range.  Engine mirrored byte-identical across V1.9 / V2.0 / frontend.
+
+**Verified**:
+  * 35,032 samples fetched for a full-year window @ 900 s cadence;
+    panel status text shows `35032 samples (365d window, 900s step)`.
+  * `data-testid="psy3d-sa-ahu-select"`, `psy3d-sa-source-select`,
+    `psy3d-sa-ribbon-toggle` all present and wired.
+  * Both-mode ribbon visibly fades amber→cyan in the scene.
+  * Parity preflight + no-cache preflight + lint all green.
+
+**Known refinement (open)**:
+  * Today the modeled path uses Open-Meteo OA while the measured path
+    uses the AHU's OA sensor.  For a true apples-to-apples ribbon
+    (controller error only, no microclimate / calibration drift),
+    swap `_bandInputFor(p)` for the AHU's `oa_t, oa_rh` when a matching
+    sample exists.  ~10-line tweak, no new endpoints (the SA-timeseries
+    endpoint already returns `oa_t/oa_rh/oa_w`).
+
 ## Phase V2.0/V1.9 — Dashboard 3D modal SA Path + cache fix (2026-02)
 
 **Brief**: User noticed the SA Path toggle added to standalone `psy_3d.html`

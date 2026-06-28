@@ -1009,6 +1009,9 @@ def register(app, ctx):
     # Auto-scaffolded by port-route.py -- TODO move next to its siblings
     app.add_url_rule('/api/ahu-history/<ahu_id>', 'ahu_history',
                      ahu_history, methods=['GET'])
+    # V2.0 parity for the 3D modal's measured-SA overlay.
+    app.add_url_rule('/api/ahu/<ahu_id>/sa-timeseries', 'ahu_sa_timeseries',
+                     ahu_sa_timeseries, methods=['GET'])
 
 # ---------------------------------------------------------------------------
 # /api/ahu-history/<ahu_id>   (GET)  -- V2.0 parity (backend/routes/history.py:121).
@@ -1085,4 +1088,62 @@ def ahu_history(ahu_id):
         'window_min': window_min,
         'step_s':     step_s,
         'samples':    samples,
+    })
+
+
+# ---------------------------------------------------------------------------
+# /api/ahu/<ahu_id>/sa-timeseries   (GET)  -- V2.0 parity
+# (backend/routes/history.py: ahu_sa_timeseries).
+#
+# SA / OA telemetry over an explicit time WINDOW (from_ts .. to_ts unix
+# epoch seconds) for the 3D Psychrometric Modal's measured-SA overlay.
+# Same deterministic synthesis as ahu_history but anchored at absolute
+# timestamps instead of "now - window_min".  When telemetry persistence
+# ships, swap the body for a Mongo query against the historian
+# collection (same response shape, no frontend change needed).
+# ---------------------------------------------------------------------------
+def ahu_sa_timeseries(ahu_id):
+    try:
+        from_ts = int(request.args.get('from_ts'))
+        to_ts   = int(request.args.get('to_ts'))
+        step_s  = int(request.args.get('step_s', 900))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'from_ts, to_ts (required) and step_s must be integers'}), 400
+    if from_ts >= to_ts:
+        return jsonify({'error': 'from_ts must be < to_ts'}), 400
+    if (to_ts - from_ts) > 366 * 86400:
+        return jsonify({'error': 'window > 366 days'}), 400
+    step_s = max(60, min(3600, step_s))
+
+    seed_base = hash(ahu_id) % 1000
+    samples = []
+    ts = from_ts
+    while ts < to_ts:
+        oa = _ahu_history_oa(ts)
+        seed = seed_base + (int(ts) % 86400) / 86400.0
+        wave_slow  = math.sin(ts / 7200.0 + seed * 0.6)
+        wave_fast  = math.sin(ts / 1800.0 + seed * 1.3)
+        wave_micro = math.sin(ts /  360.0 + seed * 2.7) * 0.4
+        sa_t  = 13.5 + 1.8 * wave_slow + 0.6 * wave_fast + wave_micro
+        sa_rh = 58.0 + 6.0 * wave_slow + 2.5 * wave_fast
+        ra_t  = 23.0 + 0.9 * wave_slow + 0.4 * wave_fast
+        ra_rh = 48.0 - 4.0 * wave_slow + 1.6 * wave_fast
+        samples.append({
+            'ts':    int(ts),
+            'sa_t':  round(sa_t,  2),
+            'sa_rh': round(sa_rh, 1),
+            'sa_w':  round(_ahu_history_w(sa_t,  sa_rh) / 1000.0, 5),
+            'ra_t':  round(ra_t,  2),
+            'ra_rh': round(ra_rh, 1),
+            'oa_t':  oa['t'],
+            'oa_rh': oa['rh'],
+            'oa_w':  round(_ahu_history_w(oa['t'], oa['rh']) / 1000.0, 5),
+        })
+        ts += step_s
+    return jsonify({
+        'ahu_id':  ahu_id,
+        'from_ts': int(from_ts),
+        'to_ts':   int(to_ts),
+        'step_s':  step_s,
+        'samples': samples,
     })

@@ -182,6 +182,84 @@ async def ahu_history(ahu_id: str,
 
 
 # ---------------------------------------------------------------------------
+# SA timeseries for the 3D modal's measured-SA overlay.
+#
+# Companion to /api/ahu-history but parametrised by an explicit time
+# WINDOW (from_ts .. to_ts, unix-epoch seconds) so the 3D Psychrometric
+# Modal can request exactly the OA date range the user has loaded from
+# Open-Meteo.  Returns the same per-sample shape as ahu-history so the
+# frontend can use one schema for both endpoints.
+#
+# Today the body re-uses the same deterministic synthesis as
+# ahu-history; when telemetry persistence ships, swap the body for a
+# Mongo query against the historian collection (same response shape, no
+# frontend change needed).
+#
+# Why a separate endpoint instead of extending ahu-history?
+#   1. Clear contract for the diagnostic UI (SA path overlay) vs the
+#      live drill-down chart.
+#   2. ahu-history's "window_min" param is anchored at *now*; the 3D
+#      modal needs an arbitrary historical window keyed by absolute ts.
+#   3. Lets us cap the step at a coarser cadence (60..900 s) for the
+#      3D layer without affecting the existing 1-min drill-down.
+# ---------------------------------------------------------------------------
+@router.get("/api/ahu/{ahu_id}/sa-timeseries")
+async def ahu_sa_timeseries(
+    ahu_id: str,
+    from_ts: int = Query(..., description="Window start, unix epoch seconds"),
+    to_ts:   int = Query(..., description="Window end (exclusive), unix epoch seconds"),
+    step_s:  int = Query(900, ge=60, le=3600,
+                         description="Sample cadence in seconds (default 15-min)"),
+) -> dict:
+    """SA / OA telemetry for an AHU over an explicit time window.
+
+    Returns ``{ahu_id, from_ts, to_ts, step_s, samples: [...]}`` where each
+    sample carries the same fields as ``/api/ahu-history`` plus a derived
+    ``oa_w`` so the 3D engine doesn't have to recompute the humidity
+    ratio client-side.
+
+    400 if ``from_ts >= to_ts`` or the window exceeds 366 days.
+    """
+    if from_ts >= to_ts:
+        raise HTTPException(status_code=400, detail="from_ts must be < to_ts")
+    if (to_ts - from_ts) > 366 * 86400:
+        raise HTTPException(status_code=400, detail="window > 366 days")
+
+    seed_base = hash(ahu_id) % 1000
+    samples: list[dict] = []
+    ts = from_ts
+    while ts < to_ts:
+        oa = _demo_oa_state(ts)
+        seed = seed_base + (int(ts) % 86400) / 86400.0
+        wave_slow  = math.sin(ts / 7200.0 + seed * 0.6)
+        wave_fast  = math.sin(ts / 1800.0 + seed * 1.3)
+        wave_micro = math.sin(ts / 360.0  + seed * 2.7) * 0.4
+        sa_t  = 13.5 + 1.8 * wave_slow + 0.6 * wave_fast + wave_micro
+        sa_rh = 58.0 + 6.0 * wave_slow + 2.5 * wave_fast
+        ra_t  = 23.0 + 0.9 * wave_slow + 0.4 * wave_fast
+        ra_rh = 48.0 + 4.0 * (-wave_slow) + 1.6 * wave_fast
+        samples.append({
+            "ts":    int(ts),
+            "sa_t":  round(sa_t,  2),
+            "sa_rh": round(sa_rh, 1),
+            "sa_w":  round(_humidity_ratio(sa_t,  sa_rh), 5),
+            "ra_t":  round(ra_t,  2),
+            "ra_rh": round(ra_rh, 1),
+            "oa_t":  round(float(oa["t"]),  2),
+            "oa_rh": round(float(oa["rh"]), 1),
+            "oa_w":  round(_humidity_ratio(float(oa["t"]), float(oa["rh"])), 5),
+        })
+        ts += step_s
+    return {
+        "ahu_id":  ahu_id,
+        "from_ts": int(from_ts),
+        "to_ts":   int(to_ts),
+        "step_s":  step_s,
+        "samples": samples,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 24h rolling average of exchange / absorption for the pill trend arrows
 # (Phase L.39 — 2026-06-27).
 #

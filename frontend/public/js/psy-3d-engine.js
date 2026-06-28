@@ -595,6 +595,21 @@ global.initPsy3D = function(container, opts){
       <div id="p3-sa-locknote" class="p3-lbl" style="display:none;color:#64748b;line-height:1.3;text-transform:none;letter-spacing:0;margin:-2px 0 4px 0">SA slider only affects the Total/Heating/Cooling baseline. B1\u2013B10 uses each band\u2019s own SA target.</div>\
       <div class="p3-row"><div class="p3-lbl">Occupants</div><input class="p3-inp" id="p3-occ" type="number" value="20" step="1" min="0"></div>\
     </div>\
+    <div style="border-top:1px solid #334155;margin-top:8px;padding-top:8px">\
+      <div class="p3-lbl" style="color:#22d3ee">SA PATH (Measured Telemetry)</div>\
+      <div class="p3-row"><div class="p3-lbl">AHU</div>\
+        <select class="p3-inp" id="p3-sa-ahu" data-testid="psy3d-sa-ahu-select" style="cursor:pointer"><option value="">\u2014 select \u2014</option></select></div>\
+      <div class="p3-row"><div class="p3-lbl">Source</div>\
+        <select class="p3-inp" id="p3-sa-source" data-testid="psy3d-sa-source-select" style="cursor:pointer">\
+          <option value="modeled">Modeled (controller logic)</option>\
+          <option value="measured">Measured (telemetry)</option>\
+          <option value="both">Both (model vs reality)</option>\
+        </select></div>\
+      <div class="p3-row" id="p3-sa-ribbon-row" style="display:none">\
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8">\
+          <input type="checkbox" id="p3-sa-ribbon" data-testid="psy3d-sa-ribbon-toggle"> Show drift ribbon</label></div>\
+      <div id="p3-sa-status" class="p3-lbl" style="color:#64748b;text-transform:none;letter-spacing:0;line-height:1.3;margin-top:3px"></div>\
+    </div>\
   </div>\
 </div>\
 <div id="p3-axes">\
@@ -1842,6 +1857,103 @@ global.initPsy3D = function(container, opts){
         name: opt.dataset.name || opt.textContent
       }, {persist:true, fetch:true});
     };
+
+    /* ---------------------------------------------------------------
+       SA PATH — measured-telemetry overlay state + wiring.
+       _saSourceMode:  'modeled' | 'measured' | 'both'
+       _saAhuId:       AHU id selected in the dropdown (or null)
+       _saRibbonOn:    drift-ribbon sub-toggle (Both mode only)
+       _saMeasured:    cached samples [{ts, sa_t, sa_rh, sa_w, oa_t, oa_rh, oa_w}]
+                       indexed by ts in ms; null until first fetch succeeds.
+       --------------------------------------------------------------- */
+    var _saSourceMode = 'modeled';
+    var _saAhuId      = null;
+    var _saRibbonOn   = false;
+    var _saMeasured   = null;
+    function _saSetStatus(txt, color){
+      var el = document.getElementById('p3-sa-status');
+      if (!el) return;
+      el.textContent = txt || '';
+      el.style.color = color || '#64748b';
+    }
+    /* Populate the AHU dropdown from /api/data once on init.  We don't
+       block the rest of the engine on this -- if the call fails the
+       dropdown stays empty and the user can still use Modeled mode. */
+    (function _populateSaAhuDropdown(){
+      var sel = document.getElementById('p3-sa-ahu');
+      if (!sel) return;
+      fetch('/api/data').then(function(r){return r.ok ? r.json() : [];}).then(function(arr){
+        if (!Array.isArray(arr)) return;
+        arr.forEach(function(a){
+          if (!a || !a.id) return;
+          var opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = a.id;
+          sel.appendChild(opt);
+        });
+      }).catch(function(){ /* leave dropdown empty on failure */ });
+    })();
+    /* Fetch SA measured timeseries for the current AHU + weatherData
+       window.  Returns a Promise resolving to the samples array (may
+       be empty); rejects on transport / 4xx errors. */
+    function _fetchSaTimeseries(){
+      if (!_saAhuId || !weatherData || !weatherData.length) {
+        return Promise.resolve([]);
+      }
+      var fromTs = Math.floor(new Date(weatherData[0].ts).getTime() / 1000);
+      var toTs   = Math.floor(new Date(weatherData[weatherData.length-1].ts).getTime() / 1000) + 3600;
+      var step   = 900;  /* 15-min cadence — coarse enough for a year, dense enough for 24h */
+      var url = '/api/ahu/' + encodeURIComponent(_saAhuId) +
+                '/sa-timeseries?from_ts=' + fromTs +
+                '&to_ts=' + toTs + '&step_s=' + step;
+      _saSetStatus('Fetching ' + _saAhuId + '\u2026', '#94a3b8');
+      return fetch(url).then(function(r){
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }).then(function(d){
+        var samples = (d && d.samples) || [];
+        _saSetStatus(samples.length + ' samples (' + Math.round((toTs-fromTs)/86400) + 'd window, ' + step + 's step)', '#22d3ee');
+        return samples;
+      }).catch(function(e){
+        _saSetStatus('error: ' + e.message, '#ef4444');
+        return [];
+      });
+    }
+    /* Refresh handler: pulls measured data (if needed) then rebuilds
+       the SA Path geometry layer.  Idempotent. */
+    function _refreshSaPath(forceRefetch){
+      var needsMeasured = (_saSourceMode === 'measured' || _saSourceMode === 'both');
+      var promise;
+      if (needsMeasured && _saAhuId && (forceRefetch || !_saMeasured)) {
+        promise = _fetchSaTimeseries().then(function(arr){ _saMeasured = arr; });
+      } else {
+        if (!needsMeasured) _saSetStatus('Modeled (controller logic, no telemetry fetch)', '#94a3b8');
+        promise = Promise.resolve();
+      }
+      promise.then(function(){
+        if (typeof _buildSaPathGeometry === 'function') _buildSaPathGeometry();
+      });
+    }
+    /* Wire the three controls.  AHU / Source changes refetch; ribbon
+       toggle only restyles. */
+    document.getElementById('p3-sa-ahu').onchange = function(){
+      _saAhuId = this.value || null;
+      _saMeasured = null;
+      _refreshSaPath(true);
+    };
+    document.getElementById('p3-sa-source').onchange = function(){
+      _saSourceMode = this.value;
+      var ribbonRow = document.getElementById('p3-sa-ribbon-row');
+      if (ribbonRow) ribbonRow.style.display = (_saSourceMode === 'both') ? '' : 'none';
+      _refreshSaPath(false);
+    };
+    document.getElementById('p3-sa-ribbon').onchange = function(){
+      _saRibbonOn = !!this.checked;
+      if (typeof _buildSaPathGeometry === 'function') _buildSaPathGeometry();
+    };
+    /* Expose the refresh hook for buildWeatherVis so the SA layer
+       auto-refetches whenever a new OA window is loaded. */
+    window.__psy3dRefreshSaPath = _refreshSaPath;
 
     /* Initial population — fetch /api/weather-location once, then rebuild
        the dropdown.  Refreshing the saved list later (after the operator
@@ -4500,42 +4612,132 @@ global.initPsy3D = function(container, opts){
   }
 
   /* ---------- SA PATH (Supply Air timeline) -------------------------------
-     Companion to OA→SA Drops.  Drops are *prescriptive* (where SA should
-     land for each OA condition per the 10-band controller).  SA Path is
-     *descriptive/temporal*: the SA trajectory pulled up along the Time
-     axis -- one amber polyline that mirrors the OA Weather Path but for
-     SA.  Uses _saReset() (the same band model that drives Drops) so the
-     two views stay coherent.
-     Hidden by default (saPathGroup.visible=false at scene init); the
-     user enables it via the "SA Path" toggle in the layer panel.
+     Modes (controlled by `_saSourceMode` and friends, defined alongside
+     the panel wiring above):
+       'modeled'  — current behavior: amber polyline of _saReset() per OA
+                    timestamp (controller logic from Open-Meteo OA).
+       'measured' — cyan polyline of measured SA from /api/ahu/{id}/sa-
+                    timeseries.  Mapped onto the Time axis by matching
+                    the sample's `ts` against the weatherData window.
+       'both'     — both polylines, plus an optional translucent drift
+                    ribbon (_saRibbonOn) connecting paired timestamps so
+                    controller-drift becomes visually scannable.
+     Companion to OA→SA Drops (prescriptive setpoints).
      ------------------------------------------------------------------ */
   function _buildSaPathGeometry(){
     var THREE = window.THREE;
     if (!saPathGroup || !weatherData || !weatherData.length) return;
     while (saPathGroup.children.length) saPathGroup.remove(saPathGroup.children[0]);
-    var sV=[], sC=[];
-    /* Amber #f59e0b = rgb(245,158,11) → /255 */
-    var col=[0.961, 0.620, 0.043];
-    weatherData.forEach(function(p){
-      var bi=_bandInputFor(p);
-      var sa=_saReset(bi.T, bi.RH, bi.W);
-      var x=t2sx(sa.t), y=frac2sy(p.frac), z=w2sz(sa.w);
-      sV.push(x, y, z);
-      sC.push(col[0], col[1], col[2]);
-    });
-    var ptGeo=new THREE.BufferGeometry();
-    ptGeo.setAttribute('position', new THREE.Float32BufferAttribute(sV, 3));
-    ptGeo.setAttribute('color',    new THREE.Float32BufferAttribute(sC, 3));
-    saPathGroup.add(new THREE.Points(ptGeo, new THREE.PointsMaterial({
-      size:2.4, vertexColors:true, transparent:true, opacity:.9,
-      sizeAttenuation:true, depthWrite:false
-    })));
-    var lnGeo=new THREE.BufferGeometry();
-    lnGeo.setAttribute('position', new THREE.Float32BufferAttribute(sV, 3));
-    lnGeo.setAttribute('color',    new THREE.Float32BufferAttribute(sC, 3));
-    saPathGroup.add(new THREE.Line(lnGeo, new THREE.LineBasicMaterial({
-      vertexColors:true, transparent:true, opacity:.85
-    })));
+
+    var mode = (typeof _saSourceMode !== 'undefined') ? _saSourceMode : 'modeled';
+    var ribbon = (typeof _saRibbonOn !== 'undefined') ? _saRibbonOn : false;
+    var measured = (typeof _saMeasured !== 'undefined') ? _saMeasured : null;
+    /* Amber #f59e0b (modeled), Cyan #22d3ee (measured) */
+    var amber = [0.961, 0.620, 0.043];
+    var cyan  = [0.133, 0.827, 0.933];
+
+    /* Time-axis mapping for measured samples: weatherData carries
+       .frac in [0..1].  We re-derive (t0,tN,span) from its ts so a
+       measured sample's unix-second ts maps to the same Y. */
+    var t0_ms = new Date(weatherData[0].ts).getTime();
+    var tN_ms = new Date(weatherData[weatherData.length-1].ts).getTime();
+    var span_ms = Math.max(1, tN_ms - t0_ms);
+    function _tsToY(ts_unix_s){
+      var frac = (ts_unix_s * 1000 - t0_ms) / span_ms;
+      if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+      return frac2sy(frac);
+    }
+
+    /* --- Modeled path (amber) --------------------------------- */
+    var modeledPts = null;
+    if (mode === 'modeled' || mode === 'both') {
+      modeledPts = [];
+      var mV = [], mC = [];
+      weatherData.forEach(function(p){
+        var bi = _bandInputFor(p);
+        var sa = _saReset(bi.T, bi.RH, bi.W);
+        var x = t2sx(sa.t), y = frac2sy(p.frac), z = w2sz(sa.w);
+        mV.push(x, y, z);
+        mC.push(amber[0], amber[1], amber[2]);
+        modeledPts.push({x:x, y:y, z:z, ts:new Date(p.ts).getTime()/1000});
+      });
+      var pGeo = new THREE.BufferGeometry();
+      pGeo.setAttribute('position', new THREE.Float32BufferAttribute(mV, 3));
+      pGeo.setAttribute('color',    new THREE.Float32BufferAttribute(mC, 3));
+      saPathGroup.add(new THREE.Points(pGeo, new THREE.PointsMaterial({
+        size:2.4, vertexColors:true, transparent:true, opacity:.9,
+        sizeAttenuation:true, depthWrite:false
+      })));
+      var lGeo = new THREE.BufferGeometry();
+      lGeo.setAttribute('position', new THREE.Float32BufferAttribute(mV, 3));
+      lGeo.setAttribute('color',    new THREE.Float32BufferAttribute(mC, 3));
+      saPathGroup.add(new THREE.Line(lGeo, new THREE.LineBasicMaterial({
+        vertexColors:true, transparent:true, opacity:.85
+      })));
+    }
+
+    /* --- Measured path (cyan) ---------------------------------
+       Only renders when we actually got telemetry back from the
+       backend AND the AHU selection is non-empty. */
+    var measuredPts = null;
+    if ((mode === 'measured' || mode === 'both') && measured && measured.length) {
+      measuredPts = [];
+      var sV = [], sC = [];
+      measured.forEach(function(s){
+        var x = t2sx(s.sa_t), y = _tsToY(s.ts), z = w2sz(s.sa_w);
+        sV.push(x, y, z);
+        sC.push(cyan[0], cyan[1], cyan[2]);
+        measuredPts.push({x:x, y:y, z:z, ts:s.ts});
+      });
+      var pGeo2 = new THREE.BufferGeometry();
+      pGeo2.setAttribute('position', new THREE.Float32BufferAttribute(sV, 3));
+      pGeo2.setAttribute('color',    new THREE.Float32BufferAttribute(sC, 3));
+      saPathGroup.add(new THREE.Points(pGeo2, new THREE.PointsMaterial({
+        size:2.4, vertexColors:true, transparent:true, opacity:.9,
+        sizeAttenuation:true, depthWrite:false
+      })));
+      var lGeo2 = new THREE.BufferGeometry();
+      lGeo2.setAttribute('position', new THREE.Float32BufferAttribute(sV, 3));
+      lGeo2.setAttribute('color',    new THREE.Float32BufferAttribute(sC, 3));
+      saPathGroup.add(new THREE.Line(lGeo2, new THREE.LineBasicMaterial({
+        vertexColors:true, transparent:true, opacity:.85
+      })));
+    }
+
+    /* --- Drift ribbon (Both + sub-toggle) ---------------------
+       For each weatherData timestamp, find the nearest measured
+       sample (within 30 min) and emit a triangle strip connecting
+       (modeled) to (measured) at the same Y as the modeled point.
+       Translucent fade between amber and cyan visualises drift. */
+    if (mode === 'both' && ribbon && modeledPts && measuredPts && measuredPts.length) {
+      /* Pre-sort measured by ts for a linear-merge walk. */
+      var mSorted = measuredPts.slice().sort(function(a,b){return a.ts - b.ts;});
+      var mIdx = 0;
+      var rV = [], rC = [];
+      for (var i = 0; i < modeledPts.length - 1; i++) {
+        var a0 = modeledPts[i], a1 = modeledPts[i+1];
+        /* advance mIdx to bracket a0.ts */
+        while (mIdx < mSorted.length - 1 && mSorted[mIdx+1].ts <= a0.ts) mIdx++;
+        var b0 = mSorted[mIdx];
+        if (!b0 || Math.abs(b0.ts - a0.ts) > 1800) continue;
+        var b1 = mSorted[Math.min(mIdx+1, mSorted.length-1)];
+        if (!b1 || Math.abs(b1.ts - a1.ts) > 1800) b1 = b0;
+        /* Quad (a0,a1,b1) + (a0,b1,b0) — colors fade amber→cyan */
+        rV.push(a0.x,a0.y,a0.z,  a1.x,a1.y,a1.z,  b1.x,b1.y,b1.z);
+        rV.push(a0.x,a0.y,a0.z,  b1.x,b1.y,b1.z,  b0.x,b0.y,b0.z);
+        rC.push(amber[0],amber[1],amber[2],  amber[0],amber[1],amber[2],  cyan[0],cyan[1],cyan[2]);
+        rC.push(amber[0],amber[1],amber[2],  cyan[0],cyan[1],cyan[2],  cyan[0],cyan[1],cyan[2]);
+      }
+      if (rV.length) {
+        var rGeo = new THREE.BufferGeometry();
+        rGeo.setAttribute('position', new THREE.Float32BufferAttribute(rV, 3));
+        rGeo.setAttribute('color',    new THREE.Float32BufferAttribute(rC, 3));
+        saPathGroup.add(new THREE.Mesh(rGeo, new THREE.MeshBasicMaterial({
+          vertexColors:true, transparent:true, opacity:.18,
+          side:THREE.DoubleSide, depthWrite:false
+        })));
+      }
+    }
   }
 
   function buildWeatherVis(locName,fromD,toD){
@@ -4644,7 +4846,17 @@ global.initPsy3D = function(container, opts){
        enables it via the "OA→SA Drops" toggle in the layer panel.
        ----------------------------------------------------------------------- */
     _buildSaDropGeometry();
-    _buildSaPathGeometry();
+    /* _refreshSaPath() does the right thing for every mode:
+         - Modeled: returns immediately, then rebuilds geometry.
+         - Measured/Both: refetches /api/ahu/{id}/sa-timeseries for the
+           new OA window, then rebuilds with the fresh sample buffer.
+       Falls back to _buildSaPathGeometry() if the wiring hasn't run
+       yet (defensive — shouldn't happen in normal flow). */
+    if (typeof window.__psy3dRefreshSaPath === 'function') {
+      window.__psy3dRefreshSaPath(true);
+    } else {
+      _buildSaPathGeometry();
+    }
 
     /* time labels */
     function mkTl(text,col,sz){var c=document.createElement('canvas'),x=c.getContext('2d');c.width=512;c.height=64;x.font='bold 30px monospace';x.fillStyle=col||'#94a3b8';x.textAlign='center';x.textBaseline='middle';x.fillText(text,256,32);var t=new THREE.CanvasTexture(c);var s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(sz||28,(sz||28)*.125,1);return s;}

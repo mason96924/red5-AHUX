@@ -8,8 +8,8 @@
       "kind": "plugin",
       "label": "Upload Service",
       "desc": "Bundle upload + chunked endpoints + disk-status + Repair Mode",
-      "size": 88019,
-      "sha256": "152542734a597a3e2d486977e7e49ceca25f690fbdf7fd8511da5a19b1631cda",
+      "size": 89269,
+      "sha256": "7140d879baff1bb97d16a7b20faecf6e4ef223d203e16b6e07969819fdf99bba",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -455,7 +455,7 @@
     },
     {
       "name": "band_guide.md",
-      "kind": "ui",
+      "kind": "doc",
       "label": "band_guide.md",
       "desc": "Band guide docs (served via band_service.py & update.html)",
       "size": 7479,
@@ -465,7 +465,7 @@
     },
     {
       "name": "control_strategy_insight.md",
-      "kind": "ui",
+      "kind": "doc",
       "label": "control_strategy_insight.md",
       "desc": "Strategy insight docs (EN, served via app.py & update.html)",
       "size": 12189,
@@ -475,7 +475,7 @@
     },
     {
       "name": "control_strategy_insight.ko.md",
-      "kind": "ui",
+      "kind": "doc",
       "label": "control_strategy_insight.ko.md",
       "desc": "Strategy insight docs (KO localisation)",
       "size": 9118,
@@ -485,7 +485,7 @@
     },
     {
       "name": "configs/collector_config.json",
-      "kind": "ui",
+      "kind": "config",
       "label": "collector_config.json",
       "desc": "Default collector config schema (read by app.py)",
       "size": 1308,
@@ -495,7 +495,7 @@
     },
     {
       "name": "configs/equipment_types.json",
-      "kind": "ui",
+      "kind": "config",
       "label": "equipment_types.json",
       "desc": "Equipment-type catalog (read by app.py & equipment_mapper.html)",
       "size": 1688763,

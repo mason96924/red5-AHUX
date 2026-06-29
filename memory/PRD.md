@@ -7380,3 +7380,25 @@ V2.0 routes: 46    V1.9 routes: 75    shared: 46
 - Rationale: V1.9 `upload_service.py` allow-list only recognises `'ui'` and `'plugin'`. Anything else is rejected by `bootstrap_controllers.sh`.
 - Regenerated `/app/archive/Red5-Studio-V1.9/repair_manifest.json` (50 entries).
 - Long-term: widen V1.9 `upload_service.py` to accept `'config'` and `'doc'` kinds (refactor backlog).
+
+---
+
+## 2026-02 — V1.9 upload_service.py widened to accept 'config' and 'doc' kinds (refactor)
+
+**Why:** Tagging docs/configs as `'ui'` was a workaround, not a fix. It pushed deployment-time guesswork onto every future contributor.
+
+**Changes:**
+- `archive/Red5-Studio-V1.9/upload_service.py`:
+  - `_manifest_allow_set(kind)` now recognises `'config'` and `'doc'` filters (returns empty set when no manifest present, since fresh controllers don't ship docs/configs in the bootstrap fallback).
+  - New `_manifest_static_allow_set()` helper returns the union of `ui | config | doc` — single allow-list for every non-plug-in static asset. Path/extension routing in the upload handler is unchanged.
+  - Two callsites updated: `repair_upload_plugin` (line ~1338) and `repair_download_plugin` (line ~1499) now consume the union instead of just `'ui'`.
+- `scripts/build_repair_manifest.py`: reverted to natural kinds — `band_guide.md`, `control_strategy_insight*.md` → `'doc'`; `collector_config.json`, `equipment_types.json` → `'config'`.
+- Regenerated `archive/Red5-Studio-V1.9/repair_manifest.json` (50 entries).
+
+**Verified (smoke test, /tmp shell run):**
+- `_manifest_allow_set('ui')` → 32 entries (no docs/configs pollution).
+- `_manifest_allow_set('doc')` → `{band_guide.md, control_strategy_insight.md, control_strategy_insight.ko.md}`.
+- `_manifest_allow_set('config')` → `{configs/collector_config.json, configs/equipment_types.json}`.
+- `_manifest_static_allow_set()` → 37 entries; all 5 previously-rejected docs/configs are admitted; plug-ins (e.g. `upload_service.py`) correctly excluded.
+
+**Operator impact:** `bootstrap_controllers.sh --ui-only` will now accept docs/configs by their real kind. No more "ui" masquerade.

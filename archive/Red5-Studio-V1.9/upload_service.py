@@ -175,15 +175,19 @@ def _load_manifest(force=False):
 
 def _manifest_allow_set(kind=None):
     """Set of file names (basenames) the manifest currently permits.
-    `kind` filters by 'plugin' / 'ui'; None = all.  Falls back to the
-    static set when no manifest is present so a fresh controller still
-    has a path to flash the first manifest."""
+    `kind` filters by 'plugin' / 'ui' / 'config' / 'doc'; None = all.
+    Falls back to the static set when no manifest is present so a fresh
+    controller still has a path to flash the first manifest."""
     m = _load_manifest()
     if m is None:
         if kind == 'plugin':
             return set(_FALLBACK_PLUGIN_FILES)
         if kind == 'ui':
             return set(_FALLBACK_UI_FILES)
+        if kind in ('config', 'doc'):
+            # Fresh controllers have no docs/configs in the fallback
+            # set -- those land via the first manifest flash.
+            return set()
         return set(_FALLBACK_PLUGIN_FILES) | set(_FALLBACK_UI_FILES)
     out = set()
     for e in m.get('files', []) or []:
@@ -199,6 +203,29 @@ def _manifest_allow_set(kind=None):
     # endpoint still serving the stale on-disk copy.
     if kind in (None, 'ui'):
         out.add('repair_manifest.json')
+    return out
+
+
+def _manifest_static_allow_set():
+    """Union of every non-plugin manifest entry: 'ui', 'config', 'doc'.
+    These all land under DATA_ROOT (routed by path/extension in the
+    upload handler) and share one allow-list at the classifier level.
+    Introduced 2026-02 so docs (band_guide.md) and configs
+    (equipment_types.json) stop having to masquerade as 'ui'."""
+    m = _load_manifest()
+    if m is None:
+        # No manifest yet -- fall back to the bootstrap UI set so a
+        # fresh controller can still receive its first flash.
+        out = set(_FALLBACK_UI_FILES)
+        out.add('repair_manifest.json')
+        return out
+    out = set()
+    for e in m.get('files', []) or []:
+        if e.get('kind') in ('ui', 'config', 'doc'):
+            n = e.get('name')
+            if n:
+                out.add(n)
+    out.add('repair_manifest.json')
     return out
 
 
@@ -1306,15 +1333,17 @@ def repair_upload_plugin():
         # Allow-list is now derived from /root/data/repair_manifest.json
         # at request time -- single source of truth shared with the UI
         # rows in update.html and the download / reload endpoints.
+        # `static_files` unions ui/config/doc -- all non-plugin assets
+        # share one allow-list and are routed below by path/extension.
         plugin_files = _manifest_allow_set('plugin')
-        ui_files     = _manifest_allow_set('ui')
+        static_files = _manifest_static_allow_set()
 
         if name == 'app.py':
             return jsonify({'success': False, 'error': 'app.py is the bootloader — refused. Replace via enteliWEB script editor.'}), 403
         if name in plugin_files:
             dest_root = PLUGINS_ROOT
             dest_label = 'pgpy'
-        elif name in ui_files:
+        elif name in static_files:
             # configs/* and js/* live under their respective subdirs --
             # preserve the subdir on disk so dashboard.html's relative
             # `<script src="js/audit_log.js">` still resolves.
@@ -1348,7 +1377,7 @@ def repair_upload_plugin():
                 dest_root = DATA_ROOT
                 dest_label = 'data'
         else:
-            return jsonify({'success': False, 'error': 'Filename not in repair allow-list', 'allowed': sorted(plugin_files | ui_files)}), 403
+            return jsonify({'success': False, 'error': 'Filename not in repair allow-list', 'allowed': sorted(plugin_files | static_files)}), 403
 
         # Disk-full guard (very lenient -- only refuse if we literally cannot
         # write a few KB safely).  No 20 MB / 5 MB floor here: this endpoint
@@ -1468,16 +1497,16 @@ def repair_download_plugin(plugin_name):
     same source of truth as the upload counterpart.
     """
     plugin_files = _manifest_allow_set('plugin')
-    ui_files     = _manifest_allow_set('ui')
+    static_files = _manifest_static_allow_set()
     name = (plugin_name or '').strip()
     # Preserve configs/ subpath; basename-strip everything else.
-    if name not in ui_files:
+    if name not in static_files:
         name = os.path.basename(name)
     if name == 'app.py':
         return jsonify({'success': False, 'error': 'app.py refused (bootloader)'}), 403
     if name in plugin_files:
         path = os.path.join(PLUGINS_ROOT, name)
-    elif name in ui_files:
+    elif name in static_files:
         path = _resolve_ui_path(name)
     else:
         return jsonify({'success': False, 'error': 'not in repair allow-list'}), 403

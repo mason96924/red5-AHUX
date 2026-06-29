@@ -87,14 +87,14 @@ EXTRA_ALLOWED_NOT_IN_UI = [
     ('js/dynamics-animation.js',    'ui',     'dynamics-animation.js',    'Psy chart dynamics animation (loaded by dashboard.html)'),
     ('js/preview-components.js',    'ui',     'preview-components.js',    'Equipment-mapper preview components (loaded via app.py)'),
     ('js/schema-config.js',         'ui',     'schema-config.js',         'Equipment-type schema config (loaded via app.py)'),
-    # NOTE: V1.9 upload_service.py only accepts 'ui' or 'plugin' kinds in the
-    # allow-list. Tagging docs/configs as 'ui' is the only way bootstrap_controllers.sh
-    # will accept them. Keep this in mind until upload_service.py is widened.
-    ('band_guide.md',               'ui',     'band_guide.md',            'Band guide docs (served via band_service.py & update.html)'),
-    ('control_strategy_insight.md', 'ui',     'control_strategy_insight.md',    'Strategy insight docs (EN, served via app.py & update.html)'),
-    ('control_strategy_insight.ko.md','ui',   'control_strategy_insight.ko.md', 'Strategy insight docs (KO localisation)'),
-    ('configs/collector_config.json','ui',    'collector_config.json',    'Default collector config schema (read by app.py)'),
-    ('configs/equipment_types.json', 'ui',    'equipment_types.json',     'Equipment-type catalog (read by app.py & equipment_mapper.html)'),
+    # Docs and configs now retain their natural 'doc' / 'config' kinds.
+    # upload_service.py (V1.9) accepts them via _manifest_static_allow_set,
+    # which unions ui/config/doc -- so no more masquerading as 'ui'.
+    ('band_guide.md',               'doc',    'band_guide.md',            'Band guide docs (served via band_service.py & update.html)'),
+    ('control_strategy_insight.md', 'doc',    'control_strategy_insight.md',    'Strategy insight docs (EN, served via app.py & update.html)'),
+    ('control_strategy_insight.ko.md','doc',  'control_strategy_insight.ko.md', 'Strategy insight docs (KO localisation)'),
+    ('configs/collector_config.json','config','collector_config.json',    'Default collector config schema (read by app.py)'),
+    ('configs/equipment_types.json', 'config','equipment_types.json',     'Equipment-type catalog (read by app.py & equipment_mapper.html)'),
 ]
 
 # Subset of plug-ins whose register() functions are safe to hot-reload via

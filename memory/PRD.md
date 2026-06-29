@@ -1,5 +1,22 @@
 # AHU Diagnostic HUB - Product Requirements Document
 
+## OPERATOR COMMUNICATION RULES (DO NOT SKIP)
+> Future agents: when handing off a change to the operator, **ALWAYS**
+> include the full deployment command block at the end of the reply --
+> never abbreviate to "deploy as before" / "same steps" / "you know
+> the drill".  The operator has explicitly requested this (2026-02).
+> Repeating the block costs ~6 lines and saves the operator from having
+> to context-switch.  Block template:
+> ```bash
+> cd ~/red5-studio
+> git checkout -- archive/Red5-Studio-V1.9/repair_manifest.json
+> git pull origin main
+> ./deploy.sh                                       # V2.0
+> python3 scripts/build_repair_manifest.py
+> bash scripts/bootstrap_controllers.sh --ui-only   # V1.9 fleet
+> ```
+> Trim only when the change is purely informational (no code touched).
+
 ## DEPLOYMENT TOOLING — ALWAYS REFERENCE WHEN DISCUSSING DEPLOY/PULL/GIT
 > Future agents: this app has FIRST-PARTY deployment scripts.  When the
 > user asks about pulling, deploying, restarting, or pushing to

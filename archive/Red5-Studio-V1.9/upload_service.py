@@ -672,6 +672,20 @@ def _finalize_bundle_from_disk(spool_path, password):
                 return {'success': False, 'error': 'Decryption failed: ' + (err or 'unknown')}, 400
             zip_path = plain_path
             plain_made = True
+            # Decryption succeeded -- the encrypted spool is now dead
+            # weight (~bundle-size on disk).  Drop it BEFORE the pre-flight
+            # headroom check so tight-disk controllers (~25 MB free) can
+            # still deploy a ~10 MB encrypted bundle.  Without this, the
+            # spool + plain copy together consume 2x bundle-size and the
+            # pre-flight check below would refuse the deploy with an
+            # [Errno 28] "Low disk headroom" -- even though we no longer
+            # need the encrypted source.  The `finally` block's existence
+            # check makes the late re-attempt a safe no-op.
+            try:
+                if os.path.exists(spool_path):
+                    os.unlink(spool_path)
+            except OSError:
+                pass
 
         if not zipfile.is_zipfile(zip_path):
             return {'success': False, 'error': 'File is not a valid zip archive (after decryption).'}, 400

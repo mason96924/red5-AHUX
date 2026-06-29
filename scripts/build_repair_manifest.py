@@ -83,6 +83,15 @@ EXTRA_ALLOWED_NOT_IN_UI = [
     ('learn.html',                  'ui',     'learn.html',               'Educational landing page (referenced by dashboard.html back-to-learn link)'),
     ('ahu.html',                    'ui',     'ahu.html',                 'AHU equipment graphic (linked from dashboard.compiled.js)'),
     ('deepdive.html',               'ui',     'deepdive.html',            'Deep-dive analysis page (linked from psy_3d.html)'),
+    ('sun_preview.html',            'ui',     'sun_preview.html',         'Solar exposure preview (linked from app.py & build_bundle.py)'),
+    ('js/dynamics-animation.js',    'ui',     'dynamics-animation.js',    'Psy chart dynamics animation (loaded by dashboard.html)'),
+    ('js/preview-components.js',    'ui',     'preview-components.js',    'Equipment-mapper preview components (loaded via app.py)'),
+    ('js/schema-config.js',         'ui',     'schema-config.js',         'Equipment-type schema config (loaded via app.py)'),
+    ('band_guide.md',               'doc',    'band_guide.md',            'Band guide docs (served via band_service.py & update.html)'),
+    ('control_strategy_insight.md', 'doc',    'control_strategy_insight.md',    'Strategy insight docs (EN, served via app.py & update.html)'),
+    ('control_strategy_insight.ko.md','doc',  'control_strategy_insight.ko.md', 'Strategy insight docs (KO localisation)'),
+    ('configs/collector_config.json','config','collector_config.json',    'Default collector config schema (read by app.py)'),
+    ('configs/equipment_types.json', 'config','equipment_types.json',     'Equipment-type catalog (read by app.py & equipment_mapper.html)'),
 ]
 
 # Subset of plug-ins whose register() functions are safe to hot-reload via
@@ -99,59 +108,69 @@ HOT_RELOADABLE = {
 
 
 def _audit_html_asset_refs(manifest_names: set) -> list:
-    """Scan every *.html AND *.js under ARCHIVE for references to local
-    assets (js/*.js, *.css, *.html) and return any not in
-    `manifest_names`.  Without this gate, files referenced only from JS
-    (e.g. the QR-code phone-preview builder pointing at
-    mobile_mockup.html) silently 404 on V1.9 controllers because
-    bootstrap_controllers.sh only pushes manifest entries.
+    """COMPREHENSIVE orphan audit (rebuilt 2026-02 after the
+    mobile_mockup.html QR-target bug).
 
-    Returns a list of (source_file, asset_path) tuples.  Empty list => OK.
+    Walks every *.html, *.js, *.py under ARCHIVE and finds every
+    reference to a local asset (HTML, JS, CSS, MD, JSON, image).
+    A reference counts when:
+      1. It looks like a path with one of the watched extensions, AND
+      2. The resolved file actually exists on disk under ARCHIVE.
+    Both conditions together avoid two failure modes:
+      * False negatives -- a string the developer added but the file
+        isn't shipped, would 404 on controllers.
+      * False positives -- arbitrary string literals that just happen
+        to match a path regex (URLs, log lines, etc.) -- ignored
+        because they don't resolve to a real file.
+
+    The shipped V2.0 deploy.sh gate calls this with exit code 2, so the
+    pipeline refuses to build a manifest that would let a referenced
+    asset silently 404 on V1.9 controllers.
+
+    Returns a list of (source_file_rel, asset_path) tuples.
+    Empty list => OK.
     """
     import re
 
     orphaned: list = []
     seen:    set  = set()
 
-    # --- HTML: scan <script src>, <link href>, <a href>, <iframe src> ---
-    html_patterns = [
-        re.compile(r'<script\s+[^>]*\bsrc="([^"]+\.js)(?:\?v=[^"]*)?"',     re.IGNORECASE),
-        re.compile(r'<link\s+[^>]*\bhref="([^"]+\.css)(?:\?v=[^"]*)?"',     re.IGNORECASE),
-        re.compile(r'<a\s+[^>]*\bhref="([^"]+\.html)(?:[?#][^"]*)?"',       re.IGNORECASE),
-        re.compile(r'<iframe\s+[^>]*\bsrc="([^"]+\.html)(?:[?#][^"]*)?"',   re.IGNORECASE),
+    # All the patterns covered.  Order matters only for performance.
+    patterns = [
+        re.compile(r'<script\s+[^>]*\bsrc="([^"]+\.[a-z]{2,5})(?:\?v=[^"]*)?"',           re.I),
+        re.compile(r'<link\s+[^>]*\bhref="([^"]+\.[a-z]{2,5})(?:\?v=[^"]*)?"',            re.I),
+        re.compile(r'<(?:a|iframe|img|audio|video|source)\s+[^>]*\b(?:href|src)="'
+                   r'([^"]+\.[a-z]{2,5})(?:[?#][^"]*)?"',                                 re.I),
+        re.compile(r'[\'"](?:/)?((?:[\w\-./]+/)?[\w\-]+\.'
+                   r'(?:html|css|js|png|jpg|jpeg|svg|gif|json|md))[\'"]',                 re.I),
     ]
-    # --- JS: scan string literals that look like a local HTML path.
-    # Catches things like  '/mobile_mockup.html#/...'  or
-    # "mobile_mockup.html?id=..." .  Intentionally narrow -- we do NOT
-    # try to evaluate dynamic builders, just the static string suffix.
-    js_pattern = re.compile(r'[\'"]/?(?:[\w\-./]+/)?([\w\-]+\.html)(?:[?#][^\'"]*)?[\'"]')
+    SKIP_DIRS = {'.git', 'node_modules', '__pycache__', 'tests', 'mockups', 'docs'}
+    SCAN_EXT  = ('.html', '.js', '.py')
 
     for root, dirs, files in os.walk(ARCHIVE):
-        # Skip noise: virtualenvs, hidden dirs, node_modules, configs/.
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', '__pycache__', 'configs', 'tests')]
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in SKIP_DIRS]
         for entry in sorted(files):
+            if not entry.endswith(SCAN_EXT):
+                continue
             path = os.path.join(root, entry)
             rel  = os.path.relpath(path, ARCHIVE)
-            ext  = entry.rsplit('.', 1)[-1].lower() if '.' in entry else ''
-            if ext not in ('html', 'js'):
-                continue
             try:
                 src = open(path, encoding='utf-8', errors='ignore').read()
             except OSError:
                 continue
 
-            matches: list = []
-            if ext == 'html':
-                for pat in html_patterns:
-                    matches.extend(pat.findall(src))
-            else:  # .js — only check for local .html references
-                matches.extend(js_pattern.findall(src))
-
-            for m in matches:
-                asset = m.lstrip('/').split('?', 1)[0].split('#', 1)[0]
-                if asset.startswith('http') or asset.startswith('//') or asset.startswith('api/'):
-                    continue
-                if asset not in manifest_names:
+            for pat in patterns:
+                for m in pat.findall(src):
+                    asset = m.lstrip('/').split('?', 1)[0].split('#', 1)[0]
+                    if not asset or asset.startswith(('http', '//', 'api/')):
+                        continue
+                    # Only flag if it resolves to a real file we'd otherwise
+                    # need to ship (avoids hits on stdlib imports, regexes,
+                    # data:/-URLs, etc.).
+                    if not os.path.isfile(os.path.join(ARCHIVE, asset)):
+                        continue
+                    if asset in manifest_names:
+                        continue
                     key = (rel, asset)
                     if key in seen:
                         continue

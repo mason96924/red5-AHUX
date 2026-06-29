@@ -412,6 +412,96 @@
       "sha256": "4e83cdab0a83ebc06213b01dde243425f2e50d5d4877b8e67581fd051746c73b",
       "show_in_ui": false,
       "hot_reload": false
+    },
+    {
+      "name": "sun_preview.html",
+      "kind": "ui",
+      "label": "sun_preview.html",
+      "desc": "Solar exposure preview (linked from app.py & build_bundle.py)",
+      "size": 7311,
+      "sha256": "f4ecbad3d95444c352224481308df7750133e6e739c3052edcde4f4eedf8e17c",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/dynamics-animation.js",
+      "kind": "ui",
+      "label": "dynamics-animation.js",
+      "desc": "Psy chart dynamics animation (loaded by dashboard.html)",
+      "size": 81874,
+      "sha256": "7d276698d390f8d7b082ea1bd4e8fcb92ccd4554366312afa84f96e9031f6288",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/preview-components.js",
+      "kind": "ui",
+      "label": "preview-components.js",
+      "desc": "Equipment-mapper preview components (loaded via app.py)",
+      "size": 43730,
+      "sha256": "8940eb11a63c058edb1f4e8751b33bb8d0834db521a661239bc77d21ac9d823c",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/schema-config.js",
+      "kind": "ui",
+      "label": "schema-config.js",
+      "desc": "Equipment-type schema config (loaded via app.py)",
+      "size": 11666,
+      "sha256": "e482dc479b631060d4094612b2bc7c9a03cd171cc65d643bdc1ebeb62bb6ce3b",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "band_guide.md",
+      "kind": "doc",
+      "label": "band_guide.md",
+      "desc": "Band guide docs (served via band_service.py & update.html)",
+      "size": 7479,
+      "sha256": "45836434e724adb98e2270c15f0c6d1e5773264149e5d9a5d440b0c43012bff0",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "control_strategy_insight.md",
+      "kind": "doc",
+      "label": "control_strategy_insight.md",
+      "desc": "Strategy insight docs (EN, served via app.py & update.html)",
+      "size": 12189,
+      "sha256": "c588979380edb496f8e0f757ac149578b14782c4ffcad0c164dd292b5a79420a",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "control_strategy_insight.ko.md",
+      "kind": "doc",
+      "label": "control_strategy_insight.ko.md",
+      "desc": "Strategy insight docs (KO localisation)",
+      "size": 9118,
+      "sha256": "409cd3ae6045320d53b1531d076d9354b76c2b7acc110487313ee336de527ab4",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "configs/collector_config.json",
+      "kind": "config",
+      "label": "collector_config.json",
+      "desc": "Default collector config schema (read by app.py)",
+      "size": 1308,
+      "sha256": "23ac2c6d4e363dad1b794b52cd5de66b92e6df25b14e8b90ca1a6961e032e282",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "configs/equipment_types.json",
+      "kind": "config",
+      "label": "equipment_types.json",
+      "desc": "Equipment-type catalog (read by app.py & equipment_mapper.html)",
+      "size": 1688763,
+      "sha256": "5bae8b0d9d009f4faa7743d0cb5d6008e7d11b07da66dcc916a96df32fd74942",
+      "show_in_ui": false,
+      "hot_reload": false
     }
   ]
 }

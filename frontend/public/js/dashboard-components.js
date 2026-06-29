@@ -64,12 +64,10 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
             // coordinate space rather than the text's own bounding box.
             // dColorAbove is chosen for contrast against the empty
             // pill background (slate-100 in light, slate-800 in dark).
-            // Dark mode uses slate-400 (#94a3b8) -- a muted grey that
-            // matches the app's `textMuted` convention.  Previously
-            // #cbd5e1 (slate-300) which read as near-white and felt
-            // too saturated against the dark pill backdrop (user
-            // feedback 2026-02-...).
-            const dColorAbove = theme==='dark' ? '#94a3b8' : '#0f172a';
+            // Dark mode uses slate-600 (#475569) -- a darker grey
+            // requested 2026-02 after slate-400 (#94a3b8) was still
+            // judged too washed-out against the dark backdrop.
+            const dColorAbove = theme==='dark' ? '#475569' : '#0f172a';
             const clipBelow = `inset(${100 - pct}% 0 0 0)`;
             const clipAbove = `inset(0 0 ${pct}% 0)`;
             deltaEl = (
@@ -113,12 +111,12 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
                 // clip-path on the full-pill overlay so the percentage
                 // refers to the pill's coordinate space, not the text
                 // span's own bounding box.
-                // Dark-mode "above-fill" colour: slate-400 (#94a3b8) so
-                // the digits read as a muted grey rather than the
-                // previous near-white #e2e8f0 (user feedback 2026-02).
+                // Dark-mode "above-fill" colour: slate-600 (#475569) --
+                // darker grey requested 2026-02 after the prior
+                // slate-400 still felt too washed-out.
                 const clipAbove = `inset(0 0 ${pct}% 0)`;
                 const clipBelow = `inset(${100 - pct}% 0 0 0)`;
-                const colAbove  = theme==='dark' ? '#94a3b8' : '#0f172a';
+                const colAbove  = theme==='dark' ? '#475569' : '#0f172a';
                 return (
                     <>
                         <div className="absolute inset-0 flex justify-center pt-1 pointer-events-none"

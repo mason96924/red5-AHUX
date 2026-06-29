@@ -485,8 +485,53 @@
     $queue.textContent = `0 in-flight  · aborted ${n}`;
   }
 
-  // ---- WS -----------------------------------------------------------
+  // ---- WS (with SSE fallback for proxies that strip Upgrade) --------
+  // Some HTTP intermediaries (e.g. shared K8s ingress in the Emergent
+  // preview cluster) don't pass the WebSocket upgrade.  We try WS
+  // first; if it closes before ever opening, we fall back to
+  // EventSource for the rest of this page session.  Anywhere WS works
+  // (LAN, controllers, dcred5-studio.com), behaviour is unchanged.
   let ws;
+  let sse;
+  let transport = "ws";       // "ws" | "sse"
+  let wsOpenedOnce = false;
+  function onEvent(rawData) {
+    let ev;
+    try { ev = JSON.parse(rawData); } catch { return; }
+    eventsTotal++;
+    currentBucket++;
+    $evTotal.textContent = eventsTotal.toLocaleString();
+    if (ev.type === "relay_state") {
+      paintCell(ev.device, ev.state);
+    }
+  }
+  function connectSSE() {
+    transport = "sse";
+    const url = `${location.protocol}//${location.host}/api/elc/events-sse`;
+    $wsFooter.textContent = `${url} · connecting (sse fallback)…`;
+    $wsPill.classList.remove("ok", "bad", "warn");
+    $wsPill.classList.add("warn");
+    $wsText.textContent = "sse · connecting";
+    $wsDetail.textContent = "connecting…";
+    if (sse) { try { sse.close(); } catch {} }
+    sse = new EventSource(url);
+    sse.onopen = () => {
+      $wsPill.classList.remove("warn", "bad");
+      $wsPill.classList.add("ok");
+      $wsText.textContent = "sse · live";
+      $wsDetail.textContent = "live (sse)";
+      $wsFooter.textContent = `${url} · connected (sse)`;
+    };
+    sse.onmessage = (m) => onEvent(m.data);
+    sse.onerror = () => {
+      $wsPill.classList.remove("ok", "warn");
+      $wsPill.classList.add("bad");
+      $wsText.textContent = "sse · down";
+      $wsDetail.textContent = "disconnected (sse)";
+      $wsFooter.textContent = `${url} · disconnected · retrying…`;
+      // EventSource auto-retries on its own; nothing else to do.
+    };
+  }
   function connectWS() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = `${proto}://${location.host}/api/elc/events`;
@@ -498,22 +543,21 @@
 
     ws = new WebSocket(url);
     ws.onopen = () => {
+      wsOpenedOnce = true;
       $wsPill.classList.remove("warn", "bad");
       $wsPill.classList.add("ok");
       $wsText.textContent = "ws · live";
       $wsDetail.textContent = "live";
       $wsFooter.textContent = `${url} · connected`;
     };
-    ws.onmessage = (m) => {
-      let ev; try { ev = JSON.parse(m.data); } catch { return; }
-      eventsTotal++;
-      currentBucket++;
-      $evTotal.textContent = eventsTotal.toLocaleString();
-      if (ev.type === "relay_state") {
-        paintCell(ev.device, ev.state);
-      }
-    };
+    ws.onmessage = (m) => onEvent(m.data);
     ws.onclose = () => {
+      if (!wsOpenedOnce) {
+        // Proxy is stripping Upgrade headers.  Switch to SSE
+        // permanently for this session -- don't thrash on WS retries.
+        connectSSE();
+        return;
+      }
       $wsPill.classList.remove("ok", "warn");
       $wsPill.classList.add("bad");
       $wsText.textContent = "ws · down";
@@ -521,7 +565,7 @@
       $wsFooter.textContent = `${url} · disconnected · retrying…`;
       setTimeout(connectWS, 1000);
     };
-    ws.onerror = () => { /* close handles reconnect */ };
+    ws.onerror = () => { /* close handles reconnect / fallback */ };
   }
 
   // ---- Rate sampling (1Hz) + tally repaint --------------------------

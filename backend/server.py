@@ -615,6 +615,7 @@ try:
     from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
 
     from elc.api.rest import build_router as _build_elc_router  # noqa: E402
+    from elc.api.sse import attach_sse as _attach_elc_sse  # noqa: E402
     from elc.api.ws import attach_ws as _attach_elc_ws  # noqa: E402
     from elc.codec import encode as _elc_encode  # noqa: E402
     from elc.codec.messages import RelaySet as _RelaySet, RelayState as _RelayState  # noqa: E402
@@ -711,6 +712,10 @@ async def _elc_startup() -> None:
         _build_elc_router(driver=driver, replica=replica, link=link)
     )
     _attach_elc_ws(app, replica, path="/api/elc/events")
+    # SSE fallback for environments whose HTTP proxy strips Upgrade
+    # headers (e.g. Kubernetes ingress on the shared preview cluster).
+    # See elc/api/sse.py for the rationale.
+    _attach_elc_sse(app, replica, path="/api/elc/events-sse")
 
     _ELC_DEMO_HTML = _elc_os.path.join(_ELC_DEMO_DIR, "demo")
     app.mount(

@@ -236,8 +236,39 @@
     } catch (e) { /* ignore */ }
   }
 
-  // ---------- WS ----------------------------------------------------
+  // ---------- WS (with SSE fallback for proxies that strip Upgrade) ----
+  // See stress.html for the same rationale.  Anywhere WS works
+  // (LAN, controllers, dcred5-studio.com), behaviour is unchanged.
   let ws;
+  let sse;
+  let wsOpenedOnce = false;
+  function onLineEvent(rawData) {
+    try { pushLog(JSON.parse(rawData)); }
+    catch { pushLog({ type: "raw", body: rawData }); }
+  }
+  function connectSSE() {
+    const url = `${location.protocol}//${location.host}/api/elc/events-sse`;
+    $wsFooter.textContent = `${url} · connecting (sse fallback)…`;
+    $wsPill.classList.remove("ok", "bad", "warn");
+    $wsPill.classList.add("warn");
+    $wsText.textContent = "sse · connecting";
+    if (sse) { try { sse.close(); } catch {} }
+    sse = new EventSource(url);
+    sse.onopen = () => {
+      $wsPill.classList.remove("warn", "bad");
+      $wsPill.classList.add("ok");
+      $wsText.textContent = "sse · live";
+      $wsFooter.textContent = `${url} · connected (sse)`;
+    };
+    sse.onmessage = (m) => onLineEvent(m.data);
+    sse.onerror = () => {
+      $wsPill.classList.remove("ok", "warn");
+      $wsPill.classList.add("bad");
+      $wsText.textContent = "sse · down";
+      $wsFooter.textContent = `${url} · disconnected · retrying…`;
+      // EventSource auto-retries on its own.
+    };
+  }
   function connectWS() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = `${proto}://${location.host}/api/elc/events`;
@@ -248,23 +279,27 @@
 
     ws = new WebSocket(url);
     ws.onopen = () => {
+      wsOpenedOnce = true;
       $wsPill.classList.remove("warn", "bad");
       $wsPill.classList.add("ok");
       $wsText.textContent = "ws · live";
       $wsFooter.textContent = `${url} · connected`;
     };
-    ws.onmessage = (m) => {
-      try { pushLog(JSON.parse(m.data)); }
-      catch { pushLog({ type: "raw", body: m.data }); }
-    };
+    ws.onmessage = (m) => onLineEvent(m.data);
     ws.onclose = () => {
+      if (!wsOpenedOnce) {
+        // Proxy is stripping Upgrade headers -- switch to SSE
+        // permanently for this session.
+        connectSSE();
+        return;
+      }
       $wsPill.classList.remove("ok", "warn");
       $wsPill.classList.add("bad");
       $wsText.textContent = "ws · down";
       $wsFooter.textContent = `${url} · disconnected · retrying in 1s`;
       setTimeout(connectWS, 1000);
     };
-    ws.onerror = () => { /* close handler will reconnect */ };
+    ws.onerror = () => { /* close handler will reconnect / fall back */ };
   }
 
   // ---------- boot --------------------------------------------------

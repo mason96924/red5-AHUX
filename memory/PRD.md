@@ -7366,3 +7366,17 @@ V2.0 routes: 46    V1.9 routes: 75    shared: 46
 - Lint clean across all 3 touched service files
 
 **Open items**: V3.0 Modbus Phase 2.
+
+---
+
+## 2026-02 — V1.9 manifest category fix (applied)
+
+- `scripts/build_repair_manifest.py`: changed kind from `'doc'`/`'config'` → `'ui'` for:
+  - `band_guide.md`
+  - `control_strategy_insight.md`
+  - `control_strategy_insight.ko.md`
+  - `configs/collector_config.json`
+  - `configs/equipment_types.json`
+- Rationale: V1.9 `upload_service.py` allow-list only recognises `'ui'` and `'plugin'`. Anything else is rejected by `bootstrap_controllers.sh`.
+- Regenerated `/app/archive/Red5-Studio-V1.9/repair_manifest.json` (50 entries).
+- Long-term: widen V1.9 `upload_service.py` to accept `'config'` and `'doc'` kinds (refactor backlog).

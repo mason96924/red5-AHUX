@@ -455,7 +455,7 @@
     },
     {
       "name": "band_guide.md",
-      "kind": "doc",
+      "kind": "ui",
       "label": "band_guide.md",
       "desc": "Band guide docs (served via band_service.py & update.html)",
       "size": 7479,
@@ -465,7 +465,7 @@
     },
     {
       "name": "control_strategy_insight.md",
-      "kind": "doc",
+      "kind": "ui",
       "label": "control_strategy_insight.md",
       "desc": "Strategy insight docs (EN, served via app.py & update.html)",
       "size": 12189,
@@ -475,7 +475,7 @@
     },
     {
       "name": "control_strategy_insight.ko.md",
-      "kind": "doc",
+      "kind": "ui",
       "label": "control_strategy_insight.ko.md",
       "desc": "Strategy insight docs (KO localisation)",
       "size": 9118,
@@ -485,7 +485,7 @@
     },
     {
       "name": "configs/collector_config.json",
-      "kind": "config",
+      "kind": "ui",
       "label": "collector_config.json",
       "desc": "Default collector config schema (read by app.py)",
       "size": 1308,
@@ -495,7 +495,7 @@
     },
     {
       "name": "configs/equipment_types.json",
-      "kind": "config",
+      "kind": "ui",
       "label": "equipment_types.json",
       "desc": "Equipment-type catalog (read by app.py & equipment_mapper.html)",
       "size": 1688763,

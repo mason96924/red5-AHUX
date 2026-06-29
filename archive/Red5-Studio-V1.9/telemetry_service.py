@@ -1012,6 +1012,9 @@ def register(app, ctx):
     # V2.0 parity for the 3D modal's measured-SA overlay.
     app.add_url_rule('/api/ahu/<ahu_id>/sa-timeseries', 'ahu_sa_timeseries',
                      ahu_sa_timeseries, methods=['GET'])
+    # V2.0 parity for the sidebar drift-score pill.
+    app.add_url_rule('/api/ahu-drift-scores', 'ahu_drift_scores',
+                     ahu_drift_scores, methods=['GET'])
 
 # ---------------------------------------------------------------------------
 # /api/ahu-history/<ahu_id>   (GET)  -- V2.0 parity (backend/routes/history.py:121).
@@ -1147,3 +1150,93 @@ def ahu_sa_timeseries(ahu_id):
         'step_s':  step_s,
         'samples': samples,
     })
+
+
+
+# ---------------------------------------------------------------------------
+# /api/ahu-drift-scores   (GET)  -- V2.0 parity
+# (backend/routes/history.py: ahu_drift_scores).
+# RMS(|sa_measured - sa_modeled|) per AHU + previous-window baseline
+# for the sidebar drift pill trend arrow.  Uses the same deterministic
+# synthesis as ahu_sa_timeseries so the sidebar pill and the 3D modal
+# ribbon agree exactly.
+# ---------------------------------------------------------------------------
+def _modeled_sa_t(oa_t, oa_rh):
+    t, rh = oa_t, oa_rh
+    if t < 5 and rh < 30:
+        return min(22.0, max(20.0, 20.0 + (5.0 - t) * 0.15))
+    if 5 <= t < 15 and 30 <= rh <= 60:
+        return min(21.0, max(18.0, 18.0 + (15.0 - t) * 0.3))
+    if 15 <= t < 20 and rh < 30:
+        return min(21.0, max(18.5, t + 1.0))
+    if 18 <= t < 22 and 30 <= rh <= 50:
+        return t
+    if 22 <= t <= 25 and 40 <= rh <= 60:
+        return t
+    if 25 < t <= 27 and 50 <= rh <= 70:
+        return min(26.0, max(23.5, t - 1.0))
+    if 27 < t <= 32 and 60 < rh <= 80:
+        return 12.0
+    if 32 < t <= 38 and rh > 70:
+        return 13.0
+    if t > 35 and rh < 30:
+        return 15.0
+    if t > 30 and rh > 85:
+        return 11.0
+    h = 1.006 * t
+    if h < 22:   return 19.0
+    if h < 27:   return t
+    if h < 31:   return max(23.5, t - 1.0)
+    return 13.0
+
+
+def _drift_rms_for_window(ahu_id, from_ts, to_ts, step_s=300):
+    seed_base = hash(ahu_id) % 1000
+    sq_sum = 0.0
+    n = 0
+    ts = from_ts
+    while ts < to_ts:
+        oa = _ahu_history_oa(ts)
+        seed = seed_base + (int(ts) % 86400) / 86400.0
+        wave_slow  = math.sin(ts / 7200.0 + seed * 0.6)
+        wave_fast  = math.sin(ts / 1800.0 + seed * 1.3)
+        wave_micro = math.sin(ts /  360.0 + seed * 2.7) * 0.4
+        sa_measured = 13.5 + 1.8 * wave_slow + 0.6 * wave_fast + wave_micro
+        sa_target   = _modeled_sa_t(oa['t'], oa['rh'])
+        d = sa_measured - sa_target
+        sq_sum += d * d
+        n += 1
+        ts += step_s
+    if n == 0:
+        return 0.0, 0
+    return math.sqrt(sq_sum / n), n
+
+
+def ahu_drift_scores():
+    try:
+        window_min = int(request.args.get('window_min', 60))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'window_min must be an integer'}), 400
+    window_min = max(15, min(1440, window_min))
+
+    now = int(time.time())
+    cur_from  = now - window_min * 60
+    base_from = cur_from - window_min * 60
+    step_s = max(60, window_min * 60 // 50)
+
+    out = {}
+    for aid in list((_ROLLING_AVGS or {}).keys()):
+        cur_rms,  cur_n  = _drift_rms_for_window(aid, cur_from,  now,      step_s)
+        base_rms, _      = _drift_rms_for_window(aid, base_from, cur_from, step_s)
+        if base_rms > 0:
+            ratio = cur_rms / base_rms
+            trend = 'up' if ratio > 1.05 else ('down' if ratio < 0.95 else 'flat')
+        else:
+            trend = 'flat'
+        out[aid] = {
+            'rms_c':      round(cur_rms,  3),
+            'base_rms_c': round(base_rms, 3),
+            'trend':      trend,
+            'n_samples':  cur_n,
+        }
+    return jsonify({'scores': out, 'n_ahus': len(out), 'window_min': window_min, 'method': 'rms'})

@@ -1822,6 +1822,23 @@
                 return () => { alive = false; clearInterval(handle); };
             }, []);
 
+            /* Per-AHU SA-drift RMS for the sidebar drift pill (P1 refinement,
+               2026-02).  Same cadence as ahuRollingAvgs (5 min) -- drift
+               is a slow-moving controller-health metric.  Endpoint:
+               /api/ahu-drift-scores -> {scores:{ahu_id:{rms_c,base_rms_c,trend,n_samples}}}. */
+            const [ahuDriftScores, setAhuDriftScores] = useState({});
+            useEffect(() => {
+                let alive = true;
+                const load = () => {
+                    fetchJSON('/api/ahu-drift-scores?window_min=60')
+                        .then(j => { if (alive && j && j.scores) setAhuDriftScores(j.scores); })
+                        .catch(() => {});
+                };
+                load();
+                const handle = setInterval(load, 5 * 60 * 1000);
+                return () => { alive = false; clearInterval(handle); };
+            }, []);
+
             const renderGivoniOverlay = () => {
                 if (!showGivoni) return null;
                 const rh80 = []; for(let t=20; t<=25; t+=0.5) rh80.push([t, getW(t, 80)]);
@@ -2397,7 +2414,7 @@
                                         browser window for extended displays
                                         (mirrors AHU/VAV modal pattern). */}
                     {/* LEFT SIDEBAR -- extracted to sidebar.js (L.27) */}
-                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t })}
+                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, ahuDriftScores, t })}
 
                     {activeView === 'diagnostics' && React.createElement(DiagnosticsConsole)}
                     {activeView === 'dynamics' && (
@@ -2480,6 +2497,7 @@
                         ahuData, mapConfig, setMapConfig, floorImage,
                         buildingLatLon, sunState, setSunState,
                         comfortZonePoly,
+                        showGivoni, showSweetSpot, sweetSpotRange,
                         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal,
                     })}
 

@@ -48,8 +48,8 @@
       "kind": "plugin",
       "label": "Telemetry Service",
       "desc": "/api/data, /api/write-point, collector config",
-      "size": 50721,
-      "sha256": "35d5c258200af62fecfd92610c65e3b348cbec5af63c15e4120f76fe686a0b48",
+      "size": 54085,
+      "sha256": "8bfd791bedf382cfd2fc377a870bfa522fab97c53a8d31bc5a7ea39260fa436b",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -159,7 +159,7 @@
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
       "size": 31555,
-      "sha256": "50fe40e468482150fd5b8cfb9024f916159b9703d941af98778effd7b84ebe97",
+      "sha256": "dd0ea9b832ad85ef154dd996465f104093b4d42cd031500fa019b948143cc11c",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -168,8 +168,8 @@
       "kind": "ui",
       "label": "dashboard.compiled.js",
       "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
-      "size": 393633,
-      "sha256": "5ed7c79d9c40ab7d95559c9db8ab82b566379cb0bcc88ac0c645f976ac84d880",
+      "size": 394675,
+      "sha256": "bb78616213d69849da1d9fa2510fef0d3abe9a26c92a28050b8fc388a685ac1c",
       "show_in_ui": true,
       "hot_reload": false
     },

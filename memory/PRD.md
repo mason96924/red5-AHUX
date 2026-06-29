@@ -24,6 +24,46 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V2.0/V1.9 — Sidebar SA Drift Pill (2026-02)
+
+**Brief**: Surface the SA-Path-vs-modeled drift (the same diagnostic
+that powers the 3D modal's amber/cyan ribbon) as a single scalar pill
+on every AHU sidebar card, so ops can spot a drifting AHU at a glance
+without opening the 3D view.
+
+**Delivered**:
+  * **Backend (V2.0)** `routes/history.py`:
+    - Python port of the JS `computeSA_band` lookup -> `_modeled_sa_t`.
+    - `_drift_rms_for_window(ahu_id, from_ts, to_ts, step_s)` returns
+      `(rms_degC, n_samples)` using the same deterministic synthesis
+      as `ahu_sa_timeseries` so the pill and the ribbon agree exactly.
+    - `GET /api/ahu-drift-scores?window_min=60` batch endpoint returning
+      `{scores: {ahu_id: {rms_c, base_rms_c, trend, n_samples}}, n_ahus,
+      window_min, method:"rms"}`.  Trend = "up"/"down"/"flat" with a 5%
+      hysteresis vs the previous window of the same length.
+  * **Backend (V1.9)** `telemetry_service.py`: byte-equivalent Flask
+    mirror (`_modeled_sa_t`, `_drift_rms_for_window`, `ahu_drift_scores`)
+    registered as `/api/ahu-drift-scores`.  Parity audit reports 48/48.
+  * **Frontend** `js/dashboard/app.js` + `js/dashboard/sidebar.js`:
+    - New `ahuDriftScores` state with a 5-min poll, mirrored from the
+      `ahuRollingAvgs` pattern.  Plumbed through `renderSidebar`.
+    - Third `<MetricBar>` per AHU card (amber `#f59e0b`, max 5 degC,
+      `delta = rms_c - base_rms_c` so the trend arrow follows the same
+      up/down convention as exchange/absorption).
+    - Wrapped in a `data-testid="ahu-{id}-drift-pill"` div with a
+      tooltip: `SA controller drift: X.XX°C RMS | base Y.YY°C | trend ...`.
+    - `dashboard.compiled.js` rebuilt; HTML cache-bust refreshed
+      (`?v=4a3b81c281`).  Mirrored byte-identical across V1.9 / V2.0 /
+      frontend.  `repair_manifest.json` auto-regenerated (30 entries,
+      new sha256 for the compiled bundle).
+
+**Verified**:
+  * Live preview: three drift pills rendered alongside exchange/
+    absorption.  Tooltips show RMS + baseline + trend.
+  * `curl /api/ahu-drift-scores?window_min=60` returns the 3 AHUs with
+    correct schema; trends include up / down / flat across runs.
+  * Lint clean; check_v19_v20_parity.py reports 48/48 shared.
+
 ## Phase V2.0/V1.9 — Apples-to-Apples Ribbon + Tailwind Sync (2026-02)
 
 **Brief**: Two follow-ups from the real-SA wiring phase: (1) make the

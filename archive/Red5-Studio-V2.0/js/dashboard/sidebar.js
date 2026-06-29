@@ -28,6 +28,47 @@
  * ------------------------------------------------------------------ */
 
 function renderSidebar(ctx) {
+    /* Self-tuning SLIM width (Phase L.43 — 2026-06-27).  Read the
+       chevron icon's right edge at first paint, add a 4-px breath,
+       cache to localStorage.red5.slimWidth.  Default 224 stays as a
+       fallback for the first-ever load (and for English).  Re-measures
+       on locale change so a Korean / Japanese H1 doesn't push the
+       chevron beyond the cached SLIM number. */
+    const chevronRef = React.useRef(null);
+    const [slimWidth, setSlimWidth] = React.useState(() => {
+        // Seed from localStorage so the first paint after a hard reload
+        // already snaps to the right width instead of flashing 224.
+        try {
+            const cached = parseInt(localStorage.getItem('red5.slimWidth') || '', 10);
+            if (Number.isFinite(cached) && cached >= 180 && cached <= 320) return cached;
+        } catch (_) {}
+        return 224;
+    });
+    React.useLayoutEffect(() => {
+        if (!chevronRef.current) return;
+        // Measure twice: once on mount, once after the next paint, so
+        // font fallbacks that resolve a tick late still get the right
+        // width.  Sidebar's own left edge (the host frame) is the
+        // reference point so the number stays correct even when the
+        // sidebar itself is floated / popped to a sub-pixel offset.
+        const measure = () => {
+            const el = chevronRef.current;
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            const host = el.closest('[data-testid^="left-sidebar"]');
+            const left = host ? host.getBoundingClientRect().left : 0;
+            const w = Math.ceil(r.right - left) + 4;
+            if (Number.isFinite(w) && w >= 180 && w <= 320) {
+                window.__red5_slim_width = w;
+                try { localStorage.setItem('red5.slimWidth', String(w)); } catch (_) {}
+                setSlimWidth(prev => (prev === w ? prev : w));
+            }
+        };
+        measure();
+        const id = setTimeout(measure, 200);
+        return () => clearTimeout(id);
+    }, [ctx.i18nReady]);
+
     // Dark-mode brightness slider bounds.  Mirror of the constants in app.js
     // (lines 77-78); duplicated here because the sidebar's dark-level UI was
     // extracted into its own module and can no longer see App's closure
@@ -35,7 +76,12 @@ function renderSidebar(ctx) {
     const DARK_LEVEL_MIN = 1.5;
     const DARK_LEVEL_MAX = 3.0;
     const DARK_LEVEL_DEFAULT = 2.0;
-    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t } = ctx;
+
+    // OA -> band helpers (bandLabelOf / bandTint / bandStory) now live
+    // in dashboard-helpers.js so the sidebar chip and the AHU modal
+    // overlay share a single source of truth.
+
+    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, ahuDriftScores, t } = ctx;
 
     /* ---------------- Per-AHU Apply-to-Controller state ---------------
        For each AHU in `ahuSweetSpots` (current local pick), compare its
@@ -133,7 +179,7 @@ function renderSidebar(ctx) {
                    instead of dragging through awkward in-between
                    widths. */
                 const continuous = startW + (mv.clientX - startX);
-                const SLIM = 224, FULL = 320, MID = (SLIM + FULL) / 2;
+                const SLIM = slimWidth, FULL = 320, MID = (SLIM + FULL) / 2;
                 const next = continuous < MID ? SLIM : FULL;
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
@@ -161,23 +207,45 @@ function renderSidebar(ctx) {
                         « = collapse).  Hidden in popped-out modes
                         because the operator already picked their own
                         surface. */}
-                    {!isPopped && (
+                    {!isPopped && (() => {
+                        // Auto-tuned badge: when a non-English locale is active
+                        // AND the measured chevron right edge produced a SLIM
+                        // width different from the 224 px English default, mark
+                        // the toggle so the operator can see the dynamic
+                        // measurement actually fired (otherwise the change is
+                        // invisible — same icon, same colour).  A subtle indigo
+                        // dot in the top-right corner + tooltip note do the job
+                        // without adding a second control.
+                        const _lang = (typeof window.getLang === 'function') ? window.getLang() : 'en';
+                        const _isAutoTuned = _lang !== 'en' && slimWidth !== 224;
+                        return (
                         <button
+                            ref={chevronRef}
                             onClick={() => {
-                                const next = isCompact ? 320 : 224;
+                                const next = isCompact ? 320 : slimWidth;
                                 setSidebarWidth(next);
                                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
                             }}
-                            className={`w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
-                            title={isCompact ? "Expand sidebar to full width (320 px)" : "Collapse sidebar to slim width (224 px)"}
+                            className={`relative w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
+                            title={isCompact
+                                ? "Expand sidebar to full width (320 px)"
+                                : `Collapse sidebar to slim width (${slimWidth} px)${_isAutoTuned ? ` · auto-tuned for ${_lang.toUpperCase()} title` : ''}`}
                             data-testid="sidebar-width-toggle-btn"
+                            data-auto-tuned={_isAutoTuned ? 'true' : 'false'}
                         >
                             {isCompact ? '\u00BB' : '\u00AB'}
+                            {_isAutoTuned && (
+                                <span
+                                    className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-[0_0_4px_rgba(129,140,248,0.9)]"
+                                    data-testid="sidebar-width-auto-tuned-badge"
+                                ></span>
+                            )}
                         </button>
-                    )}
+                        );
+                    })()}
                 </div>
                 <div className="flex items-center gap-2 mt-1">
-                    <p className="text-[9px] text-slate-500 tracking-widest uppercase">by Delta Controls</p>
+                    <p className="text-[10px] font-black text-blue-500 tracking-widest uppercase">By DIBT</p>
                     {/* Telemetry Status Badge -- extracted to telemetry-status-badge.js (L.26) */}
                     {renderTelemetryStatusBadge({ telemetryStatus })}
                     {/* WIN pop-out — relocated 2026-06-27 from top-right
@@ -230,18 +298,21 @@ function renderSidebar(ctx) {
                 button that jumps to the Psy Chart Setting page where
                 the operator manages defaults + axis + theme. */}
             <button
-                onClick={() => { window.location.href = '/setup.html?force=1'; }}
+                onClick={() => { window.location.href = '/api/assets/setup.html?force=1'; }}
                 data-testid="open-setup-btn"
                 title="Open Setup Walk (Psy Chart, Location, Language, Plug-ins)"
                 aria-label="Open Setup Walk"
-                className={`flex items-center justify-center w-8 h-8 rounded border text-base transition-all ${
+                className={`p-1 rounded border transition-all ${
                     theme === 'dark'
-                        ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-indigo-300'
+                        ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-indigo-300 hover:border-indigo-400'
                         : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200 hover:text-indigo-600'
                 }`}>
-                {/* Inline cog SVG — keeps the chip rendering with zero
-                    dependency on a font/icon loader.  16×16. */}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {/* Inline cog SVG -- 12 px to match the lucide icons
+                    used by the other 4 chips on this row.  Previously
+                    this button used `w-7 h-7` which made the cog
+                    visibly larger than its neighbours; now everyone
+                    is `p-1` + 12 px glyph for a uniform row. */}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                     <circle cx="12" cy="12" r="3"/>
                 </svg>
@@ -256,14 +327,14 @@ function renderSidebar(ctx) {
                 data-testid="standards-btn"
                 title="Open Standards — ASHRAE Guideline 36 cross-walk, Band Guide, Control Algorithms, B-Shift Insight, Psych Design Workflow"
                 aria-label="Open Standards"
-                className={`p-1.5 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
-                <Icon name="book-open" />
+                className={`p-1 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-violet-400 hover:bg-slate-700 hover:border-violet-400':'bg-slate-100 border-slate-300 text-violet-600 hover:bg-violet-50'}`}>
+                <Icon name="book-open" size={12} />
             </button>
-            <button onClick={openCollectorCfg} className={`p-1.5 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"} aria-label="Collector Configuration">
-                <Icon name="radio-tower" />
+            <button onClick={openCollectorCfg} className={`p-1 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"} aria-label="Collector Configuration">
+                <Icon name="radio-tower" size={12} />
             </button>
-            <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`p-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded transition-all`} title={t('config')} aria-label={t('config')}>
-                <Icon name="settings" />
+            <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`p-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded transition-all`} title={t('config')} aria-label={t('config')}>
+                <Icon name="settings" size={12} />
             </button>
             {/* Reset Modal Sizes: clears localStorage entries
                 for the AHU / VAV / Floor Plan modal dimensions
@@ -297,8 +368,8 @@ function renderSidebar(ctx) {
                     }}
                     title="Reset AHU / VAV / Floor Plan modal sizes to their defaults. Clears the stored sizes from local storage."
                     aria-label="Reset modal sizes"
-                    className={`p-1.5 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded transition-all`}>
-                <Icon name="rotate-ccw" />
+                    className={`p-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-400 hover:text-cyan-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600'} border rounded transition-all`}>
+                <Icon name="rotate-ccw" size={12} />
             </button>
         </div>
     </div>
@@ -315,6 +386,7 @@ function renderSidebar(ctx) {
             /* Compact-mode tab strip (Phase L.41, 2026-06-27):
                 drop the text label, keep just the colored dot + icon
                 so the four tabs survive at 205 px sidebar widths.
+                FULL mode keeps text labels (per user 2026-06-27).
                 Tooltip carries the full readable name. */
             return React.createElement('button', {
                 key: tab.id,
@@ -390,7 +462,9 @@ function renderSidebar(ctx) {
             reclaim vertical sidebar real-estate (2026-06-26). */}
         <div className="flex items-center gap-2">
             <h2 className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em] whitespace-nowrap shrink-0 shadow-black">{t('asset_search')}</h2>
-            <input type="text" placeholder="Search ID (*, ?)…" data-testid="asset-search-input"
+            <input type="text"
+                   placeholder={isCompact ? '*.?....' : 'Search(*.?)...'}
+                   data-testid="asset-search-input"
                    className={`flex-1 min-w-0 ${theme==='dark'?'bg-slate-950':'bg-slate-100'} border ${ui.border} rounded-lg py-1.5 px-3 text-[11px] focus:outline-none focus:border-indigo-500 font-medium ${ui.text}`}
                    value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
@@ -458,22 +532,55 @@ function renderSidebar(ctx) {
                             className={`${ui.text} cursor-pointer hover:text-indigo-400 transition-colors bg-transparent border-0 p-0 font-black uppercase text-[11px] tracking-tighter mr-1 shrink-0`}>
                         {ahu.id}
                     </button>
-                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`}
-                       className="shrink-0 text-[8px] px-1 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none font-bold tracking-wider">DETAIL ↗</a>
+                    <a href={`/ahu.html?id=${encodeURIComponent(ahu.id)}`} target="_blank" rel="noopener noreferrer" onClick={(e)=>e.stopPropagation()} title="Open per-AHU performance detail" aria-label="Open per-AHU performance detail" data-testid={`ahu-drill-${ahu.id}`}
+                       className="shrink-0 p-1 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400 transition-colors leading-none">
+                        {/* Lucide-style external-link arrow (slant-up).  Replaces
+                            the previous "DETAIL ↗" text label per operator
+                            request to free up sidebar width (2026-06-27). */}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M7 17 17 7"/>
+                            <path d="M8 7h9v9"/>
+                        </svg>
+                    </a>
                     {isSelected && !isCompact && (
                         <button data-testid={`ahu-lock-sa-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setIsLockedToSA && setIsLockedToSA(!isLockedToSA); setLockedVavId && setLockedVavId(null); }}
                                 title={isLockedToSA ? 'Unlock viewport from SA point' : 'Lock viewport to SA point'}
-                                className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-colors leading-none font-bold tracking-wider ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                            {isLockedToSA ? 'SA LOCK' : 'LOCK SA'}
+                                aria-label={isLockedToSA ? 'SA point locked' : 'Lock viewport to SA point'}
+                                className={`shrink-0 p-1 rounded border transition-colors leading-none ${isLockedToSA ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            {/* Inline padlock SVG -- closed when locked,
+                                open when unlocked.  12 px to match the
+                                other icon buttons on this row. */}
+                            {isLockedToSA ? (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                </svg>
+                            ) : (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                    <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                                </svg>
+                            )}
                         </button>
                     )}
                     {isSelected && !isCompact && (
                         <button data-testid={`ahu-path-${ahu.id}`}
                                 onClick={(e) => { e.stopPropagation(); setShowPath && setShowPath(!showPath); }}
                                 title={showPath ? 'Hide OA → SA → RA process path' : 'Show OA → SA → RA process path'}
-                                className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-colors leading-none font-bold tracking-wider ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
-                            PATH
+                                aria-label={showPath ? 'OA-SA-RA path visible' : 'Show OA-SA-RA path'}
+                                className={`shrink-0 p-1 rounded border transition-colors leading-none ${showPath ? 'bg-indigo-600/30 border-indigo-400 text-indigo-300' : 'border-slate-500/40 text-slate-400 hover:bg-slate-500/10 hover:border-slate-400'}`}>
+                            {/* Lucide-style "git-fork" / process-path glyph:
+                                three nodes connected by lines suggesting the
+                                OA -> SA -> RA flow that the toggle visualises.
+                                12 px to match the lock icon next to it. */}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <circle cx="5"  cy="5"  r="2.2"/>
+                                <circle cx="19" cy="12" r="2.2"/>
+                                <circle cx="5"  cy="19" r="2.2"/>
+                                <path d="M7 6.5 17 10.8"/>
+                                <path d="M17 13.2 7 17.5"/>
+                            </svg>
                         </button>
                     )}
                     {/* APPLY chip — ALWAYS rendered for uniform layout.
@@ -491,10 +598,11 @@ function renderSidebar(ctx) {
                             <button data-testid={`ahu-apply-${ahu.id}`}
                                     onClick={onClick}
                                     disabled={!dirty || applyBusy}
+                                    aria-label={dirty ? `Apply band to ${ahu.id}` : `${ahu.id} synced`}
                                     title={dirty
                                         ? `Push ${spot.lo}-${spot.hi}% RH band to the controller for ${ahu.id}`
                                         : `${ahu.id} band is already in sync with the controller`}
-                                    className={`shrink-0 text-[8px] px-1 py-0.5 rounded border transition-all leading-none font-black tracking-wider font-mono
+                                    className={`shrink-0 p-1 rounded border transition-all leading-none
                                                 ${dirty
                                                     ? (theme==='dark'
                                                         ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200 hover:bg-emerald-600/40 cursor-pointer animate-pulse'
@@ -503,7 +611,26 @@ function renderSidebar(ctx) {
                                                         ? 'border-slate-700/60 text-slate-600 bg-transparent cursor-default'
                                                         : 'border-slate-300 text-slate-400 bg-transparent cursor-default')}
                                                 ${applyBusy ? 'opacity-60 cursor-wait' : ''}`}>
-                                {dirty ? 'APPLY ↑' : 'SYNCED'}
+                                {dirty ? (
+                                    /* Lucide-style "upload" glyph: arrow rising
+                                       into a tray.  High-attention state -- pairs
+                                       with the pulse animation already on this
+                                       button.  12 px to match siblings. */
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                        <path d="M17 8l-5-5-5 5"/>
+                                        <path d="M12 3v12"/>
+                                    </svg>
+                                ) : (
+                                    /* Lucide-style "check-circle-2": tick inside
+                                       a circle.  Low-attention "matches the
+                                       controller" state -- visually quieter so
+                                       the operator's eye is drawn to dirty rows. */
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <path d="m9 12 2 2 4-4"/>
+                                    </svg>
+                                )}
                             </button>
                         );
                     })()}
@@ -546,6 +673,45 @@ function renderSidebar(ctx) {
                                           strokeLinejoin="round" strokeLinecap="round" />
                                 <circle cx={xOf(hist.length - 1)} cy={yOf(last)} r="1.4" fill={lineColor} />
                             </svg>
+                        );
+                    })()}
+                    {/* Band-status chip (Phase L.43, 2026-06-27) -- shows
+                        which B1..B10 band this AHU's OUTDOOR-air sample
+                        currently falls into.  `ml-auto` keeps the chip
+                        pinned to the far-right edge of the heading row
+                        even when the optional sparkline / LOCK SA /
+                        PATH chips above it are absent.  Mirrors the
+                        band rules used by the 3D WX overlay so the
+                        operator can correlate sidebar row colour with
+                        floor-plan colour without opening the chart. */}
+                    {(() => {
+                        const oa = ahu.points && ahu.points[0];
+                        const band = oa ? bandLabelOf(Number(oa.t), Number(oa.rh)) : '?';
+                        const tintCls = bandTint(band);
+                        const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' deg C' : '--';
+                        const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
+                        const story = bandStory(band);
+                        const header = (band === '?')
+                            ? 'BAND ?  -- SAFE-MODE'
+                            : 'BAND ' + band;
+                        // Tooltip is rendered via the native `title`
+                        // attribute, so we stick to plain ASCII and \n.
+                        // 4 short blocks: header, current OA, weather
+                        // description, what the AHU does, and the setpoints.
+                        const tip = header + '\n'
+                                  + '------------------------\n'
+                                  + 'Current OA:  ' + tipT + ' / ' + tipR + '\n\n'
+                                  + 'Outside:  ' + story.weather + '\n\n'
+                                  + 'What the AHU does:\n'
+                                  + '  ' + story.plan + '\n\n'
+                                  + 'Setpoints:\n'
+                                  + '  ' + story.set;
+                        return (
+                            <span data-testid={`ahu-band-${ahu.id}`}
+                                  title={tip}
+                                  className={`ml-auto shrink-0 text-[8px] px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono ${tintCls}`}>
+                                {band}
+                            </span>
                         );
                     })()}
                 </div>
@@ -638,10 +804,24 @@ function renderSidebar(ctx) {
                             const avg = (ahuRollingAvgs || {})[ahu.id];
                             const dEx = avg && Number.isFinite(m.exchange)   && (avg.n_samples || 0) >= 2 ? (m.exchange   - avg.exchange)   : null;
                             const dAb = avg && Number.isFinite(m.absorption) && (avg.n_samples || 0) >= 2 ? (m.absorption - avg.absorption) : null;
+                            /* SA drift pill (P1 refinement, 2026-02): controller-error
+                               RMS in degC, with a delta vs the previous-window baseline
+                               so the trend arrow follows the same up/down convention
+                               as exchange/absorption.  Color = amber (#f59e0b) matches
+                               the SA Path layer in the 3D modal so the pill and the
+                               ribbon are visually the same metric. */
+                            const drift = (ahuDriftScores || {})[ahu.id];
+                            const dDrift = drift && Number.isFinite(drift.rms_c) && Number.isFinite(drift.base_rms_c) && drift.n_samples >= 2
+                                           ? (drift.rms_c - drift.base_rms_c) : null;
                             return (
                                 <React.Fragment>
                                     <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-9" max={15} showValue={true} delta={dEx} />
                                     <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-9" max={15} showValue={true} delta={dAb} />
+                                    {drift && Number.isFinite(drift.rms_c) && (
+                                        <div data-testid={`ahu-${ahu.id}-drift-pill`} title={`SA controller drift: ${drift.rms_c.toFixed(2)}°C RMS  |  base ${drift.base_rms_c.toFixed(2)}°C  |  trend ${drift.trend}`}>
+                                            <MetricBar theme={theme} val={drift.rms_c} color="#f59e0b" height="h-full" width="w-9" max={5} showValue={true} delta={dDrift} />
+                                        </div>
+                                    )}
                                 </React.Fragment>
                             );
                         })()}

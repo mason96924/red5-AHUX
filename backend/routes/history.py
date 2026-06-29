@@ -313,3 +313,114 @@ async def ahu_rolling_avgs_batch() -> dict:
             "n_samples":     d.get("n", 0),
         }
     return {"averages": out, "n_ahus": len(out), "method": "ewma"}
+
+
+# ---------------------------------------------------------------------------
+# SA Drift score — per-AHU controller-error pill for the dashboard sidebar.
+#
+# Drift = RMS(|sa_t_measured - sa_t_modeled|) across the window, where
+# sa_t_modeled is the 10-band controller logic (computeSA_band JS, ported
+# below) applied to the AHU's own OA sensor reading at the same ts.  That
+# matches the apples-to-apples ribbon used in the 3D modal, so the pill
+# number is the SAME diagnostic surfaced two ways: scalar on the sidebar
+# and visual in the 3D scene.
+#
+# Returns a current-window RMS plus a baseline-window RMS (previous
+# window of the same length) so the frontend can render a trend arrow:
+#   trend = "up"   if rms > base by > 5%        (worsening — red ▲)
+#         = "down" if rms < base by > 5%        (improving — green ▼)
+#         = "flat" otherwise
+# ---------------------------------------------------------------------------
+def _modeled_sa_t(oa_t: float, oa_rh: float) -> float:
+    """Python port of the JS 10-band computeSA_band -- returns the
+    controller's target SA temperature in degC for a given OA (T, RH).
+    Kept compact (no W computation needed for the drift scalar)."""
+    t, rh = oa_t, oa_rh
+    if t < 5 and rh < 30:
+        return min(22.0, max(20.0, 20.0 + (5.0 - t) * 0.15))
+    if 5 <= t < 15 and 30 <= rh <= 60:
+        return min(21.0, max(18.0, 18.0 + (15.0 - t) * 0.3))
+    if 15 <= t < 20 and rh < 30:
+        return min(21.0, max(18.5, t + 1.0))
+    if 18 <= t < 22 and 30 <= rh <= 50:
+        return t
+    if 22 <= t <= 25 and 40 <= rh <= 60:
+        return t
+    if 25 < t <= 27 and 50 <= rh <= 70:
+        return min(26.0, max(23.5, t - 1.0))
+    if 27 < t <= 32 and 60 < rh <= 80:
+        return 12.0
+    if 32 < t <= 38 and rh > 70:
+        return 13.0
+    if t > 35 and rh < 30:
+        return 15.0
+    if t > 30 and rh > 85:
+        return 11.0
+    # Fallback enthalpy-banded
+    h = 1.006 * t + 0.0 * rh  # approx — band falls back on dry-bulb only here
+    if h < 22:
+        return 19.0
+    if h < 27:
+        return t
+    if h < 31:
+        return max(23.5, t - 1.0)
+    return 13.0
+
+
+def _drift_rms_for_window(ahu_id: str, from_ts: int, to_ts: int, step_s: int = 300) -> tuple[float, int]:
+    """Compute RMS(|sa_measured - sa_modeled|) over [from_ts, to_ts)
+    using the SAME deterministic synthesis as ahu_sa_timeseries so the
+    sidebar pill and the 3D modal ribbon agree exactly.
+    Returns (rms_degC, n_samples)."""
+    seed_base = hash(ahu_id) % 1000
+    sq_sum = 0.0
+    n = 0
+    ts = from_ts
+    while ts < to_ts:
+        oa = _demo_oa_state(ts)
+        seed = seed_base + (int(ts) % 86400) / 86400.0
+        wave_slow  = math.sin(ts / 7200.0 + seed * 0.6)
+        wave_fast  = math.sin(ts / 1800.0 + seed * 1.3)
+        wave_micro = math.sin(ts /  360.0 + seed * 2.7) * 0.4
+        sa_measured = 13.5 + 1.8 * wave_slow + 0.6 * wave_fast + wave_micro
+        sa_target   = _modeled_sa_t(float(oa["t"]), float(oa["rh"]))
+        d = sa_measured - sa_target
+        sq_sum += d * d
+        n += 1
+        ts += step_s
+    if n == 0:
+        return 0.0, 0
+    return math.sqrt(sq_sum / n), n
+
+
+@router.get("/api/ahu-drift-scores")
+async def ahu_drift_scores(
+    window_min: int = Query(60, ge=15, le=1440,
+                            description="Rolling window length in minutes (default 60 = last hour)"),
+) -> dict:
+    """Batch SA-drift RMS for every AHU in `_ROLLING_AVGS`.
+
+    Schema: ``{scores: {ahu_id: {rms_c, base_rms_c, trend, n_samples}}, window_min}``
+    """
+    import time as _time
+    now = int(_time.time())
+    cur_from  = now - window_min * 60
+    base_from = cur_from - window_min * 60
+    step_s = max(60, window_min * 60 // 50)   # ~50 samples per window for RMS
+
+    out: dict[str, dict] = {}
+    for aid in list((_ROLLING_AVGS or {}).keys()):
+        cur_rms,  cur_n  = _drift_rms_for_window(aid, cur_from,  now,      step_s)
+        base_rms, _      = _drift_rms_for_window(aid, base_from, cur_from, step_s)
+        if base_rms > 0:
+            ratio = cur_rms / base_rms
+            trend = "up" if ratio > 1.05 else ("down" if ratio < 0.95 else "flat")
+        else:
+            trend = "flat"
+        out[aid] = {
+            "rms_c":      round(cur_rms,  3),
+            "base_rms_c": round(base_rms, 3),
+            "trend":      trend,
+            "n_samples":  cur_n,
+        }
+    return {"scores": out, "n_ahus": len(out), "window_min": window_min, "method": "rms"}

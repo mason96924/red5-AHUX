@@ -81,7 +81,7 @@ function renderSidebar(ctx) {
     // in dashboard-helpers.js so the sidebar chip and the AHU modal
     // overlay share a single source of truth.
 
-    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, t } = ctx;
+    const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, ahuDriftScores, t } = ctx;
 
     /* ---------------- Per-AHU Apply-to-Controller state ---------------
        For each AHU in `ahuSweetSpots` (current local pick), compare its
@@ -804,10 +804,24 @@ function renderSidebar(ctx) {
                             const avg = (ahuRollingAvgs || {})[ahu.id];
                             const dEx = avg && Number.isFinite(m.exchange)   && (avg.n_samples || 0) >= 2 ? (m.exchange   - avg.exchange)   : null;
                             const dAb = avg && Number.isFinite(m.absorption) && (avg.n_samples || 0) >= 2 ? (m.absorption - avg.absorption) : null;
+                            /* SA drift pill (P1 refinement, 2026-02): controller-error
+                               RMS in degC, with a delta vs the previous-window baseline
+                               so the trend arrow follows the same up/down convention
+                               as exchange/absorption.  Color = amber (#f59e0b) matches
+                               the SA Path layer in the 3D modal so the pill and the
+                               ribbon are visually the same metric. */
+                            const drift = (ahuDriftScores || {})[ahu.id];
+                            const dDrift = drift && Number.isFinite(drift.rms_c) && Number.isFinite(drift.base_rms_c) && drift.n_samples >= 2
+                                           ? (drift.rms_c - drift.base_rms_c) : null;
                             return (
                                 <React.Fragment>
                                     <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-9" max={15} showValue={true} delta={dEx} />
                                     <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-9" max={15} showValue={true} delta={dAb} />
+                                    {drift && Number.isFinite(drift.rms_c) && (
+                                        <div data-testid={`ahu-${ahu.id}-drift-pill`} title={`SA controller drift: ${drift.rms_c.toFixed(2)}°C RMS  |  base ${drift.base_rms_c.toFixed(2)}°C  |  trend ${drift.trend}`}>
+                                            <MetricBar theme={theme} val={drift.rms_c} color="#f59e0b" height="h-full" width="w-9" max={5} showValue={true} delta={dDrift} />
+                                        </div>
+                                    )}
                                 </React.Fragment>
                             );
                         })()}

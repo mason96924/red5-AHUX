@@ -7,7 +7,7 @@ import inspect
 from typing import ClassVar
 
 from elc.codec.device_id import ADDR_BITS, SUBADDR_BITS, DeviceId, DeviceType
-from elc.codec.messages import FailReport, RelaySet, RelayState, StatusQuery
+from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState, StatusQuery
 from elc.domain.bus import EventBus
 from elc.drivers.base import AbstractDevice
 
@@ -16,11 +16,15 @@ class SrmDriver(AbstractDevice):
     """Driver for SRM / ELCC48-master relay modules.
 
     Sends `RelaySet` / `StatusQuery` over its `ScuLink`; converts
-    unsolicited 0x15 `RelayState` and 0x23 `FailReport` frames into
-    `EventBus` events.
+    unsolicited 0x15 `RelayState`, 0x17 `BroadcastComplete`, and 0x23
+    `FailReport` frames into `EventBus` events.
     """
 
-    HANDLED_MESSAGES: ClassVar[tuple[type, ...]] = (RelayState, FailReport)
+    HANDLED_MESSAGES: ClassVar[tuple[type, ...]] = (
+        RelayState,
+        BroadcastComplete,
+        FailReport,
+    )
 
     DEFAULT_QUERY_TIMEOUT: ClassVar[float] = 2.0
 
@@ -28,6 +32,7 @@ class SrmDriver(AbstractDevice):
         from elc.codec.registry import default_registry
         super().__init__(link, registry=registry or default_registry)
         self.on_state_change: EventBus[RelayState] = EventBus()
+        self.on_broadcast: EventBus[BroadcastComplete] = EventBus()
         self.on_fail: EventBus[FailReport] = EventBus()
         # Pending Futures awaiting a RelayState for a given DeviceId.
         self._pending: dict[DeviceId, list[asyncio.Future[RelayState]]] = {}
@@ -100,6 +105,9 @@ class SrmDriver(AbstractDevice):
             if not fut.done():
                 fut.set_result(msg)
         await self.on_state_change.publish(msg)
+
+    async def _on_BroadcastComplete(self, msg: BroadcastComplete) -> None:  # noqa: N802
+        await self.on_broadcast.publish(msg)
 
     async def _on_FailReport(self, msg: FailReport) -> None:  # noqa: N802
         await self.on_fail.publish(msg)

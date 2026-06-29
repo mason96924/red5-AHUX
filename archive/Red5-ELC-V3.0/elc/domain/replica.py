@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from elc.codec.device_id import DeviceId
-from elc.codec.messages import FailReport, RelayState
+from elc.codec.messages import BroadcastComplete, FailReport, RelayState
 from elc.domain.bus import EventBus
 from elc.drivers.srm import SrmDriver
 
@@ -55,6 +55,7 @@ class Replica:
     def attach(self, driver: SrmDriver) -> None:
         """Subscribe to a driver's event buses."""
         driver.on_state_change.subscribe(self._on_relay_state)
+        driver.on_broadcast.subscribe(self._on_broadcast_complete)
         driver.on_fail.subscribe(self._on_fail)
 
     # ---- reads --------------------------------------------------------
@@ -75,6 +76,32 @@ class Replica:
             "device": str(msg.device),
             "state": msg.state,
             "ts": snap.last_seen.isoformat() if snap.last_seen else None,
+        })
+
+    async def _on_broadcast_complete(self, msg: BroadcastComplete) -> None:
+        # Apply the broadcast state to every device the replica knows
+        # about that matches (dev_type, scu).  This keeps per-device
+        # reads consistent for callers of get()/all() without needing
+        # N individual RelayState frames over the wire.
+        now = datetime.now(timezone.utc)
+        affected = 0
+        for snap in self._by_device.values():
+            if (
+                int(snap.device.dev_type) == msg.dev_type
+                and snap.device.scu == msg.scu
+            ):
+                snap.relay_state = msg.state
+                snap.last_seen = now
+                snap.update_count += 1
+                affected += 1
+        await self.events.publish({
+            "type": "broadcast_complete",
+            "dev_type": msg.dev_type,
+            "scu": msg.scu,
+            "state": msg.state,
+            "count": msg.count,
+            "affected_replica": affected,
+            "ts": now.isoformat(),
         })
 
     async def _on_fail(self, msg: FailReport) -> None:

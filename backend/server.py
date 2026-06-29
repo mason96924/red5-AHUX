@@ -622,7 +622,11 @@ try:
     from elc.codec.device_id import SUBADDR_BITS as _SUBADDR_BITS  # noqa: E402
     from elc.codec.device_id import DeviceId as _ElcDeviceId  # noqa: E402
     from elc.codec.device_id import DeviceType as _ElcDeviceType  # noqa: E402
-    from elc.codec.messages import RelaySet as _RelaySet, RelayState as _RelayState  # noqa: E402
+    from elc.codec.messages import (  # noqa: E402
+        BroadcastComplete as _BroadcastComplete,
+        RelaySet as _RelaySet,
+        RelayState as _RelayState,
+    )
     from elc.codec.registry import default_registry as _elc_registry  # noqa: E402
     from elc.domain.replica import Replica as _ElcReplica  # noqa: E402
     from elc.drivers.srm import SrmDriver as _SrmDriver  # noqa: E402
@@ -722,18 +726,27 @@ async def _elc_startup() -> None:
             and cmd.device.sub_address == _SUB_BCAST
         )
         if is_broadcast:
-            # Echo a RelayState for every known device of the same
-            # (dev_type, scu) — that's the broadcast semantics.
-            targets = [
-                d for d in _seen_devices
-                if d.dev_type == cmd.device.dev_type and d.scu == cmd.device.scu
-            ]
-            for dev in targets:
-                _seen_state[dev] = cmd.state
-                reply = _elc_registry.encode_message(
-                    _RelayState(device=dev, state=cmd.state)
+            # Apply the broadcast state to every matching device the
+            # mock SCU knows about, then emit ONE BroadcastComplete
+            # frame.  Previously the mock echoed N RelayState frames
+            # (one per device), which overran the per-client SSE/WS
+            # queues and produced inconsistent partial paints across
+            # multiple browser tabs.  See PRD changelog 2026-02 entry
+            # "broadcast coalescing".
+            affected = 0
+            for dev in _seen_devices:
+                if dev.dev_type == cmd.device.dev_type and dev.scu == cmd.device.scu:
+                    _seen_state[dev] = cmd.state
+                    affected += 1
+            reply = _elc_registry.encode_message(
+                _BroadcastComplete(
+                    dev_type=int(cmd.device.dev_type),
+                    scu=cmd.device.scu,
+                    state=cmd.state,
+                    count=affected,
                 )
-                writer.write(_elc_encode(reply))
+            )
+            writer.write(_elc_encode(reply))
             await writer.drain()
         else:
             _seen_devices.add(cmd.device)

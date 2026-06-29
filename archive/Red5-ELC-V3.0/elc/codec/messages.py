@@ -124,6 +124,56 @@ class RelayState:
 
 
 # ---------------------------------------------------------------------
+# 0x17 — Broadcast acknowledgement
+# ---------------------------------------------------------------------
+#
+# Emitted by an SCU exactly once after it has applied a wildcard
+# `RelaySet` (the broadcast variant where address+sub_address are all
+# ones).  Replaces the legacy fanout where the SCU would echo one
+# `RelayState` per affected device, which produced N events per
+# broadcast and overran per-client SSE/WS queues at high device counts.
+# A single BroadcastComplete carries enough info for replicas and UIs
+# to update every matching device locally.
+
+@dataclass(frozen=True)
+class BroadcastComplete:
+    """Unsolicited: ``state`` was applied to every device matching
+    ``(dev_type, scu)``.  Sent in lieu of N individual RelayState
+    frames after a wildcard RelaySet."""
+
+    FLAG: ClassVar[int] = 0x17
+
+    dev_type: int   # DeviceType value (10-bit, 0..1023)
+    scu: int        # 0..63 (6-bit)
+    state: bool
+    count: int = 0  # informational: devices affected on the SCU side
+
+    def encode(self) -> bytes:
+        if not 0 <= self.dev_type <= 0x3FF:
+            raise MessageError(f"dev_type {self.dev_type} out of 0..1023")
+        if not 0 <= self.scu <= 0x3F:
+            raise MessageError(f"scu {self.scu} out of 0..63")
+        if not 0 <= self.count <= 0xFFFF:
+            raise MessageError(f"count {self.count} out of 0..65535")
+        return (
+            self.dev_type.to_bytes(2, "big")
+            + bytes((self.scu, 1 if self.state else 0))
+            + self.count.to_bytes(2, "big")
+        )
+
+    @classmethod
+    def decode(cls, payload: bytes) -> BroadcastComplete:
+        if len(payload) != 6:
+            raise MessageError(f"BroadcastComplete needs 6 bytes, got {len(payload)}")
+        return cls(
+            dev_type=int.from_bytes(payload[:2], "big"),
+            scu=payload[2],
+            state=bool(payload[3]),
+            count=int.from_bytes(payload[4:], "big"),
+        )
+
+
+# ---------------------------------------------------------------------
 # 0x16 — Status query (request → expect 0x15 in response)
 # ---------------------------------------------------------------------
 
@@ -312,6 +362,7 @@ ALL_MESSAGES: list[type] = [
     TimeDateSet,
     RelaySet,
     RelayState,
+    BroadcastComplete,
     StatusQuery,
     DemandResponse,
     FailReport,

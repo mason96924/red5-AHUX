@@ -896,10 +896,16 @@ def disk_status():
             'free_bytes': free_bytes,
             'total_inodes': total_inodes,
             'free_inodes': free_inodes,
-            'pycache_dirs_removed': pyc_dirs,
-            'pycache_bytes_freed': pyc_bytes,
-            'stale_uploads_removed': stale_files,
-            'stale_uploads_bytes_freed': stale_bytes,
+            # Cleanup counters live under a nested 'cleanup' key, present
+            # only when ?cleanup=1 was passed.  Matches the update.html
+            # contract (`if (payload.cleanup) { ... }`) so the "Cleanup
+            # freed ..." panel actually renders.
+            'cleanup': ({
+                'pycache_dirs_removed':  pyc_dirs,
+                'pycache_bytes_freed':   pyc_bytes,
+                'uploads_files_removed': stale_files,
+                'uploads_bytes_freed':   stale_bytes,
+            } if cleanup else None),
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

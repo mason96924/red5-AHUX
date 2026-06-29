@@ -197,7 +197,12 @@ with app.test_client() as c:
     r = c.get('/api/disk-status?cleanup=1')
     j = r.get_json()
     test('7d. disk-status cleanup runs', j and j.get('success'))
-    test('7e. disk-status reports pycache_dirs_removed key', 'pycache_dirs_removed' in j)
+    # Cleanup counters now live under a nested `cleanup` key so the
+    # update.html UI can conditionally render the "Cleanup freed..."
+    # panel.  See upload_service.py disk_status() for the shape.
+    cu = (j or {}).get('cleanup') or {}
+    test('7e. disk-status reports cleanup.pycache_dirs_removed key',
+         'pycache_dirs_removed' in cu)
 
     # --- 8. Streaming decrypt equivalence with legacy decrypt_bundle ---
     # Decrypt the same bundle via both paths and verify identical zip content.

@@ -618,6 +618,10 @@ try:
     from elc.api.sse import attach_sse as _attach_elc_sse  # noqa: E402
     from elc.api.ws import attach_ws as _attach_elc_ws  # noqa: E402
     from elc.codec import encode as _elc_encode  # noqa: E402
+    from elc.codec.device_id import ADDR_BITS as _ADDR_BITS  # noqa: E402
+    from elc.codec.device_id import SUBADDR_BITS as _SUBADDR_BITS  # noqa: E402
+    from elc.codec.device_id import DeviceId as _ElcDeviceId  # noqa: E402
+    from elc.codec.device_id import DeviceType as _ElcDeviceType  # noqa: E402
     from elc.codec.messages import RelaySet as _RelaySet, RelayState as _RelayState  # noqa: E402
     from elc.codec.registry import default_registry as _elc_registry  # noqa: E402
     from elc.domain.replica import Replica as _ElcReplica  # noqa: E402
@@ -632,90 +636,59 @@ except ImportError as _elc_imp_err:
 
 _elc_state: dict[str, object] = {}
 
-
-@app.on_event("startup")
-async def _elc_startup() -> None:
-    if not _ELC_IMPORTED:
-        # PROD or any deploy without the optional Red5-ELC-V3.0 tree --
-        # silently skip; the rest of the backend boots normally.
-        return
-    from elc.codec.device_id import ADDR_BITS as _ADDR_BITS  # noqa: PLC0415
-    from elc.codec.device_id import SUBADDR_BITS as _SUBADDR_BITS  # noqa: PLC0415
-    from elc.codec.device_id import DeviceId as _ElcDeviceId  # noqa: PLC0415
-    from elc.codec.device_id import DeviceType as _ElcDeviceType  # noqa: PLC0415
-
+# ---------------------------------------------------------------------------
+# Route registration at IMPORT TIME (not inside startup).
+#
+# Why: previously the ELC routes (/api/elc/*, /api/elc-demo/*) were
+# registered inside @app.on_event("startup"), AFTER
+# `await link.wait_connected(timeout=3.0)`.  Any request hitting those
+# paths during the up-to-3s startup window got a real 404 from FastAPI
+# because the route literally did not exist yet.  uvicorn's watchfiles
+# reloader (`Will watch for changes in these directories: ['/app/backend']`)
+# auto-restarts on every code edit, so the 404 window kept re-opening.
+#
+# Fix: build replica/driver/link at import time with a placeholder port
+# (the link is just a TCP CLIENT -- constructing it does no I/O).  Then
+# register every route while the FastAPI app is still being built.
+# Startup only does async I/O (start MockScu, learn its ephemeral port,
+# mutate link.port, then start the link).
+# ---------------------------------------------------------------------------
+if _ELC_IMPORTED:
     _ADDR_BCAST = (1 << _ADDR_BITS) - 1
     _SUB_BCAST = (1 << _SUBADDR_BITS) - 1
 
-    scu = _MockScuServer()
-    await scu.start()
-
-    # Pre-seed the MockScu with the demo's known devices so the very
-    # first broadcast (before any individual writes) has targets to
-    # echo for.  Matches the device-id range used by demo/stress.html
-    # (SRM/1/100..199/0) plus the main console's 4 devices.
-    seen_devices: set[_ElcDeviceId] = set()
-    for addr in (10, 20, 30, 40):
-        seen_devices.add(_ElcDeviceId(
-            dev_type=_ElcDeviceType.SRM, scu=1, address=addr, sub_address=0,
+    # Pre-seed device set so the very first broadcast (before any
+    # individual writes) has targets to echo for.
+    _seen_devices: set[_ElcDeviceId] = set()
+    for _addr in (10, 20, 30, 40):
+        _seen_devices.add(_ElcDeviceId(
+            dev_type=_ElcDeviceType.SRM, scu=1, address=_addr, sub_address=0,
         ))
-    for i in range(400):
-        seen_devices.add(_ElcDeviceId(
-            dev_type=_ElcDeviceType.SRM, scu=1, address=100 + i, sub_address=0,
+    for _i in range(400):
+        _seen_devices.add(_ElcDeviceId(
+            dev_type=_ElcDeviceType.SRM, scu=1, address=100 + _i, sub_address=0,
         ))
-    seen_state: dict[_ElcDeviceId, bool] = {d: False for d in seen_devices}
+    _seen_state: dict[_ElcDeviceId, bool] = {d: False for d in _seen_devices}
 
-    async def _echo_relay(frame, writer):  # type: ignore[no-untyped-def]
-        if frame.msg_type != _RelaySet.FLAG:
-            return
-        cmd = _RelaySet.decode(frame.payload)
-        is_broadcast = (
-            cmd.device.address == _ADDR_BCAST
-            and cmd.device.sub_address == _SUB_BCAST
-        )
-        if is_broadcast:
-            # Echo a RelayState for every known device of the same
-            # (dev_type, scu) — that's the broadcast semantics.
-            targets = [
-                d for d in seen_devices
-                if d.dev_type == cmd.device.dev_type and d.scu == cmd.device.scu
-            ]
-            for dev in targets:
-                seen_state[dev] = cmd.state
-                reply = _elc_registry.encode_message(
-                    _RelayState(device=dev, state=cmd.state)
-                )
-                writer.write(_elc_encode(reply))
-            await writer.drain()
-        else:
-            seen_devices.add(cmd.device)
-            seen_state[cmd.device] = cmd.state
-            reply = _elc_registry.encode_message(
-                _RelayState(device=cmd.device, state=cmd.state)
-            )
-            writer.write(_elc_encode(reply))
-            await writer.drain()
+    # Replica/driver/link are constructed synchronously (no network
+    # I/O at construction).  port=1 is a valid-but-unused placeholder;
+    # startup rewrites it to MockScu's ephemeral port BEFORE we call
+    # link.start().  (ScuLink's __init__ rejects port 0.)
+    _elc_replica = _ElcReplica()
+    _elc_link = _ScuLink("127.0.0.1", 1, name="demo-scu", initial_backoff=0.2)
+    _elc_driver = _SrmDriver(_elc_link)
+    _elc_replica.attach(_elc_driver)
 
-    scu.on_frame(_echo_relay)
-
-    link = _ScuLink("127.0.0.1", scu.port, name="demo-scu", initial_backoff=0.2)
-    driver = _SrmDriver(link)
-    replica = _ElcReplica()
-    replica.attach(driver)
-    await link.start()
-    try:
-        await link.wait_connected(timeout=3.0)
-    except Exception as e:  # noqa: BLE001
-        print(f"[elc] link did not connect: {e}")
-
+    # All routes are now visible the instant uvicorn says
+    # "Application startup complete".  No 404 race window.
     app.include_router(
-        _build_elc_router(driver=driver, replica=replica, link=link)
+        _build_elc_router(driver=_elc_driver, replica=_elc_replica, link=_elc_link)
     )
-    _attach_elc_ws(app, replica, path="/api/elc/events")
+    _attach_elc_ws(app, _elc_replica, path="/api/elc/events")
     # SSE fallback for environments whose HTTP proxy strips Upgrade
-    # headers (e.g. Kubernetes ingress on the shared preview cluster).
-    # See elc/api/sse.py for the rationale.
-    _attach_elc_sse(app, replica, path="/api/elc/events-sse")
+    # headers.  Anywhere WS works, the client uses it; SSE is only
+    # reached when ws.onclose fires before ws.onopen.
+    _attach_elc_sse(app, _elc_replica, path="/api/elc/events-sse")
 
     _ELC_DEMO_HTML = _elc_os.path.join(_ELC_DEMO_DIR, "demo")
     app.mount(
@@ -732,9 +705,64 @@ async def _elc_startup() -> None:
     async def _elc_demo_stress() -> _FileResponse:
         return _FileResponse(f"{_ELC_DEMO_HTML}/stress.html")
 
+
+@app.on_event("startup")
+async def _elc_startup() -> None:
+    if not _ELC_IMPORTED:
+        # PROD or any deploy without the optional Red5-ELC-V3.0 tree --
+        # silently skip; the rest of the backend boots normally.
+        return
+
+    async def _echo_relay(frame, writer):  # type: ignore[no-untyped-def]
+        if frame.msg_type != _RelaySet.FLAG:
+            return
+        cmd = _RelaySet.decode(frame.payload)
+        is_broadcast = (
+            cmd.device.address == _ADDR_BCAST
+            and cmd.device.sub_address == _SUB_BCAST
+        )
+        if is_broadcast:
+            # Echo a RelayState for every known device of the same
+            # (dev_type, scu) — that's the broadcast semantics.
+            targets = [
+                d for d in _seen_devices
+                if d.dev_type == cmd.device.dev_type and d.scu == cmd.device.scu
+            ]
+            for dev in targets:
+                _seen_state[dev] = cmd.state
+                reply = _elc_registry.encode_message(
+                    _RelayState(device=dev, state=cmd.state)
+                )
+                writer.write(_elc_encode(reply))
+            await writer.drain()
+        else:
+            _seen_devices.add(cmd.device)
+            _seen_state[cmd.device] = cmd.state
+            reply = _elc_registry.encode_message(
+                _RelayState(device=cmd.device, state=cmd.state)
+            )
+            writer.write(_elc_encode(reply))
+            await writer.drain()
+
+    scu = _MockScuServer()
+    await scu.start()
+    scu.on_frame(_echo_relay)
+
+    # Now that MockScu's ephemeral port is known, point the
+    # already-registered link at it.  This is safe: link.start() is
+    # the only thing that reads link.port (in asyncio.open_connection),
+    # and we haven't called start() yet.
+    _elc_link.port = scu.port
+
+    await _elc_link.start()
+    try:
+        await _elc_link.wait_connected(timeout=3.0)
+    except Exception as e:  # noqa: BLE001
+        print(f"[elc] link did not connect: {e}")
+
     _elc_state["scu"] = scu
-    _elc_state["link"] = link
-    print(f"[elc] demo mounted at /api/elc-demo/  (fake SCU on :{scu.port})")
+    _elc_state["link"] = _elc_link
+    print(f"[elc] demo ready  (fake SCU on :{scu.port})")
 
 
 @app.on_event("shutdown")

@@ -24,6 +24,41 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V2.0/V1.9 — QR Library + 6 Other Orphaned Assets + Regression Gate (2026-02)
+
+**Brief**: User reported "QR Library failed to load" on the AHU/VAV
+graphic in PROD.  Root cause: `js/qrcode.min.js` was referenced by
+`dashboard.html` but missing from `repair_manifest.json`, so
+`bootstrap_controllers.sh` never pushed it to V1.9 controllers.  Same
+bug class as the earlier `psy-3d-engine.js` issue.
+
+A systemic audit found **6 more silently-broken assets** in the same
+state: `toast.js`, `docs_index.js`, `g36_timeline.js`, `psychrometric.js`,
+`equipment_mapper.css`, `landing.css`.
+
+**Delivered**:
+  * `scripts/build_repair_manifest.py`:
+    - Added the 7 missing assets to `EXTRA_ALLOWED_NOT_IN_UI`.
+    - New `_audit_html_asset_refs()` regression gate that scans every
+      `*.html` under the V1.9 archive for `<script src="...">` and
+      `<link rel="stylesheet" href="...">` references and fails the
+      build (exit 2) if any referenced local asset isn't in the
+      manifest.  Skips absolute URLs and `/api/*` paths (served by
+      backend, not as static files).  Prints the offender list with
+      its source HTML file so the developer knows exactly what to add.
+    - The gate is automatically wired into `deploy.sh` step 0 by virtue
+      of `bootstrap_controllers.sh` calling `build_repair_manifest.py`
+      and propagating the non-zero exit.
+  * `scripts/bootstrap_controllers.sh`: corresponding 7 entries added
+    to `UI_FILES` so they ship in the canonical display order.
+  * `archive/Red5-Studio-V1.9/repair_manifest.json`: regenerated --
+    37 entries, all referenced HTML assets covered.
+
+**Verified**:
+  * `python3 scripts/build_repair_manifest.py` -> exit 0, 37 entries.
+  * Programmatic re-scan of every V1.9 HTML's script/link tags vs the
+    manifest -> "ALL PASS".
+
 ## Phase V2.0/V1.9 — Sidebar SA Drift Pill (2026-02)
 
 **Brief**: Surface the SA-Path-vs-modeled drift (the same diagnostic

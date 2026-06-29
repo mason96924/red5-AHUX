@@ -302,6 +302,76 @@
       "sha256": "ccd8f403ce49fdb7562b36a0d7a03ab3728f16a535210cec79d22c372956cdcf",
       "show_in_ui": false,
       "hot_reload": false
+    },
+    {
+      "name": "js/qrcode.min.js",
+      "kind": "ui",
+      "label": "qrcode.min.js",
+      "desc": "QR generator (AHU/VAV graphic Phone-Preview button in dashboard.html)",
+      "size": 20768,
+      "sha256": "bb2365e4902f4f84852cf4025e6f6a60325a682aeafa43fb63b7fc8f098d1ef2",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/toast.js",
+      "kind": "ui",
+      "label": "toast.js",
+      "desc": "Toast notification helper (loaded by dashboard.html)",
+      "size": 7481,
+      "sha256": "063cb08ade07a11d88935244983d6afa21725501d5b6f3bdecbf394d251a3a34",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/docs_index.js",
+      "kind": "ui",
+      "label": "docs_index.js",
+      "desc": "In-app docs search index (loaded by dashboard.html)",
+      "size": 28977,
+      "sha256": "7d54d123146cdfcfc1f36cadca5ac44a379e4ff143cb2aae36f6b77c88ba83b5",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/g36_timeline.js",
+      "kind": "ui",
+      "label": "g36_timeline.js",
+      "desc": "G36 mode-timeline bars (loaded by dashboard.html)",
+      "size": 14621,
+      "sha256": "fc3891029f1e0a19dcaf6b1e00ee824a97710817a60ea0095738904d93bc8ceb",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/psychrometric.js",
+      "kind": "ui",
+      "label": "psychrometric.js",
+      "desc": "Psychrometric helpers (loaded by setup.html)",
+      "size": 11842,
+      "sha256": "90d2cc25ee7515f4a6c628e4eac19027d6935dafd77e2dfaaf8e9f97c68d60a6",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "equipment_mapper.css",
+      "kind": "ui",
+      "label": "equipment_mapper.css",
+      "desc": "Stylesheet for equipment_mapper.html",
+      "size": 4119,
+      "sha256": "e9c7653b7fec6cd7b91dfc41dff2fc9bd32dcb6df4ba820efbc54e350559bf35",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "landing.css",
+      "kind": "ui",
+      "label": "landing.css",
+      "desc": "Stylesheet for landing.html",
+      "size": 820,
+      "sha256": "5dc627f4945b6b54c09b8f00d6e9dee898925212b3b681387844993cb4837107",
+      "show_in_ui": false,
+      "hot_reload": false
     }
   ]
 }

@@ -72,6 +72,13 @@ ENTRIES = [
 EXTRA_ALLOWED_NOT_IN_UI = [
     ('psy_3d.html',                 'ui',     'psy_3d.html',              '3D psychrometric chart (niche tool)'),
     ('js/psy-3d-engine.js',         'ui',     'psy-3d-engine.js',         '3D psychrometric engine (loaded by dashboard.html 3D-WX tab + psy_3d.html)'),
+    ('js/qrcode.min.js',            'ui',     'qrcode.min.js',            'QR generator (AHU/VAV graphic Phone-Preview button in dashboard.html)'),
+    ('js/toast.js',                 'ui',     'toast.js',                 'Toast notification helper (loaded by dashboard.html)'),
+    ('js/docs_index.js',            'ui',     'docs_index.js',            'In-app docs search index (loaded by dashboard.html)'),
+    ('js/g36_timeline.js',          'ui',     'g36_timeline.js',          'G36 mode-timeline bars (loaded by dashboard.html)'),
+    ('js/psychrometric.js',         'ui',     'psychrometric.js',         'Psychrometric helpers (loaded by setup.html)'),
+    ('equipment_mapper.css',        'ui',     'equipment_mapper.css',     'Stylesheet for equipment_mapper.html'),
+    ('landing.css',                 'ui',     'landing.css',              'Stylesheet for landing.html'),
 ]
 
 # Subset of plug-ins whose register() functions are safe to hot-reload via
@@ -85,6 +92,36 @@ HOT_RELOADABLE = {
     'bridges_admin_service.py',  'bacnet_diag_service.py',
     'audit_log_service.py',
 }
+
+
+def _audit_html_asset_refs(manifest_names: set) -> list:
+    """Scan every *.html under ARCHIVE for <script src> / <link href>
+    references to local assets (js/*.js, *.css, *.js).  Return any that
+    are NOT in `manifest_names` -- those will silently 404 on V1.9
+    controllers because bootstrap_controllers.sh only pushes manifest
+    entries.  This gate is the systemic answer to the 2026-06-29 QR
+    library bug (qrcode.min.js + 3 other scripts orphaned).
+
+    Returns a list of (html_file, asset_path) tuples.  Empty list => OK.
+    """
+    import re
+    orphaned = []
+    script_re = re.compile(r'<script\s+src="([^"]+\.js)(?:\?v=[^"]*)?"', re.IGNORECASE)
+    link_re   = re.compile(r'<link\s+rel="stylesheet"\s+href="([^"]+\.css)(?:\?v=[^"]*)?"', re.IGNORECASE)
+    for entry in sorted(os.listdir(ARCHIVE)):
+        if not entry.endswith('.html'):
+            continue
+        with open(os.path.join(ARCHIVE, entry)) as fh:
+            html = fh.read()
+        for m in script_re.findall(html) + link_re.findall(html):
+            # Strip leading slash; ignore absolute URLs and /api/* (served by backend not as files).
+            path = m.lstrip('/')
+            if m.startswith('http') or path.startswith('api/'):
+                continue
+            path = path.split('?', 1)[0]
+            if path not in manifest_names:
+                orphaned.append((entry, path))
+    return orphaned
 
 
 def main():
@@ -128,6 +165,22 @@ def main():
         for m in missing:
             print('  - {}'.format(m))
         return 1
+
+    # Regression gate: every *.js / *.css referenced by any V1.9 HTML
+    # MUST be in the manifest, else it silently 404s on controllers.
+    manifest_names = {f['name'] for f in manifest['files']}
+    orphaned = _audit_html_asset_refs(manifest_names)
+    if orphaned:
+        print('')
+        print('ERROR: {} HTML asset reference(s) NOT in manifest -- they will'.format(len(orphaned)))
+        print('       silently 404 on V1.9 controllers (same bug class as the')
+        print('       2026-06-29 qrcode.min.js QR-library-failed-to-load issue).')
+        print('       Add each path to EXTRA_ALLOWED_NOT_IN_UI in this script:')
+        print('')
+        for html_file, path in orphaned:
+            print('       - {:40s}  referenced by {}'.format(path, html_file))
+        print('')
+        return 2
     return 0
 
 

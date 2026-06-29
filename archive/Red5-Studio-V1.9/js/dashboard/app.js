@@ -105,23 +105,24 @@
                     if (theme !== 'dark') setTheme('dark');
                 }
             }, [darkLevel]);
-            // Resizable left sidebar — bounded to [250, 320] so the header
+            // Resizable left sidebar — bounded to [250, 360] so the header
             // ("AHU DIAGNOSTIC HUB" + theme toggle) keeps a small gap at min,
-            // and the original baseline (320 px) stays the comfortable max.
+            // and the FULL baseline (360 px, widened L.45 2026-02 for the
+            // 3rd SA-drift pill on each AHU card) stays the comfortable max.
             const [sidebarWidth, setSidebarWidth] = useState(() => {
                 /* Sidebar now snaps to one of two widths (Phase L.41
-                   2026-06-27): SLIM (224) or FULL (320).  SLIM was
-                   bumped from 205 → 224 px so the «/» chevron icon
-                   next to the H1 title fully fits inside the
-                   sidebar (chevron's right edge sits at ~220 px from
-                   the sidebar's left edge; 224 leaves a 4 px breath).
+                   2026-06-27, widened L.45 2026-02): SLIM (264) or
+                   FULL (360).  SLIM was bumped from 224 → 264 px so the
+                   3rd MetricBar (SA-drift) fits next to exchange /
+                   absorption without the AHU's preset / venue text
+                   intruding on the OA/SA/RA stats column.
                    Any legacy in-between value in localStorage is
                    normalised to whichever side it's closest to. */
                 try {
                     const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10);
-                    if (!Number.isNaN(v)) return v < 272 ? 224 : 320;
+                    if (!Number.isNaN(v)) return v < 312 ? 264 : 360;
                 } catch (e) {}
-                return 320;
+                return 360;
             });
             const API_URL = window.API_BASE_URL || window.location.origin;
 

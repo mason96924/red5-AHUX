@@ -28,21 +28,26 @@
  * ------------------------------------------------------------------ */
 
 function renderSidebar(ctx) {
-    /* Self-tuning SLIM width (Phase L.43 — 2026-06-27).  Read the
-       chevron icon's right edge at first paint, add a 4-px breath,
-       cache to localStorage.red5.slimWidth.  Default 224 stays as a
+    /* Self-tuning SLIM width (Phase L.43 — 2026-06-27, extended L.45 2026-02).
+       Read the chevron icon's right edge at first paint, add a 4-px breath,
+       cache to localStorage.red5.slimWidth.  Default 264 stays as a
        fallback for the first-ever load (and for English).  Re-measures
        on locale change so a Korean / Japanese H1 doesn't push the
-       chevron beyond the cached SLIM number. */
+       chevron beyond the cached SLIM number.
+       Phase L.45 (2026-02): bumped clamp + default + FULL constant by
+       40 px (one w-9 MetricBar + gap) to accommodate the new SA-drift
+       pill on each AHU card -- without that headroom the AHU's preset
+       text intrudes on the OA/SA/RA stats column.  The pill set is now
+       2 × w-9 (exchange + absorption) + 1 × w-9 (drift) = 3 pills. */
     const chevronRef = React.useRef(null);
     const [slimWidth, setSlimWidth] = React.useState(() => {
         // Seed from localStorage so the first paint after a hard reload
-        // already snaps to the right width instead of flashing 224.
+        // already snaps to the right width instead of flashing 264.
         try {
             const cached = parseInt(localStorage.getItem('red5.slimWidth') || '', 10);
-            if (Number.isFinite(cached) && cached >= 180 && cached <= 320) return cached;
+            if (Number.isFinite(cached) && cached >= 180 && cached <= 360) return cached;
         } catch (_) {}
-        return 224;
+        return 264;
     });
     React.useLayoutEffect(() => {
         if (!chevronRef.current) return;
@@ -57,8 +62,10 @@ function renderSidebar(ctx) {
             const r = el.getBoundingClientRect();
             const host = el.closest('[data-testid^="left-sidebar"]');
             const left = host ? host.getBoundingClientRect().left : 0;
-            const w = Math.ceil(r.right - left) + 4;
-            if (Number.isFinite(w) && w >= 180 && w <= 320) {
+            // L.45 (2026-02): +40 px room for the SA-drift MetricBar that
+            // sits to the right of the chevron on each AHU card.
+            const w = Math.ceil(r.right - left) + 4 + 40;
+            if (Number.isFinite(w) && w >= 180 && w <= 360) {
                 window.__red5_slim_width = w;
                 try { localStorage.setItem('red5.slimWidth', String(w)); } catch (_) {}
                 setSlimWidth(prev => (prev === w ? prev : w));
@@ -170,16 +177,20 @@ function renderSidebar(ctx) {
             const startX = e.clientX;
             const startW = sidebarWidth;
             const onMove = (mv) => {
-                /* Snap to two discrete widths (Phase L.41, 2026-06-27):
-                     SLIM (224 px) — clipped to where the «/» chevron
-                                     icon next to the H1 title ends
-                     FULL (320 px) — full mode: labels + preset + chips
+                /* Snap to two discrete widths (Phase L.41, 2026-06-27,
+                   widened L.45 2026-02 by +40 px to accommodate the
+                   3rd MetricBar = SA-drift pill on each AHU card):
+                     SLIM (264 px default — clipped to where the «/»
+                                            chevron icon next to the H1
+                                            title ends, +40 for pills)
+                     FULL (360 px)         — full mode: labels + preset
+                                            + chips + 3 pills
                    Threshold is the midpoint between the two so the
                    sidebar jumps as soon as the operator crosses it
                    instead of dragging through awkward in-between
                    widths. */
                 const continuous = startW + (mv.clientX - startX);
-                const SLIM = slimWidth, FULL = 320, MID = (SLIM + FULL) / 2;
+                const SLIM = slimWidth, FULL = 360, MID = (SLIM + FULL) / 2;
                 const next = continuous < MID ? SLIM : FULL;
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
@@ -217,18 +228,18 @@ function renderSidebar(ctx) {
                         // dot in the top-right corner + tooltip note do the job
                         // without adding a second control.
                         const _lang = (typeof window.getLang === 'function') ? window.getLang() : 'en';
-                        const _isAutoTuned = _lang !== 'en' && slimWidth !== 224;
+                        const _isAutoTuned = _lang !== 'en' && slimWidth !== 264;
                         return (
                         <button
                             ref={chevronRef}
                             onClick={() => {
-                                const next = isCompact ? 320 : slimWidth;
+                                const next = isCompact ? 360 : slimWidth;
                                 setSidebarWidth(next);
                                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
                             }}
                             className={`relative w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
                             title={isCompact
-                                ? "Expand sidebar to full width (320 px)"
+                                ? "Expand sidebar to full width (360 px)"
                                 : `Collapse sidebar to slim width (${slimWidth} px)${_isAutoTuned ? ` · auto-tuned for ${_lang.toUpperCase()} title` : ''}`}
                             data-testid="sidebar-width-toggle-btn"
                             data-auto-tuned={_isAutoTuned ? 'true' : 'false'}

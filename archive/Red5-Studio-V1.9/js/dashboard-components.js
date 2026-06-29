@@ -34,40 +34,106 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
        is on the numeric label is placed in an absolutely-positioned
        overlay so it stays visible at the top of the pill regardless
        of fill height.  Optional `delta` (number) renders a tiny
-       trend arrow at the bottom of the pill — ▲ green when current
-       is above the rolling avg, ▼ rose when below; near-zero
-       deltas (|d| < 0.2) render as a dim "·" so we don't cry wolf
-       for AHUs that are basically steady. */
+       trend arrow at the bottom of the pill — ▲/▼ in a DARKER SHADE
+       of the pill's own fill colour (2026-06-27 fix: was emerald/rose
+       which blended into the pink absorption pill and was invisible);
+       near-zero deltas (|d| < 0.2) render as a dim "·" so we don't
+       cry wolf for AHUs that are basically steady. */
     const pct = Math.max(2, Math.min(100, (Math.abs(safeVal) / max) * 100));
     const valText = Math.abs(safeVal).toFixed(safeVal < 10 ? 2 : 1);
+    // Darken helper: multiply RGB by `factor` (clamped) so we get a
+    // readable shade of the pill's own fill colour for the trend
+    // arrow.  Works on #rrggbb hex only; non-hex inputs pass through.
+    const _darken = (hex, factor) => {
+        if (typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return hex;
+        const r = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(1,3), 16) * factor)));
+        const g = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(3,5), 16) * factor)));
+        const b = Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(5,7), 16) * factor)));
+        return '#' + [r,g,b].map(n => n.toString(16).padStart(2,'0')).join('');
+    };
     let deltaEl = null;
     if (delta !== null && delta !== undefined && Number.isFinite(delta)) {
         const flat = Math.abs(delta) < 0.2;
-        const up   = !flat && delta > 0;
-        const arrow = flat ? '\u00B7' : (up ? '\u25B2' : '\u25BC');
-        const dColor = flat
-            ? (theme==='dark' ? '#64748b' : '#94a3b8')
-            : (up
-                ? (theme==='dark' ? '#34d399' : '#059669')
-                : (theme==='dark' ? '#fb7185' : '#e11d48'));
-        const dTxt = flat ? '' : (Math.abs(delta) < 10 ? delta.toFixed(1) : delta.toFixed(0));
-        const dSign = !flat && up ? '+' : '';
-        deltaEl = (
-            <div className="absolute inset-x-0 bottom-0 flex justify-center pb-0.5 pointer-events-none" title={`Δ vs 24 h rolling avg: ${delta > 0 ? '+' : ''}${delta.toFixed(2)} kJ/kg`}>
-                <span className="text-[10px] font-black font-mono tracking-tight tabular-nums leading-none" style={{ color: dColor, textShadow: theme==='dark'?'0 1px 2px rgba(0,0,0,0.85)':'0 1px 1px rgba(255,255,255,0.6)' }}>
-                    {arrow}{dTxt ? ' ' + dSign + dTxt : ''}
-                </span>
-            </div>
-        );
+        if (!flat) {
+            const up = delta > 0;
+            const dTxt  = Math.abs(delta) < 10 ? delta.toFixed(1) : delta.toFixed(0);
+            const text  = (up ? '+' : '') + dTxt;
+            // Dark layer above the fill line, white layer below.  The
+            // clip-path is applied to the FULL-pill overlay (not the
+            // text span) so the percentages are relative to the pill's
+            // coordinate space rather than the text's own bounding box.
+            // dColorAbove is chosen for contrast against the empty
+            // pill background (slate-100 in light, slate-800 in dark).
+            // Dark mode uses slate-400 (#94a3b8) -- a muted grey that
+            // matches the app's `textMuted` convention.  Previously
+            // #cbd5e1 (slate-300) which read as near-white and felt
+            // too saturated against the dark pill backdrop (user
+            // feedback 2026-02-...).
+            const dColorAbove = theme==='dark' ? '#94a3b8' : '#0f172a';
+            const clipBelow = `inset(${100 - pct}% 0 0 0)`;
+            const clipAbove = `inset(0 0 ${pct}% 0)`;
+            deltaEl = (
+                <>
+                    <div className="absolute inset-0 flex items-end justify-center pb-0.5 pointer-events-none"
+                         style={{ clipPath: clipAbove, WebkitClipPath: clipAbove }}
+                         title={`Δ vs 24 h rolling avg: ${up?'+':''}${delta.toFixed(2)} kJ/kg`}>
+                        <span className="text-[9px] font-bold font-mono tracking-tight tabular-nums leading-none"
+                              style={{ color: dColorAbove }}>{text}</span>
+                    </div>
+                    <div className="absolute inset-0 flex items-end justify-center pb-0.5 pointer-events-none"
+                         style={{ clipPath: clipBelow, WebkitClipPath: clipBelow }}
+                         title={`Δ vs 24 h rolling avg: ${up?'+':''}${delta.toFixed(2)} kJ/kg`}>
+                        <span className="text-[9px] font-bold font-mono tracking-tight tabular-nums leading-none"
+                              style={{ color: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,0.85)' }}>{text}</span>
+                    </div>
+                </>
+            );
+        }
     }
+    const alarming = Math.abs(delta || 0) >= 3;
     return (
         <div className={`${width} ${height} ${theme==='dark'?'bg-slate-800/30':'bg-slate-200/60'} relative overflow-hidden flex flex-col justify-end shadow-inner rounded-full`}>
             <div className={"w-full transition-all duration-700 ease-out " + (theme==='dark'?'shadow-lg shadow-black':'')} style={{ height: pct + "%", backgroundColor: color }} />
-            {showValue && (
-                <div className="absolute inset-x-0 top-0 flex justify-center pt-1 pointer-events-none">
-                    <span className={`text-[8px] font-black tracking-tighter ${theme==='dark'?'text-white/95 drop-shadow-md':'text-slate-900'}`} style={{textShadow: theme==='dark'?'0 1px 2px rgba(0,0,0,0.85)':'0 1px 1px rgba(255,255,255,0.6)'}}>{valText}</span>
-                </div>
+            {alarming && (
+                /* Peripheral-vision cue.  This empty overlay is rendered
+                   ONLY when |delta| >= 3, with a key that flips between
+                   "up" and "dn".  React mounts a fresh node whenever the
+                   alarm boundary is crossed OR the direction flips, so
+                   the 600 ms CSS keyframe (.red5-pill-pulse) plays once
+                   on transition and stays silent during steady alarm. */
+                <div key={(delta || 0) > 0 ? 'up' : 'dn'}
+                     className="red5-pill-pulse absolute inset-0 rounded-full pointer-events-none"
+                     data-testid="metric-pill-alarm-pulse"></div>
             )}
+            {showValue && (() => {
+                // Dual-layer rendering so the value text stays legible
+                // whether the pill is mostly empty (text floats on the
+                // background -- needs DARK colour) or mostly full
+                // (text submerged in the coloured fill -- needs WHITE).
+                // clip-path on the full-pill overlay so the percentage
+                // refers to the pill's coordinate space, not the text
+                // span's own bounding box.
+                // Dark-mode "above-fill" colour: slate-400 (#94a3b8) so
+                // the digits read as a muted grey rather than the
+                // previous near-white #e2e8f0 (user feedback 2026-02).
+                const clipAbove = `inset(0 0 ${pct}% 0)`;
+                const clipBelow = `inset(${100 - pct}% 0 0 0)`;
+                const colAbove  = theme==='dark' ? '#94a3b8' : '#0f172a';
+                return (
+                    <>
+                        <div className="absolute inset-0 flex justify-center pt-1 pointer-events-none"
+                             style={{ clipPath: clipAbove, WebkitClipPath: clipAbove }}>
+                            <span className="text-[8px] font-black tracking-tighter"
+                                  style={{ color: colAbove }}>{valText}</span>
+                        </div>
+                        <div className="absolute inset-0 flex justify-center pt-1 pointer-events-none"
+                             style={{ clipPath: clipBelow, WebkitClipPath: clipBelow }}>
+                            <span className="text-[8px] font-black tracking-tighter"
+                                  style={{ color: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,0.85)' }}>{valText}</span>
+                        </div>
+                    </>
+                );
+            })()}
             {deltaEl}
         </div>
     );

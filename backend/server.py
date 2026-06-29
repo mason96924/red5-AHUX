@@ -591,31 +591,53 @@ app.include_router(maintenance_router)
 #
 # To swap MockScu for a real device, point `_build_link_kwargs()` at the
 # SCU's host/port and skip starting MockScuServer.
+#
+# IMPORTANT: this whole stack is OPTIONAL.  If the Red5-ELC-V3.0 source
+# tree is not present alongside backend/ (e.g. a PROD checkout that omits
+# the archive/), `_ELC_IMPORTED` stays False and the backend boots
+# normally without the demo routes.  Without this guard a missing optional
+# package would crash uvicorn at module-load time, take the whole site
+# down (502 on every /api/* route), and trigger a systemd crash-loop.
+# Hardcoded `/app/...` paths were the root cause of the 2026-06-29 PROD
+# outage -- they only existed in the sandbox, not on the deploy host.
 # ---------------------------------------------------------------------------
+import os as _elc_os  # noqa: E402
 import sys as _sys  # noqa: E402
-_sys.path.insert(0, "/app/archive/Red5-ELC-V3.0")
-_sys.path.insert(0, "/app/archive/Red5-ELC-V3.0/tests")
 
-from fastapi.responses import FileResponse as _FileResponse  # noqa: E402
-from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
+_REPO_ROOT = _elc_os.path.dirname(_elc_os.path.dirname(_elc_os.path.abspath(__file__)))
+_ELC_DEMO_DIR = _elc_os.path.join(_REPO_ROOT, "archive", "Red5-ELC-V3.0")
+_sys.path.insert(0, _ELC_DEMO_DIR)
+_sys.path.insert(0, _elc_os.path.join(_ELC_DEMO_DIR, "tests"))
 
-from elc.api.rest import build_router as _build_elc_router  # noqa: E402
-from elc.api.ws import attach_ws as _attach_elc_ws  # noqa: E402
-from elc.codec import encode as _elc_encode  # noqa: E402
-from elc.codec.messages import RelaySet as _RelaySet, RelayState as _RelayState  # noqa: E402
-from elc.codec.registry import default_registry as _elc_registry  # noqa: E402
-from elc.domain.replica import Replica as _ElcReplica  # noqa: E402
-from elc.drivers.srm import SrmDriver as _SrmDriver  # noqa: E402
-from elc.transport import ScuLink as _ScuLink  # noqa: E402
+_ELC_IMPORTED = False
+try:
+    from fastapi.responses import FileResponse as _FileResponse  # noqa: E402
+    from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
 
-# MockScuServer is a test fixture, but it's import-safe (pure asyncio).
-from conftest import MockScuServer as _MockScuServer  # type: ignore  # noqa: E402
+    from elc.api.rest import build_router as _build_elc_router  # noqa: E402
+    from elc.api.ws import attach_ws as _attach_elc_ws  # noqa: E402
+    from elc.codec import encode as _elc_encode  # noqa: E402
+    from elc.codec.messages import RelaySet as _RelaySet, RelayState as _RelayState  # noqa: E402
+    from elc.codec.registry import default_registry as _elc_registry  # noqa: E402
+    from elc.domain.replica import Replica as _ElcReplica  # noqa: E402
+    from elc.drivers.srm import SrmDriver as _SrmDriver  # noqa: E402
+    from elc.transport import ScuLink as _ScuLink  # noqa: E402
+
+    # MockScuServer is a test fixture, but it's import-safe (pure asyncio).
+    from conftest import MockScuServer as _MockScuServer  # type: ignore  # noqa: E402
+    _ELC_IMPORTED = True
+except ImportError as _elc_imp_err:
+    print(f"[elc] optional V3.0 demo stack not available -- skipping mount ({_elc_imp_err})")
 
 _elc_state: dict[str, object] = {}
 
 
 @app.on_event("startup")
 async def _elc_startup() -> None:
+    if not _ELC_IMPORTED:
+        # PROD or any deploy without the optional Red5-ELC-V3.0 tree --
+        # silently skip; the rest of the backend boots normally.
+        return
     from elc.codec.device_id import ADDR_BITS as _ADDR_BITS  # noqa: PLC0415
     from elc.codec.device_id import SUBADDR_BITS as _SUBADDR_BITS  # noqa: PLC0415
     from elc.codec.device_id import DeviceId as _ElcDeviceId  # noqa: PLC0415
@@ -690,20 +712,20 @@ async def _elc_startup() -> None:
     )
     _attach_elc_ws(app, replica, path="/api/elc/events")
 
-    _ELC_DEMO_DIR = "/app/archive/Red5-ELC-V3.0/demo"
+    _ELC_DEMO_HTML = _elc_os.path.join(_ELC_DEMO_DIR, "demo")
     app.mount(
         "/api/elc-demo/static",
-        _StaticFiles(directory=_ELC_DEMO_DIR),
+        _StaticFiles(directory=_ELC_DEMO_HTML),
         name="elc-demo-static",
     )
 
     @app.get("/api/elc-demo/", include_in_schema=False)
     async def _elc_demo_index() -> _FileResponse:
-        return _FileResponse(f"{_ELC_DEMO_DIR}/index.html")
+        return _FileResponse(f"{_ELC_DEMO_HTML}/index.html")
 
     @app.get("/api/elc-demo/stress", include_in_schema=False)
     async def _elc_demo_stress() -> _FileResponse:
-        return _FileResponse(f"{_ELC_DEMO_DIR}/stress.html")
+        return _FileResponse(f"{_ELC_DEMO_HTML}/stress.html")
 
     _elc_state["scu"] = scu
     _elc_state["link"] = link
@@ -712,6 +734,8 @@ async def _elc_startup() -> None:
 
 @app.on_event("shutdown")
 async def _elc_shutdown() -> None:
+    if not _ELC_IMPORTED:
+        return
     link = _elc_state.get("link")
     scu = _elc_state.get("scu")
     if link is not None:

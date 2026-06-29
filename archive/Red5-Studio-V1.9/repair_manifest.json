@@ -159,7 +159,7 @@
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
       "size": 31555,
-      "sha256": "a3015fba13da36a2b9c1b3aa0f729aff8103bbe12faeddd9ee6664c452bec8ae",
+      "sha256": "19d164306a2675a8be4f3e94d83af915a2ae4e47e782b53ae5daec254321eb1b",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -168,8 +168,8 @@
       "kind": "ui",
       "label": "dashboard.compiled.js",
       "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
-      "size": 394686,
-      "sha256": "d52ff7891571a1679bf90a6af3d778e961df83e663b4d9274985c9adef57d329",
+      "size": 394667,
+      "sha256": "8c662e7e01581800edfef0e3d9c0380e989d51daf726faf8467422e7d5a201b6",
       "show_in_ui": true,
       "hot_reload": false
     },

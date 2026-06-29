@@ -372,6 +372,46 @@
       "sha256": "5dc627f4945b6b54c09b8f00d6e9dee898925212b3b681387844993cb4837107",
       "show_in_ui": false,
       "hot_reload": false
+    },
+    {
+      "name": "mobile_mockup.html",
+      "kind": "ui",
+      "label": "mobile_mockup.html",
+      "desc": "Mobile-phone view (QR code target from AHU/VAV phone-preview button)",
+      "size": 51629,
+      "sha256": "4cd442ca3cb81dd8a7d4d498a5f34a3e08456d995ce88fa6731415002d261146",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "learn.html",
+      "kind": "ui",
+      "label": "learn.html",
+      "desc": "Educational landing page (referenced by dashboard.html back-to-learn link)",
+      "size": 57625,
+      "sha256": "ee967b0be7536f5af7094b8fa5138fded866ecce09c6f2ec41f435805a54cc5f",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "ahu.html",
+      "kind": "ui",
+      "label": "ahu.html",
+      "desc": "AHU equipment graphic (linked from dashboard.compiled.js)",
+      "size": 36227,
+      "sha256": "2e877eb8d401b591dd0c685e1226d4bcfe699ef41d4212a5728b16bd4dcc0279",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "deepdive.html",
+      "kind": "ui",
+      "label": "deepdive.html",
+      "desc": "Deep-dive analysis page (linked from psy_3d.html)",
+      "size": 112824,
+      "sha256": "4e83cdab0a83ebc06213b01dde243425f2e50d5d4877b8e67581fd051746c73b",
+      "show_in_ui": false,
+      "hot_reload": false
     }
   ]
 }

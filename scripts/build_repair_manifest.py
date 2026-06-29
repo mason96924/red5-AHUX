@@ -79,6 +79,10 @@ EXTRA_ALLOWED_NOT_IN_UI = [
     ('js/psychrometric.js',         'ui',     'psychrometric.js',         'Psychrometric helpers (loaded by setup.html)'),
     ('equipment_mapper.css',        'ui',     'equipment_mapper.css',     'Stylesheet for equipment_mapper.html'),
     ('landing.css',                 'ui',     'landing.css',              'Stylesheet for landing.html'),
+    ('mobile_mockup.html',          'ui',     'mobile_mockup.html',       'Mobile-phone view (QR code target from AHU/VAV phone-preview button)'),
+    ('learn.html',                  'ui',     'learn.html',               'Educational landing page (referenced by dashboard.html back-to-learn link)'),
+    ('ahu.html',                    'ui',     'ahu.html',                 'AHU equipment graphic (linked from dashboard.compiled.js)'),
+    ('deepdive.html',               'ui',     'deepdive.html',            'Deep-dive analysis page (linked from psy_3d.html)'),
 ]
 
 # Subset of plug-ins whose register() functions are safe to hot-reload via
@@ -95,32 +99,65 @@ HOT_RELOADABLE = {
 
 
 def _audit_html_asset_refs(manifest_names: set) -> list:
-    """Scan every *.html under ARCHIVE for <script src> / <link href>
-    references to local assets (js/*.js, *.css, *.js).  Return any that
-    are NOT in `manifest_names` -- those will silently 404 on V1.9
-    controllers because bootstrap_controllers.sh only pushes manifest
-    entries.  This gate is the systemic answer to the 2026-06-29 QR
-    library bug (qrcode.min.js + 3 other scripts orphaned).
+    """Scan every *.html AND *.js under ARCHIVE for references to local
+    assets (js/*.js, *.css, *.html) and return any not in
+    `manifest_names`.  Without this gate, files referenced only from JS
+    (e.g. the QR-code phone-preview builder pointing at
+    mobile_mockup.html) silently 404 on V1.9 controllers because
+    bootstrap_controllers.sh only pushes manifest entries.
 
-    Returns a list of (html_file, asset_path) tuples.  Empty list => OK.
+    Returns a list of (source_file, asset_path) tuples.  Empty list => OK.
     """
     import re
-    orphaned = []
-    script_re = re.compile(r'<script\s+src="([^"]+\.js)(?:\?v=[^"]*)?"', re.IGNORECASE)
-    link_re   = re.compile(r'<link\s+rel="stylesheet"\s+href="([^"]+\.css)(?:\?v=[^"]*)?"', re.IGNORECASE)
-    for entry in sorted(os.listdir(ARCHIVE)):
-        if not entry.endswith('.html'):
-            continue
-        with open(os.path.join(ARCHIVE, entry)) as fh:
-            html = fh.read()
-        for m in script_re.findall(html) + link_re.findall(html):
-            # Strip leading slash; ignore absolute URLs and /api/* (served by backend not as files).
-            path = m.lstrip('/')
-            if m.startswith('http') or path.startswith('api/'):
+
+    orphaned: list = []
+    seen:    set  = set()
+
+    # --- HTML: scan <script src>, <link href>, <a href>, <iframe src> ---
+    html_patterns = [
+        re.compile(r'<script\s+[^>]*\bsrc="([^"]+\.js)(?:\?v=[^"]*)?"',     re.IGNORECASE),
+        re.compile(r'<link\s+[^>]*\bhref="([^"]+\.css)(?:\?v=[^"]*)?"',     re.IGNORECASE),
+        re.compile(r'<a\s+[^>]*\bhref="([^"]+\.html)(?:[?#][^"]*)?"',       re.IGNORECASE),
+        re.compile(r'<iframe\s+[^>]*\bsrc="([^"]+\.html)(?:[?#][^"]*)?"',   re.IGNORECASE),
+    ]
+    # --- JS: scan string literals that look like a local HTML path.
+    # Catches things like  '/mobile_mockup.html#/...'  or
+    # "mobile_mockup.html?id=..." .  Intentionally narrow -- we do NOT
+    # try to evaluate dynamic builders, just the static string suffix.
+    js_pattern = re.compile(r'[\'"]/?(?:[\w\-./]+/)?([\w\-]+\.html)(?:[?#][^\'"]*)?[\'"]')
+
+    for root, dirs, files in os.walk(ARCHIVE):
+        # Skip noise: virtualenvs, hidden dirs, node_modules, configs/.
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', '__pycache__', 'configs', 'tests')]
+        for entry in sorted(files):
+            path = os.path.join(root, entry)
+            rel  = os.path.relpath(path, ARCHIVE)
+            ext  = entry.rsplit('.', 1)[-1].lower() if '.' in entry else ''
+            if ext not in ('html', 'js'):
                 continue
-            path = path.split('?', 1)[0]
-            if path not in manifest_names:
-                orphaned.append((entry, path))
+            try:
+                src = open(path, encoding='utf-8', errors='ignore').read()
+            except OSError:
+                continue
+
+            matches: list = []
+            if ext == 'html':
+                for pat in html_patterns:
+                    matches.extend(pat.findall(src))
+            else:  # .js — only check for local .html references
+                matches.extend(js_pattern.findall(src))
+
+            for m in matches:
+                asset = m.lstrip('/').split('?', 1)[0].split('#', 1)[0]
+                if asset.startswith('http') or asset.startswith('//') or asset.startswith('api/'):
+                    continue
+                if asset not in manifest_names:
+                    key = (rel, asset)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    orphaned.append(key)
+
     return orphaned
 
 

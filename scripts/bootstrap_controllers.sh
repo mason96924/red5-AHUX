@@ -104,6 +104,7 @@ for f in dashboard.compiled.js dashboard.html dashboard.tailwind.css update.html
          equipment_mapper.html psy_3d.html js/psy-3d-engine.js \
          js/qrcode.min.js js/toast.js js/docs_index.js js/g36_timeline.js \
          js/psychrometric.js equipment_mapper.css landing.css \
+         mobile_mockup.html learn.html ahu.html deepdive.html \
          data_bridges_guide.md opt_sa_insight.md \
          configs/bridges.json js/audit_log.js js/i18n.js img/psy_silhouette.jpg; do
     p="$ARCHIVE/$f"

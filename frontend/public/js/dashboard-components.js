@@ -82,7 +82,7 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
                          style={{ clipPath: clipBelow, WebkitClipPath: clipBelow }}
                          title={`Δ vs 24 h rolling avg: ${up?'+':''}${delta.toFixed(2)} kJ/kg`}>
                         <span className="text-[9px] font-bold font-mono tracking-tight tabular-nums leading-none"
-                              style={{ color: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,0.85)' }}>{text}</span>
+                              style={{ color: '#0f172a', textShadow: '0 0 2px rgba(255,255,255,0.55)' }}>{text}</span>
                     </div>
                 </>
             );
@@ -127,7 +127,7 @@ const MetricBar = ({ val, max = 30, color = "#6366f1", height = "h-8", width = "
                         <div className="absolute inset-0 flex justify-center pt-1 pointer-events-none"
                              style={{ clipPath: clipBelow, WebkitClipPath: clipBelow }}>
                             <span className="text-[8px] font-black tracking-tighter"
-                                  style={{ color: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,0.85)' }}>{valText}</span>
+                                  style={{ color: '#0f172a', textShadow: '0 0 2px rgba(255,255,255,0.55)' }}>{valText}</span>
                         </div>
                     </>
                 );

@@ -243,6 +243,34 @@
     return `SRM/1/${i}/1`;
   }
 
+  // ---- Preview-sandbox transient mask --------------------------------
+  // uvicorn runs in the Emergent preview with --reload, which bounces
+  // the backend for ~1 second every time anything in /app/backend
+  // changes (platform auto-commits, manual edits, etc.).  During that
+  // window the ingress returns 404 or 502 for /api/* paths.  One retry
+  // after a short delay masks the transient for any tab that's already
+  // loaded.  Has no effect on healthy responses: the first attempt
+  // returns immediately and we exit the loop.
+  //
+  // This helper CANNOT fix the initial page-load 404 -- if the HTML
+  // itself doesn't load, this script never runs.  That case still
+  // needs an F5.
+  async function fetchRetry(url, opts = {}, retries = 1, delayMs = 600) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const r = await fetch(url, opts);
+        if (r.status !== 404 && r.status !== 502 && r.status !== 503) return r;
+        if (attempt === retries) return r;  // out of retries -- return as-is
+      } catch (e) {
+        lastErr = e;
+        if (attempt === retries) throw e;
+      }
+      await new Promise(res => setTimeout(res, delayMs));
+    }
+    throw lastErr;  // unreachable, but keeps TS-style analyzers happy
+  }
+
   // ---- DOM refs -----------------------------------------------------
   const $grid = document.getElementById("grid");
   const $gridN = document.getElementById("grid-n");
@@ -361,7 +389,7 @@
     const ctrl = new AbortController();
     pendingControllers.add(ctrl);
     try {
-      await fetch(`/api/elc/devices/${id}/relay`, {
+      await fetchRetry(`/api/elc/devices/${id}/relay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state }),
@@ -411,7 +439,7 @@
     const ctrl = new AbortController();
     pendingControllers.add(ctrl);
     try {
-      await fetch("/api/elc/broadcast", {
+      await fetchRetry("/api/elc/broadcast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state }),
@@ -595,7 +623,7 @@
   // ---- Link status poll ---------------------------------------------
   async function pollLink() {
     try {
-      const r = await fetch("/api/elc/link");
+      const r = await fetchRetry("/api/elc/link");
       const j = await r.json();
       $linkText.textContent = `link · ${j.state}`;
       $linkDetail.textContent = `${j.state} (attempt #${j.connect_attempts})`;

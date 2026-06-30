@@ -668,9 +668,14 @@ if _ELC_IMPORTED:
         _seen_devices.add(_ElcDeviceId(
             dev_type=_ElcDeviceType.SRM, scu=1, address=_addr, sub_address=0,
         ))
-    for _i in range(400):
+    # Stress-console grid: 1000 devices on sub_address=1.  Lives in a
+    # separate sub_address slot from the 4 main-console devices (which
+    # use sub_address=0) so address ranges never collide and we get the
+    # full 0..1023 address space for the grid.  Matches the layout in
+    # demo/stress.html's `deviceId(i)`.
+    for _i in range(1000):
         _seen_devices.add(_ElcDeviceId(
-            dev_type=_ElcDeviceType.SRM, scu=1, address=100 + _i, sub_address=0,
+            dev_type=_ElcDeviceType.SRM, scu=1, address=_i, sub_address=1,
         ))
     _seen_state: dict[_ElcDeviceId, bool] = {d: False for d in _seen_devices}
 

@@ -82,8 +82,12 @@ async def main() -> None:
     scu.on_frame(echo_relay)
 
     # ---- ELC stack pointed at the fake SCU --------------------------
+    # Config DB in /tmp so the demo works unprivileged (default is
+    # /var/lib/elc/config.db which requires root on first-run mkdir).
+    config_db = os.environ.get("ELC_CONFIG_DB_PATH", "/tmp/elc_demo_config.db")
     stack = build_stack(
-        "127.0.0.1", scu.port, name="demo-scu", initial_backoff=0.2
+        "127.0.0.1", scu.port, name="demo-scu", initial_backoff=0.2,
+        config_db_path=config_db,
     )
     await stack.link.start()
     await stack.link.wait_connected(timeout=3.0)

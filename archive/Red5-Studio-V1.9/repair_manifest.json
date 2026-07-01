@@ -134,26 +134,6 @@
       "hot_reload": true
     },
     {
-      "name": "elc_config_store.py",
-      "kind": "plugin",
-      "label": "ELC Config Store",
-      "desc": "SQLite storage layer for V3.0 ELC groups/schedules/assignments (Phase 1)",
-      "size": 17066,
-      "sha256": "018285ed5241c50d18db6438717cb001f9e3e25371a0bc77d7a287a2a64d41fd",
-      "show_in_ui": true,
-      "hot_reload": false
-    },
-    {
-      "name": "elc_config_service.py",
-      "kind": "plugin",
-      "label": "ELC Config Service",
-      "desc": "/api/elc/{groups,schedules,devices/*/schedules} CRUD endpoints (Phase 1)",
-      "size": 8533,
-      "sha256": "a162c60e63077fd304d847dcb81a5363405ba6dbbab215b695115926f97887f3",
-      "show_in_ui": true,
-      "hot_reload": false
-    },
-    {
       "name": "repair_manifest.json",
       "kind": "ui",
       "label": "repair_manifest.json",

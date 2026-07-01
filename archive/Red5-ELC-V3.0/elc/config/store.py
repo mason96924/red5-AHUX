@@ -1,7 +1,7 @@
 """
-elc_config_store.py
-===================
-SQLite-backed persistence for the V3.0 ELC operator UI config:
+elc.config.store
+================
+SQLite-backed persistence for the V3.0 lighting operator UI config:
     * groups           -- named collections of relays
     * group_members    -- device-id membership rows for each group
     * schedules        -- named rule sets to be evaluated later (Phase 4)
@@ -9,16 +9,16 @@ SQLite-backed persistence for the V3.0 ELC operator UI config:
                           with a priority tie-breaker
 
 Design notes:
-  * Pure sqlite3 stdlib.  No ORM, no external deps.  Each Flask handler
-    borrows a per-request connection via `get_conn()` -- SQLite handles
-    concurrency at the file level with WAL mode.
+  * Pure sqlite3 stdlib.  No ORM, no external deps.  Each FastAPI
+    handler borrows a per-request connection via `get_conn()` -- SQLite
+    handles concurrency at the file level with WAL mode.
   * `_ensure_schema()` runs at import; creating tables is idempotent.
   * IDs are UUID4 hex strings (32 chars).  Chosen over autoincrement so
     a fleet-wide sync (via bundle upload of the .db file) doesn't collide
     two controllers' independently-issued IDs.
   * Uniqueness violations raise :class:`Conflict`; not-found raises
     :class:`NotFound`.  Both are re-mapped to HTTP 409 / 404 by the
-    service layer.
+    route layer.
   * Time columns store ISO8601 UTC strings.  Cheap to read from the JS
     side without importing a date parser.
 
@@ -33,9 +33,9 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterator
 
-DEFAULT_DB_PATH = "/root/data/elc_config.db"
+DEFAULT_DB_PATH = "/var/lib/elc/config.db"
 
 
 # ---------------------------------------------------------------------------

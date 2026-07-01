@@ -41,6 +41,171 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — Phase 4 Real Schedule Authoring (2026-02, Day 2 — Editor UI)
+
+**Brief**: Location-aware, sun-aware, weather-aware scheduling authored
+inside the drag-and-drop Editor.  No new endpoints today — surfaces the
+Day 1 backend (astro / weather / evaluator / preview / settings) in a
+Settings modal + a per-schedule Rule Editor modal with live preview.
+
+**Delivered** (`demo/editor.html` grew from ~410 → ~1030 lines):
+  * **Settings modal** (⚙ button in header) — latitude / longitude
+    inputs, `<datalist>` timezone dropdown seeded with common IANA
+    zones, "📍 Locate me" (browser Geolocation API with `Intl…timeZone`
+    fallback for the tz), weather-enabled checkbox, engine-mode select
+    (dry_run / live).  PATCHes `/api/elc/settings`.
+  * **Rule editor modal** (✎ button on every schedule chip) —
+      - Trigger picker (tod / sunrise / sunset / civil_dawn /
+        civil_dusk / noon / lux).  Contextual sub-inputs
+        (time-picker for tod, ±720min offset for sun events, lux
+        threshold for lux).  Non-relevant rows hide automatically.
+      - Action select (Turn ON / Turn OFF).
+      - Day-of-week picker: 7 pill-style toggles with a `checked`
+        colour matching the app accent.  Full week = "no restriction"
+        (payload omits the `days` field so the backend keeps its
+        default).
+      - Optional date-range pickers (from/to).
+      - **Preview panel** — "Preview now" button PATCHes the rule
+        then hits `/api/elc/schedules/{id}/preview` and renders the
+        next 5 firings.  Times are formatted in the *schedule's*
+        location timezone via `Intl.DateTimeFormat({ timeZone })`
+        — not the browser's — so a UTC-clocked host doesn't
+        display Fri-in-LA as Sat-in-UTC.  Reason column echoes the
+        backend string ("sunset −30min → 19:37") and the action
+        chip is colour-coded (ON = green, OFF = amber).
+  * **Schedule chip subtitle** — each chip now shows a compact
+    rule summary underneath the name (e.g. `sunset −30min → ON ·
+    mon,tue,wed,thu,fri`).  Chips with no rule show an italic
+    "no rule — click ✎ to configure" hint in warning-orange.
+  * **Modal infrastructure** — reusable backdrop / open / close /
+    click-outside-to-dismiss.
+
+**Verified end-to-end via Playwright** (screenshot capture pending
+your review):
+  1. Open Settings → fill LA (34.05, -118.24) + America/Los_Angeles
+     → enable weather → Save → toast "Settings saved".
+  2. Create "Sunset Wash" schedule → chip appears with the italic
+     "no rule" hint.
+  3. Click ✎ → modal opens with defaults.  Change trigger to
+     Sunset, offset to −30, uncheck sat + sun.
+  4. Click "Preview now" → 5 firings appear:
+       Wed 07/01 19:38 · Thu 07/02 19:38 · Fri 07/03 19:37 ·
+       Mon 07/06 19:37 · Tue 07/07 19:37   — all "ON" in green,
+       all Mon-Fri in LA local (sat/sun correctly skipped).
+  5. Click Save rule → modal closes → chip subtitle updates to
+     `sunset −30min → ON · mon,tue,wed,thu,fri`.
+  6. Full pytest → **232/232 passed** (no regression).
+
+**Known / by-design**:
+  * Preview click also persists the rule (single round-trip
+    "save + preview") — no separate "preview unsaved" endpoint.
+    User feedback appears as `saved · previewed` beside the button.
+  * Timezone input is a free-text field with a `<datalist>` for
+    common zones.  Bad IANA identifier surfaces as a 400 from the
+    backend via toast.
+
+**Next (Day 3 — Scheduler engine)**:
+  * `elc/scheduling/engine.py` — background asyncio task polling
+    every 30s, walks every enabled schedule attached to any group,
+    calls `evaluator.should_fire(rule, now, ctx, last_lux)`, dispatches
+    the resulting action to each device via the driver in `live`
+    mode or logs it in `dry_run` mode.
+  * Wire into `build_stack()` alongside the config router.
+  * Persistent last-fired-at / last-lux state to survive restarts
+    without spurious pulses.
+  * End-to-end pytest with freezegun.
+
+## Phase V3.0 — Phase 4 Real Schedule Authoring (2026-02, Day 1 — Backend)
+
+**Brief**: Location-aware, sun-aware, weather-aware scheduling.
+Rule schema stored in the existing `schedules.rules` JSON column;
+evaluator + preview + astro + weather layers all pure so unit-testable
+under a frozen clock without hitting the real Open-Meteo API.
+
+**Delivered**:
+  * `elc/scheduling/astro.py` (~110 lines) — `Location(lat, lon, tz)`
+    dataclass (validates IANA tz via `zoneinfo`), `sun_events(loc,
+    date)` returning sunrise / sunset / civil_dawn / civil_dusk /
+    noon as timezone-aware datetimes.  `solar_elevation(loc, at)` in
+    degrees for the weather layer's lux model.  Handles polar-night
+    edge cases (raises `NoEventToday`).  Backed by the `astral`
+    library (added to runtime deps).
+  * `elc/scheduling/weather.py` (~180 lines) — Open-Meteo hourly
+    cloud-cover fetch via `urllib.request` (no httpx runtime dep
+    needed on the controller), 5-minute in-process cache keyed on
+    `(round(lat, 3), round(lon, 3))`, `outdoor_lux(loc, at,
+    weather_enabled, fetcher, now_epoch)` model:
+        `clear_sky_lux = 128000 · sin(elev)`
+        `cloud_factor  = 1 − cloud_pct/100 · 0.75`
+        `lux = max(100, clear_sky_lux · cloud_factor)`.
+    Fetch failures fall back to clear-sky (never raises upward);
+    `weather_enabled=False` skips the fetcher entirely so the fixture
+    stub in tests is never called.
+  * `elc/scheduling/evaluator.py` (~290 lines) — the heart:
+      * `validate(rule)` — rejects bad schema at the boundary.
+      * `should_fire(rule, now, ctx, last_lux)` — bool.  Gates on
+        day-of-week / date-range / excluded-dates; matches
+        target-moment within ±30s; lux triggers fire on the
+        downward crossing (`last_lux ≥ threshold > current_lux`)
+        so no spurious startup pulses when it's already dark.
+      * `next_fire_times(rule, from_dt, ctx, count)` — scans
+        forward day-by-day for TOD / sun triggers; samples the
+        hourly lux forecast for lux triggers; returns
+        `[Firing(at, action, reason)]` up to `count`.
+        `horizon_days=90` cap keeps the scan bounded.
+      * Reason strings the UI shows verbatim:
+        `"sunset −30min → 19:38"`, `"lux < 400 (est. 210 lx)"`,
+        `"time = 08:00"`, etc.
+  * `elc/config/store.py` — new `settings` table (key/value with
+    per-key validation), `get_settings()` / `update_settings()` with
+    defaults substituted for keys that haven't been persisted yet.
+    Whitelist: latitude, longitude, timezone (IANA),
+    weather_enabled (0/1), engine_mode (dry_run/live).  Bad values
+    → `BadInput`.
+  * `elc/config/routes.py` — new endpoints:
+      * `GET /api/elc/settings`, `PATCH /api/elc/settings`.
+      * `POST /api/elc/schedules/{sid}/preview` — body may override
+        stored settings for what-if preview.  Returns
+        `{schedule_id, location, weather_enabled, firings: [...]}`
+        with both `at` (ISO UTC) and `at_local` (ISO in location tz).
+    Rule validation now runs on both create and update; bad
+    schema → 400 with the exact `RuleError` message.
+  * `pyproject.toml` — moved fastapi / uvicorn / httpx /
+    websockets to runtime `dependencies` (so plain `pip install
+    -e .` is enough on a fresh controller), added `astral>=3.2`
+    runtime dep and `freezegun>=1.4` dev dep.
+  * Tests (57 new, all green):
+      * `tests/scheduling/test_astro.py` (9): NOAA-plausible LA
+        equinox values, DST spring-forward jump, polar-night
+        raises, solar elevation positive at noon summer solstice
+        + negative at midnight.
+      * `tests/scheduling/test_weather.py` (8): clear-sky peak lux
+        > 100k, overcast at 15–35% of clear-sky, weather-disabled
+        bypasses fetcher entirely, fetch-failure falls back to
+        clear-sky without raising, cache reused within 5min,
+        cache expires past TTL, hourly forecast has expected count.
+      * `tests/scheduling/test_evaluator.py` (26): every trigger
+        type + every gate + reason-string content + naive-datetime
+        input handling + first-tick-doesn't-fire-lux + no-fire-on-
+        upward-crossing.
+      * `tests/config/test_settings_and_preview.py` (14): defaults
+        substitution, PATCH persists, bad lat rejected, unknown
+        key rejected, valid TOD rule accepted, invalid rule
+        rejected, null-rules-still-ok, PATCH rules validated,
+        preview returns firings for TOD, notice on null-rules
+        schedule, body overrides stored settings, bad tz → 400,
+        404 for unknown schedule.
+
+**Verified**:
+  * `pytest` → **232/232 passed** in 10.3s (was 175, +57 new).
+  * Ruff-clean over `elc/scheduling` and `elc/config`.
+  * Live smoke via `scripts/demo.py`:
+      `PATCH /settings` (LA lat/lon/tz) →
+      `POST /schedules` (rule = sunset −30min) →
+      `POST /schedules/{id}/preview {count: 5}` returned
+      `19:37/19:38` LA-local values for 5 consecutive days,
+      astronomically correct (5–10s drift per day near solstice).
+
 ## Phase V3.0 — Phase 2 Editor UI (2026-02)
 
 **Brief**: Three-panel drag-and-drop editor page for the operator config

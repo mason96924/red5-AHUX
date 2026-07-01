@@ -164,6 +164,87 @@
   }
   #toast.show { opacity: 1; transform: translateY(0); }
   #toast.err { border-left-color: var(--bad); }
+
+  /* -------------- Modals -------------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; width: 560px; max-width: 92vw; max-height: 90vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal header {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal header h3 { margin: 0; font-size: 13px; letter-spacing: .12em;
+                      text-transform: uppercase; color: var(--text); font-weight: 600; }
+  .modal .body { padding: 18px; overflow-y: auto; }
+  .modal footer {
+    padding: 12px 18px; border-top: 1px solid var(--line);
+    display: flex; justify-content: flex-end; gap: 8px; background: #10151b;
+  }
+  .modal .close-x {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 20px; line-height: 1; padding: 0 4px;
+  }
+  .modal .close-x:hover { color: var(--text); }
+
+  /* form rows */
+  .row { margin-bottom: 14px; }
+  .row label { display: block; font-size: 11px; color: var(--muted);
+                letter-spacing: .1em; text-transform: uppercase; margin-bottom: 5px; }
+  .row input[type=text], .row input[type=number], .row select, .row input[type=time], .row input[type=date] {
+    width: 100%; background: #0a0d11; color: var(--text);
+    border: 1px solid var(--line); border-radius: 5px;
+    padding: 7px 9px; font: inherit; font-size: 13px;
+  }
+  .row .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .row .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .row .dow-picker { display: flex; gap: 4px; flex-wrap: wrap; }
+  .row .dow-picker label {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 9px; border: 1px solid var(--line); border-radius: 4px;
+    cursor: pointer; margin: 0; text-transform: none; letter-spacing: 0;
+    font-size: 12px; color: var(--text); font-family: var(--mono);
+  }
+  .row .dow-picker input { display: none; }
+  .row .dow-picker label.checked {
+    background: var(--accent); border-color: var(--accent); color: #17110b; font-weight: 600;
+  }
+
+  /* Rule summary below each schedule chip */
+  .chip .rule-summary {
+    display: block; font-size: 10.5px; color: var(--muted);
+    font-family: var(--mono); margin-top: 2px; letter-spacing: .02em;
+  }
+  .chip .rule-summary.unset { color: #6b4c2e; font-style: italic; }
+  .chip .name-block { flex: 1; min-width: 0; }
+  .chip .name-block .name { font-family: var(--mono); font-size: 13px;
+                              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Preview panel */
+  .preview-panel {
+    background: #0a0d11; border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; margin-top: 4px; font-family: var(--mono); font-size: 12px;
+    max-height: 180px; overflow-y: auto;
+  }
+  .preview-panel .fire-line {
+    display: flex; justify-content: space-between; padding: 3px 0;
+    border-bottom: 1px dashed #1a2029;
+  }
+  .preview-panel .fire-line:last-child { border-bottom: none; }
+  .preview-panel .fire-line .action.on { color: var(--ok); }
+  .preview-panel .fire-line .action.off { color: var(--warn); }
+  .preview-panel .fire-line .reason { color: var(--muted); font-size: 11px; margin-left: 8px; }
+  .preview-panel .empty { color: var(--muted); font-style: italic; text-align: center; padding: 12px; }
 </style>
 </head>
 <body>
@@ -174,6 +255,7 @@
       <span class="dot"></span><span id="conn-text">checking…</span>
     </span>
     <button class="ghost" id="btn-seed" data-testid="editor-seed-btn">Seed 4 demo devices</button>
+    <button class="ghost" id="btn-settings" data-testid="editor-settings-btn" title="Location + weather + engine mode">⚙ Settings</button>
     <a href="/" class="btn ghost">← Demo console</a>
   </div>
 </header>
@@ -212,6 +294,149 @@
 
 <div id="toast" data-testid="toast"></div>
 
+<!-- =========================== SETTINGS MODAL =========================== -->
+<div class="modal-backdrop" id="settings-modal" data-testid="settings-modal">
+  <div class="modal">
+    <header>
+      <h3>Controller Settings</h3>
+      <button class="close-x" data-modal-close>×</button>
+    </header>
+    <div class="body">
+      <div class="row">
+        <label>Latitude / Longitude</label>
+        <div class="grid-2">
+          <input type="number" step="0.0001" id="set-lat" data-testid="set-lat"
+                 placeholder="e.g. 34.05" />
+          <input type="number" step="0.0001" id="set-lon" data-testid="set-lon"
+                 placeholder="e.g. -118.24" />
+        </div>
+        <div class="hint">
+          <a href="#" id="locate-me" data-testid="locate-me">📍 Locate me</a>
+          (uses your browser's location — one-time)
+        </div>
+      </div>
+      <div class="row">
+        <label>Timezone (IANA)</label>
+        <input type="text" id="set-tz" data-testid="set-tz"
+               placeholder="e.g. America/Los_Angeles" list="tz-list" />
+        <datalist id="tz-list">
+          <option>UTC</option>
+          <option>America/Los_Angeles</option>
+          <option>America/Denver</option>
+          <option>America/Chicago</option>
+          <option>America/New_York</option>
+          <option>Europe/London</option>
+          <option>Europe/Paris</option>
+          <option>Europe/Berlin</option>
+          <option>Asia/Tokyo</option>
+          <option>Asia/Kolkata</option>
+          <option>Australia/Sydney</option>
+        </datalist>
+      </div>
+      <div class="row">
+        <label>Weather</label>
+        <div class="grid-2">
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;color:var(--text);margin:0;font-size:13px">
+            <input type="checkbox" id="set-weather" data-testid="set-weather" />
+            Enabled (Open-Meteo)
+          </label>
+          <span class="hint" style="margin:0">Adds cloud-cover to lux estimates</span>
+        </div>
+      </div>
+      <div class="row">
+        <label>Engine mode</label>
+        <select id="set-mode" data-testid="set-mode">
+          <option value="dry_run">Dry-run (log intended actions, no hardware)</option>
+          <option value="live">Live (dispatch to relays)</option>
+        </select>
+      </div>
+    </div>
+    <footer>
+      <button class="ghost" data-modal-close>Cancel</button>
+      <button class="primary" id="settings-save" data-testid="settings-save">Save</button>
+    </footer>
+  </div>
+</div>
+
+<!-- =========================== RULE EDITOR MODAL =========================== -->
+<div class="modal-backdrop" id="rule-modal" data-testid="rule-modal">
+  <div class="modal">
+    <header>
+      <h3>Edit Schedule Rule <span id="rule-modal-name" style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;margin-left:8px;font-family:var(--mono);"></span></h3>
+      <button class="close-x" data-modal-close>×</button>
+    </header>
+    <div class="body">
+      <div class="row">
+        <label>Trigger</label>
+        <select id="rule-trigger-type" data-testid="rule-trigger-type">
+          <option value="tod">Time of day (fixed clock time)</option>
+          <option value="sunrise">Sunrise</option>
+          <option value="sunset">Sunset</option>
+          <option value="civil_dawn">Civil dawn (twilight begin)</option>
+          <option value="civil_dusk">Civil dusk (twilight end)</option>
+          <option value="noon">Solar noon</option>
+          <option value="lux">Outdoor lux threshold</option>
+        </select>
+      </div>
+
+      <div class="row" id="tod-row">
+        <label>At (local time)</label>
+        <input type="time" id="rule-tod-at" data-testid="rule-tod-at" value="08:00" />
+      </div>
+
+      <div class="row" id="offset-row">
+        <label>Offset (minutes; negative = before)</label>
+        <input type="number" id="rule-offset" data-testid="rule-offset" value="0"
+               step="1" min="-720" max="720" />
+        <div class="hint">e.g. −30 = 30 min before sunset</div>
+      </div>
+
+      <div class="row" id="lux-row">
+        <label>Fire when outdoor lux drops below</label>
+        <input type="number" id="rule-lux" data-testid="rule-lux" value="400"
+               step="10" min="1" />
+        <div class="hint">Typical values: 400 lx = deep dusk, 1000 lx = cloudy afternoon, 10 lx = full dark</div>
+      </div>
+
+      <div class="row">
+        <label>Action</label>
+        <select id="rule-action" data-testid="rule-action">
+          <option value="on">Turn ON</option>
+          <option value="off">Turn OFF</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>Days of week</label>
+        <div class="dow-picker" id="rule-dow" data-testid="rule-dow"></div>
+      </div>
+
+      <div class="row">
+        <label>Date range (optional)</label>
+        <div class="grid-2">
+          <input type="date" id="rule-date-from" data-testid="rule-date-from" placeholder="from" />
+          <input type="date" id="rule-date-to" data-testid="rule-date-to" placeholder="to" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Preview — next 5 firings</label>
+        <div class="preview-panel" id="rule-preview" data-testid="rule-preview">
+          <div class="empty">Save or click Preview to compute…</div>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          <button class="ghost" id="preview-btn" data-testid="preview-btn">Preview now</button>
+          <span id="preview-note" style="margin-left:8px"></span>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button class="ghost" data-modal-close>Cancel</button>
+      <button class="primary" id="rule-save" data-testid="rule-save">Save rule</button>
+    </footer>
+  </div>
+</div>
+
 <script>
 // ---------- state -----------------------------------------------------------
 const state = {
@@ -219,7 +444,11 @@ const state = {
   schedules: [],
   devices: [],       // [{device, relay_state, ...}]  (device_id lives in .device)
   deviceGroups: {},  // device_id → [{gid, priority, color, name}]  (derived)
+  settings: null,    // {latitude, longitude, timezone, weather_enabled, engine_mode}
+  editingSid: null,  // schedule id currently open in the rule modal
 };
+
+const DOW = ["mon","tue","wed","thu","fri","sat","sun"];
 
 // ---------- HTTP helper -----------------------------------------------------
 async function api(method, path, body) {
@@ -305,10 +534,16 @@ function renderSchedules() {
     el.dataset.testid = `sch-chip-${s.id}`;
     el.dataset.type = 'schedule';
     el.dataset.id = s.id;
+    const summary = ruleSummary(s.rules);
+    const summaryClass = s.rules ? 'rule-summary' : 'rule-summary unset';
     el.innerHTML = `
       <span class="swatch" style="background:${s.color}"></span>
-      <span class="name">${escapeHtml(s.name)}</span>
+      <span class="name-block">
+        <span class="name">${escapeHtml(s.name)}</span>
+        <span class="${summaryClass}">${escapeHtml(summary)}</span>
+      </span>
       <span class="actions">
+        <button class="icon" title="Edit rule" data-testid="sch-edit-${s.id}">✎</button>
         <button class="icon danger" title="Delete schedule"
                 data-testid="sch-del-${s.id}">×</button>
       </span>`;
@@ -319,6 +554,12 @@ function renderSchedules() {
       ev.dataTransfer.effectAllowed = 'copy';
     });
     el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    // Edit rule
+    el.querySelector('button[title="Edit rule"]').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openRuleModal(s);
+    });
+    // Delete
     el.querySelector('button.danger').addEventListener('click', async (ev) => {
       ev.stopPropagation();
       if (!confirm(`Delete schedule "${s.name}"? Assignments will be dropped.`)) return;
@@ -327,6 +568,26 @@ function renderSchedules() {
     });
     host.appendChild(el);
   }
+}
+
+// Compact one-liner describing a rule for the chip subtitle.
+function ruleSummary(rules) {
+  if (!rules || !rules.trigger) return 'no rule — click ✎ to configure';
+  const t = rules.trigger;
+  let head;
+  if (t.type === 'tod') head = `at ${t.at || '??:??'}`;
+  else if (t.type === 'lux') head = `lux < ${t.lux_below}`;
+  else {
+    const off = t.offset_minutes || 0;
+    const label = t.type.replace('_', ' ');
+    head = off === 0 ? label : `${label} ${off > 0 ? '+' : '−'}${Math.abs(off)}min`;
+  }
+  const action = rules.action === 'on' ? '→ ON' : '→ OFF';
+  let days = '';
+  if (Array.isArray(rules.days) && rules.days.length && rules.days.length < 7) {
+    days = ` · ${rules.days.join(',')}`;
+  }
+  return `${head} ${action}${days}`;
 }
 
 // ---------- rendering: group cards ------------------------------------------
@@ -496,14 +757,16 @@ function renderDevices() {
 
 // ---------- refreshAll ------------------------------------------------------
 async function refreshAll() {
-  const [groupsRes, schRes, devRes] = await Promise.all([
+  const [groupsRes, schRes, devRes, setRes] = await Promise.all([
     api('GET', '/groups'),
     api('GET', '/schedules'),
     api('GET', '/devices'),
+    api('GET', '/settings'),
   ]);
   state.groups = groupsRes.groups || [];
   state.schedules = schRes.schedules || [];
   state.devices = devRes || [];
+  state.settings = setRes.settings || null;
   await rebuildDeviceGroupsIndex();
   renderSchedules();
   renderGroups();
@@ -557,6 +820,208 @@ document.getElementById('btn-seed').addEventListener('click', async () => {
   } catch (e) { toast(`Seed failed: ${e.message}`, true); }
   finally { btn.disabled = false; }
 });
+
+// ---------- Modal helpers ---------------------------------------------------
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('[data-modal-close]').forEach(btn => {
+  btn.addEventListener('click', () => btn.closest('.modal-backdrop').classList.remove('show'));
+});
+// Click backdrop to close
+document.querySelectorAll('.modal-backdrop').forEach(bd => {
+  bd.addEventListener('click', (ev) => { if (ev.target === bd) bd.classList.remove('show'); });
+});
+
+// ---------- Settings modal --------------------------------------------------
+document.getElementById('btn-settings').addEventListener('click', () => {
+  const s = state.settings || {};
+  document.getElementById('set-lat').value = s.latitude ?? '';
+  document.getElementById('set-lon').value = s.longitude ?? '';
+  document.getElementById('set-tz').value = s.timezone ?? 'UTC';
+  document.getElementById('set-weather').checked = String(s.weather_enabled) === '1';
+  document.getElementById('set-mode').value = s.engine_mode ?? 'dry_run';
+  openModal('settings-modal');
+});
+
+document.getElementById('locate-me').addEventListener('click', (ev) => {
+  ev.preventDefault();
+  if (!navigator.geolocation) { toast('Geolocation not supported', true); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      document.getElementById('set-lat').value = pos.coords.latitude.toFixed(4);
+      document.getElementById('set-lon').value = pos.coords.longitude.toFixed(4);
+      // Best-effort tz from Intl API
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) document.getElementById('set-tz').value = tz;
+      } catch (_) {}
+      toast('Location filled from browser');
+    },
+    (err) => toast(`Location denied: ${err.message}`, true),
+    { timeout: 8000 }
+  );
+});
+
+document.getElementById('settings-save').addEventListener('click', async () => {
+  const patch = {
+    latitude: parseFloat(document.getElementById('set-lat').value || '0'),
+    longitude: parseFloat(document.getElementById('set-lon').value || '0'),
+    timezone: document.getElementById('set-tz').value.trim() || 'UTC',
+    weather_enabled: document.getElementById('set-weather').checked ? 1 : 0,
+    engine_mode: document.getElementById('set-mode').value,
+  };
+  try {
+    await api('PATCH', '/settings', patch);
+    await refreshAll();
+    closeModal('settings-modal');
+    toast('Settings saved');
+  } catch (e) { toast(e.message, true); }
+});
+
+// ---------- Rule editor modal ----------------------------------------------
+function buildDowPicker() {
+  const host = document.getElementById('rule-dow');
+  host.innerHTML = '';
+  for (const d of DOW) {
+    const lbl = document.createElement('label');
+    lbl.dataset.dow = d;
+    lbl.className = 'checked';
+    lbl.innerHTML = `<input type="checkbox" value="${d}" checked />${d}`;
+    lbl.querySelector('input').addEventListener('change', (ev) => {
+      lbl.classList.toggle('checked', ev.target.checked);
+    });
+    host.appendChild(lbl);
+  }
+}
+buildDowPicker();
+
+function showTriggerRows(type) {
+  document.getElementById('tod-row').style.display   = (type === 'tod') ? '' : 'none';
+  document.getElementById('offset-row').style.display= (['sunrise','sunset','civil_dawn','civil_dusk','noon'].includes(type)) ? '' : 'none';
+  document.getElementById('lux-row').style.display   = (type === 'lux') ? '' : 'none';
+}
+document.getElementById('rule-trigger-type').addEventListener('change', (ev) => {
+  showTriggerRows(ev.target.value);
+});
+
+function openRuleModal(schedule) {
+  state.editingSid = schedule.id;
+  document.getElementById('rule-modal-name').textContent = schedule.name;
+  const r = schedule.rules || {};
+  const t = r.trigger || {};
+  document.getElementById('rule-trigger-type').value = t.type || 'tod';
+  document.getElementById('rule-tod-at').value = t.at || '08:00';
+  document.getElementById('rule-offset').value = t.offset_minutes ?? 0;
+  document.getElementById('rule-lux').value = t.lux_below ?? 400;
+  document.getElementById('rule-action').value = r.action || 'on';
+  // DOW
+  const selected = new Set(Array.isArray(r.days) && r.days.length ? r.days : DOW);
+  document.querySelectorAll('#rule-dow label').forEach(lbl => {
+    const isChecked = selected.has(lbl.dataset.dow);
+    lbl.querySelector('input').checked = isChecked;
+    lbl.classList.toggle('checked', isChecked);
+  });
+  const dr = r.date_range || {};
+  document.getElementById('rule-date-from').value = dr.from || '';
+  document.getElementById('rule-date-to').value = dr.to || '';
+  showTriggerRows(t.type || 'tod');
+  document.getElementById('rule-preview').innerHTML =
+    '<div class="empty">Save or click Preview to compute…</div>';
+  document.getElementById('preview-note').textContent = '';
+  openModal('rule-modal');
+}
+
+function readRuleFromModal() {
+  const type = document.getElementById('rule-trigger-type').value;
+  const trigger = { type };
+  if (type === 'tod') trigger.at = document.getElementById('rule-tod-at').value;
+  else if (type === 'lux') trigger.lux_below = parseInt(document.getElementById('rule-lux').value, 10);
+  else trigger.offset_minutes = parseInt(document.getElementById('rule-offset').value, 10);
+
+  const days = Array.from(document.querySelectorAll('#rule-dow input:checked')).map(x => x.value);
+  const rule = {
+    trigger,
+    action: document.getElementById('rule-action').value,
+  };
+  if (days.length && days.length < 7) rule.days = days;
+  const from = document.getElementById('rule-date-from').value;
+  const to = document.getElementById('rule-date-to').value;
+  if (from || to) {
+    rule.date_range = {};
+    if (from) rule.date_range.from = from;
+    if (to) rule.date_range.to = to;
+  }
+  return rule;
+}
+
+document.getElementById('preview-btn').addEventListener('click', async () => {
+  const sid = state.editingSid;
+  if (!sid) return;
+  // Save-preview: temporarily PATCH then hit /preview, so the preview
+  // reflects what the user has *typed* not what's persisted.  To avoid
+  // saving-then-reverting we call /preview with the current rules
+  // patched in via a temp update — simpler UX than a dedicated
+  // "preview an unsaved rule" endpoint.
+  const rule = readRuleFromModal();
+  try {
+    // Validate + save first (single API round-trip); if it fails the
+    // error message is what the user needs to see anyway.
+    await api('PATCH', `/schedules/${sid}`, { rules: rule });
+    const preview = await api('POST', `/schedules/${sid}/preview`, { count: 5 });
+    renderPreview(preview);
+    document.getElementById('preview-note').textContent = 'saved · previewed';
+    await refreshAll();
+  } catch (e) { toast(e.message, true); }
+});
+
+document.getElementById('rule-save').addEventListener('click', async () => {
+  const sid = state.editingSid;
+  if (!sid) return;
+  const rule = readRuleFromModal();
+  try {
+    await api('PATCH', `/schedules/${sid}`, { rules: rule });
+    await refreshAll();
+    closeModal('rule-modal');
+    toast('Rule saved');
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderPreview(preview) {
+  const host = document.getElementById('rule-preview');
+  const firings = preview.firings || [];
+  if (firings.length === 0) {
+    host.innerHTML = `<div class="empty">No firings in the next 90 days
+      ${preview.notice ? `<br>(${escapeHtml(preview.notice)})` : ''}
+    </div>`;
+    return;
+  }
+  // Format in the SCHEDULE's timezone (not the browser's).  Without
+  // this, a UTC-clocked test host displays "Sat 07/04" for what's
+  // actually Fri 07/03 in LA — technically correct wall-clock, but
+  // confusing because the day-of-week filter is applied at the
+  // location, not the viewer's browser.
+  const tz = (preview.location && preview.location.timezone) || 'UTC';
+  const fmtDay = new Intl.DateTimeFormat(undefined,
+    { weekday: 'short', timeZone: tz });
+  const fmtDate = new Intl.DateTimeFormat(undefined,
+    { month: '2-digit', day: '2-digit', timeZone: tz });
+  const fmtTime = new Intl.DateTimeFormat(undefined,
+    { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+
+  host.innerHTML = '';
+  for (const f of firings) {
+    const dt = new Date(f.at);
+    const line = document.createElement('div');
+    line.className = 'fire-line';
+    line.innerHTML = `
+      <span>${fmtDay.format(dt)} ${fmtDate.format(dt)} ${fmtTime.format(dt)}
+        <span class="reason">${escapeHtml(f.reason)}</span>
+      </span>
+      <span class="action ${f.action}">${f.action.toUpperCase()}</span>`;
+    host.appendChild(line);
+  }
+}
+
 
 // ---------- utils -----------------------------------------------------------
 function escapeHtml(s) {

@@ -16,6 +16,7 @@ dependencies = [
     "httpx>=0.27",
     "websockets>=12.0",
     "astral>=3.2",              # sunrise/sunset/civil-twilight, DST-aware
+    "holidays>=0.50",           # per-country holiday calendars, offline
 ]
 
 [project.optional-dependencies]

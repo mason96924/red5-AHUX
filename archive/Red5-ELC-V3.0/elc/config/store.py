@@ -105,6 +105,16 @@ _SCHEMA = [
         updated_at  TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS calendar_days (
+        id          TEXT PRIMARY KEY,
+        date        TEXT NOT NULL,      -- YYYY-MM-DD, local wall-clock
+        label       TEXT NOT NULL,
+        kind        TEXT NOT NULL,      -- 'holiday' | 'event'
+        created_at  TEXT NOT NULL,
+        UNIQUE (date, kind)             -- one entry per (date, kind)
+    )
+    """,
 ]
 
 
@@ -469,6 +479,8 @@ _DEFAULT_SETTINGS: dict[str, str] = {
     "timezone": "UTC",
     "weather_enabled": "1",
     "engine_mode": "dry_run",   # dry_run | live
+    "country": "",              # ISO-3166-1 alpha-2 (e.g. "US", "IN"),
+                                # blank = no holiday suggestions available
 }
 
 _ALLOWED_SETTINGS = set(_DEFAULT_SETTINGS.keys())
@@ -528,6 +540,99 @@ def _validate_setting(key: str, value: Any) -> None:
     elif key == "engine_mode":
         if value not in ("dry_run", "live"):
             raise BadInput("engine_mode must be 'dry_run' or 'live'")
+    elif key == "country":
+        # Accept blank ("no country set"), else exactly 2 ASCII letters.
+        if value and not (isinstance(value, str) and len(value) == 2 and value.isalpha()):
+            raise BadInput("country must be a 2-letter ISO code (e.g. 'US')")
+
+
+# ---------------------------------------------------------------------------
+# Calendar days -- holidays and event days used by the scheduler engine.
+# ---------------------------------------------------------------------------
+_CAL_KINDS = frozenset({"holiday", "event"})
+
+
+def list_calendar_days(kind: str | None = None,
+                       db_path: str | None = None) -> list[dict[str, Any]]:
+    """Return every calendar day (both kinds by default), sorted by date."""
+    db_path = db_path or DEFAULT_DB_PATH
+    with get_conn(db_path) as conn:
+        if kind is None:
+            rows = conn.execute(
+                "SELECT * FROM calendar_days ORDER BY date, kind"
+            ).fetchall()
+        else:
+            if kind not in _CAL_KINDS:
+                raise BadInput(f"kind must be one of {sorted(_CAL_KINDS)}")
+            rows = conn.execute(
+                "SELECT * FROM calendar_days WHERE kind = ? ORDER BY date",
+                (kind,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_calendar_day(date_str: str, label: str, kind: str,
+                     db_path: str | None = None) -> dict[str, Any]:
+    if kind not in _CAL_KINDS:
+        raise BadInput(f"kind must be one of {sorted(_CAL_KINDS)}")
+    _validate_iso_date(date_str)
+    if not isinstance(label, str) or not label.strip():
+        raise BadInput("label must be a non-empty string")
+    db_path = db_path or DEFAULT_DB_PATH
+    row = {
+        "id": _new_id(),
+        "date": date_str,
+        "label": label.strip(),
+        "kind": kind,
+        "created_at": _now(),
+    }
+    with get_conn(db_path) as conn:
+        try:
+            conn.execute(
+                """INSERT INTO calendar_days (id, date, label, kind, created_at)
+                   VALUES (:id, :date, :label, :kind, :created_at)""",
+                row,
+            )
+        except sqlite3.IntegrityError as e:
+            # UNIQUE(date, kind) — silent-add semantics would be surprising,
+            # so tell the caller which entry already exists.
+            raise Conflict(f"{kind} on {date_str} already exists") from e
+    return row
+
+
+def remove_calendar_day(entry_id: str, db_path: str | None = None) -> None:
+    db_path = db_path or DEFAULT_DB_PATH
+    with get_conn(db_path) as conn:
+        cur = conn.execute("DELETE FROM calendar_days WHERE id = ?", (entry_id,))
+        if cur.rowcount == 0:
+            raise NotFound(f"calendar day {entry_id!r} not found")
+
+
+def bulk_add_calendar_days(entries: list[dict[str, Any]],
+                           db_path: str | None = None) -> list[dict[str, Any]]:
+    """Add many rows.  Skips duplicates (same date+kind) silently so the
+    "suggest holidays for country/year" flow is idempotent on re-click.
+    Returns the rows that were actually inserted.
+    """
+    inserted: list[dict[str, Any]] = []
+    for e in entries:
+        try:
+            inserted.append(add_calendar_day(
+                e["date"], e["label"], e.get("kind", "holiday"), db_path=db_path,
+            ))
+        except Conflict:
+            continue
+    return inserted
+
+
+def _validate_iso_date(s: Any) -> None:
+    if not isinstance(s, str):
+        raise BadInput("date must be a string YYYY-MM-DD")
+    try:
+        from datetime import date as _d
+        _d.fromisoformat(s)
+    except ValueError as e:
+        raise BadInput(f"date {s!r} is not YYYY-MM-DD") from e
 
 
 # ---------------------------------------------------------------------------

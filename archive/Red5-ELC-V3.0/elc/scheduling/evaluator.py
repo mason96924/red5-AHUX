@@ -72,10 +72,17 @@ class EvalContext:
     ``weather_enabled`` and ``fetcher`` are only consulted for ``lux``
     triggers.  Time-of-day / sun triggers are pure functions of
     (loc, date).
+
+    ``holiday_dates`` / ``event_dates`` — ISO YYYY-MM-DD strings in
+    the controller's local timezone.  Consulted by the day-of-week
+    gate when a rule sets ``skip_holidays`` (default True) or
+    ``include_events`` (default False).
     """
     location: Location
     weather_enabled: bool = True
     fetcher: weather.CloudCoverFetcher = weather.open_meteo_fetch
+    holiday_dates: frozenset[str] = frozenset()
+    event_dates: frozenset[str] = frozenset()
 
 
 # Canonical day-of-week codes -- Python's %A gives locale-dependent
@@ -148,6 +155,10 @@ def validate(rule: Any) -> None:
         for d in excl:
             _validate_ymd(d)
 
+    for k in ("skip_holidays", "include_events"):
+        if k in rule and not isinstance(rule[k], bool):
+            raise RuleError(f"rule.{k} must be a boolean")
+
 
 def _validate_hhmm(s: Any) -> None:
     if not isinstance(s, str) or len(s) != 5 or s[2] != ":":
@@ -172,14 +183,22 @@ def _validate_ymd(s: Any) -> None:
 # ---------------------------------------------------------------------------
 # Gate helpers
 # ---------------------------------------------------------------------------
-def _matches_gates(rule: dict, on: date) -> bool:
-    """True iff the day-of-week + date-range + exclude gates all admit
-    ``on``."""
-    days = rule.get("days")
-    if days is not None:
-        dow_code = DOW_CODES[on.weekday()]
-        if dow_code not in days:
-            return False
+def _matches_gates(rule: dict, on: date, ctx: EvalContext | None = None) -> bool:
+    """True iff the day-of-week + date-range + exclude + holiday /
+    event gates all admit ``on``.
+
+    Event days override the day-of-week gate: an event date fires the
+    rule *regardless* of `days`, but explicit ``exclude_dates`` and
+    ``date_range`` still take precedence (an operator who explicitly
+    excluded a date wins over "it happens to be an event day").
+
+    Holiday exclusion is applied AFTER the event-day check so an
+    operator marking a date as *both* holiday and event will fire
+    (event beats holiday).
+    """
+    iso = on.isoformat()
+
+    # Hard-cut gates (always block):
     dr = rule.get("date_range")
     if dr is not None:
         if "from" in dr and on < date.fromisoformat(dr["from"]):
@@ -187,8 +206,28 @@ def _matches_gates(rule: dict, on: date) -> bool:
         if "to" in dr and on > date.fromisoformat(dr["to"]):
             return False
     excl = rule.get("exclude_dates") or []
-    if on.isoformat() in excl:
+    if iso in excl:
         return False
+
+    is_event = ctx is not None and iso in ctx.event_dates
+    include_events = bool(rule.get("include_events", False))
+
+    # Event override -- fires regardless of day-of-week / holiday gates.
+    if include_events and is_event:
+        return True
+
+    # Holiday gate (skip_holidays defaults to True).
+    skip_holidays = bool(rule.get("skip_holidays", True))
+    if skip_holidays and ctx is not None and iso in ctx.holiday_dates:
+        return False
+
+    # Day-of-week gate.
+    days = rule.get("days")
+    if days is not None:
+        dow_code = DOW_CODES[on.weekday()]
+        if dow_code not in days:
+            return False
+
     return True
 
 
@@ -241,7 +280,7 @@ def should_fire(
       it's already dark).
     """
     now_local = now.astimezone(ctx.location.tzinfo)
-    if not _matches_gates(rule, now_local.date()):
+    if not _matches_gates(rule, now_local.date(), ctx):
         return False
 
     ttype = rule["trigger"]["type"]
@@ -295,7 +334,7 @@ def next_fire_times(
 
     for day_off in range(horizon_days):
         d = start_date + timedelta(days=day_off)
-        if not _matches_gates(rule, d):
+        if not _matches_gates(rule, d, ctx):
             continue
         target = _target_moment(rule, d, ctx)
         if target is None:
@@ -331,7 +370,7 @@ def _next_lux_crossings(
     prev_lux: float | None = None
     for at, lux in forecast:
         at_local = at.astimezone(tz)
-        if not _matches_gates(rule, at_local.date()):
+        if not _matches_gates(rule, at_local.date(), ctx):
             prev_lux = lux
             continue
         if prev_lux is not None and prev_lux >= threshold > lux:

@@ -211,13 +211,23 @@
   .row .dow-picker { display: flex; gap: 4px; flex-wrap: wrap; }
   .row .dow-picker label {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 4px 9px; border: 1px solid var(--line); border-radius: 4px;
+    padding: 4px 9px; border-radius: 4px;
     cursor: pointer; margin: 0; text-transform: none; letter-spacing: 0;
-    font-size: 12px; color: var(--text); font-family: var(--mono);
+    font-size: 12px; font-family: var(--mono);
+    /* Excluded (default) state — clearly signalled as OFF */
+    background: transparent;
+    border: 1px solid rgba(236,91,86,0.35);
+    color: #7a5250;
+    text-decoration: line-through;
+    text-decoration-color: rgba(236,91,86,0.55);
+    text-decoration-thickness: 1.5px;
+    transition: background .12s, border-color .12s, color .12s;
   }
   .row .dow-picker input { display: none; }
+  .row .dow-picker label:hover { border-color: #4a5361; color: var(--text); }
   .row .dow-picker label.checked {
-    background: var(--accent); border-color: var(--accent); color: #17110b; font-weight: 600;
+    background: var(--accent); border-color: var(--accent); color: #17110b;
+    font-weight: 600; text-decoration: none;
   }
 
   /* Rule summary below each schedule chip */
@@ -256,6 +266,7 @@
     </span>
     <button class="ghost" id="btn-seed" data-testid="editor-seed-btn">Seed 4 demo devices</button>
     <button class="ghost" id="btn-settings" data-testid="editor-settings-btn" title="Location + weather + engine mode">⚙ Settings</button>
+    <button class="ghost" id="btn-calendar" data-testid="editor-calendar-btn" title="Holidays + event days">📅 Calendar</button>
     <a href="/" class="btn ghost">← Demo console</a>
   </div>
 </header>
@@ -344,6 +355,13 @@
         </div>
       </div>
       <div class="row">
+        <label>Country (ISO 2-letter, for holiday suggestions)</label>
+        <input type="text" id="set-country" data-testid="set-country"
+               placeholder="e.g. US, IN, GB" maxlength="2"
+               style="text-transform:uppercase" />
+        <div class="hint">Blank = no auto-suggest.  Used only by the Calendar → "Suggest holidays" button.</div>
+      </div>
+      <div class="row">
         <label>Engine mode</label>
         <select id="set-mode" data-testid="set-mode">
           <option value="dry_run">Dry-run (log intended actions, no hardware)</option>
@@ -354,6 +372,78 @@
     <footer>
       <button class="ghost" data-modal-close>Cancel</button>
       <button class="primary" id="settings-save" data-testid="settings-save">Save</button>
+    </footer>
+  </div>
+</div>
+
+<!-- =========================== CALENDAR MODAL =========================== -->
+<div class="modal-backdrop" id="calendar-modal" data-testid="calendar-modal">
+  <div class="modal" style="width:640px">
+    <header>
+      <h3>Calendar — Holidays & Event Days</h3>
+      <button class="close-x" data-modal-close>×</button>
+    </header>
+    <div class="body">
+      <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);">
+        <button class="ghost cal-tab active" data-tab="holiday" data-testid="cal-tab-holiday"
+                style="border-radius:4px 4px 0 0;border-bottom:2px solid var(--accent)">
+          🚫 Holidays / off-days
+        </button>
+        <button class="ghost cal-tab" data-tab="event" data-testid="cal-tab-event"
+                style="border-radius:4px 4px 0 0;border-bottom:2px solid transparent">
+          🎉 Event days
+        </button>
+      </div>
+
+      <div id="cal-holiday" class="cal-pane">
+        <div class="row">
+          <label>Add a holiday / off-day</label>
+          <div class="grid-3">
+            <input type="date" id="new-hol-date" data-testid="new-hol-date" />
+            <input type="text" id="new-hol-label" data-testid="new-hol-label"
+                   placeholder="Label (e.g. Christmas)" />
+            <button class="primary" id="new-hol-add" data-testid="new-hol-add">+ Add</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Auto-suggest from country</label>
+          <div class="grid-3">
+            <input type="text" id="hol-country" data-testid="hol-country"
+                   placeholder="US" maxlength="2" style="text-transform:uppercase" />
+            <input type="number" id="hol-year" data-testid="hol-year"
+                   value="2026" min="1970" max="2100" />
+            <button class="ghost" id="hol-suggest" data-testid="hol-suggest">Suggest…</button>
+          </div>
+          <div id="hol-suggest-results" class="preview-panel" style="display:none;margin-top:8px"></div>
+        </div>
+        <div class="row">
+          <label>Current holidays</label>
+          <div id="hol-list" class="preview-panel"
+               style="max-height:260px" data-testid="hol-list"></div>
+        </div>
+      </div>
+
+      <div id="cal-event" class="cal-pane" style="display:none">
+        <div class="row">
+          <label>Add an event day (overrides day-of-week gate)</label>
+          <div class="grid-3">
+            <input type="date" id="new-evt-date" data-testid="new-evt-date" />
+            <input type="text" id="new-evt-label" data-testid="new-evt-label"
+                   placeholder="Label (e.g. Grand Opening)" />
+            <button class="primary" id="new-evt-add" data-testid="new-evt-add">+ Add</button>
+          </div>
+          <div class="hint">Event days fire rules with <code>Also fire on event days</code>
+            enabled, even on weekends and holidays.</div>
+        </div>
+        <div class="row">
+          <label>Current event days</label>
+          <div id="evt-list" class="preview-panel"
+               style="max-height:260px" data-testid="evt-list"></div>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button class="ghost" data-modal-close>Close</button>
     </footer>
   </div>
 </div>
@@ -416,6 +506,20 @@
         <div class="grid-2">
           <input type="date" id="rule-date-from" data-testid="rule-date-from" placeholder="from" />
           <input type="date" id="rule-date-to" data-testid="rule-date-to" placeholder="to" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Calendar overrides</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;color:var(--text);margin:0;font-size:13px">
+            <input type="checkbox" id="rule-skip-hol" data-testid="rule-skip-hol" checked />
+            <span>🚫 Skip on holidays</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;color:var(--text);margin:0;font-size:13px">
+            <input type="checkbox" id="rule-inc-evt" data-testid="rule-inc-evt" />
+            <span>🎉 Also fire on event days (overrides weekend / holiday gates)</span>
+          </label>
         </div>
       </div>
 
@@ -840,6 +944,7 @@ document.getElementById('btn-settings').addEventListener('click', () => {
   document.getElementById('set-tz').value = s.timezone ?? 'UTC';
   document.getElementById('set-weather').checked = String(s.weather_enabled) === '1';
   document.getElementById('set-mode').value = s.engine_mode ?? 'dry_run';
+  document.getElementById('set-country').value = (s.country ?? '').toUpperCase();
   openModal('settings-modal');
 });
 
@@ -869,6 +974,7 @@ document.getElementById('settings-save').addEventListener('click', async () => {
     timezone: document.getElementById('set-tz').value.trim() || 'UTC',
     weather_enabled: document.getElementById('set-weather').checked ? 1 : 0,
     engine_mode: document.getElementById('set-mode').value,
+    country: document.getElementById('set-country').value.trim().toUpperCase(),
   };
   try {
     await api('PATCH', '/settings', patch);
@@ -924,6 +1030,8 @@ function openRuleModal(schedule) {
   const dr = r.date_range || {};
   document.getElementById('rule-date-from').value = dr.from || '';
   document.getElementById('rule-date-to').value = dr.to || '';
+  document.getElementById('rule-skip-hol').checked = r.skip_holidays !== false;
+  document.getElementById('rule-inc-evt').checked = r.include_events === true;
   showTriggerRows(t.type || 'tod');
   document.getElementById('rule-preview').innerHTML =
     '<div class="empty">Save or click Preview to compute…</div>';
@@ -951,6 +1059,13 @@ function readRuleFromModal() {
     if (from) rule.date_range.from = from;
     if (to) rule.date_range.to = to;
   }
+  // Calendar overrides -- send only when the user changed them from
+  // the backend defaults (skip_holidays=true, include_events=false)
+  // so payloads stay compact.  The evaluator's defaults match.
+  const skipHol = document.getElementById('rule-skip-hol').checked;
+  const incEvt = document.getElementById('rule-inc-evt').checked;
+  if (!skipHol) rule.skip_holidays = false;
+  if (incEvt) rule.include_events = true;
   return rule;
 }
 
@@ -1021,6 +1136,139 @@ function renderPreview(preview) {
     host.appendChild(line);
   }
 }
+
+// ---------- Calendar modal --------------------------------------------------
+document.getElementById('btn-calendar').addEventListener('click', () => {
+  // Prefill country from settings if present
+  const c = (state.settings && state.settings.country) || '';
+  document.getElementById('hol-country').value = c.toUpperCase();
+  refreshCalendar();
+  openModal('calendar-modal');
+});
+
+// tab switching
+document.querySelectorAll('.cal-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cal-tab').forEach(b => {
+      b.classList.remove('active');
+      b.style.borderBottom = '2px solid transparent';
+    });
+    btn.classList.add('active');
+    btn.style.borderBottom = '2px solid var(--accent)';
+    const tab = btn.dataset.tab;
+    document.getElementById('cal-holiday').style.display = tab === 'holiday' ? '' : 'none';
+    document.getElementById('cal-event').style.display = tab === 'event' ? '' : 'none';
+  });
+});
+
+async function refreshCalendar() {
+  try {
+    const [hols, evts] = await Promise.all([
+      api('GET', '/calendar?kind=holiday'),
+      api('GET', '/calendar?kind=event'),
+    ]);
+    renderCalList(document.getElementById('hol-list'), hols.days, '🚫');
+    renderCalList(document.getElementById('evt-list'), evts.days, '🎉');
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderCalList(host, days, icon) {
+  if (!days.length) {
+    host.innerHTML = `<div class="empty">Nothing here yet.</div>`;
+    return;
+  }
+  host.innerHTML = '';
+  for (const d of days) {
+    const line = document.createElement('div');
+    line.className = 'fire-line';
+    line.dataset.testid = `cal-item-${d.id}`;
+    line.innerHTML = `
+      <span>${icon} <b>${escapeHtml(d.date)}</b>
+        <span class="reason">${escapeHtml(d.label)}</span>
+      </span>
+      <button class="tag-x" title="Remove">×</button>`;
+    line.querySelector('.tag-x').addEventListener('click', async () => {
+      try { await api('DELETE', `/calendar/${d.id}`); await refreshCalendar(); }
+      catch (e) { toast(e.message, true); }
+    });
+    host.appendChild(line);
+  }
+}
+
+async function addCalendarDay(kind, dateEl, labelEl) {
+  const date = dateEl.value;
+  const label = labelEl.value.trim();
+  if (!date || !label) { toast('date and label required', true); return; }
+  try {
+    await api('POST', '/calendar', { date, label, kind });
+    dateEl.value = ''; labelEl.value = '';
+    await refreshCalendar();
+  } catch (e) { toast(e.message, true); }
+}
+
+document.getElementById('new-hol-add').addEventListener('click', () =>
+  addCalendarDay('holiday',
+    document.getElementById('new-hol-date'),
+    document.getElementById('new-hol-label')));
+document.getElementById('new-evt-add').addEventListener('click', () =>
+  addCalendarDay('event',
+    document.getElementById('new-evt-date'),
+    document.getElementById('new-evt-label')));
+
+document.getElementById('hol-suggest').addEventListener('click', async () => {
+  const country = document.getElementById('hol-country').value.trim().toUpperCase();
+  const year = parseInt(document.getElementById('hol-year').value, 10);
+  const host = document.getElementById('hol-suggest-results');
+  if (!country || !year) { toast('country and year required', true); return; }
+  try {
+    const res = await api('POST', '/calendar/suggest-holidays', { country, year });
+    if (!res.holidays.length) {
+      host.innerHTML = '<div class="empty">No holidays returned.</div>';
+      host.style.display = ''; return;
+    }
+    host.innerHTML = '';
+    host.style.display = '';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;margin-bottom:6px';
+    head.innerHTML = `
+      <span style="color:var(--muted)">${res.holidays.length} holidays for ${country} ${year}</span>
+      <span>
+        <button class="ghost" id="sug-all">Select all</button>
+        <button class="primary" id="sug-add" data-testid="sug-add">Add checked</button>
+      </span>`;
+    host.appendChild(head);
+    for (const h of res.holidays) {
+      const line = document.createElement('div');
+      line.className = 'fire-line';
+      line.innerHTML = `
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;">
+          <input type="checkbox" class="sug-cb" value="${escapeHtml(h.date)}" checked
+                 data-label="${escapeHtml(h.label)}" />
+          <b>${escapeHtml(h.date)}</b>
+          <span class="reason">${escapeHtml(h.label)}</span>
+        </label>`;
+      host.appendChild(line);
+    }
+    document.getElementById('sug-all').addEventListener('click', () => {
+      const cbs = host.querySelectorAll('.sug-cb');
+      const anyOff = Array.from(cbs).some(cb => !cb.checked);
+      cbs.forEach(cb => cb.checked = anyOff);
+    });
+    document.getElementById('sug-add').addEventListener('click', async () => {
+      const entries = Array.from(host.querySelectorAll('.sug-cb:checked')).map(cb => ({
+        date: cb.value, label: cb.dataset.label, kind: 'holiday',
+      }));
+      if (!entries.length) { toast('nothing selected', true); return; }
+      try {
+        const res = await api('POST', '/calendar/bulk', { entries });
+        await refreshCalendar();
+        toast(`Added ${res.inserted.length}, skipped ${res.skipped}`);
+        host.style.display = 'none';
+      } catch (e) { toast(e.message, true); }
+    });
+  } catch (e) { toast(e.message, true); }
+});
+
 
 
 // ---------- utils -----------------------------------------------------------

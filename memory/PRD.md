@@ -41,6 +41,94 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — Phase 4 Real Schedule Authoring (2026-02, Day 2.5 — Calendar + DOW polish)
+
+**Brief**: Two operator asks after Day 2 demo — (1) unselected day-of-
+week pills didn't visually read as "off", and (2) real venues need
+holidays + special event days factored into schedule gates.
+
+**Delivered**:
+  * **DOW pill re-style** — excluded days now have a red-tinted
+    border and strikethrough text (`sat` / `sun` in the screenshot
+    read unambiguously as "not firing on this day").  Included days
+    keep the accent-orange fill.
+  * **`calendar_days` SQLite table** — `id / date / label / kind
+    ('holiday'|'event') / created_at`, `UNIQUE(date, kind)`.  A date
+    may be both a holiday and an event (event beats holiday in the
+    gate logic).
+  * **New endpoints**:
+      * `GET /api/elc/calendar[?kind=holiday|event]`
+      * `POST /api/elc/calendar` (add one)
+      * `POST /api/elc/calendar/bulk` (idempotent add-many, skips
+        duplicates instead of 409-ing — used by "Add checked"
+        suggest flow)
+      * `DELETE /api/elc/calendar/{id}`
+      * `POST /api/elc/calendar/suggest-holidays` (returns but does
+        not persist; 100+ countries via the `holidays` PyPI package,
+        offline-computable — perfect for embedded controllers).
+  * **New setting**: `country` (2-letter ISO) — persisted, prefilled
+    into the Calendar's suggest form.  Blank = no auto-suggest.
+  * **Evaluator gates**:
+      * `EvalContext` grew two new fields: `holiday_dates: frozenset[str]`
+        and `event_dates: frozenset[str]` (ISO strings in the
+        controller's local timezone).
+      * `_matches_gates` order (deterministic, documented):
+          1. Hard cuts: `date_range`, `exclude_dates` — always block.
+          2. Event override: if `include_events=True` **and** date is
+             an event day → **fire** (beats holiday + DOW gates).
+          3. Holiday skip: if `skip_holidays=True` (default) **and**
+             date is a holiday → **skip**.
+          4. Day-of-week gate.
+      * Rule schema gained two booleans:
+          * `skip_holidays` (default **True**, so upgraded rules
+            "just work" the moment holidays are loaded)
+          * `include_events` (default **False**, opt-in per rule).
+      * Preview endpoint builds the context from `store.list_calendar_days`
+        so the UI's preview reflects exactly what the running engine
+        would see.
+  * **Calendar modal** (📅 button in header, new) — two tabs
+    (🚫 Holidays / off-days · 🎉 Event days).  Add-a-date row with
+    date + label + Add.  Holiday tab also has a country / year
+    suggest sub-panel that shows checkboxes for every returned
+    holiday with "Select all" + "Add checked" buttons.  Idempotent
+    on re-click.
+  * **Rule editor** grew a "Calendar overrides" section with the two
+    checkboxes described above.  Chip subtitles pick up the new
+    behaviour automatically.
+
+**Verified end-to-end** (Playwright drove the full flow):
+  1. Settings → set LA + country=US → save.
+  2. Calendar → Suggest US 2026 → 12 holidays returned in a
+     checklist → "Add checked" → 12 rows added to the Current
+     Holidays list.
+  3. Switch to Events tab → add 2026-08-15 "Grand Opening".
+  4. Create schedule "Weekday Morning" → open rule editor →
+     TOD 08:00, mon-fri (sat/sun visibly excluded with red
+     strikethrough), Skip holidays ✓, Also fire on event days ✓.
+  5. Preview → 5 firings shown, all Mon-Fri LA local,
+     **2026-07-03 (Fri, US Independence Day observed) correctly
+     skipped**, proving the holiday gate wired end-to-end.
+  6. `pytest` → **251/251 passed** (was 232, +19 calendar tests).
+  7. Full V3.0 suite still ruff-clean.
+
+**Backend regression discovered + fixed en-route**:
+  * Original `_matches_gates` applied day-of-week check before the
+    date-range check; not user-visible but semantically wrong (a
+    date outside the range shouldn't be admitted just because the
+    weekday matches).  New ordering is documented above and
+    covered by test.
+
+**Next (Day 3 — Scheduler engine)**:
+  * `elc/scheduling/engine.py` — background asyncio task, polls every
+    30s, walks every enabled schedule attached to any group, calls
+    `evaluator.should_fire(rule, now, ctx, last_lux)` with the same
+    context construction as `/preview` (holidays + events pulled from
+    SQLite), dispatches the resulting action to each device via the
+    driver in `live` mode or logs it in `dry_run` mode.  Wire into
+    `build_stack()`.  Persistent `last_fired_at` + `last_lux` per
+    (schedule, device) to survive process restarts without
+    spurious startup pulses.  End-to-end pytest with freezegun.
+
 ## Phase V3.0 — Phase 4 Real Schedule Authoring (2026-02, Day 2 — Editor UI)
 
 **Brief**: Location-aware, sun-aware, weather-aware scheduling authored

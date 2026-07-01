@@ -258,7 +258,21 @@ def build_config_router(db_path: str | None = None) -> APIRouter:
         count = int(body.get("count", 5))
         try:
             loc = Location(latitude=lat, longitude=lon, timezone=tz)
-            ctx = evaluator.EvalContext(location=loc, weather_enabled=weather_enabled)
+            # Pull the controller's calendar so preview reflects the
+            # same holidays / events the running engine would honour.
+            cal_rows = store.list_calendar_days()
+            holiday_dates = frozenset(
+                r["date"] for r in cal_rows if r["kind"] == "holiday"
+            )
+            event_dates = frozenset(
+                r["date"] for r in cal_rows if r["kind"] == "event"
+            )
+            ctx = evaluator.EvalContext(
+                location=loc,
+                weather_enabled=weather_enabled,
+                holiday_dates=holiday_dates,
+                event_dates=event_dates,
+            )
             evaluator.validate(rules)
             now = datetime.now(timezone.utc)
             firings = evaluator.next_fire_times(rules, now, ctx, count=count)
@@ -278,6 +292,70 @@ def build_config_router(db_path: str | None = None) -> APIRouter:
                 for f in firings
             ],
         }
+
+    # ------------------------------------------------------------------
+    # Calendar days: holidays + event days.
+    # ------------------------------------------------------------------
+    @r.get("/calendar")
+    def list_calendar(kind: str | None = None) -> dict[str, Any]:
+        try:
+            return {"days": store.list_calendar_days(kind)}
+        except Exception as e:  # noqa: BLE001
+            _raise_http(e)
+
+    @r.post("/calendar", status_code=201)
+    def add_calendar(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        try:
+            return store.add_calendar_day(
+                body.get("date"), body.get("label"), body.get("kind", "holiday"),
+            )
+        except Exception as e:  # noqa: BLE001
+            _raise_http(e)
+
+    @r.delete("/calendar/{entry_id}", status_code=204)
+    def delete_calendar(entry_id: str) -> None:
+        try:
+            store.remove_calendar_day(entry_id)
+        except Exception as e:  # noqa: BLE001
+            _raise_http(e)
+
+    @r.post("/calendar/suggest-holidays")
+    def suggest_holidays(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Return (but do not persist) suggested holidays for the given
+        country + year.  The UI shows a checklist; the operator picks
+        which to add via subsequent POST /calendar calls (or POST
+        /calendar/bulk).
+        """
+        try:
+            import holidays as _holidays_lib
+        except ImportError:  # pragma: no cover
+            raise HTTPException(500, "holidays library not installed") from None
+        country = (body.get("country") or "").upper().strip()
+        year = int(body.get("year", 0))
+        if len(country) != 2 or not country.isalpha():
+            raise HTTPException(400, "country must be a 2-letter ISO code")
+        if not (1970 <= year <= 2100):
+            raise HTTPException(400, "year must be 1970..2100")
+        try:
+            cal = _holidays_lib.country_holidays(country, years=[year])
+        except (KeyError, NotImplementedError):
+            raise HTTPException(400, f"unknown country code {country!r}") from None
+        entries = sorted(
+            [{"date": d.isoformat(), "label": name} for d, name in cal.items()],
+            key=lambda e: e["date"],
+        )
+        return {"country": country, "year": year, "holidays": entries}
+
+    @r.post("/calendar/bulk", status_code=201)
+    def bulk_add_calendar(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        entries = body.get("entries") or []
+        if not isinstance(entries, list):
+            raise HTTPException(400, "entries must be an array")
+        try:
+            inserted = store.bulk_add_calendar_days(entries)
+        except Exception as e:  # noqa: BLE001
+            _raise_http(e)
+        return {"inserted": inserted, "skipped": len(entries) - len(inserted)}
 
     return r
 

@@ -33,16 +33,21 @@ Errors:
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException, Path
 
 from elc.config import store
+from elc.scheduling import evaluator
+from elc.scheduling.astro import BadLocation, Location
 
 _ERR_MAP: dict[type, int] = {
     store.BadInput: 400,
     store.NotFound: 404,
     store.Conflict: 409,
+    evaluator.RuleError: 400,
+    BadLocation: 400,
 }
 
 
@@ -142,6 +147,11 @@ def build_config_router(db_path: str | None = None) -> APIRouter:
     def create_schedule(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         if "rules" not in body:
             raise HTTPException(status_code=400, detail="rules field is required (may be null)")
+        if body["rules"] is not None:
+            try:
+                evaluator.validate(body["rules"])
+            except evaluator.RuleError as e:
+                _raise_http(e)
         try:
             return store.create_schedule(
                 name=body.get("name"),
@@ -159,6 +169,11 @@ def build_config_router(db_path: str | None = None) -> APIRouter:
             if k in body:
                 kwargs[k] = body[k]
         if "rules" in body:
+            if body["rules"] is not None:
+                try:
+                    evaluator.validate(body["rules"])
+                except evaluator.RuleError as e:
+                    _raise_http(e)
             kwargs["rules"] = body["rules"]
         if "enabled" in body:
             kwargs["enabled"] = bool(body["enabled"])
@@ -201,4 +216,71 @@ def build_config_router(db_path: str | None = None) -> APIRouter:
     def schedules_for_device(did: str) -> dict[str, Any]:
         return {"device_id": did, "schedules": store.schedules_for_device(did)}
 
+    # ------------------------------------------------------------------
+    # Controller-scoped settings (Phase 4): lat / lon / timezone /
+    # weather_enabled / engine_mode.
+    # ------------------------------------------------------------------
+    @r.get("/settings")
+    def get_settings() -> dict[str, Any]:
+        return {"settings": store.get_settings()}
+
+    @r.patch("/settings")
+    def update_settings(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        try:
+            return {"settings": store.update_settings(body)}
+        except Exception as e:  # noqa: BLE001
+            _raise_http(e)
+
+    # ------------------------------------------------------------------
+    # Schedule preview: "next 5 firings at my location, today onwards".
+    # Body is optional; if provided it overrides the stored settings so
+    # the UI can preview before saving location changes.
+    # ------------------------------------------------------------------
+    @r.post("/schedules/{sid}/preview")
+    def preview_schedule(
+        sid: str,
+        body: dict[str, Any] = Body(default_factory=dict),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            sched = store.get_schedule(sid)
+        except Exception as e:  # noqa: BLE001
+            _raise_http(e)
+        rules = sched.get("rules")
+        if rules is None:
+            return {"schedule_id": sid, "firings": [],
+                    "notice": "schedule has no rules configured"}
+        settings = store.get_settings()
+        # Body overrides for what-if preview.
+        lat = float(body.get("latitude", settings["latitude"]))
+        lon = float(body.get("longitude", settings["longitude"]))
+        tz = body.get("timezone", settings["timezone"])
+        weather_enabled = _truthy(body.get("weather_enabled", settings["weather_enabled"]))
+        count = int(body.get("count", 5))
+        try:
+            loc = Location(latitude=lat, longitude=lon, timezone=tz)
+            ctx = evaluator.EvalContext(location=loc, weather_enabled=weather_enabled)
+            evaluator.validate(rules)
+            now = datetime.now(timezone.utc)
+            firings = evaluator.next_fire_times(rules, now, ctx, count=count)
+        except Exception as e:  # noqa: BLE001
+            _raise_http(e)
+        return {
+            "schedule_id": sid,
+            "location": {"latitude": lat, "longitude": lon, "timezone": tz},
+            "weather_enabled": weather_enabled,
+            "firings": [
+                {
+                    "at": f.at.isoformat(),
+                    "at_local": f.at.astimezone(loc.tzinfo).isoformat(),
+                    "action": f.action,
+                    "reason": f.reason,
+                }
+                for f in firings
+            ],
+        }
+
     return r
+
+
+def _truthy(v: Any) -> bool:
+    return str(v).lower() in ("1", "true", "yes", "on")

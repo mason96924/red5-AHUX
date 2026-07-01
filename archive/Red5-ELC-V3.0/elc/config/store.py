@@ -98,6 +98,13 @@ _SCHEMA = [
         PRIMARY KEY (group_id, schedule_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS settings (
+        key         TEXT PRIMARY KEY,
+        value       TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """,
 ]
 
 
@@ -441,6 +448,86 @@ def schedules_for_device(device_id: str, db_path: str | None = None) -> list[dic
             (device_id,),
         ).fetchall()
     return [_schedule_row(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Settings -- key/value store for controller-scoped config.  Used by the
+# Phase 4 scheduler for lat / lon / timezone / weather + engine mode.
+# ---------------------------------------------------------------------------
+# Defaults chosen so a freshly-provisioned controller "just works":
+#   * lat/lon = 0/0 (schedules with sun/lux triggers won't produce anything
+#     useful until the operator sets a real location, and the /preview
+#     endpoint will call this out plainly).
+#   * timezone = UTC.
+#   * weather_enabled = 1 (Open-Meteo, no key needed).
+#   * engine_mode = "dry_run" so the very first scheduler tick can't
+#     accidentally toggle real hardware before the operator has vetted
+#     the rules.
+_DEFAULT_SETTINGS: dict[str, str] = {
+    "latitude": "0.0",
+    "longitude": "0.0",
+    "timezone": "UTC",
+    "weather_enabled": "1",
+    "engine_mode": "dry_run",   # dry_run | live
+}
+
+_ALLOWED_SETTINGS = set(_DEFAULT_SETTINGS.keys())
+
+
+def get_settings(db_path: str | None = None) -> dict[str, str]:
+    """Return every setting as a `{key: value}` dict, with defaults
+    substituted for anything not persisted yet.
+    """
+    db_path = db_path or DEFAULT_DB_PATH
+    out = dict(_DEFAULT_SETTINGS)
+    with get_conn(db_path) as conn:
+        for row in conn.execute("SELECT key, value FROM settings"):
+            if row["key"] in _ALLOWED_SETTINGS:
+                out[row["key"]] = row["value"]
+    return out
+
+
+def update_settings(patch: dict[str, Any], db_path: str | None = None) -> dict[str, str]:
+    db_path = db_path or DEFAULT_DB_PATH
+    if not isinstance(patch, dict) or not patch:
+        raise BadInput("settings patch must be a non-empty object")
+    unknown = set(patch.keys()) - _ALLOWED_SETTINGS
+    if unknown:
+        raise BadInput(f"unknown settings: {sorted(unknown)}")
+    for k, v in patch.items():
+        _validate_setting(k, v)
+    now = _now()
+    with get_conn(db_path) as conn:
+        for k, v in patch.items():
+            conn.execute(
+                """INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+                     ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+                                                   updated_at=excluded.updated_at""",
+                (k, str(v), now),
+            )
+    return get_settings(db_path)
+
+
+def _validate_setting(key: str, value: Any) -> None:
+    if key in ("latitude", "longitude"):
+        try:
+            f = float(value)
+        except (TypeError, ValueError) as e:
+            raise BadInput(f"{key} must be a number") from e
+        if key == "latitude" and not (-90.0 <= f <= 90.0):
+            raise BadInput("latitude must be within [-90, 90]")
+        if key == "longitude" and not (-180.0 <= f <= 180.0):
+            raise BadInput("longitude must be within [-180, 180]")
+    elif key == "timezone":
+        # Cheap sanity check; the astro layer will do the real validation.
+        if not isinstance(value, str) or not value or "/" in value and value.count("/") > 2:
+            raise BadInput("timezone must be an IANA identifier (e.g. 'America/Los_Angeles')")
+    elif key == "weather_enabled":
+        if str(value) not in ("0", "1", "true", "false"):
+            raise BadInput("weather_enabled must be 0/1 or true/false")
+    elif key == "engine_mode":
+        if value not in ("dry_run", "live"):
+            raise BadInput("engine_mode must be 'dry_run' or 'live'")
 
 
 # ---------------------------------------------------------------------------

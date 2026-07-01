@@ -111,16 +111,19 @@ def test_member_bad_device_id_returns_400(client):
 # ---------- Schedules -------------------------------------------------------
 
 def test_schedule_crud_and_rules_roundtrip(client):
-    rules = {"cron": "0 8 * * 1-5", "action": "on"}
+    rules = {"trigger": {"type": "tod", "at": "08:00"}, "action": "on",
+             "days": ["mon", "tue", "wed", "thu", "fri"]}
     r = client.post("/api/elc/schedules",
                     json={"name": "Weekday morning", "color": "#38bdf8", "rules": rules})
-    assert r.status_code == 201
+    assert r.status_code == 201, r.text
     body = r.json()
     assert body["rules"] == rules and body["enabled"] is True
     sid = body["id"]
 
+    new_rules = {"trigger": {"type": "tod", "at": "18:00"}, "action": "off",
+                 "days": ["mon", "tue", "wed", "thu", "fri"]}
     r = client.patch(f"/api/elc/schedules/{sid}",
-                     json={"rules": {"cron": "0 18 * * 1-5", "action": "off"}, "enabled": False})
+                     json={"rules": new_rules, "enabled": False})
     body = r.json()
     assert body["rules"]["action"] == "off" and body["enabled"] is False
 
@@ -145,7 +148,9 @@ def test_assignment_and_priority_ordering(client):
 
     for name, prio in [("Low", 1), ("High", 10), ("Mid", 5)]:
         sid = client.post("/api/elc/schedules",
-                          json={"name": name, "color": "#000000", "rules": {"tag": name}}).json()["id"]
+                          json={"name": name, "color": "#000000",
+                                "rules": {"trigger": {"type": "tod", "at": "08:00"},
+                                          "action": "on"}}).json()["id"]
         client.post(f"/api/elc/groups/{gid}/schedules",
                     json={"schedule_id": sid, "priority": prio})
 

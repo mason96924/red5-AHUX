@@ -1803,6 +1803,33 @@
                 });
             }, [ahuData, ahuPresetVersion]);
 
+            /* Per-AHU preset -> 3D-engine RH-band slab.
+               The 3D engine (`psy-3d-engine.js`) draws a single RH slab
+               from a global `red5_sweet_spot_range` in localStorage +
+               listens for the `r5-rh-band-change` event.  Bug reported
+               2026-07-01: changing a per-AHU preset in the sidebar
+               updated the 2D chart but NOT the 3D slab, because the
+               3D engine had no visibility into the per-AHU keys.
+               Fix: whenever the SELECTED AHU's effective (lo, hi)
+               changes (via a preset dropdown pick OR selection
+               changing to a different AHU with a different preset),
+               mirror it into `red5_sweet_spot_range` and dispatch
+               `r5-rh-band-change` so the 3D engine rebuilds the slab
+               in place.  If no AHU is selected we leave the slab
+               untouched -- matches the operator's mental model that
+               the 3D slab reflects "the AHU I'm currently looking at". */
+            useEffect(() => {
+                if (!selectedAhuId) return;
+                const spot = ahuSweetSpots.find(s => s.ahuId === selectedAhuId);
+                if (!spot) return;
+                try {
+                    localStorage.setItem('red5_sweet_spot_range',
+                        JSON.stringify({ lo: spot.lo, hi: spot.hi }));
+                } catch (e) {}
+                window.dispatchEvent(new CustomEvent('r5-rh-band-change',
+                    { detail: { lo: spot.lo, hi: spot.hi } }));
+            }, [selectedAhuId, ahuSweetSpots]);
+
             /* Per-AHU 24h rolling averages of exchange / absorption —
                source for the pill trend arrows (Phase L.39).  Fetched
                on mount + refreshed every 5 min from the EWMA the backend

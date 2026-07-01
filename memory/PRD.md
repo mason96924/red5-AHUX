@@ -41,6 +41,60 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V1.9 / V2.0 — Per-AHU Preset → 3D Slab Sync (2026-07-01)
+
+**Report** (operator): _"The venue preset changed in the AHU detail box
+in the left sidebar of the dashboard does not persist in 3D rendering."_
+
+**Root cause**: The per-AHU preset dropdown (added 2026-06-26) writes
+to `localStorage['red5_rh_preset_<ahuId>']` and fires
+`r5-ahu-preset-change` — but the 3D engine (`psy-3d-engine.js`) only
+reads a global `red5_sweet_spot_range` key and only listens for the
+legacy `r5-rh-band-change` event (fired by the now-removed global
+sweet-spot slider).  Two independent state channels that never met.
+
+**Fix** (surgical, one `useEffect` in `app.js`): whenever the currently
+**selected** AHU's effective (lo, hi) changes — either because the
+user picked a different preset for it OR selected a different AHU
+with a different preset — mirror those values into
+`localStorage['red5_sweet_spot_range']` **and** dispatch
+`r5-rh-band-change` with `{lo, hi}`.  The 3D engine's existing
+listener rebuilds the slab + reclassifies the in-band scatter in place.
+
+Rationale for the "selected AHU wins" heuristic: the 3D slab is
+inherently one region.  Making it track the AHU the operator is
+currently focused on matches how they read the dashboard, is
+zero-config, and preserves the historic engine architecture.
+
+**Files touched** (Triple Parity):
+  * `frontend/public/js/dashboard/app.js` — new useEffect (~15
+    lines) after `ahuSweetSpots`.  Documented inline.
+  * `frontend/public/dashboard.compiled.js` — rebuilt (`?v=d6bb5bbe09`).
+  * V1.9 / V2.0 archives — byte-identical mirrors of all three artefacts.
+  * `repair_manifest.json` regenerated (50 entries).
+  * `red5_bundle.zip` rebuilt (2.83 MB).
+
+**Verified** (Playwright, live preview URL):
+  1. Select AHU-01-E, choose Museum → `red5_sweet_spot_range` =
+     `{"lo":40,"hi":55}`.
+  2. Choose Office → `{"lo":30,"hi":60}`.
+  3. Bound an ad-hoc event listener → heard `r5-rh-band-change`
+     with `detail = {lo:40, hi:55}` on the very next dropdown pick
+     (Library), proving the 3D engine's existing rebuild path is now
+     wired end-to-end.
+  4. Switching selection to AHU-02-S (still on Custom) → slab
+     correctly reflects that AHU's `{"lo":40,"hi":60}`, so the 3D
+     surface tracks the currently-focused AHU rather than "whichever
+     was last edited".
+
+**Backwards compat**:
+  * The 3D engine's boot-time read of `red5_sweet_spot_range` still
+    works — the useEffect populates that key with the first
+    selection's preset, so a fresh page-load into the 3D WX tab sees
+    the correct slab immediately.
+  * If no AHU is ever selected in this session, the slab defaults to
+    the legacy 40-60% (unchanged from prior behaviour).
+
 ## Phase V1.9 / V2.0 — Sidebar Band-Chip Parity Fix (2026-07-01)
 
 **Report** (operator): _"Per-AHU Performance detail shows the band while

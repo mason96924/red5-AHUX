@@ -107,6 +107,10 @@ async def main() -> None:
     async def stress() -> FileResponse:
         return FileResponse(str(demo_dir / "stress.html"))
 
+    @stack.app.get("/editor", include_in_schema=False)
+    async def editor() -> FileResponse:
+        return FileResponse(str(demo_dir / "editor.html"))
+
     # ---- Sprinkle a few random failures so the WS log shows variety -
     async def chaos_monkey() -> None:
         await asyncio.sleep(8)

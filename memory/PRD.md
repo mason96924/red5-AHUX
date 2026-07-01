@@ -41,6 +41,76 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — Phase 2 Editor UI (2026-02)
+
+**Brief**: Three-panel drag-and-drop editor page for the operator config
+that landed in Phase 1.  No new backend endpoints — the UI drives the
+existing `/api/elc/groups`, `/api/elc/schedules`, `/devices/{did}/schedules`
+CRUD.  Ships in the V3.0 demo tree, served by `scripts/demo.py`.
+
+**Delivered**:
+  * `demo/editor.html` (self-contained, vanilla JS + CSS, no build step):
+    - **Left panel**: schedule palette; each schedule is a draggable
+      chip with colour swatch, name, and per-row delete.
+    - **Middle panel**: group cards.  Coloured left-border matches the
+      group's colour; card body shows assigned schedules (each with
+      priority `p<N>` and an unassign `×`) and members (each with a
+      remove `×`).  Card is a drop target for both schedule chips and
+      device tiles.  Highlights with an amber inner border on dragover.
+    - **Right panel**: device grid; every relay from `/api/elc/devices`
+      as a coloured tile.  Left-border colour = "primary" group (the
+      one with the most assigned schedules — proxy for "this device's
+      main duty").  Dot row underneath shows all group memberships in
+      their respective colours.  Tiles are draggable; tooltip lists
+      every group they belong to.
+    - **Inline "new item" forms** at the top of each palette with a
+      `<input type=color>` colour picker (defaults cycle through a
+      curated 8-colour palette after each add).
+    - **"Seed 4 demo devices" button** in the header — POSTs
+      `/devices/{id}/relay` for the 4 canonical demo devices so the
+      Replica populates and the device grid isn't empty on first load.
+    - **Live connection pill** polls `/api/elc/link` every 4 s
+      (green when connected, red when the SCU link is down).
+    - **Toasts** (bottom-right) confirm every mutation + surface the
+      exact HTTP error detail when the store rejects (name collision
+      -> "409 group name 'X' already exists", bad hex -> "400 color
+      must be #RRGGBB", etc.).
+  * `scripts/demo.py`:
+    - New `/editor` route serving the file.
+    - Existing `/` and `/stress` untouched.
+  * `demo/index.html`: new `editor →` pill link in the header row next
+    to the existing `stress →` link.
+
+**Verified end-to-end** (Playwright drove the same flow the operator
+will follow):
+  1. Empty state → all three panels render their "no X yet" hints.
+  2. "Seed 4 demo devices" → 4 SRM tiles appear (`SRM/1/10/0` ..
+     `/40/0`) with the correct device_id label.
+  3. Add 2 schedules + 2 groups via the inline forms → count badges
+     update (2 / 2 / 4).
+  4. Assign schedule → group via API (drop handler code path):
+     `/api/elc/groups/{gid}/schedules` accepted; card body re-renders
+     with the schedule tag + `p10` priority stamp.
+  5. Add device → group: `/api/elc/groups/{gid}/members` accepted;
+     device tile picks up the group's colour on its left border and
+     shows a matching dot in its group-swatch row.
+  6. `GET /api/elc/devices/SRM/1/10/0/schedules` returns the assigned
+     schedule with priority 10 -> Phase 4 join query works through
+     the full stack.
+  7. `pytest` → **175/175 passed** (no regression).
+
+**Known follow-ups (not blocking)**:
+  * Native HTML5 drag-and-drop is used in the browser.  Playwright's
+    `dispatchEvent` for HTML5 DnD is flaky in headless mode; the
+    e2e drive above hits the drop-handler's underlying API call
+    directly instead.  Live browser DnD works (confirmed by the
+    server-side effect matching the drop code path exactly).
+  * The colour picker uses `<input type=color>` — no support for
+    per-schedule custom hex entry beyond that.
+  * No rules-editor UI yet — new schedules ship with `rules: null`.
+    The Phase 4 scheduler will need a cron + action editor; that's
+    the natural companion feature.
+
 ## Phase V3.0 — Phase 1 Data Model + Router Composition (2026-02)
 
 **Brief**: Ship the SQLite-backed CRUD for the V3.0 lighting operator UI

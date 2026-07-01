@@ -183,17 +183,23 @@ global.initPsy3D = function(container, opts){
      the per-band hour-count delta strip so we can compute the histogram
      without duplicating the rules inside a render path. */
   function _bandLabelOf(t, rh){
-    if(t<5&&rh<30)                       return 'B1';
-    if(t>=5&&t<15&&rh>=30&&rh<=60)       return 'B2';
-    if(t>=15&&t<20&&rh<30)               return 'B3';
-    if(t>=18&&t<22&&rh>=30&&rh<=50)      return 'B4';
-    if(t>=22&&t<=25&&rh>=40&&rh<=60)     return 'B5';
-    if(t>25&&t<=27&&rh>=50&&rh<=70)      return 'B6';
-    if(t>27&&t<=32&&rh>60&&rh<=80)       return 'B7';
-    if(t>32&&t<=38&&rh>70)               return 'B8';
-    if(t>35&&rh<30)                      return 'B9';
-    if(t>30&&rh>85)                      return 'B10';
-    return '?';
+    // Kept in lockstep with `dashboard-helpers.js::bandLabelOf` and
+    // `ahu.html::_resolveBand`.  All three surfaces use the same
+    // CSV-derived closed intervals + B5 fallback (fixed 2026-07-01
+    // after operators saw sidebar chips showing '?' while the
+    // per-AHU detail page showed a band for the same OA sample).
+    if (!isFinite(t) || !isFinite(rh))                    return '?';
+    if (t >= -50 && t <=  5 && rh >=  0 && rh <=  30)     return 'B1';
+    if (t >=   5 && t <= 15 && rh >= 30 && rh <=  60)     return 'B2';
+    if (t >=  15 && t <= 20 && rh >=  0 && rh <=  30)     return 'B3';
+    if (t >=  18 && t <= 22 && rh >= 30 && rh <=  50)     return 'B4';
+    if (t >=  22 && t <= 25 && rh >= 40 && rh <=  60)     return 'B5';
+    if (t >=  25 && t <= 27 && rh >= 50 && rh <=  70)     return 'B6';
+    if (t >=  27 && t <= 32 && rh >= 60 && rh <=  80)     return 'B7';
+    if (t >=  32 && t <= 38 && rh >= 70 && rh <= 100)     return 'B8';
+    if (t >=  35 && t <= 50 && rh >=  0 && rh <=  30)     return 'B9';
+    if (t >=  30 && t <= 50 && rh >= 85 && rh <= 100)     return 'B10';
+    return 'B5';
   }
   /* Walk weatherData twice -- once with raw OA, once with OA' -- to build
      a {Bn: {oa, oap}} map of hour-counts per band.  Cheap (O(N) twice,

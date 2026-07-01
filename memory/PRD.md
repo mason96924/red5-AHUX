@@ -41,6 +41,72 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V1.9 / V2.0 — Sidebar Band-Chip Parity Fix (2026-07-01)
+
+**Report** (operator): _"Per-AHU Performance detail shows the band while
+the AHU detail in the left sidebar shows ? for band."_
+
+**Root cause**: Two divergent classifiers for the same OA sample.
+  * `js/dashboard/dashboard-helpers.js::bandLabelOf` (sidebar chip)
+    used **strict `<` boundaries** and returned `'?'` on any miss.
+  * `ahu.html::_resolveBand` (Per-AHU Performance page) uses the CSV
+    band-guide with **closed `[lo, hi]` intervals** and falls back
+    to `'B5'` (PASS-THROUGH) on any miss.
+  * The 3D WX overlay in `js/psy-3d-engine.js::_bandLabelOf`
+    (histogram counts) carried the same stale strict-inequality
+    rules → hour-count bars leaked into a `'?'` bucket instead of
+    tiling the OA plane.
+
+  Real-world OA like T=28°C / RH=37% (dry-warm) fell into a gap
+  between the sidebar's windows → yellow `?` chip.  Same sample
+  → detail page returned B5 → operator saw contradictory info on
+  two surfaces about the same AHU.
+
+**Fix**: One source of truth = the CSV.  Both `bandLabelOf` copies
+rewritten to mirror `AHU-01-E_band_guide.csv` verbatim:
+  * Closed intervals `t ∈ [lo, hi]`, `rh ∈ [lo, hi]`.
+  * First-match top-to-bottom in the CSV's own order.
+  * `'B5'` fallback for valid (t, rh) that misses every window
+    (matches `_resolveBand`'s "backend fallback").
+  * `'?'` **only** for genuinely-bad `NaN` sensor data — that's the
+    real "sensor offline / SAFE-MODE" signal.  Chip retains its
+    amber-pulsing tint via `bandTint('?')` for that case only.
+
+**Files touched** (Triple Parity):
+  * `frontend/public/js/dashboard/dashboard-helpers.js` — main fix.
+  * `frontend/public/js/psy-3d-engine.js::_bandLabelOf` — sibling
+    fix so histogram counts don't leak.
+  * `frontend/public/dashboard.compiled.js` — rebuilt via
+    `frontend/src/dashboard/build.sh`.  New cache-bust hash
+    `?v=c887d80cbe` on `<script src>`.
+  * `frontend/public/dashboard.tailwind.css` — rebuilt (unchanged
+    utility scan, hash-bust for consistency).
+  * `archive/Red5-Studio-V1.9/**` and `archive/Red5-Studio-V2.0/**`
+    — byte-identical mirrors of all four artefacts above.
+  * `archive/Red5-Studio-V1.9/repair_manifest.json` — regenerated
+    (50 entries; hash of two artefacts changed).
+  * `archive/Red5-Studio-V1.9/red5_bundle.zip` — rebuilt.
+
+**Verified**:
+  * Node smoke-test of the new rules on 13 (t, rh) cases including
+    the ex-`?` cases (T=15/RH=35 → B2, T=20/RH=45 → B4, T=28/RH=37
+    → B5), NaN sensor-offline (→ `?`), extreme humidity (T=33/RH=90
+    → B8 by first-match).  All expected behaviours documented.
+  * Live smoke on `/dashboard.html` — all three AHU chips now show
+    `B5` (was `?`), matching the OA=28°C/37%RH sample.  Detail
+    page (`/ahu.html?id=AHU-01-E`) still shows B5.  Two surfaces
+    agree.
+  * ESLint clean.
+
+**Follow-ups (deferred)**:
+  * The CSV is per-AHU (`AHU-01-E_band_guide.csv`, `AHU-02-S_band_guide.csv`)
+    but the sidebar classifier uses a single hard-coded rule set
+    (values are identical today, but they could drift).  If future
+    per-AHU tuning breaks parity again, the sidebar should call
+    `/api/band-guide?ahu=<id>` and use the same async cache the
+    detail page uses.  Not needed now; documented for next
+    operator retune.
+
 ## Phase V3.0 — Phase 4 Real Schedule Authoring (2026-02, Day 2.5 — Calendar + DOW polish)
 
 **Brief**: Two operator asks after Day 2 demo — (1) unselected day-of-

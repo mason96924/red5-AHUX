@@ -159,7 +159,7 @@
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
       "size": 31555,
-      "sha256": "19d164306a2675a8be4f3e94d83af915a2ae4e47e782b53ae5daec254321eb1b",
+      "sha256": "9473e103af1cde41c717d64293c9c64f6fc49194fec4d9a463e87e92873bb407",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -168,8 +168,8 @@
       "kind": "ui",
       "label": "dashboard.compiled.js",
       "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
-      "size": 394667,
-      "sha256": "8c662e7e01581800edfef0e3d9c0380e989d51daf726faf8467422e7d5a201b6",
+      "size": 394744,
+      "sha256": "457d5503295234bd7c6ea22c5584ad4729008d60e84f6ed9d8908cb68fd5a51d",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -298,8 +298,8 @@
       "kind": "ui",
       "label": "psy-3d-engine.js",
       "desc": "3D psychrometric engine (loaded by dashboard.html 3D-WX tab + psy_3d.html)",
-      "size": 430935,
-      "sha256": "ccd8f403ce49fdb7562b36a0d7a03ab3728f16a535210cec79d22c372956cdcf",
+      "size": 431508,
+      "sha256": "dd270272ca33a7593ba8f77fa42a0f55305f64e74213fd1c93543c1d767334c6",
       "show_in_ui": false,
       "hot_reload": false
     },

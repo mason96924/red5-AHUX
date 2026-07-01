@@ -200,19 +200,49 @@ const Sparkline = ({ data, width, height, color, label }) => {
 // '?' (no match).  Rules are evaluated top-to-bottom -- first match
 // wins -- so overlapping windows (e.g. B4 vs B5) are resolved by the
 // order here, not by mutual exclusion.
+// Classify an outdoor-air (T deg C, RH %) sample to one of B1..B10 or
+// '?' (no match).
+//
+// Historically these rules were hand-typed with strict `<` inequalities
+// and returned '?' whenever no window matched -- but that disagreed
+// with the CSV band-guide the detail page (`ahu.html`) loads from
+// `/api/band-guide`, which uses closed `[lo, hi]` intervals and falls
+// back to B5 (PASS-THROUGH) on any miss.  The result was the sidebar
+// showing '?' while the detail page showed a valid band for the same
+// OA sample -- reported by operators on 2026-07-01.
+//
+// This function now mirrors the CSV verbatim (see
+// `frontend/public/AHU-01-E_band_guide.csv`), first-match-wins in the
+// same top-to-bottom order the CSV lists, with the B5 fallback so the
+// two surfaces never disagree.  Only genuinely-bad (`NaN`) T/RH still
+// yields '?' -- that's the operator's "sensor offline" signal, not
+// "no recipe for this weather".
 const bandLabelOf = (t, rh) => {
     if (!Number.isFinite(t) || !Number.isFinite(rh)) return '?';
-    if (t <  5  && rh < 30)                         return 'B1';
-    if (t >= 5  && t <  15 && rh >= 30 && rh <= 60) return 'B2';
-    if (t >= 15 && t <  20 && rh < 30)              return 'B3';
-    if (t >= 18 && t <  22 && rh >= 30 && rh <= 50) return 'B4';
-    if (t >= 22 && t <= 25 && rh >= 40 && rh <= 60) return 'B5';
-    if (t >  25 && t <= 27 && rh >= 50 && rh <= 70) return 'B6';
-    if (t >  27 && t <= 32 && rh >  60 && rh <= 80) return 'B7';
-    if (t >  32 && t <= 38 && rh >  70)             return 'B8';
-    if (t >  35 && rh < 30)                         return 'B9';
-    if (t >  30 && rh > 85)                         return 'B10';
-    return '?';
+    // B1  COLD-DRY      T ∈ [-50, 5],  RH ∈ [0, 30]
+    if (t >= -50 && t <=  5 && rh >=  0 && rh <=  30) return 'B1';
+    // B2  COLD-MOD      T ∈ [5, 15],   RH ∈ [30, 60]
+    if (t >=   5 && t <= 15 && rh >= 30 && rh <=  60) return 'B2';
+    // B3  COOL-DRY      T ∈ [15, 20],  RH ∈ [0, 30]
+    if (t >=  15 && t <= 20 && rh >=  0 && rh <=  30) return 'B3';
+    // B4  ECONOMIZER    T ∈ [18, 22],  RH ∈ [30, 50]
+    if (t >=  18 && t <= 22 && rh >= 30 && rh <=  50) return 'B4';
+    // B5  PASS-THROUGH  T ∈ [22, 25],  RH ∈ [40, 60]
+    if (t >=  22 && t <= 25 && rh >= 40 && rh <=  60) return 'B5';
+    // B6  WARM-MOD      T ∈ [25, 27],  RH ∈ [50, 70]
+    if (t >=  25 && t <= 27 && rh >= 50 && rh <=  70) return 'B6';
+    // B7  WARM-HUM      T ∈ [27, 32],  RH ∈ [60, 80]
+    if (t >=  27 && t <= 32 && rh >= 60 && rh <=  80) return 'B7';
+    // B8  HOT-HUM       T ∈ [32, 38],  RH ∈ [70, 100]
+    if (t >=  32 && t <= 38 && rh >= 70 && rh <= 100) return 'B8';
+    // B9  HOT-DRY       T ∈ [35, 50],  RH ∈ [0, 30]
+    if (t >=  35 && t <= 50 && rh >=  0 && rh <=  30) return 'B9';
+    // B10 EXTREME-HUM   T ∈ [30, 50],  RH ∈ [85, 100]
+    if (t >=  30 && t <= 50 && rh >= 85 && rh <= 100) return 'B10';
+    // Fallback: mirrors backend / `ahu.html::_resolveBand`'s B5 exit --
+    // valid OA that falls into a gap between windows still gets a
+    // sensible operator answer instead of the misleading '?' chip.
+    return 'B5';
 };
 
 // Tailwind classes for the band-status chip.  Cool side blue, mid

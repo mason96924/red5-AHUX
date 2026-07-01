@@ -95,6 +95,16 @@ zero-config, and preserves the historic engine architecture.
   * If no AHU is ever selected in this session, the slab defaults to
     the legacy 40-60% (unchanged from prior behaviour).
 
+**Follow-up (2026-07-01 later same session)**: operator reported "no
+visible change" after the initial fix.  Root cause: on their
+production controller with a single AHU, `selectedAhuId` was `null`
+(no card ever clicked) and the initial useEffect's early-return
+kept the slab stuck at defaults.  Fix: when `selectedAhuId` is
+`null`, fall back to the first AHU in `ahuSweetSpots` as the driver.
+Single-AHU deployments and first-page-load both now get a
+correctly-sized slab without requiring a click.  New bundle hash
+`?v=5992301bfc`.  Verified by the operator in the wild.
+
 ## Phase V1.9 / V2.0 — Sidebar Band-Chip Parity Fix (2026-07-01)
 
 **Report** (operator): _"Per-AHU Performance detail shows the band while

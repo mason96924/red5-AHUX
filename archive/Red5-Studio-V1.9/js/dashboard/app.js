@@ -1819,8 +1819,17 @@
                untouched -- matches the operator's mental model that
                the 3D slab reflects "the AHU I'm currently looking at". */
             useEffect(() => {
-                if (!selectedAhuId) return;
-                const spot = ahuSweetSpots.find(s => s.ahuId === selectedAhuId);
+                // Determine which AHU's preset drives the 3D slab.  If
+                // the operator has clicked a card, respect that
+                // selection; otherwise default to the first AHU so
+                // single-AHU deployments (and first-page-load, before
+                // any click) still get a correctly-sized slab.
+                let driverAhuId = selectedAhuId;
+                if (!driverAhuId && ahuSweetSpots.length > 0) {
+                    driverAhuId = ahuSweetSpots[0].ahuId;
+                }
+                if (!driverAhuId) return;
+                const spot = ahuSweetSpots.find(s => s.ahuId === driverAhuId);
                 if (!spot) return;
                 try {
                     localStorage.setItem('red5_sweet_spot_range',

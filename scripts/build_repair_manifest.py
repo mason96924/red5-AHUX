@@ -45,6 +45,8 @@ ENTRIES = [
     ('ws_bridge_service.py',        'plugin', 'WebSocket Bridge',         'Push telemetry to live clients (needs websockets)'),
     ('bacnet_diag_service.py',      'plugin', 'BACnet Diagnose Service',  '/api/bacnet/diagnose-config -- detect name-based BACnet targets'),
     ('audit_log_service.py',        'plugin', 'Audit Log Service',        '/api/audit-log -- band-apply / write-point / repair-mode log (100 KB rotating)'),
+    ('elc_config_store.py',         'plugin', 'ELC Config Store',         'SQLite storage layer for V3.0 ELC groups/schedules/assignments (Phase 1)'),
+    ('elc_config_service.py',       'plugin', 'ELC Config Service',       '/api/elc/{groups,schedules,devices/*/schedules} CRUD endpoints (Phase 1)'),
     # The manifest itself -- listed so the operator can always replace
     # it from the UI.  sha256 is intentionally None (set at the bottom)
     # because a hash that referenced itself would be a fixed-point

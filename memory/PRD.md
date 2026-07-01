@@ -41,6 +41,64 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — Phase 1 Data Model + Router Composition (2026-02)
+
+**Brief**: Ship the SQLite-backed CRUD for the V3.0 lighting operator UI
+config (groups, group_members, schedules, group_schedules) as a FastAPI
+router composed into `build_stack()` alongside the existing device /
+relay / broadcast REST layer.  This is Phase 1 of the drag-and-drop
+graphics-overlay scheduling feature; no UI yet.
+
+**Delivered**:
+  * `elc/config/store.py` — pure `sqlite3` stdlib persistence.  WAL mode,
+    ON DELETE CASCADE, uuid4 hex ids for fleet-sync safety, ISO-8601 UTC
+    timestamps for cheap JS-side parsing.  Public functions:
+    `list_/get_/create_/update_/delete_group`, `add_/remove_group_member`,
+    `list_/get_/create_/update_/delete_schedule`, `assign_/unassign_schedule`,
+    and `schedules_for_device` (priority-desc join query used by the
+    Phase 4 scheduler).  Raises `NotFound / Conflict / BadInput`.
+  * `elc/config/routes.py` — `build_config_router(db_path=None)` returns
+    a prefix-less `APIRouter`.  Endpoints (mounted under `/api/elc`):
+      * Groups: `GET/POST /groups`, `GET/PATCH/DELETE /groups/{gid}`
+      * Members: `POST /groups/{gid}/members`,
+        `DELETE /groups/{gid}/members/{did:path}`
+      * Schedules: `GET/POST /schedules`,
+        `GET/PATCH/DELETE /schedules/{sid}`
+      * Assignments: `POST /groups/{gid}/schedules`,
+        `DELETE /groups/{gid}/schedules/{sid}`
+      * Introspection: `GET /devices/{did:path}/schedules`
+    `BadInput → 400`, `NotFound → 404`, `Conflict → 409`.
+  * `elc/api/app.py::build_stack()` — new `config_db_path` kwarg;
+    config router registered **before** the existing REST router so
+    the more-specific `/devices/{did:path}/schedules` wins the match
+    ahead of the greedy `/devices/{device_id:path}` catch-all (caught
+    by the integration test below — real bug fixed, not hypothesised).
+  * `tests/config/test_config_routes.py` — 16 tests via `TestClient`:
+    CRUD round-trips, name-uniqueness → 409, payload validation → 400,
+    member add/remove + cascade, schedule cascade to assignments,
+    priority-desc ordering, `enabled=false` filtered from
+    `schedules_for_device`.
+  * `tests/integration/test_config_stack.py` — 3 composition tests
+    via `httpx.ASGITransport`: config route reachable through the
+    full stack, `/api/elc/link` still works (no override), and the
+    join endpoint under the shared `/devices/*` namespace resolves
+    correctly (route-order regression guard).
+  * `pyproject.toml` — added `httpx2>=2.5` to `[project.optional-
+    dependencies].dev`; Starlette 0.50+'s `TestClient` imports `httpx2`
+    instead of `httpx` and would otherwise fail collection.
+
+**Verified**:
+  * `pytest` → **175/175 passed in 8.3s** (was 152; +19 new config +
+    prior-fork additions).  Ruff-clean.
+  * Composition smoke: `build_stack(..., config_db_path='/tmp/x.db')`
+    boots without error and registers both routers.
+
+**Next (Phase 2 — Editor UI)**:
+  * `/app/frontend/public/elc-editor.html` — three-panel static page
+    (schedule palette · group palette · graphics canvas) with drag &
+    drop.  Legend auto-populates from `/api/elc/groups` +
+    `/api/elc/schedules`.  Colour coding per group / per schedule.
+
 ## Phase V2.0/V1.9 — QR Library + 6 Other Orphaned Assets + Regression Gate (2026-02)
 
 **Brief**: User reported "QR Library failed to load" on the AHU/VAV

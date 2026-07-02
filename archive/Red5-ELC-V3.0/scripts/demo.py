@@ -99,17 +99,31 @@ async def main() -> None:
         "/static", StaticFiles(directory=str(demo_dir)), name="static"
     )
 
+    # Aggressive no-cache headers for the three static HTML entry
+    # points.  Without these, iOS Safari (and other aggressive HTTP/1.1
+    # caches sitting between the operator and the tunnel) hold on to
+    # stale bundles for hours, and users see yesterday's UI after a
+    # code push -- confirmed in the wild 2026-07-02 (private mode
+    # fixed it; regular Safari didn't).  The compiled JS + CSS
+    # sub-resources are still safe to cache because they carry a
+    # ?v=<hash> query-string that rotates on every rebuild.
+    _NO_CACHE = {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+
     @stack.app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
-        return FileResponse(str(demo_dir / "index.html"))
+        return FileResponse(str(demo_dir / "index.html"), headers=_NO_CACHE)
 
     @stack.app.get("/stress", include_in_schema=False)
     async def stress() -> FileResponse:
-        return FileResponse(str(demo_dir / "stress.html"))
+        return FileResponse(str(demo_dir / "stress.html"), headers=_NO_CACHE)
 
     @stack.app.get("/editor", include_in_schema=False)
     async def editor() -> FileResponse:
-        return FileResponse(str(demo_dir / "editor.html"))
+        return FileResponse(str(demo_dir / "editor.html"), headers=_NO_CACHE)
 
     # ---- Sprinkle a few random failures so the WS log shows variety -
     async def chaos_monkey() -> None:

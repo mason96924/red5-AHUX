@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from elc.codec.device_id import DeviceId
 from elc.domain.replica import Replica
 from elc.drivers.srm import SrmDriver
+from elc.scheduling.engine import SchedulerEngine
 from elc.transport import LinkState, ScuLink
 
 
@@ -37,6 +38,7 @@ def build_router(
     driver: SrmDriver,
     replica: Replica,
     link: ScuLink,
+    scheduler: SchedulerEngine | None = None,
 ) -> APIRouter:
     """Construct the `/api/elc/*` router bound to a running stack."""
     router = APIRouter(prefix="/api/elc", tags=["elc"])
@@ -91,5 +93,50 @@ def build_router(
             )
         await driver.broadcast(body.state)
         return {"ok": True, "broadcast": True, "state": body.state}
+
+    # ---- Phase 4 scheduler engine control --------------------------------
+    # These are only mounted when a SchedulerEngine was wired into the
+    # stack (build_stack() passes one; small test harnesses that skip
+    # scheduling can omit it and lose only these routes).
+    if scheduler is not None:
+        @router.get("/scheduler/status")
+        async def scheduler_status() -> dict[str, Any]:
+            return {
+                "running": scheduler.running,
+                "tick_seconds": scheduler._tick_seconds,  # noqa: SLF001
+            }
+
+        @router.post("/scheduler/start")
+        async def scheduler_start() -> dict[str, Any]:
+            await scheduler.start()
+            return {"ok": True, "running": scheduler.running}
+
+        @router.post("/scheduler/stop")
+        async def scheduler_stop() -> dict[str, Any]:
+            await scheduler.stop()
+            return {"ok": True, "running": scheduler.running}
+
+        @router.post("/scheduler/tick")
+        async def scheduler_tick() -> dict[str, Any]:
+            """Run one evaluation pass immediately.  Useful for smoke
+            tests and the operator's "run now" preview button.  Returns
+            every dispatch (executed or dry-run) the tick produced.
+            """
+            out = await scheduler.tick()
+            return {
+                "dispatches": [
+                    {
+                        "at": d.at.isoformat(),
+                        "device": d.device,
+                        "state": d.state,
+                        "schedule_id": d.schedule_id,
+                        "schedule_name": d.schedule_name,
+                        "rule_index": d.rule_index,
+                        "reason": d.reason,
+                        "executed": d.executed,
+                    }
+                    for d in out
+                ],
+            }
 
     return router

@@ -21,6 +21,7 @@ from elc.api.ws import attach_ws
 from elc.config.routes import build_config_router
 from elc.domain.replica import Replica
 from elc.drivers.srm import SrmDriver
+from elc.scheduling.engine import SchedulerEngine
 from elc.transport import ScuLink
 
 
@@ -33,6 +34,7 @@ class ElcStack:
     link: ScuLink
     driver: SrmDriver
     replica: Replica
+    scheduler: SchedulerEngine
 
 
 def build_stack(
@@ -42,20 +44,34 @@ def build_stack(
     name: str | None = None,
     initial_backoff: float = 0.5,
     config_db_path: str | None = None,
+    scheduler_tick_seconds: float = 30.0,
 ) -> ElcStack:
     """Construct (but do not start) the ELC stack.
 
-    Caller is responsible for `await stack.link.start()` and shutdown.
+    Caller is responsible for ``await stack.link.start()``,
+    ``await stack.scheduler.start()`` and matching shutdown.
 
     ``config_db_path`` overrides the operator-UI config SQLite location
     (Phase 1: groups/schedules CRUD).  Leave ``None`` on the target
     device to use ``elc.config.store.DEFAULT_DB_PATH``; tests point it
     at a per-run temp path.
+
+    ``scheduler_tick_seconds`` sets the Phase 4 scheduler-engine cadence
+    (default 30s).  The engine is *not* auto-started -- call
+    ``await stack.scheduler.start()`` when you want time-of-day / sun /
+    lux rules to begin dispatching to the driver.  Even started, a
+    controller boots with ``engine_mode = "dry_run"`` so no hardware
+    fires until the operator explicitly flips it live.
     """
     link = ScuLink(host=host, port=port, name=name, initial_backoff=initial_backoff)
     driver = SrmDriver(link)
     replica = Replica()
     replica.attach(driver)
+    scheduler = SchedulerEngine(
+        driver=driver,
+        db_path=config_db_path,
+        tick_seconds=scheduler_tick_seconds,
+    )
 
     app = FastAPI(title="Red5-ELC", version="0.1.0")
     # Config router is prefix-less; mount under the same /api/elc namespace
@@ -72,7 +88,9 @@ def build_stack(
         prefix="/api/elc",
         tags=["elc-config"],
     )
-    app.include_router(build_router(driver=driver, replica=replica, link=link))
+    app.include_router(build_router(driver=driver, replica=replica, link=link, scheduler=scheduler))
     attach_ws(app, replica)
 
-    return ElcStack(app=app, link=link, driver=driver, replica=replica)
+    return ElcStack(
+        app=app, link=link, driver=driver, replica=replica, scheduler=scheduler,
+    )

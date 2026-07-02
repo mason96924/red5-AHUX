@@ -36,9 +36,14 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from elc.api import build_stack  # noqa: E402
 from elc.codec import encode  # noqa: E402
-from elc.codec.device_id import DeviceId, DeviceType  # noqa: E402
-from elc.codec.messages import FailReport, RelaySet, RelayState  # noqa: E402
+from elc.codec.device_id import ADDR_BITS, SUBADDR_BITS, DeviceId, DeviceType  # noqa: E402
+from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState  # noqa: E402
 from elc.codec.registry import default_registry  # noqa: E402
+
+# Wildcard address / sub_address values used by SrmDriver.broadcast() to
+# signal "every device of this (dev_type, scu)" — architecture §2.
+_WILDCARD_ADDR = (1 << ADDR_BITS) - 1
+_WILDCARD_SUB = (1 << SUBADDR_BITS) - 1
 
 # MockScuServer lives in tests/conftest.py — pull it directly.
 sys.path.insert(0, str(REPO_ROOT / "tests"))
@@ -72,6 +77,36 @@ async def main() -> None:
     async def echo_relay(frame, writer):  # type: ignore[no-untyped-def]
         if frame.msg_type == RelaySet.FLAG:
             cmd = RelaySet.decode(frame.payload)
+            # Detect a wildcard broadcast (address + sub_address all-ones,
+            # per architecture §2 / SrmDriver.broadcast()).  A real SCU
+            # applies the state to every matching device and replies with
+            # one BroadcastComplete frame -- NOT N RelayState echoes.  The
+            # mock has to model the same behaviour or the stress-console
+            # broadcast buttons never see anything to paint.
+            is_wildcard = (
+                cmd.device.address == _WILDCARD_ADDR
+                and cmd.device.sub_address == _WILDCARD_SUB
+            )
+            if is_wildcard:
+                affected = 0
+                for d in list(scu_state.keys()):
+                    if (
+                        int(d.dev_type) == int(cmd.device.dev_type)
+                        and d.scu == cmd.device.scu
+                    ):
+                        scu_state[d] = cmd.state
+                        affected += 1
+                reply = default_registry.encode_message(
+                    BroadcastComplete(
+                        dev_type=int(cmd.device.dev_type),
+                        scu=cmd.device.scu,
+                        state=cmd.state,
+                        count=affected,
+                    )
+                )
+                writer.write(encode(reply))
+                await writer.drain()
+                return
             scu_state[cmd.device] = cmd.state
             reply = default_registry.encode_message(
                 RelayState(device=cmd.device, state=cmd.state)

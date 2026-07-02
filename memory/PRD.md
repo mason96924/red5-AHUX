@@ -41,6 +41,90 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — Stress Broadcast Fix + Phase 4 Day 3 Scheduler Runner (2026-02)
+
+**Session date**: 2026-02 (fork resume).
+
+### P0 fix — Stress console broadcast buttons wire the grid again
+**Report** (operator): _"ALL ON / ALL OFF broadcast buttons on
+`/stress` do nothing — both PC and iPhone.  Individual clicks work."_
+
+**Root cause**: `scripts/demo.py::echo_relay` (the demo's MockScuServer
+handler) blindly echoed a `RelayState` for every `RelaySet` it saw —
+including the wildcard broadcast frame (address=1023, sub_address=63).
+Two consequences:
+1. No `BroadcastComplete` (0x17) frame ever emitted → replica never
+   published a `broadcast_complete` SSE event → `stress.html` had
+   nothing to react to.
+2. The echoed `RelayState` was tagged for the wildcard device ID,
+   which the grid doesn't render, so even the (wrong) echo silently
+   dropped on the client.
+
+**Fix**: `scripts/demo.py` now detects wildcard `RelaySet` frames
+(`address == (1 << ADDR_BITS) - 1` AND `sub_address == (1 << SUBADDR_BITS) - 1`)
+and responds with exactly one `BroadcastComplete(dev_type, scu, state, count)`
+frame — matching what a real SCU does per architecture §2.  Regular
+per-device `RelaySet` behaviour is untouched.
+
+**Verified**: 3 new integration tests in
+`tests/integration/test_demo_broadcast_echo.py` pin the wildcard
+round-trip through the full driver + replica stack, plus round-trip
+symmetry of ON→OFF broadcasts and no-regression of the individual echo.
+
+### P1 — Phase 4 Day 3 background scheduler runner shipped
+**Scope**: the pure evaluator (Day 1) and calendar/settings/preview
+(Day 2/2.5) were already landed.  Day 3 wires them into a running
+asyncio task that dispatches `driver.set_relay(dev, state)` on a fixed
+tick.
+
+**New code**:
+- `elc/scheduling/engine.py` — `SchedulerEngine` class with:
+  - `start()` / `stop()` lifecycle;
+  - `tick(now=None)` — single evaluation pass, returns `list[Dispatch]`;
+  - injectable clock (`freezegun`-compatible) and `weather_fetcher`;
+  - dry-run vs. live gate driven by `settings.engine_mode` — a fresh
+    controller boots dry-run, so no hardware toggles before the
+    operator explicitly flips it live;
+  - per-`(schedule_id, rule_index)` firing dedupe so two ticks
+    inside the ±30s window can't double-fire;
+  - lux-sample history in RAM for downward-crossing detection;
+  - `events` `EventBus[dict]` publishing `dispatch`, `rule_invalid`,
+    and `engine_error` records for the operator UI.
+- `elc/api/app.py` — `build_stack()` now instantiates the engine and
+  bundles it inside `ElcStack` (`scheduler_tick_seconds` param, default
+  30s).  Engine is **not** auto-started; the caller decides.
+- `elc/api/rest.py` — four new endpoints when `scheduler` is wired:
+  - `GET  /api/elc/scheduler/status`
+  - `POST /api/elc/scheduler/start`
+  - `POST /api/elc/scheduler/stop`
+  - `POST /api/elc/scheduler/tick` — one-shot preview / smoke test.
+
+**Verified**: 13 unit tests in `tests/scheduling/test_engine.py`
+(tick/dispatch/dry-run/dedupe/fan-out/sun-event/lifecycle) + 3
+integration tests in `tests/integration/test_scheduler_routes.py`
+(REST surface via `TestClient`).  Full V3.0 suite: **270 passed** (was
+251 pre-session; +19 new tests, zero regressions).
+
+### Files touched
+- `archive/Red5-ELC-V3.0/scripts/demo.py`  (mock SCU broadcast handling)
+- `archive/Red5-ELC-V3.0/elc/scheduling/engine.py`  (new)
+- `archive/Red5-ELC-V3.0/elc/api/app.py`  (wire scheduler into stack)
+- `archive/Red5-ELC-V3.0/elc/api/rest.py`  (scheduler control routes)
+- `archive/Red5-ELC-V3.0/tests/scheduling/test_engine.py`  (new, 13 tests)
+- `archive/Red5-ELC-V3.0/tests/integration/test_demo_broadcast_echo.py`  (new, 3 tests)
+- `archive/Red5-ELC-V3.0/tests/integration/test_scheduler_routes.py`  (new, 3 tests)
+
+### What's next
+- **P1**: V3.0 Phase 3 — Aligner spec (on/off/alarm/event visual
+  behaviour) + operator-view SSE subscribe.
+- **P2**: Phase 5 persistent audit log — wire `dispatch` events into
+  Mongo/SQLite via a second `replica.events` subscriber.
+- **P2**: SA drift alerting service (`/api/ahu-drift-scores`, toasts /
+  emails / webhooks).
+- **P2**: Phase 6+ real drivers (replace MockScuServer with actual
+  TCP hardware bring-up).
+
+
 ## Phase V1.9 / V2.0 — Per-AHU Preset → 3D Slab Sync (2026-07-01)
 
 **Report** (operator): _"The venue preset changed in the AHU detail box

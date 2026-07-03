@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from elc.api.rest import build_router
+from elc.api.sse import attach_sse
 from elc.api.ws import attach_ws
 from elc.config.routes import build_config_router
 from elc.domain.replica import Replica
@@ -90,6 +91,10 @@ def build_stack(
     )
     app.include_router(build_router(driver=driver, replica=replica, link=link, scheduler=scheduler))
     attach_ws(app, replica)
+    # Phase 3 (operator view): SSE fallback for browsers behind proxies
+    # that strip the WebSocket Upgrade header (Cloudflare access rules,
+    # some corporate MITM proxies).
+    attach_sse(app, replica)
 
     return ElcStack(
         app=app, link=link, driver=driver, replica=replica, scheduler=scheduler,

@@ -124,6 +124,69 @@ integration tests in `tests/integration/test_scheduler_routes.py`
 - **P2**: Phase 6+ real drivers (replace MockScuServer with actual
   TCP hardware bring-up).
 
+## Phase V3.0 — Phase 3 Aligners + Operator View (2026-02)
+
+**Session continuation**: same session as Phase 4 Day 3.
+
+### Aligner spec — visual state model
+Every device tile in the editor now paints one of four exclusive
+base states, plus a transient event overlay:
+
+| state           | trigger                              | visual                                 |
+|-----------------|--------------------------------------|----------------------------------------|
+| `aligner-on`    | `relay_state === true`               | steady green fill, subtle glow         |
+| `aligner-off`   | `relay_state === false`              | dim gray fill                          |
+| `aligner-unknown` | `relay_state === null` (no snapshot) | striped placeholder                    |
+| `aligner-alarm` | `last_fail_code !== null`, sticky    | red border + pulsing ring + `!` badge  |
+| `aligner-event` | any state change (500ms overlay)     | yellow ring flash                      |
+
+`aligner-alarm` beats all other states — an alarming device stays red
+regardless of relay position until the operator explicitly clicks the
+tile to acknowledge.
+
+### Operator mode toggle
+- Pill-shaped `Operator` button in the header.  Off = idle grey; on =
+  green `LIVE`; reconnecting = amber.  State persisted in
+  `localStorage` under `elc.operatorMode`.
+- Enables a WebSocket → SSE-fallback event stream client
+  (`ElcEventStream`).  WS first (`/api/elc/events`); if the socket
+  closes before opening (proxy stripped Upgrade header), falls back
+  to `/api/elc/events-sse` and stays there.  Exponential 2s reconnect
+  on either side.
+
+### New code
+- `elc/domain/replica.py` — `clear_alarm(device)` op + `alarm_cleared`
+  event.
+- `elc/api/rest.py` — `POST /api/elc/devices/{did:path}/clear-alarm`.
+  Idempotent: no-op on non-alarming devices, returns
+  `{"cleared": false}` (200 OK) instead of 404.
+- `elc/api/app.py` — `attach_sse(app, replica)` wired into
+  `build_stack` so `/api/elc/events-sse` returns 200 (was 404).
+- `demo/editor.html` — aligner CSS + `applyAlignerState`/`flashEvent`,
+  operator toggle wiring, `ElcEventStream` class, alarm-tile click
+  handler.  Alarm click → `POST clear-alarm` → toast + local snapshot
+  update.
+
+### Verified
+- 4 new pytest tests in `tests/integration/test_clear_alarm.py`:
+  * no-snapshot clear returns `cleared=false`
+  * active alarm cleared, `alarm_cleared` event published
+  * second consecutive click idempotent
+  * malformed device id returns HTTP 400.
+- Manual smoke via Playwright: seed 4 devices → toggle operator ON →
+  all 4 devices paint red with `!` badge → click SRM/1/10/0 → tile
+  flips green (`aligner-on`), toast confirms, others remain sticky
+  red.
+- Full V3.0 suite: **274 passed** (+4 from Phase 4 Day 3 baseline).
+
+### Files touched
+- `archive/Red5-ELC-V3.0/elc/domain/replica.py`
+- `archive/Red5-ELC-V3.0/elc/api/rest.py`
+- `archive/Red5-ELC-V3.0/elc/api/app.py`
+- `archive/Red5-ELC-V3.0/demo/editor.html`
+- `archive/Red5-ELC-V3.0/tests/integration/test_clear_alarm.py`  (new, 4 tests)
+
+
 
 ## Phase V1.9 / V2.0 — Per-AHU Preset → 3D Slab Sync (2026-07-01)
 

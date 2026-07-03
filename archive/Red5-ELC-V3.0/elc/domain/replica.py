@@ -66,6 +66,29 @@ class Replica:
     def all(self) -> list[DeviceSnapshot]:
         return list(self._by_device.values())
 
+    # ---- ops ----------------------------------------------------------
+
+    async def clear_alarm(self, device: DeviceId) -> bool:
+        """Operator-initiated alarm acknowledge.  Clears the sticky
+        ``last_fail_code`` on the snapshot and publishes an
+        ``alarm_cleared`` event so every subscribed operator view drops
+        the red border.  Returns ``True`` when a snapshot existed and
+        had an alarm to clear.
+        """
+        snap = self._by_device.get(device)
+        if snap is None or snap.last_fail_code is None:
+            return False
+        snap.last_fail_code = None
+        snap.last_fail_detail = b""
+        snap.last_seen = datetime.now(timezone.utc)
+        snap.update_count += 1
+        await self.events.publish({
+            "type": "alarm_cleared",
+            "device": str(device),
+            "ts": snap.last_seen.isoformat(),
+        })
+        return True
+
     # ---- inbound from drivers ----------------------------------------
 
     async def _on_relay_state(self, msg: RelayState) -> None:

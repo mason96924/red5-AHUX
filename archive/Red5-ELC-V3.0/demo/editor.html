@@ -149,6 +149,92 @@
   .device-cell .groups { display: flex; gap: 2px; justify-content: center; margin-top: 4px; }
   .device-cell .g-swatch { width: 8px; height: 8px; border-radius: 50%; }
 
+  /* -------------- Phase 3: Aligner visual states -----------------------
+     Applied when operator mode is on and a live event stream is
+     attached.  Four exclusive states + a transient "event" overlay:
+
+       .aligner-on      → steady green fill  (relay_state === true)
+       .aligner-off     → dim gray fill      (relay_state === false)
+       .aligner-unknown → transparent        (relay_state === null; no
+                                              snapshot yet)
+       .aligner-alarm   → sticky red border + pulsing ring
+                          (last_fail_code !== null)
+
+     `.aligner-event` is a short-lived overlay class that fires the
+     yellow-ring pulse on any state change — layered on top of the
+     base state so an ON→ON re-fire still visually confirms.
+  --------------------------------------------------------------------- */
+  .device-cell.aligner-on {
+    background: linear-gradient(180deg, rgba(78,203,113,0.16), rgba(78,203,113,0.06));
+    border-color: rgba(78,203,113,0.45);
+  }
+  .device-cell.aligner-on .id { color: #a7e6bc; }
+  .device-cell.aligner-off {
+    background: #0d1116;
+    border-color: #1e2530;
+  }
+  .device-cell.aligner-off .id { color: #6b7684; }
+  .device-cell.aligner-unknown {
+    background: repeating-linear-gradient(
+      45deg, #12171e, #12171e 4px, #161c24 4px, #161c24 8px
+    );
+    border-color: #2a3340;
+  }
+  .device-cell.aligner-unknown .id { color: var(--muted); font-style: italic; }
+  .device-cell.aligner-alarm {
+    border-color: var(--bad) !important;
+    background: linear-gradient(180deg, rgba(236,91,86,0.22), rgba(236,91,86,0.08));
+    animation: alarm-pulse 1.2s ease-in-out infinite;
+    cursor: pointer;
+  }
+  .device-cell.aligner-alarm .id { color: #f6a8a4; font-weight: 600; }
+  .device-cell.aligner-alarm::after {
+    content: "!";
+    position: absolute; top: 3px; right: 5px;
+    color: var(--bad); font-weight: 700; font-size: 12px;
+    text-shadow: 0 0 6px rgba(236,91,86,0.55);
+  }
+  @keyframes alarm-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(236,91,86,0.35); }
+    50%      { box-shadow: 0 0 0 4px rgba(236,91,86,0.06); }
+  }
+  .device-cell.aligner-event::before {
+    content: "";
+    position: absolute; inset: -2px;
+    border-radius: 6px;
+    border: 2px solid var(--warn);
+    pointer-events: none;
+    animation: event-flash 0.45s ease-out;
+    opacity: 0;
+  }
+  @keyframes event-flash {
+    0%   { opacity: 0.9; transform: scale(1.02); }
+    100% { opacity: 0;   transform: scale(1.00); }
+  }
+
+  /* Operator-mode toggle pill in the header */
+  .op-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    background: transparent; cursor: pointer;
+    letter-spacing: .08em; text-transform: uppercase;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .op-toggle:hover { border-color: #3a4552; color: var(--text); }
+  .op-toggle .op-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
+    transition: background .12s, box-shadow .12s;
+  }
+  .op-toggle.on {
+    color: var(--ok); border-color: rgba(78,203,113,0.45);
+    background: rgba(78,203,113,0.06);
+  }
+  .op-toggle.on .op-dot { background: var(--ok); box-shadow: 0 0 6px rgba(78,203,113,0.6); }
+  .op-toggle.connecting .op-dot { background: var(--warn); }
+  .op-toggle.error { color: var(--bad); border-color: rgba(236,91,86,0.45); }
+  .op-toggle.error .op-dot { background: var(--bad); }
+
   .empty-state { color: var(--muted); text-align: center; padding: 30px 20px; font-size: 12.5px; }
   .empty-state code { background: #0a0d11; padding: 2px 6px; border-radius: 3px;
                       font-family: var(--mono); font-size: 11.5px; color: var(--accent-2); }
@@ -264,6 +350,10 @@
     <span class="pill" id="conn-pill" data-testid="editor-conn-pill">
       <span class="dot"></span><span id="conn-text">checking…</span>
     </span>
+    <button class="op-toggle" id="op-toggle" data-testid="op-toggle"
+            title="Operator mode: subscribe to live device events">
+      <span class="op-dot"></span><span id="op-label">Operator</span>
+    </button>
     <button class="ghost" id="btn-seed" data-testid="editor-seed-btn">Seed 4 demo devices</button>
     <button class="ghost" id="btn-settings" data-testid="editor-settings-btn" title="Location + weather + engine mode">⚙ Settings</button>
     <button class="ghost" id="btn-calendar" data-testid="editor-calendar-btn" title="Holidays + event days">📅 Calendar</button>
@@ -836,6 +926,7 @@ function renderDevices() {
     cell.className = 'device-cell';
     cell.draggable = true;
     cell.dataset.testid = `dev-cell-${did}`;
+    cell.dataset.deviceId = did;
     cell.style.borderLeftColor = primary ? primary.color : 'var(--muted)';
     cell.title = memberships.length
       ? memberships.map(m => `${m.name} (${m.schedule_count} sched)`).join('\n')
@@ -854,9 +945,219 @@ function renderDevices() {
       ev.dataTransfer.effectAllowed = 'copy';
     });
     cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
+    // Phase 3: alarm tiles are clickable → acknowledge.
+    cell.addEventListener('click', (ev) => {
+      if (!cell.classList.contains('aligner-alarm')) return;
+      ev.stopPropagation();
+      clearDeviceAlarm(did);
+    });
+    applyAlignerState(cell, d);
     grid.appendChild(cell);
   }
   host.appendChild(grid);
+}
+
+// ---------- Phase 3: Aligner visual state -----------------------------------
+// One tile → one aligner base class (on/off/unknown/alarm).  On any state
+// change we also fire a transient .aligner-event overlay (yellow ring) so
+// operators visually confirm the update.
+function applyAlignerState(cell, snap) {
+  cell.classList.remove('aligner-on', 'aligner-off', 'aligner-unknown', 'aligner-alarm');
+  if (snap.last_fail_code !== null && snap.last_fail_code !== undefined) {
+    cell.classList.add('aligner-alarm');
+    cell.title = `⚠ fail_code=${snap.last_fail_code} — click to acknowledge`;
+    return;
+  }
+  if (snap.relay_state === true)  cell.classList.add('aligner-on');
+  else if (snap.relay_state === false) cell.classList.add('aligner-off');
+  else cell.classList.add('aligner-unknown');
+}
+
+function flashEvent(cell) {
+  cell.classList.remove('aligner-event');
+  // Force reflow so the animation restarts even on rapid-fire events.
+  void cell.offsetWidth;
+  cell.classList.add('aligner-event');
+  setTimeout(() => cell.classList.remove('aligner-event'), 500);
+}
+
+function findCell(did) {
+  return document.querySelector(`.device-cell[data-device-id="${CSS.escape(did)}"]`);
+}
+
+async function clearDeviceAlarm(did) {
+  try {
+    const r = await api('POST', `/devices/${did}/clear-alarm`);
+    toast(r.cleared ? 'Alarm acknowledged' : 'No active alarm');
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- Phase 3: live event stream (WebSocket → SSE fallback) ----------
+// The V2.0 shim serves this at both /api/elc/events (WS) and
+// /api/elc/events-sse (SSE fallback).  We prefer WS; if it closes
+// before it opens (proxy stripped Upgrade header) we retry over SSE.
+class ElcEventStream {
+  constructor(onEvent, onStatus) {
+    this.onEvent = onEvent;
+    this.onStatus = onStatus;
+    this._ws = null;
+    this._sse = null;
+    this._closed = true;
+    this._reconnectTimer = null;
+    this._triedWs = false;
+  }
+  start() {
+    this._closed = false;
+    this._triedWs = false;
+    this._openWs();
+  }
+  stop() {
+    this._closed = true;
+    clearTimeout(this._reconnectTimer);
+    if (this._ws) { try { this._ws.close(); } catch (_) {} this._ws = null; }
+    if (this._sse) { try { this._sse.close(); } catch (_) {} this._sse = null; }
+    this.onStatus('off');
+  }
+  _openWs() {
+    if (this._closed) return;
+    this._triedWs = true;
+    this.onStatus('connecting');
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/api/elc/events`;
+    let ws;
+    try { ws = new WebSocket(url); }
+    catch (_) { this._openSse(); return; }
+    this._ws = ws;
+    let opened = false;
+    ws.addEventListener('open', () => {
+      opened = true;
+      this.onStatus('live');
+    });
+    ws.addEventListener('message', (ev) => {
+      try { this.onEvent(JSON.parse(ev.data)); }
+      catch (_) { /* ignore malformed frame */ }
+    });
+    ws.addEventListener('close', () => {
+      this._ws = null;
+      if (this._closed) return;
+      // If it closed before opening, the proxy probably stripped the
+      // Upgrade header.  Fall back to SSE and stay there.
+      if (!opened) { this._openSse(); return; }
+      this._scheduleReconnect(this._openWs.bind(this));
+    });
+    ws.addEventListener('error', () => { /* close handler will handle it */ });
+  }
+  _openSse() {
+    if (this._closed) return;
+    this.onStatus('connecting');
+    let es;
+    try { es = new EventSource('/api/elc/events-sse'); }
+    catch (_) { this._scheduleReconnect(this._openSse.bind(this)); return; }
+    this._sse = es;
+    es.addEventListener('open', () => this.onStatus('live'));
+    es.addEventListener('message', (ev) => {
+      try { this.onEvent(JSON.parse(ev.data)); }
+      catch (_) { /* ignore */ }
+    });
+    es.addEventListener('error', () => {
+      es.close();
+      this._sse = null;
+      if (this._closed) return;
+      this._scheduleReconnect(this._openSse.bind(this));
+    });
+  }
+  _scheduleReconnect(fn) {
+    this.onStatus('reconnecting');
+    clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = setTimeout(() => { if (!this._closed) fn(); }, 2000);
+  }
+}
+
+// ---------- Operator mode wiring -------------------------------------------
+const OP_MODE_KEY = 'elc.operatorMode';
+let opStream = null;
+
+function setOpToggleUi(status) {
+  const btn = document.getElementById('op-toggle');
+  const lbl = document.getElementById('op-label');
+  btn.classList.remove('on', 'connecting', 'error');
+  if (status === 'off')          { lbl.textContent = 'Operator'; }
+  else if (status === 'connecting'){ btn.classList.add('connecting'); lbl.textContent = 'Connecting…'; }
+  else if (status === 'live')     { btn.classList.add('on'); lbl.textContent = 'Live'; }
+  else if (status === 'reconnecting') { btn.classList.add('connecting'); lbl.textContent = 'Reconnecting…'; }
+}
+
+function handleLiveEvent(ev) {
+  // Push the delta into `state.devices` so full re-renders (e.g. after
+  // a group edit) don't drop the fresh state.
+  if (ev.type === 'relay_state') {
+    const snap = _upsertDevice(ev.device);
+    snap.relay_state = ev.state;
+    snap.last_seen = ev.ts;
+    const cell = findCell(ev.device);
+    if (cell) { applyAlignerState(cell, snap); flashEvent(cell); }
+  } else if (ev.type === 'broadcast_complete') {
+    // Fan out across every known device matching (dev_type, scu).
+    // We map dev_type int → prefix name via the router's convention.
+    const prefix = _prefixFor(ev.dev_type, ev.scu);
+    if (!prefix) return;
+    for (const s of state.devices) {
+      if (!s.device.startsWith(prefix)) continue;
+      s.relay_state = ev.state;
+      s.last_seen = ev.ts;
+      const cell = findCell(s.device);
+      if (cell) { applyAlignerState(cell, s); flashEvent(cell); }
+    }
+  } else if (ev.type === 'fail_report') {
+    const snap = _upsertDevice(ev.device);
+    snap.last_fail_code = ev.fail_code;
+    snap.last_seen = ev.ts;
+    const cell = findCell(ev.device);
+    if (cell) { applyAlignerState(cell, snap); flashEvent(cell); }
+  } else if (ev.type === 'alarm_cleared') {
+    const snap = _upsertDevice(ev.device);
+    snap.last_fail_code = null;
+    snap.last_seen = ev.ts;
+    const cell = findCell(ev.device);
+    if (cell) { applyAlignerState(cell, snap); flashEvent(cell); }
+  }
+}
+
+function _upsertDevice(did) {
+  let s = state.devices.find(d => d.device === did);
+  if (!s) {
+    s = { device: did, relay_state: null, last_fail_code: null,
+          last_seen: null, update_count: 0 };
+    state.devices.push(s);
+  }
+  return s;
+}
+
+// dev_type int → "SRM"/"HUM"/... — mirror of DeviceType enum in
+// elc/codec/device_id.py.  Keep in sync if new device types are added.
+const _DEV_TYPE_NAME = { 0: 'HUM', 1: 'FDPS', 2: 'SRM', 3: 'SAFP', 4: 'EAFP' };
+function _prefixFor(devType, scu) {
+  const name = _DEV_TYPE_NAME[devType];
+  if (!name) return null;
+  return `${name}/${scu}/`;
+}
+
+function startOperator() {
+  if (opStream) return;
+  opStream = new ElcEventStream(handleLiveEvent, setOpToggleUi);
+  opStream.start();
+  localStorage.setItem(OP_MODE_KEY, '1');
+}
+
+function stopOperator() {
+  if (opStream) { opStream.stop(); opStream = null; }
+  setOpToggleUi('off');
+  localStorage.setItem(OP_MODE_KEY, '0');
+}
+
+function toggleOperator() {
+  if (opStream) stopOperator();
+  else          startOperator();
 }
 
 // ---------- refreshAll ------------------------------------------------------
@@ -1285,6 +1586,11 @@ function randomColor() {
 // ---------- boot ------------------------------------------------------------
 refreshConn(); setInterval(refreshConn, 4000);
 refreshAll().catch(e => toast(e.message, true));
+
+// Phase 3: operator-mode toggle wiring + restore from localStorage.
+document.getElementById('op-toggle').addEventListener('click', toggleOperator);
+if (localStorage.getItem(OP_MODE_KEY) === '1') startOperator();
+else                                            setOpToggleUi('off');
 </script>
 </body>
 </html>

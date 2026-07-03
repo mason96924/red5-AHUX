@@ -84,6 +84,22 @@ def build_router(
         await driver.set_relay(dev, body.state)
         return {"ok": True, "device": str(dev), "state": body.state}
 
+    @router.post("/devices/{device_id:path}/clear-alarm")
+    async def clear_alarm(device_id: str) -> dict[str, Any]:
+        """Operator-facing alarm acknowledge.
+
+        The Aligner spec (Phase 3) treats ``fail_report`` as *sticky*:
+        an alarming device stays red until the operator explicitly
+        clears it.  This route is the acknowledge action.  Returns
+        ``cleared: false`` (200 OK, not 404) when the device wasn't
+        alarming so the UI can no-op cleanly on repeat clicks.
+        """
+        if device_id.endswith("/clear-alarm"):
+            device_id = device_id[: -len("/clear-alarm")]
+        dev = _parse_device_id(device_id)
+        cleared = await replica.clear_alarm(dev)
+        return {"ok": True, "device": str(dev), "cleared": cleared}
+
     @router.post("/broadcast")
     async def broadcast(body: _RelayBody) -> dict[str, Any]:
         if link.state is not LinkState.CONNECTED:

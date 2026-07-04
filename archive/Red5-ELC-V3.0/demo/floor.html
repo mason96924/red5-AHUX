@@ -129,6 +129,29 @@
   .fixture-row .did { color: var(--muted); font-family: var(--mono); font-size: 10px; }
   .fixture-row .remove { color: var(--bad); font-size: 14px; padding: 0 6px; }
 
+  /* ---- Fixture palette (drag-source) ---------------------------------- */
+  .palette {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    margin-bottom: 12px;
+  }
+  .palette-item {
+    padding: 10px 8px; border: 1px dashed var(--line); border-radius: 8px;
+    background: var(--panel-2); cursor: grab; text-align: center;
+    user-select: none; transition: border-color .12s, background .12s, transform .08s;
+    font-size: 11.5px; color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .palette-item:hover { border-color: var(--accent); color: var(--text); }
+  .palette-item:active { cursor: grabbing; transform: scale(0.97); }
+  .palette-item.dragging { opacity: 0.5; border-style: solid; }
+  .palette-item .swatch {
+    width: 22px; height: 22px; border-radius: 50%;
+    box-shadow: 0 0 12px 2px rgba(245, 162, 91, 0.65);
+  }
+  .palette-item .swatch.onoff  { background: radial-gradient(circle, #fff0c8 0%, #d97a30 70%); }
+  .palette-item .swatch.dimmer { background: radial-gradient(circle, #d0e6ff 0%, #4a83b8 70%); }
+  #floor-canvas.drop-target { outline: 2px dashed var(--accent); outline-offset: -8px; }
+
   /* Toast */
   .toast {
     position: fixed; bottom: 22px; right: 22px; padding: 10px 18px;
@@ -175,7 +198,7 @@
   <section class="stage">
     <div class="mode-badge layout" id="mode-badge">LAYOUT</div>
     <div class="stage-hint" id="stage-hint">
-      Click on the plan to place a fixture · Drag to move · Delete key removes
+      Drag a fixture from the right rail · Or click on the plan to place · Drag placed fixtures to move · Delete key removes
     </div>
     <canvas id="floor-canvas" data-testid="floor-canvas"></canvas>
     <div class="stage-empty" id="stage-empty">
@@ -191,8 +214,20 @@
       <div class="empty">Select a floor to edit its properties.</div>
     </div>
     <h2 style="margin-top:16px">Fixtures <span id="fx-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
+    <div class="palette" data-testid="fixture-palette">
+      <div class="palette-item" draggable="true" data-fx-type="onoff"
+           data-testid="palette-onoff">
+        <div class="swatch onoff"></div>
+        <div>On/Off Light</div>
+      </div>
+      <div class="palette-item" draggable="true" data-fx-type="dimmer_0_10v"
+           data-testid="palette-dimmer">
+        <div class="swatch dimmer"></div>
+        <div>0-10V Dimmer</div>
+      </div>
+    </div>
     <div id="fixture-list" data-testid="fixture-list">
-      <div class="empty">No fixtures yet.</div>
+      <div class="empty">Drag a fixture above onto the plan.</div>
     </div>
     <div id="fixture-editor" style="display:none; margin-top: 10px;
                                     padding: 10px; border: 1px dashed var(--line);
@@ -366,7 +401,7 @@ function renderFixtureList() {
   const count = document.getElementById('fx-count');
   count.textContent = f ? `(${f.fixtures.length})` : '';
   if (!f || f.fixtures.length === 0) {
-    host.innerHTML = '<div class="empty">Click on the plan to place a fixture.</div>';
+    host.innerHTML = '<div class="empty">Drag a fixture above onto the plan.</div>';
     return;
   }
   host.innerHTML = '';
@@ -661,6 +696,48 @@ function animationLoop() {
 requestAnimationFrame(animationLoop);
 
 // -------- Canvas interaction: place / select / drag fixtures --------
+
+// ---- HTML5 drag-drop from palette to canvas ------------------------------
+// The two `.palette-item` divs in the right rail are drag-sources; the
+// canvas is the drop-target.  Dropping opens the fixture editor with
+// the drop position pre-filled -- the user then just types the
+// device_id and clicks Save.
+document.querySelectorAll('.palette-item').forEach((el) => {
+  el.addEventListener('dragstart', (ev) => {
+    if (state.mode !== 'layout' || !state.currentFloor) {
+      ev.preventDefault(); return;
+    }
+    el.classList.add('dragging');
+    ev.dataTransfer.setData('application/x-elc-fixture-type', el.dataset.fxType);
+    ev.dataTransfer.effectAllowed = 'copy';
+  });
+  el.addEventListener('dragend', () => el.classList.remove('dragging'));
+});
+canvas.addEventListener('dragover', (ev) => {
+  if (state.mode !== 'layout' || !state.currentFloor) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'copy';
+  canvas.classList.add('drop-target');
+});
+canvas.addEventListener('dragleave', () => canvas.classList.remove('drop-target'));
+canvas.addEventListener('drop', (ev) => {
+  ev.preventDefault();
+  canvas.classList.remove('drop-target');
+  const fxType = ev.dataTransfer.getData('application/x-elc-fixture-type');
+  if (!fxType) return;
+  const rect = canvas.getBoundingClientRect();
+  const world = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (!world) return;
+  const f = state.currentFloor;
+  if (world.x_m < 0 || world.x_m > f.width_m
+      || world.y_m < 0 || world.y_m > f.height_m) {
+    toast('Drop must be inside the floor outline', true);
+    return;
+  }
+  pendingPlacement = world;
+  openFixtureEditor(null, { type: fxType });
+});
+
 canvas.addEventListener('mousedown', (ev) => {
   if (state.mode !== 'layout') return;
   const rect = canvas.getBoundingClientRect();

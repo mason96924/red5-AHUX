@@ -164,6 +164,23 @@ async def main() -> None:
     async def floor() -> FileResponse:
         return FileResponse(str(demo_dir / "floor.html"), headers=_NO_CACHE)
 
+    @stack.app.get("/samples/{name}", include_in_schema=False)
+    async def sample_file(name: str) -> FileResponse:
+        """Serve any file from ``demo/samples/`` (currently just
+        ``warehouse-20x12.dxf``) as a download.  Keeps sample assets
+        one HTTP GET away without needing scp / rsync from the pod."""
+        # Reject path-escape attempts.  ``Path.name`` strips directory
+        # components and any resolve() outside ``samples/`` fails below.
+        p = (demo_dir / "samples" / Path(name).name).resolve()
+        if not p.exists() or (demo_dir / "samples").resolve() not in p.parents:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail=f"no sample named {name!r}")
+        return FileResponse(
+            str(p),
+            filename=p.name,
+            media_type="application/octet-stream",
+        )
+
     # ---- Sprinkle a few random failures so the WS log shows variety -
     async def chaos_monkey() -> None:
         await asyncio.sleep(8)

@@ -22,6 +22,7 @@ from elc.api.ws import attach_ws
 from elc.config.routes import build_config_router
 from elc.domain.replica import Replica
 from elc.drivers.srm import SrmDriver
+from elc.floors.routes import build_floors_router
 from elc.scheduling.engine import SchedulerEngine
 from elc.transport import ScuLink
 
@@ -88,6 +89,13 @@ def build_stack(
         build_config_router(db_path=config_db_path),
         prefix="/api/elc",
         tags=["elc-config"],
+    )
+    # Phase 6.1 — floor plans + fixture placements (top-down view).
+    # Piggy-backs on the same SQLite file as the config router.
+    app.include_router(
+        build_floors_router(db_path=config_db_path),
+        prefix="/api/elc",
+        tags=["elc-floors"],
     )
     app.include_router(build_router(driver=driver, replica=replica, link=link, scheduler=scheduler))
     attach_ws(app, replica)

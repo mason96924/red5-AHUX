@@ -115,6 +115,23 @@ _SCHEMA = [
         UNIQUE (date, kind)             -- one entry per (date, kind)
     )
     """,
+    # Phase 6.1 — Floor plans + fixture placements for the operator
+    # top-down lighting view.  One row per floor.  SVG is stored inline
+    # (see PRD: floors are usually 50-500KB; SQLite handles that fine
+    # and we get transactional backups for free).  fixtures_json is a
+    # list of {id, device_id, x_m, y_m, type, max_lux, beam_radius_m, cct_k}.
+    """
+    CREATE TABLE IF NOT EXISTS floors (
+        id             TEXT PRIMARY KEY,
+        name           TEXT NOT NULL UNIQUE,
+        svg            TEXT NOT NULL DEFAULT '',
+        width_m        REAL NOT NULL DEFAULT 20.0,
+        height_m       REAL NOT NULL DEFAULT 15.0,
+        fixtures_json  TEXT NOT NULL DEFAULT '[]',
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL
+    )
+    """,
 ]
 
 

@@ -160,6 +160,10 @@ async def main() -> None:
     async def editor() -> FileResponse:
         return FileResponse(str(demo_dir / "editor.html"), headers=_NO_CACHE)
 
+    @stack.app.get("/floor", include_in_schema=False)
+    async def floor() -> FileResponse:
+        return FileResponse(str(demo_dir / "floor.html"), headers=_NO_CACHE)
+
     # ---- Sprinkle a few random failures so the WS log shows variety -
     async def chaos_monkey() -> None:
         await asyncio.sleep(8)

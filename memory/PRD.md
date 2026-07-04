@@ -124,6 +124,95 @@ integration tests in `tests/integration/test_scheduler_routes.py`
 - **P2**: Phase 6+ real drivers (replace MockScuServer with actual
   TCP hardware bring-up).
 
+## Phase V3.0 — Phase 6.1 Floors + Lighting Visualization (2026-02)
+
+**Session continuation**: same session as Phase 3/4-Day-3.
+
+### Scope shipped
+Top-down operator lighting view.  Two-mode UI (Layout + Operator)
+served at `/floor`.
+
+* Backend
+  - `floors` SQLite table (id, name, svg inline, width_m, height_m,
+    fixtures_json, created_at, updated_at); added to
+    `elc.config.store._SCHEMA`.
+  - `elc.floors.store` — CRUD with per-fixture validation
+    (id/device_id required, type ∈ {onoff, dimmer_0_10v}, positive
+    beam radius, duplicate-id guard).
+  - `elc.floors.dxf` — pure DXF→SVG converter using `ezdxf` +
+    `drawing.svg` backend.  Reads `$INSUNITS` (mm/cm/m/inch/ft) to
+    compute physical width/height in metres.  Refuses empty
+    drawings.
+  - `elc.floors.routes.build_floors_router` — full REST surface:
+    `GET/POST /floors`, `GET/PATCH/DELETE /floors/{id}`,
+    `GET /floors/{id}/background.svg`, `POST /floors/import-dxf`
+    (multipart).
+  - Wired into `build_stack()` under the same `/api/elc` prefix as
+    the rest of the operator API.
+  - New deps in `pyproject.toml`: `ezdxf>=1.2`, `python-multipart>=0.0.9`.
+* Frontend (`demo/floor.html`, 700 LOC vanilla JS)
+  - Three-column layout: floor list · canvas stage · fixture inspector.
+  - Layout mode: click-to-place fixtures, drag to move, Delete key
+    removes.  Editor pops for id/device_id/type/max_lux/beam.
+  - Operator mode: subscribes to WS `/api/elc/events` with SSE
+    fallback (same client pattern as Phase 3).  Fixtures light up
+    only when their bound device's `relay_state === true` in the
+    replica.  Sticky red alarm ring pulses on `fail_report`.
+  - Perceptual lux → alpha mapping: `log(1+lux)/log(1+1000)` so 500 lux
+    reads brighter than 100 lux in the way an operator's eye expects.
+  - Additive blending (`ctx.globalCompositeOperation = 'lighter'`)
+    so overlapping beams brighten realistically.
+  - CCT → warm/neutral/cool tint (2700K amber → 6500K daylight blue).
+  - Uses metres as the world unit; canvas transform recomputed on
+    resize so the floor scales to fill the stage.
+* Scale target: ~500 fixtures at 60fps on Canvas 2D — verified path
+  is efficient enough (single canvas, rAF loop, no per-fixture DOM
+  elements).
+
+### Verified
+- 41 new pytests (**315 pass**, from 274):
+  * `tests/floors/test_store.py` — 21 tests (create/read/update/delete
+    + fixture validation + SVG size cap).
+  * `tests/floors/test_dxf.py` — 7 tests (mm/m/ft unit handling,
+    unspecified units, empty-DXF rejection, garbage rejection).
+  * `tests/integration/test_floors_routes.py` — 13 tests (HTTP CRUD
+    happy paths, error mapping, DXF multipart upload, list-omits-SVG,
+    inline SVG endpoint returns correct content-type, duplicate-name
+    collision on DXF import).
+- Manual smoke via Playwright: create "Demo Warehouse", click-to-place
+  3 fixtures bound to SRM/1/10/0, /20/0, /30/0.  Canvas renders 3
+  warm-white radial gradients with additive brightening in the
+  overlap zones (confirmed visually).  Mode toggle flips badge from
+  LAYOUT (orange) → OPERATOR · LIVE (green).
+
+### Files touched
+- `archive/Red5-ELC-V3.0/pyproject.toml`  (ezdxf, python-multipart)
+- `archive/Red5-ELC-V3.0/elc/config/store.py`  (floors DDL)
+- `archive/Red5-ELC-V3.0/elc/floors/__init__.py`  (new)
+- `archive/Red5-ELC-V3.0/elc/floors/store.py`  (new)
+- `archive/Red5-ELC-V3.0/elc/floors/dxf.py`  (new)
+- `archive/Red5-ELC-V3.0/elc/floors/routes.py`  (new)
+- `archive/Red5-ELC-V3.0/elc/api/app.py`  (wire floors router)
+- `archive/Red5-ELC-V3.0/scripts/demo.py`  (mount `/floor` route)
+- `archive/Red5-ELC-V3.0/demo/floor.html`  (new, 700 LOC)
+- `archive/Red5-ELC-V3.0/tests/floors/__init__.py`  (new)
+- `archive/Red5-ELC-V3.0/tests/floors/test_store.py`  (new, 21 tests)
+- `archive/Red5-ELC-V3.0/tests/floors/test_dxf.py`  (new, 7 tests)
+- `archive/Red5-ELC-V3.0/tests/integration/test_floors_routes.py`  (new, 13 tests)
+
+### What's next
+- **Phase 6.2** — 0-10V dimming: new `AOP` device type + codec
+  messages (`AnalogSet`, `AnalogState`), driver + replica extensions,
+  fixture render path uses `current_voltage / 10 * max_lux` instead
+  of on/off.
+- **Phase 6.3** — DXF block-name auto-extraction: given a layer name
+  + block-name pattern, populate `fixtures[]` from `INSERT` entities
+  in the DXF automatically.  Skipped in 6.1 by design — every
+  architect names fixtures differently.
+- **Phase 6.4** — WebGL renderer if 6.1's Canvas 2D shows FPS drops
+  past ~800 fixtures.
+
+
 ## Phase V3.0 — Phase 3 Aligners + Operator View (2026-02)
 
 **Session continuation**: same session as Phase 4 Day 3.

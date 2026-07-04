@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Red5-ELC · Floor</title>
+<style>
+  :root {
+    --bg: #0c0f13;
+    --panel: #13181f;
+    --panel-2: #1a2029;
+    --line: #232b36;
+    --text: #d8dde4;
+    --muted: #6b7684;
+    --accent: #d97a30;
+    --accent-2: #f5a25b;
+    --ok: #4ecb71;
+    --warn: #e3b341;
+    --bad: #ec5b56;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+               font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto; }
+  a { color: var(--accent-2); }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 24px 14px; border-bottom: 1px solid var(--line); gap: 14px;
+  }
+  header h1 { margin: 0; font-size: 17px; letter-spacing: .04em; font-weight: 600; }
+  header h1 .sub { color: var(--muted); font-weight: 400; margin-left: 10px;
+                    font-size: 11px; letter-spacing: .18em; text-transform: uppercase; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px;
+          border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono);
+          font-size: 12px; color: var(--muted); }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .2s; }
+  .pill.ok .dot { background: var(--ok); }
+  .pill.warn .dot { background: var(--warn); }
+  .pill.bad .dot { background: var(--bad); }
+
+  button, .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 12.5px;
+    cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  button:hover, .btn:hover { background: #22303f; border-color: #364251; }
+  button.primary { background: var(--accent); border-color: var(--accent);
+                   color: #0e1216; font-weight: 600; }
+  button.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  button.ghost { background: transparent; }
+
+  main { display: grid; grid-template-columns: 240px 1fr 300px;
+         height: calc(100vh - 60px); gap: 0; }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--line);
+    padding: 14px; overflow-y: auto;
+  }
+  aside.right { border-right: 0; border-left: 1px solid var(--line); }
+  aside h2 {
+    font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted); margin: 8px 0 10px;
+  }
+
+  /* Floor list rows in the left rail */
+  .floor-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+    margin-bottom: 6px; cursor: pointer; background: var(--panel-2);
+    font-size: 13px;
+  }
+  .floor-row:hover { border-color: #3a4552; }
+  .floor-row.active { border-color: var(--accent); background: rgba(217,122,48,0.08); }
+  .floor-row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .floor-row .size { color: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+  .empty { color: var(--muted); text-align: center; padding: 20px 10px; font-size: 12px; }
+
+  input, select {
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 12.5px;
+    width: 100%;
+  }
+  label { display: block; font-size: 11px; color: var(--muted);
+          margin: 10px 0 4px; letter-spacing: .06em; text-transform: uppercase; }
+
+  /* Canvas region */
+  section.stage {
+    position: relative; background: #05070a; overflow: hidden;
+  }
+  #floor-canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair;
+    touch-action: none; display: block;
+  }
+  #floor-canvas.mode-operator { cursor: default; }
+  .stage-empty {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; color: var(--muted); font-size: 13px;
+    pointer-events: none; text-align: center; padding: 24px;
+  }
+  .mode-badge {
+    position: absolute; top: 14px; left: 14px; z-index: 3;
+    padding: 4px 10px; border-radius: 999px; font-family: var(--mono);
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    background: rgba(19,24,31,0.85); border: 1px solid var(--line);
+    backdrop-filter: blur(4px);
+  }
+  .mode-badge.layout { color: var(--accent-2); border-color: rgba(217,122,48,0.4); }
+  .mode-badge.operator { color: var(--ok); border-color: rgba(78,203,113,0.4); }
+  .stage-hint {
+    position: absolute; bottom: 14px; left: 14px; z-index: 3;
+    color: var(--muted); font-size: 11px; font-family: var(--mono);
+    background: rgba(19,24,31,0.7); padding: 4px 10px; border-radius: 4px;
+  }
+
+  /* Fixture inspector (right rail) */
+  .fixture-row {
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+    margin-bottom: 6px; background: var(--panel-2); font-size: 12.5px;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+  }
+  .fixture-row:hover { border-color: #3a4552; }
+  .fixture-row.selected { border-color: var(--accent); background: rgba(217,122,48,0.08); }
+  .fixture-row .fid { font-family: var(--mono); font-size: 11px; }
+  .fixture-row .did { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+  .fixture-row .remove { color: var(--bad); font-size: 14px; padding: 0 6px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 22px; right: 22px; padding: 10px 18px;
+    background: var(--panel-2); border: 1px solid var(--accent);
+    border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    color: var(--text); font-size: 13px; z-index: 100;
+    opacity: 0; transform: translateY(10px); transition: opacity .2s, transform .2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.bad { border-color: var(--bad); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RED5-ELC · FLOOR<span class="sub">PHASE 6.1 · TOP-DOWN</span></h1>
+  <div class="toolbar">
+    <span class="pill" id="conn-pill" data-testid="floor-conn-pill">
+      <span class="dot"></span><span id="conn-text">checking…</span>
+    </span>
+    <button id="btn-mode" class="ghost" data-testid="floor-mode-toggle">Mode: Layout</button>
+    <button id="btn-new" data-testid="floor-new-btn">+ New floor</button>
+    <label for="dxf-input" class="btn" style="cursor:pointer" data-testid="floor-dxf-label">
+      Import DXF
+      <input id="dxf-input" type="file" accept=".dxf" style="display:none"
+             data-testid="floor-dxf-input">
+    </label>
+    <a href="/editor" class="btn ghost">← Editor</a>
+  </div>
+</header>
+
+<main>
+  <!-- ============ LEFT RAIL: FLOOR LIST ============ -->
+  <aside>
+    <h2>Floors</h2>
+    <div id="floor-list" data-testid="floor-list"></div>
+  </aside>
+
+  <!-- ============ CENTER: STAGE + CANVAS ============ -->
+  <section class="stage">
+    <div class="mode-badge layout" id="mode-badge">LAYOUT</div>
+    <div class="stage-hint" id="stage-hint">
+      Click on the plan to place a fixture · Drag to move · Delete key removes
+    </div>
+    <canvas id="floor-canvas" data-testid="floor-canvas"></canvas>
+    <div class="stage-empty" id="stage-empty">
+      No floor selected.<br>
+      Click <code>+ New floor</code> or <code>Import DXF</code> above.
+    </div>
+  </section>
+
+  <!-- ============ RIGHT RAIL: FIXTURE INSPECTOR ============ -->
+  <aside class="right">
+    <h2>Floor details</h2>
+    <div id="details">
+      <div class="empty">Select a floor to edit its properties.</div>
+    </div>
+    <h2 style="margin-top:16px">Fixtures <span id="fx-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
+    <div id="fixture-list" data-testid="fixture-list">
+      <div class="empty">No fixtures yet.</div>
+    </div>
+    <div id="fixture-editor" style="display:none; margin-top: 10px;
+                                    padding: 10px; border: 1px dashed var(--line);
+                                    border-radius: 6px;">
+      <label>Fixture id</label>
+      <input id="fx-id" data-testid="fx-id"/>
+      <label>Device id (e.g. SRM/1/10/0)</label>
+      <input id="fx-device" data-testid="fx-device"/>
+      <label>Type</label>
+      <select id="fx-type" data-testid="fx-type">
+        <option value="onoff">On/Off</option>
+        <option value="dimmer_0_10v">0-10V dimmer</option>
+      </select>
+      <label>Max lux</label>
+      <input id="fx-lux" type="number" min="0" step="10" data-testid="fx-lux"/>
+      <label>Beam radius (m)</label>
+      <input id="fx-beam" type="number" min="0.1" step="0.1" data-testid="fx-beam"/>
+      <div style="display:flex; gap:6px; margin-top:10px">
+        <button class="primary" id="fx-save" data-testid="fx-save">Save</button>
+        <button class="ghost" id="fx-cancel" data-testid="fx-cancel">Cancel</button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+const API = '/api/elc';
+
+// -------- State --------
+const state = {
+  floors: [],              // list from /floors (no svg)
+  currentFloor: null,      // full floor (with svg + fixtures)
+  mode: 'layout',          // 'layout' | 'operator'
+  selectedFixtureId: null, // id in the fixtures array
+  editingFixtureId: null,  // null when creating new
+  liveDevices: new Map(),  // device_id -> { relay_state, last_fail_code }
+};
+
+// -------- Utilities --------
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(`${API}${path}`, opts);
+  if (r.status === 204) return null;
+  const text = await r.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!r.ok) throw new Error(data?.detail || `HTTP ${r.status}`);
+  return data;
+}
+
+function toast(msg, bad = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('bad', bad);
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// -------- Connection pill --------
+async function refreshConn() {
+  const pill = document.getElementById('conn-pill');
+  const txt = document.getElementById('conn-text');
+  try {
+    const r = await api('GET', '/link');
+    if (r.state === 'connected') { pill.className = 'pill ok'; txt.textContent = 'Link connected'; }
+    else                          { pill.className = 'pill warn'; txt.textContent = `link ${r.state}`; }
+  } catch (_) { pill.className = 'pill bad'; txt.textContent = 'offline'; }
+}
+
+// -------- Floor list --------
+async function refreshFloors() {
+  const r = await api('GET', '/floors');
+  state.floors = r.floors || [];
+  renderFloorList();
+}
+function renderFloorList() {
+  const host = document.getElementById('floor-list');
+  if (state.floors.length === 0) {
+    host.innerHTML = `<div class="empty">No floors yet.<br>Click <code>+ New</code>
+                      or <code>Import DXF</code> above.</div>`;
+    return;
+  }
+  host.innerHTML = '';
+  for (const f of state.floors) {
+    const row = document.createElement('div');
+    row.className = 'floor-row';
+    if (state.currentFloor && f.id === state.currentFloor.id) row.classList.add('active');
+    row.dataset.testid = `floor-row-${f.name}`;
+    row.innerHTML = `<span class="name">${escapeHtml(f.name)}</span>
+                     <span class="size">${f.width_m.toFixed(1)}×${f.height_m.toFixed(1)}m</span>`;
+    row.addEventListener('click', () => selectFloor(f.id));
+    host.appendChild(row);
+  }
+}
+
+async function selectFloor(id) {
+  const full = await api('GET', `/floors/${id}`);
+  state.currentFloor = full;
+  state.selectedFixtureId = null;
+  document.getElementById('stage-empty').style.display = 'none';
+  await renderFloorDetails();
+  await loadBackgroundAndPaint();
+  renderFloorList();
+  renderFixtureList();
+  localStorage.setItem('elc.floor.selected', id);
+}
+
+async function renderFloorDetails() {
+  const f = state.currentFloor;
+  const host = document.getElementById('details');
+  if (!f) { host.innerHTML = '<div class="empty">Select a floor above.</div>'; return; }
+  host.innerHTML = `
+    <label>Name</label>
+    <input id="d-name" value="${escapeHtml(f.name)}" data-testid="d-name"/>
+    <label>Width (m)</label>
+    <input id="d-width" type="number" min="0.1" step="0.1" value="${f.width_m}" data-testid="d-width"/>
+    <label>Height (m)</label>
+    <input id="d-height" type="number" min="0.1" step="0.1" value="${f.height_m}" data-testid="d-height"/>
+    <div style="display:flex; gap:6px; margin-top:10px">
+      <button class="primary" id="d-save" data-testid="d-save">Save</button>
+      <button class="ghost" id="d-delete" data-testid="d-delete"
+              style="color:var(--bad); border-color:var(--bad)">Delete</button>
+    </div>`;
+  document.getElementById('d-save').onclick = async () => {
+    try {
+      const patch = {
+        name: document.getElementById('d-name').value,
+        width_m: parseFloat(document.getElementById('d-width').value),
+        height_m: parseFloat(document.getElementById('d-height').value),
+      };
+      state.currentFloor = await api('PATCH', `/floors/${f.id}`, patch);
+      await refreshFloors();
+      renderFloorList();
+      paintCanvas();
+      toast('Floor saved');
+    } catch (e) { toast(e.message, true); }
+  };
+  document.getElementById('d-delete').onclick = async () => {
+    if (!confirm(`Delete floor "${f.name}"?  Fixtures are lost too.`)) return;
+    try {
+      await api('DELETE', `/floors/${f.id}`);
+      state.currentFloor = null;
+      document.getElementById('stage-empty').style.display = 'flex';
+      backgroundImg = null;
+      await refreshFloors();
+      renderFloorDetails();
+      renderFixtureList();
+      paintCanvas();
+      toast('Floor deleted');
+    } catch (e) { toast(e.message, true); }
+  };
+}
+
+// -------- Fixture list + editor --------
+function renderFixtureList() {
+  const host = document.getElementById('fixture-list');
+  const f = state.currentFloor;
+  const count = document.getElementById('fx-count');
+  count.textContent = f ? `(${f.fixtures.length})` : '';
+  if (!f || f.fixtures.length === 0) {
+    host.innerHTML = '<div class="empty">Click on the plan to place a fixture.</div>';
+    return;
+  }
+  host.innerHTML = '';
+  for (const fx of f.fixtures) {
+    const row = document.createElement('div');
+    row.className = 'fixture-row';
+    if (fx.id === state.selectedFixtureId) row.classList.add('selected');
+    row.dataset.testid = `fixture-row-${fx.id}`;
+    row.innerHTML = `
+      <div>
+        <div class="fid">${escapeHtml(fx.id)}</div>
+        <div class="did">${escapeHtml(fx.device_id)}</div>
+      </div>
+      <div>
+        <button class="ghost remove" title="Delete"
+                data-testid="fx-del-${fx.id}">✕</button>
+      </div>`;
+    row.addEventListener('click', (ev) => {
+      if (ev.target.classList.contains('remove')) return;
+      openFixtureEditor(fx.id);
+    });
+    row.querySelector('.remove').addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (!confirm(`Delete fixture ${fx.id}?`)) return;
+      const newFx = f.fixtures.filter(x => x.id !== fx.id);
+      await saveFixtures(newFx);
+    });
+    host.appendChild(row);
+  }
+}
+
+function openFixtureEditor(fixtureId, defaults) {
+  const f = state.currentFloor;
+  if (!f) return;
+  const ed = document.getElementById('fixture-editor');
+  const existing = fixtureId ? f.fixtures.find(x => x.id === fixtureId) : null;
+  const seed = existing || defaults || {};
+  state.editingFixtureId = fixtureId;
+  state.selectedFixtureId = fixtureId;
+  document.getElementById('fx-id').value = seed.id || `L-${String(f.fixtures.length + 1).padStart(3,'0')}`;
+  document.getElementById('fx-device').value = seed.device_id || '';
+  document.getElementById('fx-type').value = seed.type || 'onoff';
+  document.getElementById('fx-lux').value = seed.max_lux ?? 500;
+  document.getElementById('fx-beam').value = seed.beam_radius_m ?? 4.0;
+  ed.style.display = 'block';
+  renderFixtureList();
+  paintCanvas();
+  document.getElementById('fx-device').focus();
+}
+
+document.getElementById('fx-save').onclick = async () => {
+  const f = state.currentFloor;
+  if (!f) return;
+  const newFixture = {
+    id: document.getElementById('fx-id').value.trim(),
+    device_id: document.getElementById('fx-device').value.trim(),
+    x_m: 0, y_m: 0,   // filled below
+    type: document.getElementById('fx-type').value,
+    max_lux: parseFloat(document.getElementById('fx-lux').value) || 500,
+    beam_radius_m: parseFloat(document.getElementById('fx-beam').value) || 4.0,
+  };
+  if (!newFixture.id || !newFixture.device_id) {
+    toast('id and device_id are required', true); return;
+  }
+  let nextList;
+  if (state.editingFixtureId) {
+    const existing = f.fixtures.find(x => x.id === state.editingFixtureId);
+    newFixture.x_m = existing.x_m; newFixture.y_m = existing.y_m;
+    nextList = f.fixtures.map(x =>
+      x.id === state.editingFixtureId ? newFixture : x);
+  } else {
+    // Place at floor centre if no click position captured.
+    newFixture.x_m = pendingPlacement?.x_m ?? f.width_m / 2;
+    newFixture.y_m = pendingPlacement?.y_m ?? f.height_m / 2;
+    nextList = [...f.fixtures, newFixture];
+  }
+  await saveFixtures(nextList);
+  document.getElementById('fixture-editor').style.display = 'none';
+  state.editingFixtureId = null;
+  pendingPlacement = null;
+};
+document.getElementById('fx-cancel').onclick = () => {
+  document.getElementById('fixture-editor').style.display = 'none';
+  state.editingFixtureId = null;
+  pendingPlacement = null;
+};
+
+async function saveFixtures(fixtures) {
+  try {
+    state.currentFloor = await api('PATCH',
+      `/floors/${state.currentFloor.id}`, { fixtures });
+    renderFixtureList();
+    paintCanvas();
+    toast('Fixtures saved');
+  } catch (e) { toast(e.message, true); }
+}
+
+// -------- Mode toggle --------
+document.getElementById('btn-mode').onclick = () => {
+  state.mode = (state.mode === 'layout') ? 'operator' : 'layout';
+  const btn = document.getElementById('btn-mode');
+  const badge = document.getElementById('mode-badge');
+  const hint = document.getElementById('stage-hint');
+  const canvas = document.getElementById('floor-canvas');
+  if (state.mode === 'operator') {
+    btn.textContent = 'Mode: Operator';
+    badge.textContent = 'OPERATOR · LIVE';
+    badge.className = 'mode-badge operator';
+    hint.style.display = 'none';
+    canvas.classList.add('mode-operator');
+    startLiveStream();
+  } else {
+    btn.textContent = 'Mode: Layout';
+    badge.textContent = 'LAYOUT';
+    badge.className = 'mode-badge layout';
+    hint.style.display = 'block';
+    canvas.classList.remove('mode-operator');
+    stopLiveStream();
+  }
+  paintCanvas();
+};
+
+// -------- Canvas + rendering --------
+const canvas = document.getElementById('floor-canvas');
+const ctx    = canvas.getContext('2d');
+let backgroundImg = null;      // HTMLImageElement of the SVG
+let pendingPlacement = null;   // {x_m, y_m} while user is deciding
+let dragState = null;
+
+function fitCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = Math.floor(rect.width  * dpr);
+  canvas.height = Math.floor(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  paintCanvas();
+}
+window.addEventListener('resize', fitCanvas);
+
+async function loadBackgroundAndPaint() {
+  const f = state.currentFloor;
+  backgroundImg = null;
+  if (f && f.svg && f.svg.length > 20) {
+    const blob = new Blob([f.svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    await new Promise((resolve) => {
+      img.onload = () => { backgroundImg = img; URL.revokeObjectURL(url); resolve(); };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(); };  // silent
+      img.src = url;
+    });
+  }
+  paintCanvas();
+}
+
+// World (metres) → screen (pixels).  Everything fits with a small
+// margin.  Returns { m2px, xOffset, yOffset }.
+function computeTransform() {
+  const f = state.currentFloor;
+  if (!f) return null;
+  const rect = canvas.getBoundingClientRect();
+  const margin = 20;
+  const m2pxX = (rect.width  - margin * 2) / f.width_m;
+  const m2pxY = (rect.height - margin * 2) / f.height_m;
+  const m2px = Math.min(m2pxX, m2pxY);
+  const xOffset = (rect.width  - f.width_m  * m2px) / 2;
+  const yOffset = (rect.height - f.height_m * m2px) / 2;
+  return { m2px, xOffset, yOffset };
+}
+
+function screenToWorld(sx, sy) {
+  const t = computeTransform();
+  if (!t) return null;
+  return {
+    x_m: (sx - t.xOffset) / t.m2px,
+    y_m: (sy - t.yOffset) / t.m2px,
+  };
+}
+
+// Perceptual mapping: physical lux → screen alpha in [0, 0.9].
+// log(1 + lux) / log(1 + 1000) so 500 lux registers as ~0.9, 100 as ~0.66.
+function luxToAlpha(lux) {
+  return Math.min(0.9, Math.log(1 + lux) / Math.log(1 + 1000));
+}
+
+// CCT → rgb tint.  Warm 2700K = orange, neutral 4000K = white, cool
+// 6500K = pale blue.  Keeps the palette in a UI-friendly range.
+function cctColor(k) {
+  if (k <= 3000) return [255, 200, 130];    // warm amber
+  if (k <= 4500) return [255, 240, 220];    // neutral
+  if (k <= 5500) return [235, 240, 255];    // cool white
+  return [200, 220, 255];                    // daylight
+}
+
+function fixtureIsOn(fx) {
+  const d = state.liveDevices.get(fx.device_id);
+  if (state.mode !== 'operator') return true;  // preview brightness in layout
+  return d && d.relay_state === true;
+}
+
+function fixtureAlarming(fx) {
+  const d = state.liveDevices.get(fx.device_id);
+  return state.mode === 'operator'
+      && d && d.last_fail_code !== null && d.last_fail_code !== undefined;
+}
+
+function paintCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  const f = state.currentFloor;
+  if (!f) return;
+  const t = computeTransform();
+
+  // 1) background SVG.
+  if (backgroundImg) {
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(
+      backgroundImg,
+      t.xOffset, t.yOffset,
+      f.width_m * t.m2px, f.height_m * t.m2px,
+    );
+    ctx.globalAlpha = 1;
+  } else {
+    // Plain floor outline if no SVG.
+    ctx.strokeStyle = '#232b36';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(
+      t.xOffset, t.yOffset,
+      f.width_m * t.m2px, f.height_m * t.m2px,
+    );
+  }
+
+  // 2) fixture light gradients — additive so overlaps brighten.
+  ctx.globalCompositeOperation = 'lighter';
+  for (const fx of f.fixtures) {
+    if (!fixtureIsOn(fx)) continue;
+    const cx = t.xOffset + fx.x_m * t.m2px;
+    const cy = t.yOffset + fx.y_m * t.m2px;
+    const r  = fx.beam_radius_m * t.m2px;
+    const [rr, gg, bb] = cctColor(fx.cct_k || 4000);
+    const alpha = luxToAlpha(fx.max_lux || 500);
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, `rgba(${rr}, ${gg}, ${bb}, ${alpha})`);
+    grad.addColorStop(1, `rgba(${rr}, ${gg}, ${bb}, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  // 3) fixture markers (dot + label).  Skipped in operator mode.
+  if (state.mode === 'layout') {
+    for (const fx of f.fixtures) {
+      const cx = t.xOffset + fx.x_m * t.m2px;
+      const cy = t.yOffset + fx.y_m * t.m2px;
+      const selected = fx.id === state.selectedFixtureId;
+      ctx.beginPath();
+      ctx.arc(cx, cy, selected ? 7 : 5, 0, Math.PI * 2);
+      ctx.fillStyle = selected ? '#f5a25b' : '#d97a30';
+      ctx.fill();
+      ctx.strokeStyle = '#0c0f13';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#d8dde4';
+      ctx.font = '11px ui-monospace, monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(fx.id, cx + 10, cy);
+    }
+  }
+
+  // 4) alarm rings (operator mode only).
+  const now = performance.now();
+  const pulse = 0.5 + 0.5 * Math.sin(now / 250);
+  for (const fx of f.fixtures) {
+    if (!fixtureAlarming(fx)) continue;
+    const cx = t.xOffset + fx.x_m * t.m2px;
+    const cy = t.yOffset + fx.y_m * t.m2px;
+    ctx.strokeStyle = `rgba(236, 91, 86, ${0.4 + 0.5 * pulse})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 14 + 4 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// Animation loop only runs when we need it (operator mode w/ alarms).
+function animationLoop() {
+  paintCanvas();
+  requestAnimationFrame(animationLoop);
+}
+requestAnimationFrame(animationLoop);
+
+// -------- Canvas interaction: place / select / drag fixtures --------
+canvas.addEventListener('mousedown', (ev) => {
+  if (state.mode !== 'layout') return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+  const world = screenToWorld(sx, sy);
+  if (!world || !state.currentFloor) return;
+
+  // Hit-test existing fixtures first.
+  const t = computeTransform();
+  for (const fx of state.currentFloor.fixtures) {
+    const cx = t.xOffset + fx.x_m * t.m2px;
+    const cy = t.yOffset + fx.y_m * t.m2px;
+    const dist = Math.hypot(sx - cx, sy - cy);
+    if (dist < 12) {
+      dragState = { fx, offX: cx - sx, offY: cy - sy, moved: false };
+      state.selectedFixtureId = fx.id;
+      renderFixtureList(); paintCanvas();
+      return;
+    }
+  }
+  // No hit — treat as a placement click.
+  const f = state.currentFloor;
+  if (world.x_m < 0 || world.x_m > f.width_m || world.y_m < 0 || world.y_m > f.height_m) return;
+  pendingPlacement = world;
+  openFixtureEditor(null);
+});
+
+canvas.addEventListener('mousemove', (ev) => {
+  if (!dragState) return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+  const t = computeTransform();
+  dragState.fx.x_m = (sx + dragState.offX - t.xOffset) / t.m2px;
+  dragState.fx.y_m = (sy + dragState.offY - t.yOffset) / t.m2px;
+  dragState.moved = true;
+  paintCanvas();
+});
+
+canvas.addEventListener('mouseup', async () => {
+  if (!dragState) return;
+  const moved = dragState.moved;
+  dragState = null;
+  if (moved) await saveFixtures(state.currentFloor.fixtures);
+});
+
+document.addEventListener('keydown', async (ev) => {
+  if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+  if (state.mode !== 'layout' || !state.selectedFixtureId) return;
+  if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  const f = state.currentFloor;
+  const next = f.fixtures.filter(x => x.id !== state.selectedFixtureId);
+  state.selectedFixtureId = null;
+  await saveFixtures(next);
+});
+
+// -------- "New floor" + DXF upload --------
+document.getElementById('btn-new').onclick = async () => {
+  const name = prompt('Floor name?', 'New floor');
+  if (!name) return;
+  try {
+    const f = await api('POST', '/floors', { name });
+    await refreshFloors();
+    selectFloor(f.id);
+    toast(`Created "${name}"`);
+  } catch (e) { toast(e.message, true); }
+};
+
+document.getElementById('dxf-input').onchange = async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  ev.target.value = '';
+  const name = prompt('Name for imported floor?', file.name.replace(/\.dxf$/i, ''));
+  if (!name) return;
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('dxf', file);
+  try {
+    const r = await fetch(`${API}/floors/import-dxf`, { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) { toast(data.detail || 'DXF import failed', true); return; }
+    await refreshFloors();
+    selectFloor(data.id);
+    toast(`Imported "${name}" (${data.width_m.toFixed(1)}×${data.height_m.toFixed(1)}m)`);
+  } catch (e) { toast(e.message, true); }
+};
+
+// -------- Live event stream (operator mode) --------
+let liveWs = null;
+let liveSse = null;
+function startLiveStream() {
+  stopLiveStream();
+  // Prime state.liveDevices from the current replica snapshot.
+  api('GET', '/devices').then(list => {
+    for (const d of list) state.liveDevices.set(d.device, {
+      relay_state: d.relay_state, last_fail_code: d.last_fail_code,
+    });
+    paintCanvas();
+  }).catch(() => {});
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${location.host}/api/elc/events`;
+  let opened = false;
+  try {
+    liveWs = new WebSocket(url);
+    liveWs.onopen = () => { opened = true; };
+    liveWs.onmessage = (m) => onLiveEvent(JSON.parse(m.data));
+    liveWs.onclose = () => { if (!opened) fallbackToSse(); };
+  } catch (_) { fallbackToSse(); }
+}
+function fallbackToSse() {
+  try {
+    liveSse = new EventSource('/api/elc/events-sse');
+    liveSse.onmessage = (m) => onLiveEvent(JSON.parse(m.data));
+  } catch (_) {}
+}
+function stopLiveStream() {
+  if (liveWs) { try { liveWs.close(); } catch {} liveWs = null; }
+  if (liveSse) { try { liveSse.close(); } catch {} liveSse = null; }
+}
+function onLiveEvent(ev) {
+  if (ev.type === 'relay_state') {
+    const d = state.liveDevices.get(ev.device) || {};
+    d.relay_state = ev.state;
+    state.liveDevices.set(ev.device, d);
+  } else if (ev.type === 'broadcast_complete') {
+    const prefix = _prefixFor(ev.dev_type, ev.scu);
+    if (!prefix) return;
+    for (const [dev, d] of state.liveDevices.entries()) {
+      if (dev.startsWith(prefix)) d.relay_state = ev.state;
+    }
+  } else if (ev.type === 'fail_report') {
+    const d = state.liveDevices.get(ev.device) || {};
+    d.last_fail_code = ev.fail_code;
+    state.liveDevices.set(ev.device, d);
+  } else if (ev.type === 'alarm_cleared') {
+    const d = state.liveDevices.get(ev.device) || {};
+    d.last_fail_code = null;
+    state.liveDevices.set(ev.device, d);
+  }
+  // paintCanvas() happens on the rAF loop; no need to force here.
+}
+const _DEV_TYPE_NAME = { 0: 'HUM', 1: 'FDPS', 2: 'SRM', 3: 'SAFP', 4: 'EAFP' };
+function _prefixFor(devType, scu) {
+  const name = _DEV_TYPE_NAME[devType];
+  return name ? `${name}/${scu}/` : null;
+}
+
+// -------- Boot --------
+refreshConn(); setInterval(refreshConn, 4000);
+refreshFloors().then(() => {
+  fitCanvas();
+  const lastId = localStorage.getItem('elc.floor.selected');
+  if (lastId && state.floors.some(f => f.id === lastId)) selectFloor(lastId);
+});
+</script>
+</body>
+</html>

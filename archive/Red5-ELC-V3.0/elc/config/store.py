@@ -119,7 +119,9 @@ _SCHEMA = [
     # top-down lighting view.  One row per floor.  SVG is stored inline
     # (see PRD: floors are usually 50-500KB; SQLite handles that fine
     # and we get transactional backups for free).  fixtures_json is a
-    # list of {id, device_id, x_m, y_m, type, max_lux, beam_radius_m, cct_k}.
+    # list of {id, device_id, x_m, y_m} -- lighting type + config
+    # lives in the shared `lighting_elements` table so a device is
+    # configured once and can be dropped onto any floor.
     """
     CREATE TABLE IF NOT EXISTS floors (
         id             TEXT PRIMARY KEY,
@@ -130,6 +132,21 @@ _SCHEMA = [
         fixtures_json  TEXT NOT NULL DEFAULT '[]',
         created_at     TEXT NOT NULL,
         updated_at     TEXT NOT NULL
+    )
+    """,
+    # Phase 6.1b — per-device lighting element assignments.  Present
+    # here means the SRM has been designated as a lighting element of
+    # some type; absent means "unassigned" (grey tile in the UI).
+    # Kept as a shared table so a device is configured once and the
+    # same lux/beam/cct render on whichever floor it eventually lands.
+    """
+    CREATE TABLE IF NOT EXISTS lighting_elements (
+        device_id       TEXT PRIMARY KEY,
+        type            TEXT NOT NULL,       -- 'onoff' | 'dimmer_0_10v'
+        max_lux         REAL NOT NULL DEFAULT 500,
+        beam_radius_m   REAL NOT NULL DEFAULT 4.0,
+        cct_k           INTEGER NOT NULL DEFAULT 4000,
+        updated_at      TEXT NOT NULL
     )
     """,
 ]

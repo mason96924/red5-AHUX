@@ -22,7 +22,7 @@ from elc.api.ws import attach_ws
 from elc.config.routes import build_config_router
 from elc.domain.replica import Replica
 from elc.drivers.srm import SrmDriver
-from elc.floors.routes import build_floors_router
+from elc.floors.routes import build_floors_router, build_lighting_router
 from elc.scheduling.engine import SchedulerEngine
 from elc.transport import ScuLink
 
@@ -96,6 +96,12 @@ def build_stack(
         build_floors_router(db_path=config_db_path),
         prefix="/api/elc",
         tags=["elc-floors"],
+    )
+    # Phase 6.1b — per-device lighting-element assignments.
+    app.include_router(
+        build_lighting_router(db_path=config_db_path),
+        prefix="/api/elc",
+        tags=["elc-lighting"],
     )
     app.include_router(build_router(driver=driver, replica=replica, link=link, scheduler=scheduler))
     attach_ws(app, replica)

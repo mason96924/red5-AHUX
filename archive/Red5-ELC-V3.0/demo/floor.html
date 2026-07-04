@@ -129,27 +129,52 @@
   .fixture-row .did { color: var(--muted); font-family: var(--mono); font-size: 10px; }
   .fixture-row .remove { color: var(--bad); font-size: 14px; padding: 0 6px; }
 
-  /* ---- Fixture palette (drag-source) ---------------------------------- */
-  .palette {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
-    margin-bottom: 12px;
+  /* ---- SRM device grid ------------------------------------------------- */
+  .assign-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px; padding: 8px 6px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
   }
-  .palette-item {
-    padding: 10px 8px; border: 1px dashed var(--line); border-radius: 8px;
-    background: var(--panel-2); cursor: grab; text-align: center;
-    user-select: none; transition: border-color .12s, background .12s, transform .08s;
-    font-size: 11.5px; color: var(--muted);
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  .assign-count {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+    color: var(--muted); text-transform: uppercase;
   }
-  .palette-item:hover { border-color: var(--accent); color: var(--text); }
-  .palette-item:active { cursor: grabbing; transform: scale(0.97); }
-  .palette-item.dragging { opacity: 0.5; border-style: solid; }
-  .palette-item .swatch {
-    width: 22px; height: 22px; border-radius: 50%;
-    box-shadow: 0 0 12px 2px rgba(245, 162, 91, 0.65);
+  .assign-actions { display: flex; gap: 4px; }
+  .assign-btn {
+    padding: 4px 8px; font-size: 11px; border-radius: 4px;
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    cursor: pointer; letter-spacing: .04em;
   }
-  .palette-item .swatch.onoff  { background: radial-gradient(circle, #fff0c8 0%, #d97a30 70%); }
-  .palette-item .swatch.dimmer { background: radial-gradient(circle, #d0e6ff 0%, #4a83b8 70%); }
+  .assign-btn:not(:disabled):hover { border-color: #3a4552; color: var(--text); }
+  .assign-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .assign-btn.onoff:not(:disabled)  { color: #f5a25b; border-color: rgba(217,122,48,0.4); }
+  .assign-btn.dimmer:not(:disabled) { color: #6ba7dc; border-color: rgba(74,131,184,0.4); }
+  .assign-btn.clear:not(:disabled)  { color: var(--muted); }
+
+  #srm-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+  .srm-tile {
+    position: relative; padding: 8px 8px 6px; border: 2px solid var(--line);
+    border-radius: 6px; background: var(--panel-2); cursor: pointer;
+    font-family: var(--mono); font-size: 10.5px; text-align: center;
+    user-select: none; transition: border-color .1s, background .1s;
+  }
+  .srm-tile:hover { border-color: #3a4552; }
+  .srm-tile.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .srm-tile.assigned-onoff  { border-color: #d97a30; background: rgba(217,122,48,0.10); }
+  .srm-tile.assigned-dimmer { border-color: #4a83b8; background: rgba(74,131,184,0.10); }
+  .srm-tile.placed-here::after,
+  .srm-tile.placed-elsewhere::after {
+    content: ""; position: absolute; top: 4px; right: 4px;
+    width: 7px; height: 7px; border-radius: 50%;
+  }
+  .srm-tile.placed-here::after       { background: var(--ok);  box-shadow: 0 0 6px rgba(78,203,113,0.6); }
+  .srm-tile.placed-elsewhere::after  { background: var(--bad); }
+  .srm-tile.placed-elsewhere { opacity: 0.6; cursor: not-allowed; }
+  .srm-tile[draggable="true"] { cursor: grab; }
+  .srm-tile[draggable="true"]:active { cursor: grabbing; }
+  .srm-tile.dragging { opacity: 0.5; }
+  .srm-tile .did-line { color: var(--text); }
+  .srm-tile .type-line { color: var(--muted); font-size: 9px; margin-top: 2px; letter-spacing: .05em; }
   #floor-canvas.drop-target { outline: 2px dashed var(--accent); outline-offset: -8px; }
 
   /* Toast */
@@ -198,7 +223,7 @@
   <section class="stage">
     <div class="mode-badge layout" id="mode-badge">LAYOUT</div>
     <div class="stage-hint" id="stage-hint">
-      Drag a fixture from the right rail · Or click on the plan to place · Drag placed fixtures to move · Delete key removes
+      Select SRMs on the right → assign On/Off or 0-10V → drag a colored tile onto the plan · Drag placed dots to reposition · Delete removes
     </div>
     <canvas id="floor-canvas" data-testid="floor-canvas"></canvas>
     <div class="stage-empty" id="stage-empty">
@@ -213,41 +238,43 @@
     <div id="details">
       <div class="empty">Select a floor to edit its properties.</div>
     </div>
-    <h2 style="margin-top:16px">Fixtures <span id="fx-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
-    <div class="palette" data-testid="fixture-palette">
-      <div class="palette-item" draggable="true" data-fx-type="onoff"
-           data-testid="palette-onoff">
-        <div class="swatch onoff"></div>
-        <div>On/Off Light</div>
-      </div>
-      <div class="palette-item" draggable="true" data-fx-type="dimmer_0_10v"
-           data-testid="palette-dimmer">
-        <div class="swatch dimmer"></div>
-        <div>0-10V Dimmer</div>
+    <h2 style="margin-top:16px">SRM Devices <span id="dev-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
+    <div class="assign-bar" data-testid="assign-bar">
+      <div class="assign-count" id="assign-count">0 selected</div>
+      <div class="assign-actions">
+        <button id="btn-assign-onoff" class="assign-btn onoff"
+                data-testid="assign-onoff" disabled>On/Off</button>
+        <button id="btn-assign-dimmer" class="assign-btn dimmer"
+                data-testid="assign-dimmer" disabled>0-10V</button>
+        <button id="btn-assign-clear" class="assign-btn clear"
+                data-testid="assign-clear" disabled>Clear</button>
       </div>
     </div>
-    <div id="fixture-list" data-testid="fixture-list">
-      <div class="empty">Drag a fixture above onto the plan.</div>
+    <div id="srm-grid" data-testid="srm-grid">
+      <div class="empty">No SRM devices yet. Open <a href="/editor">Editor</a>
+      → Seed 4 demo devices, then return here.</div>
     </div>
-    <div id="fixture-editor" style="display:none; margin-top: 10px;
+    <div id="element-editor" style="display:none; margin-top: 10px;
                                     padding: 10px; border: 1px dashed var(--line);
                                     border-radius: 6px;">
-      <label>Fixture id</label>
-      <input id="fx-id" data-testid="fx-id"/>
-      <label>Device id (e.g. SRM/1/10/0)</label>
-      <input id="fx-device" data-testid="fx-device"/>
+      <div style="font-family: var(--mono); font-size: 11px; color: var(--muted);
+                  margin-bottom: 8px;">
+        Editing <span id="ee-device" style="color: var(--text)"></span>
+      </div>
       <label>Type</label>
-      <select id="fx-type" data-testid="fx-type">
+      <select id="ee-type" data-testid="ee-type">
         <option value="onoff">On/Off</option>
         <option value="dimmer_0_10v">0-10V dimmer</option>
       </select>
       <label>Max lux</label>
-      <input id="fx-lux" type="number" min="0" step="10" data-testid="fx-lux"/>
+      <input id="ee-lux" type="number" min="0" step="10" data-testid="ee-lux"/>
       <label>Beam radius (m)</label>
-      <input id="fx-beam" type="number" min="0.1" step="0.1" data-testid="fx-beam"/>
+      <input id="ee-beam" type="number" min="0.1" step="0.1" data-testid="ee-beam"/>
+      <label>Colour temperature (K)</label>
+      <input id="ee-cct" type="number" min="1000" step="100" data-testid="ee-cct"/>
       <div style="display:flex; gap:6px; margin-top:10px">
-        <button class="primary" id="fx-save" data-testid="fx-save">Save</button>
-        <button class="ghost" id="fx-cancel" data-testid="fx-cancel">Cancel</button>
+        <button class="primary" id="ee-save" data-testid="ee-save">Save</button>
+        <button class="ghost" id="ee-close" data-testid="ee-close">Close</button>
       </div>
     </div>
   </aside>
@@ -265,8 +292,11 @@ const state = {
   floors: [],              // list from /floors (no svg)
   currentFloor: null,      // full floor (with svg + fixtures)
   mode: 'layout',          // 'layout' | 'operator'
-  selectedFixtureId: null, // id in the fixtures array
-  editingFixtureId: null,  // null when creating new
+  devices: [],             // list from /api/elc/devices (SRMs)
+  lightingElements: new Map(), // device_id -> {type, max_lux, beam_radius_m, cct_k}
+  deviceFloor: new Map(),  // device_id -> {floor_id, floor_name} (cross-floor 1:1)
+  selectedDeviceIds: new Set(),   // multi-select in the SRM grid
+  editingDeviceId: null,   // currently opened in the inline element editor
   liveDevices: new Map(),  // device_id -> { relay_state, last_fail_code }
 };
 
@@ -339,12 +369,13 @@ function renderFloorList() {
 async function selectFloor(id) {
   const full = await api('GET', `/floors/${id}`);
   state.currentFloor = full;
-  state.selectedFixtureId = null;
+  state.selectedDeviceIds.clear();
+  closeElementEditor();
   document.getElementById('stage-empty').style.display = 'none';
   await renderFloorDetails();
   await loadBackgroundAndPaint();
   renderFloorList();
-  renderFixtureList();
+  await refreshDevicesAndElements();
   localStorage.setItem('elc.floor.selected', id);
 }
 
@@ -387,117 +418,232 @@ async function renderFloorDetails() {
       backgroundImg = null;
       await refreshFloors();
       renderFloorDetails();
-      renderFixtureList();
+      await refreshDevicesAndElements();
       paintCanvas();
       toast('Floor deleted');
     } catch (e) { toast(e.message, true); }
   };
 }
 
-// -------- Fixture list + editor --------
-function renderFixtureList() {
-  const host = document.getElementById('fixture-list');
-  const f = state.currentFloor;
-  const count = document.getElementById('fx-count');
-  count.textContent = f ? `(${f.fixtures.length})` : '';
-  if (!f || f.fixtures.length === 0) {
-    host.innerHTML = '<div class="empty">Drag a fixture above onto the plan.</div>';
+// -------- SRM Devices grid + type assignment --------
+
+async function refreshDevicesAndElements() {
+  // Devices from the replica (may include non-SRMs someday; filter now
+  // to just show lighting-capable types).
+  let devs = [];
+  try { devs = await api('GET', '/devices'); } catch (_) {}
+  state.devices = devs.filter(d => d.device.startsWith('SRM/'));
+  // Lighting-element assignments (Phase 6.1b).
+  try {
+    const r = await api('GET', '/lighting-elements');
+    state.lightingElements.clear();
+    for (const e of (r.elements || [])) state.lightingElements.set(e.device_id, e);
+  } catch (_) {}
+  // Cross-floor placement index -- who owns which SRM already?
+  state.deviceFloor.clear();
+  for (const f of state.floors) {
+    // We only get fixtures for the *current* floor in state.currentFloor,
+    // so fetch the full floor payload only when it's the active one.
+    // Every other floor's fixtures can be inferred from a lightweight
+    // per-floor probe.  For MVP we fetch each floor once at boot.
+  }
+  // Simpler: after refreshFloors(), pull each floor's fixtures once so
+  // the deviceFloor map is populated for the 1:1 badge.  A dedicated
+  // /placements aggregate endpoint would be more efficient but this
+  // stays fine for the ~dozens-of-floors scale we target.
+  await Promise.all(state.floors.map(async (f) => {
+    try {
+      const full = await api('GET', `/floors/${f.id}`);
+      for (const fx of (full.fixtures || [])) {
+        state.deviceFloor.set(fx.device_id, {
+          floor_id: full.id, floor_name: full.name,
+        });
+      }
+    } catch (_) {}
+  }));
+  renderSrmGrid();
+  updateAssignBar();
+  paintCanvas();
+}
+
+function renderSrmGrid() {
+  const host = document.getElementById('srm-grid');
+  const count = document.getElementById('dev-count');
+  count.textContent = state.devices.length ? `(${state.devices.length})` : '';
+  if (state.devices.length === 0) {
+    host.innerHTML = `<div class="empty">No SRM devices yet.
+      Open <a href="/editor">Editor</a> → <code>Seed 4 demo devices</code>,
+      then return here.</div>`;
     return;
   }
   host.innerHTML = '';
-  for (const fx of f.fixtures) {
-    const row = document.createElement('div');
-    row.className = 'fixture-row';
-    if (fx.id === state.selectedFixtureId) row.classList.add('selected');
-    row.dataset.testid = `fixture-row-${fx.id}`;
-    row.innerHTML = `
-      <div>
-        <div class="fid">${fx.type === 'dimmer_0_10v' ? '◐ ' : '● '}${escapeHtml(fx.id)}</div>
-        <div class="did">${escapeHtml(fx.device_id)} · ${fx.type === 'dimmer_0_10v' ? 'dimmer' : 'on/off'}</div>
-      </div>
-      <div>
-        <button class="ghost remove" title="Delete"
-                data-testid="fx-del-${fx.id}">✕</button>
-      </div>`;
-    row.addEventListener('click', (ev) => {
-      if (ev.target.classList.contains('remove')) return;
-      openFixtureEditor(fx.id);
+  const currentFloorId = state.currentFloor?.id;
+  for (const d of state.devices) {
+    const did = d.device;
+    const el = state.lightingElements.get(did);
+    const placement = state.deviceFloor.get(did);
+    const placedHere = placement && placement.floor_id === currentFloorId;
+    const placedElsewhere = placement && !placedHere;
+
+    const tile = document.createElement('div');
+    tile.className = 'srm-tile';
+    tile.dataset.deviceId = did;
+    tile.dataset.testid = `srm-tile-${did}`;
+    if (el?.type === 'onoff')        tile.classList.add('assigned-onoff');
+    if (el?.type === 'dimmer_0_10v') tile.classList.add('assigned-dimmer');
+    if (state.selectedDeviceIds.has(did)) tile.classList.add('selected');
+    if (placedHere)      tile.classList.add('placed-here');
+    if (placedElsewhere) tile.classList.add('placed-elsewhere');
+
+    // Draggable only if assigned AND not already on another floor.
+    const draggable = !!el && !placedElsewhere;
+    if (draggable) tile.setAttribute('draggable', 'true');
+
+    // Tooltip explains state on hover / long-press.
+    if (placedElsewhere) {
+      tile.title = `Placed on floor "${placement.floor_name}" — un-place from there first.`;
+    } else if (placedHere) {
+      tile.title = `Placed on this floor.  Drag on the canvas to reposition.`;
+    } else if (!el) {
+      tile.title = `Unassigned — select and click On/Off or 0-10V to assign a type before dropping.`;
+    } else {
+      tile.title = `${el.type === 'onoff' ? 'On/Off' : '0-10V'} · ${el.max_lux} lux · ${el.beam_radius_m} m.  Drag onto the plan.`;
+    }
+
+    const typeLabel = el
+      ? (el.type === 'onoff' ? 'ON/OFF' : '0-10V')
+      : 'unassigned';
+    tile.innerHTML = `
+      <div class="did-line">${escapeHtml(did)}</div>
+      <div class="type-line">${typeLabel}</div>`;
+
+    tile.addEventListener('click', (ev) => {
+      // Ctrl / Cmd / Shift toggles additive selection.
+      const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+      toggleSrmSelection(did, additive);
     });
-    row.querySelector('.remove').addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      if (!confirm(`Delete fixture ${fx.id}?`)) return;
-      const newFx = f.fixtures.filter(x => x.id !== fx.id);
-      await saveFixtures(newFx);
+    tile.addEventListener('dblclick', () => openElementEditor(did));
+    // Drag-source
+    tile.addEventListener('dragstart', (ev) => {
+      if (!draggable || state.mode !== 'layout' || !state.currentFloor) {
+        ev.preventDefault(); return;
+      }
+      tile.classList.add('dragging');
+      ev.dataTransfer.setData('application/x-elc-device-id', did);
+      ev.dataTransfer.effectAllowed = 'copy';
     });
-    host.appendChild(row);
+    tile.addEventListener('dragend', () => tile.classList.remove('dragging'));
+
+    host.appendChild(tile);
   }
 }
 
-function openFixtureEditor(fixtureId, defaults) {
-  const f = state.currentFloor;
-  if (!f) return;
-  const ed = document.getElementById('fixture-editor');
-  const existing = fixtureId ? f.fixtures.find(x => x.id === fixtureId) : null;
-  const seed = existing || defaults || {};
-  state.editingFixtureId = fixtureId;
-  state.selectedFixtureId = fixtureId;
-  document.getElementById('fx-id').value = seed.id || `L-${String(f.fixtures.length + 1).padStart(3,'0')}`;
-  document.getElementById('fx-device').value = seed.device_id || '';
-  document.getElementById('fx-type').value = seed.type || 'onoff';
-  document.getElementById('fx-lux').value = seed.max_lux ?? 500;
-  document.getElementById('fx-beam').value = seed.beam_radius_m ?? 4.0;
-  ed.style.display = 'block';
-  renderFixtureList();
-  paintCanvas();
-  document.getElementById('fx-device').focus();
-}
-
-document.getElementById('fx-save').onclick = async () => {
-  const f = state.currentFloor;
-  if (!f) return;
-  const newFixture = {
-    id: document.getElementById('fx-id').value.trim(),
-    device_id: document.getElementById('fx-device').value.trim(),
-    x_m: 0, y_m: 0,   // filled below
-    type: document.getElementById('fx-type').value,
-    max_lux: parseFloat(document.getElementById('fx-lux').value) || 500,
-    beam_radius_m: parseFloat(document.getElementById('fx-beam').value) || 4.0,
-  };
-  if (!newFixture.id || !newFixture.device_id) {
-    toast('id and device_id are required', true); return;
-  }
-  let nextList;
-  if (state.editingFixtureId) {
-    const existing = f.fixtures.find(x => x.id === state.editingFixtureId);
-    newFixture.x_m = existing.x_m; newFixture.y_m = existing.y_m;
-    nextList = f.fixtures.map(x =>
-      x.id === state.editingFixtureId ? newFixture : x);
+function toggleSrmSelection(did, additive) {
+  if (!additive) {
+    // Solo selection also opens the inline editor (single-tile mode).
+    const wasOnly = state.selectedDeviceIds.size === 1 && state.selectedDeviceIds.has(did);
+    state.selectedDeviceIds.clear();
+    if (!wasOnly) state.selectedDeviceIds.add(did);
+  } else if (state.selectedDeviceIds.has(did)) {
+    state.selectedDeviceIds.delete(did);
   } else {
-    // Place at floor centre if no click position captured.
-    newFixture.x_m = pendingPlacement?.x_m ?? f.width_m / 2;
-    newFixture.y_m = pendingPlacement?.y_m ?? f.height_m / 2;
-    nextList = [...f.fixtures, newFixture];
+    state.selectedDeviceIds.add(did);
   }
-  await saveFixtures(nextList);
-  document.getElementById('fixture-editor').style.display = 'none';
-  state.editingFixtureId = null;
-  pendingPlacement = null;
-};
-document.getElementById('fx-cancel').onclick = () => {
-  document.getElementById('fixture-editor').style.display = 'none';
-  state.editingFixtureId = null;
-  pendingPlacement = null;
-};
+  renderSrmGrid();
+  updateAssignBar();
+  // Auto-open editor when exactly one device is selected AND already assigned.
+  if (state.selectedDeviceIds.size === 1) {
+    const only = [...state.selectedDeviceIds][0];
+    if (state.lightingElements.has(only)) openElementEditor(only);
+    else                                    closeElementEditor();
+  } else {
+    closeElementEditor();
+  }
+}
 
-async function saveFixtures(fixtures) {
+function updateAssignBar() {
+  const n = state.selectedDeviceIds.size;
+  document.getElementById('assign-count').textContent =
+    n === 0 ? '0 selected' : `${n} selected`;
+  const on = n > 0;
+  document.getElementById('btn-assign-onoff').disabled = !on;
+  document.getElementById('btn-assign-dimmer').disabled = !on;
+  document.getElementById('btn-assign-clear').disabled = !on;
+}
+
+async function bulkAssign(type) {
+  if (state.selectedDeviceIds.size === 0) return;
   try {
-    state.currentFloor = await api('PATCH',
-      `/floors/${state.currentFloor.id}`, { fixtures });
-    renderFixtureList();
+    const r = await api('POST', '/lighting-elements/bulk-assign', {
+      device_ids: [...state.selectedDeviceIds],
+      type,
+    });
+    for (const e of r.elements) state.lightingElements.set(e.device_id, e);
+    renderSrmGrid();
     paintCanvas();
-    toast('Fixtures saved');
+    toast(`${r.elements.length} device(s) assigned as ${type === 'onoff' ? 'On/Off' : '0-10V dimmer'}`);
   } catch (e) { toast(e.message, true); }
 }
+
+async function bulkClearAssignment() {
+  if (state.selectedDeviceIds.size === 0) return;
+  const ids = [...state.selectedDeviceIds];
+  if (!confirm(`Un-assign ${ids.length} device(s)?  Any placements will be removed.`)) return;
+  try {
+    for (const did of ids) {
+      if (state.lightingElements.has(did)) {
+        await api('DELETE', `/lighting-elements/${did}`);
+      }
+      state.lightingElements.delete(did);
+      state.deviceFloor.delete(did);
+    }
+    // Refresh floors — server may have stripped fixtures we no longer own.
+    await refreshFloors();
+    if (state.currentFloor) {
+      state.currentFloor = await api('GET', `/floors/${state.currentFloor.id}`);
+    }
+    renderSrmGrid();
+    paintCanvas();
+    toast(`${ids.length} device(s) un-assigned`);
+  } catch (e) { toast(e.message, true); }
+}
+
+document.getElementById('btn-assign-onoff').onclick  = () => bulkAssign('onoff');
+document.getElementById('btn-assign-dimmer').onclick = () => bulkAssign('dimmer_0_10v');
+document.getElementById('btn-assign-clear').onclick  = bulkClearAssignment;
+
+function openElementEditor(deviceId) {
+  const el = state.lightingElements.get(deviceId);
+  if (!el) return;
+  state.editingDeviceId = deviceId;
+  document.getElementById('element-editor').style.display = 'block';
+  document.getElementById('ee-device').textContent = deviceId;
+  document.getElementById('ee-type').value = el.type;
+  document.getElementById('ee-lux').value = el.max_lux;
+  document.getElementById('ee-beam').value = el.beam_radius_m;
+  document.getElementById('ee-cct').value = el.cct_k;
+}
+function closeElementEditor() {
+  document.getElementById('element-editor').style.display = 'none';
+  state.editingDeviceId = null;
+}
+document.getElementById('ee-close').onclick = closeElementEditor;
+document.getElementById('ee-save').onclick = async () => {
+  const did = state.editingDeviceId;
+  if (!did) return;
+  try {
+    const updated = await api('PUT', `/lighting-elements/${did}`, {
+      type: document.getElementById('ee-type').value,
+      max_lux: parseFloat(document.getElementById('ee-lux').value) || 500,
+      beam_radius_m: parseFloat(document.getElementById('ee-beam').value) || 4.0,
+      cct_k: parseInt(document.getElementById('ee-cct').value, 10) || 4000,
+    });
+    state.lightingElements.set(did, updated);
+    renderSrmGrid();
+    paintCanvas();
+    toast('Element saved');
+  } catch (e) { toast(e.message, true); }
+};
 
 // -------- Mode toggle --------
 document.getElementById('btn-mode').onclick = () => {
@@ -528,7 +674,6 @@ document.getElementById('btn-mode').onclick = () => {
 const canvas = document.getElementById('floor-canvas');
 const ctx    = canvas.getContext('2d');
 let backgroundImg = null;      // HTMLImageElement of the SVG
-let pendingPlacement = null;   // {x_m, y_m} while user is deciding
 let dragState = null;
 
 function fitCanvas() {
@@ -635,21 +780,22 @@ function paintCanvas() {
   }
 
   // 2) fixture light gradients — additive so overlaps brighten.
-  // On/Off lights render at full max_lux when on.  0-10V dimmers
-  // render at 60% intensity in layout preview mode (a visual cue
-  // that they can be dimmed).  Phase 6.2 will replace this preview
-  // level with the fixture's real current voltage.
+  // Fixture placement now stores just {id, device_id, x_m, y_m};
+  // type + max_lux + beam + CCT come from the shared
+  // lighting_elements map so a device is configured once and drawn
+  // consistently across every floor it lands on.
   ctx.globalCompositeOperation = 'lighter';
   for (const fx of f.fixtures) {
     if (!fixtureIsOn(fx)) continue;
+    const el = state.lightingElements.get(fx.device_id);
+    if (!el) continue;   // placement exists but element got un-assigned
     const cx = t.xOffset + fx.x_m * t.m2px;
     const cy = t.yOffset + fx.y_m * t.m2px;
-    const r  = fx.beam_radius_m * t.m2px;
-    const [rr, gg, bb] = cctColor(fx.cct_k || 4000);
-    // Dimmer preview level.  Once Phase 6.2 lands, replace with
-    // (voltage / 10) sampled from state.liveDevices.
-    const previewLevel = (fx.type === 'dimmer_0_10v') ? 0.6 : 1.0;
-    const alpha = luxToAlpha((fx.max_lux || 500) * previewLevel);
+    const r  = el.beam_radius_m * t.m2px;
+    const [rr, gg, bb] = cctColor(el.cct_k || 4000);
+    // Dimmer preview level — replaced by real voltage in Phase 6.2.
+    const previewLevel = (el.type === 'dimmer_0_10v') ? 0.6 : 1.0;
+    const alpha = luxToAlpha((el.max_lux || 500) * previewLevel);
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     grad.addColorStop(0, `rgba(${rr}, ${gg}, ${bb}, ${alpha})`);
     grad.addColorStop(1, `rgba(${rr}, ${gg}, ${bb}, 0)`);
@@ -661,22 +807,21 @@ function paintCanvas() {
   ctx.globalCompositeOperation = 'source-over';
 
   // 3) fixture markers (dot + label).  Skipped in operator mode.
-  // Colour keyed to type so layout designers can tell at a glance
-  // which fixtures are switched vs. dimmed:
-  //   on/off        → amber (matches the "On/Off Light" palette swatch)
-  //   dimmer_0_10v  → blue  (matches the "0-10V Dimmer" palette swatch)
-  // Dimmer marker also gets a small "◐" glyph next to the label so
-  // the type is legible even to red-green colour-blind operators.
+  // Colour keyed to type (looked up in lightingElements):
+  //   on/off        → amber
+  //   dimmer_0_10v  → blue
   const MARKERS = {
     onoff:        { fill: '#d97a30', selectedFill: '#f5a25b', glyph: '' },
     dimmer_0_10v: { fill: '#4a83b8', selectedFill: '#6ba7dc', glyph: '◐' },
   };
   if (state.mode === 'layout') {
     for (const fx of f.fixtures) {
+      const el = state.lightingElements.get(fx.device_id);
+      const type = el?.type || 'onoff';
       const cx = t.xOffset + fx.x_m * t.m2px;
       const cy = t.yOffset + fx.y_m * t.m2px;
-      const selected = fx.id === state.selectedFixtureId;
-      const m = MARKERS[fx.type] || MARKERS.onoff;
+      const selected = state.selectedDeviceIds.has(fx.device_id);
+      const m = MARKERS[type] || MARKERS.onoff;
       ctx.beginPath();
       ctx.arc(cx, cy, selected ? 7 : 5, 0, Math.PI * 2);
       ctx.fillStyle = selected ? m.selectedFill : m.fill;
@@ -716,22 +861,11 @@ requestAnimationFrame(animationLoop);
 
 // -------- Canvas interaction: place / select / drag fixtures --------
 
-// ---- HTML5 drag-drop from palette to canvas ------------------------------
-// The two `.palette-item` divs in the right rail are drag-sources; the
-// canvas is the drop-target.  Dropping opens the fixture editor with
-// the drop position pre-filled -- the user then just types the
-// device_id and clicks Save.
-document.querySelectorAll('.palette-item').forEach((el) => {
-  el.addEventListener('dragstart', (ev) => {
-    if (state.mode !== 'layout' || !state.currentFloor) {
-      ev.preventDefault(); return;
-    }
-    el.classList.add('dragging');
-    ev.dataTransfer.setData('application/x-elc-fixture-type', el.dataset.fxType);
-    ev.dataTransfer.effectAllowed = 'copy';
-  });
-  el.addEventListener('dragend', () => el.classList.remove('dragging'));
-});
+// ---- HTML5 drag-drop: SRM tile → canvas ---------------------------------
+// The SRM grid tiles in the right rail are drag-sources (see
+// renderSrmGrid()).  Dropping on the canvas places the device at the
+// drop position -- no editor pops up because the lighting element
+// was already configured before the drag.
 canvas.addEventListener('dragover', (ev) => {
   if (state.mode !== 'layout' || !state.currentFloor) return;
   ev.preventDefault();
@@ -739,11 +873,16 @@ canvas.addEventListener('dragover', (ev) => {
   canvas.classList.add('drop-target');
 });
 canvas.addEventListener('dragleave', () => canvas.classList.remove('drop-target'));
-canvas.addEventListener('drop', (ev) => {
+canvas.addEventListener('drop', async (ev) => {
   ev.preventDefault();
   canvas.classList.remove('drop-target');
-  const fxType = ev.dataTransfer.getData('application/x-elc-fixture-type');
-  if (!fxType) return;
+  const did = ev.dataTransfer.getData('application/x-elc-device-id');
+  if (!did) return;
+  if (state.deviceFloor.has(did)
+      && state.deviceFloor.get(did).floor_id !== state.currentFloor.id) {
+    toast('Already placed on another floor', true);
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
   const world = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
   if (!world) return;
@@ -753,18 +892,32 @@ canvas.addEventListener('drop', (ev) => {
     toast('Drop must be inside the floor outline', true);
     return;
   }
-  pendingPlacement = world;
-  openFixtureEditor(null, { type: fxType });
+  // Either move an existing placement or create a fresh one.
+  const existing = f.fixtures.find(x => x.device_id === did);
+  let nextList;
+  if (existing) {
+    nextList = f.fixtures.map(x => (x.device_id === did
+      ? { ...x, x_m: world.x_m, y_m: world.y_m } : x));
+  } else {
+    // Auto-label the placement id from the device_id so the marker
+    // shows something friendly on the canvas.
+    const fixtureId = `L-${f.fixtures.length + 1}`.padStart(4, '0');
+    nextList = [...f.fixtures,
+      { id: fixtureId, device_id: did, x_m: world.x_m, y_m: world.y_m }];
+  }
+  await savePlacements(nextList);
 });
 
 canvas.addEventListener('mousedown', (ev) => {
   if (state.mode !== 'layout') return;
   const rect = canvas.getBoundingClientRect();
   const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
-  const world = screenToWorld(sx, sy);
-  if (!world || !state.currentFloor) return;
+  if (!state.currentFloor) return;
 
-  // Hit-test existing fixtures first.
+  // Hit-test existing placed fixtures — click selects the device
+  // (highlighting its tile in the right rail) and starts a drag to
+  // reposition.  Placement-only mode; no click-to-create anymore
+  // because devices come from the SRM grid, not from the canvas.
   const t = computeTransform();
   for (const fx of state.currentFloor.fixtures) {
     const cx = t.xOffset + fx.x_m * t.m2px;
@@ -772,16 +925,12 @@ canvas.addEventListener('mousedown', (ev) => {
     const dist = Math.hypot(sx - cx, sy - cy);
     if (dist < 12) {
       dragState = { fx, offX: cx - sx, offY: cy - sy, moved: false };
-      state.selectedFixtureId = fx.id;
-      renderFixtureList(); paintCanvas();
+      const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+      toggleSrmSelection(fx.device_id, additive);
+      paintCanvas();
       return;
     }
   }
-  // No hit — treat as a placement click.
-  const f = state.currentFloor;
-  if (world.x_m < 0 || world.x_m > f.width_m || world.y_m < 0 || world.y_m > f.height_m) return;
-  pendingPlacement = world;
-  openFixtureEditor(null);
 });
 
 canvas.addEventListener('mousemove', (ev) => {
@@ -799,18 +948,31 @@ canvas.addEventListener('mouseup', async () => {
   if (!dragState) return;
   const moved = dragState.moved;
   dragState = null;
-  if (moved) await saveFixtures(state.currentFloor.fixtures);
+  if (moved) await savePlacements(state.currentFloor.fixtures);
 });
 
 document.addEventListener('keydown', async (ev) => {
   if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
-  if (state.mode !== 'layout' || !state.selectedFixtureId) return;
+  if (state.mode !== 'layout' || state.selectedDeviceIds.size === 0) return;
   if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  // Remove placements for every currently-selected device that's on
+  // this floor.  Devices stay assigned in lighting_elements -- you
+  // just took them off the plan.
   const f = state.currentFloor;
-  const next = f.fixtures.filter(x => x.id !== state.selectedFixtureId);
-  state.selectedFixtureId = null;
-  await saveFixtures(next);
+  const doomed = new Set(state.selectedDeviceIds);
+  const next = f.fixtures.filter(x => !doomed.has(x.device_id));
+  if (next.length !== f.fixtures.length) await savePlacements(next);
 });
+
+async function savePlacements(fixtures) {
+  try {
+    state.currentFloor = await api('PATCH',
+      `/floors/${state.currentFloor.id}`, { fixtures });
+    await refreshDevicesAndElements();
+    paintCanvas();
+    toast('Placements saved');
+  } catch (e) { toast(e.message, true); }
+}
 
 // -------- "New floor" + DXF upload --------
 document.getElementById('btn-new').onclick = async () => {
@@ -905,8 +1067,9 @@ function _prefixFor(devType, scu) {
 
 // -------- Boot --------
 refreshConn(); setInterval(refreshConn, 4000);
-refreshFloors().then(() => {
+refreshFloors().then(async () => {
   fitCanvas();
+  await refreshDevicesAndElements();
   const lastId = localStorage.getItem('elc.floor.selected');
   if (lastId && state.floors.some(f => f.id === lastId)) selectFloor(lastId);
 });

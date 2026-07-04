@@ -28,7 +28,7 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from elc.config import store as config_store
-from elc.floors import store
+from elc.floors import lighting, store
 from elc.floors.dxf import DxfImportError, dxf_to_svg
 
 _ERR_MAP: dict[type, int] = {
@@ -146,5 +146,68 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
             )
         except Exception as e:
             _raise_http(e)
+
+    return router
+
+
+def build_lighting_router(*, db_path: str | None = None) -> APIRouter:
+    """Phase 6.1b — per-device lighting-element assignments.
+
+    Kept as its own APIRouter so the mount can be reused / omitted
+    independently of the floor CRUD if a future stack ever wants only
+    one of the two.  Both routers share the same ``config_db_path``
+    when wired through :func:`elc.api.app.build_stack`.
+    """
+    router = APIRouter(prefix="/lighting-elements", tags=["elc-lighting"])
+
+    @router.get("")
+    async def list_all() -> dict[str, Any]:
+        return {"elements": lighting.list_elements(db_path=db_path)}
+
+    @router.get("/{device_id:path}")
+    async def get_one(device_id: str) -> dict[str, Any]:
+        try:
+            return lighting.get_element(device_id, db_path=db_path)
+        except Exception as e:
+            _raise_http(e)
+
+    @router.put("/{device_id:path}")
+    async def upsert(
+        device_id: str, payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
+        try:
+            return lighting.upsert_element(
+                device_id,
+                type=payload.get("type", ""),
+                max_lux=float(payload.get("max_lux", 500)),
+                beam_radius_m=float(payload.get("beam_radius_m", 4.0)),
+                cct_k=int(payload.get("cct_k", 4000)),
+                db_path=db_path,
+            )
+        except Exception as e:
+            _raise_http(e)
+
+    @router.delete("/{device_id:path}", status_code=204)
+    async def delete_one(device_id: str) -> Response:
+        try:
+            lighting.delete_element(device_id, db_path=db_path)
+        except Exception as e:
+            _raise_http(e)
+        return Response(status_code=204)
+
+    # POST body: { "device_ids": ["SRM/1/10/0", ...], "type": "onoff" }
+    # Mounted at the class root (no /bulk-assign path collision with
+    # the /{device_id:path} rule) via a distinct path.
+    @router.post("/bulk-assign", status_code=200)
+    async def bulk_assign(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        try:
+            elements = lighting.bulk_assign(
+                payload.get("device_ids") or [],
+                type=payload.get("type", ""),
+                db_path=db_path,
+            )
+        except Exception as e:
+            _raise_http(e)
+        return {"elements": elements}
 
     return router

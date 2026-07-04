@@ -41,7 +41,6 @@ from typing import Any
 
 from elc.config.store import BadInput, Conflict, NotFound, _new_id, _now, get_conn
 
-_FIXTURE_TYPES = {"onoff", "dimmer_0_10v"}
 _MAX_SVG_BYTES = 5 * 1024 * 1024  # 5 MB — flip to filesystem past this
 
 
@@ -59,9 +58,15 @@ def _row_to_floor(row: Any) -> dict[str, Any]:
 
 
 def _validate_fixture(f: dict[str, Any]) -> dict[str, Any]:
-    """Coerce and validate a single fixture dict.  Returns the
-    normalised form (fills defaults, drops unknown keys) or raises
-    :class:`BadInput`."""
+    """Coerce and validate a single fixture (placement) dict.
+
+    Post-Phase-6.1b the fixture record is *placement-only* --
+    ``{id, device_id, x_m, y_m}``.  Lighting type + config live in
+    the shared ``lighting_elements`` table and are looked up at
+    render time.  Legacy records that carry ``type`` / ``max_lux``
+    etc. are still accepted for read-side backward compatibility;
+    the extra fields are dropped on the way in.
+    """
     if not isinstance(f, dict):
         raise BadInput("fixture must be an object")
     try:
@@ -73,24 +78,7 @@ def _validate_fixture(f: dict[str, Any]) -> dict[str, Any]:
         raise BadInput(f"fixture missing required field: {e}") from e
     if not fid or not device_id:
         raise BadInput("fixture id and device_id must be non-empty")
-    ftype = str(f.get("type", "onoff"))
-    if ftype not in _FIXTURE_TYPES:
-        raise BadInput(f"fixture type must be one of {_FIXTURE_TYPES}, got {ftype!r}")
-    max_lux = float(f.get("max_lux", 500))
-    beam_radius_m = float(f.get("beam_radius_m", 4.0))
-    cct_k = int(f.get("cct_k", 4000))
-    if max_lux < 0 or beam_radius_m <= 0:
-        raise BadInput("max_lux must be >= 0 and beam_radius_m > 0")
-    return {
-        "id": fid,
-        "device_id": device_id,
-        "x_m": x_m,
-        "y_m": y_m,
-        "type": ftype,
-        "max_lux": max_lux,
-        "beam_radius_m": beam_radius_m,
-        "cct_k": cct_k,
-    }
+    return {"id": fid, "device_id": device_id, "x_m": x_m, "y_m": y_m}
 
 
 def _validate_fixtures(fixtures: Any) -> list[dict[str, Any]]:
@@ -102,7 +90,40 @@ def _validate_fixtures(fixtures: Any) -> list[dict[str, Any]]:
     ids = {f["id"] for f in out}
     if len(ids) != len(out):
         raise BadInput("duplicate fixture id in list")
+    device_ids = [f["device_id"] for f in out]
+    if len(set(device_ids)) != len(device_ids):
+        raise BadInput("same device placed twice on this floor")
     return out
+
+
+def _check_device_uniqueness(
+    fixtures: list[dict[str, Any]],
+    *,
+    exclude_floor_id: str | None = None,
+    db_path: str | None = None,
+) -> None:
+    """1:1 placement guard -- a device can only sit on one floor.
+
+    Called on create + update.  Raises :class:`Conflict` if any of
+    ``fixtures``' device_ids is already on a different floor.
+    """
+    if not fixtures:
+        return
+    devs = {f["device_id"] for f in fixtures}
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, name, fixtures_json FROM floors "
+            + ("WHERE id != ?" if exclude_floor_id else ""),
+            (exclude_floor_id,) if exclude_floor_id else (),
+        ).fetchall()
+    for row in rows:
+        other = json.loads(row["fixtures_json"])
+        clash = {f.get("device_id") for f in other} & devs
+        if clash:
+            example = next(iter(clash))
+            raise Conflict(
+                f"device {example!r} is already placed on floor {row['name']!r}",
+            )
 
 
 def list_floors(db_path: str | None = None) -> list[dict[str, Any]]:
@@ -150,6 +171,7 @@ def create_floor(
     if len(svg.encode("utf-8")) > _MAX_SVG_BYTES:
         raise BadInput(f"svg exceeds {_MAX_SVG_BYTES // 1024} KB cap")
     fixtures_norm = _validate_fixtures(fixtures)
+    _check_device_uniqueness(fixtures_norm, db_path=db_path)
     fid = _new_id()
     now = _now()
     try:
@@ -205,8 +227,10 @@ def update_floor(
         sets.append("height_m = ?")
         args.append(float(height_m))
     if fixtures is not None:
+        norm = _validate_fixtures(fixtures)
+        _check_device_uniqueness(norm, exclude_floor_id=floor_id, db_path=db_path)
         sets.append("fixtures_json = ?")
-        args.append(json.dumps(_validate_fixtures(fixtures)))
+        args.append(json.dumps(norm))
     if not sets:
         return get_floor(floor_id, db_path=db_path)
     sets.append("updated_at = ?")

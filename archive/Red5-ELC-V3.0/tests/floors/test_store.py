@@ -39,16 +39,17 @@ class TestCreate:
             "Zone A",
             fixtures=[
                 {"id": "L1", "device_id": "SRM/1/10/0", "x_m": 2.0, "y_m": 3.0},
-                {"id": "L2", "device_id": "SRM/1/20/0", "x_m": 5.0, "y_m": 3.0,
-                 "type": "dimmer_0_10v", "max_lux": 800},
+                {"id": "L2", "device_id": "SRM/1/20/0", "x_m": 5.0, "y_m": 3.0},
             ],
             db_path=db_path,
         )
         assert len(f["fixtures"]) == 2
         assert f["fixtures"][0]["id"] == "L1"
-        assert f["fixtures"][0]["type"] == "onoff"      # default
-        assert f["fixtures"][0]["max_lux"] == 500       # default
-        assert f["fixtures"][1]["type"] == "dimmer_0_10v"
+        assert f["fixtures"][0]["device_id"] == "SRM/1/10/0"
+        # Post-6.1b: fixtures are placement-only.  type / max_lux / etc
+        # live in the shared lighting_elements table.
+        assert "type" not in f["fixtures"][0]
+        assert "max_lux" not in f["fixtures"][0]
 
     def test_empty_name_rejected(self, db_path):
         with pytest.raises(BadInput):
@@ -77,15 +78,6 @@ class TestFixtureValidation:
                 "X", fixtures=[{"id": "L1", "x_m": 0.0, "y_m": 0.0}], db_path=db_path,
             )
 
-    def test_unknown_type(self, db_path):
-        with pytest.raises(BadInput):
-            floors.create_floor(
-                "X", fixtures=[
-                    {"id": "L1", "device_id": "SRM/1/1/0", "x_m": 0.0, "y_m": 0.0,
-                     "type": "laser"},
-                ], db_path=db_path,
-            )
-
     def test_duplicate_fixture_ids(self, db_path):
         with pytest.raises(BadInput):
             floors.create_floor(
@@ -95,13 +87,27 @@ class TestFixtureValidation:
                 ], db_path=db_path,
             )
 
-    def test_zero_beam_radius(self, db_path):
-        with pytest.raises(BadInput):
+    def test_duplicate_device_ids_on_same_floor(self, db_path):
+        with pytest.raises(BadInput, match="same device"):
             floors.create_floor(
                 "X", fixtures=[
-                    {"id": "L1", "device_id": "SRM/1/1/0", "x_m": 0, "y_m": 0,
-                     "beam_radius_m": 0},
+                    {"id": "L1", "device_id": "SRM/1/1/0", "x_m": 0, "y_m": 0},
+                    {"id": "L2", "device_id": "SRM/1/1/0", "x_m": 1, "y_m": 1},
                 ], db_path=db_path,
+            )
+
+    def test_device_on_another_floor_conflicts(self, db_path):
+        """1:1 placement -- a device on floor A can't also land on floor B."""
+        floors.create_floor(
+            "Floor-A",
+            fixtures=[{"id": "L1", "device_id": "SRM/1/1/0", "x_m": 0, "y_m": 0}],
+            db_path=db_path,
+        )
+        with pytest.raises(Conflict, match="already placed"):
+            floors.create_floor(
+                "Floor-B",
+                fixtures=[{"id": "L1", "device_id": "SRM/1/1/0", "x_m": 1, "y_m": 1}],
+                db_path=db_path,
             )
 
 

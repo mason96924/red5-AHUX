@@ -124,6 +124,87 @@ integration tests in `tests/integration/test_scheduler_routes.py`
 - **P2**: Phase 6+ real drivers (replace MockScuServer with actual
   TCP hardware bring-up).
 
+## Phase V3.0 — Phase 6.1b Lighting-Element Assignments (2026-02)
+
+**Session continuation**: same session as Phase 6.1.
+
+### Why this exists
+The Phase 6.1 UX asked the operator to type a `device_id` into a
+drop-time popup — awkward, error-prone, and it lost the mental model
+already established in the editor (devices exist first, then get
+grouped / scheduled / typed).
+
+Phase 6.1b flips the workflow to match: **every SRM device the
+replica knows about shows up as a tile.  Select tiles → click a type
+button → drag the now-coloured tile onto the floor.**
+
+### Schema change
+* New table `lighting_elements(device_id PK, type, max_lux,
+  beam_radius_m, cct_k, updated_at)`.  Devices without a row are
+  "unassigned" (grey tile in the UI).
+* Floor `fixtures_json` schema simplified to placement-only:
+  `[{id, device_id, x_m, y_m}]`.  Type + lux + beam + CCT come from
+  `lighting_elements` at render time.
+* 1:1 placement constraint enforced in `elc.floors.store`: a device
+  on floor A can't also land on floor B (raises `Conflict`, HTTP 409).
+* Deleting a lighting-element cascades: strips the device from
+  every floor's `fixtures_json` in the same transaction.
+
+### New API endpoints (all under `/api/elc/lighting-elements`)
+```
+GET    /                     → all assigned elements
+GET    /{device_id:path}     → one
+PUT    /{device_id:path}     → upsert type + tuning
+POST   /bulk-assign          → { device_ids: [], type: 'onoff' | 'dimmer_0_10v' }
+DELETE /{device_id:path}     → un-assign + cascade
+```
+
+### Frontend rework (`demo/floor.html`)
+Right rail replaced with:
+1. **Assign bar**: `[On/Off]` `[0-10V]` `[Clear]` + "N selected" counter.
+2. **SRM tile grid**: one tile per replica device.  Border color =
+   assignment (grey / orange / blue).  Small green/red dot = placed
+   here / placed elsewhere (drag disabled on the red-dot tiles).
+3. **Inline element editor** (opens on single-tile select of an
+   assigned device): tune max_lux, beam_radius_m, cct_k, save.
+
+Interaction:
+* Click a tile → single select (opens editor if assigned).
+* Ctrl/Cmd/Shift-click → additive multi-select.
+* Assigned tiles are draggable; unassigned tiles refuse drag
+  (`preventDefault` on `dragstart`).
+* Drop on canvas creates a `{id, device_id, x_m, y_m}` placement
+  and re-paints — no popup, no typing.  Dragging an already-placed
+  device just moves it.
+
+Rendering:
+* `paintCanvas` now looks up type + tuning per fixture from the
+  shared `lightingElements` map.  Beam colour + brightness follow.
+* Dimmer preview level (60%) stays — replaced by real voltage in
+  Phase 6.2.
+
+### Verified
+* 14 new lighting-element unit tests (`tests/floors/test_lighting.py`
+  — upsert / bulk / cascade / validation).
+* Existing floor-store tests updated for the placement-only schema;
+  added coverage for cross-floor 1:1 conflict.
+* Full V3.0 suite: **329 pass** (from 315 in Phase 6.1; +14).
+* Playwright smoke: seed 4 SRMs → 2 pre-assigned as On/Off via the
+  workflow → multi-select the other 2 (Cmd-click) → click **0-10V**
+  → both flip to blue.  Confirmed the assign bar disables/enables
+  correctly on selection changes and both tile colour classes render.
+
+### Files touched
+- `elc/config/store.py`  (new `lighting_elements` DDL, fixture schema comment)
+- `elc/floors/store.py`  (simplified fixture validation + 1:1 guard)
+- `elc/floors/lighting.py`  (new — CRUD + bulk + cascade)
+- `elc/floors/routes.py`  (new `build_lighting_router`)
+- `elc/api/app.py`  (wire the new router)
+- `demo/floor.html`  (major rewrite of right rail + interaction logic)
+- `tests/floors/test_store.py`  (schema-change updates + new 1:1 test)
+- `tests/floors/test_lighting.py`  (new, 14 tests)
+
+
 ## Phase V3.0 — Phase 6.1 Floors + Lighting Visualization (2026-02)
 
 **Session continuation**: same session as Phase 3/4-Day-3.

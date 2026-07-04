@@ -18,6 +18,7 @@ dependencies = [
     "astral>=3.2",              # sunrise/sunset/civil-twilight, DST-aware
     "holidays>=0.50",           # per-country holiday calendars, offline
     "ezdxf>=1.2",               # AutoCAD DXF → SVG converter (Phase 6 floors)
+    "Pillow>=10.0",             # runtime dep of ezdxf.addons.drawing
     "python-multipart>=0.0.9",  # required by FastAPI for multipart uploads
 ]
 

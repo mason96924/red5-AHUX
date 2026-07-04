@@ -412,8 +412,8 @@ function renderFixtureList() {
     row.dataset.testid = `fixture-row-${fx.id}`;
     row.innerHTML = `
       <div>
-        <div class="fid">${escapeHtml(fx.id)}</div>
-        <div class="did">${escapeHtml(fx.device_id)}</div>
+        <div class="fid">${fx.type === 'dimmer_0_10v' ? '◐ ' : '● '}${escapeHtml(fx.id)}</div>
+        <div class="did">${escapeHtml(fx.device_id)} · ${fx.type === 'dimmer_0_10v' ? 'dimmer' : 'on/off'}</div>
       </div>
       <div>
         <button class="ghost remove" title="Delete"
@@ -635,6 +635,10 @@ function paintCanvas() {
   }
 
   // 2) fixture light gradients — additive so overlaps brighten.
+  // On/Off lights render at full max_lux when on.  0-10V dimmers
+  // render at 60% intensity in layout preview mode (a visual cue
+  // that they can be dimmed).  Phase 6.2 will replace this preview
+  // level with the fixture's real current voltage.
   ctx.globalCompositeOperation = 'lighter';
   for (const fx of f.fixtures) {
     if (!fixtureIsOn(fx)) continue;
@@ -642,7 +646,10 @@ function paintCanvas() {
     const cy = t.yOffset + fx.y_m * t.m2px;
     const r  = fx.beam_radius_m * t.m2px;
     const [rr, gg, bb] = cctColor(fx.cct_k || 4000);
-    const alpha = luxToAlpha(fx.max_lux || 500);
+    // Dimmer preview level.  Once Phase 6.2 lands, replace with
+    // (voltage / 10) sampled from state.liveDevices.
+    const previewLevel = (fx.type === 'dimmer_0_10v') ? 0.6 : 1.0;
+    const alpha = luxToAlpha((fx.max_lux || 500) * previewLevel);
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     grad.addColorStop(0, `rgba(${rr}, ${gg}, ${bb}, ${alpha})`);
     grad.addColorStop(1, `rgba(${rr}, ${gg}, ${bb}, 0)`);
@@ -654,14 +661,25 @@ function paintCanvas() {
   ctx.globalCompositeOperation = 'source-over';
 
   // 3) fixture markers (dot + label).  Skipped in operator mode.
+  // Colour keyed to type so layout designers can tell at a glance
+  // which fixtures are switched vs. dimmed:
+  //   on/off        → amber (matches the "On/Off Light" palette swatch)
+  //   dimmer_0_10v  → blue  (matches the "0-10V Dimmer" palette swatch)
+  // Dimmer marker also gets a small "◐" glyph next to the label so
+  // the type is legible even to red-green colour-blind operators.
+  const MARKERS = {
+    onoff:        { fill: '#d97a30', selectedFill: '#f5a25b', glyph: '' },
+    dimmer_0_10v: { fill: '#4a83b8', selectedFill: '#6ba7dc', glyph: '◐' },
+  };
   if (state.mode === 'layout') {
     for (const fx of f.fixtures) {
       const cx = t.xOffset + fx.x_m * t.m2px;
       const cy = t.yOffset + fx.y_m * t.m2px;
       const selected = fx.id === state.selectedFixtureId;
+      const m = MARKERS[fx.type] || MARKERS.onoff;
       ctx.beginPath();
       ctx.arc(cx, cy, selected ? 7 : 5, 0, Math.PI * 2);
-      ctx.fillStyle = selected ? '#f5a25b' : '#d97a30';
+      ctx.fillStyle = selected ? m.selectedFill : m.fill;
       ctx.fill();
       ctx.strokeStyle = '#0c0f13';
       ctx.lineWidth = 1.5;
@@ -669,7 +687,8 @@ function paintCanvas() {
       ctx.fillStyle = '#d8dde4';
       ctx.font = '11px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
-      ctx.fillText(fx.id, cx + 10, cy);
+      const label = m.glyph ? `${m.glyph} ${fx.id}` : fx.id;
+      ctx.fillText(label, cx + 10, cy);
     }
   }
 

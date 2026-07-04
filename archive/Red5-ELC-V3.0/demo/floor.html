@@ -134,6 +134,16 @@
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px; margin-bottom: 10px; padding: 8px 6px;
     background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+    transition: border-color .2s, background .2s;
+  }
+  .assign-bar.needs-action {
+    border-color: var(--accent);
+    background: rgba(217,122,48,0.10);
+    animation: nudge 1.4s ease-in-out infinite;
+  }
+  @keyframes nudge {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(217,122,48,0.35); }
+    50%      { box-shadow: 0 0 0 4px rgba(217,122,48,0.06); }
   }
   .assign-count {
     font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
@@ -495,9 +505,10 @@ function renderSrmGrid() {
     if (placedHere)      tile.classList.add('placed-here');
     if (placedElsewhere) tile.classList.add('placed-elsewhere');
 
-    // Draggable only if assigned AND not already on another floor.
-    const draggable = !!el && !placedElsewhere;
-    if (draggable) tile.setAttribute('draggable', 'true');
+    // Always draggable at the HTML level so we can intercept the
+    // attempt and show an explanatory toast on unassigned / other-floor
+    // tiles.  The dragstart handler decides whether to actually start.
+    tile.setAttribute('draggable', 'true');
 
     // Tooltip explains state on hover / long-press.
     if (placedElsewhere) {
@@ -525,8 +536,20 @@ function renderSrmGrid() {
     tile.addEventListener('dblclick', () => openElementEditor(did));
     // Drag-source
     tile.addEventListener('dragstart', (ev) => {
-      if (!draggable || state.mode !== 'layout' || !state.currentFloor) {
-        ev.preventDefault(); return;
+      if (!el) {
+        ev.preventDefault();
+        toast('Assign a type first — click On/Off or 0-10V above.', true);
+        return;
+      }
+      if (placedElsewhere) {
+        ev.preventDefault();
+        toast(`Already placed on floor "${placement.floor_name}".`, true);
+        return;
+      }
+      if (state.mode !== 'layout' || !state.currentFloor) {
+        ev.preventDefault();
+        if (!state.currentFloor) toast('Select a floor first (left rail).', true);
+        return;
       }
       tile.classList.add('dragging');
       ev.dataTransfer.setData('application/x-elc-device-id', did);
@@ -563,12 +586,19 @@ function toggleSrmSelection(did, additive) {
 
 function updateAssignBar() {
   const n = state.selectedDeviceIds.size;
+  const bar = document.querySelector('.assign-bar');
   document.getElementById('assign-count').textContent =
     n === 0 ? '0 selected' : `${n} selected`;
   const on = n > 0;
   document.getElementById('btn-assign-onoff').disabled = !on;
   document.getElementById('btn-assign-dimmer').disabled = !on;
   document.getElementById('btn-assign-clear').disabled = !on;
+  // Highlight the bar when the operator has a selection but hasn't
+  // hit an assign button yet -- the next step is "pick a type".
+  const anyUnassigned = [...state.selectedDeviceIds].some(
+    d => !state.lightingElements.has(d)
+  );
+  bar.classList.toggle('needs-action', n > 0 && anyUnassigned);
 }
 
 async function bulkAssign(type) {

@@ -756,10 +756,22 @@ function screenToWorld(sx, sy) {
   };
 }
 
-// Perceptual mapping: physical lux → screen alpha in [0, 0.9].
-// log(1 + lux) / log(1 + 1000) so 500 lux registers as ~0.9, 100 as ~0.66.
+// Perceptual mapping: physical lux → screen alpha.  Uses a power
+// curve rather than log so operators see a visible brightness
+// change across the whole range they typically tune (100–2000 lux):
+//
+//    lux    → alpha
+//     50    → 0.22
+//    100    → 0.30
+//    300    → 0.46
+//    500    → 0.57
+//   1000    → 0.76
+//   2000    → 1.00  (fully opaque core -- max the eye can tell)
+//
+// Values above 2000 clip to 1.0 (an operator UI has no headroom past
+// that anyway, and a linear ramp there would just look identical).
 function luxToAlpha(lux) {
-  return Math.min(0.9, Math.log(1 + lux) / Math.log(1 + 1000));
+  return Math.min(1.0, Math.pow(Math.max(0, lux) / 2000, 0.4));
 }
 
 // CCT → rgb tint.  Warm 2700K = orange, neutral 4000K = white, cool

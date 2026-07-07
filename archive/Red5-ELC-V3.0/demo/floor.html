@@ -1344,6 +1344,23 @@ function paintCanvas() {
         ctx.stroke();
       }
 
+      // Resize handles (Phase 6.1d) — only for selected fixtures so
+      // the canvas stays clean during read-only browsing.  Each
+      // handle is a small white square with a dark outline; hit-
+      // test radius is 9 px in mousedown.
+      if (selected && shape !== 'point') {
+        for (const h of fixtureHandles(fx, el, t)) {
+          if (h.kind === 'anchor') continue;
+          ctx.beginPath();
+          ctx.rect(h.sx - 4, h.sy - 4, 8, 8);
+          ctx.fillStyle = '#f2f4f7';
+          ctx.fill();
+          ctx.strokeStyle = '#0c0f13';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
       // Label -- offset from the anchor so it doesn't sit on top
       // of the shape body.
       ctx.fillStyle = '#d8dde4';
@@ -1626,16 +1643,34 @@ canvas.addEventListener('mousedown', (ev) => {
   if (!state.currentFloor) return;
 
   // Hit-test existing placed fixtures — click selects the device
-  // (highlighting its tile in the right rail) and starts a drag to
-  // reposition.  Placement-only mode; no click-to-create anymore
-  // because devices come from the SRM grid, not from the canvas.
+  // (highlighting its tile in the right rail) and starts a drag.
+  //
+  // Phase 6.1d resize: iterate fixture handles first (endpoint /
+  // radius / vertex) so a click near a handle beats a click near
+  // the anchor.  Handles only exist on selected fixtures; picking
+  // a fresh fixture goes through the anchor path below and just
+  // selects it -- a second mousedown then grabs a handle.
   const t = computeTransform();
+  for (const fx of state.currentFloor.fixtures) {
+    if (!state.selectedDeviceIds.has(fx.device_id)) continue;
+    const el = state.lightingElements.get(fx.device_id);
+    for (const h of fixtureHandles(fx, el, t)) {
+      if (h.kind === 'anchor') continue;    // handled in the second pass
+      if (Math.hypot(sx - h.sx, sy - h.sy) < 9) {
+        dragState = { fx, el, mode: h.kind, moved: false };
+        paintCanvas();
+        return;
+      }
+    }
+  }
+  // Anchor pass: any fixture (selected or not).  Anchor moves the
+  // whole shape as a rigid body (its geometry stays intact).
   for (const fx of state.currentFloor.fixtures) {
     const cx = t.xOffset + fx.x_m * t.m2px;
     const cy = t.yOffset + fx.y_m * t.m2px;
-    const dist = Math.hypot(sx - cx, sy - cy);
-    if (dist < 12) {
-      dragState = { fx, offX: cx - sx, offY: cy - sy, moved: false };
+    if (Math.hypot(sx - cx, sy - cy) < 12) {
+      dragState = { fx, mode: 'anchor', offX: cx - sx, offY: cy - sy,
+                    moved: false };
       const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
       toggleSrmSelection(fx.device_id, additive);
       paintCanvas();
@@ -1649,8 +1684,50 @@ canvas.addEventListener('mousemove', (ev) => {
   const rect = canvas.getBoundingClientRect();
   const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
   const t = computeTransform();
-  dragState.fx.x_m = (sx + dragState.offX - t.xOffset) / t.m2px;
-  dragState.fx.y_m = (sy + dragState.offY - t.yOffset) / t.m2px;
+  const fx = dragState.fx;
+  const mode = dragState.mode;
+  // World coords under cursor (metres).
+  const wx = (sx - t.xOffset) / t.m2px;
+  const wy = (sy - t.yOffset) / t.m2px;
+
+  if (mode === 'anchor') {
+    // Whole-shape rigid translation — geometry (length/radius/
+    // vertices) stays, only the anchor shifts.  Vertices ARE stored
+    // in world coords for polylines, so translate each by the
+    // anchor delta so the shape follows the drag.
+    const newX = (sx + dragState.offX - t.xOffset) / t.m2px;
+    const newY = (sy + dragState.offY - t.yOffset) / t.m2px;
+    if (fx.vertices && fx.vertices.length) {
+      const dx = newX - fx.x_m, dy = newY - fx.y_m;
+      fx.vertices = fx.vertices.map(([vx, vy]) => [vx + dx, vy + dy]);
+    }
+    fx.x_m = newX;
+    fx.y_m = newY;
+  } else if (mode === 'endA' || mode === 'endB') {
+    // Sticks & strips: dragging an endpoint changes both length &
+    // angle; the OPPOSITE endpoint stays fixed (natural feel).
+    // Anchor (centre) is recomputed as midpoint.
+    const halfLen = (fx.length_m || 2) / 2;
+    const ang = (fx.angle_deg || 0) * Math.PI / 180;
+    const cos = Math.cos(ang), sin = Math.sin(ang);
+    const fixedX = fx.x_m + (mode === 'endA' ?  cos * halfLen : -cos * halfLen);
+    const fixedY = fx.y_m + (mode === 'endA' ?  sin * halfLen : -sin * halfLen);
+    const dx = wx - fixedX, dy = wy - fixedY;
+    const newLen = Math.max(0.2, Math.hypot(dx, dy));
+    const newAng = Math.atan2(dy, dx) * 180 / Math.PI;
+    fx.length_m = newLen;
+    fx.angle_deg = (mode === 'endA') ? (newAng + 180) % 360 : newAng;
+    fx.x_m = (fixedX + wx) / 2;
+    fx.y_m = (fixedY + wy) / 2;
+  } else if (mode === 'radius') {
+    // Ring: drag the east-side handle to grow/shrink; anchor stays.
+    fx.radius_m = Math.max(0.1, Math.hypot(wx - fx.x_m, wy - fx.y_m));
+  } else if (mode.startsWith('vertex:')) {
+    const idx = parseInt(mode.slice(7), 10);
+    if (fx.vertices && idx >= 0 && idx < fx.vertices.length) {
+      fx.vertices[idx] = [wx, wy];
+    }
+  }
   dragState.moved = true;
   paintCanvas();
 });
@@ -1661,6 +1738,56 @@ canvas.addEventListener('mouseup', async () => {
   dragState = null;
   if (moved) await savePlacements(state.currentFloor.fixtures);
 });
+
+// ---- Fixture handles (Phase 6.1d resize) ------------------------------
+// Return an array of {kind, sx, sy, wx, wy} handles for a placed
+// fixture.  The `anchor` handle is always the fixture's (x_m,y_m)
+// grab-pip; shape-specific handles let the operator resize the
+// geometry after placement.  Called from mousedown (hit-test) and
+// paintCanvas (draw when the fixture is selected).
+function fixtureHandles(fx, el, t) {
+  const shape = el?.shape || 'point';
+  const anchor = {
+    kind: 'anchor',
+    sx: t.xOffset + fx.x_m * t.m2px, sy: t.yOffset + fx.y_m * t.m2px,
+    wx: fx.x_m, wy: fx.y_m,
+  };
+  const list = [anchor];
+  if (shape === 'stick' || shape === 'strip') {
+    const half = (fx.length_m || (el?.beam_radius_m || 4) * 2) / 2;
+    const ang = (fx.angle_deg || 0) * Math.PI / 180;
+    const dx = Math.cos(ang) * half, dy = Math.sin(ang) * half;
+    list.push({
+      kind: 'endA',
+      wx: fx.x_m - dx, wy: fx.y_m - dy,
+      sx: t.xOffset + (fx.x_m - dx) * t.m2px,
+      sy: t.yOffset + (fx.y_m - dy) * t.m2px,
+    });
+    list.push({
+      kind: 'endB',
+      wx: fx.x_m + dx, wy: fx.y_m + dy,
+      sx: t.xOffset + (fx.x_m + dx) * t.m2px,
+      sy: t.yOffset + (fx.y_m + dy) * t.m2px,
+    });
+  } else if (shape === 'ring') {
+    const r = fx.radius_m || (el?.beam_radius_m || 4) * 0.5;
+    list.push({
+      kind: 'radius',
+      wx: fx.x_m + r, wy: fx.y_m,
+      sx: t.xOffset + (fx.x_m + r) * t.m2px,
+      sy: t.yOffset + fx.y_m * t.m2px,
+    });
+  } else if (shape === 'polyline') {
+    const verts = fx.vertices || [];
+    verts.forEach((v, i) => list.push({
+      kind: `vertex:${i}`,
+      wx: v[0], wy: v[1],
+      sx: t.xOffset + v[0] * t.m2px,
+      sy: t.yOffset + v[1] * t.m2px,
+    }));
+  }
+  return list;
+}
 
 document.addEventListener('keydown', async (ev) => {
   if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;

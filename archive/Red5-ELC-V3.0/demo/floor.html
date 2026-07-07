@@ -294,6 +294,40 @@
              type="number" min="3" max="24" step="1" value="6"
              style="width:52px;padding:4px 6px;font-size:11px;text-align:center"/>
     </label>
+    <!-- Phase 6.1f — physical dimension inputs.  Empty ⇒ 2-click
+         placement (as before).  Filled ⇒ 1-click "drop = anchor".
+         When a fixture is selected, edits live-update it. -->
+    <label id="dim-length-wrap"
+           style="display:none;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Length (m)
+      <input id="dim-length" data-testid="dim-length"
+             type="number" min="0" step="0.1" placeholder="click"
+             style="width:64px;padding:4px 6px;font-size:11px;text-align:center"/>
+    </label>
+    <label id="dim-radius-wrap"
+           style="display:none;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Radius (m)
+      <input id="dim-radius" data-testid="dim-radius"
+             type="number" min="0" step="0.1" placeholder="click"
+             style="width:64px;padding:4px 6px;font-size:11px;text-align:center"/>
+    </label>
+    <label id="dim-width-wrap"
+           style="display:none;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      W×H (m)
+      <input id="dim-width" data-testid="dim-width"
+             type="number" min="0" step="0.1" placeholder="click"
+             style="width:56px;padding:4px 6px;font-size:11px;text-align:center"/>
+      <span style="color:var(--muted)">×</span>
+      <input id="dim-height" data-testid="dim-height"
+             type="number" min="0" step="0.1" placeholder="click"
+             style="width:56px;padding:4px 6px;font-size:11px;text-align:center"/>
+    </label>
     <button id="btn-new" data-testid="floor-new-btn">+ New floor</button>
     <label for="dxf-input" class="btn" style="cursor:pointer" data-testid="floor-dxf-label">
       Import DXF
@@ -719,6 +753,10 @@ function toggleSrmSelection(did, additive) {
   }
   renderSrmGrid();
   updateAssignBar();
+  // Refresh toolbar dimension inputs to reflect the new selection.
+  if (typeof populateDimInputsFromSelection === 'function') {
+    populateDimInputsFromSelection();
+  }
   // Auto-open editor when exactly one device is selected AND already assigned.
   if (state.selectedDeviceIds.size === 1) {
     const only = [...state.selectedDeviceIds][0];
@@ -1415,11 +1453,12 @@ function paintCanvas() {
           const tubeName = el?.tube_type;
           let thick;
           if (tubeName && tubeName !== 'none' && TUBE_DIAMETER_M[tubeName]) {
-            // max(physical-mm-at-current-zoom, per-tube legibility
-            // floor) so relative ordering is always preserved.
-            const physical = (TUBE_DIAMETER_M[tubeName] * t.m2px) / 2;
-            const floorPx  = (TUBE_LEGIBILITY_PX[tubeName] || 4) / 2;
-            thick = Math.max(floorPx, physical);
+            // Phase 6.1f — pure physical scale: tube diameter in
+            // metres → screen pixels via m2px, only clamped to a
+            // hairline (0.5 px) so it doesn't vanish entirely at
+            // low zoom.  T-numbers now render at their true 1:1
+            // ratio against the floor.
+            thick = Math.max(0.5, (TUBE_DIAMETER_M[tubeName] * t.m2px) / 2);
           } else {
             // Legacy stick/strip records (or line + tube=none): keep
             // the visual thickness they had before Phase 6.1e.
@@ -1743,6 +1782,27 @@ canvas.addEventListener('drop', async (ev) => {
   // was dropped; subsequent clicks gather the remaining geometry.
   // For regular polygons we snapshot the current kind + sides on the
   // placement so those values can't change mid-flow.
+  //
+  // Phase 6.1f — if the operator pre-filled Length / Radius / Width /
+  // Height in the toolbar, we skip the click-flow entirely and just
+  // commit at the drop point with those dimensions.
+  const preset = _presetDimensions(shape, state.polygonKind);
+  if (preset) {
+    const geom = _buildPlacementFromPreset(shape, state.polygonKind, state.polygonSides,
+                                            world, preset);
+    const placement = {
+      id: existing?.id || fixtureId, device_id: did,
+      angle_deg: null, length_m: null, radius_m: null, vertices: null,
+      polygon_kind: null, width_m: null, height_m: null, sides: null,
+      ...geom,
+    };
+    const nextList = existing
+      ? f.fixtures.map(x => (x.device_id === did ? placement : x))
+      : [...f.fixtures, placement];
+    await savePlacements(nextList);
+    return;
+  }
+
   state.placement = {
     device_id: did, fid: fixtureId, shape,
     polygon_kind: (shape === 'regular_polygon') ? state.polygonKind : null,
@@ -1753,6 +1813,50 @@ canvas.addEventListener('drop', async (ev) => {
   };
   showPlacementBanner();
 });
+
+// Read the toolbar dimension inputs.  Returns null if none of the
+// relevant inputs are populated (⇒ fall through to click-flow).
+function _presetDimensions(shape, kind) {
+  const num = (id) => {
+    const v = parseFloat(document.getElementById(id).value);
+    return (Number.isFinite(v) && v > 0) ? v : null;
+  };
+  if (shape === 'line') {
+    const L = num('dim-length');
+    return L ? { length_m: L } : null;
+  }
+  if (shape === 'regular_polygon') {
+    if (kind === 'circle' || kind === 'polygon') {
+      const R = num('dim-radius');
+      return R ? { radius_m: R } : null;
+    }
+    if (kind === 'rectangle') {
+      const W = num('dim-width'), H = num('dim-height');
+      return (W && H) ? { width_m: W, height_m: H } : null;
+    }
+  }
+  return null;
+}
+
+function _buildPlacementFromPreset(shape, kind, sides, anchor, preset) {
+  if (shape === 'line') {
+    return { x_m: anchor.x_m, y_m: anchor.y_m,
+             length_m: preset.length_m, angle_deg: 0 };
+  }
+  if (shape === 'regular_polygon' && kind === 'circle') {
+    return { x_m: anchor.x_m, y_m: anchor.y_m,
+             polygon_kind: 'circle', radius_m: preset.radius_m };
+  }
+  if (shape === 'regular_polygon' && kind === 'rectangle') {
+    return { x_m: anchor.x_m, y_m: anchor.y_m, polygon_kind: 'rectangle',
+             width_m: preset.width_m, height_m: preset.height_m };
+  }
+  if (shape === 'regular_polygon' && kind === 'polygon') {
+    return { x_m: anchor.x_m, y_m: anchor.y_m, polygon_kind: 'polygon',
+             sides: sides || 6, radius_m: preset.radius_m, angle_deg: 0 };
+  }
+  return { x_m: anchor.x_m, y_m: anchor.y_m };
+}
 
 // ---- Click-flow for shape placement (Phase 6.1d) ----------------------
 function showPlacementBanner() {
@@ -1938,13 +2042,91 @@ function syncShapeSubcontrols() {
   const kindWrap  = document.getElementById('polygon-kind-wrap');
   const sidesWrap = document.getElementById('polygon-sides-wrap');
   const tubeWrap  = document.getElementById('tube-type-wrap');
+  const lenWrap   = document.getElementById('dim-length-wrap');
+  const radWrap   = document.getElementById('dim-radius-wrap');
+  const wWrap     = document.getElementById('dim-width-wrap');
   const isPoly = state.shape === 'regular_polygon';
   const isLine = state.shape === 'line';
+  const kind = state.polygonKind;
   kindWrap.style.display  = isPoly ? 'inline-flex' : 'none';
-  sidesWrap.style.display =
-    (isPoly && state.polygonKind === 'polygon') ? 'inline-flex' : 'none';
+  sidesWrap.style.display = (isPoly && kind === 'polygon') ? 'inline-flex' : 'none';
   tubeWrap.style.display  = isLine ? 'inline-flex' : 'none';
+  lenWrap.style.display   = isLine ? 'inline-flex' : 'none';
+  radWrap.style.display   =
+    (isPoly && (kind === 'circle' || kind === 'polygon')) ? 'inline-flex' : 'none';
+  wWrap.style.display     = (isPoly && kind === 'rectangle') ? 'inline-flex' : 'none';
+  populateDimInputsFromSelection();
 }
+
+// Populate the numeric inputs with the geometry of the currently
+// selected fixture (if any + shape matches).  If nothing's selected
+// or the shape doesn't match, leave placeholder text so the user
+// knows blank ⇒ "use click flow".
+function populateDimInputsFromSelection() {
+  const sel = Array.from(state.selectedDeviceIds || []).map(
+    did => state.currentFloor?.fixtures.find(f => f.device_id === did)
+  ).filter(Boolean);
+  const fx = sel.length === 1 ? sel[0] : null;
+  const el = fx ? state.lightingElements.get(fx.device_id) : null;
+  const setVal = (id, v) => {
+    const inp = document.getElementById(id);
+    inp.value = (v != null && !Number.isNaN(v)) ? Number(v).toFixed(2) : '';
+  };
+  const shape = el?.shape || null;
+  const kind  = fx?.polygon_kind || null;
+  setVal('dim-length', (state.shape === 'line' && shape === 'line') ? fx?.length_m : null);
+  setVal('dim-radius', (state.shape === 'regular_polygon'
+                        && (state.polygonKind === 'circle' || state.polygonKind === 'polygon')
+                        && kind === state.polygonKind) ? fx?.radius_m : null);
+  setVal('dim-width',  (state.shape === 'regular_polygon'
+                        && state.polygonKind === 'rectangle'
+                        && kind === 'rectangle') ? fx?.width_m : null);
+  setVal('dim-height', (state.shape === 'regular_polygon'
+                        && state.polygonKind === 'rectangle'
+                        && kind === 'rectangle') ? fx?.height_m : null);
+}
+
+// Apply dimension-input edits.  If a single fixture is selected AND
+// its shape matches, patches the fixture in-place and pushes to the
+// backend.  Otherwise the values just sit there waiting for the
+// next placement.
+async function onDimensionEdit() {
+  const sel = Array.from(state.selectedDeviceIds || []).map(
+    did => state.currentFloor?.fixtures.find(f => f.device_id === did)
+  ).filter(Boolean);
+  if (sel.length !== 1) return;
+  const fx = sel[0];
+  const el = state.lightingElements.get(fx.device_id);
+  const readNum = (id) => {
+    const v = parseFloat(document.getElementById(id).value);
+    return (Number.isFinite(v) && v > 0) ? v : null;
+  };
+  const shape = el?.shape || 'point';
+  const kind  = fx.polygon_kind || null;
+  let changed = false;
+  if (shape === 'line') {
+    const L = readNum('dim-length');
+    if (L != null && L !== fx.length_m) { fx.length_m = L; changed = true; }
+  }
+  if (shape === 'regular_polygon' && (kind === 'circle' || kind === 'polygon')) {
+    const R = readNum('dim-radius');
+    if (R != null && R !== fx.radius_m) { fx.radius_m = R; changed = true; }
+  }
+  if (shape === 'regular_polygon' && kind === 'rectangle') {
+    const W = readNum('dim-width');
+    const H = readNum('dim-height');
+    if (W != null && W !== fx.width_m)  { fx.width_m = W; changed = true; }
+    if (H != null && H !== fx.height_m) { fx.height_m = H; changed = true; }
+  }
+  if (changed) {
+    paintCanvas();
+    await savePlacements(state.currentFloor.fixtures);
+  }
+}
+['dim-length','dim-radius','dim-width','dim-height'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', onDimensionEdit);
+});
 document.getElementById('tube-type-picker').onchange = (ev) => {
   state.tubeType = ev.target.value;
   toast(`Next line placement: ${labelForTube(ev.target.value)}`);

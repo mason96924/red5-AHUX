@@ -186,3 +186,97 @@ class TestDelete:
     def test_missing(self, db_path):
         with pytest.raises(NotFound):
             floors.delete_floor("nope", db_path=db_path)
+
+
+class TestRooms:
+    """Phase 6.1c — room polygons for canvas light clipping."""
+
+    _RECT = [[0.0, 0.0], [5.0, 0.0], [5.0, 3.0], [0.0, 3.0]]
+
+    def test_default_empty(self, db_path):
+        f = floors.create_floor("A", db_path=db_path)
+        assert f["rooms"] == []
+
+    def test_create_with_rooms(self, db_path):
+        f = floors.create_floor(
+            "A",
+            rooms=[
+                {"id": "R-1", "name": "West", "vertices": self._RECT},
+            ],
+            db_path=db_path,
+        )
+        assert len(f["rooms"]) == 1
+        assert f["rooms"][0]["name"] == "West"
+        assert f["rooms"][0]["vertices"] == self._RECT
+
+    def test_update_rooms_replaces(self, db_path):
+        f = floors.create_floor(
+            "A",
+            rooms=[{"vertices": self._RECT}],
+            db_path=db_path,
+        )
+        floors.update_floor(f["id"], rooms=[], db_path=db_path)
+        r = floors.get_floor(f["id"], db_path=db_path)
+        assert r["rooms"] == []
+
+    def test_update_rooms_none_leaves_untouched(self, db_path):
+        f = floors.create_floor(
+            "A",
+            rooms=[{"vertices": self._RECT}],
+            db_path=db_path,
+        )
+        floors.update_floor(f["id"], width_m=99, rooms=None, db_path=db_path)
+        r = floors.get_floor(f["id"], db_path=db_path)
+        assert len(r["rooms"]) == 1
+
+    def test_validation_bad_vertex(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A",
+                rooms=[{"vertices": [[0, 0], [1, 0], "nope"]}],
+                db_path=db_path,
+            )
+
+    def test_validation_too_few_vertices(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A",
+                rooms=[{"vertices": [[0, 0], [1, 1]]}],
+                db_path=db_path,
+            )
+
+
+class TestSchemaMigration:
+    """Legacy DBs created before the ``rooms_json`` column existed
+    should get it added automatically on the next init/open."""
+
+    def test_adds_rooms_json_column_to_legacy_db(self, tmp_path):
+        import sqlite3
+
+        p = str(tmp_path / "legacy.db")
+        conn = sqlite3.connect(p)
+        # Simulate an old floors table without rooms_json.
+        conn.execute("""
+            CREATE TABLE floors (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                svg TEXT NOT NULL DEFAULT '',
+                width_m REAL NOT NULL DEFAULT 20.0,
+                height_m REAL NOT NULL DEFAULT 15.0,
+                fixtures_json TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "INSERT INTO floors (id, name, svg, width_m, height_m, "
+            "fixtures_json, created_at, updated_at) "
+            "VALUES ('x', 'Old', '', 5, 5, '[]', 't', 't')"
+        )
+        conn.commit()
+        conn.close()
+
+        # Re-init through the store — should add the missing column.
+        cs.init(p)
+        f = floors.get_floor("x", db_path=p)
+        assert f["rooms"] == []

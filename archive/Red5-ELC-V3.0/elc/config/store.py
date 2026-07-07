@@ -130,6 +130,7 @@ _SCHEMA = [
         width_m        REAL NOT NULL DEFAULT 20.0,
         height_m       REAL NOT NULL DEFAULT 15.0,
         fixtures_json  TEXT NOT NULL DEFAULT '[]',
+        rooms_json     TEXT NOT NULL DEFAULT '[]',
         created_at     TEXT NOT NULL,
         updated_at     TEXT NOT NULL
     )
@@ -188,6 +189,19 @@ def _ensure_schema(db_path: str | None = None) -> None:
     with get_conn(db_path) as conn:
         for stmt in _SCHEMA:
             conn.execute(stmt)
+        # ---- Additive migrations for pre-existing DBs -------------
+        # SQLite ADD COLUMN is idempotent-friendly only via try/except:
+        # OperationalError fires if the column already exists.  Kept
+        # in a list so future columns can be tacked on without ceremony.
+        _MIGRATIONS: list[tuple[str, str]] = [
+            # Phase 6.1c — room polygons for light-clipping on the canvas.
+            ("floors", "ALTER TABLE floors ADD COLUMN rooms_json TEXT NOT NULL DEFAULT '[]'"),
+        ]
+        for _tbl, stmt in _MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass    # column already exists
 
 
 def init(db_path: str | None = None) -> None:

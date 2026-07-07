@@ -41,10 +41,25 @@ class DxfConversion:
     metres) lines up.  If the DXF's `$INSUNITS` header says feet, we
     convert accordingly; anything else is passed through as-is with a
     best-effort guess.
+
+    ``rooms`` are closed polygons on the ``ROOMS`` layer, extracted
+    for canvas-side light clipping (Phase 6.1c).  Each is a dict of::
+
+        {"id": "OFF-1", "name": "Office 1",
+         "vertices": [[x_m, y_m], [x_m, y_m], ...]}
+
+    Coordinates are in metres, relative to the drawing's bounding-box
+    origin (top-left after Y flip) so they line up 1:1 with the SVG
+    the frontend renders and with the ``x_m`` / ``y_m`` fixture axes.
     """
     svg: str
     width_m: float
     height_m: float
+    rooms: list[dict] = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.rooms is None:
+            object.__setattr__(self, "rooms", [])
 
 
 # DXF $INSUNITS → metres conversion factor.  Values from the DXF spec.
@@ -93,6 +108,14 @@ def dxf_to_svg(dxf_bytes: bytes) -> DxfConversion:
     # so it knows how big to make the viewport; we render the model
     # bounding box at 1 mm per SVG unit (ezdxf's default) so the SVG's
     # own coordinate system stays true to the drawing.
+    #
+    # We turn the ROOMS layer *off* before rendering — those closed
+    # polylines are for programmatic light-clipping (see
+    # :func:`_extract_rooms`) not for visual walls; leaving them
+    # visible would draw a redundant coloured outline on top of the
+    # real double-line partitions.
+    if "ROOMS" in doc.layers:
+        doc.layers.get("ROOMS").off()
     backend = SVGBackend()
     ctx = RenderContext(doc)
     frontend = Frontend(ctx, backend, config=Configuration())
@@ -107,7 +130,67 @@ def dxf_to_svg(dxf_bytes: bytes) -> DxfConversion:
     svg = backend.get_string(page)
     svg = _theme_svg_for_dark_canvas(svg)
 
-    return DxfConversion(svg=svg, width_m=width_m, height_m=height_m)
+    # ---- Extract room polygons (Phase 6.1c) --------------------------
+    # Convention: any closed LWPOLYLINE on layer "ROOMS" is treated as
+    # a room boundary for canvas-side light clipping.  Coordinates are
+    # translated so the bounding-box min becomes (0, 0) and flipped on
+    # Y so they match the SVG viewport (which the drawing add-on flips
+    # the same way).  Missing layer → empty list, i.e. the frontend
+    # falls back to floor-bounding-box clipping.
+    rooms = _extract_rooms(
+        msp, unit_m=unit_m,
+        origin_x=float(bbox.extmin.x),
+        origin_y=float(bbox.extmin.y),
+        drawing_height_m=height_m,
+    )
+
+    return DxfConversion(svg=svg, width_m=width_m, height_m=height_m, rooms=rooms)
+
+
+def _extract_rooms(msp, *, unit_m: float, origin_x: float, origin_y: float,
+                   drawing_height_m: float) -> list[dict]:
+    """Pull every closed LWPOLYLINE on layer "ROOMS" out of ``msp`` and
+    return them as a list of ``{id, name, vertices}`` dicts in metres,
+    top-left origin.
+
+    * ``id`` / ``name`` come from XDATA if present, else a synthetic
+      "R-1", "R-2", ... string.
+    * Any polyline with < 3 distinct vertices is skipped (degenerate).
+    """
+    out: list[dict] = []
+    for i, pl in enumerate(msp.query("LWPOLYLINE")):
+        if not getattr(pl, "closed", False):
+            continue
+        if pl.dxf.layer != "ROOMS":
+            continue
+        pts = list(pl.get_points("xy"))
+        if len(pts) < 3:
+            continue
+        verts: list[list[float]] = []
+        for (x, y) in pts:
+            x_m = (float(x) - origin_x) * unit_m
+            # DXF Y grows upward; SVG viewport Y grows downward and the
+            # drawing add-on flips accordingly.  We mirror to match.
+            y_m = drawing_height_m - (float(y) - origin_y) * unit_m
+            verts.append([x_m, y_m])
+        # A LWPOLYLINE with closed=True doesn't repeat the first vertex
+        # by default -- that's fine, our polygon consumer closes it
+        # implicitly (path back to verts[0]).
+        # Prefer any XDATA "ROOM_NAME" if present, else fall back.
+        name = ""
+        try:
+            for tag in pl.get_xdata("ROOM"):
+                if tag[0] == 1000:      # string data code
+                    name = str(tag[1])
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        out.append({
+            "id": f"R-{i + 1}",
+            "name": name or f"Room {i + 1}",
+            "vertices": verts,
+        })
+    return out
 
 
 # ezdxf 1.4's SVGBackend hard-codes a dark background rect and a

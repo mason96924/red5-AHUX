@@ -75,3 +75,61 @@ class TestFailureModes:
         # Valid DXF header, no geometry → converter refuses.
         with pytest.raises(DxfImportError, match="no drawable geometry"):
             dxf_to_svg(_dxf_bytes(lambda doc: None))
+
+
+class TestRoomExtraction:
+    """Phase 6.1c — closed LWPOLYLINEs on layer ``ROOMS`` become
+    room polygons on the conversion result."""
+
+    def _build_two_rooms(self, doc):
+        msp = doc.modelspace()
+        # Outer envelope so the drawing has extents.
+        msp.add_lwpolyline(
+            [(0, 0), (10_000, 0), (10_000, 6_000), (0, 6_000)],
+            close=True,
+        )
+        doc.layers.add(name="ROOMS", color=3)
+        # Two rooms: left half and right half.
+        msp.add_lwpolyline(
+            [(0, 0), (5_000, 0), (5_000, 6_000), (0, 6_000)],
+            close=True, dxfattribs={"layer": "ROOMS"},
+        )
+        msp.add_lwpolyline(
+            [(5_000, 0), (10_000, 0), (10_000, 6_000), (5_000, 6_000)],
+            close=True, dxfattribs={"layer": "ROOMS"},
+        )
+        doc.header["$INSUNITS"] = 4    # mm
+
+    def test_rooms_extracted(self):
+        r = dxf_to_svg(_dxf_bytes(self._build_two_rooms))
+        assert len(r.rooms) == 2
+        for room in r.rooms:
+            assert room["id"].startswith("R-")
+            assert len(room["vertices"]) == 4
+            # Coordinates in metres, top-left origin, y flipped so
+            # they match the SVG viewport used by the frontend.
+            for (x_m, y_m) in room["vertices"]:
+                assert 0 - 1e-6 <= x_m <= 10.0 + 1e-6
+                assert 0 - 1e-6 <= y_m <= 6.0 + 1e-6
+
+    def test_no_rooms_layer_returns_empty(self):
+        # A drawing with no ROOMS-layer polylines → rooms == [].
+        r = dxf_to_svg(_dxf_bytes(_rect(5000, 3000, insunits=4)))
+        assert r.rooms == []
+
+    def test_open_polyline_on_rooms_layer_ignored(self):
+        def _b(doc):
+            msp = doc.modelspace()
+            msp.add_line((0, 0), (5000, 0))
+            msp.add_line((5000, 0), (5000, 3000))
+            msp.add_line((5000, 3000), (0, 3000))
+            msp.add_line((0, 3000), (0, 0))
+            doc.layers.add(name="ROOMS", color=3)
+            # Open (close=False) LWPOLYLINE — not a valid boundary.
+            msp.add_lwpolyline(
+                [(500, 500), (2000, 500), (2000, 2000)],
+                close=False, dxfattribs={"layer": "ROOMS"},
+            )
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert r.rooms == []

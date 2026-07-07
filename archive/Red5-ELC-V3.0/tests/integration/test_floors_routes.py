@@ -40,6 +40,31 @@ def _make_dxf(width: int = 5000, height: int = 3000) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
+def _make_dxf_with_rooms() -> bytes:
+    """DXF with two closed room polygons on the ROOMS layer + an
+    exterior outline so extents work."""
+    doc = ezdxf.new()
+    msp = doc.modelspace()
+    # outer envelope
+    msp.add_lwpolyline(
+        [(0, 0), (10_000, 0), (10_000, 6_000), (0, 6_000)],
+        close=True,
+    )
+    doc.layers.add(name="ROOMS", color=3)
+    msp.add_lwpolyline(
+        [(0, 0), (5_000, 0), (5_000, 6_000), (0, 6_000)],
+        close=True, dxfattribs={"layer": "ROOMS"},
+    )
+    msp.add_lwpolyline(
+        [(5_000, 0), (10_000, 0), (10_000, 6_000), (5_000, 6_000)],
+        close=True, dxfattribs={"layer": "ROOMS"},
+    )
+    doc.header["$INSUNITS"] = 4
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode("utf-8")
+
+
 class TestCrud:
     def test_list_empty(self, client_and_db):
         c, _ = client_and_db
@@ -162,3 +187,23 @@ class TestDxfImport:
             files={"dxf": ("p.dxf", dxf, "application/octet-stream")},
         )
         assert r.status_code == 409
+
+    def test_dxf_rooms_land_on_floor(self, client_and_db):
+        """A DXF that carries closed LWPOLYLINEs on the ROOMS layer
+        must surface those polygons on the created floor so the
+        frontend canvas can clip light gradients to room boundaries."""
+        c, _ = client_and_db
+        r = c.post(
+            "/api/elc/floors/import-dxf",
+            data={"name": "TwoRooms"},
+            files={"dxf": ("p.dxf", _make_dxf_with_rooms(),
+                           "application/octet-stream")},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert len(body["rooms"]) == 2
+        for room in body["rooms"]:
+            assert len(room["vertices"]) == 4
+            for (x_m, y_m) in room["vertices"]:
+                assert 0 - 1e-6 <= x_m <= 10.0 + 1e-6
+                assert 0 - 1e-6 <= y_m <= 6.0 + 1e-6

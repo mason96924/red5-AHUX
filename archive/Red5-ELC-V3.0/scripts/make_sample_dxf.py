@@ -92,6 +92,36 @@ def _label(msp, text: str, x: int, y: int, height: int = 350):
     msp.add_text(text, dxfattribs={"height": height, "insert": (x, y)})
 
 
+def _room(msp, x0, y0, x1, y1, name: str = ""):
+    """Emit a closed room boundary on the dedicated ``ROOMS`` layer.
+
+    Room polygons are what the frontend uses to clip fixture light
+    gradients (Phase 6.1c) so a lamp in Office 1 doesn't bleed into
+    Office 2.  They are *invisible* on the SVG rendering (rendered
+    with a nearly-transparent colour) but preserved in the DXF for
+    downstream extraction by :func:`elc.floors.dxf._extract_rooms`.
+    """
+    doc = msp.doc
+    if "ROOMS" not in doc.layers:
+        # Bright green so if anyone ever previews the raw DXF in a
+        # CAD app the boundary is legible, but the SVG converter
+        # renders it at the same stroke width as everything else --
+        # we keep it thin by using a light colour that visually
+        # recedes on the dark operator canvas.
+        doc.layers.add(name="ROOMS", color=3)
+    pl = msp.add_lwpolyline(
+        [(x0, y0), (x1, y0), (x1, y1), (x0, y1)],
+        close=True,
+        dxfattribs={"layer": "ROOMS"},
+    )
+    if name:
+        try:
+            doc.appids.add("ROOM")
+            pl.set_xdata("ROOM", [(1000, name)])
+        except Exception:  # noqa: BLE001
+            pass    # xdata is nice-to-have, not required
+
+
 def _rect(msp, x0, y0, x1, y1):
     """Outlined rectangle — used for furniture symbols and columns."""
     msp.add_lwpolyline(
@@ -175,6 +205,11 @@ def build_warehouse() -> ezdxf.document.Drawing:
 
     for cx in (6_500, 15_000):
         _column(msp, cx, 6_000)
+
+    # ---- room boundaries (for light-clipping) ----------------------
+    # Two zones split by the central partition wall at x=10_000.
+    _room(msp, 0, 0, 10_000, H, name="Warehouse West")
+    _room(msp, 10_000, 0, W, H, name="Warehouse East")
 
     _label(msp, "WAREHOUSE  20 x 12 m", 500, H - 800, height=500)
     return doc
@@ -262,6 +297,28 @@ def build_office() -> ezdxf.document.Drawing:
     # ---- title block -------------------------------------------------
     _label(msp, "OFFICE FLOOR PLAN  40 x 25 m", 400, H + 400, height=600)
     _label(msp, "SCALE: schematic, not to print", 400, H + 1_200, height=280)
+
+    # ---- room boundaries (for light-clipping) ----------------------
+    # Layered on top of the wall drawings; the frontend uses these to
+    # bound light gradients so lamps in one room don't bleed into
+    # neighbouring rooms.  Coordinates are inset by half the wall
+    # thickness so the polygon interior matches the finished-face
+    # of each room.
+    T = WALL_T // 2
+    ET = EXT_T // 2
+    # North strip of private offices + kitchen (Y = OFF_Y..H)
+    _room(msp, ET,        OFF_Y + T, 7_000  - T, H - ET, name="Office 1")
+    _room(msp, 7_000 + T, OFF_Y + T, 14_000 - T, H - ET, name="Office 2")
+    _room(msp, 14_000 + T, OFF_Y + T, 21_000 - T, H - ET, name="Office 3")
+    _room(msp, 21_000 + T, OFF_Y + T, 28_000 - T, H - ET, name="Office 4")
+    _room(msp, 28_000 + T, OFF_Y + T, W - ET,     H - ET, name="Kitchen & Cafe")
+    # Corridor (between OFF_Y and 15_000 south wall)
+    _room(msp, ET, 15_000 + T, 27_000 - T, OFF_Y - T, name="Corridor")
+    # Meeting rooms east block
+    _room(msp, 27_000 + T, 8_000 + T,  W - ET, 15_000 - T, name="Meeting Room A")
+    _room(msp, 27_000 + T, ET,         W - ET, 8_000 - T,  name="Meeting Room B")
+    # Open workspace
+    _room(msp, ET, ET, 27_000 - T, 15_000 - T, name="Open Workspace")
 
     return doc
 

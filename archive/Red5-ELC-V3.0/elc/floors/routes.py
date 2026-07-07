@@ -88,6 +88,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 width_m=float(payload.get("width_m", 20.0)),
                 height_m=float(payload.get("height_m", 15.0)),
                 fixtures=payload.get("fixtures"),
+                rooms=payload.get("rooms"),
                 db_path=db_path,
             )
         except Exception as e:
@@ -106,6 +107,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 width_m=payload.get("width_m"),
                 height_m=payload.get("height_m"),
                 fixtures=payload.get("fixtures"),
+                rooms=payload.get("rooms"),
                 db_path=db_path,
             )
         except Exception as e:
@@ -142,6 +144,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 svg=conv.svg,
                 width_m=conv.width_m,
                 height_m=conv.height_m,
+                rooms=conv.rooms,
                 db_path=db_path,
             )
         except Exception as e:

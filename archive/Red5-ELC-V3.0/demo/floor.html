@@ -777,6 +777,56 @@ function luxToAlpha(lux) {
   return Math.min(1.0, Math.pow(Math.max(0, lux) / 2000, 0.4));
 }
 
+// ---- Point-in-polygon (ray casting) -----------------------------------
+// Vertices are [x_m, y_m] pairs in the same coordinate space as the
+// fixture's (x_m, y_m).  Returns true if (x, y) is inside the polygon
+// -- edge-touching cases resolve deterministically enough for the
+// "which room owns this fixture" lookup we need.
+function pointInPolygon(x, y, verts) {
+  let inside = false;
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const xi = verts[i][0], yi = verts[i][1];
+    const xj = verts[j][0], yj = verts[j][1];
+    const intersect = ((yi > y) !== (yj > y))
+      && (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// Trace ``verts`` (metres) as a canvas path in screen coords using the
+// current transform.  Caller wraps with save/clip/restore.
+function tracePolygonPath(ctx, verts, t) {
+  ctx.beginPath();
+  for (let i = 0; i < verts.length; i++) {
+    const sx = t.xOffset + verts[i][0] * t.m2px;
+    const sy = t.yOffset + verts[i][1] * t.m2px;
+    if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+  }
+  ctx.closePath();
+}
+
+// Pick the smallest room polygon that contains (x_m, y_m); returns
+// null if the fixture sits outside every room boundary.  Smallest-
+// containing lets nested rooms (rare but possible in complex plans)
+// resolve to the innermost owner.
+function findContainingRoom(x_m, y_m, rooms) {
+  let best = null, bestArea = Infinity;
+  for (const r of rooms) {
+    if (!r.vertices || r.vertices.length < 3) continue;
+    if (!pointInPolygon(x_m, y_m, r.vertices)) continue;
+    // Shoelace-formula polygon area (metres²)
+    let a = 0;
+    for (let i = 0, j = r.vertices.length - 1; i < r.vertices.length; j = i++) {
+      a += (r.vertices[j][0] + r.vertices[i][0])
+         * (r.vertices[j][1] - r.vertices[i][1]);
+    }
+    a = Math.abs(a) / 2;
+    if (a < bestArea) { bestArea = a; best = r; }
+  }
+  return best;
+}
+
 // CCT → rgb tint.  Warm 2700K = orange, neutral 4000K = white, cool
 // 6500K = pale blue.  Keeps the palette in a UI-friendly range.
 function cctColor(k) {
@@ -829,7 +879,15 @@ function paintCanvas() {
   // type + max_lux + beam + CCT come from the shared
   // lighting_elements map so a device is configured once and drawn
   // consistently across every floor it lands on.
+  //
+  // Phase 6.1c — Wall clipping: if the floor has room polygons
+  // (imported from DXF closed LWPOLYLINEs on layer "ROOMS"), we
+  // clip each fixture's gradient to its containing room so light
+  // doesn't bleed through partition walls.  Fixtures outside any
+  // room fall back to a clip against the floor's outer bounding
+  // box so lights don't spill past the plan edges either.
   ctx.globalCompositeOperation = 'lighter';
+  const rooms = f.rooms || [];
   for (const fx of f.fixtures) {
     if (!fixtureIsOn(fx)) continue;
     const el = state.lightingElements.get(fx.device_id);
@@ -844,10 +902,29 @@ function paintCanvas() {
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     grad.addColorStop(0, `rgba(${rr}, ${gg}, ${bb}, ${alpha})`);
     grad.addColorStop(1, `rgba(${rr}, ${gg}, ${bb}, 0)`);
+
+    // Establish the clipping region for this fixture.
+    ctx.save();
+    const room = rooms.length
+      ? findContainingRoom(fx.x_m, fx.y_m, rooms)
+      : null;
+    if (room) {
+      tracePolygonPath(ctx, room.vertices, t);
+      ctx.clip();
+    } else {
+      // Fallback: clip to the floor's outer bounding box so light
+      // doesn't spill off the plan (the user-selected default for
+      // fixtures placed outside any closed room polygon).
+      ctx.beginPath();
+      ctx.rect(t.xOffset, t.yOffset,
+               f.width_m * t.m2px, f.height_m * t.m2px);
+      ctx.clip();
+    }
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
   ctx.globalCompositeOperation = 'source-over';
 

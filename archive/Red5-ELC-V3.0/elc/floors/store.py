@@ -52,6 +52,7 @@ def _row_to_floor(row: Any) -> dict[str, Any]:
         "width_m": row["width_m"],
         "height_m": row["height_m"],
         "fixtures": json.loads(row["fixtures_json"]),
+        "rooms": json.loads(row["rooms_json"] or "[]"),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -126,6 +127,46 @@ def _check_device_uniqueness(
             )
 
 
+def _validate_rooms(rooms: Any) -> list[dict[str, Any]]:
+    """Room polygons used for canvas light clipping (Phase 6.1c).
+
+    Shape::
+
+        [{"id": "OFF-1", "name": "Office 1",
+          "vertices": [[x_m, y_m], [x_m, y_m], ...]}, ...]
+
+    ``id`` / ``name`` are optional; ``vertices`` must be a list of at
+    least 3 [x, y] pairs (metres) that trace a closed simple polygon
+    counter-clockwise or clockwise (winding doesn't matter for the
+    even-odd fill rule used on the canvas).
+    """
+    if rooms is None:
+        return []
+    if not isinstance(rooms, list):
+        raise BadInput("rooms must be a list")
+    out: list[dict[str, Any]] = []
+    for r in rooms:
+        if not isinstance(r, dict):
+            raise BadInput("room must be an object")
+        verts_raw = r.get("vertices")
+        if not isinstance(verts_raw, list) or len(verts_raw) < 3:
+            raise BadInput("room.vertices must be a list of >= 3 [x, y] pairs")
+        verts: list[list[float]] = []
+        for v in verts_raw:
+            if not isinstance(v, (list, tuple)) or len(v) != 2:
+                raise BadInput("each vertex must be [x_m, y_m]")
+            try:
+                verts.append([float(v[0]), float(v[1])])
+            except (TypeError, ValueError) as e:
+                raise BadInput("vertex coords must be numbers") from e
+        out.append({
+            "id": str(r.get("id", "")),
+            "name": str(r.get("name", "")),
+            "vertices": verts,
+        })
+    return out
+
+
 def list_floors(db_path: str | None = None) -> list[dict[str, Any]]:
     """Return every floor (with fixtures, without the SVG blob -- that
     is served from a dedicated ``/floors/{id}/background.svg`` route
@@ -133,7 +174,7 @@ def list_floors(db_path: str | None = None) -> list[dict[str, Any]]:
     with get_conn(db_path) as conn:
         rows = conn.execute(
             "SELECT id, name, '' AS svg, width_m, height_m, fixtures_json, "
-            "created_at, updated_at FROM floors ORDER BY name"
+            "rooms_json, created_at, updated_at FROM floors ORDER BY name"
         ).fetchall()
     return [_row_to_floor(r) for r in rows]
 
@@ -142,10 +183,11 @@ def get_floor(
     floor_id: str, *, include_svg: bool = True, db_path: str | None = None,
 ) -> dict[str, Any]:
     with get_conn(db_path) as conn:
-        cols = "id, name, svg, width_m, height_m, fixtures_json, created_at, updated_at"
+        cols = ("id, name, svg, width_m, height_m, fixtures_json, "
+                "rooms_json, created_at, updated_at")
         if not include_svg:
             cols = ("id, name, '' AS svg, width_m, height_m, fixtures_json, "
-                    "created_at, updated_at")
+                    "rooms_json, created_at, updated_at")
         row = conn.execute(
             f"SELECT {cols} FROM floors WHERE id = ?", (floor_id,),
         ).fetchone()
@@ -161,6 +203,7 @@ def create_floor(
     width_m: float = 20.0,
     height_m: float = 15.0,
     fixtures: list[dict[str, Any]] | None = None,
+    rooms: list[dict[str, Any]] | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
     name = str(name).strip()
@@ -171,6 +214,7 @@ def create_floor(
     if len(svg.encode("utf-8")) > _MAX_SVG_BYTES:
         raise BadInput(f"svg exceeds {_MAX_SVG_BYTES // 1024} KB cap")
     fixtures_norm = _validate_fixtures(fixtures)
+    rooms_norm = _validate_rooms(rooms)
     _check_device_uniqueness(fixtures_norm, db_path=db_path)
     fid = _new_id()
     now = _now()
@@ -178,10 +222,12 @@ def create_floor(
         with get_conn(db_path) as conn:
             conn.execute(
                 "INSERT INTO floors "
-                "(id, name, svg, width_m, height_m, fixtures_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(id, name, svg, width_m, height_m, fixtures_json, "
+                "rooms_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (fid, name, svg, width_m, height_m,
-                 json.dumps(fixtures_norm), now, now),
+                 json.dumps(fixtures_norm), json.dumps(rooms_norm),
+                 now, now),
             )
     except Exception as e:  # noqa: BLE001
         if "UNIQUE" in str(e).upper():
@@ -198,11 +244,12 @@ def update_floor(
     width_m: float | None = None,
     height_m: float | None = None,
     fixtures: list[dict[str, Any]] | None = None,
+    rooms: list[dict[str, Any]] | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
     """Partial-update — only fields provided are touched.  Passing
     ``fixtures=[]`` clears the list; passing ``fixtures=None`` leaves
-    it untouched."""
+    it untouched.  Same semantics for ``rooms``."""
     sets: list[str] = []
     args: list[Any] = []
     if name is not None:
@@ -231,6 +278,10 @@ def update_floor(
         _check_device_uniqueness(norm, exclude_floor_id=floor_id, db_path=db_path)
         sets.append("fixtures_json = ?")
         args.append(json.dumps(norm))
+    if rooms is not None:
+        rooms_norm = _validate_rooms(rooms)
+        sets.append("rooms_json = ?")
+        args.append(json.dumps(rooms_norm))
     if not sets:
         return get_floor(floor_id, db_path=db_path)
     sets.append("updated_at = ?")

@@ -1215,34 +1215,141 @@ function paintCanvas() {
     paintHeatmapOverlay(t, f);
   }
 
-  // 3) fixture markers (dot + label).  Skipped in operator mode.
+  // 3) fixture markers (shape-aware).  Skipped in operator mode.
+  //
   // Colour keyed to type (looked up in lightingElements):
   //   on/off        → amber
   //   dimmer_0_10v  → blue
+  //
+  // Silhouette keyed to el.shape (Phase 6.1d):
+  //   point     → filled dot
+  //   stick     → filled capsule along axis (length_m x thickness)
+  //   strip     → thinner capsule (LED strip visual)
+  //   ring      → hollow annulus at radius_m
+  //   polyline  → traced polyline joining fx.vertices
+  //
+  // The anchor (x_m, y_m) is still where hit-testing / drag latches,
+  // so we always draw a small anchor pip on top so the operator has
+  // an obvious handle to grab even on long strips.
   const MARKERS = {
-    onoff:        { fill: '#d97a30', selectedFill: '#f5a25b', glyph: '' },
-    dimmer_0_10v: { fill: '#4a83b8', selectedFill: '#6ba7dc', glyph: '◐' },
+    onoff:        { fill: '#d97a30', selectedFill: '#f5a25b' },
+    dimmer_0_10v: { fill: '#4a83b8', selectedFill: '#6ba7dc' },
   };
   if (state.mode === 'layout') {
     for (const fx of f.fixtures) {
       const el = state.lightingElements.get(fx.device_id);
       const type = el?.type || 'onoff';
-      const cx = t.xOffset + fx.x_m * t.m2px;
-      const cy = t.yOffset + fx.y_m * t.m2px;
+      const shape = el?.shape || 'point';
       const selected = state.selectedDeviceIds.has(fx.device_id);
       const m = MARKERS[type] || MARKERS.onoff;
-      ctx.beginPath();
-      ctx.arc(cx, cy, selected ? 7 : 5, 0, Math.PI * 2);
-      ctx.fillStyle = selected ? m.selectedFill : m.fill;
-      ctx.fill();
+      const fill = selected ? m.selectedFill : m.fill;
+      const cx = t.xOffset + fx.x_m * t.m2px;
+      const cy = t.yOffset + fx.y_m * t.m2px;
+
       ctx.strokeStyle = '#0c0f13';
       ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.fillStyle = fill;
+
+      switch (shape) {
+        case 'stick':
+        case 'strip': {
+          // Capsule: rectangle body + two rounded end caps.
+          const angle = (fx.angle_deg || 0) * Math.PI / 180;
+          const len = (fx.length_m || (el?.beam_radius_m || 4) * 2) * t.m2px;
+          const half = len / 2;
+          // Visual thickness matches the physical fixture: sticks
+          // (fluorescent tubes) ~5 px, strips ~3 px.  Selected
+          // fixtures get +1 px so they read as "picked".
+          const thick = (shape === 'strip' ? 3 : 5) + (selected ? 1 : 0);
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(angle);
+          // Capsule via a rounded rect (fallback for older Chromes:
+          // rectangle + arcs -- always works on Canvas 2D).
+          if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(-half, -thick, len, thick * 2, thick);
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(-half + thick, -thick);
+            ctx.lineTo(half - thick, -thick);
+            ctx.arc(half - thick, 0, thick, -Math.PI / 2, Math.PI / 2);
+            ctx.lineTo(-half + thick, thick);
+            ctx.arc(-half + thick, 0, thick, Math.PI / 2, Math.PI * 1.5);
+            ctx.closePath();
+          }
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+          break;
+        }
+        case 'ring': {
+          // Annulus: outer stroke at radius, inner hole 3px less.
+          const r = (fx.radius_m || (el?.beam_radius_m || 4) * 0.5) * t.m2px;
+          const band = selected ? 5 : 3.5;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r + band / 2, 0, Math.PI * 2);
+          ctx.arc(cx, cy, Math.max(0.5, r - band / 2),
+                  0, Math.PI * 2, true);   // reverse winding = hole
+          ctx.fill('evenodd');
+          ctx.stroke();
+          break;
+        }
+        case 'polyline': {
+          // Trace vertices with a thick coloured stroke.
+          const verts = fx.vertices || [];
+          if (verts.length >= 2) {
+            ctx.save();
+            ctx.strokeStyle = fill;
+            ctx.lineWidth = selected ? 5 : 3.5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            for (let i = 0; i < verts.length; i++) {
+              const px = t.xOffset + verts[i][0] * t.m2px;
+              const py = t.yOffset + verts[i][1] * t.m2px;
+              if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+            // Dark outline so the coloured stroke stands out on
+            // both dark and light backgrounds.
+            ctx.strokeStyle = 'rgba(12,15,19,0.9)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+          }
+          break;
+        }
+        case 'point':
+        default: {
+          ctx.beginPath();
+          ctx.arc(cx, cy, selected ? 7 : 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          break;
+        }
+      }
+
+      // Anchor pip -- always visible on non-point shapes so the
+      // operator has a small, predictable grab-handle even on very
+      // long strips or big rings.  Skipped for point (the dot IS
+      // the handle already).
+      if (shape !== 'point') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, selected ? 3.5 : 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = '#0c0f13';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // Label -- offset from the anchor so it doesn't sit on top
+      // of the shape body.
       ctx.fillStyle = '#d8dde4';
       ctx.font = '11px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
-      const label = m.glyph ? `${m.glyph} ${fx.id}` : fx.id;
-      ctx.fillText(label, cx + 10, cy);
+      ctx.fillText(fx.id, cx + 10, cy);
     }
   }
 

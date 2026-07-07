@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from re import compile as _re_compile
 
 import ezdxf
 from ezdxf.addons.drawing import Frontend, RenderContext
@@ -104,8 +105,30 @@ def dxf_to_svg(dxf_bytes: bytes) -> DxfConversion:
         height=dxf_height * unit_m * 1000.0,
     )
     svg = backend.get_string(page)
+    svg = _theme_svg_for_dark_canvas(svg)
 
     return DxfConversion(svg=svg, width_m=width_m, height_m=height_m)
+
+
+# ezdxf 1.4's SVGBackend hard-codes a dark background rect and a
+# ``stroke-width: 6`` (relative to a ~1e6-unit viewBox) which, when
+# drawn on our operator canvas at typical zoom levels, is sub-pixel
+# thin and thus effectively invisible.  We post-process the SVG:
+#   1) drop the opaque background rect so our canvas colour shows
+#      through and the fixture beams read against it correctly;
+#   2) fatten strokes ~250× so walls, furniture, and door swings
+#      render as ~1-2 px lines at typical operator zoom.
+_SVG_BG_RECT_RE = _re_compile(
+    r"<rect fill=\"[^\"]*\" x=\"0\" y=\"0\" "
+    r"width=\"\d+\" height=\"\d+\" fill-opacity=\"[^\"]*\"\s*/>"
+)
+_SVG_STROKE_W_RE = _re_compile(r"stroke-width:\s*\d+(?:\.\d+)?")
+
+
+def _theme_svg_for_dark_canvas(svg: str) -> str:
+    svg = _SVG_BG_RECT_RE.sub("", svg, count=1)
+    svg = _SVG_STROKE_W_RE.sub("stroke-width: 1500", svg)
+    return svg
 
 
 __all__ = ["DxfConversion", "DxfImportError", "dxf_to_svg"]

@@ -268,6 +268,23 @@
         <option value="polygon">N-gon (3–24 sides)</option>
       </select>
     </label>
+    <label id="tube-type-wrap"
+           style="display:none;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Tube
+      <select id="tube-type-picker" data-testid="tube-type-picker"
+              title="Physical tube diameter (T-numbers are 1/8 inch)"
+              style="width:auto;padding:4px 8px;font-size:11px">
+        <option value="none">Unspecified</option>
+        <option value="led_strip">LED strip</option>
+        <option value="T2">T2 (7 mm)</option>
+        <option value="T4">T4 (13 mm)</option>
+        <option value="T5">T5 (16 mm)</option>
+        <option value="T8">T8 (25 mm)</option>
+        <option value="T12">T12 (38 mm)</option>
+      </select>
+    </label>
     <label id="polygon-sides-wrap"
            style="display:none;align-items:center;gap:6px;margin:0;padding:0;
                   color:var(--muted);font-size:11px;letter-spacing:.06em;
@@ -370,6 +387,18 @@
         <option value="polyline">Polyline (custom outline)</option>
         <option value="regular_polygon">Regular polygon</option>
       </select>
+      <label id="ee-tube-type-wrap" style="display:none">Tube type</label>
+      <select id="ee-tube-type" data-testid="ee-tube-type"
+              style="display:none"
+              title="Physical tube diameter -- drives the canvas thickness">
+        <option value="none">Unspecified</option>
+        <option value="led_strip">LED strip (flat)</option>
+        <option value="T2">T2 (7 mm)</option>
+        <option value="T4">T4 (13 mm)</option>
+        <option value="T5">T5 (16 mm)</option>
+        <option value="T8">T8 (25 mm)</option>
+        <option value="T12">T12 (38 mm)</option>
+      </select>
       <div style="display:flex; gap:6px; margin-top:10px">
         <button class="primary" id="ee-save" data-testid="ee-save">Save</button>
         <button class="ghost" id="ee-close" data-testid="ee-close">Close</button>
@@ -394,6 +423,7 @@ const state = {
   shape: 'point',          // point|line|polyline|regular_polygon for next placement
   polygonKind: 'circle',   // circle|rectangle|polygon (used when shape=regular_polygon)
   polygonSides: 6,         // 3..24 (used when shape=regular_polygon + kind=polygon)
+  tubeType: 'none',        // none|led_strip|T2|T4|T5|T8|T12 (used when shape=line)
   placement: null,         // {device_id, fid, shape, points:[{x_m,y_m},...]} while drawing
   devices: [],             // list from /api/elc/devices (SRMs)
   lightingElements: new Map(), // device_id -> {type, max_lux, beam_radius_m, cct_k, shape}
@@ -768,6 +798,17 @@ function openElementEditor(deviceId) {
   document.getElementById('ee-beam').value = el.beam_radius_m;
   document.getElementById('ee-cct').value = el.cct_k;
   document.getElementById('ee-shape').value = el.shape || 'point';
+  const tubeSel = document.getElementById('ee-tube-type');
+  const tubeLbl = document.getElementById('ee-tube-type-wrap');
+  tubeSel.value = el.tube_type || 'none';
+  const showTube = (el.shape || 'point') === 'line';
+  tubeSel.style.display = showTube ? '' : 'none';
+  tubeLbl.style.display = showTube ? '' : 'none';
+  document.getElementById('ee-shape').onchange = (ev) => {
+    const isLine = ev.target.value === 'line';
+    tubeSel.style.display = isLine ? '' : 'none';
+    tubeLbl.style.display = isLine ? '' : 'none';
+  };
 }
 function closeElementEditor() {
   document.getElementById('element-editor').style.display = 'none';
@@ -784,6 +825,7 @@ document.getElementById('ee-save').onclick = async () => {
       beam_radius_m: parseFloat(document.getElementById('ee-beam').value) || 4.0,
       cct_k: parseInt(document.getElementById('ee-cct').value, 10) || 4000,
       shape: document.getElementById('ee-shape').value || 'point',
+      tube_type: document.getElementById('ee-tube-type').value || 'none',
     });
     state.lightingElements.set(did, updated);
     renderSrmGrid();
@@ -1366,10 +1408,24 @@ function paintCanvas() {
           const angle = (fx.angle_deg || 0) * Math.PI / 180;
           const len = (fx.length_m || (el?.beam_radius_m || 4) * 2) * t.m2px;
           const half = len / 2;
-          // Visual thickness matches the physical fixture: sticks
-          // (fluorescent tubes) ~5 px, strips ~3 px.  Selected
-          // fixtures get +1 px so they read as "picked".
-          const thick = (shape === 'strip' ? 3 : 5) + (selected ? 1 : 0);
+          // Visual thickness: physical tube diameter in metres → pixels.
+          // Lower-bounded so a T2 tube isn't a hairline at low zoom, and
+          // legacy stick/strip records without tube_type keep their
+          // previous thickness (5 / 3 px respectively).
+          const tubeName = el?.tube_type;
+          let thick;
+          if (tubeName && tubeName !== 'none' && TUBE_DIAMETER_M[tubeName]) {
+            // max(physical-mm-at-current-zoom, per-tube legibility
+            // floor) so relative ordering is always preserved.
+            const physical = (TUBE_DIAMETER_M[tubeName] * t.m2px) / 2;
+            const floorPx  = (TUBE_LEGIBILITY_PX[tubeName] || 4) / 2;
+            thick = Math.max(floorPx, physical);
+          } else {
+            // Legacy stick/strip records (or line + tube=none): keep
+            // the visual thickness they had before Phase 6.1e.
+            thick = (shape === 'strip' ? 3 : 5);
+          }
+          if (selected) thick += 1;
           ctx.save();
           ctx.translate(cx, cy);
           ctx.rotate(angle);
@@ -1652,12 +1708,15 @@ canvas.addEventListener('drop', async (ev) => {
   // rendering reflects it consistently across reloads.  We only
   // upsert if the shape actually differs to keep updated_at stable.
   const el = state.lightingElements.get(did);
-  if (el && el.shape !== shape) {
+  const wantTube = (shape === 'line') ? (state.tubeType || 'none') : (el?.tube_type || 'none');
+  const needsShapeUpdate = el && (el.shape !== shape);
+  const needsTubeUpdate  = el && (el.tube_type !== wantTube) && shape === 'line';
+  if (el && (needsShapeUpdate || needsTubeUpdate)) {
     try {
       const updated = await api('PUT', `/lighting-elements/${did}`, {
         type: el.type, max_lux: el.max_lux,
         beam_radius_m: el.beam_radius_m, cct_k: el.cct_k,
-        shape,
+        shape, tube_type: wantTube,
       });
       state.lightingElements.set(did, updated);
     } catch (e) { /* non-fatal — fall back to old shape */ }
@@ -1878,11 +1937,38 @@ document.getElementById('polygon-sides').onchange = (ev) => {
 function syncShapeSubcontrols() {
   const kindWrap  = document.getElementById('polygon-kind-wrap');
   const sidesWrap = document.getElementById('polygon-sides-wrap');
+  const tubeWrap  = document.getElementById('tube-type-wrap');
   const isPoly = state.shape === 'regular_polygon';
+  const isLine = state.shape === 'line';
   kindWrap.style.display  = isPoly ? 'inline-flex' : 'none';
   sidesWrap.style.display =
     (isPoly && state.polygonKind === 'polygon') ? 'inline-flex' : 'none';
+  tubeWrap.style.display  = isLine ? 'inline-flex' : 'none';
 }
+document.getElementById('tube-type-picker').onchange = (ev) => {
+  state.tubeType = ev.target.value;
+  toast(`Next line placement: ${labelForTube(ev.target.value)}`);
+};
+function labelForTube(t) {
+  return ({
+    none: 'unspecified', led_strip: 'LED strip',
+    T2: 'T2 (7 mm)', T4: 'T4 (13 mm)', T5: 'T5 (16 mm)',
+    T8: 'T8 (25 mm)', T12: 'T12 (38 mm)',
+  })[t] || t;
+}
+// Tube diameters in metres (physical).  Used both to size the marker
+// (via m2px at the current zoom) AND to enforce a legibility floor
+// so a T2 vs T12 is *visibly* different on a 40 m floor plan even
+// when the physical difference (7 vs 38 mm) would collapse to sub-
+// pixel on a low-zoom canvas.  The floor pixel values are hand-tuned
+// to preserve the ranking T2 < T4 < T5 < T8 < T12 at any zoom.
+const TUBE_DIAMETER_M = {
+  none: 0.02, led_strip: 0.01, T2: 0.00635, T4: 0.0127,
+  T5: 0.01588, T8: 0.0254, T12: 0.0381,
+};
+const TUBE_LEGIBILITY_PX = {
+  none: 5, led_strip: 4, T2: 3, T4: 4, T5: 5, T8: 7, T12: 10,
+};
 function labelForShape() {
   if (state.shape !== 'regular_polygon') return state.shape;
   if (state.polygonKind === 'polygon')

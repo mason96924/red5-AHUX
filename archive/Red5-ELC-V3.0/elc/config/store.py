@@ -147,7 +147,8 @@ _SCHEMA = [
         max_lux         REAL NOT NULL DEFAULT 500,
         beam_radius_m   REAL NOT NULL DEFAULT 4.0,
         cct_k           INTEGER NOT NULL DEFAULT 4000,
-        shape           TEXT NOT NULL DEFAULT 'point',  -- point|stick|strip|ring|polyline
+        shape           TEXT NOT NULL DEFAULT 'point',  -- point|line|polyline|regular_polygon|(legacy stick|strip|ring)
+        tube_type       TEXT NOT NULL DEFAULT 'none',   -- none|led_strip|T2|T4|T5|T8|T12
         updated_at      TEXT NOT NULL
     )
     """,
@@ -200,6 +201,9 @@ def _ensure_schema(db_path: str | None = None) -> None:
             # Phase 6.1d — non-point fixture shapes (stick/strip/ring/polyline).
             ("lighting_elements",
              "ALTER TABLE lighting_elements ADD COLUMN shape TEXT NOT NULL DEFAULT 'point'"),
+            # Phase 6.1e — Line-shape sub-type (T2/T4/T5/T8/T12 + LED strip).
+            ("lighting_elements",
+             "ALTER TABLE lighting_elements ADD COLUMN tube_type TEXT NOT NULL DEFAULT 'none'"),
         ]
         for _tbl, stmt in _MIGRATIONS:
             try:

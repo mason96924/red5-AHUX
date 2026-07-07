@@ -43,6 +43,13 @@ _TYPES = {"onoff", "dimmer_0_10v"}
 _SHAPES = {"point", "line", "polyline", "regular_polygon",
            "stick", "strip", "ring"}
 _POLYGON_KINDS = {"circle", "rectangle", "polygon"}
+# Tube sub-type for shape='line'.  "T-numbers" are the physical
+# diameter of the glass in eighths-of-an-inch (T5 = 5/8" = 15.9 mm).
+# ``led_strip`` is the flat surface-mount variant (~10 mm effective).
+# ``none`` (or missing) means "unspecified" -- renderer picks a
+# sensible default.  Values chosen so both operator drop-downs and
+# BOM export can read the same string.
+_TUBE_TYPES = {"none", "led_strip", "T2", "T4", "T5", "T8", "T12"}
 
 
 def _row_to_element(row: Any) -> dict[str, Any]:
@@ -53,6 +60,7 @@ def _row_to_element(row: Any) -> dict[str, Any]:
         "beam_radius_m": row["beam_radius_m"],
         "cct_k": row["cct_k"],
         "shape": row["shape"] if "shape" in row.keys() else "point",
+        "tube_type": (row["tube_type"] if "tube_type" in row.keys() else "none"),
         "updated_at": row["updated_at"],
     }
 
@@ -69,12 +77,20 @@ def _validate_shape(s: str) -> str:
     return s
 
 
+def _validate_tube_type(t: str) -> str:
+    if t not in _TUBE_TYPES:
+        raise BadInput(
+            f"tube_type must be one of {sorted(_TUBE_TYPES)}, got {t!r}"
+        )
+    return t
+
+
 def list_elements(db_path: str | None = None) -> list[dict[str, Any]]:
     """Return every assigned lighting element, ordered by device_id."""
     with get_conn(db_path) as conn:
         rows = conn.execute(
             "SELECT device_id, type, max_lux, beam_radius_m, cct_k, shape, "
-            "updated_at FROM lighting_elements ORDER BY device_id"
+            "tube_type, updated_at FROM lighting_elements ORDER BY device_id"
         ).fetchall()
     return [_row_to_element(r) for r in rows]
 
@@ -85,7 +101,7 @@ def get_element(
     with get_conn(db_path) as conn:
         row = conn.execute(
             "SELECT device_id, type, max_lux, beam_radius_m, cct_k, shape, "
-            "updated_at FROM lighting_elements WHERE device_id = ?",
+            "tube_type, updated_at FROM lighting_elements WHERE device_id = ?",
             (device_id,),
         ).fetchone()
     if row is None:
@@ -101,6 +117,7 @@ def upsert_element(
     beam_radius_m: float = 4.0,
     cct_k: int = 4000,
     shape: str = "point",
+    tube_type: str = "none",
     db_path: str | None = None,
 ) -> dict[str, Any]:
     """Assign or update the lighting-element config for a single device."""
@@ -109,6 +126,7 @@ def upsert_element(
         raise BadInput("device_id is required")
     _validate_type(type)
     _validate_shape(shape)
+    _validate_tube_type(tube_type)
     max_lux = float(max_lux)
     beam_radius_m = float(beam_radius_m)
     cct_k = int(cct_k)
@@ -120,16 +138,19 @@ def upsert_element(
     with get_conn(db_path) as conn:
         conn.execute(
             """INSERT INTO lighting_elements
-               (device_id, type, max_lux, beam_radius_m, cct_k, shape, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
+               (device_id, type, max_lux, beam_radius_m, cct_k, shape,
+                tube_type, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (device_id) DO UPDATE SET
                  type = excluded.type,
                  max_lux = excluded.max_lux,
                  beam_radius_m = excluded.beam_radius_m,
                  cct_k = excluded.cct_k,
                  shape = excluded.shape,
+                 tube_type = excluded.tube_type,
                  updated_at = excluded.updated_at""",
-            (device_id, type, max_lux, beam_radius_m, cct_k, shape, now),
+            (device_id, type, max_lux, beam_radius_m, cct_k, shape,
+             tube_type, now),
         )
     return get_element(device_id, db_path=db_path)
 
@@ -160,8 +181,9 @@ def bulk_assign(
         for did in cleaned:
             conn.execute(
                 """INSERT INTO lighting_elements
-                   (device_id, type, max_lux, beam_radius_m, cct_k, shape, updated_at)
-                   VALUES (?, ?, 500, 4.0, 4000, 'point', ?)
+                   (device_id, type, max_lux, beam_radius_m, cct_k, shape,
+                    tube_type, updated_at)
+                   VALUES (?, ?, 500, 4.0, 4000, 'point', 'none', ?)
                    ON CONFLICT (device_id) DO UPDATE SET
                      type = excluded.type,
                      updated_at = excluded.updated_at""",

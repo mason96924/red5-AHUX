@@ -186,6 +186,7 @@ def build_lighting_router(*, db_path: str | None = None) -> APIRouter:
                 beam_radius_m=float(payload.get("beam_radius_m", 4.0)),
                 cct_k=int(payload.get("cct_k", 4000)),
                 shape=str(payload.get("shape", "point")),
+                tube_type=str(payload.get("tube_type", "none")),
                 db_path=db_path,
             )
         except Exception as e:

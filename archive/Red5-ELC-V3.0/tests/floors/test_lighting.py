@@ -65,6 +65,27 @@ class TestUpsert:
             )
             assert e["shape"] == s
 
+    def test_tube_type_defaults_to_none(self, db_path):
+        e = lighting.upsert_element(
+            "SRM/1/10/0", type="onoff", shape="line", db_path=db_path,
+        )
+        assert e["tube_type"] == "none"
+
+    def test_tube_type_persisted(self, db_path):
+        for t in ("led_strip", "T2", "T4", "T5", "T8", "T12"):
+            e = lighting.upsert_element(
+                "SRM/1/10/0", type="onoff", shape="line",
+                tube_type=t, db_path=db_path,
+            )
+            assert e["tube_type"] == t
+
+    def test_bad_tube_type_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            lighting.upsert_element(
+                "SRM/1/10/0", type="onoff", shape="line",
+                tube_type="T99", db_path=db_path,
+            )
+
     def test_update_existing(self, db_path):
         lighting.upsert_element("SRM/1/10/0", type="onoff", db_path=db_path)
         # Re-upsert with tuned values.

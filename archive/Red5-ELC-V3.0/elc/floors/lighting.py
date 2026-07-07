@@ -34,6 +34,7 @@ from typing import Any
 from elc.config.store import BadInput, NotFound, _now, get_conn
 
 _TYPES = {"onoff", "dimmer_0_10v"}
+_SHAPES = {"point", "stick", "strip", "ring", "polyline"}
 
 
 def _row_to_element(row: Any) -> dict[str, Any]:
@@ -43,6 +44,7 @@ def _row_to_element(row: Any) -> dict[str, Any]:
         "max_lux": row["max_lux"],
         "beam_radius_m": row["beam_radius_m"],
         "cct_k": row["cct_k"],
+        "shape": row["shape"] if "shape" in row.keys() else "point",
         "updated_at": row["updated_at"],
     }
 
@@ -53,12 +55,18 @@ def _validate_type(t: str) -> str:
     return t
 
 
+def _validate_shape(s: str) -> str:
+    if s not in _SHAPES:
+        raise BadInput(f"shape must be one of {sorted(_SHAPES)}, got {s!r}")
+    return s
+
+
 def list_elements(db_path: str | None = None) -> list[dict[str, Any]]:
     """Return every assigned lighting element, ordered by device_id."""
     with get_conn(db_path) as conn:
         rows = conn.execute(
-            "SELECT device_id, type, max_lux, beam_radius_m, cct_k, updated_at "
-            "FROM lighting_elements ORDER BY device_id"
+            "SELECT device_id, type, max_lux, beam_radius_m, cct_k, shape, "
+            "updated_at FROM lighting_elements ORDER BY device_id"
         ).fetchall()
     return [_row_to_element(r) for r in rows]
 
@@ -68,8 +76,8 @@ def get_element(
 ) -> dict[str, Any]:
     with get_conn(db_path) as conn:
         row = conn.execute(
-            "SELECT device_id, type, max_lux, beam_radius_m, cct_k, updated_at "
-            "FROM lighting_elements WHERE device_id = ?",
+            "SELECT device_id, type, max_lux, beam_radius_m, cct_k, shape, "
+            "updated_at FROM lighting_elements WHERE device_id = ?",
             (device_id,),
         ).fetchone()
     if row is None:
@@ -84,6 +92,7 @@ def upsert_element(
     max_lux: float = 500.0,
     beam_radius_m: float = 4.0,
     cct_k: int = 4000,
+    shape: str = "point",
     db_path: str | None = None,
 ) -> dict[str, Any]:
     """Assign or update the lighting-element config for a single device."""
@@ -91,6 +100,7 @@ def upsert_element(
     if not device_id:
         raise BadInput("device_id is required")
     _validate_type(type)
+    _validate_shape(shape)
     max_lux = float(max_lux)
     beam_radius_m = float(beam_radius_m)
     cct_k = int(cct_k)
@@ -102,15 +112,16 @@ def upsert_element(
     with get_conn(db_path) as conn:
         conn.execute(
             """INSERT INTO lighting_elements
-               (device_id, type, max_lux, beam_radius_m, cct_k, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?)
+               (device_id, type, max_lux, beam_radius_m, cct_k, shape, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (device_id) DO UPDATE SET
                  type = excluded.type,
                  max_lux = excluded.max_lux,
                  beam_radius_m = excluded.beam_radius_m,
                  cct_k = excluded.cct_k,
+                 shape = excluded.shape,
                  updated_at = excluded.updated_at""",
-            (device_id, type, max_lux, beam_radius_m, cct_k, now),
+            (device_id, type, max_lux, beam_radius_m, cct_k, shape, now),
         )
     return get_element(device_id, db_path=db_path)
 
@@ -141,8 +152,8 @@ def bulk_assign(
         for did in cleaned:
             conn.execute(
                 """INSERT INTO lighting_elements
-                   (device_id, type, max_lux, beam_radius_m, cct_k, updated_at)
-                   VALUES (?, ?, 500, 4.0, 4000, ?)
+                   (device_id, type, max_lux, beam_radius_m, cct_k, shape, updated_at)
+                   VALUES (?, ?, 500, 4.0, 4000, 'point', ?)
                    ON CONFLICT (device_id) DO UPDATE SET
                      type = excluded.type,
                      updated_at = excluded.updated_at""",

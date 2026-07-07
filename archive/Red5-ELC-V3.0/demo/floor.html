@@ -115,6 +115,38 @@
     color: var(--muted); font-size: 11px; font-family: var(--mono);
     background: rgba(19,24,31,0.7); padding: 4px 10px; border-radius: 4px;
   }
+  /* Shape-placement banner + heatmap legend (canvas overlays) */
+  .place-banner {
+    position: absolute; top: 14px; right: 14px; z-index: 4;
+    padding: 8px 12px; background: rgba(19,24,31,0.9);
+    border: 1px solid var(--accent); border-radius: 6px;
+    color: var(--accent-2); font-family: var(--mono); font-size: 11px;
+    backdrop-filter: blur(4px);
+    max-width: 280px; line-height: 1.5;
+  }
+  .place-banner .primary-key { color: var(--text); }
+  .place-banner .cancel-hint { color: var(--muted); font-size: 10px; margin-top: 4px; }
+  .heatmap-legend {
+    position: absolute; bottom: 14px; right: 14px; z-index: 3;
+    padding: 8px 12px; background: rgba(19,24,31,0.85);
+    border: 1px solid var(--line); border-radius: 6px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    display: none; backdrop-filter: blur(4px);
+  }
+  .heatmap-legend.show { display: block; }
+  .heatmap-legend .row {
+    display: flex; align-items: center; gap: 8px; margin: 3px 0;
+  }
+  .heatmap-legend .sw {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .heatmap-legend .sw.pass { background: rgba(78,203,113,0.55); }
+  .heatmap-legend .sw.warn { background: rgba(227,179,65,0.55); }
+  .heatmap-legend .sw.fail { background: rgba(236,91,86,0.55); }
+  button#btn-heatmap.on {
+    background: var(--panel-2); border-color: var(--ok); color: var(--ok);
+  }
 
   /* Fixture inspector (right rail) */
   .fixture-row {
@@ -209,6 +241,22 @@
       <span class="dot"></span><span id="conn-text">checking…</span>
     </span>
     <button id="btn-mode" class="ghost" data-testid="floor-mode-toggle">Mode: Layout</button>
+    <button id="btn-heatmap" class="ghost" data-testid="floor-heatmap-toggle"
+            title="Colour-code each room by average lux vs. code-compliance minimum">Heatmap: Off</button>
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Shape
+      <select id="shape-picker" data-testid="shape-picker"
+              title="Choose the shape of the next fixture you place"
+              style="width:auto;padding:4px 8px;font-size:11px">
+        <option value="point">Point (bulb)</option>
+        <option value="stick">Stick (tube)</option>
+        <option value="strip">LED strip</option>
+        <option value="ring">Ring</option>
+        <option value="polyline">Polyline</option>
+      </select>
+    </label>
     <button id="btn-new" data-testid="floor-new-btn">+ New floor</button>
     <label for="dxf-input" class="btn" style="cursor:pointer" data-testid="floor-dxf-label">
       Import DXF
@@ -239,6 +287,15 @@
       Select SRMs on the right → assign On/Off or 0-10V → drag a colored tile onto the plan · Drag placed dots to reposition · Delete removes
     </div>
     <canvas id="floor-canvas" data-testid="floor-canvas"></canvas>
+    <div class="place-banner" id="place-banner" style="display:none"
+         data-testid="place-banner"></div>
+    <div class="heatmap-legend" id="heatmap-legend" data-testid="heatmap-legend">
+      <div style="letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px;
+                  color:var(--text)">Compliance</div>
+      <div class="row"><div class="sw pass"></div>Meets minimum</div>
+      <div class="row"><div class="sw warn"></div>Within 10% below</div>
+      <div class="row"><div class="sw fail"></div>Below minimum</div>
+    </div>
     <div class="stage-empty" id="stage-empty">
       No floor selected.<br>
       Click <code>+ New floor</code> or <code>Import DXF</code> above.
@@ -285,6 +342,15 @@
       <input id="ee-beam" type="number" min="0.1" step="0.1" data-testid="ee-beam"/>
       <label>Colour temperature (K)</label>
       <input id="ee-cct" type="number" min="1000" step="100" data-testid="ee-cct"/>
+      <label>Shape</label>
+      <select id="ee-shape" data-testid="ee-shape"
+              title="Physical shape of this light source (affects rendering)">
+        <option value="point">Point (bulb)</option>
+        <option value="stick">Stick (fluorescent tube)</option>
+        <option value="strip">LED strip</option>
+        <option value="ring">Ring</option>
+        <option value="polyline">Custom polyline</option>
+      </select>
       <div style="display:flex; gap:6px; margin-top:10px">
         <button class="primary" id="ee-save" data-testid="ee-save">Save</button>
         <button class="ghost" id="ee-close" data-testid="ee-close">Close</button>
@@ -305,8 +371,11 @@ const state = {
   floors: [],              // list from /floors (no svg)
   currentFloor: null,      // full floor (with svg + fixtures)
   mode: 'layout',          // 'layout' | 'operator'
+  heatmap: false,          // compliance colouring on/off
+  shape: 'point',          // point|stick|strip|ring|polyline for next placement
+  placement: null,         // {device_id, fid, shape, points:[{x_m,y_m},...]} while drawing
   devices: [],             // list from /api/elc/devices (SRMs)
-  lightingElements: new Map(), // device_id -> {type, max_lux, beam_radius_m, cct_k}
+  lightingElements: new Map(), // device_id -> {type, max_lux, beam_radius_m, cct_k, shape}
   deviceFloor: new Map(),  // device_id -> {floor_id, floor_name} (cross-floor 1:1)
   selectedDeviceIds: new Set(),   // multi-select in the SRM grid
   editingDeviceId: null,   // currently opened in the inline element editor
@@ -655,6 +724,7 @@ function openElementEditor(deviceId) {
   document.getElementById('ee-lux').value = el.max_lux;
   document.getElementById('ee-beam').value = el.beam_radius_m;
   document.getElementById('ee-cct').value = el.cct_k;
+  document.getElementById('ee-shape').value = el.shape || 'point';
 }
 function closeElementEditor() {
   document.getElementById('element-editor').style.display = 'none';
@@ -670,6 +740,7 @@ document.getElementById('ee-save').onclick = async () => {
       max_lux: parseFloat(document.getElementById('ee-lux').value) || 500,
       beam_radius_m: parseFloat(document.getElementById('ee-beam').value) || 4.0,
       cct_k: parseInt(document.getElementById('ee-cct').value, 10) || 4000,
+      shape: document.getElementById('ee-shape').value || 'point',
     });
     state.lightingElements.set(did, updated);
     renderSrmGrid();
@@ -848,6 +919,193 @@ function fixtureAlarming(fx) {
       && d && d.last_fail_code !== null && d.last_fail_code !== undefined;
 }
 
+// ---- Shape geometry samplers (Phase 6.1d) ------------------------------
+// Given a fixture placement + its lighting element, produce a list of
+// {x_m, y_m} sample points along the shape's centre line.  Additive
+// gradients at each point compose into the "capsule / ring / poly-
+// line" glow the eye reads as a single tube-shaped light source.
+//
+// The number of samples scales with the shape's total length so
+// short strips look punchy and long strips look uniform.  Beam
+// radius controls sample spacing so overlap between neighbouring
+// samples is consistent (spacing = beam_radius so adjacent gradients
+// overlap by ~50% at their falloff edge).
+function sampleShapePoints(fx, el) {
+  const shape = el.shape || 'point';
+  const beam  = el.beam_radius_m || 4;
+  const step  = Math.max(0.25, beam);
+  switch (shape) {
+    case 'stick':
+    case 'strip': {
+      const length = fx.length_m || (beam * 2);
+      const angle  = (fx.angle_deg || 0) * Math.PI / 180;
+      const dx = Math.cos(angle), dy = Math.sin(angle);
+      // Anchor (x_m,y_m) is the shape's *centre* -- samples spread
+      // symmetrically on both sides so rotation feels natural.
+      const half = length / 2;
+      const n = Math.max(2, Math.ceil(length / step) + 1);
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const t = (n === 1) ? 0 : (i / (n - 1)) * 2 - 1;    // -1..+1
+        out.push({
+          x_m: fx.x_m + dx * half * t,
+          y_m: fx.y_m + dy * half * t,
+        });
+      }
+      return out;
+    }
+    case 'ring': {
+      const rad = fx.radius_m || (beam * 1.5);
+      // Circumference / step, min 6 samples so even a tiny ring
+      // reads as circular rather than hexagonal.
+      const n = Math.max(6, Math.ceil((2 * Math.PI * rad) / step));
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * 2 * Math.PI;
+        out.push({
+          x_m: fx.x_m + rad * Math.cos(a),
+          y_m: fx.y_m + rad * Math.sin(a),
+        });
+      }
+      return out;
+    }
+    case 'polyline': {
+      const verts = fx.vertices || [];
+      if (verts.length < 2) return [{ x_m: fx.x_m, y_m: fx.y_m }];
+      const out = [];
+      // First vertex always emitted; then step along each segment.
+      out.push({ x_m: verts[0][0], y_m: verts[0][1] });
+      for (let i = 1; i < verts.length; i++) {
+        const [x0, y0] = verts[i - 1];
+        const [x1, y1] = verts[i];
+        const dx = x1 - x0, dy = y1 - y0;
+        const segLen = Math.hypot(dx, dy);
+        const n = Math.max(1, Math.ceil(segLen / step));
+        for (let k = 1; k <= n; k++) {
+          const t = k / n;
+          out.push({ x_m: x0 + dx * t, y_m: y0 + dy * t });
+        }
+      }
+      return out;
+    }
+    case 'point':
+    default:
+      return [{ x_m: fx.x_m, y_m: fx.y_m }];
+  }
+}
+
+// ---- Compliance heatmap (Phase 6.1d) ---------------------------------
+// Inverse of luxToAlpha: given an observed screen-alpha in [0,1],
+// recover the approximate lux that produced it.  Uses the same
+// exponent as the forward mapping so the round-trip is stable
+// (small numerical drift is fine — this is a compliance check, not
+// a photometric simulation).
+function alphaToLux(a) {
+  if (a <= 0) return 0;
+  return Math.min(2000, Math.pow(Math.min(1, a), 1 / 0.4) * 2000);
+}
+
+// Room-type → default minimum lux (mirror of Python
+// _ROOM_MIN_LUX_DEFAULTS in elc/floors/store.py; keep in sync).
+const ROOM_MIN_LUX_DEFAULTS = {
+  office:    300, corridor:  100, meeting:   300,
+  warehouse: 200, kitchen:   300, bathroom:  200,
+  storage:   100, workspace: 300, other:     200,
+};
+function roomMinLux(room) {
+  if (typeof room.min_lux === 'number' && room.min_lux > 0) return room.min_lux;
+  return ROOM_MIN_LUX_DEFAULTS[room.type] || 200;
+}
+
+// Overlay a translucent green/amber/red fill on each room polygon,
+// based on the average lux hitting its floor area.  Reads pixels
+// STRAIGHT off the canvas so it can't drift out of sync with the
+// visual (that was the P1 promise -- "what the eye sees IS what the
+// heatmap scores").
+function paintHeatmapOverlay(t, f) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const wPx = Math.floor(rect.width  * dpr);
+  const hPx = Math.floor(rect.height * dpr);
+  let img;
+  try {
+    img = ctx.getImageData(0, 0, wPx, hPx);
+  } catch (e) { return; }    // canvas may be tainted; silent skip
+  const data = img.data;
+
+  for (const room of f.rooms) {
+    const verts = room.vertices;
+    if (!verts || verts.length < 3) continue;
+    // Compute room bounding box in DPR-scaled canvas pixels.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x_m, y_m] of verts) {
+      const sx = (t.xOffset + x_m * t.m2px) * dpr;
+      const sy = (t.yOffset + y_m * t.m2px) * dpr;
+      if (sx < minX) minX = sx; if (sx > maxX) maxX = sx;
+      if (sy < minY) minY = sy; if (sy > maxY) maxY = sy;
+    }
+    minX = Math.max(0, Math.floor(minX));
+    minY = Math.max(0, Math.floor(minY));
+    maxX = Math.min(wPx - 1, Math.ceil(maxX));
+    maxY = Math.min(hPx - 1, Math.ceil(maxY));
+    if (maxX <= minX || maxY <= minY) continue;
+
+    // Sample every 3rd pixel — plenty for a mean, ~10× faster.
+    const STEP = 3;
+    let sumAlpha = 0, count = 0;
+    for (let py = minY; py <= maxY; py += STEP) {
+      const y_m = (py / dpr - t.yOffset) / t.m2px;
+      for (let px = minX; px <= maxX; px += STEP) {
+        const x_m = (px / dpr - t.xOffset) / t.m2px;
+        if (!pointInPolygon(x_m, y_m, verts)) continue;
+        // Additive light pass writes only the RGB channels visibly;
+        // combined luminance is the best signal for "brightness".
+        const idx = (py * wPx + px) * 4;
+        const R = data[idx], G = data[idx + 1], B = data[idx + 2];
+        // Rec 709 luma → 0..255 → 0..1
+        const lum = (0.2126 * R + 0.7152 * G + 0.0722 * B) / 255;
+        sumAlpha += lum;
+        count++;
+      }
+    }
+    if (count === 0) continue;
+    const avgAlpha = sumAlpha / count;
+    const avgLux = alphaToLux(avgAlpha);
+    const minLx = roomMinLux(room);
+    room._avgLux = avgLux;     // stashed for tooltip / render pass
+
+    // Traffic-light overlay.
+    let overlay;
+    if (avgLux >= minLx)               overlay = 'rgba(78,203,113,0.28)';   // pass
+    else if (avgLux >= minLx * 0.9)    overlay = 'rgba(227,179,65,0.32)';   // marginal
+    else                               overlay = 'rgba(236,91,86,0.32)';    // fail
+
+    ctx.save();
+    tracePolygonPath(ctx, verts, t);
+    ctx.fillStyle = overlay;
+    ctx.fill();
+    ctx.restore();
+
+    // Label at the polygon centroid: "Office 1 · 420/300 lx".
+    let cx_m = 0, cy_m = 0;
+    for (const [x, y] of verts) { cx_m += x; cy_m += y; }
+    cx_m /= verts.length; cy_m /= verts.length;
+    const sx = t.xOffset + cx_m * t.m2px;
+    const sy = t.yOffset + cy_m * t.m2px;
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = `${room.name || room.type} · ${Math.round(avgLux)}/${minLx} lx`;
+    const w = ctx.measureText(label).width + 12;
+    ctx.fillStyle = 'rgba(12,15,19,0.85)';
+    ctx.fillRect(sx - w / 2, sy - 9, w, 18);
+    ctx.fillStyle = '#d8dde4';
+    ctx.fillText(label, sx, sy);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+  }
+}
+
 function paintCanvas() {
   const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
@@ -886,24 +1144,28 @@ function paintCanvas() {
   // doesn't bleed through partition walls.  Fixtures outside any
   // room fall back to a clip against the floor's outer bounding
   // box so lights don't spill past the plan edges either.
+  //
+  // Phase 6.1d — Non-point shapes: point (default) draws a single
+  // radial gradient (the classic bulb); stick / strip / ring /
+  // polyline sample multiple positions along the shape's centre
+  // line and additively blend them so the tube / ring / custom
+  // outline glows uniformly across its length.  Shape geometry
+  // (angle, length, radius, vertices) lives on the *fixture*
+  // record (per-placement) — the element only carries which
+  // shape category to draw.
   ctx.globalCompositeOperation = 'lighter';
   const rooms = f.rooms || [];
   for (const fx of f.fixtures) {
     if (!fixtureIsOn(fx)) continue;
     const el = state.lightingElements.get(fx.device_id);
     if (!el) continue;   // placement exists but element got un-assigned
-    const cx = t.xOffset + fx.x_m * t.m2px;
-    const cy = t.yOffset + fx.y_m * t.m2px;
-    const r  = el.beam_radius_m * t.m2px;
+
     const [rr, gg, bb] = cctColor(el.cct_k || 4000);
     // Dimmer preview level — replaced by real voltage in Phase 6.2.
     const previewLevel = (el.type === 'dimmer_0_10v') ? 0.6 : 1.0;
-    const alpha = luxToAlpha((el.max_lux || 500) * previewLevel);
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0, `rgba(${rr}, ${gg}, ${bb}, ${alpha})`);
-    grad.addColorStop(1, `rgba(${rr}, ${gg}, ${bb}, 0)`);
 
-    // Establish the clipping region for this fixture.
+    // Establish the clipping region for this fixture based on its
+    // "anchor" point (x_m, y_m).  All shapes rooted at that point.
     ctx.save();
     const room = rooms.length
       ? findContainingRoom(fx.x_m, fx.y_m, rooms)
@@ -912,21 +1174,46 @@ function paintCanvas() {
       tracePolygonPath(ctx, room.vertices, t);
       ctx.clip();
     } else {
-      // Fallback: clip to the floor's outer bounding box so light
-      // doesn't spill off the plan (the user-selected default for
-      // fixtures placed outside any closed room polygon).
       ctx.beginPath();
       ctx.rect(t.xOffset, t.yOffset,
                f.width_m * t.m2px, f.height_m * t.m2px);
       ctx.clip();
     }
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
+
+    // Build the list of light-emitter sample points (in metres)
+    // based on the element's shape + placement geometry.
+    const samples = sampleShapePoints(fx, el);
+    // Per-sample brightness: for a shape with N samples, dividing
+    // the max lux by sqrt(N) keeps the *peak* additive brightness
+    // roughly matched to a point source, so a "long strip" and a
+    // "single bulb" of the same nominal lux read similar at their
+    // brightest points, but the strip covers more floor area.
+    const perSample = (el.max_lux || 500) * previewLevel
+                      / Math.max(1, Math.sqrt(samples.length));
+    const alpha = luxToAlpha(perSample);
+    const rMeters = el.beam_radius_m || 4;
+    const rPx = rMeters * t.m2px;
+    for (const s of samples) {
+      const cx = t.xOffset + s.x_m * t.m2px;
+      const cy = t.yOffset + s.y_m * t.m2px;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rPx);
+      grad.addColorStop(0, `rgba(${rr}, ${gg}, ${bb}, ${alpha})`);
+      grad.addColorStop(1, `rgba(${rr}, ${gg}, ${bb}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
   ctx.globalCompositeOperation = 'source-over';
+
+  // 2b) Compliance heatmap overlay -- pixel-readback based so what
+  // the operator sees IS what gets scored, no separate lux model to
+  // drift.  Skipped in operator mode (visual noise) and when off.
+  if (state.heatmap && state.mode === 'layout' && rooms.length) {
+    paintHeatmapOverlay(t, f);
+  }
 
   // 3) fixture markers (dot + label).  Skipped in operator mode.
   // Colour keyed to type (looked up in lightingElements):
@@ -972,6 +1259,54 @@ function paintCanvas() {
     ctx.arc(cx, cy, 14 + 4 * pulse, 0, Math.PI * 2);
     ctx.stroke();
   }
+
+  // 5) In-progress shape placement preview (Phase 6.1d).
+  // Draws the anchor + already-committed clicks + a rubber-band
+  // line to the current mouse position so the operator can see the
+  // stick/strip/ring/polyline they're about to commit.
+  const p = state.placement;
+  if (p && p.points.length) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(217,122,48,0.9)';
+    ctx.fillStyle   = 'rgba(217,122,48,0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    const toPx = (pt) => [t.xOffset + pt.x_m * t.m2px, t.yOffset + pt.y_m * t.m2px];
+    const anchor = p.points[0];
+    const [ax, ay] = toPx(anchor);
+    // anchor dot
+    ctx.beginPath(); ctx.arc(ax, ay, 5, 0, Math.PI * 2); ctx.fill();
+    if (p.shape === 'ring') {
+      const target = p.points[1] || p.hover;
+      const [bx, by] = toPx(target);
+      const r = Math.hypot(bx - ax, by - ay);
+      ctx.beginPath(); ctx.arc(ax, ay, r, 0, Math.PI * 2); ctx.stroke();
+    } else if (p.shape === 'polyline') {
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      for (let i = 1; i < p.points.length; i++) {
+        const [x, y] = toPx(p.points[i]); ctx.lineTo(x, y);
+      }
+      if (p.hover) {
+        const [hx, hy] = toPx(p.hover); ctx.lineTo(hx, hy);
+      }
+      ctx.stroke();
+      // dots on committed vertices
+      ctx.setLineDash([]);
+      for (const pt of p.points) {
+        const [x, y] = toPx(pt);
+        ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      // stick / strip
+      const target = p.points[1] || p.hover;
+      const [bx, by] = toPx(target);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 // Animation loop only runs when we need it (operator mode w/ alarms).
@@ -1014,24 +1349,171 @@ canvas.addEventListener('drop', async (ev) => {
     toast('Drop must be inside the floor outline', true);
     return;
   }
-  // Either move an existing placement or create a fresh one.
+  // Point shapes → single click, place immediately (legacy fast path).
+  // Non-point shapes → drop plants the anchor and enters click-flow
+  // for the remaining geometry (endpoint / edge / more vertices).
+  const shape = state.shape || 'point';
   const existing = f.fixtures.find(x => x.device_id === did);
-  let nextList;
-  if (existing) {
-    nextList = f.fixtures.map(x => (x.device_id === did
-      ? { ...x, x_m: world.x_m, y_m: world.y_m } : x));
-  } else {
-    // Auto-label the placement id from the device_id so the marker
-    // shows something friendly on the canvas.
-    const fixtureId = `L-${f.fixtures.length + 1}`.padStart(4, '0');
-    nextList = [...f.fixtures,
-      { id: fixtureId, device_id: did, x_m: world.x_m, y_m: world.y_m }];
+  const fixtureId = existing?.id
+                    || `L-${String(f.fixtures.length + 1).padStart(4, '0')}`;
+  // Persist the shape choice onto the lighting element so the
+  // rendering reflects it consistently across reloads.  We only
+  // upsert if the shape actually differs to keep updated_at stable.
+  const el = state.lightingElements.get(did);
+  if (el && el.shape !== shape) {
+    try {
+      const updated = await api('PUT', `/lighting-elements/${did}`, {
+        type: el.type, max_lux: el.max_lux,
+        beam_radius_m: el.beam_radius_m, cct_k: el.cct_k,
+        shape,
+      });
+      state.lightingElements.set(did, updated);
+    } catch (e) { /* non-fatal — fall back to old shape */ }
   }
-  await savePlacements(nextList);
+
+  if (shape === 'point') {
+    let nextList;
+    if (existing) {
+      nextList = f.fixtures.map(x => (x.device_id === did
+        ? { ...x, x_m: world.x_m, y_m: world.y_m,
+            // clear geometry from a previous non-point shape
+            angle_deg: null, length_m: null, radius_m: null, vertices: null }
+        : x));
+    } else {
+      nextList = [...f.fixtures,
+        { id: fixtureId, device_id: did, x_m: world.x_m, y_m: world.y_m }];
+    }
+    await savePlacements(nextList);
+    return;
+  }
+
+  // Non-point: enter click-flow.  Anchor point is where the SRM tile
+  // was dropped; subsequent clicks gather the remaining geometry.
+  state.placement = {
+    device_id: did, fid: fixtureId, shape,
+    points: [{ x_m: world.x_m, y_m: world.y_m }],
+    hover: { x_m: world.x_m, y_m: world.y_m },
+  };
+  showPlacementBanner();
 });
+
+// ---- Click-flow for shape placement (Phase 6.1d) ----------------------
+function showPlacementBanner() {
+  const el = document.getElementById('place-banner');
+  const p = state.placement;
+  if (!p) { el.style.display = 'none'; return; }
+  const hints = {
+    stick:    'Click the <span class="primary-key">OTHER END</span> of the tube.',
+    strip:    'Click the <span class="primary-key">OTHER END</span> of the LED strip.',
+    ring:     'Click on the <span class="primary-key">CIRCLE EDGE</span> to set radius.',
+    polyline: 'Click each vertex, then <span class="primary-key">double-click</span> or press <span class="primary-key">Enter</span> to finish.',
+  };
+  el.innerHTML = `
+    <div><strong>Placing ${p.shape.toUpperCase()}</strong> · ${p.device_id}</div>
+    <div>${hints[p.shape] || ''}</div>
+    <div class="cancel-hint">Press Esc to cancel</div>
+  `;
+  el.style.display = 'block';
+}
+function cancelPlacement() {
+  state.placement = null;
+  document.getElementById('place-banner').style.display = 'none';
+  paintCanvas();
+}
+async function commitPlacement() {
+  const p = state.placement;
+  if (!p) return;
+  const f = state.currentFloor;
+  const anchor = p.points[0];
+  let extra = {};
+  if (p.shape === 'stick' || p.shape === 'strip') {
+    const b = p.points[1];
+    const dx = b.x_m - anchor.x_m, dy = b.y_m - anchor.y_m;
+    const length_m = Math.hypot(dx, dy);
+    if (length_m < 0.1) { toast('Shape too short', true); return cancelPlacement(); }
+    // Store the CENTRE as (x_m,y_m) so rotation feels natural.
+    extra = {
+      x_m: (anchor.x_m + b.x_m) / 2, y_m: (anchor.y_m + b.y_m) / 2,
+      length_m, angle_deg: Math.atan2(dy, dx) * 180 / Math.PI,
+    };
+  } else if (p.shape === 'ring') {
+    const b = p.points[1];
+    const radius_m = Math.hypot(b.x_m - anchor.x_m, b.y_m - anchor.y_m);
+    if (radius_m < 0.1) { toast('Ring too small', true); return cancelPlacement(); }
+    extra = { x_m: anchor.x_m, y_m: anchor.y_m, radius_m };
+  } else if (p.shape === 'polyline') {
+    if (p.points.length < 2) {
+      toast('Polyline needs at least 2 vertices', true);
+      return cancelPlacement();
+    }
+    extra = {
+      x_m: p.points[0].x_m, y_m: p.points[0].y_m,
+      vertices: p.points.map(pt => [pt.x_m, pt.y_m]),
+    };
+  }
+  // Merge into fixtures list (replace if same device_id).
+  const existing = f.fixtures.find(x => x.device_id === p.device_id);
+  const placement = {
+    id: existing?.id || p.fid, device_id: p.device_id,
+    // reset any stale geometry from previous shapes
+    angle_deg: null, length_m: null, radius_m: null, vertices: null,
+    ...extra,
+  };
+  const nextList = existing
+    ? f.fixtures.map(x => (x.device_id === p.device_id ? placement : x))
+    : [...f.fixtures, placement];
+  state.placement = null;
+  document.getElementById('place-banner').style.display = 'none';
+  await savePlacements(nextList);
+}
+
+canvas.addEventListener('click', (ev) => {
+  const p = state.placement;
+  if (!p) return;
+  const rect = canvas.getBoundingClientRect();
+  const world = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (!world) return;
+  p.points.push(world);
+  if (p.shape === 'stick' || p.shape === 'strip' || p.shape === 'ring') {
+    // 2-click shapes finish on the second click.
+    if (p.points.length >= 2) commitPlacement();
+  }
+  // Polylines keep going until Enter/dblclick.
+  paintCanvas();
+});
+canvas.addEventListener('dblclick', () => {
+  if (state.placement && state.placement.shape === 'polyline') commitPlacement();
+});
+document.addEventListener('keydown', (ev) => {
+  if (!state.placement) return;
+  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+  if (ev.key === 'Escape') cancelPlacement();
+  else if (ev.key === 'Enter' && state.placement.shape === 'polyline') commitPlacement();
+});
+canvas.addEventListener('mousemove', (ev) => {
+  if (!state.placement) return;
+  const rect = canvas.getBoundingClientRect();
+  const world = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+  if (world) { state.placement.hover = world; paintCanvas(); }
+});
+
+// ---- Heatmap + shape picker wiring ------------------------------------
+document.getElementById('btn-heatmap').onclick = () => {
+  state.heatmap = !state.heatmap;
+  const btn = document.getElementById('btn-heatmap');
+  btn.textContent = `Heatmap: ${state.heatmap ? 'On' : 'Off'}`;
+  btn.classList.toggle('on', state.heatmap);
+  document.getElementById('heatmap-legend').classList.toggle('show', state.heatmap);
+  paintCanvas();
+};
+document.getElementById('shape-picker').onchange = (ev) => {
+  state.shape = ev.target.value;
+  toast(`Next placement: ${ev.target.value}`);
+};
 
 canvas.addEventListener('mousedown', (ev) => {
   if (state.mode !== 'layout') return;
+  if (state.placement) return;   // placement click-flow owns this event
   const rect = canvas.getBoundingClientRect();
   const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
   if (!state.currentFloor) return;

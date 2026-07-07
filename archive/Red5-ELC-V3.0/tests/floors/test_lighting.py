@@ -31,6 +31,23 @@ class TestUpsert:
         assert e["max_lux"] == 500
         assert e["beam_radius_m"] == 4.0
         assert e["cct_k"] == 4000
+        assert e["shape"] == "point"
+
+    def test_shape_persisted(self, db_path):
+        e = lighting.upsert_element(
+            "SRM/1/10/0", type="onoff", shape="stick", db_path=db_path,
+        )
+        assert e["shape"] == "stick"
+        e2 = lighting.upsert_element(
+            "SRM/1/10/0", type="onoff", shape="ring", db_path=db_path,
+        )
+        assert e2["shape"] == "ring"
+
+    def test_bad_shape_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            lighting.upsert_element(
+                "SRM/1/10/0", type="onoff", shape="hexagon", db_path=db_path,
+            )
 
     def test_update_existing(self, db_path):
         lighting.upsert_element("SRM/1/10/0", type="onoff", db_path=db_path)

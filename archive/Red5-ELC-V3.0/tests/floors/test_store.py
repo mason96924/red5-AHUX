@@ -246,6 +246,135 @@ class TestRooms:
             )
 
 
+class TestRoomTypeAndMinLux:
+    """Phase 6.1d — room `type` and `min_lux` for compliance heatmap."""
+
+    _RECT = [[0.0, 0.0], [5.0, 0.0], [5.0, 3.0], [0.0, 3.0]]
+
+    def test_type_defaults_to_other_for_unknown_name(self, db_path):
+        f = floors.create_floor(
+            "A",
+            rooms=[{"name": "Unnamed", "vertices": self._RECT}],
+            db_path=db_path,
+        )
+        assert f["rooms"][0]["type"] == "other"
+        assert f["rooms"][0]["min_lux"] == 200
+
+    def test_type_inferred_from_name(self, db_path):
+        f = floors.create_floor(
+            "A",
+            rooms=[
+                {"name": "Office 3", "vertices": self._RECT},
+                {"name": "Corridor N", "vertices":
+                    [[0, 3], [5, 3], [5, 4], [0, 4]]},
+                {"name": "Meeting Room A", "vertices":
+                    [[0, 4], [5, 4], [5, 5], [0, 5]]},
+            ],
+            db_path=db_path,
+        )
+        types = {r["name"]: r["type"] for r in f["rooms"]}
+        assert types["Office 3"] == "office"
+        assert types["Corridor N"] == "corridor"
+        assert types["Meeting Room A"] == "meeting"
+        lux = {r["name"]: r["min_lux"] for r in f["rooms"]}
+        assert lux["Office 3"] == 300
+        assert lux["Corridor N"] == 100
+        assert lux["Meeting Room A"] == 300
+
+    def test_explicit_type_overrides_inferred(self, db_path):
+        f = floors.create_floor(
+            "A",
+            rooms=[{"name": "Office 3", "type": "warehouse",
+                    "vertices": self._RECT}],
+            db_path=db_path,
+        )
+        assert f["rooms"][0]["type"] == "warehouse"
+        assert f["rooms"][0]["min_lux"] == 200
+
+    def test_explicit_min_lux_overrides_default(self, db_path):
+        f = floors.create_floor(
+            "A",
+            rooms=[{"name": "Office 3", "min_lux": 750,
+                    "vertices": self._RECT}],
+            db_path=db_path,
+        )
+        assert f["rooms"][0]["min_lux"] == 750
+
+    def test_bad_type_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A",
+                rooms=[{"type": "hangar", "vertices": self._RECT}],
+                db_path=db_path,
+            )
+
+
+class TestFixtureShapeGeometry:
+    """Phase 6.1d — placements can carry non-point shape geometry."""
+
+    def test_default_placement_omits_geometry(self, db_path):
+        f = floors.create_floor(
+            "A",
+            fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                       "x_m": 3, "y_m": 4}],
+            db_path=db_path,
+        )
+        fx = f["fixtures"][0]
+        assert "length_m" not in fx
+        assert "angle_deg" not in fx
+        assert "radius_m" not in fx
+        assert "vertices" not in fx
+
+    def test_stick_geometry_persisted(self, db_path):
+        f = floors.create_floor(
+            "A",
+            fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                       "x_m": 5, "y_m": 3,
+                       "length_m": 2.4, "angle_deg": 90}],
+            db_path=db_path,
+        )
+        fx = f["fixtures"][0]
+        assert fx["length_m"] == 2.4
+        assert fx["angle_deg"] == 90
+
+    def test_ring_geometry_persisted(self, db_path):
+        f = floors.create_floor(
+            "A",
+            fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                       "x_m": 5, "y_m": 3, "radius_m": 1.5}],
+            db_path=db_path,
+        )
+        assert f["fixtures"][0]["radius_m"] == 1.5
+
+    def test_polyline_geometry_persisted(self, db_path):
+        vs = [[0, 0], [1, 0], [1, 1], [2, 1]]
+        f = floors.create_floor(
+            "A",
+            fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                       "x_m": 0, "y_m": 0, "vertices": vs}],
+            db_path=db_path,
+        )
+        assert f["fixtures"][0]["vertices"] == vs
+
+    def test_negative_length_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A",
+                fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                           "x_m": 5, "y_m": 3, "length_m": -1}],
+                db_path=db_path,
+            )
+
+    def test_polyline_too_few_vertices_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A",
+                fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                           "x_m": 0, "y_m": 0, "vertices": [[0, 0]]}],
+                db_path=db_path,
+            )
+
+
 class TestSchemaMigration:
     """Legacy DBs created before the ``rooms_json`` column existed
     should get it added automatically on the next init/open."""

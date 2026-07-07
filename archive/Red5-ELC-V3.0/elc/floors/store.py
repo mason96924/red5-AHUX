@@ -67,6 +67,22 @@ def _validate_fixture(f: dict[str, Any]) -> dict[str, Any]:
     render time.  Legacy records that carry ``type`` / ``max_lux``
     etc. are still accepted for read-side backward compatibility;
     the extra fields are dropped on the way in.
+
+    Phase 6.1d — placements can carry shape-specific geometry that
+    the operator drew when placing the fixture:
+
+    * ``angle_deg`` — orientation for ``stick`` / ``strip`` shapes
+      (degrees, 0 = +X, 90 = +Y).
+    * ``length_m``  — total length for ``stick`` / ``strip``.
+    * ``radius_m``  — radius of a ``ring`` fixture (LED loop).
+    * ``vertices``  — ordered [[x_m, y_m], ...] for ``polyline``
+      shapes (LED strip forming a custom outline).
+
+    Only geometry fields that pass validation are stored; missing
+    fields default to ``None`` and the renderer falls back to
+    point-source math.  This lets the same fixture record round-
+    trip through the API even if the lighting element's ``shape``
+    changes.
     """
     if not isinstance(f, dict):
         raise BadInput("fixture must be an object")
@@ -79,7 +95,45 @@ def _validate_fixture(f: dict[str, Any]) -> dict[str, Any]:
         raise BadInput(f"fixture missing required field: {e}") from e
     if not fid or not device_id:
         raise BadInput("fixture id and device_id must be non-empty")
-    return {"id": fid, "device_id": device_id, "x_m": x_m, "y_m": y_m}
+    out: dict[str, Any] = {
+        "id": fid, "device_id": device_id, "x_m": x_m, "y_m": y_m,
+    }
+    # Optional shape-specific geometry ---------------------------------
+    if "angle_deg" in f and f["angle_deg"] is not None:
+        try:
+            out["angle_deg"] = float(f["angle_deg"])
+        except (TypeError, ValueError) as e:
+            raise BadInput("fixture.angle_deg must be a number") from e
+    if "length_m" in f and f["length_m"] is not None:
+        try:
+            length_m = float(f["length_m"])
+        except (TypeError, ValueError) as e:
+            raise BadInput("fixture.length_m must be a number") from e
+        if length_m <= 0:
+            raise BadInput("fixture.length_m must be > 0")
+        out["length_m"] = length_m
+    if "radius_m" in f and f["radius_m"] is not None:
+        try:
+            radius_m = float(f["radius_m"])
+        except (TypeError, ValueError) as e:
+            raise BadInput("fixture.radius_m must be a number") from e
+        if radius_m <= 0:
+            raise BadInput("fixture.radius_m must be > 0")
+        out["radius_m"] = radius_m
+    if "vertices" in f and f["vertices"] is not None:
+        verts_raw = f["vertices"]
+        if not isinstance(verts_raw, list) or len(verts_raw) < 2:
+            raise BadInput("fixture.vertices must be a list of >= 2 [x, y] pairs")
+        verts: list[list[float]] = []
+        for v in verts_raw:
+            if not isinstance(v, (list, tuple)) or len(v) != 2:
+                raise BadInput("each fixture vertex must be [x_m, y_m]")
+            try:
+                verts.append([float(v[0]), float(v[1])])
+            except (TypeError, ValueError) as e:
+                raise BadInput("fixture vertex coords must be numbers") from e
+        out["vertices"] = verts
+    return out
 
 
 def _validate_fixtures(fixtures: Any) -> list[dict[str, Any]]:
@@ -127,18 +181,61 @@ def _check_device_uniqueness(
             )
 
 
+_ROOM_TYPES = {
+    "office", "corridor", "meeting", "warehouse", "kitchen",
+    "bathroom", "storage", "workspace", "other",
+}
+# Compliance thresholds -- minimum lux at floor level (EN 12464-1 rounded
+# to operator-friendly numbers).  Used by :func:`_infer_room_type` /
+# ``_default_min_lux`` on both backend and frontend; keep in sync with
+# demo/floor.html.
+_ROOM_MIN_LUX_DEFAULTS: dict[str, int] = {
+    "office":     300,
+    "corridor":   100,
+    "meeting":    300,
+    "warehouse":  200,
+    "kitchen":    300,
+    "bathroom":   200,
+    "storage":    100,
+    "workspace":  300,
+    "other":      200,
+}
+
+
+def _infer_room_type(name: str) -> str:
+    """Guess a room type from its DXF XDATA name -- used only when the
+    operator hasn't set one explicitly.  Substring match on lower-cased
+    name; falls through to ``other`` for anything unrecognised."""
+    n = (name or "").lower()
+    if "office" in n:                          return "office"
+    if "corridor" in n or "hall" in n:         return "corridor"
+    if "meeting" in n or "conference" in n:    return "meeting"
+    if "warehouse" in n or "storage" in n or "stock" in n: return "warehouse"
+    if "kitchen" in n or "cafe" in n or "pantry" in n:     return "kitchen"
+    if "bath" in n or "toilet" in n or "wc" in n or "restroom" in n:
+        return "bathroom"
+    if "workspace" in n or "open" in n or "desk" in n:     return "workspace"
+    return "other"
+
+
 def _validate_rooms(rooms: Any) -> list[dict[str, Any]]:
-    """Room polygons used for canvas light clipping (Phase 6.1c).
+    """Room polygons used for canvas light clipping (Phase 6.1c) and
+    compliance heatmap colouring (Phase 6.1d).
 
     Shape::
 
-        [{"id": "OFF-1", "name": "Office 1",
-          "vertices": [[x_m, y_m], [x_m, y_m], ...]}, ...]
+        [{"id": "OFF-1",
+          "name": "Office 1",
+          "type": "office",           # optional -- inferred from name
+          "min_lux": 300,             # optional -- inferred from type
+          "vertices": [[x_m, y_m], ...]},
+         ...]
 
-    ``id`` / ``name`` are optional; ``vertices`` must be a list of at
-    least 3 [x, y] pairs (metres) that trace a closed simple polygon
-    counter-clockwise or clockwise (winding doesn't matter for the
-    even-odd fill rule used on the canvas).
+    ``id`` / ``name`` / ``type`` / ``min_lux`` are optional; when
+    absent, ``type`` is inferred from ``name`` (see
+    :func:`_infer_room_type`) and ``min_lux`` from the type default
+    table (see ``_ROOM_MIN_LUX_DEFAULTS``).  ``vertices`` must be a
+    list of at least 3 [x, y] pairs (metres).
     """
     if rooms is None:
         return []
@@ -159,9 +256,27 @@ def _validate_rooms(rooms: Any) -> list[dict[str, Any]]:
                 verts.append([float(v[0]), float(v[1])])
             except (TypeError, ValueError) as e:
                 raise BadInput("vertex coords must be numbers") from e
+        name = str(r.get("name", ""))
+        rtype = str(r.get("type") or "").strip().lower() or _infer_room_type(name)
+        if rtype not in _ROOM_TYPES:
+            raise BadInput(
+                f"room.type must be one of {sorted(_ROOM_TYPES)}, got {rtype!r}"
+            )
+        min_lux_raw = r.get("min_lux")
+        if min_lux_raw is None:
+            min_lux = _ROOM_MIN_LUX_DEFAULTS[rtype]
+        else:
+            try:
+                min_lux = int(min_lux_raw)
+            except (TypeError, ValueError) as e:
+                raise BadInput("room.min_lux must be an integer") from e
+            if min_lux < 0:
+                raise BadInput("room.min_lux must be >= 0")
         out.append({
             "id": str(r.get("id", "")),
-            "name": str(r.get("name", "")),
+            "name": name,
+            "type": rtype,
+            "min_lux": min_lux,
             "vertices": verts,
         })
     return out

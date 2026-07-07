@@ -215,9 +215,12 @@
       <input id="dxf-input" type="file" accept=".dxf" style="display:none"
              data-testid="floor-dxf-input">
     </label>
+    <a href="/samples/office-40x25.dxf" download class="btn ghost"
+       title="Download a 40 × 25 m office floor plan (5 offices, kitchen, 2 meeting rooms, open workspace)"
+       data-testid="floor-sample-office-dl">Sample office DXF</a>
     <a href="/samples/warehouse-20x12.dxf" download class="btn ghost"
-       title="Download a 20 × 12 m warehouse plan to test the import flow"
-       data-testid="floor-sample-dl">Sample DXF</a>
+       title="Download a small 20 × 12 m warehouse plan"
+       data-testid="floor-sample-dl">Sample warehouse DXF</a>
     <a href="/editor" class="btn ghost">← Editor</a>
   </div>
 </header>
@@ -397,9 +400,9 @@ async function renderFloorDetails() {
     <label>Name</label>
     <input id="d-name" value="${escapeHtml(f.name)}" data-testid="d-name"/>
     <label>Width (m)</label>
-    <input id="d-width" type="number" min="0.1" step="0.1" value="${f.width_m}" data-testid="d-width"/>
+    <input id="d-width" type="number" min="0.1" step="0.1" value="${f.width_m.toFixed(2)}" data-testid="d-width"/>
     <label>Height (m)</label>
-    <input id="d-height" type="number" min="0.1" step="0.1" value="${f.height_m}" data-testid="d-height"/>
+    <input id="d-height" type="number" min="0.1" step="0.1" value="${f.height_m.toFixed(2)}" data-testid="d-height"/>
     <div style="display:flex; gap:6px; margin-top:10px">
       <button class="primary" id="d-save" data-testid="d-save">Save</button>
       <button class="ghost" id="d-delete" data-testid="d-delete"

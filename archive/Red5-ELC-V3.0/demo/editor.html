@@ -354,7 +354,7 @@
             title="Operator mode: subscribe to live device events">
       <span class="op-dot"></span><span id="op-label">Operator</span>
     </button>
-    <button class="ghost" id="btn-seed" data-testid="editor-seed-btn">Seed 4 demo devices</button>
+    <button class="ghost" id="btn-seed" data-testid="editor-seed-btn">Seed 30 demo devices</button>
     <button class="ghost" id="btn-settings" data-testid="editor-settings-btn" title="Location + weather + engine mode">⚙ Settings</button>
     <button class="ghost" id="btn-calendar" data-testid="editor-calendar-btn" title="Holidays + event days">📅 Calendar</button>
     <a href="/" class="btn ghost">← Demo console</a>
@@ -908,7 +908,7 @@ function renderDevices() {
   if (state.devices.length === 0) {
     host.innerHTML = `<div class="empty-state">
       No devices seen yet.<br>
-      Click <code>Seed 4 demo devices</code> above to populate the replica.
+      Click <code>Seed 30 demo devices</code> above to populate the replica.
     </div>`;
     return;
   }
@@ -1213,15 +1213,17 @@ document.getElementById('new-grp-form').addEventListener('submit', async (ev) =>
 document.getElementById('btn-seed').addEventListener('click', async () => {
   const btn = document.getElementById('btn-seed');
   btn.disabled = true;
-  const devices = ['SRM/1/10/0', 'SRM/1/20/0', 'SRM/1/30/0', 'SRM/1/40/0'];
+  // 30 SRMs at 10-address increments -- mirrors DEMO_DEVICES in demo.py.
+  const devices = Array.from({length: 30}, (_, i) => `SRM/1/${(i + 1) * 10}/0`);
   try {
-    for (const d of devices) {
-      await api('POST', `/devices/${d}/relay`, { state: true });
-    }
-    // give the MockScu echo a beat to hit the replica
-    await new Promise(r => setTimeout(r, 400));
+    // Fire in parallel so a big batch doesn't take 30× RTT to complete.
+    await Promise.all(devices.map(d =>
+      api('POST', `/devices/${d}/relay`, { state: true })
+    ));
+    // give the MockScu echoes a beat to reach the replica
+    await new Promise(r => setTimeout(r, 500));
     await refreshAll();
-    toast('4 demo devices seeded');
+    toast(`${devices.length} demo devices seeded`);
   } catch (e) { toast(`Seed failed: ${e.message}`, true); }
   finally { btn.disabled = false; }
 });

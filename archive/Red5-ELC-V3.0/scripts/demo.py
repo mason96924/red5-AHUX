@@ -55,11 +55,13 @@ logging.basicConfig(
 log = logging.getLogger("demo")
 
 
+# Demo device set -- 30 SRMs across scu=1 at 10-address increments.
+# Sized to cover a mid-size office floor (~5 rooms × 6 fixtures each)
+# so the /floor page has enough tiles to build a realistic layout
+# without hitting the "Seed" button repeatedly.
 DEMO_DEVICES = [
-    DeviceId(dev_type=DeviceType.SRM, scu=1, address=10, sub_address=0),
-    DeviceId(dev_type=DeviceType.SRM, scu=1, address=20, sub_address=0),
-    DeviceId(dev_type=DeviceType.SRM, scu=1, address=30, sub_address=0),
-    DeviceId(dev_type=DeviceType.SRM, scu=1, address=40, sub_address=0),
+    DeviceId(dev_type=DeviceType.SRM, scu=1, address=10 * (i + 1), sub_address=0)
+    for i in range(30)
 ]
 
 

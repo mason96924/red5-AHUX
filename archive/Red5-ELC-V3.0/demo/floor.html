@@ -251,11 +251,31 @@
               title="Choose the shape of the next fixture you place"
               style="width:auto;padding:4px 8px;font-size:11px">
         <option value="point">Point (bulb)</option>
-        <option value="stick">Stick (tube)</option>
-        <option value="strip">LED strip</option>
-        <option value="ring">Ring</option>
-        <option value="polyline">Polyline</option>
+        <option value="line">Line (tube / strip)</option>
+        <option value="polyline">Polyline (custom)</option>
+        <option value="regular_polygon">Regular polygon</option>
       </select>
+    </label>
+    <label id="polygon-kind-wrap"
+           style="display:none;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Kind
+      <select id="polygon-kind" data-testid="polygon-kind"
+              style="width:auto;padding:4px 8px;font-size:11px">
+        <option value="circle">Circle</option>
+        <option value="rectangle">Rectangle</option>
+        <option value="polygon">N-gon (3–24 sides)</option>
+      </select>
+    </label>
+    <label id="polygon-sides-wrap"
+           style="display:none;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Sides
+      <input id="polygon-sides" data-testid="polygon-sides"
+             type="number" min="3" max="24" step="1" value="6"
+             style="width:52px;padding:4px 6px;font-size:11px;text-align:center"/>
     </label>
     <button id="btn-new" data-testid="floor-new-btn">+ New floor</button>
     <label for="dxf-input" class="btn" style="cursor:pointer" data-testid="floor-dxf-label">
@@ -346,10 +366,9 @@
       <select id="ee-shape" data-testid="ee-shape"
               title="Physical shape of this light source (affects rendering)">
         <option value="point">Point (bulb)</option>
-        <option value="stick">Stick (fluorescent tube)</option>
-        <option value="strip">LED strip</option>
-        <option value="ring">Ring</option>
-        <option value="polyline">Custom polyline</option>
+        <option value="line">Line (tube / strip)</option>
+        <option value="polyline">Polyline (custom outline)</option>
+        <option value="regular_polygon">Regular polygon</option>
       </select>
       <div style="display:flex; gap:6px; margin-top:10px">
         <button class="primary" id="ee-save" data-testid="ee-save">Save</button>
@@ -372,7 +391,9 @@ const state = {
   currentFloor: null,      // full floor (with svg + fixtures)
   mode: 'layout',          // 'layout' | 'operator'
   heatmap: false,          // compliance colouring on/off
-  shape: 'point',          // point|stick|strip|ring|polyline for next placement
+  shape: 'point',          // point|line|polyline|regular_polygon for next placement
+  polygonKind: 'circle',   // circle|rectangle|polygon (used when shape=regular_polygon)
+  polygonSides: 6,         // 3..24 (used when shape=regular_polygon + kind=polygon)
   placement: null,         // {device_id, fid, shape, points:[{x_m,y_m},...]} while drawing
   devices: [],             // list from /api/elc/devices (SRMs)
   lightingElements: new Map(), // device_id -> {type, max_lux, beam_radius_m, cct_k, shape}
@@ -952,11 +973,43 @@ function fixtureAlarming(fx) {
 // radius controls sample spacing so overlap between neighbouring
 // samples is consistent (spacing = beam_radius so adjacent gradients
 // overlap by ~50% at their falloff edge).
+// Compute the effective outline vertices of a regular-polygon
+// fixture (rectangle / N-gon).  Circle is drawn as a smooth arc
+// elsewhere and returns [] here.  Called by the sampler, marker
+// renderer and handle hit-test so all three stay in sync.
+function regularPolygonVertices(fx, el) {
+  const kind = fx.polygon_kind || 'circle';
+  const beam = el?.beam_radius_m || 4;
+  if (kind === 'rectangle') {
+    const w = (fx.width_m  || beam * 2) / 2;
+    const h = (fx.height_m || beam * 2) / 2;
+    return [
+      [fx.x_m - w, fx.y_m - h],
+      [fx.x_m + w, fx.y_m - h],
+      [fx.x_m + w, fx.y_m + h],
+      [fx.x_m - w, fx.y_m + h],
+    ];
+  }
+  if (kind === 'polygon') {
+    const n = Math.max(3, Math.min(24, fx.sides || 6));
+    const r = fx.radius_m || beam;
+    const a0 = (fx.angle_deg || 0) * Math.PI / 180;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * 2 * Math.PI;
+      out.push([fx.x_m + r * Math.cos(a), fx.y_m + r * Math.sin(a)]);
+    }
+    return out;
+  }
+  return [];      // circle -> smooth arc, not vertex-based
+}
+
 function sampleShapePoints(fx, el) {
   const shape = el.shape || 'point';
   const beam  = el.beam_radius_m || 4;
   const step  = Math.max(0.25, beam);
   switch (shape) {
+    case 'line':
     case 'stick':
     case 'strip': {
       const length = fx.length_m || (beam * 2);
@@ -988,6 +1041,39 @@ function sampleShapePoints(fx, el) {
           x_m: fx.x_m + rad * Math.cos(a),
           y_m: fx.y_m + rad * Math.sin(a),
         });
+      }
+      return out;
+    }
+    case 'regular_polygon': {
+      // Phase 6.1e — circle / rectangle / N-gon dispatch.  Circle
+      // is sampled around a smooth ring; rectangle & polygon walk
+      // the outline like a closed polyline.
+      const kind = fx.polygon_kind || 'circle';
+      if (kind === 'circle') {
+        const rad = fx.radius_m || (beam * 1.5);
+        const n = Math.max(6, Math.ceil((2 * Math.PI * rad) / step));
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * 2 * Math.PI;
+          out.push({
+            x_m: fx.x_m + rad * Math.cos(a),
+            y_m: fx.y_m + rad * Math.sin(a),
+          });
+        }
+        return out;
+      }
+      const verts = regularPolygonVertices(fx, el);
+      const out = [];
+      for (let i = 0; i < verts.length; i++) {
+        const [x0, y0] = verts[i];
+        const [x1, y1] = verts[(i + 1) % verts.length];
+        const dx = x1 - x0, dy = y1 - y0;
+        const segLen = Math.hypot(dx, dy);
+        const n = Math.max(1, Math.ceil(segLen / step));
+        for (let k = 0; k < n; k++) {
+          const t = k / n;
+          out.push({ x_m: x0 + dx * t, y_m: y0 + dy * t });
+        }
       }
       return out;
     }
@@ -1273,6 +1359,7 @@ function paintCanvas() {
       ctx.fillStyle = fill;
 
       switch (shape) {
+        case 'line':
         case 'stick':
         case 'strip': {
           // Capsule: rectangle body + two rounded end caps.
@@ -1315,6 +1402,41 @@ function paintCanvas() {
                   0, Math.PI * 2, true);   // reverse winding = hole
           ctx.fill('evenodd');
           ctx.stroke();
+          break;
+        }
+        case 'regular_polygon': {
+          const kind = fx.polygon_kind || 'circle';
+          if (kind === 'circle') {
+            const r = (fx.radius_m || (el?.beam_radius_m || 4)) * t.m2px;
+            const band = selected ? 5 : 3.5;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r + band / 2, 0, Math.PI * 2);
+            ctx.arc(cx, cy, Math.max(0.5, r - band / 2),
+                    0, Math.PI * 2, true);
+            ctx.fill('evenodd');
+            ctx.stroke();
+          } else {
+            // Rectangle / N-gon -- stroke the outline.
+            const verts = regularPolygonVertices(fx, el);
+            if (verts.length >= 3) {
+              ctx.save();
+              ctx.strokeStyle = fill;
+              ctx.lineWidth = selected ? 5 : 3.5;
+              ctx.lineJoin = 'round';
+              ctx.beginPath();
+              for (let i = 0; i < verts.length; i++) {
+                const px = t.xOffset + verts[i][0] * t.m2px;
+                const py = t.yOffset + verts[i][1] * t.m2px;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+              }
+              ctx.closePath();
+              ctx.stroke();
+              ctx.strokeStyle = 'rgba(12,15,19,0.9)';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
           break;
         }
         case 'polyline': {
@@ -1427,6 +1549,30 @@ function paintCanvas() {
       const [bx, by] = toPx(target);
       const r = Math.hypot(bx - ax, by - ay);
       ctx.beginPath(); ctx.arc(ax, ay, r, 0, Math.PI * 2); ctx.stroke();
+    } else if (p.shape === 'regular_polygon') {
+      const target = p.points[1] || p.hover;
+      const [bx, by] = toPx(target);
+      if (p.polygon_kind === 'circle') {
+        const r = Math.hypot(bx - ax, by - ay);
+        ctx.beginPath(); ctx.arc(ax, ay, r, 0, Math.PI * 2); ctx.stroke();
+      } else if (p.polygon_kind === 'rectangle') {
+        ctx.beginPath();
+        ctx.rect(Math.min(ax, bx), Math.min(ay, by),
+                 Math.abs(bx - ax), Math.abs(by - ay));
+        ctx.stroke();
+      } else {  // N-gon
+        const n = Math.max(3, Math.min(24, p.sides || 6));
+        const r = Math.hypot(bx - ax, by - ay);
+        const a0 = Math.atan2(by - ay, bx - ax);
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+          const a = a0 + (i / n) * 2 * Math.PI;
+          const px = ax + r * Math.cos(a), py = ay + r * Math.sin(a);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
     } else if (p.shape === 'polyline') {
       ctx.beginPath();
       ctx.moveTo(ax, ay);
@@ -1523,7 +1669,8 @@ canvas.addEventListener('drop', async (ev) => {
       nextList = f.fixtures.map(x => (x.device_id === did
         ? { ...x, x_m: world.x_m, y_m: world.y_m,
             // clear geometry from a previous non-point shape
-            angle_deg: null, length_m: null, radius_m: null, vertices: null }
+            angle_deg: null, length_m: null, radius_m: null, vertices: null,
+            polygon_kind: null, width_m: null, height_m: null, sides: null }
         : x));
     } else {
       nextList = [...f.fixtures,
@@ -1535,10 +1682,15 @@ canvas.addEventListener('drop', async (ev) => {
 
   // Non-point: enter click-flow.  Anchor point is where the SRM tile
   // was dropped; subsequent clicks gather the remaining geometry.
+  // For regular polygons we snapshot the current kind + sides on the
+  // placement so those values can't change mid-flow.
   state.placement = {
     device_id: did, fid: fixtureId, shape,
+    polygon_kind: (shape === 'regular_polygon') ? state.polygonKind : null,
+    sides:        (shape === 'regular_polygon' && state.polygonKind === 'polygon')
+                  ? state.polygonSides : null,
     points: [{ x_m: world.x_m, y_m: world.y_m }],
-    hover: { x_m: world.x_m, y_m: world.y_m },
+    hover:   { x_m: world.x_m, y_m: world.y_m },
   };
   showPlacementBanner();
 });
@@ -1548,15 +1700,32 @@ function showPlacementBanner() {
   const el = document.getElementById('place-banner');
   const p = state.placement;
   if (!p) { el.style.display = 'none'; return; }
-  const hints = {
-    stick:    'Click the <span class="primary-key">OTHER END</span> of the tube.',
-    strip:    'Click the <span class="primary-key">OTHER END</span> of the LED strip.',
-    ring:     'Click on the <span class="primary-key">CIRCLE EDGE</span> to set radius.',
-    polyline: 'Click each vertex, then <span class="primary-key">double-click</span> or press <span class="primary-key">Enter</span> to finish.',
-  };
+  let heading = `Placing ${p.shape.toUpperCase()}`;
+  let hint = '';
+  if (p.shape === 'line') {
+    hint = 'Click the <span class="primary-key">OTHER END</span> of the line.';
+  } else if (p.shape === 'polyline') {
+    hint = 'Click each vertex, then <span class="primary-key">double-click</span> or press <span class="primary-key">Enter</span> to finish.';
+  } else if (p.shape === 'regular_polygon') {
+    heading = `Placing ${p.polygon_kind === 'polygon'
+      ? `${p.sides}-GON` : p.polygon_kind.toUpperCase()}`;
+    if (p.polygon_kind === 'circle')
+      hint = 'Click on the <span class="primary-key">EDGE</span> to set radius.';
+    else if (p.polygon_kind === 'rectangle')
+      hint = 'Click the <span class="primary-key">OPPOSITE CORNER</span>.';
+    else
+      hint = 'Click a <span class="primary-key">VERTEX</span> (sets radius + rotation).';
+  }
+  // Legacy stick / strip / ring click hints for any old element rows
+  // whose shape isn't in the new set (kept for backwards compat).
+  else if (p.shape === 'stick' || p.shape === 'strip') {
+    hint = 'Click the <span class="primary-key">OTHER END</span> of the line.';
+  } else if (p.shape === 'ring') {
+    hint = 'Click on the <span class="primary-key">CIRCLE EDGE</span> to set radius.';
+  }
   el.innerHTML = `
-    <div><strong>Placing ${p.shape.toUpperCase()}</strong> · ${p.device_id}</div>
-    <div>${hints[p.shape] || ''}</div>
+    <div><strong>${heading}</strong> · ${p.device_id}</div>
+    <div>${hint}</div>
     <div class="cancel-hint">Press Esc to cancel</div>
   `;
   el.style.display = 'block';
@@ -1572,12 +1741,11 @@ async function commitPlacement() {
   const f = state.currentFloor;
   const anchor = p.points[0];
   let extra = {};
-  if (p.shape === 'stick' || p.shape === 'strip') {
+  if (p.shape === 'stick' || p.shape === 'strip' || p.shape === 'line') {
     const b = p.points[1];
     const dx = b.x_m - anchor.x_m, dy = b.y_m - anchor.y_m;
     const length_m = Math.hypot(dx, dy);
     if (length_m < 0.1) { toast('Shape too short', true); return cancelPlacement(); }
-    // Store the CENTRE as (x_m,y_m) so rotation feels natural.
     extra = {
       x_m: (anchor.x_m + b.x_m) / 2, y_m: (anchor.y_m + b.y_m) / 2,
       length_m, angle_deg: Math.atan2(dy, dx) * 180 / Math.PI,
@@ -1587,16 +1755,44 @@ async function commitPlacement() {
     const radius_m = Math.hypot(b.x_m - anchor.x_m, b.y_m - anchor.y_m);
     if (radius_m < 0.1) { toast('Ring too small', true); return cancelPlacement(); }
     extra = { x_m: anchor.x_m, y_m: anchor.y_m, radius_m };
+  } else if (p.shape === 'regular_polygon') {
+    const b = p.points[1];
+    const dx = b.x_m - anchor.x_m, dy = b.y_m - anchor.y_m;
+    if (p.polygon_kind === 'circle') {
+      const radius_m = Math.hypot(dx, dy);
+      if (radius_m < 0.1) { toast('Circle too small', true); return cancelPlacement(); }
+      extra = {
+        x_m: anchor.x_m, y_m: anchor.y_m,
+        polygon_kind: 'circle', radius_m,
+      };
+    } else if (p.polygon_kind === 'rectangle') {
+      const width_m  = Math.abs(dx);
+      const height_m = Math.abs(dy);
+      if (width_m < 0.1 || height_m < 0.1) {
+        toast('Rectangle too small', true); return cancelPlacement();
+      }
+      // Anchor at the CENTRE of the rectangle so drag & resize
+      // handles feel consistent with circle/polygon kinds.
+      extra = {
+        x_m: (anchor.x_m + b.x_m) / 2, y_m: (anchor.y_m + b.y_m) / 2,
+        polygon_kind: 'rectangle', width_m, height_m,
+      };
+    } else {  // 'polygon' (N-gon)
+      const radius_m = Math.hypot(dx, dy);
+      if (radius_m < 0.1) { toast('Polygon too small', true); return cancelPlacement(); }
+      extra = {
+        x_m: anchor.x_m, y_m: anchor.y_m,
+        polygon_kind: 'polygon',
+        sides: p.sides || 6,
+        radius_m,
+        angle_deg: Math.atan2(dy, dx) * 180 / Math.PI,
+      };
+    }
   } else if (p.shape === 'polyline') {
     if (p.points.length < 2) {
       toast('Polyline needs at least 2 vertices', true);
       return cancelPlacement();
     }
-    // Anchor lives at the centroid of the vertices so it's visibly
-    // distinct from any single vertex handle -- clicking the centre
-    // pip drags the whole polyline as a rigid body, while each
-    // vertex handle drags just that corner.  Vertices are stored in
-    // absolute world coords so the anchor is a pure derived value.
     let cx = 0, cy = 0;
     for (const pt of p.points) { cx += pt.x_m; cy += pt.y_m; }
     cx /= p.points.length; cy /= p.points.length;
@@ -1611,6 +1807,7 @@ async function commitPlacement() {
     id: existing?.id || p.fid, device_id: p.device_id,
     // reset any stale geometry from previous shapes
     angle_deg: null, length_m: null, radius_m: null, vertices: null,
+    polygon_kind: null, width_m: null, height_m: null, sides: null,
     ...extra,
   };
   const nextList = existing
@@ -1628,11 +1825,10 @@ canvas.addEventListener('click', (ev) => {
   const world = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
   if (!world) return;
   p.points.push(world);
-  if (p.shape === 'stick' || p.shape === 'strip' || p.shape === 'ring') {
-    // 2-click shapes finish on the second click.
-    if (p.points.length >= 2) commitPlacement();
-  }
-  // Polylines keep going until Enter/dblclick.
+  // 2-click shapes finish on the second click.  Polyline keeps going
+  // until Enter/dblclick.
+  const twoClickShapes = ['stick', 'strip', 'ring', 'line', 'regular_polygon'];
+  if (twoClickShapes.includes(p.shape) && p.points.length >= 2) commitPlacement();
   paintCanvas();
 });
 canvas.addEventListener('dblclick', () => {
@@ -1662,8 +1858,37 @@ document.getElementById('btn-heatmap').onclick = () => {
 };
 document.getElementById('shape-picker').onchange = (ev) => {
   state.shape = ev.target.value;
-  toast(`Next placement: ${ev.target.value}`);
+  syncShapeSubcontrols();
+  toast(`Next placement: ${labelForShape()}`);
 };
+document.getElementById('polygon-kind').onchange = (ev) => {
+  state.polygonKind = ev.target.value;
+  document.getElementById('polygon-sides-wrap').style.display =
+    (state.shape === 'regular_polygon' && state.polygonKind === 'polygon')
+    ? 'inline-flex' : 'none';
+  toast(`Next placement: ${labelForShape()}`);
+};
+document.getElementById('polygon-sides').onchange = (ev) => {
+  const v = Math.max(3, Math.min(24, parseInt(ev.target.value, 10) || 6));
+  state.polygonSides = v;
+  ev.target.value = v;
+};
+
+// Visibility rules for the shape sub-dropdowns.
+function syncShapeSubcontrols() {
+  const kindWrap  = document.getElementById('polygon-kind-wrap');
+  const sidesWrap = document.getElementById('polygon-sides-wrap');
+  const isPoly = state.shape === 'regular_polygon';
+  kindWrap.style.display  = isPoly ? 'inline-flex' : 'none';
+  sidesWrap.style.display =
+    (isPoly && state.polygonKind === 'polygon') ? 'inline-flex' : 'none';
+}
+function labelForShape() {
+  if (state.shape !== 'regular_polygon') return state.shape;
+  if (state.polygonKind === 'polygon')
+    return `regular polygon · ${state.polygonSides}-gon`;
+  return `regular polygon · ${state.polygonKind}`;
+}
 
 canvas.addEventListener('mousedown', (ev) => {
   if (state.mode !== 'layout') return;
@@ -1750,8 +1975,20 @@ canvas.addEventListener('mousemove', (ev) => {
     fx.x_m = (fixedX + wx) / 2;
     fx.y_m = (fixedY + wy) / 2;
   } else if (mode === 'radius') {
-    // Ring: drag the east-side handle to grow/shrink; anchor stays.
+    // Ring / circle: drag the east handle to grow/shrink; anchor stays.
     fx.radius_m = Math.max(0.1, Math.hypot(wx - fx.x_m, wy - fx.y_m));
+  } else if (mode.startsWith('corner:')) {
+    // Rectangle: drag a corner, resizes symmetrically about centre.
+    // We don't shift the centre so the *opposite* corner also moves
+    // (which reads as "corner-drag" rather than "one-side-drag").
+    fx.width_m  = Math.max(0.1, 2 * Math.abs(wx - fx.x_m));
+    fx.height_m = Math.max(0.1, 2 * Math.abs(wy - fx.y_m));
+  } else if (mode === 'polygon_vertex') {
+    // N-gon: dragging the vertex handle rotates the whole polygon
+    // AND changes its radius simultaneously.
+    const dx = wx - fx.x_m, dy = wy - fx.y_m;
+    fx.radius_m  = Math.max(0.1, Math.hypot(dx, dy));
+    fx.angle_deg = Math.atan2(dy, dx) * 180 / Math.PI;
   } else if (mode.startsWith('vertex:')) {
     const idx = parseInt(mode.slice(7), 10);
     if (fx.vertices && idx >= 0 && idx < fx.vertices.length) {
@@ -1783,7 +2020,7 @@ function fixtureHandles(fx, el, t) {
     wx: fx.x_m, wy: fx.y_m,
   };
   const list = [anchor];
-  if (shape === 'stick' || shape === 'strip') {
+  if (shape === 'line' || shape === 'stick' || shape === 'strip') {
     const half = (fx.length_m || (el?.beam_radius_m || 4) * 2) / 2;
     const ang = (fx.angle_deg || 0) * Math.PI / 180;
     const dx = Math.cos(ang) * half, dy = Math.sin(ang) * half;
@@ -1807,6 +2044,41 @@ function fixtureHandles(fx, el, t) {
       sx: t.xOffset + (fx.x_m + r) * t.m2px,
       sy: t.yOffset + fx.y_m * t.m2px,
     });
+  } else if (shape === 'regular_polygon') {
+    const kind = fx.polygon_kind || 'circle';
+    if (kind === 'circle') {
+      const r = fx.radius_m || (el?.beam_radius_m || 4);
+      list.push({
+        kind: 'radius',
+        wx: fx.x_m + r, wy: fx.y_m,
+        sx: t.xOffset + (fx.x_m + r) * t.m2px,
+        sy: t.yOffset + fx.y_m * t.m2px,
+      });
+    } else if (kind === 'rectangle') {
+      // 4 corner handles.  Dragging any corner resizes the box
+      // symmetrically about its centre (opposite corner mirrors),
+      // keeping x_m/y_m fixed and updating width_m/height_m.
+      const w = (fx.width_m  || (el?.beam_radius_m || 4) * 2) / 2;
+      const h = (fx.height_m || (el?.beam_radius_m || 4) * 2) / 2;
+      const corners = [[-w,-h], [+w,-h], [+w,+h], [-w,+h]];
+      corners.forEach((c, i) => list.push({
+        kind: `corner:${i}`,
+        wx: fx.x_m + c[0], wy: fx.y_m + c[1],
+        sx: t.xOffset + (fx.x_m + c[0]) * t.m2px,
+        sy: t.yOffset + (fx.y_m + c[1]) * t.m2px,
+      }));
+    } else {  // 'polygon' N-gon: single vertex handle controls both
+              // radius (distance) AND rotation (angle) of vertex 0.
+      const r = fx.radius_m || (el?.beam_radius_m || 4);
+      const a = (fx.angle_deg || 0) * Math.PI / 180;
+      const hx = fx.x_m + r * Math.cos(a), hy = fx.y_m + r * Math.sin(a);
+      list.push({
+        kind: 'polygon_vertex',
+        wx: hx, wy: hy,
+        sx: t.xOffset + hx * t.m2px,
+        sy: t.yOffset + hy * t.m2px,
+      });
+    }
   } else if (shape === 'polyline') {
     const verts = fx.vertices || [];
     verts.forEach((v, i) => list.push({

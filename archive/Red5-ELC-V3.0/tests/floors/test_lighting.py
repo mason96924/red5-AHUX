@@ -49,6 +49,22 @@ class TestUpsert:
                 "SRM/1/10/0", type="onoff", shape="hexagon", db_path=db_path,
             )
 
+    def test_new_shape_names_accepted(self, db_path):
+        # Phase 6.1e — consolidated "line" and "regular_polygon".
+        for s in ("line", "regular_polygon"):
+            e = lighting.upsert_element(
+                "SRM/1/10/0", type="onoff", shape=s, db_path=db_path,
+            )
+            assert e["shape"] == s
+
+    def test_legacy_shape_names_still_accepted(self, db_path):
+        # Backwards compat: stick / strip / ring must round-trip.
+        for s in ("stick", "strip", "ring"):
+            e = lighting.upsert_element(
+                "SRM/1/10/0", type="onoff", shape=s, db_path=db_path,
+            )
+            assert e["shape"] == s
+
     def test_update_existing(self, db_path):
         lighting.upsert_element("SRM/1/10/0", type="onoff", db_path=db_path)
         # Re-upsert with tuned values.

@@ -34,7 +34,15 @@ from typing import Any
 from elc.config.store import BadInput, NotFound, _now, get_conn
 
 _TYPES = {"onoff", "dimmer_0_10v"}
-_SHAPES = {"point", "stick", "strip", "ring", "polyline"}
+# ``line`` (single linear source), ``regular_polygon`` (circle /
+# rectangle / N-sided) are the Phase 6.1e re-org.  The legacy
+# ``stick`` / ``strip`` / ``ring`` values are kept as valid inputs so
+# older placements still round-trip -- the frontend now presents them
+# under the consolidated dropdown ("Line" for stick+strip, "Regular
+# polygon / Circle" for ring).
+_SHAPES = {"point", "line", "polyline", "regular_polygon",
+           "stick", "strip", "ring"}
+_POLYGON_KINDS = {"circle", "rectangle", "polygon"}
 
 
 def _row_to_element(row: Any) -> dict[str, Any]:

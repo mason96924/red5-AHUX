@@ -374,6 +374,59 @@ class TestFixtureShapeGeometry:
                 db_path=db_path,
             )
 
+    def test_rectangle_geometry_persisted(self, db_path):
+        f = floors.create_floor(
+            "A",
+            fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                       "x_m": 5, "y_m": 3,
+                       "polygon_kind": "rectangle",
+                       "width_m": 3.0, "height_m": 1.5}],
+            db_path=db_path,
+        )
+        fx = f["fixtures"][0]
+        assert fx["polygon_kind"] == "rectangle"
+        assert fx["width_m"] == 3.0
+        assert fx["height_m"] == 1.5
+
+    def test_ngon_geometry_persisted(self, db_path):
+        f = floors.create_floor(
+            "A",
+            fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                       "x_m": 5, "y_m": 3,
+                       "polygon_kind": "polygon",
+                       "radius_m": 2.0, "sides": 6, "angle_deg": 30}],
+            db_path=db_path,
+        )
+        fx = f["fixtures"][0]
+        assert fx["polygon_kind"] == "polygon"
+        assert fx["sides"] == 6
+        assert fx["radius_m"] == 2.0
+
+    def test_bad_polygon_kind_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A",
+                fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                           "x_m": 5, "y_m": 3, "polygon_kind": "trapezoid"}],
+                db_path=db_path,
+            )
+
+    def test_sides_out_of_range_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A",
+                fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                           "x_m": 0, "y_m": 0, "sides": 2}],
+                db_path=db_path,
+            )
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "A2",
+                fixtures=[{"id": "L-1", "device_id": "SRM/1/10/0",
+                           "x_m": 0, "y_m": 0, "sides": 30}],
+                db_path=db_path,
+            )
+
 
 class TestSchemaMigration:
     """Legacy DBs created before the ``rooms_json`` column existed

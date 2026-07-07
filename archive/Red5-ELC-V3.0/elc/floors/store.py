@@ -133,6 +133,45 @@ def _validate_fixture(f: dict[str, Any]) -> dict[str, Any]:
             except (TypeError, ValueError) as e:
                 raise BadInput("fixture vertex coords must be numbers") from e
         out["vertices"] = verts
+    # Phase 6.1e — regular polygon geometry ---------------------------
+    # polygon_kind selects between the "circle" (existing ring
+    # semantics), "rectangle" (axis-aligned box of width_m x
+    # height_m), and "polygon" (regular N-sided polygon inscribed in
+    # a circle of radius_m, rotated by angle_deg).  Only stored if
+    # non-null; the frontend uses shape='regular_polygon' + this
+    # field to dispatch rendering.
+    if "polygon_kind" in f and f["polygon_kind"] is not None:
+        pk = str(f["polygon_kind"]).strip().lower()
+        if pk not in {"circle", "rectangle", "polygon"}:
+            raise BadInput(
+                "fixture.polygon_kind must be one of "
+                "['circle', 'rectangle', 'polygon']"
+            )
+        out["polygon_kind"] = pk
+    if "width_m" in f and f["width_m"] is not None:
+        try:
+            width_m = float(f["width_m"])
+        except (TypeError, ValueError) as e:
+            raise BadInput("fixture.width_m must be a number") from e
+        if width_m <= 0:
+            raise BadInput("fixture.width_m must be > 0")
+        out["width_m"] = width_m
+    if "height_m" in f and f["height_m"] is not None:
+        try:
+            height_m = float(f["height_m"])
+        except (TypeError, ValueError) as e:
+            raise BadInput("fixture.height_m must be a number") from e
+        if height_m <= 0:
+            raise BadInput("fixture.height_m must be > 0")
+        out["height_m"] = height_m
+    if "sides" in f and f["sides"] is not None:
+        try:
+            sides = int(f["sides"])
+        except (TypeError, ValueError) as e:
+            raise BadInput("fixture.sides must be an integer") from e
+        if sides < 3 or sides > 24:
+            raise BadInput("fixture.sides must be in [3, 24]")
+        out["sides"] = sides
     return out
 
 

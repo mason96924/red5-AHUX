@@ -448,8 +448,30 @@ function renderFloorList() {
   }
 }
 
+// Backwards-compat: legacy polylines had their anchor pinned to
+// vertex[0], which overlaps a vertex handle and blocks "drag whole
+// shape".  Recentre the anchor on the centroid so newly-loaded
+// floors behave the same as freshly-placed ones.  Pure in-memory --
+// persisted on the next save that touches the fixture.
+function _recentreLegacyPolylines(floor) {
+  if (!floor || !floor.fixtures) return;
+  for (const fx of floor.fixtures) {
+    const v = fx.vertices;
+    if (!Array.isArray(v) || v.length < 2) continue;
+    let cx = 0, cy = 0;
+    for (const [x, y] of v) { cx += x; cy += y; }
+    cx /= v.length; cy /= v.length;
+    // Only recentre if anchor is glued to vertex[0] (the old bug).
+    if (Math.abs(fx.x_m - v[0][0]) < 1e-6 && Math.abs(fx.y_m - v[0][1]) < 1e-6) {
+      fx.x_m = cx;
+      fx.y_m = cy;
+    }
+  }
+}
+
 async function selectFloor(id) {
   const full = await api('GET', `/floors/${id}`);
+  _recentreLegacyPolylines(full);
   state.currentFloor = full;
   state.selectedDeviceIds.clear();
   closeElementEditor();
@@ -1570,8 +1592,16 @@ async function commitPlacement() {
       toast('Polyline needs at least 2 vertices', true);
       return cancelPlacement();
     }
+    // Anchor lives at the centroid of the vertices so it's visibly
+    // distinct from any single vertex handle -- clicking the centre
+    // pip drags the whole polyline as a rigid body, while each
+    // vertex handle drags just that corner.  Vertices are stored in
+    // absolute world coords so the anchor is a pure derived value.
+    let cx = 0, cy = 0;
+    for (const pt of p.points) { cx += pt.x_m; cy += pt.y_m; }
+    cx /= p.points.length; cy /= p.points.length;
     extra = {
-      x_m: p.points[0].x_m, y_m: p.points[0].y_m,
+      x_m: cx, y_m: cy,
       vertices: p.points.map(pt => [pt.x_m, pt.y_m]),
     };
   }

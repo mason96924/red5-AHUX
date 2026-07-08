@@ -64,7 +64,22 @@ class Replica:
         return self._by_device.get(device)
 
     def all(self) -> list[DeviceSnapshot]:
-        return list(self._by_device.values())
+        """Return every known device, sorted for a human-readable UI.
+
+        Operators walk the DIN rail in ``(SCU, module_address, module_type,
+        relay_channel)`` order, so we sort accordingly instead of returning
+        insertion order (which is race-dependent when the editor seeds all
+        16 channels in parallel via ``Promise.all``).
+        """
+        return sorted(
+            self._by_device.values(),
+            key=lambda snap: (
+                snap.device.scu,
+                snap.device.address,
+                snap.device.dev_type.name,
+                snap.device.sub_address,
+            ),
+        )
 
     # ---- ops ----------------------------------------------------------
 

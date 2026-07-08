@@ -1170,7 +1170,17 @@ async function refreshAll() {
   ]);
   state.groups = groupsRes.groups || [];
   state.schedules = schRes.schedules || [];
-  state.devices = devRes || [];
+  // Sort by (scu, module_address, dev_type, relay_channel) so the
+  // grid reflects the physical DIN-rail walk order regardless of the
+  // race-y seed-in-parallel arrival at the replica.
+  state.devices = (devRes || []).slice().sort((a, b) => {
+    const A = a.device.split('/'), B = b.device.split('/');
+    // parts: [dev_type, scu, address, sub_address]
+    return (parseInt(A[1]) - parseInt(B[1]))
+        || (parseInt(A[2]) - parseInt(B[2]))
+        || A[0].localeCompare(B[0])
+        || (parseInt(A[3]) - parseInt(B[3]));
+  });
   state.settings = setRes.settings || null;
   await rebuildDeviceGroupsIndex();
   renderSchedules();

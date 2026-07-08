@@ -26,6 +26,12 @@ from elc.drivers.srm import SrmDriver
 class DeviceSnapshot:
     device: DeviceId
     relay_state: bool | None = None
+    # Analog dim level in the 0.0 .. 1.0 range, or None when never set.
+    # 0-10V dimmers map linearly; 1.0 == full output.  This is a Phase
+    # 6.1 UI stub -- the real analog frame is Phase 6.2, so setting it
+    # today reflects in the UI and event stream but does NOT drive
+    # physical hardware.  See docs/ROADMAP or CHANGELOG for status.
+    dim_level: float | None = None
     last_fail_code: int | None = None
     last_fail_detail: bytes = b""
     last_seen: datetime | None = None
@@ -35,6 +41,7 @@ class DeviceSnapshot:
         return {
             "device": str(self.device),
             "relay_state": self.relay_state,
+            "dim_level": self.dim_level,
             "last_fail_code": self.last_fail_code,
             "last_seen": (
                 self.last_seen.isoformat() if self.last_seen else None
@@ -107,6 +114,26 @@ class Replica:
             "ts": snap.last_seen.isoformat() if snap.last_seen else None,
         })
         return True
+
+    async def set_dim_level(self, device: DeviceId, level: float) -> None:
+        """Record a 0-10V dim level for the given device.
+
+        UI-facing stub: creates the snapshot if unseen, clamps ``level``
+        into ``[0.0, 1.0]``, and publishes a ``dim_level`` event so
+        subscribed WebSocket / SSE clients update in lockstep.  The
+        real analog wire frame is Phase 6.2 -- until then this is a
+        UI-only state that never reaches the SCU.
+        """
+        level = max(0.0, min(1.0, float(level)))
+        snap = self._by_device.get(device) or self._touch(device)
+        snap.dim_level = level
+        snap.update_count += 1
+        await self.events.publish({
+            "type": "dim_level",
+            "device": str(device),
+            "level": level,
+            "mocked": True,   # remove when Phase 6.2 wires the wire frame
+        })
 
     async def clear_alarm(self, device: DeviceId) -> bool:
         """Operator-initiated alarm acknowledge.  Clears the sticky

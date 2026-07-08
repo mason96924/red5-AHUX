@@ -246,5 +246,59 @@ async def test_register_device_bad_id(client) -> None:
     assert r.status_code == 400
 
 
+# ---------- POST /api/elc/devices/{id}/dim ---------------------------
+
+
+async def test_dim_sets_level_and_broadcasts_event(
+    client, stack, mock_scu_server
+) -> None:
+    """POST /dim clamps to [0,1], updates the replica snapshot, and
+    emits a ``dim_level`` event so subscribed WS/SSE clients update.
+    """
+    dev = _dev(90)
+    # Register first so the snapshot exists (mirrors real UI flow).
+    await client.post(f"/api/elc/devices/{_id(dev)}/register")
+
+    seen: list[dict[str, Any]] = []
+    async def sink(ev: dict[str, Any]) -> None:
+        if ev.get("type") == "dim_level":
+            seen.append(ev)
+    stack.replica.events.subscribe(sink)
+
+    r = await client.post(
+        f"/api/elc/devices/{_id(dev)}/dim", json={"level": 0.42}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["device"] == str(dev)
+    assert body["level"] == pytest.approx(0.42)
+    assert body["mocked"] is True
+
+    await asyncio.sleep(0.02)
+    assert len(seen) == 1
+    assert seen[0]["device"] == str(dev)
+    assert seen[0]["level"] == pytest.approx(0.42)
+
+    # Snapshot reflects the level.
+    r2 = await client.get(f"/api/elc/devices/{_id(dev)}")
+    assert r2.json()["dim_level"] == pytest.approx(0.42)
+
+    # No wire frame emitted -- dim is UI-only (Phase 6.1 stub).
+    assert len(mock_scu_server.received_frames) == 0
+
+
+async def test_dim_clamps_out_of_range(client) -> None:
+    dev = _dev(91)
+    r_hi = await client.post(
+        f"/api/elc/devices/{_id(dev)}/dim", json={"level": 3.7}
+    )
+    r_lo = await client.post(
+        f"/api/elc/devices/{_id(dev)}/dim", json={"level": -0.5}
+    )
+    assert r_hi.json()["level"] == pytest.approx(1.0)
+    assert r_lo.json()["level"] == pytest.approx(0.0)
+
+
 # Silence unused-import lint for fixtures.
 _ = contextlib

@@ -23,6 +23,13 @@ class _RelayBody(BaseModel):
     state: bool
 
 
+class _DimBody(BaseModel):
+    # 0.0 (off) .. 1.0 (full).  Values outside the range are clamped
+    # server-side rather than rejected -- operators tuning a slider
+    # shouldn't see a 422 for a fingertip overshoot.
+    level: float
+
+
 def _parse_device_id(s: str) -> DeviceId:
     try:
         return DeviceId.from_string(s)
@@ -130,6 +137,28 @@ def build_router(
         dev = _parse_device_id(device_id)
         await driver.set_relay(dev, body.state)
         return {"ok": True, "device": str(dev), "state": body.state}
+
+    @router.post("/devices/{device_id:path}/dim")
+    async def set_dim(device_id: str, body: _DimBody) -> dict[str, Any]:
+        """UI-facing 0-10V dim endpoint (Phase 6.1 stub).
+
+        Records the requested level in the replica and broadcasts a
+        ``dim_level`` event so every open UI updates in lockstep.  This
+        endpoint does NOT emit an analog wire frame today -- that lands
+        in Phase 6.2 with the real ELC dim opcode.  Response includes
+        ``mocked: true`` so the frontend can badge the control until
+        real hardware control is available.
+        """
+        if device_id.endswith("/dim"):
+            device_id = device_id[: -len("/dim")]
+        dev = _parse_device_id(device_id)
+        await replica.set_dim_level(dev, body.level)
+        return {
+            "ok": True,
+            "device": str(dev),
+            "level": max(0.0, min(1.0, float(body.level))),
+            "mocked": True,
+        }
 
     @router.post("/devices/{device_id:path}/clear-alarm")
     async def clear_alarm(device_id: str) -> dict[str, Any]:

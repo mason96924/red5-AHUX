@@ -434,6 +434,36 @@
                   margin-bottom: 8px;">
         Editing <span id="ee-device" style="color: var(--text)"></span>
       </div>
+
+      <!-- Live operations: on/off toggle + dim slider.  Visible when
+           the currently-open element is `onoff` or `dimmer_0_10v`
+           respectively.  Talks straight to /devices/{id}/relay and
+           /devices/{id}/dim.  Dim is a Phase 6.1 UI stub -- the wire
+           frame is Phase 6.2, hence the "mocked" badge next to it. -->
+      <div id="ee-ops" style="margin-bottom:10px;padding-bottom:10px;
+                              border-bottom:1px dashed var(--line)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <label style="margin:0">State</label>
+          <button class="ghost" id="ee-toggle" data-testid="ee-toggle"
+                  style="padding:4px 12px;font-size:12px;min-width:70px"
+                  title="Toggle this device's relay -- POSTs to /devices/{id}/relay">
+            <span id="ee-toggle-label">OFF</span>
+          </button>
+          <span id="ee-toggle-hint" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+        <div id="ee-dim-row" style="display:none;align-items:center;gap:8px">
+          <label style="margin:0;min-width:38px">Dim</label>
+          <input id="ee-dim" type="range" min="0" max="100" step="1"
+                 data-testid="ee-dim"
+                 style="flex:1;accent-color:var(--accent)"/>
+          <span id="ee-dim-pct" style="font-family:var(--mono);
+                font-size:11px;min-width:34px;text-align:right">0%</span>
+          <span title="0-10V dim wire frame lands in Phase 6.2; today's slider updates UI only."
+                style="font-size:9px;padding:1px 4px;border:1px solid var(--muted);
+                       border-radius:3px;color:var(--muted)">STUB</span>
+        </div>
+      </div>
+
       <label>Type</label>
       <select id="ee-type" data-testid="ee-type">
         <option value="onoff">On/Off</option>
@@ -893,12 +923,93 @@ function openElementEditor(deviceId) {
     tubeSel.style.display = isLine ? '' : 'none';
     tubeLbl.style.display = isLine ? '' : 'none';
   };
+  // Refresh ops panel on element-type change too, so switching a
+  // device from onoff → dimmer surfaces the slider.
+  document.getElementById('ee-type').onchange = () => refreshOpsPanel();
+  refreshOpsPanel();
+}
+
+// Populate the on/off toggle + dim slider from the current live state.
+// Called on open, on element-type change, and whenever an SSE
+// relay_state / dim_level event lands (via applyLiveOpsUpdate).
+function refreshOpsPanel() {
+  const did = state.editingDeviceId;
+  if (!did) return;
+  const eType = document.getElementById('ee-type').value;
+  const live = state.liveDevices.get(did) || {};
+  const relay = live.relay_state === true;
+  const dim = (typeof live.dim_level === 'number') ? live.dim_level : 0;
+  const toggle = document.getElementById('ee-toggle');
+  const label = document.getElementById('ee-toggle-label');
+  const hint = document.getElementById('ee-toggle-hint');
+  label.textContent = relay ? 'ON' : 'OFF';
+  toggle.style.background = relay ? 'rgba(120,200,120,0.15)' : '';
+  toggle.style.borderColor = relay ? '#78c878' : '';
+  hint.textContent = (live.relay_state === null || live.relay_state === undefined)
+    ? 'unknown — click to set'
+    : '';
+  const dimRow = document.getElementById('ee-dim-row');
+  const isDimmer = eType === 'dimmer_0_10v';
+  dimRow.style.display = isDimmer ? 'flex' : 'none';
+  if (isDimmer) {
+    const pct = Math.round(dim * 100);
+    document.getElementById('ee-dim').value = pct;
+    document.getElementById('ee-dim-pct').textContent = `${pct}%`;
+  }
+}
+
+// Called from the SSE/WS live-event handler when a relay_state or
+// dim_level event lands, so the ops panel updates without a poll.
+function applyLiveOpsUpdate(deviceId) {
+  if (state.editingDeviceId === deviceId) refreshOpsPanel();
 }
 function closeElementEditor() {
   document.getElementById('element-editor').style.display = 'none';
   state.editingDeviceId = null;
 }
 document.getElementById('ee-close').onclick = closeElementEditor;
+
+// Wire the on/off toggle -- flip the target state based on the live
+// snapshot, POST to /devices/{id}/relay.  The unsolicited RelayState
+// echo comes back via the SSE/WS stream and refreshOpsPanel updates
+// the label; we don't optimistically write here so the UI shows the
+// authoritative post-echo state.
+document.getElementById('ee-toggle').onclick = async () => {
+  const did = state.editingDeviceId;
+  if (!did) return;
+  const live = state.liveDevices.get(did) || {};
+  const target = !(live.relay_state === true);   // treat unknown as OFF
+  try {
+    await api('POST', `/devices/${did}/relay`, { state: target });
+    // Optimistically flip the UI too, in case the SSE echo is slow /
+    // in mock mode where the echo comes from MockScu (near-instant).
+    live.relay_state = target;
+    state.liveDevices.set(did, live);
+    refreshOpsPanel();
+  } catch (e) { toast(`Toggle failed: ${e.message}`, true); }
+};
+
+// Wire the dim slider -- debounce so a fast drag doesn't hammer the
+// API, but still send the final value.  Uses `input` (not `change`)
+// so the UI feels live.
+let _dimDebounce = null;
+document.getElementById('ee-dim').addEventListener('input', (ev) => {
+  const did = state.editingDeviceId;
+  if (!did) return;
+  const pct = parseInt(ev.target.value, 10) || 0;
+  document.getElementById('ee-dim-pct').textContent = `${pct}%`;
+  // Reflect locally so the slider tracks the finger; server confirms
+  // via SSE dim_level event.
+  const live = state.liveDevices.get(did) || {};
+  live.dim_level = pct / 100;
+  state.liveDevices.set(did, live);
+  clearTimeout(_dimDebounce);
+  _dimDebounce = setTimeout(async () => {
+    try {
+      await api('POST', `/devices/${did}/dim`, { level: pct / 100 });
+    } catch (e) { toast(`Dim failed: ${e.message}`, true); }
+  }, 120);
+});
 document.getElementById('ee-save').onclick = async () => {
   const did = state.editingDeviceId;
   if (!did) return;
@@ -2711,12 +2822,19 @@ function onLiveEvent(ev) {
     const d = state.liveDevices.get(ev.device) || {};
     d.relay_state = ev.state;
     state.liveDevices.set(ev.device, d);
+    applyLiveOpsUpdate(ev.device);
+  } else if (ev.type === 'dim_level') {
+    const d = state.liveDevices.get(ev.device) || {};
+    d.dim_level = ev.level;
+    state.liveDevices.set(ev.device, d);
+    applyLiveOpsUpdate(ev.device);
   } else if (ev.type === 'broadcast_complete') {
     const prefix = _prefixFor(ev.dev_type, ev.scu);
     if (!prefix) return;
     for (const [dev, d] of state.liveDevices.entries()) {
       if (dev.startsWith(prefix)) d.relay_state = ev.state;
     }
+    if (state.editingDeviceId) applyLiveOpsUpdate(state.editingDeviceId);
   } else if (ev.type === 'fail_report') {
     const d = state.liveDevices.get(ev.device) || {};
     d.last_fail_code = ev.fail_code;

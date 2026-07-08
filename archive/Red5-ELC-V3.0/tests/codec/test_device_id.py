@@ -43,8 +43,9 @@ def test_encode_decode_roundtrip_max_each_field() -> None:
 
 
 def test_decode_unknown_devtype_falls_back_to_unknown() -> None:
-    # devtype value 999 is outside the IntEnum table.
-    raw = (999 << (32 - DEVTYPE_BITS)).to_bytes(4, "big")
+    # devtype value 200 is outside the IntEnum table but still fits
+    # in 8 bits (V3.8 layout has DEVTYPE_BITS=8).
+    raw = (200 << (32 - DEVTYPE_BITS)).to_bytes(4, "big")
     d = DeviceId.decode_4b(raw)
     assert d.dev_type is DeviceType.UNKNOWN
 

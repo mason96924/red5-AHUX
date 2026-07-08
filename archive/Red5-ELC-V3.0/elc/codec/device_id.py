@@ -1,17 +1,16 @@
 """4-byte hierarchical Device-ID codec.
 
-Bit layout (MSB → LSB, 32 bits total):
+Bit layout (MSB → LSB, 32 bits total, V3.8-aligned):
 
-    31..22   21..16   15..6     5..0
+    31..24   23..18   17..8     7..0
     +--------+-------+---------+---------+
     | DevType|  SCU  | Address | SubAddr |
-    | 10 bits| 6 bits| 10 bits |  6 bits |
+    | 8 bits | 6 bits| 10 bits |  8 bits |
     +--------+-------+---------+---------+
 
-Note: the prose in `docs/ARCHITECTURE.md §2` labels SubAddr "8 bits",
-which doesn't fit 32 bits with the other three fields.  We follow the
-bit *positions* (5..0 → 6 bits), which is the layout the ELCC48 spec
-itself uses.  Re-confirm against a captured frame.
+Per ``docs/RED5-ETLC-V3.8-PROTOCOL.md §2``, the SubAddress field is
+8 bits (sub-address broadcast is 0xFF).  All V3.8 device-type codes
+fit in 8 bits (max is 0x3E = 62), so DevType shrinks from 10 to 8.
 """
 
 from __future__ import annotations
@@ -85,10 +84,10 @@ class DeviceType(IntEnum):
     SRM_6E = 0x16         # alias of SRM_ERM (6-channel eRM)
 
 
-DEVTYPE_BITS: Final[int] = 10
+DEVTYPE_BITS: Final[int] = 8
 SCU_BITS: Final[int] = 6
 ADDR_BITS: Final[int] = 10
-SUBADDR_BITS: Final[int] = 6
+SUBADDR_BITS: Final[int] = 8
 
 _DEVTYPE_SHIFT: Final[int] = 32 - DEVTYPE_BITS                       # 22
 _SCU_SHIFT: Final[int] = _DEVTYPE_SHIFT - SCU_BITS                   # 16

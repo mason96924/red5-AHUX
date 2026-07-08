@@ -1189,8 +1189,26 @@ function cctColor(k) {
 
 function fixtureIsOn(fx) {
   const d = state.liveDevices.get(fx.device_id);
-  if (state.mode !== 'operator') return true;  // preview brightness in layout
-  return d && d.relay_state === true;
+  // Operator mode: strict reading of the live relay state (unknown
+  // channels stay dark until a RelayState frame arrives).
+  if (state.mode === 'operator') return !!(d && d.relay_state === true);
+  // Layout mode: still preview the light spread for fresh / unknown
+  // channels so operators can see beam footprints while placing.
+  // BUT if the operator has explicitly turned a fixture off (via the
+  // sidebar toggle or a device-side change echoed on SSE), reflect
+  // that on the canvas too -- otherwise the toggle looks dead.
+  return !d || d.relay_state !== false;
+}
+
+// 0..1 brightness scale for a fixture: 1.0 when at full output,
+// scaled down by dim_level when the channel is a 0-10V dimmer with a
+// known level.  Used by paintCanvas() to modulate the light-spread
+// alpha so the dim slider feels connected to the plan.
+function fixtureBrightness(fx) {
+  if (!fixtureIsOn(fx)) return 0;
+  const d = state.liveDevices.get(fx.device_id);
+  if (d && typeof d.dim_level === 'number') return d.dim_level;
+  return 1;
 }
 
 function fixtureAlarming(fx) {
@@ -1506,8 +1524,15 @@ function paintCanvas() {
     if (!el) continue;   // placement exists but element got un-assigned
 
     const [rr, gg, bb] = cctColor(el.cct_k || 4000);
-    // Dimmer preview level — replaced by real voltage in Phase 6.2.
-    const previewLevel = (el.type === 'dimmer_0_10v') ? 0.6 : 1.0;
+    // Real live brightness: obeys the sidebar dim slider (0-10V UI
+    // stub) when the channel is a dimmer; falls back to a sensible
+    // preview level for a dimmer channel with no level set yet so
+    // freshly-placed dimmers still visualise as a light source.
+    const isDimmer = el.type === 'dimmer_0_10v';
+    const live = state.liveDevices.get(fx.device_id) || {};
+    const previewLevel = isDimmer
+      ? (typeof live.dim_level === 'number' ? live.dim_level : 0.6)
+      : 1.0;
 
     // Establish the clipping region for this fixture based on its
     // "anchor" point (x_m, y_m).  All shapes rooted at that point.
@@ -2793,7 +2818,9 @@ function startLiveStream() {
   // Prime state.liveDevices from the current replica snapshot.
   api('GET', '/devices').then(list => {
     for (const d of list) state.liveDevices.set(d.device, {
-      relay_state: d.relay_state, last_fail_code: d.last_fail_code,
+      relay_state: d.relay_state,
+      dim_level: d.dim_level,
+      last_fail_code: d.last_fail_code,
     });
     paintCanvas();
   }).catch(() => {});

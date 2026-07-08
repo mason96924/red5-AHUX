@@ -54,15 +54,27 @@ class ScuLink:
         backoff_factor: float = 2.0,
         connect_timeout: float = 5.0,
         outbound_maxsize: int = 256,
+        wire_version: str = "legacy",
     ) -> None:
         if port <= 0 or port > 0xFFFF:
             raise ValueError(f"port {port} out of range 1..65535")
         if initial_backoff <= 0 or max_backoff < initial_backoff:
             raise ValueError("invalid back-off settings")
+        if wire_version not in ("legacy", "v38"):
+            raise ValueError(
+                f"wire_version {wire_version!r} must be 'legacy' or 'v38'"
+            )
 
         self.host = host
         self.port = port
         self.name = name or f"{host}:{port}"
+        # ``legacy``: our internal frame.py preamble/type/length/CRC
+        # framing (MockScu speaks this; every existing test relies on it).
+        # ``v38``: ETLC V3.8 wire protocol -- Flag(4)+DeviceID(4)+payload+
+        # checksum, used only when talking to real hardware.  In v38 mode
+        # the reader loop invokes ``raw_handlers`` with each chunk from
+        # the socket; the SrmDriver parses V3.8 frames from that stream.
+        self.wire_version = wire_version
 
         self._initial_backoff = initial_backoff
         self._max_backoff = max_backoff
@@ -72,6 +84,9 @@ class ScuLink:
         self._state: LinkState = LinkState.DOWN
         self._connected_event = asyncio.Event()
         self._handlers: list[FrameHandler] = []
+        # Raw-bytes handlers: only invoked when wire_version=='v38'.
+        # The V3.8 driver installs its own 11-byte fixed-frame parser.
+        self._raw_handlers: list = []
         self._outbound: asyncio.Queue[bytes] = asyncio.Queue(maxsize=outbound_maxsize)
         self._supervisor_task: asyncio.Task | None = None
         self._stop_requested = False
@@ -87,6 +102,15 @@ class ScuLink:
     def feed(self, handler: FrameHandler) -> None:
         """Subscribe to inbound frames.  Handler may be sync or async."""
         self._handlers.append(handler)
+
+    def feed_raw(self, handler: Callable[[bytes], Awaitable[None] | None]) -> None:
+        """Subscribe to raw byte chunks (used by the V3.8 driver).
+
+        Handler receives every chunk read from the socket, unmodified.
+        Kept separate from ``feed()`` so v38 handlers don't have to
+        pretend to be legacy Frame handlers.
+        """
+        self._raw_handlers.append(handler)
 
     async def start(self) -> None:
         """Start the supervisor task (idempotent)."""
@@ -115,6 +139,15 @@ class ScuLink:
         on the socket directly.
         """
         await self._outbound.put(encode(frame))
+
+    async def send_bytes(self, data: bytes) -> None:
+        """Enqueue pre-encoded raw bytes (V3.8 escape hatch).
+
+        Used by the V3.8 SrmDriver: it builds ETLC frames directly and
+        needs to bypass the legacy ``Frame`` wrapper.  Legacy callers
+        should keep using ``send()``.
+        """
+        await self._outbound.put(bytes(data))
 
     async def wait_connected(self, timeout: float | None = None) -> None:
         """Wait until the link reaches `CONNECTED`.  Raises on timeout."""
@@ -208,6 +241,26 @@ class ScuLink:
             chunk = await reader.read(4096)
             if not chunk:
                 return  # peer closed
+            if self.wire_version == "v38":
+                # V3.8 mode: skip legacy decoding and forward the raw
+                # bytes to every registered raw handler.  Each handler
+                # keeps its own parse buffer.
+                for h in self._raw_handlers:
+                    try:
+                        result = h(chunk)
+                    except Exception:  # noqa: BLE001
+                        log.exception("ScuLink[%s] raw handler raised",
+                                      self.name)
+                        continue
+                    if inspect.isawaitable(result):
+                        try:
+                            await result
+                        except Exception:  # noqa: BLE001
+                            log.exception(
+                                "ScuLink[%s] async raw handler raised",
+                                self.name,
+                            )
+                continue
             buf.extend(chunk)
             for frame in decode(buf):
                 await self._dispatch(frame)

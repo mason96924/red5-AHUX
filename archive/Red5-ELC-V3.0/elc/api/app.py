@@ -68,7 +68,13 @@ def build_stack(
     controller boots with ``engine_mode = "dry_run"`` so no hardware
     fires until the operator explicitly flips it live.
     """
-    link = ScuLink(host=host, port=port, name=name, initial_backoff=initial_backoff)
+    link = ScuLink(
+        host=host, port=port, name=name,
+        initial_backoff=initial_backoff,
+        # Physical hardware speaks ETLC V3.8; mock stays on legacy so
+        # the existing 385-test suite keeps passing unchanged.
+        wire_version=("v38" if data_source == "physical" else "legacy"),
+    )
     driver = SrmDriver(link)
     replica = Replica()
     replica.attach(driver)

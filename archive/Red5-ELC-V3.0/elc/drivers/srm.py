@@ -7,6 +7,7 @@ import inspect
 from typing import ClassVar
 
 from elc.codec.device_id import ADDR_BITS, SUBADDR_BITS, DeviceId, DeviceType
+from elc.codec.etlc38 import RelayOverrideV38, RelayStateV38
 from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState, StatusQuery
 from elc.domain.bus import EventBus
 from elc.drivers.base import AbstractDevice
@@ -36,6 +37,12 @@ class SrmDriver(AbstractDevice):
         self.on_fail: EventBus[FailReport] = EventBus()
         # Pending Futures awaiting a RelayState for a given DeviceId.
         self._pending: dict[DeviceId, list[asyncio.Future[RelayState]]] = {}
+        # V3.8 mode: install a raw-byte handler on the link to parse
+        # ETLC-format RelayState echoes.  Legacy mode leaves the base
+        # class's Frame-registry path in charge.
+        self._v38_buffer = bytearray()
+        if getattr(link, "wire_version", "legacy") == "v38":
+            link.feed_raw(self._on_v38_bytes)
 
     # ---- outbound -----------------------------------------------------
 
@@ -45,9 +52,59 @@ class SrmDriver(AbstractDevice):
         Fire-and-forget at the protocol level — the unsolicited 0x15
         echo (observed via `on_state_change`) is treated as the
         authoritative confirmation per architecture §7 Q3.
+
+        In V3.8 mode (physical hardware), emits an ETLC ``RelayOverride``
+        (opcode 0x07) frame directly; in legacy mode the internal
+        codec+registry wraps a ``RelaySet`` for MockScu.
         """
+        if getattr(self._link, "wire_version", "legacy") == "v38":
+            data = RelayOverrideV38(device=device, state=state).encode()
+            await self._link.send_bytes(data)
+            return
         frame = self._registry.encode_message(RelaySet(device=device, state=state))
         await self._link.send(frame)
+
+    async def _on_v38_bytes(self, chunk: bytes) -> None:
+        """Parse ETLC RelayState echoes out of a raw byte stream.
+
+        V3.8 frames are fixed-length (11 bytes) framed by the sentinel
+        ``FF FF FF FF``.  On any parse failure (bad checksum, unknown
+        opcode) we skip one byte and rescan -- standard recovery for a
+        noisy or partially-implemented protocol.
+        """
+        self._v38_buffer.extend(chunk)
+        while len(self._v38_buffer) >= 11:
+            idx = self._v38_buffer.find(b"\xff\xff\xff\xff")
+            if idx == -1:
+                # No sentinel in buffer.  Drop everything but the last
+                # 3 bytes (a sentinel could straddle two reads).
+                del self._v38_buffer[: -3]
+                return
+            if idx > 0:
+                del self._v38_buffer[:idx]
+            if len(self._v38_buffer) < 11:
+                return
+            candidate = bytes(self._v38_buffer[:11])
+            parsed = RelayStateV38.try_decode(candidate)
+            if parsed is not None:
+                del self._v38_buffer[:11]
+                # Fabricate a legacy ``RelayState`` so downstream
+                # subscribers (Replica etc.) don't need to care about
+                # the wire version -- one internal event model.
+                await self.on_state_change.publish(
+                    RelayState(device=parsed.device, state=parsed.state)
+                )
+                # Resolve any waiting query() Futures.
+                for fut in self._pending.get(parsed.device, []):
+                    if not fut.done():
+                        fut.set_result(
+                            RelayState(device=parsed.device, state=parsed.state)
+                        )
+                continue
+            # 11 bytes starting with sentinel but not a RelayState we
+            # know -- could be RelayStatus (0x25), FailReport (0x23),
+            # etc.  Skip the sentinel and keep scanning.
+            del self._v38_buffer[:1]
 
     async def broadcast(
         self,

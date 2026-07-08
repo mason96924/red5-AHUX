@@ -306,6 +306,15 @@
              type="number" min="0" step="0.1" placeholder="click"
              style="width:64px;padding:4px 6px;font-size:11px;text-align:center"/>
     </label>
+    <label id="dim-angle-wrap"
+           style="display:none;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Angle (°)
+      <input id="dim-angle" data-testid="dim-angle"
+             type="number" step="1" placeholder="0"
+             style="width:56px;padding:4px 6px;font-size:11px;text-align:center"/>
+    </label>
     <label id="dim-radius-wrap"
            style="display:none;align-items:center;gap:6px;margin:0;padding:0;
                   color:var(--muted);font-size:11px;letter-spacing:.06em;
@@ -1827,7 +1836,10 @@ function _presetDimensions(shape, kind) {
   };
   if (shape === 'line') {
     const L = num('dim-length');
-    return L ? { length_m: L } : null;
+    if (!L) return null;
+    const aRaw = document.getElementById('dim-angle').value;
+    const A = (aRaw === '') ? 0 : parseFloat(aRaw);
+    return { length_m: L, angle_deg: Number.isFinite(A) ? A : 0 };
   }
   if (shape === 'regular_polygon') {
     if (kind === 'circle' || kind === 'polygon') {
@@ -1845,7 +1857,8 @@ function _presetDimensions(shape, kind) {
 function _buildPlacementFromPreset(shape, kind, sides, anchor, preset) {
   if (shape === 'line') {
     return { x_m: anchor.x_m, y_m: anchor.y_m,
-             length_m: preset.length_m, angle_deg: 0 };
+             length_m: preset.length_m,
+             angle_deg: preset.angle_deg || 0 };
   }
   if (shape === 'regular_polygon' && kind === 'circle') {
     return { x_m: anchor.x_m, y_m: anchor.y_m,
@@ -2047,6 +2060,7 @@ function syncShapeSubcontrols() {
   const sidesWrap = document.getElementById('polygon-sides-wrap');
   const tubeWrap  = document.getElementById('tube-type-wrap');
   const lenWrap   = document.getElementById('dim-length-wrap');
+  const angWrap   = document.getElementById('dim-angle-wrap');
   const radWrap   = document.getElementById('dim-radius-wrap');
   const wWrap     = document.getElementById('dim-width-wrap');
   const isPoly = state.shape === 'regular_polygon';
@@ -2056,6 +2070,7 @@ function syncShapeSubcontrols() {
   sidesWrap.style.display = (isPoly && kind === 'polygon') ? 'inline-flex' : 'none';
   tubeWrap.style.display  = isLine ? 'inline-flex' : 'none';
   lenWrap.style.display   = isLine ? 'inline-flex' : 'none';
+  angWrap.style.display   = isLine ? 'inline-flex' : 'none';
   radWrap.style.display   =
     (isPoly && (kind === 'circle' || kind === 'polygon')) ? 'inline-flex' : 'none';
   wWrap.style.display     = (isPoly && kind === 'rectangle') ? 'inline-flex' : 'none';
@@ -2079,6 +2094,7 @@ function populateDimInputsFromSelection() {
   const shape = el?.shape || null;
   const kind  = fx?.polygon_kind || null;
   setVal('dim-length', (state.shape === 'line' && shape === 'line') ? fx?.length_m : null);
+  setVal('dim-angle',  (state.shape === 'line' && shape === 'line') ? fx?.angle_deg : null);
   setVal('dim-radius', (state.shape === 'regular_polygon'
                         && (state.polygonKind === 'circle' || state.polygonKind === 'polygon')
                         && kind === state.polygonKind) ? fx?.radius_m : null);
@@ -2111,6 +2127,14 @@ async function onDimensionEdit() {
   if (shape === 'line') {
     const L = readNum('dim-length');
     if (L != null && L !== fx.length_m) { fx.length_m = L; changed = true; }
+    // Angle is unrestricted (can be negative) so use a separate parse.
+    const aRaw = document.getElementById('dim-angle').value;
+    if (aRaw !== '') {
+      const A = parseFloat(aRaw);
+      if (Number.isFinite(A) && A !== fx.angle_deg) {
+        fx.angle_deg = A; changed = true;
+      }
+    }
   }
   if (shape === 'regular_polygon' && (kind === 'circle' || kind === 'polygon')) {
     const R = readNum('dim-radius');
@@ -2127,7 +2151,7 @@ async function onDimensionEdit() {
     await savePlacements(state.currentFloor.fixtures);
   }
 }
-['dim-length','dim-radius','dim-width','dim-height'].forEach(id => {
+['dim-length','dim-angle','dim-radius','dim-width','dim-height'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', onDimensionEdit);
 });

@@ -2422,21 +2422,31 @@ canvas.addEventListener('mousemove', (ev) => {
     fx.angle_deg = (mode === 'endA') ? (newAng + 180) % 360 : newAng;
     fx.x_m = (fixedX + wx) / 2;
     fx.y_m = (fixedY + wy) / 2;
+    // Phase 6.1i — broadcast size + orientation to every other line
+    // in the current selection.  Each sibling keeps its own anchor
+    // position so rows-of-tubes stay in place; only length_m and
+    // angle_deg propagate.
+    _broadcastSizeToSelection(fx, ['length_m', 'angle_deg'], 'line');
   } else if (mode === 'radius') {
     // Ring / circle: drag the east handle to grow/shrink; anchor stays.
     fx.radius_m = Math.max(0.1, Math.hypot(wx - fx.x_m, wy - fx.y_m));
+    _broadcastSizeToSelection(fx, ['radius_m'], ['ring', 'regular_polygon']);
   } else if (mode.startsWith('corner:')) {
     // Rectangle: drag a corner, resizes symmetrically about centre.
     // We don't shift the centre so the *opposite* corner also moves
     // (which reads as "corner-drag" rather than "one-side-drag").
     fx.width_m  = Math.max(0.1, 2 * Math.abs(wx - fx.x_m));
     fx.height_m = Math.max(0.1, 2 * Math.abs(wy - fx.y_m));
+    _broadcastSizeToSelection(fx, ['width_m', 'height_m'],
+                              'regular_polygon', 'rectangle');
   } else if (mode === 'polygon_vertex') {
     // N-gon: dragging the vertex handle rotates the whole polygon
     // AND changes its radius simultaneously.
     const dx = wx - fx.x_m, dy = wy - fx.y_m;
     fx.radius_m  = Math.max(0.1, Math.hypot(dx, dy));
     fx.angle_deg = Math.atan2(dy, dx) * 180 / Math.PI;
+    _broadcastSizeToSelection(fx, ['radius_m', 'angle_deg'],
+                              'regular_polygon', 'polygon');
   } else if (mode.startsWith('vertex:')) {
     const idx = parseInt(mode.slice(7), 10);
     if (fx.vertices && idx >= 0 && idx < fx.vertices.length) {
@@ -2453,6 +2463,27 @@ canvas.addEventListener('mouseup', async () => {
   dragState = null;
   if (moved) await savePlacements(state.currentFloor.fixtures);
 });
+
+// Copy the listed fields from ``srcFx`` to every *other* fixture in
+// the current selection whose element.shape (and optionally
+// polygon_kind) match.  Anchors (x_m / y_m) are NOT copied so each
+// sibling stays put -- only size / orientation propagates.  Used by
+// the resize-handle drag paths so a group of T8 tubes stretch or
+// rotate together in real time.
+function _broadcastSizeToSelection(srcFx, fields, shapeFilter, kindFilter) {
+  if (!state.currentFloor || !state.selectedDeviceIds) return;
+  if (!state.selectedDeviceIds.has(srcFx.device_id)) return;
+  if (state.selectedDeviceIds.size < 2) return;
+  const shapesAllowed = Array.isArray(shapeFilter) ? shapeFilter : [shapeFilter];
+  for (const fx of state.currentFloor.fixtures) {
+    if (fx === srcFx) continue;
+    if (!state.selectedDeviceIds.has(fx.device_id)) continue;
+    const el = state.lightingElements.get(fx.device_id);
+    if (!el || !shapesAllowed.includes(el.shape)) continue;
+    if (kindFilter && fx.polygon_kind !== kindFilter) continue;
+    for (const k of fields) fx[k] = srcFx[k];
+  }
+}
 
 // ---- Fixture handles (Phase 6.1d resize) ------------------------------
 // Return an array of {kind, sx, sy, wx, wy} handles for a placed

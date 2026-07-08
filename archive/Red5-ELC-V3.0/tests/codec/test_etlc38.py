@@ -1,9 +1,8 @@
-"""Unit tests for the ETLC V3.8 probe codec.
+"""Unit tests for the ETLC V3.8 codec (post-hardware-capture rev).
 
-Zero-hardware tests: verify our best-guess wire format encodes /
-decodes symmetrically, hits the expected byte counts, and rejects
-mangled frames.  Hardware iteration will still be needed to confirm
-the actual byte values against the SCU.
+The wire format was reverse-engineered from actual SCU RX chunks
+captured on 2026-02-11.  Every observation is baked into a golden
+test below so any regression breaks loudly.
 """
 
 from __future__ import annotations
@@ -12,193 +11,205 @@ import pytest
 
 from elc.codec.device_id import DeviceId, DeviceType
 from elc.codec.etlc38 import (
-    FLAG_STANDARD,
+    CLASS_SRM,
+    FRAME_LEN,
     OPCODE_RELAY_OVERRIDE,
-    OPCODE_RELAY_STATE,
+    OPCODE_RELAY_STATUS,
+    PREAMBLE,
     EtlcFrameError,
     RelayOverrideV38,
-    RelayStateV38,
+    RelayStatusV38,
+    channels_from_mask,
     checksum,
-    decode_device_id_v38,
-    encode_device_id_v38,
 )
 
 
-def _dev(*, dev_type=DeviceType.SRM_6S, scu=1, address=2, sub_address=0):
-    return DeviceId(
-        dev_type=dev_type, scu=scu, address=address, sub_address=sub_address,
-    )
+# ---------- Wire constants -------------------------------------------
 
 
-# ---------- DeviceID V3.8 packing ------------------------------------
+def test_preamble_is_elc_at_symbol():
+    assert PREAMBLE == bytes([0x45, 0x4C, 0x43, 0x40])
 
 
-def test_device_id_v38_roundtrip():
-    for dev in [
-        _dev(dev_type=DeviceType.SRM_4S, address=3, sub_address=0),
-        _dev(dev_type=DeviceType.SRM_6S, address=2, sub_address=5),
-        _dev(dev_type=DeviceType.SRM_ERM, address=1, sub_address=5),
-        _dev(dev_type=DeviceType.SRM_48S, scu=3, address=1023, sub_address=255),
-    ]:
-        out = encode_device_id_v38(dev)
-        assert len(out) == 4
-        back = decode_device_id_v38(out)
-        assert back == dev
+def test_frame_length_is_12():
+    assert FRAME_LEN == 12
 
 
-def test_device_id_v38_bit_positions():
-    """Verify the specific bit positions per §2 of protocol doc.
-
-    Type=0x15 (SRM_6S), SCU=1, Addr=2, Sub=0 should pack as:
-        0001 0101  00 0001  00 0000 0010  0000 0000
-        = 0x15 04 02 00  (with SCU=1 shifted into positions 23..18)
-
-    Byte 0: 0x15  (type)
-    Byte 1: 000001 00 = 0x04  (scu=1 in top 6 bits + top 2 bits of addr)
-    Byte 2: 00000010 = 0x02  (middle 8 bits of addr = 0x002)
-    Byte 3: 0x00  (subaddress)
-    """
-    dev = _dev(dev_type=DeviceType.SRM_6S, scu=1, address=2, sub_address=0)
-    assert encode_device_id_v38(dev) == bytes([0x15, 0x04, 0x02, 0x00])
-
-
-def test_device_id_v38_max_values():
-    """Boundary check: max field values pack correctly."""
-    dev = DeviceId(
-        dev_type=DeviceType.SRM_48S,  # 0x18
-        scu=0x3F,                       # 6 bits max
-        address=0x3FF,                  # 10 bits max (broadcast)
-        sub_address=0xFF,               # 8 bits max (broadcast)
-    )
-    out = encode_device_id_v38(dev)
-    # Byte 0: 0x18 (type)
-    # Byte 1: 111111 11 = 0xFF (scu all-ones + top 2 bits of addr all-ones)
-    # Byte 2: 11111111 = 0xFF (middle 8 bits of addr)
-    # Byte 3: 0xFF (subaddress all-ones)
-    assert out == bytes([0x18, 0xFF, 0xFF, 0xFF])
+def test_class_srm_is_0x07():
+    assert CLASS_SRM == 0x07
 
 
 # ---------- Checksum -------------------------------------------------
 
 
-def test_checksum_matches_byte_sum():
-    assert checksum(b"") == 0
-    assert checksum(bytes([0x01, 0x02, 0x03])) == 0x06
-    assert checksum(bytes([0xFF, 0xFF, 0xFF, 0xFF])) == 0xFC   # 4*0xFF & 0xFF
+def test_checksum_matches_observed_hardware_values():
+    """Golden values from the 2026-02-11 hardware log:
 
+        RX: 45 4C 43 40 07 15 00 02 00 25 01 43   ->  cs 0x43
+        RX: 45 4C 43 40 07 15 00 02 00 25 03 41   ->  cs 0x41
+        RX: 45 4C 43 40 07 15 00 02 00 25 07 3D   ->  cs 0x3D
+        RX: 45 4C 43 40 07 15 00 02 00 25 17 2D   ->  cs 0x2D
+        RX: 45 4C 43 40 07 15 00 02 00 25 37 0D   ->  cs 0x0D
+        RX: 45 4C 43 40 07 14 00 03 00 25 01 43   ->  cs 0x43
 
-# ---------- RelayOverride (opcode 0x07) ------------------------------
-
-
-def test_relay_override_frame_size_and_shape():
-    """A single relay-override frame must be exactly 11 bytes:
-    Flag(4) + DeviceID(4) + Opcode(1) + State(1) + Checksum(1)."""
-    fr = RelayOverrideV38(device=_dev(), state=True).encode()
-    assert len(fr) == 11
-    assert fr[:4] == FLAG_STANDARD
-    assert fr[8] == OPCODE_RELAY_OVERRIDE
-    assert fr[9] == 1
-    # Checksum verifies the same body on the receiver side.
-    assert checksum(fr[:10]) == fr[10]
-
-
-def test_relay_override_roundtrip():
-    for state in (True, False):
-        for dev in [
-            _dev(dev_type=DeviceType.SRM_4S, address=3, sub_address=2),
-            _dev(dev_type=DeviceType.SRM_6S, address=2, sub_address=5),
-            _dev(dev_type=DeviceType.SRM_ERM, address=1, sub_address=0),
-        ]:
-            fr = RelayOverrideV38(device=dev, state=state).encode()
-            back = RelayOverrideV38.decode(fr)
-            assert back.device == dev
-            assert back.state == state
-
-
-def test_relay_override_rejects_wrong_length():
-    with pytest.raises(EtlcFrameError, match="11 bytes"):
-        RelayOverrideV38.decode(b"\x00" * 10)
-
-
-def test_relay_override_rejects_bad_flag():
-    fr = bytearray(RelayOverrideV38(device=_dev(), state=True).encode())
-    fr[0] = 0x00
-    fr[-1] = checksum(bytes(fr[:10]))
-    with pytest.raises(EtlcFrameError, match="Flag"):
-        RelayOverrideV38.decode(bytes(fr))
-
-
-def test_relay_override_rejects_bad_checksum():
-    fr = bytearray(RelayOverrideV38(device=_dev(), state=True).encode())
-    fr[-1] ^= 0xFF
-    with pytest.raises(EtlcFrameError, match="checksum"):
-        RelayOverrideV38.decode(bytes(fr))
-
-
-def test_relay_override_rejects_wrong_opcode():
-    fr = bytearray(RelayOverrideV38(device=_dev(), state=True).encode())
-    fr[8] = 0x15   # RelayState opcode instead
-    fr[-1] = checksum(bytes(fr[:10]))
-    with pytest.raises(EtlcFrameError, match="opcode"):
-        RelayOverrideV38.decode(bytes(fr))
-
-
-# ---------- RelayState (opcode 0x15) ---------------------------------
-
-
-def test_relay_state_frame_shape():
-    fr = RelayStateV38(device=_dev(), state=True).encode()
-    assert len(fr) == 11
-    assert fr[8] == OPCODE_RELAY_STATE
-
-
-def test_relay_state_try_decode_valid():
-    fr = RelayStateV38(device=_dev(), state=False).encode()
-    got = RelayStateV38.try_decode(fr)
-    assert got is not None
-    assert got.state is False
-    assert got.device == _dev()
-
-
-def test_relay_state_try_decode_ignores_non_relay_state_frames():
-    # Different opcode -> not RelayState -> try_decode returns None.
-    fr = RelayOverrideV38(device=_dev(), state=True).encode()
-    assert RelayStateV38.try_decode(fr) is None
-
-
-def test_relay_state_try_decode_none_on_bad_checksum():
-    fr = bytearray(RelayStateV38(device=_dev(), state=True).encode())
-    fr[-1] ^= 0xFF
-    assert RelayStateV38.try_decode(bytes(fr)) is None
-
-
-# ---------- Concrete hardware-probe frame ---------------------------
-
-
-def test_concrete_probe_frame_for_srm_6s_channel_0_on():
-    """The exact bytes we'll send to the SCU as our probe.
-
-    Target: SRM_6S at module_address=2, sub_address=0, scu=1 → ON.
-    Expected on-wire bytes (V3.8 best-guess):
-
-        FF FF FF FF   Flag
-        15            Type = SRM_6S (0x15)
-        04            SCU=1 << 2 | top 2 bits of addr (0x02 >> 8 = 0)
-        02            middle 8 bits of addr
-        00            sub_address = 0
-        07            Opcode = RelayOverride
-        01            State = ON
-        22            Checksum: 0xFF*4 + 0x15 + 0x04 + 0x02 + 0x07 + 0x01
-                                = 0x3FC + 0x23 = 0x41F & 0xFF = 0x1F
-
-    If you get a rejection on this specific frame from the SCU, share
-    the pcap and we resolve the ambiguities empirically.
+    Formula: cs = (0x87 - sum(bytes[4..10])) & 0xFF.
     """
-    dev = DeviceId(
-        dev_type=DeviceType.SRM_6S, scu=1, address=2, sub_address=0,
-    )
+    samples = [
+        (b"\x07\x15\x00\x02\x00\x25\x01", 0x43),
+        (b"\x07\x15\x00\x02\x00\x25\x03", 0x41),
+        (b"\x07\x15\x00\x02\x00\x25\x07", 0x3D),
+        (b"\x07\x15\x00\x02\x00\x25\x17", 0x2D),
+        (b"\x07\x15\x00\x02\x00\x25\x37", 0x0D),
+        (b"\x07\x14\x00\x03\x00\x25\x01", 0x43),
+        (b"\x07\x15\x00\x02\x00\x25\x3F", 0x05),   # all six on
+    ]
+    for body, expected in samples:
+        assert checksum(body) == expected, (
+            f"body {body.hex()} -> got 0x{checksum(body):02X}, "
+            f"want 0x{expected:02X}"
+        )
+
+
+def test_checksum_requires_7_byte_body():
+    with pytest.raises(EtlcFrameError, match="7 B"):
+        checksum(b"\x00" * 6)
+    with pytest.raises(EtlcFrameError, match="7 B"):
+        checksum(b"\x00" * 8)
+
+
+# ---------- RelayOverride (opcode 0x07, master → SCU) ---------------
+
+
+def test_relay_override_frame_shape_and_size():
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
     fr = RelayOverrideV38(device=dev, state=True).encode()
-    assert fr.hex() == "ffffffff150402000701" + f"{checksum(fr[:10]):02x}"
-    # And decodes back losslessly.
-    back = RelayOverrideV38.decode(fr)
-    assert back.device == dev and back.state is True
+    assert len(fr) == FRAME_LEN
+    assert fr[:4] == PREAMBLE
+    assert fr[4] == CLASS_SRM
+    assert fr[5] == 0x15  # SRM_6S
+    assert fr[6] == 0x00  # scu
+    assert fr[7] == 0x02  # address
+    assert fr[8] == 0x00  # sub-address (channel 0)
+    assert fr[9] == OPCODE_RELAY_OVERRIDE
+    assert fr[10] == 1    # state ON
+    assert fr[11] == checksum(fr[4:11])
+
+
+def test_relay_override_off_state():
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    fr = RelayOverrideV38(device=dev, state=False).encode()
+    assert fr[10] == 0
+
+
+def test_relay_override_concrete_expected_bytes_for_6srm_ch0_on():
+    """Exact TX bytes the driver will send when the operator clicks
+    SRM_6S/0/2/0 → ON.  If this test changes, hardware needs re-verified.
+    """
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    fr = RelayOverrideV38(device=dev, state=True).encode()
+    # Preamble(4) + class(1) + type + scu + addr + sub + opcode + data + cs
+    expected_body = bytes([0x07, 0x15, 0x00, 0x02, 0x00, 0x07, 0x01])
+    expected_cs = checksum(expected_body)
+    assert fr == PREAMBLE + expected_body + bytes((expected_cs,))
+    # Human-readable golden:
+    assert fr.hex() == "454c43400715000200070161"
+
+
+# ---------- RelayStatus (opcode 0x25, SCU → master, unsolicited) ----
+
+
+def test_relay_status_decodes_hardware_capture():
+    """The exact RX bytes we saw on 2026-02-11 when the operator
+    flipped channels 0, 0+1, 0+1+2 physically on the 6sRM module."""
+    frames = [
+        (bytes.fromhex("454c43400715000200250143"), 0x01),
+        (bytes.fromhex("454c43400715000200250341"), 0x03),
+        (bytes.fromhex("454c4340071500020025073d"), 0x07),
+        (bytes.fromhex("454c4340071500020025172d"), 0x17),
+        (bytes.fromhex("454c4340071500020025370d"), 0x37),
+        (bytes.fromhex("454c43400715000200253f05"), 0x3F),
+    ]
+    for raw, want_mask in frames:
+        got = RelayStatusV38.try_decode(raw)
+        assert got is not None, f"failed to decode {raw.hex()}"
+        assert got.device.dev_type == DeviceType.SRM_6S
+        assert got.device.scu == 0
+        assert got.device.address == 2
+        assert got.device.sub_address == 0
+        assert got.state_mask == want_mask
+
+
+def test_relay_status_decodes_4srm_hardware_capture():
+    """The 4sRM lines from the log -- address=3."""
+    frames = [
+        (bytes.fromhex("454c43400714000300250143"), 0x01),
+        (bytes.fromhex("454c43400714000300250341"), 0x03),
+        (bytes.fromhex("454c4340071400030025073d"), 0x07),
+        (bytes.fromhex("454c43400714000300250f35"), 0x0F),
+    ]
+    for raw, want_mask in frames:
+        got = RelayStatusV38.try_decode(raw)
+        assert got is not None
+        assert got.device.dev_type == DeviceType.SRM_4S
+        assert got.device.address == 3
+        assert got.state_mask == want_mask
+
+
+def test_relay_status_try_decode_rejects_wrong_length():
+    assert RelayStatusV38.try_decode(b"\x00" * 11) is None
+
+
+def test_relay_status_try_decode_rejects_wrong_preamble():
+    fr = bytearray(bytes.fromhex("454c43400715000200250143"))
+    fr[0] = 0x00
+    assert RelayStatusV38.try_decode(bytes(fr)) is None
+
+
+def test_relay_status_try_decode_rejects_bad_checksum():
+    fr = bytearray(bytes.fromhex("454c43400715000200250143"))
+    fr[-1] ^= 0xFF
+    assert RelayStatusV38.try_decode(bytes(fr)) is None
+
+
+def test_relay_status_try_decode_ignores_relayoverride_opcode():
+    """A frame with opcode 0x07 (RelayOverride) must NOT decode as
+    RelayStatus -- keeps the parser opcode-strict."""
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    fr = RelayOverrideV38(device=dev, state=True).encode()
+    assert RelayStatusV38.try_decode(fr) is None
+
+
+def test_relay_status_encode_decode_roundtrip():
+    dev = DeviceId(dev_type=DeviceType.SRM_6E, scu=0, address=1, sub_address=0)
+    for mask in (0x00, 0x01, 0x0F, 0x3F, 0xFF):
+        raw = RelayStatusV38(device=dev, state_mask=mask).encode()
+        assert len(raw) == FRAME_LEN
+        got = RelayStatusV38.try_decode(raw)
+        assert got is not None
+        assert got.device == dev
+        assert got.state_mask == mask
+
+
+# ---------- Channel mask expansion ----------------------------------
+
+
+def test_channels_from_mask_6_channels():
+    assert channels_from_mask(0x01, 6) == [True, False, False, False, False, False]
+    assert channels_from_mask(0x03, 6) == [True, True, False, False, False, False]
+    assert channels_from_mask(0x3F, 6) == [True] * 6
+    assert channels_from_mask(0x00, 6) == [False] * 6
+
+
+def test_channels_from_mask_4_channels():
+    """4sRM only exposes channels 0-3; bits above are noise."""
+    assert channels_from_mask(0x0F, 4) == [True, True, True, True]
+    assert channels_from_mask(0x03, 4) == [True, True, False, False]
+
+
+def test_channels_from_mask_48_channels():
+    """48sRM -- bitmask spans multiple bytes; we take 48 bits."""
+    mask = (1 << 47) | 1  # channel 0 and 47 on
+    bits = channels_from_mask(mask, 48)
+    assert bits[0] is True
+    assert bits[47] is True
+    assert sum(bits) == 2

@@ -8,7 +8,13 @@ import logging
 from typing import ClassVar
 
 from elc.codec.device_id import ADDR_BITS, SUBADDR_BITS, DeviceId, DeviceType
-from elc.codec.etlc38 import RelayOverrideV38, RelayStateV38
+from elc.codec.etlc38 import (
+    FRAME_LEN,
+    PREAMBLE,
+    RelayOverrideV38,
+    RelayStatusV38,
+    channels_from_mask,
+)
 from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState, StatusQuery
 from elc.domain.bus import EventBus
 from elc.drivers.base import AbstractDevice
@@ -122,49 +128,69 @@ class SrmDriver(AbstractDevice):
             await self._on_v38_bytes(response)
 
     async def _on_v38_bytes(self, chunk: bytes) -> None:
-        """Parse ETLC RelayState echoes out of a raw byte stream.
+        """Parse ETLC RelayStatus frames out of a raw byte stream.
 
-        V3.8 frames are fixed-length (11 bytes) framed by the sentinel
-        ``FF FF FF FF``.  On any parse failure (bad checksum, unknown
-        opcode) we skip one byte and rescan -- standard recovery for a
-        noisy or partially-implemented protocol.
+        The real SCU speaks ``ELC@`` (0x45 0x4C 0x43 0x40) preamble
+        with 12-byte fixed frames.  RelayStatus (opcode 0x25) carries
+        a module-wide channel bitmask -- we expand it back into a per-
+        channel ``RelayState`` event for every relay that we care
+        about (i.e. every registered device on the same module), so
+        the Replica / UI update uniformly.
+
+        Unknown / partial frames are skipped one byte at a time until
+        a valid preamble is found.
         """
         log.info("V3.8 RX chunk (%d B): %s", len(chunk), chunk.hex())
         self._v38_buffer.extend(chunk)
-        while len(self._v38_buffer) >= 11:
-            idx = self._v38_buffer.find(b"\xff\xff\xff\xff")
+        while len(self._v38_buffer) >= FRAME_LEN:
+            idx = self._v38_buffer.find(PREAMBLE)
             if idx == -1:
-                # No sentinel in buffer.  Drop everything but the last
-                # 3 bytes (a sentinel could straddle two reads).
+                # No preamble in buffer.  Drop everything but the last
+                # 3 bytes (a preamble could straddle two reads).
                 del self._v38_buffer[: -3]
                 return
             if idx > 0:
                 del self._v38_buffer[:idx]
-            if len(self._v38_buffer) < 11:
+            if len(self._v38_buffer) < FRAME_LEN:
                 return
-            candidate = bytes(self._v38_buffer[:11])
-            parsed = RelayStateV38.try_decode(candidate)
-            if parsed is not None:
-                del self._v38_buffer[:11]
-                log.info("V3.8 RX RelayState %s = %s",
-                         parsed.device, "ON" if parsed.state else "OFF")
-                # Fabricate a legacy ``RelayState`` so downstream
-                # subscribers (Replica etc.) don't need to care about
-                # the wire version -- one internal event model.
-                await self.on_state_change.publish(
-                    RelayState(device=parsed.device, state=parsed.state)
-                )
-                # Resolve any waiting query() Futures.
-                for fut in self._pending.get(parsed.device, []):
-                    if not fut.done():
-                        fut.set_result(
-                            RelayState(device=parsed.device, state=parsed.state)
-                        )
+            candidate = bytes(self._v38_buffer[:FRAME_LEN])
+            status = RelayStatusV38.try_decode(candidate)
+            if status is not None:
+                del self._v38_buffer[:FRAME_LEN]
+                await self._fan_out_status(status)
                 continue
-            # 11 bytes starting with sentinel but not a RelayState we
-            # know -- could be RelayStatus (0x25), FailReport (0x23),
-            # etc.  Skip the sentinel and keep scanning.
+            # 12 bytes starting with preamble but not a RelayStatus we
+            # know (could be a different opcode we haven't wired yet
+            # -- fail report, dali, dsw).  Skip preamble and scan on.
             del self._v38_buffer[:1]
+
+    async def _fan_out_status(self, status: RelayStatusV38) -> None:
+        """Emit one RelayState per channel implied by the module bitmask.
+
+        The SCU sends a module-wide status; downstream code
+        (Replica, UI) reasons in per-channel ``RelayState``.  Bridge
+        the two here.
+        """
+        # Assume 6-channel width for now; other widths can be derived
+        # from ``status.device.dev_type`` in a follow-up.  6 covers
+        # the operator's 6sRM/6eRM inventory; 4sRM sits on the same
+        # 6-bit horizon but ignores channels 4-5.
+        channels = channels_from_mask(status.state_mask, 6)
+        log.info("V3.8 RX RelayStatus %s mask=0x%02X → %s",
+                 status.device, status.state_mask,
+                 [i for i, on in enumerate(channels) if on] or "all OFF")
+        for chan_idx, is_on in enumerate(channels):
+            per_channel = DeviceId(
+                dev_type=status.device.dev_type,
+                scu=status.device.scu,
+                address=status.device.address,
+                sub_address=chan_idx,
+            )
+            msg = RelayState(device=per_channel, state=is_on)
+            await self.on_state_change.publish(msg)
+            for fut in self._pending.get(per_channel, []):
+                if not fut.done():
+                    fut.set_result(msg)
 
     async def broadcast(
         self,

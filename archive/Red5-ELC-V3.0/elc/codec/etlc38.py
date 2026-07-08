@@ -1,30 +1,28 @@
-"""ETLC V3.8 wire codec — probe implementation.
+"""ETLC V3.8 wire codec -- corrected against observed hardware behaviour.
 
-Best-guess V3.8-compliant encoding of a single ``RelaySet`` frame.
-Used ONLY when the SCU driver is in physical mode; MockScu still
-speaks the legacy ``elc.codec.frame`` format.
+Wire format (12 bytes fixed):
 
-See ``docs/RED5-ETLC-V3.8-PROTOCOL.md`` for the spec this implements.
-The doc has known ambiguities (§8) -- this module makes explicit
-choices for each so a *single* physical-hardware probe can resolve
-them:
+    byte  0..3   preamble = ASCII "ELC@" (45 4C 43 40)
+    byte  4      class byte -- 0x07 for the SRM/ERM family
+    byte  5      device type (SRM_6S=0x15, SRM_4S=0x14, SRM_6E=0x16, ...)
+    byte  6      SCU bus number (the physical SCU broadcasts as 0)
+    byte  7      module address
+    byte  8      sub-address (relay channel index, 0-based)
+    byte  9      opcode (0x07=RelayOverride, 0x25=RelayStatus)
+    byte  10     data byte (state or channel bitmask depending on opcode)
+    byte  11     checksum = (0x87 - sum(bytes[4..10])) & 0xFF
 
-* Flag length: **4 bytes** (spec is inconsistent 4-vs-8; we picked
-  the smaller which is what the SRM/ERM section text prefers).
-* DeviceID bit layout: **Type(8) + SCU(6) + Address(10) + SubAddr(8)**
-  = 32 bits total.  The doc text says Type(10) but every actual code
-  value listed is < 0x40 (fits in 6 bits), and the SCU time-broadcast
-  frame example uses ``TTTTTTTT UUUUUUAA AAAAAAAA 00SSSSSS`` which
-  clearly gives Type 8 bits.  Trust the example over the summary.
-* Endianness: **big-endian** for DeviceID (matches SCU time-broadcast
-  example above); little-endian on multi-byte payload values.
-* Checksum: **sum of every byte from Flag through end of payload,
-  modulo 256** (matches the ELC48 Master/Slaver algorithm; the SRM
-  section defers to "checksum" without further detail).
+Derivation of the checksum: for every observed RX frame we saw
+``sum(bytes[4..10]) + checksum == 0x87``, invariant across state, type,
+and address changes.  0x87 is likely ``0x80 | class_byte`` (class byte
+= 0x07 for SRM), which we assume so the algorithm generalises to
+future message classes.
 
-After the probe frame is verified on real hardware, this module will
-be promoted to the primary codec and the legacy ``frame.py`` will
-migrate to a "MockScu-only" role.
+*Everything* in this module was rebuilt from the actual hardware RX
+observed on 2026-02-11 (see log capture in the CHANGELOG).  The V3.8
+spec doc's talk of ``Flag = 0xFFFFFFFF`` is either aspirational,
+outdated, or for a different message class; our SCU firmware speaks
+what's coded below.
 """
 
 from __future__ import annotations
@@ -34,163 +32,111 @@ from typing import Final
 
 from elc.codec.device_id import DeviceId, DeviceType
 
-FLAG_STANDARD: Final[bytes] = b"\xff\xff\xff\xff"
+# Wire constants (observed) -----------------------------------------
+PREAMBLE: Final[bytes] = b"ELC@"          # 45 4C 43 40
+CLASS_SRM: Final[int] = 0x07              # byte 4 for SRM/ERM family
+FRAME_LEN: Final[int] = 12                # every observed frame is 12 B
 
-# Opcodes per V3.8 spec (SRM / ERM / ELCC48 family).
-OPCODE_RELAY_OVERRIDE: Final[int] = 0x07        # single relay set
-OPCODE_MULTI_RELAY_OVERRIDE: Final[int] = 0x08  # batched via bitmask
-OPCODE_DATA_REQUEST: Final[int] = 0x14          # query -> subtype 0x11
-OPCODE_RELAY_STATE: Final[int] = 0x15           # unsolicited echo
-OPCODE_FAIL_REPORT: Final[int] = 0x23
-OPCODE_RELAY_STATUS: Final[int] = 0x25          # response to 0x14/0x11
-
-SUBTYPE_REQ_RELAY_STATUS: Final[int] = 0x11
+# Opcodes per V3.8 doc + hardware confirmation ----------------------
+OPCODE_RELAY_OVERRIDE: Final[int] = 0x07  # master → SCU, single relay
+OPCODE_RELAY_STATUS: Final[int] = 0x25    # SCU → master, module bitmask
 
 
 class EtlcFrameError(ValueError):
     """Raised when a frame is structurally invalid."""
 
 
-def encode_device_id_v38(dev: DeviceId) -> bytes:
-    """Pack a DeviceId into the V3.8 4-byte on-wire layout.
+def checksum(header_and_payload: bytes) -> int:
+    """(0x87 - sum(bytes[4..10])) & 0xFF.
 
-    Bit layout (MSB → LSB, big-endian):
-
-        31..24   23..18   17..8    7..0
-        +-------+-------+---------+---------+
-        | Type  |  SCU  | Address | SubAddr |
-        | 8 bits| 6 bits| 10 bits |  8 bits |
-        +-------+-------+---------+---------+
-
-    The existing internal DeviceId still uses 10+6+10+6 (see
-    ``codec/device_id.py``).  We repack here rather than change the
-    internal layout because *many* tests depend on it -- once the
-    probe confirms the V3.8 layout, the internal DeviceId will be
-    updated in Commit 2.
+    ``header_and_payload`` must be bytes[4..10] (7 bytes) -- the class
+    byte, dev-id fields, opcode, and data byte, with the preamble
+    stripped and the checksum position excluded.
     """
-    type_val = int(dev.dev_type) & 0xFF
-    scu_val = dev.scu & 0x3F
-    addr_val = dev.address & 0x3FF
-    sub_val = dev.sub_address & 0xFF
-    raw = (
-        (type_val << 24)
-        | (scu_val << 18)
-        | (addr_val << 8)
-        | sub_val
-    )
-    return raw.to_bytes(4, "big")
+    if len(header_and_payload) != 7:
+        raise EtlcFrameError(
+            f"checksum body must be 7 B, got {len(header_and_payload)}"
+        )
+    return (0x87 - sum(header_and_payload)) & 0xFF
 
 
-def decode_device_id_v38(data: bytes) -> DeviceId:
-    if len(data) != 4:
-        raise EtlcFrameError(f"DeviceId requires 4 bytes, got {len(data)}")
-    raw = int.from_bytes(data, "big")
-    type_val = (raw >> 24) & 0xFF
-    scu_val = (raw >> 18) & 0x3F
-    addr_val = (raw >> 8) & 0x3FF
-    sub_val = raw & 0xFF
-    try:
-        dev_type = DeviceType(type_val)
-    except ValueError:
-        dev_type = DeviceType.UNKNOWN
-    return DeviceId(dev_type=dev_type, scu=scu_val, address=addr_val,
-                    sub_address=sub_val)
-
-
-def checksum(data: bytes) -> int:
-    """Byte-sum modulo 256.
-
-    Per the ELC48 Master section of the spec; the SRM section doesn't
-    detail the algorithm but this is the most common choice and the
-    likely one the SCU uses.  If the probe frame is rejected, first
-    thing to test is XOR-of-all-bytes.
-    """
-    return sum(data) & 0xFF
+def _encode(dev: DeviceId, opcode: int, data_byte: int) -> bytes:
+    """Assemble a full 12-byte ETLC frame."""
+    body = bytes((
+        CLASS_SRM,
+        int(dev.dev_type) & 0xFF,
+        dev.scu & 0xFF,
+        dev.address & 0xFF,
+        dev.sub_address & 0xFF,
+        opcode & 0xFF,
+        data_byte & 0xFF,
+    ))
+    return PREAMBLE + body + bytes((checksum(body),))
 
 
 @dataclass(frozen=True)
 class RelayOverrideV38:
-    """ETLC V3.8 single-relay override frame (opcode 0x07).
-
-    Wire layout:
-
-        [ Flag: 4 bytes 0xFFFFFFFF ]
-        [ DeviceID: 4 bytes         ]  target relay
-        [ Opcode:  1 byte 0x07      ]
-        [ State:   1 byte (0 / 1)   ]
-        [ Checksum: 1 byte          ]
-
-    Total: 11 bytes.  Minimum-viable frame to command the SCU.
-    """
+    """Set a single relay on/off (opcode 0x07)."""
 
     device: DeviceId
     state: bool
 
     def encode(self) -> bytes:
-        body = (
-            FLAG_STANDARD
-            + encode_device_id_v38(self.device)
-            + bytes((OPCODE_RELAY_OVERRIDE, 1 if self.state else 0))
-        )
-        return body + bytes((checksum(body),))
-
-    @classmethod
-    def decode(cls, frame: bytes) -> RelayOverrideV38:
-        if len(frame) != 11:
-            raise EtlcFrameError(
-                f"RelayOverrideV38 needs 11 bytes, got {len(frame)}"
-            )
-        if frame[:4] != FLAG_STANDARD:
-            raise EtlcFrameError(f"bad Flag: {frame[:4].hex()}")
-        if frame[8] != OPCODE_RELAY_OVERRIDE:
-            raise EtlcFrameError(
-                f"bad opcode: 0x{frame[8]:02x}, want 0x07"
-            )
-        if checksum(frame[:10]) != frame[10]:
-            raise EtlcFrameError(
-                f"checksum mismatch: got 0x{frame[10]:02x}, "
-                f"want 0x{checksum(frame[:10]):02x}"
-            )
-        return cls(
-            device=decode_device_id_v38(frame[4:8]),
-            state=bool(frame[9]),
-        )
+        return _encode(self.device, OPCODE_RELAY_OVERRIDE,
+                       1 if self.state else 0)
 
 
 @dataclass(frozen=True)
-class RelayStateV38:
-    """ETLC V3.8 unsolicited relay-state echo (opcode 0x15).
+class RelayStatusV38:
+    """Module-wide relay-state bitmask (opcode 0x25, unsolicited).
 
-    Same wire layout as RelayOverrideV38 but with opcode 0x15 -- the
-    SCU sends this on every relay state change (including changes
-    driven by physical switches on the module itself, per spec §4).
+    The SCU emits this whenever ANY relay on the module changes state,
+    whether driven by our RelayOverride or by a physical switch on the
+    module itself.  ``state_mask`` bit N == 1 means relay channel N is
+    currently on.
     """
 
-    device: DeviceId
-    state: bool
+    device: DeviceId   # ``sub_address`` is 0 for module-wide status
+    state_mask: int    # bitmask of channels currently ON
 
     def encode(self) -> bytes:
-        body = (
-            FLAG_STANDARD
-            + encode_device_id_v38(self.device)
-            + bytes((OPCODE_RELAY_STATE, 1 if self.state else 0))
-        )
-        return body + bytes((checksum(body),))
+        return _encode(self.device, OPCODE_RELAY_STATUS,
+                       self.state_mask & 0xFF)
 
     @classmethod
-    def try_decode(cls, frame: bytes) -> RelayStateV38 | None:
-        """Non-throwing decode -- returns None on any mismatch so the
-        driver can silently skip non-relay-state traffic (like the
-        RelayStatus 0x25 or FailReport 0x23 we haven't wired yet)."""
-        if len(frame) != 11:
+    def try_decode(cls, frame: bytes) -> RelayStatusV38 | None:
+        """Non-throwing decode -- returns None on any structural mismatch."""
+        if len(frame) != FRAME_LEN:
             return None
-        if frame[:4] != FLAG_STANDARD:
+        if frame[:4] != PREAMBLE:
             return None
-        if frame[8] != OPCODE_RELAY_STATE:
+        if frame[4] != CLASS_SRM:
             return None
-        if checksum(frame[:10]) != frame[10]:
+        if frame[9] != OPCODE_RELAY_STATUS:
             return None
-        return cls(
-            device=decode_device_id_v38(frame[4:8]),
-            state=bool(frame[9]),
+        try:
+            expected_cs = checksum(frame[4:11])
+        except EtlcFrameError:
+            return None
+        if expected_cs != frame[11]:
+            return None
+        try:
+            dev_type = DeviceType(frame[5])
+        except ValueError:
+            dev_type = DeviceType.UNKNOWN
+        device = DeviceId(
+            dev_type=dev_type,
+            scu=frame[6],
+            address=frame[7],
+            sub_address=frame[8],
         )
+        return cls(device=device, state_mask=frame[10])
+
+
+def channels_from_mask(mask: int, module_channel_count: int = 6) -> list[bool]:
+    """Turn a RelayStatus bitmask into a per-channel list.
+
+    ``module_channel_count`` defaults to 6 for the 6sRM / 6eRM
+    families; use 4 for 4sRM / 4eRM, 48 for 48sRM.
+    """
+    return [(mask >> i) & 1 == 1 for i in range(module_channel_count)]

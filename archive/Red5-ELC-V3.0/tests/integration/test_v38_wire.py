@@ -1,12 +1,11 @@
-"""Integration test: V3.8 wire path.
+"""Integration test: V3.8 wire path (post-hardware rev).
 
-Spins up a bare TCP echo server (no MockScu -- MockScu speaks legacy),
+Spins up a bare TCP server (no MockScu -- MockScu speaks legacy),
 wires an SrmDriver against a ScuLink(wire_version='v38'), and asserts:
 
-1. ``driver.set_relay()`` emits an 11-byte ETLC ``RelayOverride`` frame
-   with our best-guess V3.8 layout.
-2. Feeding a synthetic ``RelayStateV38`` frame back through the socket
-   triggers ``driver.on_state_change`` with the correct DeviceId.
+1. ``driver.set_relay()`` emits the observed 12-byte ETLC frame.
+2. Feeding a synthetic RelayStatus bitmask back through the socket
+   fans out into one RelayState event per channel implied by the mask.
 """
 
 from __future__ import annotations
@@ -17,17 +16,16 @@ import pytest
 
 # Force api-level modules to load first so their internal import order
 # resolves the (pre-existing) circular dep between drivers.srm and
-# domain.replica.  Importing elc.api first mirrors what production
-# code does and mirrors the ordering the other integration tests use.
+# domain.replica.
 import elc.api  # noqa: F401
 
 from elc.codec.device_id import DeviceId, DeviceType
 from elc.codec.etlc38 import (
-    FLAG_STANDARD,
+    CLASS_SRM,
+    FRAME_LEN,
     OPCODE_RELAY_OVERRIDE,
-    OPCODE_RELAY_STATE,
-    RelayOverrideV38,
-    RelayStateV38,
+    PREAMBLE,
+    RelayStatusV38,
     checksum,
 )
 from elc.codec.messages import RelayState
@@ -36,9 +34,9 @@ from elc.transport.tcp_scu import LinkState, ScuLink
 
 
 class _EchoServer:
-    """Minimal TCP server that captures the bytes it receives and lets
-    the test push arbitrary bytes back to the client.  No protocol
-    smarts -- we're driving the client, not simulating the SCU."""
+    """Minimal TCP server: captures the bytes sent by the client and
+    lets the test push bytes back.  Accepts multiple connections
+    because the V3.8 driver uses one-shot connections per command."""
 
     def __init__(self) -> None:
         self.received: bytearray = bytearray()
@@ -89,10 +87,8 @@ class _EchoServer:
 
 @pytest.fixture
 async def v38_stack():
-    """A minimal (link + driver) wired for V3.8, no MockScu, no FastAPI."""
     echo = _EchoServer()
     port = await echo.start()
-
     link = ScuLink(
         host="127.0.0.1", port=port,
         initial_backoff=0.05, wire_version="v38",
@@ -108,114 +104,99 @@ async def v38_stack():
         await echo.stop()
 
 
-async def test_v38_set_relay_emits_etlc_frame(v38_stack):
-    """set_relay() must produce the exact 11-byte V3.8 frame."""
+async def test_v38_set_relay_emits_observed_frame(v38_stack):
+    """set_relay(SRM_6S/0/2/0, ON) must produce the exact 12-byte
+    frame we determined from the hardware log."""
     link, driver, echo = v38_stack
     assert link.wire_version == "v38"
     assert link.state == LinkState.CONNECTED
 
-    dev = DeviceId(
-        dev_type=DeviceType.SRM_6S, scu=1, address=2, sub_address=0,
-    )
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
     await driver.set_relay(dev, True)
 
-    # Give the writer loop a beat to flush.
-    for _ in range(20):
-        if len(echo.received) >= 11:
-            break
-        await asyncio.sleep(0.01)
-
-    assert len(echo.received) == 11, (
-        f"expected 11-byte ETLC frame, got {len(echo.received)}: "
-        f"{bytes(echo.received).hex()}"
-    )
-    frame = bytes(echo.received)
-    assert frame[:4] == FLAG_STANDARD
-    assert frame[8] == OPCODE_RELAY_OVERRIDE
-    assert frame[9] == 1  # state ON
-    assert checksum(frame[:10]) == frame[10]
-
-    # And the frame is exactly what our probe script would send.
-    expected = RelayOverrideV38(device=dev, state=True).encode()
-    assert frame == expected
-
-
-async def test_v38_inbound_relay_state_fires_event(v38_stack):
-    """A synthetic V3.8 RelayState echo must reach on_state_change."""
-    link, driver, echo = v38_stack
-
-    caught: list[RelayState] = []
-
-    async def sink(msg: RelayState) -> None:
-        caught.append(msg)
-
-    driver.on_state_change.subscribe(sink)
-
-    dev = DeviceId(
-        dev_type=DeviceType.SRM_ERM, scu=1, address=1, sub_address=3,
-    )
-    fake_echo = RelayStateV38(device=dev, state=True).encode()
-    await echo.push_bytes(fake_echo)
-
-    for _ in range(20):
-        if caught:
+    # One-shot connection: give it a moment for the write to hit the
+    # echo server's second accept() and complete.
+    for _ in range(50):
+        if len(echo.received) >= FRAME_LEN:
             break
         await asyncio.sleep(0.02)
 
-    assert len(caught) == 1
-    assert caught[0].device == dev
-    assert caught[0].state is True
+    assert len(echo.received) == FRAME_LEN
+    fr = bytes(echo.received)
+    assert fr[:4] == PREAMBLE
+    assert fr[4] == CLASS_SRM
+    assert fr[9] == OPCODE_RELAY_OVERRIDE
+    assert fr[10] == 1
+    assert fr[11] == checksum(fr[4:11])
+    # Golden hex from the codec test:
+    assert fr.hex() == "454c43400715000200070161"
+
+
+async def test_v38_inbound_relay_status_fans_out_per_channel(v38_stack):
+    """A RelayStatus bitmask (channels 0 and 1 ON) must produce two
+    ``state=True`` RelayState events plus four ``state=False`` for
+    channels 2-5."""
+    link, driver, echo = v38_stack
+
+    caught: dict[int, bool] = {}
+
+    async def sink(msg: RelayState) -> None:
+        caught[msg.device.sub_address] = msg.state
+
+    driver.on_state_change.subscribe(sink)
+
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    # mask 0x03 = channels 0, 1 on
+    fake = RelayStatusV38(device=dev, state_mask=0x03).encode()
+    await echo.push_bytes(fake)
+
+    for _ in range(50):
+        if len(caught) >= 6:
+            break
+        await asyncio.sleep(0.02)
+
+    assert caught == {0: True, 1: True, 2: False, 3: False, 4: False, 5: False}
 
 
 async def test_v38_split_reads_still_parse(v38_stack):
-    """Frames straddling two socket reads must still parse correctly.
-
-    The V3.8 raw-handler buffers unparsed bytes across chunks; this
-    test verifies a frame split into 5-byte + 6-byte chunks arrives
-    intact.
-    """
+    """Frame straddling two socket reads must still parse."""
     _link, driver, echo = v38_stack
-    caught: list[RelayState] = []
+    caught: list[tuple[int, bool]] = []
 
     async def sink(msg: RelayState) -> None:
-        caught.append(msg)
+        caught.append((msg.device.sub_address, msg.state))
 
     driver.on_state_change.subscribe(sink)
 
-    dev = DeviceId(
-        dev_type=DeviceType.SRM_4S, scu=1, address=3, sub_address=1,
-    )
-    frame = RelayStateV38(device=dev, state=False).encode()
+    dev = DeviceId(dev_type=DeviceType.SRM_4S, scu=0, address=3, sub_address=0)
+    frame = RelayStatusV38(device=dev, state_mask=0x01).encode()
     await echo.push_bytes(frame[:5])
-    await asyncio.sleep(0.02)
-    assert not caught, "should not fire on partial frame"
+    await asyncio.sleep(0.03)
+    assert not caught
     await echo.push_bytes(frame[5:])
-    for _ in range(20):
+    for _ in range(50):
         if caught:
             break
         await asyncio.sleep(0.02)
+    # We fan out 6 channels even for a 4sRM (channels 4-5 will report
+    # False from the bitmask); the important thing is channel 0 is on.
+    on = [(i, s) for i, s in caught if s]
+    assert on == [(0, True)]
 
-    assert len(caught) == 1
-    assert caught[0].device == dev
-    assert caught[0].state is False
 
-
-async def test_v38_ignores_garbage_before_sentinel(v38_stack):
-    """Random bytes preceding a valid frame must be skipped, not crash."""
+async def test_v38_ignores_garbage_before_preamble(v38_stack):
+    """Random bytes before the preamble must be skipped without crash."""
     _link, driver, echo = v38_stack
-    caught: list[RelayState] = []
-    driver.on_state_change.subscribe(lambda m: caught.append(m))
-
-    dev = DeviceId(
-        dev_type=DeviceType.SRM_6S, scu=1, address=2, sub_address=4,
+    caught: list[tuple[int, bool]] = []
+    driver.on_state_change.subscribe(
+        lambda m: caught.append((m.device.sub_address, m.state))
     )
-    valid = RelayStateV38(device=dev, state=True).encode()
-    # Prepend a nonsense byte and an incomplete sentinel to exercise
-    # the resynchronisation loop.
-    await echo.push_bytes(b"\xaa" + b"\xff\xff\xff" + valid)
-    for _ in range(30):
-        if caught:
+
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    valid = RelayStatusV38(device=dev, state_mask=0x01).encode()
+    await echo.push_bytes(b"\xaa\xbb" + b"EL" + valid)
+    for _ in range(50):
+        if any(s for _, s in caught):
             break
         await asyncio.sleep(0.02)
-    assert len(caught) == 1
-    assert caught[0].device == dev
+    assert (0, True) in caught

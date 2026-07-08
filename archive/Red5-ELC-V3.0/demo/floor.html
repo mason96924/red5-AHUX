@@ -201,7 +201,7 @@
     user-select: none; transition: border-color .1s, background .1s;
   }
   .srm-tile:hover { border-color: #3a4552; }
-  .srm-tile.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .srm-tile.selected { outline: 2px solid #c084fc; outline-offset: -2px; }
   .srm-tile.assigned-onoff  { border-color: #d97a30; background: rgba(217,122,48,0.10); }
   .srm-tile.assigned-dimmer { border-color: #4a83b8; background: rgba(74,131,184,0.10); }
   .srm-tile.placed-here::after,
@@ -1419,9 +1419,13 @@ function paintCanvas() {
   // The anchor (x_m, y_m) is still where hit-testing / drag latches,
   // so we always draw a small anchor pip on top so the operator has
   // an obvious handle to grab even on long strips.
+  // Selected fixtures share a bright violet fill regardless of
+  // type so the "picked" state is legible next to the amber (on/off)
+  // and blue (0-10V dimmer) unselected states.
+  const SELECTED_FILL = '#c084fc';    // vivid violet, high contrast on dark bg
   const MARKERS = {
-    onoff:        { fill: '#d97a30', selectedFill: '#f5a25b' },
-    dimmer_0_10v: { fill: '#4a83b8', selectedFill: '#6ba7dc' },
+    onoff:        { fill: '#d97a30', selectedFill: SELECTED_FILL },
+    dimmer_0_10v: { fill: '#4a83b8', selectedFill: SELECTED_FILL },
   };
   if (state.mode === 'layout') {
     for (const fx of f.fixtures) {

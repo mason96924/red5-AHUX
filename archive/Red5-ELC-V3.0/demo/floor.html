@@ -415,7 +415,7 @@
     </div>
     <div id="srm-grid" data-testid="srm-grid">
       <div class="empty">No SRM devices yet. Open <a href="/editor">Editor</a>
-      → Seed 4 demo devices, then return here.</div>
+      → click the <code>Seed</code> button, then return here.</div>
     </div>
     <div id="element-editor" style="display:none; margin-top: 10px;
                                     padding: 10px; border: 1px dashed var(--line);
@@ -640,10 +640,22 @@ async function renderFloorDetails() {
 
 async function refreshDevicesAndElements() {
   // Devices from the replica (may include non-SRMs someday; filter now
-  // to just show lighting-capable types).
+  // to just show lighting-capable types -- the SRM family covers legacy
+  // ``SRM/`` and the module variants ``SRM_6E/``, ``SRM_6S/``,
+  // ``SRM_4S/``, ``SRM_4E/``, ``SRM_48S/``).
   let devs = [];
   try { devs = await api('GET', '/devices'); } catch (_) {}
-  state.devices = devs.filter(d => d.device.startsWith('SRM/'));
+  state.devices = devs
+    .filter(d => /^SRM(_[A-Z0-9]+)?\//.test(d.device))
+    .sort((a, b) => {
+      // Match editor.html order: (scu, module_address, dev_type,
+      // relay_channel) -- physical DIN-rail walk order.
+      const A = a.device.split('/'), B = b.device.split('/');
+      return (parseInt(A[1]) - parseInt(B[1]))
+          || (parseInt(A[2]) - parseInt(B[2]))
+          || A[0].localeCompare(B[0])
+          || (parseInt(A[3]) - parseInt(B[3]));
+    });
   // Lighting-element assignments (Phase 6.1b).
   try {
     const r = await api('GET', '/lighting-elements');
@@ -683,7 +695,7 @@ function renderSrmGrid() {
   count.textContent = state.devices.length ? `(${state.devices.length})` : '';
   if (state.devices.length === 0) {
     host.innerHTML = `<div class="empty">No SRM devices yet.
-      Open <a href="/editor">Editor</a> → <code>Seed 4 demo devices</code>,
+      Open <a href="/editor">Editor</a> → click the <code>Seed</code> button,
       then return here.</div>`;
     return;
   }

@@ -73,20 +73,47 @@ logging.basicConfig(
 log = logging.getLogger("demo")
 
 
+def _warn_typoed_env() -> None:
+    """Loud-warn on common env-var typos so an operator running against
+    real hardware doesn't silently boot the 30-SRM mock inventory.
+
+    ``ELC_DEVICE_JSON`` (missing S) has caught the operator once already
+    (2026-02-11).  Any ``ELC_*`` env var that isn't in the canonical
+    list gets printed to stderr before boot.
+    """
+    known = {
+        "ELC_DATA_SOURCE", "ELC_SCU_HOST", "ELC_SCU_PORT",
+        "ELC_DEVICES_JSON", "ELC_CONFIG_DB_PATH",
+    }
+    for key in os.environ:
+        if key.startswith("ELC_") and key not in known:
+            print(
+                f"\N{WARNING SIGN}  {key} is not a recognised ELC env var. "
+                f"Did you mean ELC_DEVICES_JSON?  Known keys: "
+                f"{', '.join(sorted(known))}",
+                file=sys.stderr, flush=True,
+            )
+
+
 def _load_device_set() -> list[DeviceId]:
     """Return the DeviceId list for the demo.
 
     * If ``ELC_DEVICES_JSON`` points at a readable file, parse it and
       turn each entry into a DeviceId.  Unknown ``dev_type`` names
-      raise so misconfiguration fails loud.
+      raise so misconfiguration fails loud.  Entries missing
+      ``dev_type`` are skipped so JSON files can carry pure-comment
+      objects if needed.
     * Otherwise fall back to 30 SRMs on scu=1 -- the historical mock
       layout that /floor's grid expects.
     """
+    _warn_typoed_env()
     path = os.environ.get("ELC_DEVICES_JSON")
     if path:
         raw = json.loads(Path(path).read_text())
         out: list[DeviceId] = []
         for entry in raw:
+            if "dev_type" not in entry:
+                continue
             out.append(DeviceId(
                 dev_type=DeviceType[entry["dev_type"]],
                 scu=int(entry["scu"]),
@@ -119,8 +146,12 @@ async def main() -> None:
         log.info("╔══════════════════════════════════════════════════════════╗")
         log.info("║ DATA SOURCE: PHYSICAL SCU @ %-25s ║", f"{scu_host}:{scu_port}")
         log.info("║ Devices: %-48s ║",
-                 ", ".join(f"{d.dev_type.name}/{d.address}" for d in DEMO_DEVICES[:6])
-                 + ("..." if len(DEMO_DEVICES) > 6 else ""))
+                 ", ".join(
+                     f"{d.dev_type.name}/{d.address}/{d.sub_address}"
+                     for d in DEMO_DEVICES[:4]
+                 )
+                 + (f"... (+{len(DEMO_DEVICES) - 4} more)" if len(DEMO_DEVICES) > 4 else ""))
+        log.info("║ Channel count: %-42d ║", len(DEMO_DEVICES))
         log.info("╚══════════════════════════════════════════════════════════╝")
     else:
         scu = MockScuServer()
@@ -295,18 +326,25 @@ async def main() -> None:
     server = uvicorn.Server(config)
 
     p = f"{port}"
-    s = f"{scu.port}"
+    # In physical mode there's no MockScuServer (scu is None); the SCU
+    # line is replaced with the real host:port for operator sanity.
+    if scu is not None:
+        scu_line = f"║  Fake SCU        127.0.0.1:{scu.port}  (MockScuServer)"
+    else:
+        scu_line = f"║  Physical SCU    {scu_host}:{scu_port}"
     banner = f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║  Red5-ELC V3.0 · Demo Console                                ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Web console     http://127.0.0.1:{p}/
+║  Editor          http://127.0.0.1:{p}/editor
 ║  Swagger UI      http://127.0.0.1:{p}/docs
 ║  Link status     http://127.0.0.1:{p}/api/elc/link
 ║  Device list     http://127.0.0.1:{p}/api/elc/devices
+║  Advertised set  http://127.0.0.1:{p}/api/elc/demo-devices
 ║  Live events     ws://127.0.0.1:{p}/api/elc/events
 ╠══════════════════════════════════════════════════════════════╣
-║  Fake SCU        127.0.0.1:{s}  (MockScuServer)
+{scu_line}
 ║  Ctrl-C to stop.
 ╚══════════════════════════════════════════════════════════════╝
 """

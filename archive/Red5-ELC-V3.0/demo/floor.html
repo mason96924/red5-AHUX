@@ -350,6 +350,16 @@
               title="Align selected fixture centres on a vertical line (same X)"
               style="padding:4px 8px;font-size:11px">Align V</button>
     </span>
+    <!-- Delete-from-canvas button: visible when 1+ fixtures are selected
+         on the plan.  Same effect as pressing Delete/Backspace -- just
+         removes the placement, the device stays assigned in the
+         replica.  Kept next to align controls so the "selection
+         actions" cluster stays together. -->
+    <button id="canvas-delete" class="ghost" data-testid="canvas-delete"
+            title="Remove selected fixture(s) from the plan (device stays assigned).  Shortcut: Delete or Backspace."
+            style="display:none;padding:4px 8px;font-size:11px;color:var(--bad);border-color:var(--bad)">
+      Delete <span id="canvas-delete-count"></span>
+    </button>
     <button id="btn-new" data-testid="floor-new-btn">+ New floor</button>
     <label for="dxf-input" class="btn" style="cursor:pointer" data-testid="floor-dxf-label">
       Import DXF
@@ -377,7 +387,7 @@
   <section class="stage">
     <div class="mode-badge layout" id="mode-badge">LAYOUT</div>
     <div class="stage-hint" id="stage-hint">
-      Select SRMs on the right → assign On/Off or 0-10V → drag a colored tile onto the plan · Drag placed dots to reposition · Delete removes
+      Select SRMs on the right → assign On/Off or 0-10V → drag a colored tile onto the plan · Drag placed dots to reposition · Click <b>Delete</b> or press Delete to remove
     </div>
     <canvas id="floor-canvas" data-testid="floor-canvas"></canvas>
     <div class="place-banner" id="place-banner" style="display:none"
@@ -2193,6 +2203,17 @@ function syncShapeSubcontrols() {
   if (alignWrap) {
     alignWrap.style.display = (state.selectedDeviceIds?.size >= 2) ? 'inline-flex' : 'none';
   }
+  // Delete-from-canvas button: any non-empty selection can be deleted
+  // off the plan.  Only makes sense in layout mode -- operator mode
+  // is read-only.
+  const delBtn = document.getElementById('canvas-delete');
+  if (delBtn) {
+    const n = state.selectedDeviceIds?.size || 0;
+    const inLayout = state.mode === 'layout';
+    delBtn.style.display = (n >= 1 && inLayout) ? 'inline-flex' : 'none';
+    const cnt = document.getElementById('canvas-delete-count');
+    if (cnt) cnt.textContent = n > 1 ? `(${n})` : '';
+  }
   populateDimInputsFromSelection();
 }
 
@@ -2582,18 +2603,35 @@ function fixtureHandles(fx, el, t) {
   return list;
 }
 
-document.addEventListener('keydown', async (ev) => {
-  if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+// Remove every selected device's placement from the current floor.
+// Devices stay assigned in lighting_elements -- you just took them
+// off the plan.  Used by both the Delete/Backspace hotkey and the
+// on-canvas "Delete" button.
+async function deleteSelectedPlacements() {
   if (state.mode !== 'layout' || state.selectedDeviceIds.size === 0) return;
-  if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
-  // Remove placements for every currently-selected device that's on
-  // this floor.  Devices stay assigned in lighting_elements -- you
-  // just took them off the plan.
   const f = state.currentFloor;
+  if (!f) return;
   const doomed = new Set(state.selectedDeviceIds);
   const next = f.fixtures.filter(x => !doomed.has(x.device_id));
-  if (next.length !== f.fixtures.length) await savePlacements(next);
+  if (next.length === f.fixtures.length) return;
+  const removed = f.fixtures.length - next.length;
+  await savePlacements(next);
+  // Clear the selection now that the fixtures are gone so the
+  // selection-actions cluster (align/delete) collapses cleanly.
+  state.selectedDeviceIds.clear();
+  updateAssignBar();
+  syncShapeSubcontrols();
+  toast(`Removed ${removed} fixture${removed === 1 ? '' : 's'} from plan`);
+}
+
+document.addEventListener('keydown', async (ev) => {
+  if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+  if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  await deleteSelectedPlacements();
 });
+
+document.getElementById('canvas-delete').addEventListener('click',
+  () => deleteSelectedPlacements());
 
 async function savePlacements(fixtures) {
   try {

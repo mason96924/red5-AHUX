@@ -814,6 +814,26 @@ function renderSrmGrid() {
   }
 }
 
+// Map an arbitrary device_id string to whichever entry in the current
+// SRM inventory has matching (type, address, sub-address).  Ignores
+// the SCU number so placements made before the 2026-02-11 rev (which
+// changed SCU from 1 to 0) still resolve to the correct current tile.
+// Returns the input unchanged if no inventory match exists.
+function _normaliseToInventory(did) {
+  if (!did || !Array.isArray(state.devices)) return did;
+  const parts = String(did).split('/');
+  if (parts.length !== 4) return did;
+  const [wantType, , wantAddr, wantSub] = parts;
+  for (const d of state.devices) {
+    const p = String(d.device).split('/');
+    if (p.length !== 4) continue;
+    if (p[0] === wantType && p[2] === wantAddr && p[3] === wantSub) {
+      return d.device;
+    }
+  }
+  return did;
+}
+
 function toggleSrmSelection(did, additive) {
   if (!additive) {
     // Solo selection also opens the inline editor (single-tile mode).
@@ -1614,7 +1634,8 @@ function paintCanvas() {
       const el = state.lightingElements.get(fx.device_id);
       const type = el?.type || 'onoff';
       const shape = el?.shape || 'point';
-      const selected = state.selectedDeviceIds.has(fx.device_id);
+      const selected = state.selectedDeviceIds.has(fx.device_id)
+        || state.selectedDeviceIds.has(_normaliseToInventory(fx.device_id));
       const m = MARKERS[type] || MARKERS.onoff;
       const fill = selected ? m.selectedFill : m.fill;
       const cx = t.xOffset + fx.x_m * t.m2px;
@@ -2544,7 +2565,12 @@ canvas.addEventListener('mousedown', (ev) => {
       dragState = { fx, mode: 'anchor', offX: cx - sx, offY: cy - sy,
                     moved: false };
       const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
-      toggleSrmSelection(fx.device_id, additive);
+      // Normalise the fixture's stored device_id against the current
+      // SRM inventory: match on (type, address, sub-address) so old
+      // placements whose SCU number changed (e.g. 1 -> 0 after the
+      // 2026-02-11 hardware-capture rev) still highlight the correct
+      // tile.  If no inventory match, fall back to the raw string.
+      toggleSrmSelection(_normaliseToInventory(fx.device_id), additive);
       paintCanvas();
       return;
     }

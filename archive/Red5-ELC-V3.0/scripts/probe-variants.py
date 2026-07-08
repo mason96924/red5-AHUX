@@ -1,15 +1,28 @@
-"""Try several candidate ETLC RelayOverride encodings against the SCU.
+"""Try candidate ETLC master→SCU RelayOverride frames (post-doc re-read).
 
-Since the observed RX frames only include unsolicited RelayStatus
-(opcode 0x25) responses, we don't have ground truth for the master →
-SCU RelayOverride frame yet.  This script fires several plausible
-variants in sequence and prints TX + RX for each, so we can identify
-which variant (if any) makes the physical relay click.
+The 2026-02-11 re-extraction of the ETLC V3.8 doc revealed:
 
-Between each variant we pause 1s to give the operator time to hear
-whether that specific frame produced a click.
+  * Preamble is 3 bytes ("ELC" = 45 4C 43), not 4 bytes.
+  * Byte 3 is Type (the opcode itself for master TX).
+  * Byte 4 is Length (# bytes remaining: data + checksum).
+  * Checksum = (~(sum(data_bytes) + 0x80) + 1) & 0xFF.
+    Equivalent to (0x80 - sum(data)) & 0xFF.  Verified vs 10 observed
+    RX frames with Type=0x40 wrapper.
 
-Target: SRM_6S at scu=0 addr=2 channel=0 → ON.
+For master TX, the doc lists Relay Override at Type=0x07 (single) and
+Type=0x08 (multi).  The doc's format for 0x08 is:
+
+    TTTTTTTT | UUUUUUAA | AAAAAAAA | 00SSSSSS | FFFFFFFF |
+    LLLLLLLL | RRRRRRRR | .. DI1 ..
+
+Some fields are ambiguous (FFFFFFFF may be 1 byte 0xFF or 4 bytes,
+DI1 is described as "action subject" -- probably a source-ID byte).
+
+This script fires four variants of a single-relay ON command in
+sequence with 2-second pauses so the operator can hear which one (if
+any) makes the physical 6sRM channel-0 relay click.
+
+Target: SRM_6S (0x15) at scu=0 addr=2 channel=0 → ON.
 """
 
 from __future__ import annotations
@@ -20,22 +33,25 @@ import time
 
 HOST = "192.168.1.222"
 PORT = 9760
-PREAMBLE = b"\x45\x4C\x43\x40"    # ELC@
+PREAMBLE = b"\x45\x4C\x43"      # "ELC" (3 bytes)
 
 
-def _cs(body: bytes) -> int:
-    return (0x87 - sum(body)) & 0xFF
+def _cs_doc(data: bytes) -> int:
+    """(~(sum(data) + 0x80) + 1) & 0xFF -- the algorithm from the
+    ETLC doc, matches observed RX byte-for-byte."""
+    return ((~(sum(data) + 0x80)) + 1) & 0xFF
 
 
-def _cs_xor(body: bytes) -> int:
-    x = 0
-    for b in body:
-        x ^= b
-    return x
+def _frame(type_byte: int, data: bytes) -> bytes:
+    """Build a full frame: PRE + Type + Length + Data + Checksum.
 
-
-def _cs_neg_sum(body: bytes) -> int:
-    return (-sum(body)) & 0xFF
+    Length is "number of bytes after Length itself" = len(data) + 1
+    (for the checksum), matching the observed RX Length=0x07 when
+    data was 6 bytes.
+    """
+    length = len(data) + 1
+    cs = _cs_doc(data)
+    return PREAMBLE + bytes((type_byte, length)) + data + bytes((cs,))
 
 
 def _emit(label: str, frame: bytes) -> None:
@@ -67,51 +83,45 @@ def _emit(label: str, frame: bytes) -> None:
 
 
 def main() -> int:
-    # Base fields for a 6sRM channel-0 ON command.
+    TYPE_RELAY_OVERRIDE = 0x07
+    TYPE_MULTI_OVERRIDE = 0x08
     TYPE_6SRM = 0x15
     SCU = 0x00
     ADDR = 0x02
     SUB = 0x00
-    OP_OVERRIDE = 0x07
     STATE_ON = 0x01
 
     variants: list[tuple[str, bytes]] = []
 
-    # (1) Current best guess: class=0x07, opcode=0x07, checksum=0x87-sum.
-    body = bytes([0x07, TYPE_6SRM, SCU, ADDR, SUB, OP_OVERRIDE, STATE_ON])
-    variants.append(("current: class=0x07 op=0x07 cs=0x87-sum",
-                     PREAMBLE + body + bytes((_cs(body),))))
+    # (A) Straight interpretation of doc: Type=0x07 (single override),
+    #     Data = dev_type + scu + addr + sub + state.
+    data_a = bytes([TYPE_6SRM, SCU, ADDR, SUB, STATE_ON])
+    variants.append(("Type=0x07 minimal (5 data bytes)",
+                     _frame(TYPE_RELAY_OVERRIDE, data_a)))
 
-    # (2) Same but with XOR checksum.
-    variants.append(("XOR checksum",
-                     PREAMBLE + body + bytes((_cs_xor(body),))))
+    # (B) Doc mentions FFFFFFFF (Flag) between sub-address and payload.
+    #     Interpret as ONE 0xFF byte.
+    data_b = bytes([TYPE_6SRM, SCU, ADDR, SUB, 0xFF, STATE_ON])
+    variants.append(("Type=0x07 with 1-byte Flag=0xFF",
+                     _frame(TYPE_RELAY_OVERRIDE, data_b)))
 
-    # (3) Same but with two's-complement (-sum) checksum.
-    variants.append(("two's-complement checksum",
-                     PREAMBLE + body + bytes((_cs_neg_sum(body),))))
+    # (C) FFFFFFFF interpreted as 4 bytes.
+    data_c = bytes([TYPE_6SRM, SCU, ADDR, SUB, 0xFF, 0xFF, 0xFF, 0xFF, STATE_ON])
+    variants.append(("Type=0x07 with 4-byte Flag=FFFFFFFF",
+                     _frame(TYPE_RELAY_OVERRIDE, data_c)))
 
-    # (4) Try opcode 0x05 (spec §7 alt) instead of 0x07.
-    body4 = bytes([0x07, TYPE_6SRM, SCU, ADDR, SUB, 0x05, STATE_ON])
-    variants.append(("opcode=0x05 (alt)",
-                     PREAMBLE + body4 + bytes((_cs(body4),))))
-
-    # (5) Try opcode 0x08 (multiple-relay override) with bitmask=0x01.
-    body5 = bytes([0x07, TYPE_6SRM, SCU, ADDR, SUB, 0x08, STATE_ON])
-    variants.append(("opcode=0x08 (multi-relay override)",
-                     PREAMBLE + body5 + bytes((_cs(body5),))))
-
-    # (6) Master identifies as SCU=0xFF (broadcast) instead of 0.
-    body6 = bytes([0x07, TYPE_6SRM, 0xFF, ADDR, SUB, OP_OVERRIDE, STATE_ON])
-    variants.append(("master scu=0xFF",
-                     PREAMBLE + body6 + bytes((_cs(body6),))))
+    # (D) Multi-relay override 0x08 with bitmask -- easier per doc.
+    #     Data = dev_type + scu + addr + subaddr + mask_target + mask_on
+    data_d = bytes([TYPE_6SRM, SCU, ADDR, 0x01, 0x01, 0x01])
+    variants.append(("Type=0x08 multi-relay, bitmask=0x01 (ch 0 only)",
+                     _frame(TYPE_MULTI_OVERRIDE, data_d)))
 
     for label, fr in variants:
         _emit(label, fr)
+
     print("=" * 60)
-    print("done.")
-    print("If any of the six made the relay click, note which one and")
-    print("share the label + TX bytes.  We'll bake that variant into")
-    print("the codec.")
+    print("done.  If any variant made the physical relay click,")
+    print("please share the label + TX bytes.")
     return 0
 
 

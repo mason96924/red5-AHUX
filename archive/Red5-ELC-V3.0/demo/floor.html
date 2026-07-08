@@ -2078,77 +2078,92 @@ function syncShapeSubcontrols() {
 }
 
 // Populate the numeric inputs with the geometry of the currently
-// selected fixture (if any + shape matches).  If nothing's selected
-// or the shape doesn't match, leave placeholder text so the user
-// knows blank ⇒ "use click flow".
+// selected fixture(s).  When ONE fixture is selected we show its
+// exact value.  When N>1 fixtures are selected we show the shared
+// value if every selected fixture agrees (else blank -- caller can
+// still type a new value to force-apply to the whole group).
 function populateDimInputsFromSelection() {
   const sel = Array.from(state.selectedDeviceIds || []).map(
     did => state.currentFloor?.fixtures.find(f => f.device_id === did)
   ).filter(Boolean);
-  const fx = sel.length === 1 ? sel[0] : null;
-  const el = fx ? state.lightingElements.get(fx.device_id) : null;
   const setVal = (id, v) => {
     const inp = document.getElementById(id);
     inp.value = (v != null && !Number.isNaN(v)) ? Number(v).toFixed(2) : '';
   };
-  const shape = el?.shape || null;
-  const kind  = fx?.polygon_kind || null;
-  setVal('dim-length', (state.shape === 'line' && shape === 'line') ? fx?.length_m : null);
-  setVal('dim-angle',  (state.shape === 'line' && shape === 'line') ? fx?.angle_deg : null);
-  setVal('dim-radius', (state.shape === 'regular_polygon'
-                        && (state.polygonKind === 'circle' || state.polygonKind === 'polygon')
-                        && kind === state.polygonKind) ? fx?.radius_m : null);
-  setVal('dim-width',  (state.shape === 'regular_polygon'
-                        && state.polygonKind === 'rectangle'
-                        && kind === 'rectangle') ? fx?.width_m : null);
-  setVal('dim-height', (state.shape === 'regular_polygon'
-                        && state.polygonKind === 'rectangle'
-                        && kind === 'rectangle') ? fx?.height_m : null);
+  // Reduce a per-fixture accessor to a shared value across the
+  // selection, or null if the group disagrees / is empty.
+  function shared(fx_to_num) {
+    if (!sel.length) return null;
+    let v = null;
+    for (const fx of sel) {
+      const el = state.lightingElements.get(fx.device_id);
+      const cur = fx_to_num(fx, el);
+      if (cur == null || Number.isNaN(cur)) return null;
+      if (v == null) v = cur;
+      else if (Math.abs(v - cur) > 1e-6) return null;
+    }
+    return v;
+  }
+  const isLineSel = state.shape === 'line' && sel.every(fx => {
+    const el = state.lightingElements.get(fx.device_id); return el?.shape === 'line';
+  });
+  const isRadKindSel = state.shape === 'regular_polygon'
+    && (state.polygonKind === 'circle' || state.polygonKind === 'polygon')
+    && sel.every(fx => fx.polygon_kind === state.polygonKind);
+  const isRectSel = state.shape === 'regular_polygon'
+    && state.polygonKind === 'rectangle'
+    && sel.every(fx => fx.polygon_kind === 'rectangle');
+  setVal('dim-length', isLineSel     ? shared((fx) => fx.length_m)  : null);
+  setVal('dim-angle',  isLineSel     ? shared((fx) => fx.angle_deg) : null);
+  setVal('dim-radius', isRadKindSel  ? shared((fx) => fx.radius_m)  : null);
+  setVal('dim-width',  isRectSel     ? shared((fx) => fx.width_m)   : null);
+  setVal('dim-height', isRectSel     ? shared((fx) => fx.height_m)  : null);
 }
 
-// Apply dimension-input edits.  If a single fixture is selected AND
-// its shape matches, patches the fixture in-place and pushes to the
-// backend.  Otherwise the values just sit there waiting for the
-// next placement.
+// Apply dimension-input edits.  Iterates every selected fixture whose
+// shape matches the current input (line ⇒ length/angle; rect ⇒ w/h;
+// circle/polygon ⇒ radius) so an operator can bulk-rotate every T8
+// tube in an office to 90° with one keystroke, for example.  Fixtures
+// whose shape doesn't match the current input are silently skipped so
+// heterogeneous selections behave "do what I mean".
 async function onDimensionEdit() {
   const sel = Array.from(state.selectedDeviceIds || []).map(
     did => state.currentFloor?.fixtures.find(f => f.device_id === did)
   ).filter(Boolean);
-  if (sel.length !== 1) return;
-  const fx = sel[0];
-  const el = state.lightingElements.get(fx.device_id);
+  if (!sel.length) return;
   const readNum = (id) => {
-    const v = parseFloat(document.getElementById(id).value);
-    return (Number.isFinite(v) && v > 0) ? v : null;
+    const raw = document.getElementById(id).value;
+    if (raw === '') return null;
+    const v = parseFloat(raw);
+    return Number.isFinite(v) ? v : null;
   };
-  const shape = el?.shape || 'point';
-  const kind  = fx.polygon_kind || null;
+  const positive = (v) => (v != null && v > 0) ? v : null;
   let changed = false;
-  if (shape === 'line') {
-    const L = readNum('dim-length');
-    if (L != null && L !== fx.length_m) { fx.length_m = L; changed = true; }
-    // Angle is unrestricted (can be negative) so use a separate parse.
-    const aRaw = document.getElementById('dim-angle').value;
-    if (aRaw !== '') {
-      const A = parseFloat(aRaw);
-      if (Number.isFinite(A) && A !== fx.angle_deg) {
-        fx.angle_deg = A; changed = true;
-      }
+  const L = positive(readNum('dim-length'));
+  const A = readNum('dim-angle');    // angle can be any real number
+  const R = positive(readNum('dim-radius'));
+  const W = positive(readNum('dim-width'));
+  const H = positive(readNum('dim-height'));
+  for (const fx of sel) {
+    const el = state.lightingElements.get(fx.device_id);
+    const shape = el?.shape || 'point';
+    const kind  = fx.polygon_kind || null;
+    if (shape === 'line') {
+      if (L != null && L !== fx.length_m)   { fx.length_m  = L; changed = true; }
+      if (A != null && A !== fx.angle_deg)  { fx.angle_deg = A; changed = true; }
     }
-  }
-  if (shape === 'regular_polygon' && (kind === 'circle' || kind === 'polygon')) {
-    const R = readNum('dim-radius');
-    if (R != null && R !== fx.radius_m) { fx.radius_m = R; changed = true; }
-  }
-  if (shape === 'regular_polygon' && kind === 'rectangle') {
-    const W = readNum('dim-width');
-    const H = readNum('dim-height');
-    if (W != null && W !== fx.width_m)  { fx.width_m = W; changed = true; }
-    if (H != null && H !== fx.height_m) { fx.height_m = H; changed = true; }
+    if (shape === 'regular_polygon' && (kind === 'circle' || kind === 'polygon')) {
+      if (R != null && R !== fx.radius_m)   { fx.radius_m  = R; changed = true; }
+    }
+    if (shape === 'regular_polygon' && kind === 'rectangle') {
+      if (W != null && W !== fx.width_m)    { fx.width_m   = W; changed = true; }
+      if (H != null && H !== fx.height_m)   { fx.height_m  = H; changed = true; }
+    }
   }
   if (changed) {
     paintCanvas();
     await savePlacements(state.currentFloor.fixtures);
+    if (sel.length > 1) toast(`Updated ${sel.length} fixtures`);
   }
 }
 ['dim-length','dim-angle','dim-radius','dim-width','dim-height'].forEach(id => {

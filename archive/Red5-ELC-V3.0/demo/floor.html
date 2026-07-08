@@ -337,6 +337,19 @@
              type="number" min="0" step="0.1" placeholder="click"
              style="width:56px;padding:4px 6px;font-size:11px;text-align:center"/>
     </label>
+    <!-- Phase 6.1g — align controls, visible only when 2+ fixtures
+         are selected.  Align H = same Y (centres on a horizontal
+         line); Align V = same X (centres on a vertical line).  Uses
+         the mean of the selection as the target so nothing jumps
+         far. -->
+    <span id="align-wrap" style="display:none;gap:4px;align-items:center">
+      <button id="align-h" class="ghost" data-testid="align-h"
+              title="Align selected fixture centres on a horizontal line (same Y)"
+              style="padding:4px 8px;font-size:11px">Align H</button>
+      <button id="align-v" class="ghost" data-testid="align-v"
+              title="Align selected fixture centres on a vertical line (same X)"
+              style="padding:4px 8px;font-size:11px">Align V</button>
+    </span>
     <button id="btn-new" data-testid="floor-new-btn">+ New floor</button>
     <label for="dxf-input" class="btn" style="cursor:pointer" data-testid="floor-dxf-label">
       Import DXF
@@ -762,8 +775,10 @@ function toggleSrmSelection(did, additive) {
   }
   renderSrmGrid();
   updateAssignBar();
-  // Refresh toolbar dimension inputs to reflect the new selection.
-  if (typeof populateDimInputsFromSelection === 'function') {
+  // Refresh toolbar dimension inputs + align-button visibility.
+  if (typeof syncShapeSubcontrols === 'function') {
+    syncShapeSubcontrols();
+  } else if (typeof populateDimInputsFromSelection === 'function') {
     populateDimInputsFromSelection();
   }
   // Auto-open editor when exactly one device is selected AND already assigned.
@@ -2074,8 +2089,48 @@ function syncShapeSubcontrols() {
   radWrap.style.display   =
     (isPoly && (kind === 'circle' || kind === 'polygon')) ? 'inline-flex' : 'none';
   wWrap.style.display     = (isPoly && kind === 'rectangle') ? 'inline-flex' : 'none';
+  // Align controls surface once the operator has ≥2 fixtures in the
+  // selection -- they only make sense on a group.
+  const alignWrap = document.getElementById('align-wrap');
+  if (alignWrap) {
+    alignWrap.style.display = (state.selectedDeviceIds?.size >= 2) ? 'inline-flex' : 'none';
+  }
   populateDimInputsFromSelection();
 }
+
+// Align every selected fixture's anchor on a common horizontal
+// (``axis`` = 'y') or vertical (``axis`` = 'x') line at the arithmetic
+// mean of the selection.  Polyline vertices are translated by the
+// same delta so their shape stays intact.  A single-fixture selection
+// is a no-op.  Async so it waits for the persistence round-trip.
+async function alignSelected(axis) {
+  const sel = Array.from(state.selectedDeviceIds || []).map(
+    did => state.currentFloor?.fixtures.find(f => f.device_id === did)
+  ).filter(Boolean);
+  if (sel.length < 2) return;
+  let target = 0;
+  for (const fx of sel) target += (axis === 'y') ? fx.y_m : fx.x_m;
+  target /= sel.length;
+  for (const fx of sel) {
+    const old = (axis === 'y') ? fx.y_m : fx.x_m;
+    const delta = target - old;
+    if (Math.abs(delta) < 1e-6) continue;
+    if (axis === 'y') fx.y_m = target;
+    else              fx.x_m = target;
+    // Polyline vertices are absolute world coords -- shift them too
+    // so the shape rides the anchor instead of getting sheared.
+    if (Array.isArray(fx.vertices)) {
+      fx.vertices = fx.vertices.map(([vx, vy]) => (axis === 'y')
+        ? [vx, vy + delta]
+        : [vx + delta, vy]);
+    }
+  }
+  paintCanvas();
+  await savePlacements(state.currentFloor.fixtures);
+  toast(`Aligned ${sel.length} fixtures on ${axis === 'y' ? 'horizontal' : 'vertical'} axis`);
+}
+document.getElementById('align-h').onclick = () => alignSelected('y');
+document.getElementById('align-v').onclick = () => alignSelected('x');
 
 // Populate the numeric inputs with the geometry of the currently
 // selected fixture(s).  When ONE fixture is selected we show its

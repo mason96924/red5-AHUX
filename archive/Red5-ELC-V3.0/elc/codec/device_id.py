@@ -60,7 +60,12 @@ class DeviceType(IntEnum):
     # SRM family — V3.8 §1
     SRM_4S = 0x14         # 20  ETLC_DEVICE_4SRM  (4-ch switching relay)
     SRM_6S = 0x15         # 21  ETLC_DEVICE_6SRM  (6-ch switching relay)
-    SRM_ERM = 0x16        # 22  ETLC_DEVICE_ERM   (energy-metering RM, 4e / 6e)
+    # 4eRM and 6eRM share this wire code (V3.8 spec §1); operators
+    # typically talk about a 6eRM module so we pick that as the
+    # primary name -- otherwise ``str(DeviceId)`` prints ``SRM_ERM``
+    # which doesn't match the string in the operator's ELC_DEVICES_JSON.
+    # ``SRM_ERM`` and ``SRM_4E`` are aliases with the same wire code.
+    SRM_6E = 0x16         # 22  primary name for the ERM family
     SRM_48S = 0x18        # 24  ETLC_DEVICE_48SRM (48-ch, layout TBD)
     # Head unit
     SCU = 0x05            # 5   ETLC_DEVICE_SCU (moved to actual V3.8 code)
@@ -72,16 +77,19 @@ class DeviceType(IntEnum):
     MULTI_SENSOR = 0x3E   # 62
 
     # ---- Legacy aliases (application-code convenience) ---------------
-    # These are OLD names for module families we kept working during the
-    # V3.8 migration.  They resolve to the same wire code as the
-    # underscore-suffixed name.  Prefer the underscored name in new
-    # code.
+    # ---- Legacy / spec aliases --------------------------------------
+    # ``SRM_ERM`` is the V3.8 spec name for the ERM family; we keep it
+    # as an alias so code referring to it (docs / tests) still works.
+    # ``SRM_4E`` shares the same wire code (0x16) -- the ETLC protocol
+    # doesn't distinguish 4e/6e at the type level, only by channel
+    # count derived from sub-address range.  Prefer the primary
+    # ``SRM_6E`` in new code -- it matches the operator's ELC_DEVICES_
+    # JSON.
     #
     # NOTE: Python IntEnum forbids duplicate NAMEs but allows the same
-    # numeric value under a different name via aliasing -- so
-    # ``SRM_6E`` below is an alias of ``SRM_ERM``, not a new member.
-    SRM_4E = 0x16         # alias of SRM_ERM (4-channel eRM)
-    SRM_6E = 0x16         # alias of SRM_ERM (6-channel eRM)
+    # numeric value under different names as aliases.
+    SRM_ERM = 0x16        # alias of SRM_6E (V3.8 spec name)
+    SRM_4E = 0x16         # alias of SRM_6E (4-channel eRM variant)
 
 
 DEVTYPE_BITS: Final[int] = 8

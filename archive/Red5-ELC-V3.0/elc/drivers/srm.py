@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from typing import ClassVar
 
 from elc.codec.device_id import ADDR_BITS, SUBADDR_BITS, DeviceId, DeviceType
@@ -11,6 +12,8 @@ from elc.codec.etlc38 import RelayOverrideV38, RelayStateV38
 from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState, StatusQuery
 from elc.domain.bus import EventBus
 from elc.drivers.base import AbstractDevice
+
+log = logging.getLogger(__name__)
 
 
 class SrmDriver(AbstractDevice):
@@ -59,6 +62,10 @@ class SrmDriver(AbstractDevice):
         """
         if getattr(self._link, "wire_version", "legacy") == "v38":
             data = RelayOverrideV38(device=device, state=state).encode()
+            log.info(
+                "V3.8 TX RelayOverride %s → %s  (%d B: %s)",
+                device, "ON" if state else "OFF", len(data), data.hex(),
+            )
             await self._link.send_bytes(data)
             return
         frame = self._registry.encode_message(RelaySet(device=device, state=state))
@@ -72,6 +79,7 @@ class SrmDriver(AbstractDevice):
         opcode) we skip one byte and rescan -- standard recovery for a
         noisy or partially-implemented protocol.
         """
+        log.info("V3.8 RX chunk (%d B): %s", len(chunk), chunk.hex())
         self._v38_buffer.extend(chunk)
         while len(self._v38_buffer) >= 11:
             idx = self._v38_buffer.find(b"\xff\xff\xff\xff")
@@ -88,6 +96,8 @@ class SrmDriver(AbstractDevice):
             parsed = RelayStateV38.try_decode(candidate)
             if parsed is not None:
                 del self._v38_buffer[:11]
+                log.info("V3.8 RX RelayState %s = %s",
+                         parsed.device, "ON" if parsed.state else "OFF")
                 # Fabricate a legacy ``RelayState`` so downstream
                 # subscribers (Replica etc.) don't need to care about
                 # the wire version -- one internal event model.

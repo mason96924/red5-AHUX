@@ -39,9 +39,22 @@ def build_router(
     replica: Replica,
     link: ScuLink,
     scheduler: SchedulerEngine | None = None,
+    demo_devices: list[DeviceId] | None = None,
+    data_source: str = "mock",
 ) -> APIRouter:
-    """Construct the `/api/elc/*` router bound to a running stack."""
+    """Construct the `/api/elc/*` router bound to a running stack.
+
+    ``demo_devices`` optionally advertises the operator's real device
+    inventory (e.g. the 6eRM + 6sRM + 4sRM channels loaded from
+    ``ELC_DEVICES_JSON``) via ``GET /demo-devices``.  The editor page
+    reads that list to safely seed the replica without firing any
+    relays.  ``data_source`` is echoed back with the same endpoint so
+    the UI can label the seed button appropriately ("Seed 16 SCU
+    channels" vs. "Seed 30 demo devices").
+    """
     router = APIRouter(prefix="/api/elc", tags=["elc"])
+    _demo_devices: list[DeviceId] = list(demo_devices or [])
+    _data_source = (data_source or "mock").strip().lower()
 
     @router.get("/link")
     async def link_state() -> dict[str, Any]:
@@ -56,6 +69,40 @@ def build_router(
     @router.get("/devices")
     async def list_devices() -> list[dict[str, Any]]:
         return [snap.to_dict() for snap in replica.all()]
+
+    @router.get("/demo-devices")
+    async def demo_devices_list() -> dict[str, Any]:
+        """Return the operator's advertised device inventory.
+
+        In ``mock`` mode this is a generated 30-SRM grid (matches the
+        historical demo).  In ``physical`` mode it comes from whatever
+        ``ELC_DEVICES_JSON`` was loaded at boot (e.g. 6eRM + 6sRM + 4sRM
+        = 16 channels).  The editor page uses this to seed the replica
+        by calling ``POST /devices/{id}/register`` per entry --
+        importantly, **without** flipping any relay.
+        """
+        return {
+            "source": _data_source,
+            "count": len(_demo_devices),
+            "devices": [str(d) for d in _demo_devices],
+        }
+
+    @router.post("/devices/{device_id:path}/register")
+    async def register_device(device_id: str) -> dict[str, Any]:
+        """Register a device in the replica without touching hardware.
+
+        Used by the editor "Seed SCU channels" button when a physical
+        SCU is on the wire -- we want the operator to see their real
+        6eRM/6sRM/4sRM channels appear in the device grid immediately,
+        without any RelaySet frame being sent (which would physically
+        switch relays on).  Idempotent: registering an already-known
+        device returns ``registered: false`` (200 OK).
+        """
+        if device_id.endswith("/register"):
+            device_id = device_id[: -len("/register")]
+        dev = _parse_device_id(device_id)
+        registered = await replica.register(dev)
+        return {"ok": True, "device": str(dev), "registered": registered}
 
     @router.get("/devices/{device_id:path}")
     async def get_device(device_id: str) -> dict[str, Any]:

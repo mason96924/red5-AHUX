@@ -162,5 +162,89 @@ async def test_device_404_when_unseen(client) -> None:
     assert r.status_code == 404
 
 
+# ---------- GET /api/elc/demo-devices ---------------------------------
+
+
+async def test_demo_devices_defaults_to_empty_mock(client) -> None:
+    """When build_stack is called without demo_devices, the endpoint
+    reports source=mock and an empty inventory (no crash)."""
+    r = await client.get("/api/elc/demo-devices")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "mock"
+    assert body["count"] == 0
+    assert body["devices"] == []
+
+
+async def test_demo_devices_reports_physical_inventory(mock_scu_server) -> None:
+    """When build_stack is passed a device list + data_source='physical',
+    /demo-devices returns exactly that list.  This is the code path the
+    editor's Seed button relies on to switch label + count to the
+    operator's real 6eRM/6sRM/4sRM inventory."""
+    inventory = [
+        DeviceId(dev_type=DeviceType.SRM, scu=1, address=10, sub_address=i)
+        for i in range(6)
+    ] + [
+        DeviceId(dev_type=DeviceType.SRM, scu=1, address=20, sub_address=i)
+        for i in range(6)
+    ] + [
+        DeviceId(dev_type=DeviceType.SRM, scu=1, address=30, sub_address=i)
+        for i in range(4)
+    ]
+    stack = build_stack(
+        "127.0.0.1", mock_scu_server.port, initial_backoff=0.05,
+        demo_devices=inventory, data_source="physical",
+    )
+    transport = httpx.ASGITransport(app=stack.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/api/elc/demo-devices")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "physical"
+        assert body["count"] == 16
+        assert body["devices"] == [str(d) for d in inventory]
+
+
+# ---------- POST /api/elc/devices/{id}/register -----------------------
+
+
+async def test_register_device_populates_replica_without_relay(
+    client, stack, mock_scu_server
+) -> None:
+    """Register endpoint must NOT emit any RelaySet frame -- registering
+    a device on a physical SCU should never physically switch relays.
+    """
+    dev = _dev(70)
+    r = await client.post(f"/api/elc/devices/{_id(dev)}/register")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body == {"ok": True, "device": str(dev), "registered": True}
+
+    # The MockScu must NOT have received any frame from this call.
+    # Give the loop a beat to expose any accidental write.
+    await asyncio.sleep(0.05)
+    assert len(mock_scu_server.received_frames) == 0
+
+    # Device now visible via the standard endpoints, with unknown state.
+    r = await client.get(f"/api/elc/devices/{_id(dev)}")
+    assert r.status_code == 200
+    snap = r.json()
+    assert snap["device"] == str(dev)
+    assert snap["relay_state"] is None
+
+
+async def test_register_device_is_idempotent(client, stack) -> None:
+    dev = _dev(80)
+    r1 = await client.post(f"/api/elc/devices/{_id(dev)}/register")
+    r2 = await client.post(f"/api/elc/devices/{_id(dev)}/register")
+    assert r1.json()["registered"] is True
+    assert r2.json()["registered"] is False
+
+
+async def test_register_device_bad_id(client) -> None:
+    r = await client.post("/api/elc/devices/BOGUS/register")
+    assert r.status_code == 400
+
+
 # Silence unused-import lint for fixtures.
 _ = contextlib

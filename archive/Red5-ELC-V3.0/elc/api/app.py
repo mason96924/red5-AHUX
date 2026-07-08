@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from elc.api.rest import build_router
 from elc.api.sse import attach_sse
 from elc.api.ws import attach_ws
+from elc.codec.device_id import DeviceId
 from elc.config.routes import build_config_router
 from elc.domain.replica import Replica
 from elc.drivers.srm import SrmDriver
@@ -47,6 +48,8 @@ def build_stack(
     initial_backoff: float = 0.5,
     config_db_path: str | None = None,
     scheduler_tick_seconds: float = 30.0,
+    demo_devices: list[DeviceId] | None = None,
+    data_source: str = "mock",
 ) -> ElcStack:
     """Construct (but do not start) the ELC stack.
 
@@ -103,7 +106,14 @@ def build_stack(
         prefix="/api/elc",
         tags=["elc-lighting"],
     )
-    app.include_router(build_router(driver=driver, replica=replica, link=link, scheduler=scheduler))
+    app.include_router(build_router(
+        driver=driver,
+        replica=replica,
+        link=link,
+        scheduler=scheduler,
+        demo_devices=demo_devices,
+        data_source=data_source,
+    ))
     attach_ws(app, replica)
     # Phase 3 (operator view): SSE fallback for browsers behind proxies
     # that strip the WebSocket Upgrade header (Cloudflare access rules,

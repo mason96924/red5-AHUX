@@ -908,7 +908,7 @@ function renderDevices() {
   if (state.devices.length === 0) {
     host.innerHTML = `<div class="empty-state">
       No devices seen yet.<br>
-      Click <code>Seed 30 demo devices</code> above to populate the replica.
+      Click the <code data-testid="editor-seed-hint">Seed</code> button above to populate the replica.
     </div>`;
     return;
   }
@@ -1213,20 +1213,48 @@ document.getElementById('new-grp-form').addEventListener('submit', async (ev) =>
 document.getElementById('btn-seed').addEventListener('click', async () => {
   const btn = document.getElementById('btn-seed');
   btn.disabled = true;
-  // 30 SRMs at 10-address increments -- mirrors DEMO_DEVICES in demo.py.
-  const devices = Array.from({length: 30}, (_, i) => `SRM/1/${(i + 1) * 10}/0`);
   try {
-    // Fire in parallel so a big batch doesn't take 30× RTT to complete.
+    // Ask the backend which devices it's advertising.  In physical
+    // mode this returns the 6eRM/6sRM/4sRM channels loaded from
+    // ELC_DEVICES_JSON; in mock mode it's the 30-SRM demo grid.
+    const info = await api('GET', '/demo-devices');
+    const devices = Array.isArray(info.devices) ? info.devices : [];
+    if (devices.length === 0) {
+      toast('No devices advertised by the server -- check ELC_DEVICES_JSON', true);
+      return;
+    }
+    // Register (safe: no relay is flipped) rather than sending a
+    // RelaySet -- writing state=true here would physically switch
+    // every real relay on when a hardware SCU is on the wire.
     await Promise.all(devices.map(d =>
-      api('POST', `/devices/${d}/relay`, { state: true })
+      api('POST', `/devices/${d}/register`, {})
     ));
-    // give the MockScu echoes a beat to reach the replica
-    await new Promise(r => setTimeout(r, 500));
+    // Give WS/SSE echoes a beat to reach the replica.
+    await new Promise(r => setTimeout(r, 300));
     await refreshAll();
-    toast(`${devices.length} demo devices seeded`);
+    const label = info.source === 'physical'
+      ? `${devices.length} SCU channels registered`
+      : `${devices.length} demo devices seeded`;
+    toast(label);
   } catch (e) { toast(`Seed failed: ${e.message}`, true); }
   finally { btn.disabled = false; }
 });
+
+// Relabel the seed button + empty-state hint on load so operators
+// running against real hardware see "Seed N SCU channels" rather
+// than the mock "Seed 30 demo devices" string.
+(async () => {
+  try {
+    const info = await api('GET', '/demo-devices');
+    const btn = document.getElementById('btn-seed');
+    if (info.source === 'physical') {
+      btn.textContent = `Seed ${info.count} SCU channels`;
+      btn.title = 'Register the physical SCU\'s advertised channels in the replica (no relays are switched).';
+    } else {
+      btn.textContent = `Seed ${info.count} demo devices`;
+    }
+  } catch { /* endpoint missing on old servers; keep the default label */ }
+})();
 
 // ---------- Modal helpers ---------------------------------------------------
 function openModal(id) { document.getElementById(id).classList.add('show'); }

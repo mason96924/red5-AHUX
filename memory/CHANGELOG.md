@@ -4,6 +4,41 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11 — V3.0 Phase 6.1k: SCU-aware editor "Seed" button
+
+The editor page's `Seed 30 demo devices` button was hardcoded to the
+mock topology (30 SRMs at `SRM/1/{10..300}/0`) *and* seeded by firing
+`state: true` RelaySet writes — safe against MockScu, dangerous
+against a real SCU (would physically switch every relay on).
+
+### Backend
+- `Replica.register(device)` — new public method (`elc/domain/replica.py`).
+  Creates a snapshot with `relay_state=None` (unknown), emits a
+  `device_registered` event, and is idempotent.
+- `GET /api/elc/demo-devices` — returns `{source, count, devices}`
+  where `devices` is the list loaded from `ELC_DEVICES_JSON` (or the
+  30-SRM mock grid when unset).  Used by the editor to relabel the
+  Seed button and drive the safe-seed loop.
+- `POST /api/elc/devices/{id}/register` — safe replica-only insertion,
+  no `RelaySet` frame emitted.  Verified by test that asserts
+  `mock_scu_server.received_frames == []` after registration.
+- `build_router` / `build_stack` grew `demo_devices` +
+  `data_source` params; `scripts/demo.py` passes both through.
+
+### Frontend (`demo/editor.html`)
+- Seed handler now fetches `/demo-devices`, calls `/register` per
+  entry (no relay flip), and toasts a source-aware message.
+- Button label + tooltip auto-update on load: "Seed 16 SCU channels"
+  in physical mode, "Seed 30 demo devices" in mock.
+- Empty-state hint copy no longer hardcodes "30".
+
+### Tests
+- 5 new pytest cases in `tests/integration/test_rest.py` covering:
+  default-mock demo-devices, physical-inventory demo-devices,
+  register-doesn't-emit-frames, register-idempotency, bad-id 400.
+- Full suite: 368/368 passing.
+
+
 ## 2026-02-07 — V3.0 Phase 6.1d: Non-point Shapes + Compliance Heatmap
 
 Two visualisation features on top of the wall-clipping foundation:

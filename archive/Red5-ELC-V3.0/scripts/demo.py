@@ -182,6 +182,8 @@ async def main() -> None:
     stack = build_stack(
         scu_host, scu_port, name="demo-scu", initial_backoff=0.2,
         config_db_path=config_db,
+        demo_devices=DEMO_DEVICES,
+        data_source=source,
     )
     await stack.link.start()
     # Physical SCUs can take longer to accept the first TCP connection

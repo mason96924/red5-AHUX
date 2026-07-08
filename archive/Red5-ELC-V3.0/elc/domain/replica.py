@@ -68,6 +68,31 @@ class Replica:
 
     # ---- ops ----------------------------------------------------------
 
+    async def register(self, device: DeviceId) -> bool:
+        """Announce a device to the replica without touching hardware.
+
+        Creates a snapshot with ``relay_state=None`` (unknown) so the
+        operator UI can list the channel before any RelayState frame
+        has been received.  Used by the "Seed SCU channels" button on
+        the editor page when talking to a **physical** SCU -- we must
+        NOT drive relays just to make them appear in the inventory.
+
+        Returns ``True`` when the device is newly registered,
+        ``False`` when it was already known (idempotent).
+        """
+        if device in self._by_device:
+            return False
+        snap = self._touch(device)
+        # `_touch` bumps update_count to 1 and stamps last_seen; leave
+        # relay_state at its dataclass default (None) so the UI can
+        # style unknown-state channels distinctly from "off".
+        await self.events.publish({
+            "type": "device_registered",
+            "device": str(device),
+            "ts": snap.last_seen.isoformat() if snap.last_seen else None,
+        })
+        return True
+
     async def clear_alarm(self, device: DeviceId) -> bool:
         """Operator-initiated alarm acknowledge.  Clears the sticky
         ``last_fail_code`` on the snapshot and publishes an

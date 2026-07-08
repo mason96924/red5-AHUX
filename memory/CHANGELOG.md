@@ -4,6 +4,56 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11 — V3.0 Phase 6.1L: ETLC V3.8 hardware protocol scaffolding
+
+### What shipped
+
+- **Live on/off + 0-10V dim controls** on the floor-plan element editor
+  sidebar (`floor.html`).  Dim slider is a UI stub (`{mocked: true}`)
+  until the analog wire frame lands.
+- **Delete-from-canvas button** in the floor toolbar; same effect as
+  Delete/Backspace, kept next to Align H/V.
+- **Sort placed devices in DIN-rail order** (`Replica.all()` sorted
+  by `(scu, address, dev_type, sub_address)`), matched client-side
+  in editor + floor pages.
+- **Canvas + operator mode now respect `relay_state=false`** — was
+  hard-coded ON in layout mode; dim slider modulates canvas beam
+  brightness via `fixtureBrightness()`.
+- **Device-id canonicalisation** on floor read
+  (`elc/floors/routes.py`) — old placements with stale enum-alias
+  or SCU-number strings get rewritten to the current canonical form
+  so the SRM-grid purple highlight fires correctly on canvas click.
+- **V3.8 wire codec scaffolding**: `elc/codec/etlc38.py` +
+  `docs/RED5-ETLC-V3.8-PROTOCOL.md` + `scripts/probe-v38.py` +
+  `scripts/probe-variants.py`.  ScuLink gained a `wire_version="v38"`
+  mode with a raw-bytes handler channel; SrmDriver opens a fresh
+  TCP socket per command (mimics probe behaviour).
+- **Checksum algorithm verified** against 10 observed RX frames:
+  `cs = (~(sum(data) + 0x80) + 1) & 0xFF`, matches doc text exactly.
+- **Preamble is 3 bytes "ELC"** (not 4 bytes "ELC@" as we first
+  assumed).  Codec + tests updated accordingly.
+- **391 tests passing**; every observed hardware RX byte is baked
+  into `tests/codec/test_etlc38.py` as a golden regression.
+
+### Known hardware blocker
+
+None of the four master→SCU RelayOverride variants tried on 2026-02-11
+elicited any response from the physical SCU:
+
+  * Type=0x07 minimal (5 data bytes)
+  * Type=0x07 with 1-byte Flag=0xFF
+  * Type=0x07 with 4-byte Flag=FFFFFFFF
+  * Type=0x08 multi-relay bitmask
+
+The SCU RX path (physical switch on module → SCU broadcasts
+Type=0x40 RelayStatus 0x25) works and our codec decodes it perfectly.
+The TX path is blocked pending ground-truth from a working ETLC
+master (vendor Windows tool / touch panel / mobile app) captured via
+`tcpdump -w vendor.pcap 'host 192.168.1.222 and port 9760'`.  See
+`docs/RED5-ETLC-V3.8-PROTOCOL.md §6` for the six ambiguities that
+need resolving.
+
+
 ## 2026-02-11 — V3.0 Phase 6.1k: SCU-aware editor "Seed" button
 
 The editor page's `Seed 30 demo devices` button was hardcoded to the

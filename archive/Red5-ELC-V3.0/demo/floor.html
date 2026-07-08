@@ -2051,22 +2051,108 @@ document.getElementById('btn-heatmap').onclick = () => {
   document.getElementById('heatmap-legend').classList.toggle('show', state.heatmap);
   paintCanvas();
 };
-document.getElementById('shape-picker').onchange = (ev) => {
+document.getElementById('shape-picker').onchange = async (ev) => {
   state.shape = ev.target.value;
   syncShapeSubcontrols();
+  await maybeBulkApplyShape('shape');
   toast(`Next placement: ${labelForShape()}`);
 };
-document.getElementById('polygon-kind').onchange = (ev) => {
+document.getElementById('polygon-kind').onchange = async (ev) => {
   state.polygonKind = ev.target.value;
   document.getElementById('polygon-sides-wrap').style.display =
     (state.shape === 'regular_polygon' && state.polygonKind === 'polygon')
     ? 'inline-flex' : 'none';
+  await maybeBulkApplyShape('kind');
   toast(`Next placement: ${labelForShape()}`);
 };
-document.getElementById('polygon-sides').onchange = (ev) => {
+document.getElementById('polygon-sides').onchange = async (ev) => {
   const v = Math.max(3, Math.min(24, parseInt(ev.target.value, 10) || 6));
   state.polygonSides = v;
   ev.target.value = v;
+  await maybeBulkApplyShape('sides');
+};
+
+// Phase 6.1h — when the toolbar Shape / Kind / Sides / Tube changes
+// AND there are selected devices, propagate the new attribute(s) to
+// every one of them.  Placed fixtures also get their geometry reset
+// to sensible defaults for the new shape (using any preset toolbar
+// dimensions).  Unassigned tiles just update the element metadata.
+async function maybeBulkApplyShape(triggeredBy) {
+  const dids = Array.from(state.selectedDeviceIds || []);
+  if (!dids.length) return;
+
+  const shape = state.shape;
+  const kind  = state.polygonKind;
+  const sides = state.polygonSides;
+  const tube  = state.tubeType;
+
+  // 1) Push element metadata (shape + tube_type) for every device.
+  for (const did of dids) {
+    const el = state.lightingElements.get(did);
+    if (!el) continue;    // unassigned + missing element row -- rare
+    const nextTube = (shape === 'line') ? tube : (el.tube_type || 'none');
+    if (el.shape === shape && el.tube_type === nextTube
+        && triggeredBy !== 'kind' && triggeredBy !== 'sides') continue;
+    try {
+      const updated = await api('PUT', `/lighting-elements/${did}`, {
+        type: el.type, max_lux: el.max_lux,
+        beam_radius_m: el.beam_radius_m, cct_k: el.cct_k,
+        shape, tube_type: nextTube,
+      });
+      state.lightingElements.set(did, updated);
+    } catch (e) { /* keep going -- one failure doesn't block the group */ }
+  }
+
+  // 2) For each placed fixture in the selection, reset shape-specific
+  // geometry to match the new shape/kind.  Preset toolbar dims win.
+  if (!state.currentFloor) return;
+  const preset = _presetDimensions(shape, kind);
+  let changedAny = false;
+  for (const fx of state.currentFloor.fixtures) {
+    if (!dids.includes(fx.device_id)) continue;
+    const el = state.lightingElements.get(fx.device_id);
+    const beam = el?.beam_radius_m || 4;
+    // Reset all shape-specific fields; new ones filled below.
+    fx.angle_deg = null; fx.length_m = null; fx.radius_m = null;
+    fx.vertices = null; fx.polygon_kind = null;
+    fx.width_m = null; fx.height_m = null; fx.sides = null;
+    if (shape === 'line') {
+      fx.length_m  = preset?.length_m ?? (beam * 2);
+      fx.angle_deg = preset?.angle_deg ?? 0;
+    } else if (shape === 'regular_polygon') {
+      fx.polygon_kind = kind;
+      if (kind === 'circle') {
+        fx.radius_m = preset?.radius_m ?? beam;
+      } else if (kind === 'rectangle') {
+        fx.width_m  = preset?.width_m  ?? (beam * 2);
+        fx.height_m = preset?.height_m ?? (beam * 2);
+      } else {  // 'polygon' N-gon
+        fx.radius_m  = preset?.radius_m ?? beam;
+        fx.sides     = sides || 6;
+        fx.angle_deg = 0;
+      }
+    } else if (shape === 'polyline') {
+      // Default polyline: a small square around the anchor so the
+      // fixture stays visible; operator can drag vertices to reshape.
+      const s = beam;
+      fx.vertices = [
+        [fx.x_m - s, fx.y_m - s], [fx.x_m + s, fx.y_m - s],
+        [fx.x_m + s, fx.y_m + s], [fx.x_m - s, fx.y_m + s],
+      ];
+    }
+    // shape === 'point' -> geometry fields stay cleared.
+    changedAny = true;
+  }
+  if (changedAny) {
+    paintCanvas();
+    await savePlacements(state.currentFloor.fixtures);
+  }
+  if (dids.length > 1) toast(`Updated ${dids.length} elements`);
+}
+document.getElementById('tube-type-picker').onchange = async (ev) => {
+  state.tubeType = ev.target.value;
+  await maybeBulkApplyShape('tube');
+  toast(`Next line placement: ${labelForTube(ev.target.value)}`);
 };
 
 // Visibility rules for the shape sub-dropdowns.
@@ -2225,10 +2311,6 @@ async function onDimensionEdit() {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', onDimensionEdit);
 });
-document.getElementById('tube-type-picker').onchange = (ev) => {
-  state.tubeType = ev.target.value;
-  toast(`Next line placement: ${labelForTube(ev.target.value)}`);
-};
 function labelForTube(t) {
   return ({
     none: 'unspecified', led_strip: 'LED strip',

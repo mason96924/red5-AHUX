@@ -27,11 +27,20 @@ class DeviceType(IntEnum):
     Values are placeholders until the official ELC type-code table is
     extracted from a live SCU.  Drivers must look up their type via
     this enum so the table can be re-assigned centrally.
+
+    SRM variants: on the ELC wire the type + module-address pair is
+    the unique identifier for a module.  Two modules of *different*
+    types may share the same ``address`` (e.g. 6eRM@1 and 4sRM@1) --
+    that's fine on the wire because ``dev_type`` differentiates them.
+    Two modules of the *same* type must not share an address.
+
+    Numeric values in the 10..14 range are provisional; they'll be
+    reconciled once we capture a real SCU device-inventory response.
     """
 
     UNKNOWN = 0
     SCU = 1
-    SRM = 2          # Slim Relay Module / ELCC48 master
+    SRM = 2          # Generic / legacy SRM (kept for back-compat)
     DSW = 3          # Direct Switch
     DALI_MASTER = 4
     DALI_SLAVE = 5
@@ -39,6 +48,14 @@ class DeviceType(IntEnum):
     SHG = 7          # Smart Home Gateway (EnOcean)
     ELCC48_SLAVE = 8
     DT8 = 9          # Tunable-white DALI device
+    # SRM family sub-types -- see docs/RED5-MODBUS-V3.0-PROTOCOL.md §3
+    # for the equivalent Modbus coil-block layout.  Provisional values,
+    # to be re-mapped when the ELC device-type table is captured.
+    SRM_4E = 10      # 4-channel Energy-metering Relay Module
+    SRM_6E = 11      # 6-channel Energy-metering Relay Module
+    SRM_4S = 12      # 4-channel Switching Relay Module
+    SRM_6S = 13      # 6-channel Switching Relay Module
+    SRM_48S = 14     # 48-channel Switching Relay Module (layout TBD)
 
 
 DEVTYPE_BITS: Final[int] = 10

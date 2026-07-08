@@ -27,6 +27,7 @@ from typing import Any
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
+from elc.codec.device_id import DeviceId
 from elc.config import store as config_store
 from elc.floors import lighting, store
 from elc.floors.dxf import DxfImportError, dxf_to_svg
@@ -46,6 +47,26 @@ def _raise_http(exc: Exception) -> None:
     raise HTTPException(status_code=status, detail=str(exc))
 
 
+def _canonicalise_fixtures(floor: dict[str, Any]) -> None:
+    """Rewrite each fixture's ``device_id`` to the canonical string.
+
+    Ensures alias / SCU-renumber migrations don't strand old placements
+    with legacy strings.  Silently skips fixtures whose device_id
+    can't be parsed (they'll show up on the plan but won't match any
+    SRM tile until the operator re-places them).
+    """
+    fixtures = floor.get("fixtures") or []
+    for fx in fixtures:
+        did = fx.get("device_id")
+        if not isinstance(did, str):
+            continue
+        try:
+            dev = DeviceId.from_string(did)
+        except Exception:
+            continue
+        fx["device_id"] = str(dev)
+
+
 def build_floors_router(*, db_path: str | None = None) -> APIRouter:
     """Construct the ``/floors`` sub-router.  Called by ``build_stack``
     with the same ``db_path`` used by the config router so all
@@ -61,9 +82,18 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
     @router.get("/{fid}")
     async def get_floor(fid: str) -> dict[str, Any]:
         try:
-            return store.get_floor(fid, db_path=db_path)
+            f = store.get_floor(fid, db_path=db_path)
         except Exception as e:
             _raise_http(e)
+        # Canonicalise fixture device_ids on read.  Placements stored
+        # before enum-alias / SCU-number changes may carry legacy
+        # strings (e.g. ``SRM_ERM/1/2/0`` when the codec now emits
+        # ``SRM_6E/0/2/0``); we re-parse and re-format via DeviceId so
+        # the string always matches what ``/api/elc/devices`` returns.
+        # A mismatch here is exactly why the SRM-grid highlight
+        # doesn't fire after a canvas selection.
+        _canonicalise_fixtures(f)
+        return f
 
     # ---- inline SVG background --------------------------------------
     @router.get("/{fid}/background.svg")

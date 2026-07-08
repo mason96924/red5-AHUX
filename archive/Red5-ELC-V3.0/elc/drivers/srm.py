@@ -66,10 +66,60 @@ class SrmDriver(AbstractDevice):
                 "V3.8 TX RelayOverride %s → %s  (%d B: %s)",
                 device, "ON" if state else "OFF", len(data), data.hex(),
             )
-            await self._link.send_bytes(data)
+            # Some ETLC SCU firmware only processes frames from a
+            # *fresh* TCP connection -- the persistent ScuLink socket
+            # observes silent drops even though the bytes on the wire
+            # are byte-identical to a working one-shot probe.  Open a
+            # dedicated socket per command to mimic probe-v38.py's
+            # behaviour.  We still keep the persistent ``self._link``
+            # around for future inbound-event work; the write path
+            # just doesn't share it.
+            await self._v38_one_shot_send(data)
             return
         frame = self._registry.encode_message(RelaySet(device=device, state=state))
         await self._link.send(frame)
+
+    async def _v38_one_shot_send(self, data: bytes) -> None:
+        """Open a dedicated TCP socket, send ``data``, drain any
+        response into the V3.8 parse buffer, then close.
+
+        Mirrors ``scripts/probe-v38.py``: same fresh-connection
+        semantics that the ETLC SCU firmware appears to require for
+        write operations.  Response bytes still route through the
+        normal ``_on_v38_bytes`` handler so unsolicited RelayState
+        echoes update the replica identically to persistent-link
+        traffic.
+        """
+        import socket
+        host = getattr(self._link, "host", None)
+        port = getattr(self._link, "port", None)
+        if host is None or port is None:
+            log.warning("V3.8 one-shot: link has no host/port; skipping")
+            return
+        loop = asyncio.get_running_loop()
+
+        def _blocking_send_recv() -> bytes:
+            with socket.create_connection((host, port), timeout=2.0) as s:
+                s.sendall(data)
+                s.settimeout(0.4)
+                buf = bytearray()
+                try:
+                    while True:
+                        chunk = s.recv(4096)
+                        if not chunk:
+                            break
+                        buf.extend(chunk)
+                except socket.timeout:
+                    pass
+            return bytes(buf)
+
+        try:
+            response = await loop.run_in_executor(None, _blocking_send_recv)
+        except Exception as e:  # noqa: BLE001
+            log.warning("V3.8 one-shot send failed: %s", e)
+            return
+        if response:
+            await self._on_v38_bytes(response)
 
     async def _on_v38_bytes(self, chunk: bytes) -> None:
         """Parse ETLC RelayState echoes out of a raw byte stream.

@@ -44,6 +44,7 @@ class _EchoServer:
         self.received: bytearray = bytearray()
         self._server: asyncio.AbstractServer | None = None
         self._writer: asyncio.StreamWriter | None = None
+        self._writers: list[asyncio.StreamWriter] = []
         self.client_connected = asyncio.Event()
 
     async def start(self) -> int:
@@ -54,12 +55,20 @@ class _EchoServer:
 
     async def _handle(self, reader, writer):  # type: ignore[no-untyped-def]
         self._writer = writer
+        self._writers.append(writer)
         self.client_connected.set()
-        while True:
-            chunk = await reader.read(4096)
-            if not chunk:
-                return
-            self.received.extend(chunk)
+        try:
+            while True:
+                chunk = await reader.read(4096)
+                if not chunk:
+                    return
+                self.received.extend(chunk)
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
     async def push_bytes(self, data: bytes) -> None:
         assert self._writer is not None
@@ -67,10 +76,10 @@ class _EchoServer:
         await self._writer.drain()
 
     async def stop(self) -> None:
-        if self._writer is not None:
-            self._writer.close()
+        for w in self._writers:
             try:
-                await self._writer.wait_closed()
+                w.close()
+                await w.wait_closed()
             except Exception:
                 pass
         if self._server is not None:

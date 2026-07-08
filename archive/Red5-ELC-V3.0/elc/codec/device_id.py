@@ -24,38 +24,65 @@ from typing import Final
 class DeviceType(IntEnum):
     """Coarse device-family enumeration.
 
-    Values are placeholders until the official ELC type-code table is
-    extracted from a live SCU.  Drivers must look up their type via
-    this enum so the table can be re-assigned centrally.
+    **Numeric values come from ETLC protocol V3.8** (see
+    docs/RED5-ETLC-V3.8-PROTOCOL.md §1).  Do NOT reassign these
+    without updating the protocol doc and re-verifying against
+    hardware -- they are what the SCU expects on the wire.
 
-    SRM variants: on the ELC wire the type + module-address pair is
-    the unique identifier for a module.  Two modules of *different*
-    types may share the same ``address`` (e.g. 6eRM@1 and 4sRM@1) --
-    that's fine on the wire because ``dev_type`` differentiates them.
-    Two modules of the *same* type must not share an address.
+    SRM variants: on the ETLC wire the type + module-address pair
+    is the unique identifier for a module.  Two modules of
+    *different* types may share the same ``address`` (e.g. 6eRM@1
+    and 4sRM@1) -- that's fine on the wire because ``dev_type``
+    differentiates them.  Two modules of the *same* type must not
+    share an address.
 
-    Numeric values in the 10..14 range are provisional; they'll be
-    reconciled once we capture a real SCU device-inventory response.
+    Legacy ``SRM = 2`` is kept for pre-Phase-6.1k data / tests that
+    predate the type-family split.  New code should use the
+    specific SRM_4S / SRM_6S / SRM_ERM subtypes.
     """
 
     UNKNOWN = 0
-    SCU = 1
-    SRM = 2          # Generic / legacy SRM (kept for back-compat)
-    DSW = 3          # Direct Switch
-    DALI_MASTER = 4
-    DALI_SLAVE = 5
-    WGM = 6          # Wireless Gateway Module (Zigbee)
-    SHG = 7          # Smart Home Gateway (EnOcean)
+    SMARTORL = 1                 # ETLC_DEVICE_SMARTORL
+    SRM = 2                      # legacy, kept for back-compat
+    DSW = 3                      # generic DSW (legacy)
+    DALI_MASTER_LEGACY = 4       # kept for pre-V3.8 tests; use DALI_MASTER (0x1E)
+    DALI_SLAVE = 5               # (V3.8 assigns 0x05 to SCU; retained for tests)
+    WGM = 6                      # (legacy alias)
+    SHG_LEGACY = 7               # kept for pre-V3.8 tests; use SHG (0x25)
     ELCC48_SLAVE = 8
-    DT8 = 9          # Tunable-white DALI device
-    # SRM family sub-types -- see docs/RED5-MODBUS-V3.0-PROTOCOL.md §3
-    # for the equivalent Modbus coil-block layout.  Provisional values,
-    # to be re-mapped when the ELC device-type table is captured.
-    SRM_4E = 10      # 4-channel Energy-metering Relay Module
-    SRM_6E = 11      # 6-channel Energy-metering Relay Module
-    SRM_4S = 12      # 4-channel Switching Relay Module
-    SRM_6S = 13      # 6-channel Switching Relay Module
-    SRM_48S = 14     # 48-channel Switching Relay Module (layout TBD)
+    DT8 = 9                      # Tunable-white DALI device
+    # --- V3.8 wire-authoritative codes below ------------------------
+    # Direct-Switch family
+    DSW_4 = 0x0A          # 10  ETLC_DEVICE_4DSW / ETLC_DEVICE_DSW_START
+    DSW_8 = 0x0B          # 11  ETLC_DEVICE_8DSW
+    DSW_STS1 = 0x0C       # 12  ETLC_DEVICE_STS1 (DSW16)
+    DSW_STS2 = 0x0D       # 13  ETLC_DEVICE_STS2 / ETLC_DEVICE_DSW_END
+    SU = 0x0E             # 14  (DSW_END + 1)
+    # SRM family — V3.8 §1
+    SRM_4S = 0x14         # 20  ETLC_DEVICE_4SRM  (4-ch switching relay)
+    SRM_6S = 0x15         # 21  ETLC_DEVICE_6SRM  (6-ch switching relay)
+    SRM_ERM = 0x16        # 22  ETLC_DEVICE_ERM   (energy-metering RM, 4e / 6e)
+    SRM_48S = 0x18        # 24  ETLC_DEVICE_48SRM (48-ch, layout TBD)
+    # Head unit
+    SCU = 0x05            # 5   ETLC_DEVICE_SCU (moved to actual V3.8 code)
+    # DALI / wireless / smart-home
+    DALI_MASTER = 0x1E    # 30
+    WGM_4SWITCH = 0x23    # 35
+    WGM_8SWITCH = 0x24    # 36
+    SHG = 0x25            # 37
+    MULTI_SENSOR = 0x3E   # 62
+
+    # ---- Legacy aliases (application-code convenience) ---------------
+    # These are OLD names for module families we kept working during the
+    # V3.8 migration.  They resolve to the same wire code as the
+    # underscore-suffixed name.  Prefer the underscored name in new
+    # code.
+    #
+    # NOTE: Python IntEnum forbids duplicate NAMEs but allows the same
+    # numeric value under a different name via aliasing -- so
+    # ``SRM_6E`` below is an alias of ``SRM_ERM``, not a new member.
+    SRM_4E = 0x16         # alias of SRM_ERM (4-channel eRM)
+    SRM_6E = 0x16         # alias of SRM_ERM (6-channel eRM)
 
 
 DEVTYPE_BITS: Final[int] = 10

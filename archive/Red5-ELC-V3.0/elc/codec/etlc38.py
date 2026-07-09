@@ -1,28 +1,22 @@
-"""ETLC V3.8 wire codec -- corrected against observed hardware behaviour.
+"""ETLC V3.8 wire codec -- vendor-tool-captured (2026-07-09).
 
-Wire format (12 bytes fixed):
+Frame:  45 4C 43   40   LL   <payload>              <cs>
 
-    byte  0..3   preamble = ASCII "ELC@" (45 4C 43 40)
-    byte  4      class byte -- 0x07 for the SRM/ERM family
-    byte  5      device type (SRM_6S=0x15, SRM_4S=0x14, SRM_6E=0x16, ...)
-    byte  6      SCU bus number (the physical SCU broadcasts as 0)
-    byte  7      module address
-    byte  8      sub-address (relay channel index, 0-based)
-    byte  9      opcode (0x07=RelayOverride, 0x25=RelayStatus)
-    byte  10     data byte (state or channel bitmask depending on opcode)
-    byte  11     checksum = (0x87 - sum(bytes[4..10])) & 0xFF
+* preamble = "ELC" (45 4C 43)
+* type     = 0x40 (ETLC protocol wrapper)
+* length   = number of bytes remaining (payload + checksum)
+* checksum = (~(sum(payload) + 0x80) + 1) & 0xFF
 
-Derivation of the checksum: for every observed RX frame we saw
-``sum(bytes[4..10]) + checksum == 0x87``, invariant across state, type,
-and address changes.  0x87 is likely ``0x80 | class_byte`` (class byte
-= 0x07 for SRM), which we assume so the algorithm generalises to
-future message classes.
+TX payload (10 B, opcode 0x07 RelayOverride):
+    [dev_type][scu][addr][channel_0based][0x07][state][DI1: 11 12 13 14]
 
-*Everything* in this module was rebuilt from the actual hardware RX
-observed on 2026-02-11 (see log capture in the CHANGELOG).  The V3.8
-spec doc's talk of ``Flag = 0xFFFFFFFF`` is either aspirational,
-outdated, or for a different message class; our SCU firmware speaks
-what's coded below.
+RX payload (6 B, opcode 0x25 RelayStatus, unsolicited from SCU):
+    [dev_type][scu][addr][00][0x25][state_mask]
+
+Wire-vs-UI addressing:
+    SCU:     0-based on wire (UI SCU=1  → wire 0)
+    Module:  1-based on wire (UI addr=2 → wire 2)
+    Channel: 0-based on wire (UI ch=2   → wire 1)
 """
 
 from __future__ import annotations
@@ -32,111 +26,103 @@ from typing import Final
 
 from elc.codec.device_id import DeviceId, DeviceType
 
-# Wire constants (observed) -----------------------------------------
-PREAMBLE: Final[bytes] = b"ELC@"          # 45 4C 43 40
-CLASS_SRM: Final[int] = 0x07              # byte 4 for SRM/ERM family
-FRAME_LEN: Final[int] = 12                # every observed frame is 12 B
+PREAMBLE: Final[bytes] = b"\x45\x4C\x43"
+TYPE_WRAP: Final[int] = 0x40
+DI1_TAIL: Final[bytes] = b"\x11\x12\x13\x14"
 
-# Opcodes per V3.8 doc + hardware confirmation ----------------------
-OPCODE_RELAY_OVERRIDE: Final[int] = 0x07  # master → SCU, single relay
-OPCODE_RELAY_STATUS: Final[int] = 0x25    # SCU → master, module bitmask
+OPCODE_RELAY_OVERRIDE: Final[int] = 0x07
+OPCODE_RELAY_STATUS: Final[int] = 0x25
+
+TX_FRAME_LEN: Final[int] = 16
+RX_FRAME_LEN: Final[int] = 12
+
+# Legacy aliases -- pre-2026-07-09 tests reference these names.
+CLASS_SRM: Final[int] = TYPE_WRAP
+FRAME_LEN: Final[int] = RX_FRAME_LEN
 
 
 class EtlcFrameError(ValueError):
     """Raised when a frame is structurally invalid."""
 
 
-def checksum(header_and_payload: bytes) -> int:
-    """(0x87 - sum(bytes[4..10])) & 0xFF.
-
-    ``header_and_payload`` must be bytes[4..10] (7 bytes) -- the class
-    byte, dev-id fields, opcode, and data byte, with the preamble
-    stripped and the checksum position excluded.
-    """
-    if len(header_and_payload) != 7:
-        raise EtlcFrameError(
-            f"checksum body must be 7 B, got {len(header_and_payload)}"
-        )
-    return (0x87 - sum(header_and_payload)) & 0xFF
+def checksum(payload: bytes) -> int:
+    """(~(sum(payload) + 0x80) + 1) & 0xFF."""
+    return ((~(sum(payload) + 0x80)) + 1) & 0xFF
 
 
-def _encode(dev: DeviceId, opcode: int, data_byte: int) -> bytes:
-    """Assemble a full 12-byte ETLC frame."""
-    body = bytes((
-        CLASS_SRM,
-        int(dev.dev_type) & 0xFF,
-        dev.scu & 0xFF,
-        dev.address & 0xFF,
-        dev.sub_address & 0xFF,
-        opcode & 0xFF,
-        data_byte & 0xFF,
-    ))
-    return PREAMBLE + body + bytes((checksum(body),))
+def _wrap(payload: bytes) -> bytes:
+    return (
+        PREAMBLE
+        + bytes((TYPE_WRAP, len(payload) + 1))
+        + payload
+        + bytes((checksum(payload),))
+    )
 
 
 @dataclass(frozen=True)
 class RelayOverrideV38:
-    """Set a single relay on/off (opcode 0x07)."""
+    """Master → SCU single-relay override (opcode 0x07)."""
 
     device: DeviceId
     state: bool
 
     def encode(self) -> bytes:
-        return _encode(self.device, OPCODE_RELAY_OVERRIDE,
-                       1 if self.state else 0)
+        payload = bytes([
+            int(self.device.dev_type) & 0xFF,
+            self.device.scu & 0xFF,
+            self.device.address & 0xFF,
+            self.device.sub_address & 0xFF,
+            OPCODE_RELAY_OVERRIDE,
+            0x01 if self.state else 0x00,
+        ]) + DI1_TAIL
+        return _wrap(payload)
 
 
 @dataclass(frozen=True)
 class RelayStatusV38:
-    """Module-wide relay-state bitmask (opcode 0x25, unsolicited).
+    """SCU → master unsolicited module state (opcode 0x25)."""
 
-    The SCU emits this whenever ANY relay on the module changes state,
-    whether driven by our RelayOverride or by a physical switch on the
-    module itself.  ``state_mask`` bit N == 1 means relay channel N is
-    currently on.
-    """
-
-    device: DeviceId   # ``sub_address`` is 0 for module-wide status
-    state_mask: int    # bitmask of channels currently ON
+    device: DeviceId
+    state_mask: int
 
     def encode(self) -> bytes:
-        return _encode(self.device, OPCODE_RELAY_STATUS,
-                       self.state_mask & 0xFF)
+        payload = bytes([
+            int(self.device.dev_type) & 0xFF,
+            self.device.scu & 0xFF,
+            self.device.address & 0xFF,
+            self.device.sub_address & 0xFF,
+            OPCODE_RELAY_STATUS,
+            self.state_mask & 0xFF,
+        ])
+        return _wrap(payload)
 
     @classmethod
-    def try_decode(cls, frame: bytes) -> RelayStatusV38 | None:
-        """Non-throwing decode -- returns None on any structural mismatch."""
-        if len(frame) != FRAME_LEN:
+    def try_decode(cls, frame: bytes) -> "RelayStatusV38 | None":
+        if len(frame) != RX_FRAME_LEN:
             return None
-        if frame[:4] != PREAMBLE:
+        if frame[:3] != PREAMBLE:
             return None
-        if frame[4] != CLASS_SRM:
+        if frame[3] != TYPE_WRAP:
             return None
-        if frame[9] != OPCODE_RELAY_STATUS:
+        if frame[4] + 5 != RX_FRAME_LEN:
             return None
-        try:
-            expected_cs = checksum(frame[4:11])
-        except EtlcFrameError:
+        payload = frame[5:11]
+        if payload[4] != OPCODE_RELAY_STATUS:
             return None
-        if expected_cs != frame[11]:
+        if checksum(payload) != frame[11]:
             return None
         try:
-            dev_type = DeviceType(frame[5])
+            dev_type = DeviceType(payload[0])
         except ValueError:
             dev_type = DeviceType.UNKNOWN
         device = DeviceId(
             dev_type=dev_type,
-            scu=frame[6],
-            address=frame[7],
-            sub_address=frame[8],
+            scu=payload[1],
+            address=payload[2],
+            sub_address=payload[3],
         )
-        return cls(device=device, state_mask=frame[10])
+        return cls(device=device, state_mask=payload[5])
 
 
 def channels_from_mask(mask: int, module_channel_count: int = 6) -> list[bool]:
-    """Turn a RelayStatus bitmask into a per-channel list.
-
-    ``module_channel_count`` defaults to 6 for the 6sRM / 6eRM
-    families; use 4 for 4sRM / 4eRM, 48 for 48sRM.
-    """
     return [(mask >> i) & 1 == 1 for i in range(module_channel_count)]

@@ -21,10 +21,11 @@ import elc.api  # noqa: F401
 
 from elc.codec.device_id import DeviceId, DeviceType
 from elc.codec.etlc38 import (
-    CLASS_SRM,
-    FRAME_LEN,
     OPCODE_RELAY_OVERRIDE,
     PREAMBLE,
+    RX_FRAME_LEN,
+    TX_FRAME_LEN,
+    TYPE_WRAP,
     RelayStatusV38,
     checksum,
 )
@@ -117,19 +118,18 @@ async def test_v38_set_relay_emits_observed_frame(v38_stack):
     # One-shot connection: give it a moment for the write to hit the
     # echo server's second accept() and complete.
     for _ in range(50):
-        if len(echo.received) >= FRAME_LEN:
+        if len(echo.received) >= TX_FRAME_LEN:
             break
         await asyncio.sleep(0.02)
 
-    assert len(echo.received) == FRAME_LEN
+    assert len(echo.received) == TX_FRAME_LEN
     fr = bytes(echo.received)
-    assert fr[:4] == PREAMBLE
-    assert fr[4] == CLASS_SRM
+    assert fr[:3] == PREAMBLE
+    assert fr[3] == TYPE_WRAP
     assert fr[9] == OPCODE_RELAY_OVERRIDE
     assert fr[10] == 1
-    assert fr[11] == checksum(fr[4:11])
-    # Golden hex from the codec test:
-    assert fr.hex() == "454c43400715000200070161"
+    # Golden hex from the codec test (6SRM ch=0 wire ON):
+    assert fr.hex() == "454c43400b1500020007011112131417"
 
 
 async def test_v38_inbound_relay_status_fans_out_per_channel(v38_stack):

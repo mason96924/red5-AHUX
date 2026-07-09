@@ -4016,6 +4016,7 @@ function startLiveStream() {
   // fired — the operator was silently blind to relay events while
   // the editor iframe (which always uses SSE) kept updating.
   _startSse();
+  _startLiveReconcile();
 }
 
 function _startSse() {
@@ -4033,6 +4034,41 @@ function _startSse() {
   } catch (_) {
     setTimeout(_startSse, 2000);
   }
+}
+
+// Belt on top of SSE — every 5 s, pull the replica's authoritative
+// device snapshot and reconcile state.liveDevices.  If SSE misses an
+// event (network blip, proxy hiccup, back-pressure), this heals the
+// UI within one poll cycle.  Cheap: /devices returns a JSON list,
+// typically <20 KB for a full site.
+let _liveReconcileTimer = null;
+async function _reconcileLiveDevices() {
+  try {
+    const list = await api('GET', '/devices');
+    let dirty = false;
+    for (const d of list) {
+      const cur = state.liveDevices.get(d.device) || {};
+      if (cur.relay_state !== d.relay_state
+       || cur.dim_level !== d.dim_level
+       || cur.last_fail_code !== d.last_fail_code) {
+        state.liveDevices.set(d.device, {
+          relay_state: d.relay_state,
+          dim_level: d.dim_level,
+          last_fail_code: d.last_fail_code,
+        });
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      renderSrmGrid();
+      if (state.moduleModal) renderModuleModal();
+      paintCanvas();
+    }
+  } catch (_) {}
+}
+function _startLiveReconcile() {
+  if (_liveReconcileTimer !== null) return;
+  _liveReconcileTimer = setInterval(_reconcileLiveDevices, 5000);
 }
 function stopLiveStream() {
   if (liveWs) { try { liveWs.close(); } catch {} liveWs = null; }

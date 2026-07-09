@@ -463,6 +463,17 @@
         <option value="2">2</option>
         <option value="3">3</option>
       </select>
+      <!-- IP hostname for the selected SCU bus.  Purely UI-side
+           metadata for now (persisted per-SCU# in localStorage under
+           'elc.floor.scu.<n>.host').  Blur = save + re-scan.  When
+           we wire multi-SCU-link backend support this same field
+           becomes the source of truth for that link's dial target. -->
+      <input id="scu-host" data-testid="floor-scu-host" type="text"
+             placeholder="ip / host"
+             title="IP address or hostname of the currently-selected SCU bus.  Press Enter or blur to save."
+             style="width:130px;padding:4px 8px;font-size:11px;text-transform:none;
+                    background:var(--panel-2);color:var(--text);
+                    border:1px solid var(--line);border-radius:4px" />
     </label>
     <button id="btn-mode" class="ghost" data-testid="floor-mode-toggle">Mode: Layout</button>
     <button id="btn-heatmap" class="ghost" data-testid="floor-heatmap-toggle"
@@ -4034,15 +4045,44 @@ async function discoverSrms(opts = {}) {
 document.getElementById('btn-discover').onclick = () => discoverSrms();
 
 // SCU picker: initialise from localStorage, and re-scan whenever the
-// operator switches buses.
+// operator switches buses.  The paired IP-host field below shows the
+// last-known dial address for the currently-selected SCU bus (per
+// operator ask 2026-02-11: "SCU IP address setting and info when SCU
+// number is selected").  For now the IP is UI-side metadata only
+// (localStorage under 'elc.floor.scu.<n>.host'); once a multi-SCU-link
+// backend lands it'll become the source-of-truth for that link's dial
+// target.
 (function initScuPicker() {
   const sel = document.getElementById('scu-picker');
+  const ipInput = document.getElementById('scu-host');
   if (!sel) return;
   const saved = localStorage.getItem('elc.floor.scu');
   if (saved !== null && Array.from(sel.options).some(o => o.value === saved)) {
     sel.value = saved;
   }
-  sel.addEventListener('change', () => discoverSrms());
+  const _syncIpField = () => {
+    const n = sel.value;
+    if (ipInput) ipInput.value = localStorage.getItem(`elc.floor.scu.${n}.host`) || '';
+  };
+  _syncIpField();
+
+  sel.addEventListener('change', () => {
+    _syncIpField();
+    discoverSrms();
+  });
+  if (ipInput) {
+    const _save = () => {
+      const n = sel.value;
+      const key = `elc.floor.scu.${n}.host`;
+      const v = (ipInput.value || '').trim();
+      if (v) localStorage.setItem(key, v);
+      else localStorage.removeItem(key);
+    };
+    ipInput.addEventListener('blur', _save);
+    ipInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); ipInput.blur(); }
+    });
+  }
 })();
 
 // Escape closes whichever floor/schedule modal is open (the module

@@ -475,10 +475,8 @@
             title="Operator mode: subscribe to live device events">
       <span class="op-dot"></span><span id="op-label">Operator</span>
     </button>
-    <button class="ghost" id="btn-seed" data-testid="editor-seed-btn">Seed 30 demo devices</button>
     <button class="ghost" id="btn-settings" data-testid="editor-settings-btn" title="Location + weather + engine mode">⚙ Settings</button>
     <button class="ghost" id="btn-calendar" data-testid="editor-calendar-btn" title="Holidays + event days">📅 Calendar</button>
-    <a href="/" class="btn ghost">← Demo console</a>
   </div>
 </header>
 
@@ -1175,7 +1173,7 @@ function renderDevices() {
   if (state.devices.length === 0) {
     host.innerHTML = `<div class="empty-state">
       No devices seen yet.<br>
-      Click the <code data-testid="editor-seed-hint">Seed</code> button above to populate the replica.
+      Open <a href="/floor">/floor</a> and pick an SCU to auto-discover modules.
     </div>`;
     return;
   }
@@ -1560,52 +1558,6 @@ document.getElementById('new-grp-form').addEventListener('submit', async (ev) =>
     toast('Group added');
   } catch (e) { toast(e.message, true); }
 });
-
-document.getElementById('btn-seed').addEventListener('click', async () => {
-  const btn = document.getElementById('btn-seed');
-  btn.disabled = true;
-  try {
-    // Ask the backend which devices it's advertising.  In physical
-    // mode this returns the 6eRM/6sRM/4sRM channels loaded from
-    // ELC_DEVICES_JSON; in mock mode it's the 30-SRM demo grid.
-    const info = await api('GET', '/demo-devices');
-    const devices = Array.isArray(info.devices) ? info.devices : [];
-    if (devices.length === 0) {
-      toast('No devices advertised by the server -- check ELC_DEVICES_JSON', true);
-      return;
-    }
-    // Register (safe: no relay is flipped) rather than sending a
-    // RelaySet -- writing state=true here would physically switch
-    // every real relay on when a hardware SCU is on the wire.
-    await Promise.all(devices.map(d =>
-      api('POST', `/devices/${d}/register`, {})
-    ));
-    // Give WS/SSE echoes a beat to reach the replica.
-    await new Promise(r => setTimeout(r, 300));
-    await refreshAll();
-    const label = info.source === 'physical'
-      ? `${devices.length} SCU channels registered`
-      : `${devices.length} demo devices seeded`;
-    toast(label);
-  } catch (e) { toast(`Seed failed: ${e.message}`, true); }
-  finally { btn.disabled = false; }
-});
-
-// Relabel the seed button + empty-state hint on load so operators
-// running against real hardware see "Seed N SCU channels" rather
-// than the mock "Seed 30 demo devices" string.
-(async () => {
-  try {
-    const info = await api('GET', '/demo-devices');
-    const btn = document.getElementById('btn-seed');
-    if (info.source === 'physical') {
-      btn.textContent = `Seed ${info.count} SCU channels`;
-      btn.title = 'Register the physical SCU\'s advertised channels in the replica (no relays are switched).';
-    } else {
-      btn.textContent = `Seed ${info.count} demo devices`;
-    }
-  } catch { /* endpoint missing on old servers; keep the default label */ }
-})();
 
 // ---------- Modal helpers ---------------------------------------------------
 function openModal(id) { document.getElementById(id).classList.add('show'); }

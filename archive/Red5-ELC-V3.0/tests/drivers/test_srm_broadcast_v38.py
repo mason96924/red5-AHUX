@@ -61,19 +61,32 @@ pytestmark = pytest.mark.asyncio
 
 class V38RawServer:
     """Raw-byte TCP server that captures V3.8 frames and optionally
-    replies with a canned response (per-frame or global).
+    replies with a canned response.
+
+    2026-02-11 rewrite: the driver's V3.8 broadcast path now
+    enqueues frames on the ONE persistent ScuLink connection (see
+    ``_v38_burst_send`` — 16 concurrent fresh sockets triggered
+    ``Errno 111 Connection refused`` on the real single-connection
+    SCU).  The server therefore reads the stream continuously and
+    splits it into individual 16-byte V3.8 frames by scanning for
+    the ``ELC@`` preamble.  Each recovered frame is appended to
+    ``received_bursts`` along with a timestamp so tests can verify
+    both the frame count AND that they arrived in a tight,
+    no-inter-frame-RTT burst.
     """
+    _PREAMBLE = b"\x45\x4c\x43\x40"     # "ELC@"
 
     def __init__(self) -> None:
         self.port: int = 0
         self._server: asyncio.base_events.Server | None = None
-        # (connection_index, raw_bytes) — connection_index lets a test
-        # distinguish "N concurrent sockets" from "1 socket, N frames".
+        # One entry per decoded V3.8 frame.
         self.received_bursts: list[bytes] = []
         self._reply_per_connection: bytes = b""
-        # Number of connections opened so far (monotonic).
+        # Number of TCP connections opened so far (monotonic).
         self.connection_count: int = 0
-        # Timestamps of connection acceptance for concurrency checks.
+        # Timestamps -- for the burst path they represent each frame's
+        # arrival on the persistent connection, so tests can check the
+        # spread is tight.
         self.connect_times: list[float] = []
 
     async def start(self) -> None:
@@ -89,7 +102,7 @@ class V38RawServer:
             self._server = None
 
     def set_reply(self, data: bytes) -> None:
-        """Every subsequent inbound frame gets this exact reply."""
+        """Every subsequent decoded frame gets this exact reply."""
         self._reply_per_connection = data
 
     async def _handle(
@@ -99,14 +112,35 @@ class V38RawServer:
     ) -> None:
         loop = asyncio.get_running_loop()
         self.connection_count += 1
-        self.connect_times.append(loop.time())
+        buf = bytearray()
         try:
-            data = await reader.read(4096)
-            if data:
-                self.received_bursts.append(data)
-                if self._reply_per_connection:
-                    writer.write(self._reply_per_connection)
-                    await writer.drain()
+            while True:
+                chunk = await reader.read(4096)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                # Split on ELC@ preamble.  Each frame is
+                # preamble(4) + length(1) + payload(length) +
+                # checksum(1); payload for opcode 0x07 is 10 bytes
+                # so a full frame is 16 bytes.
+                while True:
+                    idx = buf.find(self._PREAMBLE)
+                    if idx < 0:
+                        break
+                    # Need at least 5 bytes to read length.
+                    if len(buf) < idx + 5:
+                        break
+                    length = buf[idx + 4]
+                    frame_end = idx + 5 + length
+                    if len(buf) < frame_end:
+                        break
+                    frame = bytes(buf[idx:frame_end])
+                    del buf[:frame_end]
+                    self.received_bursts.append(frame)
+                    self.connect_times.append(loop.time())
+                    if self._reply_per_connection:
+                        writer.write(self._reply_per_connection)
+                        await writer.drain()
         finally:
             writer.close()
             try:
@@ -126,18 +160,36 @@ async def v38_server():
 
 
 async def _make_v38_link(port: int) -> ScuLink:
-    # wire_version='v38' installs the raw-byte handler on the persistent
-    # link.  The v38 write path itself uses one-shot sockets (see
-    # SrmDriver._v38_one_shot_send / _v38_burst_send) rather than the
-    # persistent link — but the driver still needs (host, port) on the
-    # link object to know where to dial.
+    """Build a persistent V3.8 ScuLink and WAIT for it to connect.
+
+    2026-02-11 rewrite: broadcast_v38 now enqueues frames on this
+    single persistent connection (via ``send_bytes``) rather than
+    opening one-shot sockets per frame — so the test MUST wait for
+    the link to reach CONNECTED before writing, otherwise the frames
+    just sit in the outbound queue and never reach the server.
+    """
     link = ScuLink(
         "127.0.0.1", port, initial_backoff=0.05, wire_version="v38",
     )
     await link.start()
-    # Persistent connect can happen at any time; broadcast doesn't
-    # depend on it being "CONNECTED", so no wait needed here.
+    await link.wait_connected(timeout=2.0)
     return link
+
+
+async def _drain_burst(server: "V38RawServer", expected: int,
+                       timeout: float = 1.5) -> None:
+    """Poll until *expected* frames have been parsed by the server.
+
+    The V3.8 broadcast is async — ``_v38_burst_send`` returns as soon
+    as the queue is populated; frames still have to be written by the
+    link's writer loop and parsed out of the TCP stream by
+    ``V38RawServer._handle``.  A tight polling loop with a 1.5s ceiling
+    matches the pytest-asyncio idiom used elsewhere in this suite.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while len(server.received_bursts) < expected and loop.time() < deadline:
+        await asyncio.sleep(0.02)
 
 
 # ---------------------------------------------------------------------
@@ -166,11 +218,11 @@ async def test_broadcast_v38_fires_one_frame_per_module_channel(
         assert expected == 4 + 6 + 6
 
         await driver.broadcast_v38(state, modules)
+        await _drain_burst(v38_server, expected)
 
-        # 4 + 6 + 6 = 16 concurrent V3.8 frames on wire.
-        # The persistent ScuLink also holds one silent TCP connection
-        # to the server (no bytes ever sent through it), so we count
-        # frame-bearing bursts here rather than raw connections.
+        # 4 + 6 + 6 = 16 V3.8 frames enqueued back-to-back on the
+        # persistent ScuLink and drained onto the wire by the link's
+        # writer loop -- see driver._v38_burst_send() docstring.
         assert len(v38_server.received_bursts) == expected, (
             f"expected {expected} frames, got "
             f"{len(v38_server.received_bursts)}"
@@ -218,24 +270,27 @@ async def test_broadcast_v38_dispatches_concurrently(v38_server) -> None:
         await driver.broadcast_v38(True, modules)
         elapsed = loop.time() - t0
 
-        # 18 frames.  If serialised behind _v38_write_lock the
-        # existing 0.15s per-frame settling sleep would push this to
-        # ~2.7s.  Concurrent should finish well under 1s even on a
-        # slow CI runner.  This asserts we're NOT accidentally
-        # reusing the serialised _v38_one_shot_send path.
+        await _drain_burst(v38_server, expected_frames)
+
+        # 18 frames enqueued back-to-back on the persistent ScuLink.
+        # The queue-put loop finishes in microseconds; the writer_loop
+        # then flushes each frame with just a writer.drain() between.
+        # If the driver ever regresses to a per-frame RTT (e.g. by
+        # awaiting a query after each write) this would blow past 1s.
         assert elapsed < 1.0, (
             f"broadcast_v38 took {elapsed:.2f}s — likely serialised"
         )
-        # And every frame arrived within a very tight window (all 18
-        # bursts within ~500ms of the first) — the persistent
-        # ScuLink connection is silent and doesn't contribute a
-        # burst timestamp here.
+        # Every frame arrived within a very tight window (all 18
+        # frames within ~500ms of the first).  With the new
+        # persistent-connection model the timestamps are per-frame
+        # arrivals on the ONE connection rather than per-socket
+        # accept events, but the tight-burst assertion still holds.
         burst_times = v38_server.connect_times[-expected_frames:]
         assert len(burst_times) == expected_frames
         spread = max(burst_times) - min(burst_times)
         assert spread < 0.5, (
-            f"connection spread {spread:.3f}s too wide — expected "
-            f"near-simultaneous dial"
+            f"frame arrival spread {spread:.3f}s too wide — expected "
+            f"near-simultaneous burst"
         )
     finally:
         await link.stop()
@@ -283,7 +338,11 @@ async def test_broadcast_v38_replica_trusts_relaystatus_reply(v38_server) -> Non
     replica.attach(driver)
     try:
         await driver.broadcast_v38(True, [module], 6)
-        # Give the async fan-out a beat to publish.
+        # Wait for the burst to flush AND the SCU reply to be drained
+        # and dispatched through _on_v38_bytes into the Replica.
+        await _drain_burst(v38_server, 6)
+        # Give the reader loop a beat to fan the reply out to per-
+        # channel RelayState events (Replica consumes those).
         await asyncio.sleep(0.15)
         # All 6 channels of the module must now be tracked as ON in
         # the replica — driven by the SCU's 0x25 reply, not by the
@@ -325,6 +384,7 @@ async def test_broadcast_v38_uses_per_module_channel_count(
     driver = SrmDriver(link)
     try:
         await driver.broadcast_v38(True, modules)  # no max_channels arg
+        await _drain_burst(v38_server, 4 + 6)
         assert len(v38_server.received_bursts) == 4 + 6
     finally:
         await link.stop()

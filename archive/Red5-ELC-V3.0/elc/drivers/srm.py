@@ -410,59 +410,52 @@ class SrmDriver(AbstractDevice):
         await self._v38_burst_send(frames)
 
     async def _v38_burst_send(self, frames: list[bytes]) -> None:
-        """Fire ``frames`` on the wire as concurrent, no-wait one-shots.
+        """Fire ``frames`` on the wire as back-to-back writes on the
+        ONE persistent SCU connection.
 
-        Each frame gets its own fresh TCP connection opened in parallel
-        via ``asyncio.gather`` — matches the operator-confirmed
-        'send N times almost simultaneously without waiting for RX'
-        broadcast protocol.  RX bytes drained from every socket are
-        fed into ``_on_v38_bytes`` so the resulting ``0x25``
-        RelayStatus frames update the Replica.
+        Hardware constraint (operator-confirmed 2026-02-11 hardware
+        capture): the SCU is a **single-connection** device.  Opening
+        16 concurrent fresh TCP sockets — as an earlier version of
+        this method did via ``asyncio.gather`` on
+        ``socket.create_connection`` — makes the SCU refuse 15 of
+        them (``Errno 111 Connection refused``) and only the winning
+        socket delivers its frame.  In the field this manifested as
+        "All Off" only toggling the first 1-3 relays of the first
+        module.
 
-        Unlike :meth:`_v38_one_shot_send` this does NOT hold
-        ``_v38_write_lock`` — the whole point of a burst is that the
-        frames land on the SCU with as little inter-frame delay as
-        possible.  This intentionally bypasses the single-connection
-        serialisation guard used by normal per-relay ops; only
-        explicit broadcast paths should call it.
+        The fix: enqueue every frame on the persistent link's
+        outbound queue via :meth:`ScuLink.send_bytes`.  The link's
+        writer loop drains them back-to-back with just a
+        ``writer.drain()`` between frames (kernel-buffer flush, no
+        RTT) — that is the *fastest* way to put 16 frames on a
+        single-connection SCU without pausing for RX.  Each affected
+        module's ``0x25`` RelayStatus reply arrives asynchronously
+        via the normal reader path and lands in ``_on_v38_bytes``,
+        which updates the Replica.
         """
-        import socket
+        if not frames:
+            return
         host = getattr(self._link, "host", None)
         port = getattr(self._link, "port", None)
-        if host is None or port is None:
-            log.warning("V3.8 burst: link has no host/port; skipping")
+        send_bytes = getattr(self._link, "send_bytes", None)
+        if send_bytes is None:
+            log.warning(
+                "V3.8 burst: link %r has no send_bytes(); skipping",
+                type(self._link).__name__,
+            )
             return
-        loop = asyncio.get_running_loop()
-
-        def _blocking_one(data: bytes) -> bytes:
-            try:
-                with socket.create_connection((host, port), timeout=2.0) as s:
-                    s.sendall(data)
-                    s.settimeout(0.4)
-                    buf = bytearray()
-                    try:
-                        while True:
-                            chunk = s.recv(4096)
-                            if not chunk:
-                                break
-                            buf.extend(chunk)
-                    except socket.timeout:
-                        pass
-                    return bytes(buf)
-            except Exception as e:  # noqa: BLE001
-                log.warning("V3.8 burst frame send failed: %s", e)
-                return b""
-
-        tasks = [
-            loop.run_in_executor(None, _blocking_one, f) for f in frames
-        ]
         log.info("V3.8 TX burst (%d frames) → %s:%s: %s",
                  len(frames), host, port,
                  " | ".join(f.hex() for f in frames))
-        responses = await asyncio.gather(*tasks, return_exceptions=False)
-        for resp in responses:
-            if resp:
-                await self._on_v38_bytes(resp)
+        # Enqueue every frame back-to-back.  send_bytes() is a
+        # queue-put — it returns as soon as the frame is on the
+        # outbound queue, so 16 awaits complete in microseconds and
+        # the writer loop drains them onto the wire immediately.
+        for f in frames:
+            try:
+                await send_bytes(f)
+            except Exception as e:  # noqa: BLE001
+                log.warning("V3.8 burst enqueue failed: %s", e)
 
     async def query(
         self,

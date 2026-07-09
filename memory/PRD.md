@@ -29,17 +29,30 @@
 >    that overshoots smaller modules with frames aimed at non-existent
 >    channels.  This was a live bug in the previous fork; operator
 >    flagged it 2026-02-11.
-> 3. All frames across ALL modules dispatch CONCURRENTLY via
->    `asyncio.gather` on independent one-shot TCP sockets.  No
->    inter-frame sleep.  No `_v38_write_lock`.
+> 3. **SINGLE-CONNECTION SCU** — the physical SCU is a
+>    single-connection device.  Opening N concurrent fresh TCP sockets
+>    (e.g. `asyncio.gather` on `socket.create_connection`) causes the
+>    SCU to reject N-1 of them with `Errno 111 Connection refused` and
+>    only 1-2 frames actually reach the module — manifests in the
+>    field as "All Off only turns off the first few relays".
+>    ALWAYS burst frames on the ONE persistent `ScuLink` connection
+>    via `self._link.send_bytes(frame)`.  The link's `_writer_loop`
+>    drains queued frames back-to-back with just `writer.drain()`
+>    between them, which is the fastest possible dispatch on a
+>    single-connection SCU (no per-frame RTT, no per-frame connect
+>    overhead, no lock contention).
 > 4. Each affected module answers with a single `0x25` RelayStatus
 >    after its relays settle.  Hardware state is source of truth.
+>    RX bytes arrive via the normal `ScuLink` reader path and land
+>    in `_on_v38_bytes` — do NOT try to drain per-frame responses
+>    inline in the burst path.
 > 5. The same async-fan-out rule applies to discovery:
 >    `POST /api/elc/discover-srms` fires the two family PanelInfo
 >    queries (`0x14` + `0x15`) via `asyncio.gather`, not sequentially.
 >
-> If refactoring, KEEP: per-module inner loop + `asyncio.gather` in
-> both `broadcast_v38` and `discover_srms`.
+> If refactoring, KEEP: per-module inner loop + `send_bytes` enqueue
+> in `broadcast_v38` (NOT fresh TCP sockets), + `asyncio.gather` in
+> `discover_srms`.
 
 ## V3.0 DEMO STARTUP RULE (DO NOT SKIP — added 2026-02-11)
 > The operator has repeatedly asked to see the **exact commands** to

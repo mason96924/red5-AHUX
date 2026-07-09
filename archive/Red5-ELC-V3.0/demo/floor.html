@@ -3977,30 +3977,43 @@ let liveWs = null;
 let liveSse = null;
 function startLiveStream() {
   stopLiveStream();
-  // Prime state.liveDevices from the current replica snapshot.
+  // Prime state.liveDevices from the current replica snapshot so
+  // relay states known to the server (from RX that landed BEFORE the
+  // page loaded, or during a reconnect gap) show up on the module
+  // dots without waiting for a fresh event.
   api('GET', '/devices').then(list => {
     for (const d of list) state.liveDevices.set(d.device, {
       relay_state: d.relay_state,
       dim_level: d.dim_level,
       last_fail_code: d.last_fail_code,
     });
+    renderSrmGrid();
     paintCanvas();
   }).catch(() => {});
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${location.host}/api/elc/events`;
-  let opened = false;
-  try {
-    liveWs = new WebSocket(url);
-    liveWs.onopen = () => { opened = true; };
-    liveWs.onmessage = (m) => onLiveEvent(JSON.parse(m.data));
-    liveWs.onclose = () => { if (!opened) fallbackToSse(); };
-  } catch (_) { fallbackToSse(); }
+  // SSE-only (matches editor.html).  Was WebSocket-with-SSE-fallback
+  // pre-2026-07-09, but the fallback was gated on `if (!opened)`,
+  // which meant if the WS opened cleanly and later closed (proxy
+  // idle timeout, backend hiccup, network blip) the fallback never
+  // fired — the operator was silently blind to relay events while
+  // the editor iframe (which always uses SSE) kept updating.
+  _startSse();
 }
-function fallbackToSse() {
+
+function _startSse() {
   try {
-    liveSse = new EventSource('/api/elc/events-sse');
+    liveSse = new EventSource(`${API}/events-sse`);
     liveSse.onmessage = (m) => onLiveEvent(JSON.parse(m.data));
-  } catch (_) {}
+    // EventSource has native auto-reconnect on transient failures,
+    // but a permanent close (readyState === CLOSED) needs a manual
+    // kick.  Poll every 5s and revive if dead.
+    liveSse.onerror = () => {
+      if (liveSse && liveSse.readyState === EventSource.CLOSED) {
+        setTimeout(_startSse, 2000);
+      }
+    };
+  } catch (_) {
+    setTimeout(_startSse, 2000);
+  }
 }
 function stopLiveStream() {
   if (liveWs) { try { liveWs.close(); } catch {} liveWs = null; }

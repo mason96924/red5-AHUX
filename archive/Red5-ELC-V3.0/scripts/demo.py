@@ -171,6 +171,37 @@ async def main() -> None:
             f"ELC_DATA_SOURCE must be 'mock' or 'physical', got {source!r}"
         )
 
+    # ---- Boot banner: ALWAYS visible so operators (and forked agents)
+    # never have to hunt for the right invocation.  Print via plain
+    # stdout, not the logger, so the block survives any log-level
+    # filtering an operator or CI might apply.  DO NOT REMOVE -- see
+    # /app/memory/PRD.md §"demo.py startup banner rule".
+    print("", flush=True)
+    print("=" * 68, flush=True)
+    print(" RED5-ELC V3.0 demo — startup instructions", flush=True)
+    print("=" * 68, flush=True)
+    print(f" Current mode      : {source.upper()}", flush=True)
+    print(f" HTTP UI           : http://127.0.0.1:{port}/floor", flush=True)
+    print("", flush=True)
+    print(" How to run in MOCK mode (no hardware needed):", flush=True)
+    print("   python scripts/demo.py", flush=True)
+    print("", flush=True)
+    print(" How to run against PHYSICAL SCU + real 6eRM/6sRM/4sRM:", flush=True)
+    print("   export PYTHONUNBUFFERED=1", flush=True)
+    print("   export ELC_DATA_SOURCE=physical", flush=True)
+    print("   export ELC_SCU_HOST=<scu-ip>       # e.g. 192.168.1.222", flush=True)
+    print("   export ELC_SCU_PORT=<scu-port>     # e.g. 9760", flush=True)
+    print("   python scripts/demo.py 2>&1 | tee /tmp/demo.log", flush=True)
+    print("", flush=True)
+    print(" Watch just the ETLC V3.8 wire traffic in another terminal:", flush=True)
+    print("   tail -f /tmp/demo.log | grep 'V3\\.8'", flush=True)
+    print("", flush=True)
+    print(" Other useful env vars:", flush=True)
+    print("   ELC_DEVICES_JSON=demo/samples/scu-6e6s4s.json  (module layout)", flush=True)
+    print("   DEMO_PORT=8888                                 (HTTP port)", flush=True)
+    print("=" * 68, flush=True)
+    print("", flush=True)
+
     # ---- Boot the data source ---------------------------------------
     scu = None                        # MockScuServer instance, or None for physical
     if source == "physical":

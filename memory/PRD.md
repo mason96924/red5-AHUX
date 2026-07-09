@@ -17,6 +17,32 @@
 > ```
 > Trim only when the change is purely informational (no code touched).
 
+## V3.0 DEMO STARTUP RULE (DO NOT SKIP — added 2026-02-11)
+> The operator has repeatedly asked to see the **exact commands** to
+> boot `scripts/demo.py` in both MOCK and PHYSICAL modes, plus the
+> TX/RX log tail commands, printed **directly by demo.py at startup**.
+> A previous fork silently removed the printed instructions; the
+> operator flagged it as a rule violation.  Rules:
+>
+> 1. `scripts/demo.py` MUST print an ASCII banner on boot that
+>    includes:
+>      - Current mode (MOCK / PHYSICAL)
+>      - HTTP UI URL (`http://127.0.0.1:${DEMO_PORT}/floor`)
+>      - MOCK invocation (`python scripts/demo.py`)
+>      - PHYSICAL invocation with `ELC_DATA_SOURCE=physical`,
+>        `ELC_SCU_HOST`, `ELC_SCU_PORT`, `PYTHONUNBUFFERED=1`,
+>        and `2>&1 | tee /tmp/demo.log`
+>      - Log-tail command: `tail -f /tmp/demo.log | grep 'V3\.8'`
+>      - Env var hints: `ELC_DEVICES_JSON`, `DEMO_PORT`
+> 2. Print via **plain `print(..., flush=True)`** (NOT `log.info`)
+>    so the banner survives log-level filtering.
+> 3. When replying to the operator about `demo.py`, ALSO paste the
+>    same command block into the chat -- do NOT assume they can see
+>    the banner (they may already be scrolled past it).
+> 4. If refactoring `demo.py`, KEEP the banner block untouched --
+>    it is intentional operator-facing infrastructure, not debug
+>    output.
+
 ## DEPLOYMENT TOOLING — ALWAYS REFERENCE WHEN DISCUSSING DEPLOY/PULL/GIT
 > Future agents: this app has FIRST-PARTY deployment scripts.  When the
 > user asks about pulling, deploying, restarting, or pushing to

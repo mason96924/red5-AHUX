@@ -28,24 +28,27 @@ and a channel-detail modal.
       (`broadcast-bar`, `broadcast-on`, `broadcast-off`,
       `module-box-{type}-{scu}-{addr}`, `mod-dot-{device_id}`)
 
-### Phase B — Channel detail modal
-- [ ] Clicking a module box opens a **modal** with:
+### Phase B — Channel detail modal  ✅ DONE (2026-07-09)
+- [x] Clicking a module box opens a **modal** with:
     * Per-channel On/Off toggle rows (one per sub_address)
-    * Live-state reflected via dot next to each toggle
-    * "Multi-Select" button that flips the modal into a
+    * Live-state reflected via dot next to each toggle (SSE-driven)
+    * "Multi-Select" tab that flips the modal into a
       checkbox-per-channel selection mode
-- [ ] Multi-select mode adds a batch action bar:
-    * All On / All Off / Clear (unassign)
-    * Assign type = On/Off relay  |  0-10V dimmer
-    * Group vs individual state toggle
-- [ ] Property editor (`type`, `max_lux`, `beam_radius`, `cct_k`,
-      `shape`, `tube_type`) moves into the modal, applying to the
-      selection
-- [ ] Auto-drop new fixtures at a default coordinate on Multi-Select
-      "Apply" so operators can Multi-Select 8 channels and see them
-      all on the plan in one go — placement then draggable
-- [ ] Modal state persists via `?module=...` query param so refresh
-      keeps context
+- [x] Multi-select mode adds a batch action bar:
+    * Select all / Clear
+    * All On / All Off / Un-assign
+- [x] Property editor (`type`, `max_lux`, `beam_radius`, `cct_k`,
+      `shape`, `tube_type`) now lives inside the modal, applying
+      to the current selection via bulk-assign + PUT.
+- [x] Auto-drop unplaced channels at a small grid inside the current
+      floor's 10% inset on "Apply" — operator can multi-select N
+      channels and see them all on the plan in one go.
+- [x] Modal state persists via `?module=...` query param, restored
+      on page load once devices are refreshed.
+- [x] Escape / backdrop-click / × button all close.
+- [x] Ctrl/Cmd/Shift-click on the module box preserves the legacy
+      "select all channels into canvas selection" behaviour for the
+      align/delete toolbar workflows.
 
 ### Phase C — Follow-ups
 - [ ] One-shot cleanup: delete orphaned legacy 0-based placements
@@ -85,10 +88,10 @@ and a channel-detail modal.
 - 4eRM vs 6eRM disambiguation (both use type code 0x16)
 - Deploy-lock button (temporary "read-only" mode for critical ops)
 
-*Last updated: 2026-07-09 Phase A **complete** — Broadcast All On/All
-Off cluster wired above the module grid with confirmation dialog and
-data-testid coverage.  Phase B next: click a module box to open the
-channel-detail modal.*
+*Last updated: 2026-07-09 Phase A **and** Phase B **complete**.  Phase
+C follow-ups remain: legacy 0-based placement purge, "last opened
+module" persistence, live inventory panel with last-heard-from
+timestamps.*
 
 ---
 

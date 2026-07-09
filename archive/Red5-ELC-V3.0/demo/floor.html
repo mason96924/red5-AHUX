@@ -216,6 +216,100 @@
   .broadcast-btn.off { border-color: #d97a30; color: #d97a30; }
   .broadcast-btn:hover:not(:disabled) { filter: brightness(1.25); }
   .broadcast-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* Module-detail modal (Phase B) */
+  .mm-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    display: none; align-items: center; justify-content: center;
+    z-index: 500;
+  }
+  .mm-backdrop.open { display: flex; }
+  .mm-panel {
+    background: var(--panel-1, #14181d); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    width: min(560px, 92vw); max-height: 88vh; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .mm-hdr {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 12px;
+  }
+  .mm-hdr .mm-title { flex: 1; }
+  .mm-hdr .mm-close {
+    background: transparent; border: 1px solid var(--line);
+    color: var(--muted); border-radius: 4px; cursor: pointer;
+    padding: 2px 8px; font-family: var(--mono); font-size: 14px;
+  }
+  .mm-tabs {
+    display: flex; gap: 4px; padding: 8px 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .mm-tab {
+    padding: 4px 12px; font-family: var(--mono); font-size: 11px;
+    border: 1px solid var(--line); border-bottom: none;
+    border-radius: 4px 4px 0 0; background: transparent;
+    color: var(--muted); cursor: pointer;
+  }
+  .mm-tab.active { background: var(--panel-2, #1a1e24); color: var(--text); }
+  .mm-body { padding: 12px 14px; overflow-y: auto; flex: 1; }
+  .mm-batch {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 8px 10px; margin-bottom: 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  .mm-batch button {
+    padding: 3px 9px; font-family: var(--mono); font-size: 11px;
+    border-radius: 4px; border: 1px solid var(--line); cursor: pointer;
+    background: transparent; color: var(--text);
+  }
+  .mm-batch button.on  { border-color: #78c878; color: #78c878; }
+  .mm-batch button.off { border-color: #d97a30; color: #d97a30; }
+  .mm-batch button.clear { border-color: #b04040; color: #b04040; }
+  .mm-batch button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .mm-props {
+    display: grid; grid-template-columns: auto 1fr auto 1fr;
+    gap: 6px 8px; align-items: center;
+    padding: 8px 10px; margin-bottom: 10px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--line); border-radius: 6px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .mm-props label { color: var(--muted); font-size: 10.5px; }
+  .mm-props input, .mm-props select {
+    padding: 3px 6px; font-family: var(--mono); font-size: 11px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  .mm-props .mm-apply {
+    grid-column: 1 / -1; margin-top: 4px;
+    padding: 4px 10px; font-family: var(--mono); font-size: 11px;
+    background: var(--accent, #6ba7dc); color: #0a1418;
+    border: none; border-radius: 4px; cursor: pointer; font-weight: 600;
+  }
+  .mm-props .mm-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+  .mm-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px;
+    margin-bottom: 4px; font-family: var(--mono); font-size: 11.5px;
+  }
+  .mm-row .mm-ch { min-width: 30px; color: var(--muted); }
+  .mm-row .mm-badge {
+    padding: 1px 6px; border-radius: 3px; font-size: 9.5px;
+    border: 1px solid var(--line); color: var(--muted);
+  }
+  .mm-row .mm-badge.onoff  { color: #d97a30; border-color: #d97a30; }
+  .mm-row .mm-badge.dimmer { color: #6ba7dc; border-color: #6ba7dc; }
+  .mm-row .mm-toggle {
+    margin-left: auto;
+    padding: 3px 12px; font-family: var(--mono); font-size: 11px;
+    border-radius: 4px; border: 1px solid var(--line);
+    background: transparent; color: var(--muted); cursor: pointer;
+    min-width: 60px;
+  }
+  .mm-row .mm-toggle.on { border-color: #78c878; color: #78c878; }
+  .mm-row .mm-toggle.off { border-color: #d97a30; color: #d97a30; }
+  .mm-row .mm-cb { width: 14px; height: 14px; accent-color: var(--accent); }
   #srm-grid { display: flex; flex-direction: column; gap: 6px; }
   .module-box { border: 1px solid var(--line); border-radius: 6px;
                 padding: 6px 8px; background: var(--panel-bg, transparent);
@@ -550,6 +644,85 @@
   </aside>
 </main>
 
+<!-- ============ MODULE-DETAIL MODAL (Phase B) ============ -->
+<div class="mm-backdrop" id="module-modal" data-testid="module-modal">
+  <div class="mm-panel" role="dialog" aria-modal="true"
+       aria-labelledby="mm-title">
+    <div class="mm-hdr">
+      <div class="mm-title" id="mm-title" data-testid="mm-title">Module</div>
+      <button class="mm-close" id="mm-close"
+              data-testid="mm-close" title="Close">×</button>
+    </div>
+    <div class="mm-tabs">
+      <button class="mm-tab active" id="mm-tab-individual"
+              data-testid="mm-tab-individual">Individual</button>
+      <button class="mm-tab" id="mm-tab-multi"
+              data-testid="mm-tab-multi">Multi-Select</button>
+    </div>
+    <div class="mm-body">
+      <!-- Batch action bar (visible only in multi-select mode) -->
+      <div class="mm-batch" id="mm-batch"
+           data-testid="mm-batch" style="display:none">
+        <button id="mm-select-all"
+                data-testid="mm-select-all">Select all</button>
+        <button id="mm-select-none"
+                data-testid="mm-select-none">Clear</button>
+        <span style="flex:1;color:var(--muted);align-self:center;
+                     font-family:var(--mono);font-size:11px">
+          <span id="mm-sel-count">0</span> selected
+        </span>
+        <button id="mm-batch-on" class="on"
+                data-testid="mm-batch-on" disabled>All On</button>
+        <button id="mm-batch-off" class="off"
+                data-testid="mm-batch-off" disabled>All Off</button>
+        <button id="mm-batch-clear" class="clear"
+                data-testid="mm-batch-clear" disabled>Un-assign</button>
+      </div>
+      <!-- Property editor (visible only in multi-select mode) -->
+      <div class="mm-props" id="mm-props"
+           data-testid="mm-props" style="display:none">
+        <label>Type</label>
+        <select id="mm-type" data-testid="mm-type">
+          <option value="onoff">On/Off relay</option>
+          <option value="dimmer_0_10v">0-10V dimmer</option>
+        </select>
+        <label>Max lux</label>
+        <input id="mm-lux" type="number" min="0" step="10"
+               value="500" data-testid="mm-lux"/>
+        <label>Beam (m)</label>
+        <input id="mm-beam" type="number" min="0.1" step="0.1"
+               value="4" data-testid="mm-beam"/>
+        <label>CCT (K)</label>
+        <input id="mm-cct" type="number" min="1000" step="100"
+               value="4000" data-testid="mm-cct"/>
+        <label>Shape</label>
+        <select id="mm-shape" data-testid="mm-shape">
+          <option value="point">Point (bulb)</option>
+          <option value="line">Line (tube/strip)</option>
+          <option value="polyline">Polyline</option>
+          <option value="regular_polygon">Regular polygon</option>
+        </select>
+        <label>Tube</label>
+        <select id="mm-tube" data-testid="mm-tube">
+          <option value="none">Unspecified</option>
+          <option value="led_strip">LED strip</option>
+          <option value="T2">T2 (7 mm)</option>
+          <option value="T4">T4 (13 mm)</option>
+          <option value="T5">T5 (16 mm)</option>
+          <option value="T8">T8 (25 mm)</option>
+          <option value="T12">T12 (38 mm)</option>
+        </select>
+        <button class="mm-apply" id="mm-apply"
+                data-testid="mm-apply" disabled>
+          Apply to selection
+        </button>
+      </div>
+      <!-- Channel rows -->
+      <div id="mm-rows" data-testid="mm-rows"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -775,6 +948,11 @@ async function refreshDevicesAndElements() {
   updateAssignBar();
   updateBroadcastBar();
   paintCanvas();
+  // Restore the module modal if the URL asked for one (deferred until
+  // state.devices is populated).
+  if (typeof _maybeRestoreModuleModalFromUrl === 'function' && !state.moduleModal) {
+    _maybeRestoreModuleModalFromUrl();
+  }
 }
 
 function renderSrmGrid() {
@@ -843,16 +1021,21 @@ function renderSrmGrid() {
       <div class="mod-dots">${dotsHtml}</div>
     `;
 
-    // Click a module → add all its channels to the selection (Phase B
-    // will open a channel-detail modal here instead).
+    // Click a module → open the channel-detail modal (Phase B).
+    // Ctrl/Cmd/Shift-click keeps the legacy behaviour of adding all
+    // channels to the canvas selection (still handy for the align/
+    // delete toolbar workflows).
     box.addEventListener('click', (ev) => {
       const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
-      if (!additive) state.selectedDeviceIds.clear();
-      for (const d of m.channels) state.selectedDeviceIds.add(d.device);
-      renderSrmGrid();
-      updateAssignBar();
-      if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
-      paintCanvas();
+      if (additive) {
+        for (const d of m.channels) state.selectedDeviceIds.add(d.device);
+        renderSrmGrid();
+        updateAssignBar();
+        if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
+        paintCanvas();
+        return;
+      }
+      openModuleModal(`${m.type}/${m.scu}/${m.addr}`);
     });
     host.appendChild(box);
   }
@@ -919,6 +1102,307 @@ async function broadcastRelay(state_target) {
 
 document.getElementById('btn-broadcast-on').onclick  = () => broadcastRelay(true);
 document.getElementById('btn-broadcast-off').onclick = () => broadcastRelay(false);
+
+// -- Phase B: channel-detail modal ------------------------------------
+// State lives on state.moduleModal = { key, mode, selected: Set<did> }.
+// key    = "TYPE/scu/addr" — same shape the module boxes use.
+// mode   = 'individual' (per-channel toggles) or 'multi' (batch/props).
+// URL sync via ?module=TYPE/scu/addr so a refresh keeps the context.
+state.moduleModal = null;
+
+function _moduleChannels(key) {
+  return state.devices.filter(d => {
+    const p = String(d.device).split('/');
+    return p.length === 4 && `${p[0]}/${p[1]}/${p[2]}` === key;
+  }).sort((a, b) =>
+    parseInt(a.device.split('/')[3]) - parseInt(b.device.split('/')[3])
+  );
+}
+
+function openModuleModal(key) {
+  const chs = _moduleChannels(key);
+  if (chs.length === 0) { toast('Module has no channels', true); return; }
+  state.moduleModal = {
+    key, mode: 'individual', selected: new Set(),
+  };
+  const parts = key.split('/');
+  document.getElementById('mm-title').textContent =
+    `${parts[0]} · SCU ${parts[1]} · Addr ${parts[2]} · ${chs.length} ch`;
+  document.getElementById('module-modal').classList.add('open');
+  _syncModuleModalUrl();
+  _mmPrefillProps(chs);
+  renderModuleModal();
+}
+
+function closeModuleModal() {
+  state.moduleModal = null;
+  document.getElementById('module-modal').classList.remove('open');
+  _syncModuleModalUrl();
+}
+
+function _syncModuleModalUrl() {
+  const u = new URL(window.location.href);
+  if (state.moduleModal) u.searchParams.set('module', state.moduleModal.key);
+  else                   u.searchParams.delete('module');
+  window.history.replaceState(null, '', u.toString());
+}
+
+function _mmSwitchMode(mode) {
+  if (!state.moduleModal) return;
+  state.moduleModal.mode = mode;
+  if (mode === 'individual') state.moduleModal.selected.clear();
+  document.getElementById('mm-tab-individual')
+    .classList.toggle('active', mode === 'individual');
+  document.getElementById('mm-tab-multi')
+    .classList.toggle('active', mode === 'multi');
+  const isMulti = (mode === 'multi');
+  document.getElementById('mm-batch').style.display = isMulti ? 'flex' : 'none';
+  document.getElementById('mm-props').style.display = isMulti ? 'grid' : 'none';
+  renderModuleModal();
+}
+
+// Prefill the property editor from the first assigned channel in the
+// module, or fall back to sensible defaults.  Purely cosmetic — the
+// operator can still edit before pressing Apply.
+function _mmPrefillProps(chs) {
+  for (const d of chs) {
+    const [, el] = _findLightingElement(d.device);
+    if (el) {
+      document.getElementById('mm-type').value = el.type || 'onoff';
+      document.getElementById('mm-lux').value = el.max_lux ?? 500;
+      document.getElementById('mm-beam').value = el.beam_radius_m ?? 4;
+      document.getElementById('mm-cct').value = el.cct_k ?? 4000;
+      document.getElementById('mm-shape').value = el.shape || 'point';
+      document.getElementById('mm-tube').value = el.tube_type || 'none';
+      return;
+    }
+  }
+}
+
+function renderModuleModal() {
+  if (!state.moduleModal) return;
+  const { key, mode, selected } = state.moduleModal;
+  const chs = _moduleChannels(key);
+  const host = document.getElementById('mm-rows');
+  host.innerHTML = '';
+
+  for (const d of chs) {
+    const did = d.device;
+    const chNum = did.split('/')[3];
+    const live = state.liveDevices.get(did) || {};
+    const isOn = live.relay_state === true;
+    const isOff = live.relay_state === false;
+    const dotCls = isOn ? 'mod-dot on' : isOff ? 'mod-dot off' : 'mod-dot';
+    const [, el] = _findLightingElement(did);
+    const badge = el
+      ? `<span class="mm-badge ${el.type === 'dimmer_0_10v' ? 'dimmer' : 'onoff'}"
+              title="Assigned as ${el.type}">${el.type === 'dimmer_0_10v' ? '0-10V' : 'On/Off'}</span>`
+      : `<span class="mm-badge" title="No element type assigned yet">unassigned</span>`;
+
+    const row = document.createElement('div');
+    row.className = 'mm-row';
+    row.dataset.testid = `mm-row-${did}`;
+    if (mode === 'multi') {
+      row.innerHTML = `
+        <input type="checkbox" class="mm-cb"
+               data-testid="mm-cb-${did}"
+               ${selected.has(did) ? 'checked' : ''}/>
+        <span class="mm-ch">ch ${chNum}</span>
+        <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
+        ${badge}
+      `;
+      row.querySelector('.mm-cb').addEventListener('change', (ev) => {
+        if (ev.target.checked) selected.add(did); else selected.delete(did);
+        _mmRefreshBatchState();
+      });
+    } else {
+      row.innerHTML = `
+        <span class="mm-ch">ch ${chNum}</span>
+        <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
+        ${badge}
+        <button class="mm-toggle ${isOn ? 'on' : 'off'}"
+                data-testid="mm-toggle-${did}">
+          ${isOn ? 'ON' : 'OFF'}
+        </button>
+      `;
+      row.querySelector('.mm-toggle').addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const target = !isOn;
+        ev.target.disabled = true;
+        try {
+          await api('POST', `/devices/${did}/relay`, { state: target });
+          const l = state.liveDevices.get(did) || {};
+          l.relay_state = target;
+          state.liveDevices.set(did, l);
+          renderModuleModal();
+          renderSrmGrid();
+        } catch (e) {
+          toast(`Toggle failed: ${e.message}`, true);
+          ev.target.disabled = false;
+        }
+      });
+    }
+    host.appendChild(row);
+  }
+  _mmRefreshBatchState();
+}
+
+function _mmRefreshBatchState() {
+  if (!state.moduleModal) return;
+  const n = state.moduleModal.selected.size;
+  document.getElementById('mm-sel-count').textContent = String(n);
+  const dis = (n === 0);
+  for (const id of ['mm-batch-on', 'mm-batch-off', 'mm-batch-clear', 'mm-apply']) {
+    document.getElementById(id).disabled = dis;
+  }
+}
+
+async function _mmBatchRelay(target) {
+  if (!state.moduleModal) return;
+  const ids = [...state.moduleModal.selected];
+  if (ids.length === 0) return;
+  let ok = 0, fail = 0;
+  for (const did of ids) {
+    try {
+      await api('POST', `/devices/${did}/relay`, { state: target });
+      const l = state.liveDevices.get(did) || {};
+      l.relay_state = target;
+      state.liveDevices.set(did, l);
+      ok += 1;
+    } catch (_e) { fail += 1; }
+  }
+  renderModuleModal();
+  renderSrmGrid();
+  toast(fail === 0
+    ? `${ok} channel(s) → ${target ? 'ON' : 'OFF'}`
+    : `${ok} OK, ${fail} failed`, fail !== 0);
+}
+
+async function _mmBatchClear() {
+  if (!state.moduleModal) return;
+  const ids = [...state.moduleModal.selected];
+  if (ids.length === 0) return;
+  if (!confirm(`Un-assign ${ids.length} channel(s)?  Placements will be removed.`)) return;
+  try {
+    for (const did of ids) {
+      const [key] = _findLightingElement(did);
+      const target = key || did;
+      if (state.lightingElements.has(target)) {
+        await api('DELETE', `/lighting-elements/${target}`);
+      }
+      state.lightingElements.delete(target);
+      state.deviceFloor.delete(target);
+    }
+    await refreshFloors();
+    if (state.currentFloor) {
+      state.currentFloor = await api('GET', `/floors/${state.currentFloor.id}`);
+    }
+    state.moduleModal.selected.clear();
+    renderModuleModal();
+    renderSrmGrid();
+    paintCanvas();
+    toast(`${ids.length} channel(s) un-assigned`);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function _mmApplyProps() {
+  if (!state.moduleModal) return;
+  const ids = [...state.moduleModal.selected];
+  if (ids.length === 0) return;
+  const payload = {
+    type:          document.getElementById('mm-type').value,
+    max_lux:       parseFloat(document.getElementById('mm-lux').value) || 500,
+    beam_radius_m: parseFloat(document.getElementById('mm-beam').value) || 4.0,
+    cct_k:         parseInt(document.getElementById('mm-cct').value, 10) || 4000,
+    shape:         document.getElementById('mm-shape').value || 'point',
+    tube_type:     document.getElementById('mm-tube').value || 'none',
+  };
+  try {
+    // Step 1 — ensure every id is assigned to the chosen type (idempotent
+    // upsert via bulk-assign, so previously-unassigned channels get a row).
+    await api('POST', '/lighting-elements/bulk-assign', {
+      device_ids: ids, type: payload.type,
+    });
+    // Step 2 — apply full payload (lux/beam/cct/shape/tube) per id.
+    const updated = [];
+    for (const did of ids) {
+      const el = await api('PUT', `/lighting-elements/${did}`, payload);
+      state.lightingElements.set(did, el);
+      updated.push(el);
+    }
+    // Step 3 — auto-drop any channels not yet placed onto the current
+    // floor.  We tile them in a small grid at 10% inset from top-left
+    // of the floor so they're immediately visible; the operator can
+    // then drag them into position.
+    if (state.currentFloor) {
+      const floor = state.currentFloor;
+      const unplaced = ids.filter(did => {
+        const [k] = _findLightingElement(did);
+        const key = k || did;
+        return !state.deviceFloor.has(key);
+      });
+      if (unplaced.length > 0) {
+        const fixtures = Array.isArray(floor.fixtures) ? [...floor.fixtures] : [];
+        const cols = Math.ceil(Math.sqrt(unplaced.length));
+        const step = Math.max(1.0, Math.min(floor.width_m, floor.height_m) * 0.06);
+        const x0 = floor.width_m * 0.1;
+        const y0 = floor.height_m * 0.1;
+        unplaced.forEach((did, i) => {
+          const col = i % cols, row = Math.floor(i / cols);
+          fixtures.push({
+            id: `fx-${did}-${Date.now()}-${i}`,
+            device_id: did,
+            x_m: x0 + col * step,
+            y_m: y0 + row * step,
+          });
+          state.deviceFloor.set(did, { floor_id: floor.id, floor_name: floor.name });
+        });
+        state.currentFloor = await api('PATCH', `/floors/${floor.id}`, { fixtures });
+      }
+    }
+    renderModuleModal();
+    renderSrmGrid();
+    paintCanvas();
+    toast(`${updated.length} channel(s) updated${
+      state.currentFloor ? '' : ' (no floor selected — nothing auto-placed)'
+    }`);
+  } catch (e) { toast(e.message, true); }
+}
+
+// -- Modal wiring -----------------------------------------------------
+document.getElementById('mm-close').onclick = closeModuleModal;
+document.getElementById('module-modal').addEventListener('click', (ev) => {
+  if (ev.target.id === 'module-modal') closeModuleModal();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && state.moduleModal) closeModuleModal();
+});
+document.getElementById('mm-tab-individual').onclick = () => _mmSwitchMode('individual');
+document.getElementById('mm-tab-multi').onclick      = () => _mmSwitchMode('multi');
+document.getElementById('mm-select-all').onclick = () => {
+  if (!state.moduleModal) return;
+  for (const d of _moduleChannels(state.moduleModal.key)) {
+    state.moduleModal.selected.add(d.device);
+  }
+  renderModuleModal();
+};
+document.getElementById('mm-select-none').onclick = () => {
+  if (!state.moduleModal) return;
+  state.moduleModal.selected.clear();
+  renderModuleModal();
+};
+document.getElementById('mm-batch-on').onclick    = () => _mmBatchRelay(true);
+document.getElementById('mm-batch-off').onclick   = () => _mmBatchRelay(false);
+document.getElementById('mm-batch-clear').onclick = _mmBatchClear;
+document.getElementById('mm-apply').onclick       = _mmApplyProps;
+
+// Restore modal from ?module=... on load — deferred until after the
+// initial device inventory refresh has populated state.devices.
+function _maybeRestoreModuleModalFromUrl() {
+  const q = new URL(window.location.href).searchParams.get('module');
+  if (!q) return;
+  if (_moduleChannels(q).length > 0) openModuleModal(q);
+}
 
 // Map an arbitrary device_id string to whichever entry in the current
 // SRM inventory has matching (type, address, sub-address).  Ignores
@@ -3056,11 +3540,13 @@ function stopLiveStream() {
   if (liveSse) { try { liveSse.close(); } catch {} liveSse = null; }
 }
 function onLiveEvent(ev) {
+  let dirty = false;
   if (ev.type === 'relay_state') {
     const d = state.liveDevices.get(ev.device) || {};
     d.relay_state = ev.state;
     state.liveDevices.set(ev.device, d);
     applyLiveOpsUpdate(ev.device);
+    dirty = true;
   } else if (ev.type === 'dim_level') {
     const d = state.liveDevices.get(ev.device) || {};
     d.dim_level = ev.level;
@@ -3073,6 +3559,7 @@ function onLiveEvent(ev) {
       if (dev.startsWith(prefix)) d.relay_state = ev.state;
     }
     if (state.editingDeviceId) applyLiveOpsUpdate(state.editingDeviceId);
+    dirty = true;
   } else if (ev.type === 'fail_report') {
     const d = state.liveDevices.get(ev.device) || {};
     d.last_fail_code = ev.fail_code;
@@ -3081,6 +3568,12 @@ function onLiveEvent(ev) {
     const d = state.liveDevices.get(ev.device) || {};
     d.last_fail_code = null;
     state.liveDevices.set(ev.device, d);
+  }
+  // Re-paint the module dots + open modal on relay-state changes so
+  // hardware feedback shows up without a manual refresh.
+  if (dirty) {
+    renderSrmGrid();
+    if (state.moduleModal) renderModuleModal();
   }
   // paintCanvas() happens on the rAF loop; no need to force here.
 }

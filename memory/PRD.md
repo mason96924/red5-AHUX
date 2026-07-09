@@ -41,6 +41,59 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — UX Redesign Phase B (2026-07-09)
+
+### P1 — Channel-detail modal shipped
+Click a module box on `/floor` and the new modal opens with two tabs:
+
+* **Individual** — one row per channel showing (a) live dot from the
+  SSE `relay_state` stream, (b) assignment badge (`On/Off`, `0-10V`,
+  or `unassigned`), (c) an ON/OFF toggle button that POSTs
+  `/devices/{did}/relay` and optimistically updates local state
+  before the echo lands.
+* **Multi-Select** — checkbox per channel plus:
+  * Batch action bar (Select all · Clear · All On · All Off ·
+    Un-assign).
+  * Compact property editor (`type` / `max_lux` / `beam_radius_m` /
+    `cct_k` / `shape` / `tube_type`) with a single **Apply** button
+    that:
+    1. Idempotently upserts every selected channel via
+       `/lighting-elements/bulk-assign`.
+    2. PUTs the full payload per channel.
+    3. Auto-drops any not-yet-placed channels onto the current floor
+       in a compact grid at 10% inset from top-left so the operator
+       immediately sees them.
+
+Extras:
+* Modal state persists via `?module=TYPE/scu/addr` URL query param;
+  a refresh (or a bookmark) reopens the same module once devices
+  have been refreshed.
+* Escape / backdrop-click / × button all close cleanly.
+* Ctrl/Cmd/Shift-click on the module box preserves the pre-Phase-B
+  behaviour of adding all channels to `state.selectedDeviceIds`
+  (so the align/delete toolbar workflows still work).
+* SSE `relay_state` / `broadcast_complete` events now trigger a
+  `renderSrmGrid()` + `renderModuleModal()` refresh, so hardware
+  echoes light up dots in real time.
+
+**Files touched**:
+* `archive/Red5-ELC-V3.0/demo/floor.html` — modal HTML, ~100 lines of
+  CSS, ~250 lines of JS (open/close, mode switch, rendering, batch
+  actions, property apply with auto-place, URL sync, live-event
+  hook).  Backend untouched.
+
+**Testing**: Node syntax check on the extracted script block passed
+(`node --check /tmp/_floor.js` → SYNTAX OK).  Backend is unchanged;
+pytest untouched.
+
+### P1 — ETLC §2 pending-device-code table split
+Operator asked us to leave scaffolding in the protocol doc for the
+next hardware capture session.  §2 in `docs/RED5-ETLC-V3.8-PROTOCOL.md`
+now has two tables — one for verified byte codes, one for pending
+families (`ELCC48, DSW, DSW4, DSW8, GDS4, GDS8, GDS16, DM, WGM, SHG`)
+with a task list: sniff, update byte, extend `DeviceType` enum, add
+golden-bytes test.  The addressing math in §1.a already covers them.
+
 ## Phase V3.0 — UX Redesign Phase A + ETLC V3.8 Addressing Doc (2026-07-09)
 
 **Session date**: 2026-07-09 (fork resume).

@@ -89,7 +89,9 @@ before we implement drivers for them.  The addressing math above,
 however, is universal across the whole SRM family per operator
 confirmation on 2026-07-09.
 
-## 2. Device Type Codes (SRM family)
+## 2. Device Type Codes (SRM-class families)
+
+Confirmed via hardware RX capture:
 
 | Family        | Code (hex) | Channels | Verified? |
 |---------------|-----------:|---------:|:---------:|
@@ -97,6 +99,31 @@ confirmation on 2026-07-09.
 | `6SRM`        | `0x15`     | 6        | ✅ RX      |
 | `ERM` (4e/6e) | `0x16`     | 4 or 6   | ⏳ TBD     |
 | `48SRM`       | `0x18`     | 48       | ⏳ TBD     |
+
+Awaiting hardware RX capture — placeholders documented so the codec
+can be extended in one place once the byte is known:
+
+| Family    | Code (hex) | Channels        | Verified? |
+|-----------|-----------:|-----------------|:---------:|
+| `ELCC48`  | `TBD`      | 48 (controller) | ❌ pending |
+| `DSW`     | `TBD`      | 1 (dim switch)  | ❌ pending |
+| `DSW4`    | `TBD`      | 4               | ❌ pending |
+| `DSW8`    | `TBD`      | 8               | ❌ pending |
+| `GDS4`    | `TBD`      | 4               | ❌ pending |
+| `GDS8`    | `TBD`      | 8               | ❌ pending |
+| `GDS16`   | `TBD`      | 16              | ❌ pending |
+| `DM`      | `TBD`      | 1 (dimmer)      | ❌ pending |
+| `WGM`     | `TBD`      | (wall-gang)     | ❌ pending |
+| `SHG`     | `TBD`      | (shade)         | ❌ pending |
+
+**Next hardware session — capture task list**:
+* Physically toggle each family (or issue the vendor tool's Panel
+  Info sweep) with `probe-v38.py --sniff` recording; extract byte 5
+  and update the appropriate row above.
+* Once known, extend `elc/codec/etlc38.py::DeviceType` enum and
+  add golden-bytes tests in `tests/codec/test_etlc38.py`.
+* The addressing math in §1.a already covers all of these — only
+  the family byte is missing.
 
 ## 3. Opcodes (SRM family)
 

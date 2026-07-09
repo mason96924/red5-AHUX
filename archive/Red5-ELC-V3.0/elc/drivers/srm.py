@@ -50,6 +50,10 @@ class SrmDriver(AbstractDevice):
         # ETLC-format RelayState echoes.  Legacy mode leaves the base
         # class's Frame-registry path in charge.
         self._v38_buffer = bytearray()
+        # Serialises V3.8 one-shot sends so overlapping clicks don't
+        # try to open two sockets simultaneously against a single-
+        # connection SCU.
+        self._v38_write_lock = asyncio.Lock()
         if getattr(link, "wire_version", "legacy") == "v38":
             link.feed_raw(self._on_v38_bytes)
 
@@ -89,12 +93,10 @@ class SrmDriver(AbstractDevice):
         """Open a dedicated TCP socket, send ``data``, drain any
         response into the V3.8 parse buffer, then close.
 
-        Mirrors ``scripts/probe-v38.py``: same fresh-connection
-        semantics that the ETLC SCU firmware appears to require for
-        write operations.  Response bytes still route through the
-        normal ``_on_v38_bytes`` handler so unsolicited RelayState
-        echoes update the replica identically to persistent-link
-        traffic.
+        Serialises calls through ``self._v38_write_lock`` so
+        back-to-back operator clicks don't race two socket opens
+        against the SCU (some ETLC firmware locks the listen port
+        for ~1s after each close).
         """
         import socket
         host = getattr(self._link, "host", None)
@@ -119,11 +121,17 @@ class SrmDriver(AbstractDevice):
                     pass
             return bytes(buf)
 
-        try:
-            response = await loop.run_in_executor(None, _blocking_send_recv)
-        except Exception as e:  # noqa: BLE001
-            log.warning("V3.8 one-shot send failed: %s", e)
-            return
+        # One in-flight send at a time.  Guards against overlapping
+        # connect attempts to a single-connection SCU.
+        async with self._v38_write_lock:
+            try:
+                response = await loop.run_in_executor(None, _blocking_send_recv)
+            except Exception as e:  # noqa: BLE001
+                log.warning("V3.8 one-shot send failed: %s", e)
+                return
+            # Small settling period so the SCU can close its side
+            # cleanly before we hit it again.
+            await asyncio.sleep(0.15)
         if response:
             await self._on_v38_bytes(response)
 

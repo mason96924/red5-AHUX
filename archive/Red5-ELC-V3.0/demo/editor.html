@@ -1026,6 +1026,10 @@ async function fillGroupDetail(card, gid) {
   }
   // members — grouped by module for a compact "one tile per module,
   // dots for member relays" view (operator UX ask 2026-02-11).
+  // Member dots inherit the group's own colour so the members list
+  // reads as visually part of the group card (2026-02-11 refinement).
+  const groupColor = (state.groups.find(x => x.id === gid) || {}).color
+                     || '#d97a30';
   if (!detail.members || detail.members.length === 0) {
     memHost.innerHTML = `<span class="empty">drop devices here…</span>`;
   } else {
@@ -1061,8 +1065,11 @@ async function fillGroupDetail(card, gid) {
         <span class="mm-dots">${allSubs.map(s => {
           const isMember = memberSubs.has(s);
           const did = `${mk}/${s}`;
+          const style = isMember
+            ? `style="background:${groupColor};border-color:${groupColor};color:#0a1418"`
+            : '';
           return `<span class="mm-dot${isMember ? ' member' : ''}"
-                        data-device-id="${escapeHtml(did)}"
+                        data-device-id="${escapeHtml(did)}" ${style}
                         title="${escapeHtml(did)}${isMember ? ' — click to remove' : ' (not a member)'}"
                         >${s}</span>`;
         }).join('')}</span>

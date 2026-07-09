@@ -212,6 +212,85 @@
     100% { opacity: 0;   transform: scale(1.00); }
   }
 
+  /* ---- Module tiles (Floor-page parity) ---------------------------------
+     The Devices panel groups per-channel entries into module tiles so
+     the LHS matches the Floor page's vocabulary: one tile per module,
+     one dot per relay, live status via SSE.  Clicking a tile expands
+     an inline detail panel BELOW it with per-relay rows that are
+     individually draggable + carry a "include on module drop" mask
+     checkbox.  See renderDevices() / renderModuleDetail() for the
+     implementation.  (2026-02-11 operator redesign.)
+  ------------------------------------------------------------------------ */
+  .module-grid { display: flex; flex-direction: column; gap: 8px; }
+  .module-box {
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; background: var(--panel-2);
+    cursor: grab; user-select: none;
+    transition: border-color 120ms;
+  }
+  .module-box[draggable="true"]:active { cursor: grabbing; }
+  .module-box:hover { border-color: #3a4552; }
+  .module-box.opened {
+    border-color: #c084fc;
+    background: rgba(192,132,252,0.08);
+  }
+  .module-box.dragging { opacity: 0.5; }
+  .module-box .mod-hdr {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    margin-bottom: 4px; display: flex; justify-content: space-between;
+    align-items: center;
+  }
+  .module-box .mod-hdr .mod-title { color: var(--text); font-size: 11px; }
+  .module-box.opened .mod-hdr .mod-title { color: #c084fc; }
+  .module-box .mod-hdr .mod-mask-count {
+    color: var(--muted); font-size: 9.5px; letter-spacing: .05em;
+  }
+  .module-box .mod-dots { display: flex; gap: 4px; flex-wrap: wrap; }
+  .mod-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid var(--muted); background: transparent;
+    font-size: 8px; line-height: 12px; text-align: center;
+    color: var(--muted);
+  }
+  .mod-dot.on  { background: #78c878; border-color: #78c878; color: #0a2410; }
+  .mod-dot.off { background: #4a2d1a; border-color: #d97a30; color: #e8b088; }
+  .mod-dot.alarm {
+    background: rgba(236,91,86,0.35); border-color: var(--bad);
+    color: #f6a8a4; animation: alarm-pulse 1.2s ease-in-out infinite;
+  }
+
+  /* Inline per-relay detail — sits BELOW the module tile in the same
+     column, does NOT overlay other UI (operator asked explicitly for
+     "not as a pop up"). */
+  .module-detail {
+    border: 1px solid #3a4552; border-top: none; border-radius: 0 0 6px 6px;
+    background: #0e131a; padding: 6px 8px 8px; margin-top: -2px;
+  }
+  .module-detail .relay-row {
+    display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel-2); font-family: var(--mono); font-size: 11px;
+    cursor: grab; user-select: none; margin-top: 4px;
+    transition: border-color .08s;
+  }
+  .module-detail .relay-row:hover { border-color: #3a4552; }
+  .module-detail .relay-row.dragging { opacity: 0.4; }
+  .module-detail .relay-row:active { cursor: grabbing; }
+  .module-detail .relay-row.masked { opacity: 0.55; }
+  .module-detail .relay-row input[type="checkbox"] {
+    accent-color: #c084fc; margin: 0; cursor: pointer;
+  }
+  .module-detail .relay-row .relay-id { flex: 1; color: var(--text); }
+  .module-detail .relay-row .relay-state {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--muted);
+  }
+  .module-detail .relay-row .relay-state.on  { background: #78c878; }
+  .module-detail .relay-row .relay-state.off { background: #d97a30; }
+  .module-detail .mask-hint {
+    color: var(--muted); font-size: 10px; margin: 4px 0 2px;
+    letter-spacing: .04em;
+  }
+
   /* Operator-mode toggle pill in the header */
   .op-toggle {
     display: inline-flex; align-items: center; gap: 6px;
@@ -840,6 +919,28 @@ function renderGroups() {
         } else if (payload.type === 'device') {
           await api('POST', `/groups/${g.id}/members`, { device_id: payload.id });
           toast(`Device added to ${g.name}`);
+        } else if (payload.type === 'module') {
+          // Bundle-drop: add every UNMASKED channel of the module.
+          // Backend model is unchanged -- each channel lands as its
+          // own row in `group_members`, matching the per-relay drop
+          // path.  The mask is a UI-only "include on drop" filter
+          // persisted in localStorage (see _maskSetForModule).
+          const ids = payload.channels || [];
+          if (ids.length === 0) {
+            toast(`Module ${payload.module} has no unmasked relays to add`, true);
+          } else {
+            let added = 0, skipped = 0;
+            for (const did of ids) {
+              try {
+                await api('POST', `/groups/${g.id}/members`, { device_id: did });
+                added++;
+              } catch (_) { skipped++; }
+            }
+            const note = skipped
+              ? ` (${skipped} skipped -- already members?)`
+              : '';
+            toast(`${added} relay(s) from ${payload.module} added to ${g.name}${note}`);
+          }
         }
         await refreshAll();
       } catch (e) { toast(e.message, true); }
@@ -902,6 +1003,75 @@ async function fillGroupDetail(card, gid) {
 }
 
 // ---------- rendering: device grid ------------------------------------------
+// ---------- Module-tile view (Floor-page parity) ---------------------------
+// The Devices panel used to render a flat grid of per-channel cells.
+// Operator asked (2026-02-11) for the LHS to mirror the Floor page:
+// one module tile per (dev_type, scu, addr) with live status dots per
+// relay, clicking a tile expands an inline detail panel below it with
+// per-relay draggable rows + "include on module-drop" mask checkboxes.
+//
+// Data model:
+//   * state.devices is still the flat list of per-channel snapshots.
+//   * We derive modules on the fly by grouping on `${type}/${scu}/${addr}`
+//     (i.e. the device-id with the sub_address stripped).
+//   * Mask persistence lives in localStorage under
+//     'elc.editor.mask.<moduleKey>'.  Value is a comma-separated list
+//     of EXCLUDED sub_addresses ("1,3").  Absence = all included.
+//
+// Drag payloads emitted from this panel:
+//   * Module tile     → { type: 'module', module: '<key>',
+//                         channels: [<unmasked device ids...>] }
+//   * Relay-row      → { type: 'device', id: '<channel id>' }
+// See the group card drop handler for how the two are consumed.
+// ---------------------------------------------------------------------------
+
+// Which module is currently expanded (only one at a time).
+let _openedModuleKey = null;
+
+function moduleKeyForDevice(did) {
+  // 'SRM_6S/0/1/1' -> 'SRM_6S/0/1'
+  const bits = did.split('/');
+  return bits.length >= 3 ? bits.slice(0, 3).join('/') : did;
+}
+
+function _maskSetForModule(moduleKey) {
+  // Returns a Set<int> of EXCLUDED sub_addresses.
+  const raw = localStorage.getItem(`elc.editor.mask.${moduleKey}`);
+  if (!raw) return new Set();
+  return new Set(raw.split(',').map(x => parseInt(x, 10)).filter(x => !isNaN(x)));
+}
+function _saveMaskForModule(moduleKey, excludedSet) {
+  const key = `elc.editor.mask.${moduleKey}`;
+  if (excludedSet.size === 0) localStorage.removeItem(key);
+  else localStorage.setItem(key, [...excludedSet].sort((a,b)=>a-b).join(','));
+}
+
+function _channelsForModule(moduleKey) {
+  // Return { channels: [snap...], includedIds: [device_id...] } for one
+  // module.  `channels` is sorted by sub_address ascending; includedIds
+  // respects the local mask.
+  const excluded = _maskSetForModule(moduleKey);
+  const chans = state.devices
+    .filter(d => moduleKeyForDevice(d.device) === moduleKey)
+    .slice()
+    .sort((a, b) => {
+      const sa = parseInt(a.device.split('/')[3] || '0', 10);
+      const sb = parseInt(b.device.split('/')[3] || '0', 10);
+      return sa - sb;
+    });
+  const includedIds = chans
+    .filter(c => !excluded.has(parseInt(c.device.split('/')[3] || '0', 10)))
+    .map(c => c.device);
+  return { channels: chans, includedIds, excluded };
+}
+
+function _dotStateFor(snap) {
+  if (snap.last_fail_code !== null && snap.last_fail_code !== undefined) return 'alarm';
+  if (snap.relay_state === true)  return 'on';
+  if (snap.relay_state === false) return 'off';
+  return '';
+}
+
 function renderDevices() {
   const host = document.getElementById('dev-grid');
   document.getElementById('dev-count').textContent = state.devices.length;
@@ -912,78 +1082,152 @@ function renderDevices() {
     </div>`;
     return;
   }
+  // Group flat channel list into modules.
+  const modules = new Map();  // moduleKey -> ordered channel snapshots
+  for (const d of state.devices) {
+    const mk = moduleKeyForDevice(d.device);
+    if (!modules.has(mk)) modules.set(mk, []);
+    modules.get(mk).push(d);
+  }
+  // Deterministic module order — by key string.
+  const orderedKeys = [...modules.keys()].sort();
+
   host.innerHTML = '';
   const grid = document.createElement('div');
-  grid.className = 'device-grid';
-  for (const d of state.devices) {
-    const did = d.device;
-    const memberships = state.deviceGroups[did] || [];
-    // primary group = one with most assigned schedules
-    const primary = memberships
-      .slice()
-      .sort((a, b) => (b.schedule_count - a.schedule_count))[0];
-    const cell = document.createElement('div');
-    cell.className = 'device-cell';
-    cell.draggable = true;
-    cell.dataset.testid = `dev-cell-${did}`;
-    cell.dataset.deviceId = did;
-    cell.style.borderLeftColor = primary ? primary.color : 'var(--muted)';
-    cell.title = memberships.length
-      ? memberships.map(m => `${m.name} (${m.schedule_count} sched)`).join('\n')
-      : 'unassigned';
-    cell.innerHTML = `
-      <div class="id">${escapeHtml(did)}</div>
-      <div class="groups">
-        ${memberships.map(m =>
-          `<span class="g-swatch" style="background:${m.color}"></span>`
-        ).join('')}
+  grid.className = 'module-grid';
+  for (const mk of orderedKeys) {
+    const { channels, includedIds, excluded } = _channelsForModule(mk);
+    const box = document.createElement('div');
+    box.className = 'module-box';
+    box.dataset.moduleKey = mk;
+    box.dataset.testid = `module-${mk}`;
+    box.draggable = true;
+    if (mk === _openedModuleKey) box.classList.add('opened');
+    const chCount = channels.length;
+    const maskNote = excluded.size
+      ? `<span class="mod-mask-count">${includedIds.length}/${chCount} on drop</span>`
+      : '';
+    box.innerHTML = `
+      <div class="mod-hdr">
+        <span class="mod-title">${escapeHtml(mk)}</span>
+        ${maskNote}
+      </div>
+      <div class="mod-dots">
+        ${channels.map(c => {
+          const sub = c.device.split('/')[3] || '';
+          const st = _dotStateFor(c);
+          return `<span class="mod-dot ${st}" data-device-id="${escapeHtml(c.device)}"
+                        title="${escapeHtml(c.device)}">${escapeHtml(sub)}</span>`;
+        }).join('')}
       </div>`;
-    cell.addEventListener('dragstart', (ev) => {
-      cell.classList.add('dragging');
-      ev.dataTransfer.setData('text/plain',
-        JSON.stringify({ type: 'device', id: did }));
+    // Module tile drag: bundle-drop into a group.
+    box.addEventListener('dragstart', (ev) => {
+      box.classList.add('dragging');
+      ev.dataTransfer.setData('text/plain', JSON.stringify({
+        type: 'module', module: mk, channels: includedIds,
+      }));
       ev.dataTransfer.effectAllowed = 'copy';
     });
-    cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
-    // Phase 3: alarm tiles are clickable → acknowledge.
-    cell.addEventListener('click', (ev) => {
-      if (!cell.classList.contains('aligner-alarm')) return;
-      ev.stopPropagation();
-      clearDeviceAlarm(did);
+    box.addEventListener('dragend', () => box.classList.remove('dragging'));
+    // Click toggles the inline detail panel.
+    box.addEventListener('click', (ev) => {
+      // Avoid toggling when the operator is initiating a drag from a
+      // dot; the click event still fires but only if there's no drag.
+      if (ev.target.closest('.mod-dot')) return;
+      _openedModuleKey = (_openedModuleKey === mk) ? null : mk;
+      renderDevices();
     });
-    applyAlignerState(cell, d);
-    grid.appendChild(cell);
+    grid.appendChild(box);
+    // Inline detail panel — same column, directly below.
+    if (mk === _openedModuleKey) {
+      grid.appendChild(_renderModuleDetail(mk, channels, excluded));
+    }
   }
   host.appendChild(grid);
 }
 
-// ---------- Phase 3: Aligner visual state -----------------------------------
-// One tile → one aligner base class (on/off/unknown/alarm).  On any state
-// change we also fire a transient .aligner-event overlay (yellow ring) so
-// operators visually confirm the update.
-function applyAlignerState(cell, snap) {
-  cell.classList.remove('aligner-on', 'aligner-off', 'aligner-unknown', 'aligner-alarm');
-  if (snap.last_fail_code !== null && snap.last_fail_code !== undefined) {
-    cell.classList.add('aligner-alarm');
-    cell.title = `⚠ fail_code=${snap.last_fail_code} — click to acknowledge`;
-    return;
+function _renderModuleDetail(moduleKey, channels, excluded) {
+  const wrap = document.createElement('div');
+  wrap.className = 'module-detail';
+  wrap.dataset.testid = `module-detail-${moduleKey}`;
+  const hint = document.createElement('div');
+  hint.className = 'mask-hint';
+  hint.textContent = 'Uncheck a relay to exclude it when the module is dropped';
+  wrap.appendChild(hint);
+  for (const c of channels) {
+    const sub = parseInt(c.device.split('/')[3] || '0', 10);
+    const isMasked = excluded.has(sub);
+    const row = document.createElement('div');
+    row.className = 'relay-row' + (isMasked ? ' masked' : '');
+    row.draggable = true;
+    row.dataset.deviceId = c.device;
+    row.dataset.testid = `relay-row-${c.device}`;
+    const st = _dotStateFor(c);
+    row.innerHTML = `
+      <input type="checkbox" ${isMasked ? '' : 'checked'}
+             data-testid="mask-cb-${escapeHtml(c.device)}"
+             title="Include on module-drop" />
+      <span class="relay-id">${escapeHtml(c.device)}</span>
+      <span class="relay-state ${st}"></span>`;
+    // Mask toggle
+    row.querySelector('input').addEventListener('change', (ev) => {
+      ev.stopPropagation();
+      const set = _maskSetForModule(moduleKey);
+      if (ev.target.checked) set.delete(sub);
+      else set.add(sub);
+      _saveMaskForModule(moduleKey, set);
+      renderDevices();
+    });
+    // Individual relay drag = same payload the old flat grid produced,
+    // so the existing group drop handler for type:'device' still works.
+    row.addEventListener('dragstart', (ev) => {
+      ev.stopPropagation();
+      row.classList.add('dragging');
+      ev.dataTransfer.setData('text/plain', JSON.stringify({
+        type: 'device', id: c.device,
+      }));
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    wrap.appendChild(row);
   }
-  if (snap.relay_state === true)  cell.classList.add('aligner-on');
-  else if (snap.relay_state === false) cell.classList.add('aligner-off');
-  else cell.classList.add('aligner-unknown');
+  return wrap;
 }
 
-function flashEvent(cell) {
-  cell.classList.remove('aligner-event');
-  // Force reflow so the animation restarts even on rapid-fire events.
-  void cell.offsetWidth;
-  cell.classList.add('aligner-event');
-  setTimeout(() => cell.classList.remove('aligner-event'), 500);
+// Live-event handler helpers -------------------------------------------------
+// Update the small dot on the tile AND (when the detail panel is open)
+// the coloured circle on the relay row.  Replaces the old findCell
+// aligner path — the new tiles use .mod-dot / .relay-state.
+function findModDot(did) {
+  return document.querySelector(`.mod-dot[data-device-id="${CSS.escape(did)}"]`);
+}
+function findRelayRow(did) {
+  return document.querySelector(`.relay-row[data-device-id="${CSS.escape(did)}"]`);
+}
+function applyLiveDot(did, snap) {
+  const dot = findModDot(did);
+  if (dot) {
+    dot.classList.remove('on', 'off', 'alarm');
+    const st = _dotStateFor(snap);
+    if (st) dot.classList.add(st);
+  }
+  const row = findRelayRow(did);
+  if (row) {
+    const st = row.querySelector('.relay-state');
+    st.classList.remove('on', 'off', 'alarm');
+    const s = _dotStateFor(snap);
+    if (s) st.classList.add(s);
+  }
 }
 
-function findCell(did) {
-  return document.querySelector(`.device-cell[data-device-id="${CSS.escape(did)}"]`);
-}
+// Backwards-compat shim -- the SSE handler below still calls
+// applyAlignerState(cell, snap) / findCell(did) / flashEvent(cell)
+// which targeted the old .device-cell DOM.  Redirect them onto the
+// new mod-dot pipeline so the SSE fan-out keeps updating the UI
+// without touching handleLiveEvent().
+function applyAlignerState(_cell, snap) { applyLiveDot(snap.device, snap); }
+function flashEvent(_cell) { /* no-op: dots don't ring-flash */ }
+function findCell(did)     { return findModDot(did); }
 
 async function clearDeviceAlarm(did) {
   try {

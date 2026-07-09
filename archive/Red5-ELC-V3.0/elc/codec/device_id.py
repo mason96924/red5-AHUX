@@ -57,15 +57,22 @@ class DeviceType(IntEnum):
     DSW_STS1 = 0x0C       # 12  ETLC_DEVICE_STS1 (DSW16)
     DSW_STS2 = 0x0D       # 13  ETLC_DEVICE_STS2 / ETLC_DEVICE_DSW_END
     SU = 0x0E             # 14  (DSW_END + 1)
-    # SRM family — V3.8 §1
+    # SRM family — V3.8 §1 (operator-confirmed 2026-07-09)
     SRM_4S = 0x14         # 20  ETLC_DEVICE_4SRM  (4-ch switching relay)
     SRM_6S = 0x15         # 21  ETLC_DEVICE_6SRM  (6-ch switching relay)
-    # 4eRM and 6eRM share this wire code (V3.8 spec §1); operators
-    # typically talk about a 6eRM module so we pick that as the
-    # primary name -- otherwise ``str(DeviceId)`` prints ``SRM_ERM``
-    # which doesn't match the string in the operator's ELC_DEVICES_JSON.
-    # ``SRM_ERM`` and ``SRM_4E`` are aliases with the same wire code.
-    SRM_6E = 0x16         # 22  primary name for the ERM family
+    # 6ERM and 6SRM SHARE THE SAME WIRE CODE (0x15) — operator-confirmed
+    # 2026-07-09.  On the wire the SCU cannot distinguish 6SRM vs 6ERM
+    # by device-type byte alone; they're differentiated by module
+    # address only.  A `PanelInfo` query for 0x15 returns BOTH families
+    # side-by-side, each with its own address + relay mask.
+    #
+    # Python IntEnum treats identical values as aliases of the first
+    # canonical member, so ``DeviceType["SRM_6E"]`` returns the same
+    # value/behaviour as ``DeviceType["SRM_6S"]``.  This means every
+    # 6E/6S device string round-trips through the codec as the
+    # canonical ``SRM_6S`` -- exactly what we want, since the operator
+    # cannot commission them differently anyway.
+    SRM_6E = 0x15         # alias of SRM_6S (V3.8 §1: same wire code)
     SRM_48S = 0x18        # 24  ETLC_DEVICE_48SRM (48-ch, layout TBD)
     # Head unit
     SCU = 0x05            # 5   ETLC_DEVICE_SCU (moved to actual V3.8 code)
@@ -88,8 +95,8 @@ class DeviceType(IntEnum):
     #
     # NOTE: Python IntEnum forbids duplicate NAMEs but allows the same
     # numeric value under different names as aliases.
-    SRM_ERM = 0x16        # alias of SRM_6E (V3.8 spec name)
-    SRM_4E = 0x16         # alias of SRM_6E (4-channel eRM variant)
+    SRM_ERM = 0x15        # alias of SRM_6S (V3.8 §1: 6ERM shares 0x15)
+    SRM_4E = 0x15         # alias of SRM_6S (V3.8 §1: 4eRM also shares)
 
 
 DEVTYPE_BITS: Final[int] = 8

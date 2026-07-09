@@ -91,14 +91,33 @@ confirmation on 2026-07-09.
 
 ## 2. Device Type Codes (SRM-class families)
 
-Confirmed via hardware RX capture:
+**Operator-confirmed 2026-07-09** — the SRM family uses ONLY TWO wire
+codes.  The 6SRM and 6ERM share `0x15`; the SCU cannot distinguish
+them by device-type byte alone (address differentiates the modules
+in practice).  A PanelInfo broadcast (address `0x3FF`) for `0x15`
+returns BOTH families side-by-side, each carrying its own real
+address and channel mask.
 
 | Family        | Code (hex) | Channels | Verified? |
 |---------------|-----------:|---------:|:---------:|
 | `4SRM`        | `0x14`     | 4        | ✅ RX      |
 | `6SRM`        | `0x15`     | 6        | ✅ RX      |
-| `ERM` (4e/6e) | `0x16`     | 4 or 6   | ⏳ TBD     |
+| `6ERM`        | `0x15`     | 6        | ✅ RX (shares 0x15 with 6SRM) |
 | `48SRM`       | `0x18`     | 48       | ⏳ TBD     |
+
+So a full SRM-family sweep is **two** PanelInfo queries — one for
+`0x14`, one for `0x15` — not one per module.  Each query uses the
+10-bit broadcast address `0x3FF` (see §1.a).
+
+**Discovery pattern in `POST /api/elc/discover-srms`** (post-fix):
+```
+driver.panel_info(SRM_4S, scu=0)   # → all 4SRMs on this SCU respond
+driver.panel_info(SRM_6S, scu=0)   # → all 6SRMs + 6ERMs respond
+```
+Each responder's `RelayStatus` frame flows into `_on_v38_bytes`,
+per-channel `RelayState` events cascade through the replica's
+`_touch()` auto-register path, and the UI paints module dots with
+true hardware state.
 
 Awaiting hardware RX capture — placeholders documented so the codec
 can be extended in one place once the byte is known:

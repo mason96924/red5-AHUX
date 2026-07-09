@@ -7,6 +7,7 @@ so the V2.0 FastAPI app and the V1.9 Flask shim can both import
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
@@ -113,67 +114,84 @@ def build_router(
 
     @router.post("/discover-srms")
     async def discover_srms() -> dict[str, Any]:
-        """Discover the SCU's SRM-family channels and register them.
+        """Broadcast-discover SRM-family modules on the SCU.
 
-        Two-phase:
+        Per operator-confirmed V3.8 §1.a/§1.b (2026-07-09):
+        * Only TWO device-type codes matter for the SRM family:
+          ``0x14`` (4SRM) and ``0x15`` (6SRM AND 6ERM — they share
+          the wire code).
+        * Query with ``address = 0x3FF`` (10-bit broadcast) and the
+          SCU replies with one RelayStatus frame per populated
+          module, each carrying its real (dev_type, scu, address)
+          plus a full channel-state bitmask.
 
-        1. **Register** every advertised SRM channel with the replica
-           without firing any relay -- safe against live hardware.
-        2. **Scan module state** -- for each unique module
-           ``(dev_type, scu, address)`` we send one ETLC StatusQuery
-           (opcode 0x16) via a one-shot connection.  The SCU's
-           RelayStatus response is decoded by
-           ``SrmDriver._on_v38_bytes`` and cascaded through
-           ``on_state_change`` → Replica → SSE, so the UI ends up
-           reflecting the TRUE hardware state (including any relays
-           left on by a wall-switch press before the demo booted).
+        Physical mode: fire the two broadcast queries and let the
+        RX pipeline auto-register whichever modules respond (via
+        the ``Replica._touch`` + ``_on_relay_state`` cascade -- any
+        RelayState decoded for an unknown device creates a snapshot
+        automatically).  The frontend polls ``GET /devices`` after
+        a settle window and the module dots light up with true
+        hardware state.
 
-           Skipped in mock mode -- MockScu already echoes state
-           on register, so a probe frame would be a no-op.
-
-        Filtered to the SRM family only (``SRM``, ``SRM_4S``,
-        ``SRM_6S``, ``SRM_6E``, ``SRM_4E``, ``SRM_48S``).  Roadmap:
-        when ``SrmDriver.discover_srms(scu, max_addr)`` grows a real
-        over-the-wire sweep of the 10-bit address space (per
-        docs/RED5-ETLC-V3.8-PROTOCOL.md §1.a), this endpoint switches
-        to driving that sweep -- **without any frontend change**.
+        Mock mode: falls back to the legacy "advertised inventory"
+        register loop -- the MockScu already carries synthetic state.
         """
-        srm_devices = [d for d in _demo_devices if d.dev_type.name.startswith("SRM")]
-        registered_now: list[str] = []
-        already_known: list[str] = []
-        for d in srm_devices:
-            if await replica.register(d):
-                registered_now.append(str(d))
-            else:
-                already_known.append(str(d))
-        # Phase 2 -- scan physical hardware state.  Only meaningful in
-        # physical mode; mocked mode already carries synthetic state.
-        scanned = 0
-        if _data_source == "physical":
-            # Deduplicate by (dev_type, scu, address) so multi-channel
-            # modules receive one probe each, not one per channel.
-            modules: set[tuple[int, int, int]] = set()
+        # Mock-mode / dev-mode: no wire, just register the advertised
+        # inventory so the UI has something to show.
+        if _data_source != "physical":
+            srm_devices = [
+                d for d in _demo_devices
+                if d.dev_type.name.startswith("SRM")
+            ]
+            registered_now: list[str] = []
+            already_known: list[str] = []
             for d in srm_devices:
-                modules.add((int(d.dev_type), d.scu, d.address))
-            for dt_int, scu, addr in sorted(modules):
-                try:
-                    await driver.query_module_v38(
-                        DeviceType(dt_int), scu, addr,
-                    )
-                    scanned += 1
-                except Exception:  # noqa: BLE001
-                    # Single-module failures are non-fatal -- worst
-                    # case that module's channels stay at their
-                    # last-known state (or None) in the replica.
-                    pass
+                if await replica.register(d):
+                    registered_now.append(str(d))
+                else:
+                    already_known.append(str(d))
+            return {
+                "ok": True,
+                "source": _data_source,
+                "mode": "advertised_inventory",
+                "family_filter": "SRM",
+                "count": len(srm_devices),
+                "registered": registered_now,
+                "already_known": already_known,
+                "modules_scanned": 0,
+            }
+
+        # Physical mode: broadcast PanelInfo to the two SRM device
+        # families.  Auto-registration happens downstream when the
+        # SCU's RelayStatus responses land in _on_v38_bytes.
+        from elc.codec.device_id import DeviceType as _DT
+        pre_count = len(replica.all())
+        scanned_types: list[str] = []
+        for dt in (_DT.SRM_4S, _DT.SRM_6S):     # 0x14, 0x15
+            try:
+                await driver.panel_info(dt, scu=0)
+                scanned_types.append(f"0x{int(dt):02X}")
+            except Exception:                    # noqa: BLE001
+                # One family failing (e.g. no 4SRMs on this SCU) is
+                # not fatal -- proceed with the other.
+                pass
+        # Give the SCU + reader loop a beat to publish per-channel
+        # RelayStates so the caller sees fresh state via GET /devices.
+        await asyncio.sleep(1.0)
+        post_devices = replica.all()
+        new_ids = [
+            str(s.device)
+            for s in post_devices
+        ][pre_count:]
         return {
             "ok": True,
             "source": _data_source,
+            "mode": "broadcast_query",
             "family_filter": "SRM",
-            "count": len(srm_devices),
-            "registered": registered_now,
-            "already_known": already_known,
-            "modules_scanned": scanned,
+            "queried_types": scanned_types,
+            "modules_scanned": len(scanned_types),
+            "registered": new_ids,
+            "already_known": [str(s.device) for s in post_devices][:pre_count],
         }
 
     @router.get("/devices/{device_id:path}")

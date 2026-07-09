@@ -58,6 +58,47 @@ def checksum(payload: bytes) -> int:
     return ((~(sum(payload) + 0x80)) + 1) & 0xFF
 
 
+# ETLC V3.8 §1.a — the SCU byte + module-address byte are actually a
+# packed 6-bit-SCU + 10-bit-address field spread across two adjacent
+# bytes.  These helpers centralise the split so every message class
+# uses the same layout, and so a future re-interpretation (e.g. a
+# vendor firmware that redefines the top-2-bit meaning) lands in one
+# place.
+#
+#     byte 6:  [ addr[9:8] : 2 ][ scu : 6 ]
+#     byte 7:  [ addr[7:0] : 8 ]
+#
+# ``address`` uses the full 10-bit range ``0..1023``.  ``0x3FF`` is
+# reserved as the *broadcast* address for PanelInfo queries -- every
+# module of the requested device type replies with its own frame.
+
+SCU_MASK: Final[int] = 0x3F                  # 6 low bits
+ADDR_HI_SHIFT: Final[int] = 6                # top 2 bits of byte 6
+ADDR_HI_MASK: Final[int] = 0x03
+ADDR_MAX: Final[int] = 0x3FF                 # 10 bits → 1023
+ADDR_BROADCAST: Final[int] = 0x3FF           # PanelInfo wildcard
+
+
+def encode_scu_addr(scu: int, address: int) -> tuple[int, int]:
+    """Split (scu, address) into wire bytes 6 and 7.
+
+    ``scu`` is 6 bits (0..63); ``address`` is 10 bits (0..1023).
+    Returns ``(byte6, byte7)``.  Silently masks over-range inputs to
+    keep the encode path allocation-free; range-checking happens at
+    the DeviceId construction site.
+    """
+    byte6 = ((address >> 8) & ADDR_HI_MASK) << ADDR_HI_SHIFT | (scu & SCU_MASK)
+    byte7 = address & 0xFF
+    return byte6, byte7
+
+
+def decode_scu_addr(byte6: int, byte7: int) -> tuple[int, int]:
+    """Inverse of :func:`encode_scu_addr` — returns ``(scu, address)``."""
+    scu = byte6 & SCU_MASK
+    address = ((byte6 >> ADDR_HI_SHIFT) & ADDR_HI_MASK) << 8 | byte7
+    return scu, address
+
+
 def _wrap(payload: bytes) -> bytes:
     return (
         PREAMBLE
@@ -75,10 +116,13 @@ class RelayOverrideV38:
     state: bool
 
     def encode(self) -> bytes:
+        scu_byte, addr_byte = encode_scu_addr(
+            self.device.scu, self.device.address,
+        )
         payload = bytes([
             int(self.device.dev_type) & 0xFF,
-            self.device.scu & 0xFF,
-            self.device.address & 0xFF,
+            scu_byte,
+            addr_byte,
             self.device.sub_address & 0xFF,
             OPCODE_RELAY_OVERRIDE,
             0x01 if self.state else 0x00,
@@ -93,10 +137,13 @@ class RelayStatusV38:
     device: DeviceId
     state_mask: int
     def encode(self) -> bytes:
+        scu_byte, addr_byte = encode_scu_addr(
+            self.device.scu, self.device.address,
+        )
         payload = bytes([
             int(self.device.dev_type) & 0xFF,
-            self.device.scu & 0xFF,
-            self.device.address & 0xFF,
+            scu_byte,
+            addr_byte,
             self.device.sub_address & 0xFF,
             OPCODE_RELAY_STATUS,
             self.state_mask & 0xFF,
@@ -122,10 +169,11 @@ class RelayStatusV38:
             dev_type = DeviceType(payload[0])
         except ValueError:
             dev_type = DeviceType.UNKNOWN
+        scu, address = decode_scu_addr(payload[1], payload[2])
         device = DeviceId(
             dev_type=dev_type,
-            scu=payload[1],
-            address=payload[2],
+            scu=scu,
+            address=address,
             sub_address=payload[3],
         )
         return cls(device=device, state_mask=payload[5])
@@ -145,6 +193,13 @@ class StatusQueryV38:
     pass it through unchanged so the frame layout matches RelayOverride
     byte-for-byte apart from the opcode.
 
+    **Broadcast (PanelInfo) queries** — set ``device.address`` to
+    ``ADDR_BROADCAST`` (0x3FF).  The SCU responds with one RelayStatus
+    frame *per module of the requested device type*, each carrying its
+    own real address.  For the SRM family (dev_type 0x14 = 4SRM,
+    0x15 = 6SRM/6ERM shared), this is exactly the discovery mechanism
+    the operator uses -- see ETLC §1.a and §1.b.
+
     The expected response is an unsolicited-shaped RelayStatus (0x25,
     12-byte RX frame) which ``SrmDriver._on_v38_bytes`` already
     decodes end-to-end (per-channel RelayState events → replica → SSE
@@ -155,10 +210,13 @@ class StatusQueryV38:
     device: DeviceId
 
     def encode(self) -> bytes:
+        scu_byte, addr_byte = encode_scu_addr(
+            self.device.scu, self.device.address,
+        )
         payload = bytes([
             int(self.device.dev_type) & 0xFF,
-            self.device.scu & 0xFF,
-            self.device.address & 0xFF,
+            scu_byte,
+            addr_byte,
             self.device.sub_address & 0xFF,
             OPCODE_STATUS_QUERY,
             0x00,                          # reserved / data byte

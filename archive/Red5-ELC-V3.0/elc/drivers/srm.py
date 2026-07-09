@@ -260,17 +260,21 @@ class SrmDriver(AbstractDevice):
         scu: int,
         address: int,
     ) -> None:
-        """Send an ETLC V3.8 StatusQuery for one module.
+        """Send an ETLC V3.8 StatusQuery for one module (or a broadcast).
 
-        The SCU response is an unsolicited-shaped ``RelayStatus`` (0x25)
-        that :meth:`_on_v38_bytes` decodes end-to-end -- per-channel
+        Pass ``address = 0x3FF`` (``ADDR_BROADCAST`` in etlc38) to
+        issue a **PanelInfo** query -- every module of the requested
+        device type replies with its own RelayStatus frame carrying
+        its real address.  The one-shot recv window (400 ms) collects
+        all responding frames back-to-back; ``_on_v38_bytes`` demuxes
+        them.
+
+        The SCU response is decoded end-to-end -- per-channel
         ``RelayState`` events land on ``on_state_change`` and cascade
         through Replica → SSE → UI without any extra plumbing here.
 
-        Fire-and-forget: caller doesn't wait for the response.  The
-        one-shot socket's 400 ms recv window absorbs the echo before
-        closing.  Safe against live hardware -- a query frame never
-        fires a relay.
+        Fire-and-forget: caller doesn't wait for the response.  Safe
+        against live hardware -- a query frame never fires a relay.
         """
         dev = DeviceId(
             dev_type=dev_type,
@@ -284,6 +288,22 @@ class SrmDriver(AbstractDevice):
             dev, len(data), data.hex(),
         )
         await self._v38_one_shot_send(data)
+
+    async def panel_info(
+        self,
+        dev_type: DeviceType,
+        scu: int = 0,
+    ) -> None:
+        """Broadcast PanelInfo query for every module of ``dev_type``.
+
+        Shorthand for ``query_module_v38(dev_type, scu,
+        ADDR_BROADCAST)``.  For the SRM family: two calls suffice
+        (``SRM_4S = 0x14`` and ``SRM_6S = 0x15`` -- the latter covers
+        both 6SRM and 6ERM because they share the wire code, per
+        operator-confirmed V3.8 §1).
+        """
+        from elc.codec.etlc38 import ADDR_BROADCAST
+        await self.query_module_v38(dev_type, scu, ADDR_BROADCAST)
 
 
     async def broadcast(

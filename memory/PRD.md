@@ -41,6 +41,68 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — /floor UX Consolidation (2026-07-09, batch 2)
+
+Operator asked for a large restructure of the `/floor` page: floors
+into a dropdown, editor accessible inline, floor details as a modal,
+DXF-import-only in that modal, module modal to be a drag source, and
+a fix for the "multi-select feels all-or-nothing" report.  All shipped
+in a single frontend-only pass — backend untouched.
+
+### Shipped (`archive/Red5-ELC-V3.0/demo/floor.html`)
+* **Header dropdown** — `<select id="floor-picker">` replaces the LHS
+  floor list.  Options include every floor + a final `＋ New floor…`
+  entry which invokes the create prompt then auto-opens the details
+  modal so the operator can set dimensions or import a DXF right away.
+* **Details** header button → opens **Floor details modal**
+  (`#floor-modal`) containing the pre-existing name / W / H / Save /
+  Delete form plus the DXF file input.  Sample-DXF download links
+  and the standalone Import DXF button were removed from the toolbar
+  as requested.  Delete auto-closes the modal.
+* **Schedules** header button → opens `/editor` inside an iframe
+  modal (`#sched-modal`, `min(1200px, 96vw)` × `90vh`).  `src` is
+  set lazily on first open so re-opening preserves any in-flight
+  rule-editor state.  No code duplication — the tested `/editor`
+  code path runs as-is.
+* **LHS `<aside>` removed**; `main` grid switched from
+  `240px 1fr 300px` to `1fr 300px`.
+* **Right rail** loses its "Floor details" section (now in the modal)
+  and retains only the SRM module grid + broadcast bar.
+* **Module modal — multi-select fix**: the whole row is now a click
+  target; clicking anywhere in the row (channel label, badge, dot,
+  or checkbox glyph) toggles selection.  `_mmRefreshBatchState()`
+  updates the button-enable state on every click.  `data-testid`
+  hooks unchanged.
+* **Module modal — drag source**: in Individual mode each row with
+  an assigned lighting element becomes `draggable=true` and emits
+  `application/x-elc-device-id` on `dragstart` — the exact MIME the
+  canvas drop handler already accepts.  Un-assigned rows keep a
+  helpful tooltip pointing operators at the Multi-Select Apply flow.
+
+### Stage-hint copy refreshed
+`Click a module box on the right → open its channel modal → assign
+On/Off or 0-10V → drag a channel row onto the plan…`.  Reflects the
+new workflow: module first, channel-detail modal, drag from modal.
+
+### Testing
+Node syntax check → SYNTAX OK.  No orphan references to removed IDs
+(`floor-list`, `details`, `btn-new`, `floor-sample*`, `/samples/`).
+Backend untouched (pytest not run — nothing changed under it).
+
+Operator smoke path:
+1. `/floor` — Floor dropdown shows every floor + `＋ New floor…`.
+2. Pick a floor → canvas paints, Details button enables.
+3. Click Details → modal opens, edit W/H → Save → dropdown label
+   auto-updates.
+4. Click Details → Import DXF → auto-open imported floor.
+5. Click Schedules → editor iframe fills the modal; assign
+   schedules to groups without leaving `/floor`.
+6. Click a module box → modal opens, in Individual mode drag a
+   channel row onto the canvas → placement lands at drop point.
+7. Multi-Select tab → click checkboxes (or anywhere on the row) →
+   count updates → All On / All Off / Apply work on the exact
+   subset.
+
 ## Phase V3.0 — UX Redesign Phase B (2026-07-09)
 
 ### P1 — Channel-detail modal shipped

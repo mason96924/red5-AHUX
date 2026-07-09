@@ -54,7 +54,7 @@
   button.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
   button.ghost { background: transparent; }
 
-  main { display: grid; grid-template-columns: 240px 1fr 300px;
+  main { display: grid; grid-template-columns: 1fr 300px;
          height: calc(100vh - 60px); gap: 0; }
   aside {
     background: var(--panel); border-right: 1px solid var(--line);
@@ -372,6 +372,34 @@
     <span class="pill" id="conn-pill" data-testid="floor-conn-pill">
       <span class="dot"></span><span id="conn-text">checking…</span>
     </span>
+    <!-- Floor navigation: single dropdown replaces the LHS floor list.
+         The "＋ New floor" option at the bottom triggers the create
+         flow (was a separate toolbar button previously). -->
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      Floor
+      <select id="floor-picker" data-testid="floor-picker"
+              style="width:auto;padding:4px 8px;font-size:11px;min-width:150px"
+              title="Select an existing floor, or choose ＋ New floor to create one">
+        <option value="">— pick a floor —</option>
+      </select>
+    </label>
+    <!-- Details opens the floor properties + DXF import modal.
+         Only enabled when a floor is currently selected. -->
+    <button id="btn-floor-details" class="ghost"
+            data-testid="floor-details-btn" disabled
+            title="Edit the selected floor's name, dimensions, or import a DXF">
+      Details
+    </button>
+    <!-- Schedules opens the schedule-assignment editor (formerly at
+         /editor) as an iframe modal, so operators never leave the
+         floor page to bind schedules to groups. -->
+    <button id="btn-schedules" class="ghost"
+            data-testid="floor-schedules-btn"
+            title="Open the schedule / group editor">
+      Schedules
+    </button>
     <button id="btn-mode" class="ghost" data-testid="floor-mode-toggle">Mode: Layout</button>
     <button id="btn-heatmap" class="ghost" data-testid="floor-heatmap-toggle"
             title="Colour-code each room by average lux vs. code-compliance minimum">Heatmap: Off</button>
@@ -492,34 +520,15 @@
             style="display:none;padding:4px 8px;font-size:11px;color:var(--bad);border-color:var(--bad)">
       Delete <span id="canvas-delete-count"></span>
     </button>
-    <button id="btn-new" data-testid="floor-new-btn">+ New floor</button>
-    <label for="dxf-input" class="btn" style="cursor:pointer" data-testid="floor-dxf-label">
-      Import DXF
-      <input id="dxf-input" type="file" accept=".dxf" style="display:none"
-             data-testid="floor-dxf-input">
-    </label>
-    <a href="/samples/office-40x25.dxf" download class="btn ghost"
-       title="Download a 40 × 25 m office floor plan (5 offices, kitchen, 2 meeting rooms, open workspace)"
-       data-testid="floor-sample-office-dl">Sample office DXF</a>
-    <a href="/samples/warehouse-20x12.dxf" download class="btn ghost"
-       title="Download a small 20 × 12 m warehouse plan"
-       data-testid="floor-sample-dl">Sample warehouse DXF</a>
-    <a href="/editor" class="btn ghost">← Editor</a>
   </div>
 </header>
 
 <main>
-  <!-- ============ LEFT RAIL: FLOOR LIST ============ -->
-  <aside>
-    <h2>Floors</h2>
-    <div id="floor-list" data-testid="floor-list"></div>
-  </aside>
-
   <!-- ============ CENTER: STAGE + CANVAS ============ -->
   <section class="stage">
     <div class="mode-badge layout" id="mode-badge">LAYOUT</div>
     <div class="stage-hint" id="stage-hint">
-      Select SRMs on the right → assign On/Off or 0-10V → drag a colored tile onto the plan · Drag placed dots to reposition · Click <b>Delete</b> or press Delete to remove
+      Click a module box on the right → open its channel modal → assign On/Off or 0-10V → drag a channel row onto the plan · Drag placed dots to reposition · Click <b>Delete</b> or press Delete to remove
     </div>
     <canvas id="floor-canvas" data-testid="floor-canvas"></canvas>
     <div class="place-banner" id="place-banner" style="display:none"
@@ -533,17 +542,14 @@
     </div>
     <div class="stage-empty" id="stage-empty">
       No floor selected.<br>
-      Click <code>+ New floor</code> or <code>Import DXF</code> above.
+      Pick one from the <b>Floor</b> dropdown above,
+      or choose <code>＋ New floor…</code> to create one.
     </div>
   </section>
 
   <!-- ============ RIGHT RAIL: FIXTURE INSPECTOR ============ -->
   <aside class="right">
-    <h2>Floor details</h2>
-    <div id="details">
-      <div class="empty">Select a floor to edit its properties.</div>
-    </div>
-    <h2 style="margin-top:16px">SRM Devices <span id="dev-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
+    <h2>SRM Devices <span id="dev-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
     <div class="assign-bar" data-testid="assign-bar">
       <div class="assign-count" id="assign-count">0 selected</div>
       <div class="assign-actions">
@@ -643,6 +649,61 @@
     </div>
   </aside>
 </main>
+
+<!-- ============ FLOOR DETAILS MODAL ============ -->
+<div class="mm-backdrop" id="floor-modal" data-testid="floor-modal">
+  <div class="mm-panel" role="dialog" aria-modal="true"
+       aria-labelledby="fm-title" style="width: min(480px, 92vw)">
+    <div class="mm-hdr">
+      <div class="mm-title" id="fm-title" data-testid="fm-title">Floor details</div>
+      <button class="mm-close" id="fm-close"
+              data-testid="fm-close" title="Close">×</button>
+    </div>
+    <div class="mm-body">
+      <div id="fm-details">
+        <div class="empty">Select a floor first.</div>
+      </div>
+      <div style="margin-top: 14px; padding-top: 12px;
+                  border-top: 1px dashed var(--line)">
+        <div style="font-family: var(--mono); font-size: 10.5px;
+                    color: var(--muted); margin-bottom: 6px;
+                    text-transform: uppercase; letter-spacing: .1em">
+          Import DXF
+        </div>
+        <label for="dxf-input" class="btn" style="cursor:pointer;display:inline-block"
+               data-testid="floor-dxf-label"
+               title="Upload a DXF drawing to auto-create a floor from it">
+          Choose DXF file…
+          <input id="dxf-input" type="file" accept=".dxf" style="display:none"
+                 data-testid="floor-dxf-input">
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCHEDULES MODAL (iframe of /editor) ============ -->
+<div class="mm-backdrop" id="sched-modal" data-testid="sched-modal">
+  <div class="mm-panel" role="dialog" aria-modal="true"
+       aria-labelledby="sm-title"
+       style="width: min(1200px, 96vw); height: 90vh">
+    <div class="mm-hdr">
+      <div class="mm-title" id="sm-title" data-testid="sm-title">
+        Schedules &amp; Groups
+      </div>
+      <button class="mm-close" id="sm-close"
+              data-testid="sm-close" title="Close">×</button>
+    </div>
+    <div style="flex:1; overflow:hidden">
+      <!-- Lazy-loaded via src injection so the iframe doesn't run
+           until the modal is opened.  Same-origin -- the /editor
+           route lives on this server -- so no CSP shenanigans. -->
+      <iframe id="sched-iframe" data-testid="sched-iframe"
+              style="width:100%; height:100%; border:none; background:transparent"
+              title="Schedule and group editor"></iframe>
+    </div>
+  </div>
+</div>
 
 <!-- ============ MODULE-DETAIL MODAL (Phase B) ============ -->
 <div class="mm-backdrop" id="module-modal" data-testid="module-modal">
@@ -802,23 +863,42 @@ async function refreshFloors() {
   renderFloorList();
 }
 function renderFloorList() {
-  const host = document.getElementById('floor-list');
-  if (state.floors.length === 0) {
-    host.innerHTML = `<div class="empty">No floors yet.<br>Click <code>+ New</code>
-                      or <code>Import DXF</code> above.</div>`;
-    return;
-  }
-  host.innerHTML = '';
+  // Post-Phase-B: floor list is now the header dropdown.  We keep the
+  // function name so all existing call sites (which re-render on
+  // create / rename / delete) stay wired without touching them.
+  const picker = document.getElementById('floor-picker');
+  if (!picker) return;
+  const prev = state.currentFloor ? state.currentFloor.id : '';
+  picker.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = state.floors.length
+    ? '— pick a floor —'
+    : '— no floors yet —';
+  picker.appendChild(placeholder);
   for (const f of state.floors) {
-    const row = document.createElement('div');
-    row.className = 'floor-row';
-    if (state.currentFloor && f.id === state.currentFloor.id) row.classList.add('active');
-    row.dataset.testid = `floor-row-${f.name}`;
-    row.innerHTML = `<span class="name">${escapeHtml(f.name)}</span>
-                     <span class="size">${f.width_m.toFixed(1)}×${f.height_m.toFixed(1)}m</span>`;
-    row.addEventListener('click', () => selectFloor(f.id));
-    host.appendChild(row);
+    const opt = document.createElement('option');
+    opt.value = f.id;
+    opt.textContent = `${f.name}  ·  ${f.width_m.toFixed(1)}×${f.height_m.toFixed(1)}m`;
+    opt.dataset.testid = `floor-opt-${f.name}`;
+    picker.appendChild(opt);
   }
+  // Sentinel value → triggers the "＋ New floor" flow from the change
+  // handler.  Kept at the end so it never accidentally becomes the
+  // default selection.
+  const sep = document.createElement('option');
+  sep.disabled = true;
+  sep.textContent = '──────────';
+  picker.appendChild(sep);
+  const newOpt = document.createElement('option');
+  newOpt.value = '__new__';
+  newOpt.textContent = '＋ New floor…';
+  newOpt.dataset.testid = 'floor-opt-new';
+  picker.appendChild(newOpt);
+  picker.value = prev;
+  // Enable/disable the Details button based on whether a floor is loaded.
+  const dbtn = document.getElementById('btn-floor-details');
+  if (dbtn) dbtn.disabled = !state.currentFloor;
 }
 
 // Backwards-compat: legacy polylines had their anchor pinned to
@@ -851,15 +931,19 @@ async function selectFloor(id) {
   document.getElementById('stage-empty').style.display = 'none';
   await renderFloorDetails();
   await loadBackgroundAndPaint();
-  renderFloorList();
+  renderFloorList();  // refresh dropdown + Details-button enable state
+  const picker = document.getElementById('floor-picker');
+  if (picker) picker.value = id;
   await refreshDevicesAndElements();
   localStorage.setItem('elc.floor.selected', id);
 }
 
 async function renderFloorDetails() {
   const f = state.currentFloor;
-  const host = document.getElementById('details');
-  if (!f) { host.innerHTML = '<div class="empty">Select a floor above.</div>'; return; }
+  // Details are now rendered inside the floor modal (`#fm-details`).
+  const host = document.getElementById('fm-details');
+  if (!host) return;
+  if (!f) { host.innerHTML = '<div class="empty">Select a floor first.</div>'; return; }
   host.innerHTML = `
     <label>Name</label>
     <input id="d-name" value="${escapeHtml(f.name)}" data-testid="d-name"/>
@@ -897,6 +981,7 @@ async function renderFloorDetails() {
       renderFloorDetails();
       await refreshDevicesAndElements();
       paintCanvas();
+      closeFloorModal();
       toast('Floor deleted');
     } catch (e) { toast(e.message, true); }
   };
@@ -1272,11 +1357,25 @@ function renderModuleModal() {
         <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
         ${badge}
       `;
-      row.querySelector('.mm-cb').addEventListener('change', (ev) => {
-        if (ev.target.checked) selected.add(did); else selected.delete(did);
+      // Whole-row click toggles the checkbox so any target in the row
+      // works (the checkbox itself, the channel label, the badge).
+      // Fixes the "only ALL or nothing" report where clicking the
+      // checkbox's tiny hit-target felt like it wasn't landing.
+      row.style.cursor = 'pointer';
+      const cb = row.querySelector('.mm-cb');
+      row.addEventListener('click', (ev) => {
+        if (ev.target !== cb) {
+          cb.checked = !cb.checked;
+        }
+        if (cb.checked) selected.add(did); else selected.delete(did);
         _mmRefreshBatchState();
+        ev.stopPropagation();
       });
     } else {
+      // Individual mode — row is also a drag source so operators can
+      // drag a channel straight from the modal onto the canvas.  The
+      // canvas drop handler is already wired for the same MIME type,
+      // so no code needed on the receiving side.
       row.innerHTML = `
         <span class="mm-ch">ch ${chNum}</span>
         <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
@@ -1286,6 +1385,21 @@ function renderModuleModal() {
           ${isOn ? 'ON' : 'OFF'}
         </button>
       `;
+      // Make the channel draggable IF it's assigned (otherwise the
+      // canvas has no lighting element to render).  Un-assigned rows
+      // get a hint tooltip instead.
+      const [, elForDrag] = _findLightingElement(did);
+      if (elForDrag) {
+        row.setAttribute('draggable', 'true');
+        row.style.cursor = 'grab';
+        row.title = 'Drag onto the floor to place this channel';
+        row.addEventListener('dragstart', (ev) => {
+          ev.dataTransfer.effectAllowed = 'copy';
+          ev.dataTransfer.setData('application/x-elc-device-id', did);
+        });
+      } else {
+        row.title = 'Assign a type in Multi-Select before dragging onto the floor';
+      }
       row.querySelector('.mm-toggle').addEventListener('click', async (ev) => {
         ev.stopPropagation();
         const target = !isOn;
@@ -3550,17 +3664,74 @@ async function savePlacements(fixtures) {
   } catch (e) { toast(e.message, true); }
 }
 
-// -------- "New floor" + DXF upload --------
-document.getElementById('btn-new').onclick = async () => {
+// -------- Floor picker (dropdown) + create + modals --------
+async function newFloorFlow() {
   const name = prompt('Floor name?', 'New floor');
   if (!name) return;
   try {
     const f = await api('POST', '/floors', { name });
     await refreshFloors();
-    selectFloor(f.id);
+    await selectFloor(f.id);
     toast(`Created "${name}"`);
+    openFloorModal();  // pop the details modal so operator can set W/H
   } catch (e) { toast(e.message, true); }
-};
+}
+
+document.getElementById('floor-picker').addEventListener('change', async (ev) => {
+  const val = ev.target.value;
+  if (val === '__new__') {
+    // Reset the picker before firing the flow so a subsequent pick of
+    // "__new__" still triggers the change event.
+    ev.target.value = state.currentFloor ? state.currentFloor.id : '';
+    await newFloorFlow();
+    return;
+  }
+  if (!val) return;
+  if (state.currentFloor && val === state.currentFloor.id) return;
+  await selectFloor(val);
+});
+
+function openFloorModal() {
+  if (!state.currentFloor) { toast('Pick a floor first', true); return; }
+  renderFloorDetails();
+  document.getElementById('floor-modal').classList.add('open');
+}
+function closeFloorModal() {
+  document.getElementById('floor-modal').classList.remove('open');
+}
+document.getElementById('btn-floor-details').onclick = openFloorModal;
+document.getElementById('fm-close').onclick = closeFloorModal;
+document.getElementById('floor-modal').addEventListener('click', (ev) => {
+  if (ev.target.id === 'floor-modal') closeFloorModal();
+});
+
+function openScheduleModal() {
+  const iframe = document.getElementById('sched-iframe');
+  // Lazy-load: only set src the first time so re-opening reuses the
+  // existing session (unsaved rule-editor state is preserved).
+  if (!iframe.src) iframe.src = '/editor';
+  document.getElementById('sched-modal').classList.add('open');
+}
+function closeScheduleModal() {
+  document.getElementById('sched-modal').classList.remove('open');
+}
+document.getElementById('btn-schedules').onclick = openScheduleModal;
+document.getElementById('sm-close').onclick = closeScheduleModal;
+document.getElementById('sched-modal').addEventListener('click', (ev) => {
+  if (ev.target.id === 'sched-modal') closeScheduleModal();
+});
+
+// Escape closes whichever floor/schedule modal is open (the module
+// modal already has its own Escape handler earlier in this script).
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  if (document.getElementById('floor-modal').classList.contains('open')) {
+    closeFloorModal();
+  }
+  if (document.getElementById('sched-modal').classList.contains('open')) {
+    closeScheduleModal();
+  }
+});
 
 document.getElementById('dxf-input').onchange = async (ev) => {
   const file = ev.target.files[0];
@@ -3576,8 +3747,9 @@ document.getElementById('dxf-input').onchange = async (ev) => {
     const data = await r.json();
     if (!r.ok) { toast(data.detail || 'DXF import failed', true); return; }
     await refreshFloors();
-    selectFloor(data.id);
+    await selectFloor(data.id);
     toast(`Imported "${name}" (${data.width_m.toFixed(1)}×${data.height_m.toFixed(1)}m)`);
+    closeFloorModal();
   } catch (e) { toast(e.message, true); }
 };
 

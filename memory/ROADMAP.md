@@ -54,7 +54,26 @@ and a channel-detail modal.
       "select all channels into canvas selection" behaviour for the
       align/delete toolbar workflows.
 
-### Phase C — Follow-ups
+### Phase C — UX consolidation  ✅ DONE (2026-07-09 batch 2)
+- [x] LHS floor list collapsed into a header **Floor** dropdown; the
+      `＋ New floor…` action lives inside the dropdown itself.
+- [x] Floor details moved into a **pop-up modal** opened via a new
+      **Details** header button (enabled only when a floor is loaded).
+- [x] DXF import moved into the floor details modal.  Sample-DXF
+      download links and the standalone Import DXF toolbar button
+      were removed.
+- [x] **Schedules** header button opens the schedule / group editor
+      (`/editor`) inside an iframe modal — the operator never leaves
+      the floor page to bind schedules to groups.
+- [x] Module-modal row click hit-target widened (whole row toggles
+      checkbox) — fixes the "multi-select feels all-or-nothing" bug
+      where only the tiny native checkbox glyph landed clicks.
+- [x] Module-modal channel rows are now **drag sources** in
+      Individual mode: drag an assigned channel straight onto the
+      canvas to place it (same MIME the canvas drop handler already
+      consumes for the legacy SRM tiles).
+
+### Phase C — Follow-ups (deferred)
 - [ ] One-shot cleanup: delete orphaned legacy 0-based placements
       (script `scripts/purge-legacy-channels.py`)
 - [ ] Persist "last opened module" between page loads

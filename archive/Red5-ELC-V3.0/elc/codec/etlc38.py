@@ -32,6 +32,14 @@ DI1_TAIL: Final[bytes] = b"\x11\x12\x13\x14"
 
 OPCODE_RELAY_OVERRIDE: Final[int] = 0x07
 OPCODE_RELAY_STATUS: Final[int] = 0x25
+# Master → SCU "please tell me the current relay state of this
+# module".  Kept in sync with the legacy StatusQuery opcode (0x16)
+# in elc/codec/messages.py so V3.8 shares the semantic even if the
+# vendor tool never emits it -- the SCU echoes an unsolicited
+# RelayStatus (0x25) in response, which _on_v38_bytes already
+# decodes.  Safe: the SCU never fires a relay in response to a
+# query frame.
+OPCODE_STATUS_QUERY: Final[int] = 0x16
 
 TX_FRAME_LEN: Final[int] = 16
 RX_FRAME_LEN: Final[int] = 12
@@ -84,7 +92,6 @@ class RelayStatusV38:
 
     device: DeviceId
     state_mask: int
-
     def encode(self) -> bytes:
         payload = bytes([
             int(self.device.dev_type) & 0xFF,
@@ -126,3 +133,34 @@ class RelayStatusV38:
 
 def channels_from_mask(mask: int, module_channel_count: int = 6) -> list[bool]:
     return [(mask >> i) & 1 == 1 for i in range(module_channel_count)]
+
+
+@dataclass(frozen=True)
+class StatusQueryV38:
+    """Master → SCU "read module state" (opcode 0x16).
+
+    Encoded with the same wrapper + preamble as RelayOverride so the
+    SCU's parser accepts it on the same TCP path.  The device's
+    ``sub_address`` is ignored -- a query is module-wide -- but we
+    pass it through unchanged so the frame layout matches RelayOverride
+    byte-for-byte apart from the opcode.
+
+    The expected response is an unsolicited-shaped RelayStatus (0x25,
+    12-byte RX frame) which ``SrmDriver._on_v38_bytes`` already
+    decodes end-to-end (per-channel RelayState events → replica → SSE
+    → UI).  Safe against live hardware -- issuing a query frame never
+    fires a relay.
+    """
+
+    device: DeviceId
+
+    def encode(self) -> bytes:
+        payload = bytes([
+            int(self.device.dev_type) & 0xFF,
+            self.device.scu & 0xFF,
+            self.device.address & 0xFF,
+            self.device.sub_address & 0xFF,
+            OPCODE_STATUS_QUERY,
+            0x00,                          # reserved / data byte
+        ]) + DI1_TAIL
+        return _wrap(payload)

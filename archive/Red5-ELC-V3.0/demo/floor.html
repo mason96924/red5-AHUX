@@ -3923,18 +3923,37 @@ document.getElementById('btn-discover').onclick = async () => {
   btn.textContent = 'Discovering…';
   try {
     const r = await api('POST', '/discover-srms');
-    // Give WS/SSE echoes a beat to reach the replica.
-    await new Promise(res => setTimeout(res, 300));
+    // Give the SCU StatusQuery echoes a beat to reach the replica
+    // and cascade through SSE.  ~600 ms covers a 6-module scan at
+    // 90 ms per one-shot socket (SCU firmware settles for ~150 ms
+    // between requests, per _v38_write_lock).
+    const settle = (r.modules_scanned || 0) > 0 ? 800 : 300;
+    await new Promise(res => setTimeout(res, settle));
     await refreshDevicesAndElements();
+    // Re-prime state.liveDevices from the replica so any query
+    // responses that landed during the settle window are on the UI.
+    try {
+      const list = await api('GET', '/devices');
+      for (const d of list) state.liveDevices.set(d.device, {
+        relay_state: d.relay_state,
+        dim_level: d.dim_level,
+        last_fail_code: d.last_fail_code,
+      });
+    } catch (_) {}
+    renderSrmGrid();
+    if (state.moduleModal) renderModuleModal();
+    paintCanvas();
     const n = (r.registered || []).length;
     const k = (r.already_known || []).length;
+    const s = r.modules_scanned || 0;
+    const scanNote = s > 0 ? ` · scanned ${s} module state(s)` : '';
     if (n === 0 && k === 0) {
       toast('No SRM-family devices advertised by the SCU', true);
     } else if (n === 0) {
-      toast(`All ${k} SRM channel(s) already known`);
+      toast(`All ${k} SRM channel(s) already known${scanNote}`);
     } else {
       toast(`Discovered ${n} new SRM channel(s)` +
-            (k ? ` (${k} already known)` : ''));
+            (k ? ` (${k} already known)` : '') + scanNote);
     }
   } catch (e) { toast(`Discover failed: ${e.message}`, true); }
   finally { btn.disabled = false; btn.textContent = original; }

@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from elc.codec.device_id import DeviceId
+from elc.codec.device_id import DeviceId, DeviceType
 from elc.domain.replica import Replica
 from elc.drivers.srm import SrmDriver
 from elc.scheduling.engine import SchedulerEngine
@@ -115,19 +115,28 @@ def build_router(
     async def discover_srms() -> dict[str, Any]:
         """Discover the SCU's SRM-family channels and register them.
 
-        Today this walks the advertised inventory (``ELC_DEVICES_JSON``
-        in physical mode, or the built-in mock grid otherwise),
-        **filtered to the SRM device family only** (``SRM``, ``SRM_4S``,
-        ``SRM_6S``, ``SRM_6E`` / ``SRM_ERM`` / ``SRM_4E``, ``SRM_48S``).
-        Every matching channel is registered in the replica without
-        firing any relay -- safe to call against live hardware.
+        Two-phase:
 
-        Roadmap: when the SrmDriver grows a real over-the-wire sweep
-        (``discover_srms(scu, max_addr)`` that issues StatusQuery per
-        candidate and awaits response), this endpoint switches to
-        driving that sweep and returns whatever responds -- **without
-        any frontend change**.  See docs/RED5-ETLC-V3.8-PROTOCOL.md
-        §1.a for the 10-bit address space discovery walks.
+        1. **Register** every advertised SRM channel with the replica
+           without firing any relay -- safe against live hardware.
+        2. **Scan module state** -- for each unique module
+           ``(dev_type, scu, address)`` we send one ETLC StatusQuery
+           (opcode 0x16) via a one-shot connection.  The SCU's
+           RelayStatus response is decoded by
+           ``SrmDriver._on_v38_bytes`` and cascaded through
+           ``on_state_change`` → Replica → SSE, so the UI ends up
+           reflecting the TRUE hardware state (including any relays
+           left on by a wall-switch press before the demo booted).
+
+           Skipped in mock mode -- MockScu already echoes state
+           on register, so a probe frame would be a no-op.
+
+        Filtered to the SRM family only (``SRM``, ``SRM_4S``,
+        ``SRM_6S``, ``SRM_6E``, ``SRM_4E``, ``SRM_48S``).  Roadmap:
+        when ``SrmDriver.discover_srms(scu, max_addr)`` grows a real
+        over-the-wire sweep of the 10-bit address space (per
+        docs/RED5-ETLC-V3.8-PROTOCOL.md §1.a), this endpoint switches
+        to driving that sweep -- **without any frontend change**.
         """
         srm_devices = [d for d in _demo_devices if d.dev_type.name.startswith("SRM")]
         registered_now: list[str] = []
@@ -137,6 +146,26 @@ def build_router(
                 registered_now.append(str(d))
             else:
                 already_known.append(str(d))
+        # Phase 2 -- scan physical hardware state.  Only meaningful in
+        # physical mode; mocked mode already carries synthetic state.
+        scanned = 0
+        if _data_source == "physical":
+            # Deduplicate by (dev_type, scu, address) so multi-channel
+            # modules receive one probe each, not one per channel.
+            modules: set[tuple[int, int, int]] = set()
+            for d in srm_devices:
+                modules.add((int(d.dev_type), d.scu, d.address))
+            for dt_int, scu, addr in sorted(modules):
+                try:
+                    await driver.query_module_v38(
+                        DeviceType(dt_int), scu, addr,
+                    )
+                    scanned += 1
+                except Exception:  # noqa: BLE001
+                    # Single-module failures are non-fatal -- worst
+                    # case that module's channels stay at their
+                    # last-known state (or None) in the replica.
+                    pass
         return {
             "ok": True,
             "source": _data_source,
@@ -144,6 +173,7 @@ def build_router(
             "count": len(srm_devices),
             "registered": registered_now,
             "already_known": already_known,
+            "modules_scanned": scanned,
         }
 
     @router.get("/devices/{device_id:path}")

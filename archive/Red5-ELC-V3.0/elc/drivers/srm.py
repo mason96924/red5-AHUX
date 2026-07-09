@@ -13,6 +13,7 @@ from elc.codec.etlc38 import (
     PREAMBLE,
     RelayOverrideV38,
     RelayStatusV38,
+    StatusQueryV38,
     channels_from_mask,
 )
 from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState, StatusQuery
@@ -252,6 +253,38 @@ class SrmDriver(AbstractDevice):
             for fut in self._pending.get(per_channel, []):
                 if not fut.done():
                     fut.set_result(msg)
+
+    async def query_module_v38(
+        self,
+        dev_type: DeviceType,
+        scu: int,
+        address: int,
+    ) -> None:
+        """Send an ETLC V3.8 StatusQuery for one module.
+
+        The SCU response is an unsolicited-shaped ``RelayStatus`` (0x25)
+        that :meth:`_on_v38_bytes` decodes end-to-end -- per-channel
+        ``RelayState`` events land on ``on_state_change`` and cascade
+        through Replica → SSE → UI without any extra plumbing here.
+
+        Fire-and-forget: caller doesn't wait for the response.  The
+        one-shot socket's 400 ms recv window absorbs the echo before
+        closing.  Safe against live hardware -- a query frame never
+        fires a relay.
+        """
+        dev = DeviceId(
+            dev_type=dev_type,
+            scu=scu,
+            address=address,
+            sub_address=0,
+        )
+        data = StatusQueryV38(device=dev).encode()
+        log.info(
+            "V3.8 TX StatusQuery %s (%d B: %s)",
+            dev, len(data), data.hex(),
+        )
+        await self._v38_one_shot_send(data)
+
 
     async def broadcast(
         self,

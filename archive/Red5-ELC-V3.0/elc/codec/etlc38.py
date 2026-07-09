@@ -65,16 +65,23 @@ def checksum(payload: bytes) -> int:
 # vendor firmware that redefines the top-2-bit meaning) lands in one
 # place.
 #
-#     byte 6:  [ addr[9:8] : 2 ][ scu : 6 ]
-#     byte 7:  [ addr[7:0] : 8 ]
+# Operator-confirmed 2026-07-09 (bit-order fix from vendor capture):
+#
+#     byte 6:  [ scu : 6                    ][ addr[9:8] : 2 ]
+#     byte 7:  [ addr[7:0]                                 : 8 ]
+#
+# So broadcast address ``0x3FF`` for SCU 0 encodes to bytes
+# ``0x03 0xFF`` (byte 6 top-6 bits = 0, low-2 bits = 0b11) -- NOT
+# ``0xC0 0xFF`` which is what a naive "top-2-bits-are-high-address"
+# reading would produce.
 #
 # ``address`` uses the full 10-bit range ``0..1023``.  ``0x3FF`` is
 # reserved as the *broadcast* address for PanelInfo queries -- every
 # module of the requested device type replies with its own frame.
 
-SCU_MASK: Final[int] = 0x3F                  # 6 low bits
-ADDR_HI_SHIFT: Final[int] = 6                # top 2 bits of byte 6
-ADDR_HI_MASK: Final[int] = 0x03
+SCU_MASK: Final[int] = 0x3F                  # 6 bits
+SCU_SHIFT: Final[int] = 2                    # scu occupies bits 7:2 of byte 6
+ADDR_HI_MASK: Final[int] = 0x03              # low 2 bits of byte 6
 ADDR_MAX: Final[int] = 0x3FF                 # 10 bits → 1023
 ADDR_BROADCAST: Final[int] = 0x3FF           # PanelInfo wildcard
 
@@ -86,16 +93,20 @@ def encode_scu_addr(scu: int, address: int) -> tuple[int, int]:
     Returns ``(byte6, byte7)``.  Silently masks over-range inputs to
     keep the encode path allocation-free; range-checking happens at
     the DeviceId construction site.
+
+    Layout (see comment block above):
+        byte6 = (scu << 2) | addr[9:8]
+        byte7 = addr[7:0]
     """
-    byte6 = ((address >> 8) & ADDR_HI_MASK) << ADDR_HI_SHIFT | (scu & SCU_MASK)
+    byte6 = ((scu & SCU_MASK) << SCU_SHIFT) | ((address >> 8) & ADDR_HI_MASK)
     byte7 = address & 0xFF
     return byte6, byte7
 
 
 def decode_scu_addr(byte6: int, byte7: int) -> tuple[int, int]:
     """Inverse of :func:`encode_scu_addr` — returns ``(scu, address)``."""
-    scu = byte6 & SCU_MASK
-    address = ((byte6 >> ADDR_HI_SHIFT) & ADDR_HI_MASK) << 8 | byte7
+    scu = (byte6 >> SCU_SHIFT) & SCU_MASK
+    address = ((byte6 & ADDR_HI_MASK) << 8) | byte7
     return scu, address
 
 

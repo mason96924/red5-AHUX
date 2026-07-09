@@ -38,27 +38,42 @@ was for a different device class or a discontinued wire version.
 
 Bytes `[P0, P1, P2]` (relative to the payload — i.e. wire bytes 5, 6, 7)
 together identify **one physical module** on an SCU bus.  Bit layout,
-authoritative:
+authoritative (bit-order corrected 2026-07-09 from vendor capture):
 
 ```
                           bit  7 6 5 4 3 2 1 0
 byte 5 (device_type)      ─── [ D D D D D D D D ]   8 bits, device family code
-byte 6 (SCU + addr high)  ─── [ A A|S S S S S S ]   HIGH 2 bits = addr[9:8]
-                                                    LOW  6 bits = scu (0..63)
+byte 6 (SCU + addr high)  ─── [ S S S S S S|A A ]   HIGH 6 bits = scu (0..63)
+                                                    LOW  2 bits = addr[9:8]
 byte 7 (addr low)         ─── [ A A A A A A A A ]   LOW  8 bits = addr[7:0]
 
-    module_address (10 bit) = ((byte6 >> 6) << 8) | byte7    → 0..1023
-    scu            (6  bit) =   byte6 & 0x3F                 → 0..63
+    scu            (6  bit) =  (byte6 >> 2) & 0x3F              → 0..63
+    module_address (10 bit) =  ((byte6 & 0x03) << 8) | byte7    → 0..1023
 ```
+
+Canonical examples (operator-verified via probe captures):
+
+| scu | address (dec / hex) | byte 6 | byte 7 |
+|-----|--------------------:|:------:|:------:|
+| 0   | 0                   | `0x00` | `0x00` |
+| 0   | 2                   | `0x00` | `0x02` |
+| 0   | 255                 | `0x00` | `0xFF` |
+| 0   | 256                 | `0x01` | `0x00` |
+| 0   | **1023 (0x3FF, broadcast)** | **`0x03`** | **`0xFF`** |
+| 1   | 1023 (broadcast)    | `0x07` | `0xFF` |
+| 3   | 0                   | `0x0C` | `0x00` |
+| 63  | 1023                | `0xFF` | `0xFF` |
 
 Consequences:
 * **64 SCUs max** per controller / bus (6-bit SCU field).
 * **1024 module addresses max** per (SCU, device_type) tuple —
   each device family has its own address space.
-* **Enumeration via PanelInfo** — an operator wanting to discover the
-  full topology of an SCU walks `(device_type, scu, addr)` for every
-  known device family with `addr ∈ [0, 1023]` and issues a `PanelInfo`
-  query; the SCU responds only for populated slots.
+* **Enumeration via PanelInfo broadcast** — set the module address
+  to `0x3FF` and every module of the queried device type responds
+  with its own real address + relay mask.  A full SRM sweep is
+  therefore **two** broadcast queries (`dev_type = 0x14` for 4SRM,
+  `dev_type = 0x15` for both 6SRM and 6ERM — see §2), not a per-
+  address walk of `[0, 1023]`.
 
 ### 1.b. Device family codes to iterate for PanelInfo enumeration
 

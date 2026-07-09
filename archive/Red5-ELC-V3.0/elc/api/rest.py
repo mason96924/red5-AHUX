@@ -173,17 +173,27 @@ def build_router(
         # Physical mode: broadcast PanelInfo to the two SRM device
         # families.  Auto-registration happens downstream when the
         # SCU's RelayStatus responses land in _on_v38_bytes.
+        #
+        # The two queries fire CONCURRENTLY via asyncio.gather() —
+        # same async-fan-out philosophy as broadcast_v38 (operator-
+        # confirmed 2026-02-11).  Each module returns its 0x25
+        # RelayStatus independently and the RX pipeline is safe to
+        # interleave decodes.
         from elc.codec.device_id import DeviceType as _DT
         pre_count = len(replica.all())
-        scanned_types: list[str] = []
-        for dt in (_DT.SRM_4S, _DT.SRM_6S):     # 0x14, 0x15
+        types_to_query = (_DT.SRM_4S, _DT.SRM_6S)   # 0x14, 0x15
+
+        async def _one(dt: DeviceType) -> str | None:
             try:
                 await driver.panel_info(dt, scu=scu)
-                scanned_types.append(f"0x{int(dt):02X}")
-            except Exception:                    # noqa: BLE001
+                return f"0x{int(dt):02X}"
+            except Exception:                        # noqa: BLE001
                 # One family failing (e.g. no 4SRMs on this SCU) is
                 # not fatal -- proceed with the other.
-                pass
+                return None
+
+        results = await asyncio.gather(*[_one(dt) for dt in types_to_query])
+        scanned_types: list[str] = [r for r in results if r]
         # Give the SCU + reader loop a beat to publish per-channel
         # RelayStates so the caller sees fresh state via GET /devices.
         await asyncio.sleep(1.0)
@@ -305,8 +315,16 @@ def build_router(
                     sub_address=0,
                 ))
             if modules:
-                max_ch = max(channel_count_for(m.dev_type) for m in modules)
-                await driver.broadcast_v38(body.state, modules, max_ch)
+                # Per-module channel count (operator-confirmed rule
+                # 2026-02-11): a 4SRM in a mixed 4+6 install still gets
+                # only 4 frames.  Sum is the true frame count on the
+                # wire.  ``broadcast_v38`` now ignores its
+                # ``max_channels`` arg but we keep computing it for
+                # response transparency.
+                per_module = [channel_count_for(m.dev_type) for m in modules]
+                total_frames = sum(per_module)
+                max_ch = max(per_module)
+                await driver.broadcast_v38(body.state, modules)
                 return {
                     "ok": True,
                     "broadcast": True,
@@ -314,7 +332,8 @@ def build_router(
                     "mode": "v38_burst",
                     "modules": len(modules),
                     "max_channels": max_ch,
-                    "frames": len(modules) * max_ch,
+                    "per_module_channels": per_module,
+                    "frames": total_frames,
                 }
             # No known SRM modules yet — surface that to the caller so
             # the operator can hit "Discover SRMs" first instead of

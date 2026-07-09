@@ -17,6 +17,30 @@
 > ```
 > Trim only when the change is purely informational (no code touched).
 
+## V3.0 BROADCAST 0x07 PER-MODULE RULE (DO NOT SKIP — added 2026-02-11)
+> Operator-confirmed protocol for `driver.broadcast_v38`:
+> 1. Wire opcode = `0x07` (RelayOverride), data byte = `0x01` (ON) /
+>    `0x00` (OFF).
+> 2. **PER-MODULE channel count** — each module receives EXACTLY
+>    `channel_count_for(module.dev_type)` frames:
+>      - `SRM_4S` (0x14) → 4 frames
+>      - `SRM_6S` / `SRM_6E` (0x15, shared) → 6 frames
+>    Do NOT use `max(channel_count_for(m.dev_type) for m in modules)` —
+>    that overshoots smaller modules with frames aimed at non-existent
+>    channels.  This was a live bug in the previous fork; operator
+>    flagged it 2026-02-11.
+> 3. All frames across ALL modules dispatch CONCURRENTLY via
+>    `asyncio.gather` on independent one-shot TCP sockets.  No
+>    inter-frame sleep.  No `_v38_write_lock`.
+> 4. Each affected module answers with a single `0x25` RelayStatus
+>    after its relays settle.  Hardware state is source of truth.
+> 5. The same async-fan-out rule applies to discovery:
+>    `POST /api/elc/discover-srms` fires the two family PanelInfo
+>    queries (`0x14` + `0x15`) via `asyncio.gather`, not sequentially.
+>
+> If refactoring, KEEP: per-module inner loop + `asyncio.gather` in
+> both `broadcast_v38` and `discover_srms`.
+
 ## V3.0 DEMO STARTUP RULE (DO NOT SKIP — added 2026-02-11)
 > The operator has repeatedly asked to see the **exact commands** to
 > boot `scripts/demo.py` in both MOCK and PHYSICAL modes, plus the

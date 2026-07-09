@@ -12,10 +12,12 @@ Operator-confirmed protocol (2026-07-25 hardware notes):
 This test pins:
 
   * ``driver.broadcast_v38`` fans out **exactly**
-    ``len(modules) * max_channels`` frames on the wire (one per
-    (module, channel) pair) via *independent, concurrent* TCP
-    sockets — matching "almost simultaneously without waiting for
-    the RX".
+    ``sum(channel_count_for(m.dev_type) for m in modules)`` frames on
+    the wire (one per (module, channel) pair, per-module count) via
+    *independent, concurrent* TCP sockets — matching "almost
+    simultaneously without waiting for the RX".  A 4SRM in a mixed
+    4+6 install therefore contributes 4 frames, not 6 (operator-
+    confirmed rule 2026-02-11).
   * Every frame is a valid ETLC 0x07 RelayOverride carrying the
     requested state byte (0x01 ON / 0x00 OFF).
   * The frames land on the SCU as **concurrent socket opens**, not
@@ -147,7 +149,11 @@ async def _make_v38_link(port: int) -> ScuLink:
 async def test_broadcast_v38_fires_one_frame_per_module_channel(
     v38_server, state, state_byte,
 ) -> None:
-    """3 modules × max_channels=6  →  18 V3.8 opcode-0x07 frames on wire."""
+    """Mixed 4+6+6 modules  →  16 V3.8 opcode-0x07 frames on wire.
+
+    Operator-confirmed rule (2026-02-11): the 4SRM contributes 4
+    frames, the two 6SRMs contribute 6 each = 4+6+6 = 16.
+    """
     link = await _make_v38_link(v38_server.port)
     driver = SrmDriver(link)
     try:
@@ -156,16 +162,15 @@ async def test_broadcast_v38_fires_one_frame_per_module_channel(
             DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=1, sub_address=0),
             DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0),
         ]
-        max_channels = max(channel_count_for(m.dev_type) for m in modules)
-        assert max_channels == 6
+        expected = sum(channel_count_for(m.dev_type) for m in modules)
+        assert expected == 4 + 6 + 6
 
-        await driver.broadcast_v38(state, modules, max_channels)
+        await driver.broadcast_v38(state, modules)
 
-        # 3 modules × 6 channels = 18 concurrent V3.8 frames on wire.
+        # 4 + 6 + 6 = 16 concurrent V3.8 frames on wire.
         # The persistent ScuLink also holds one silent TCP connection
         # to the server (no bytes ever sent through it), so we count
         # frame-bearing bursts here rather than raw connections.
-        expected = len(modules) * max_channels
         assert len(v38_server.received_bursts) == expected, (
             f"expected {expected} frames, got "
             f"{len(v38_server.received_bursts)}"
@@ -202,13 +207,15 @@ async def test_broadcast_v38_dispatches_concurrently(v38_server) -> None:
         DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=i, sub_address=0)
         for i in range(1, 4)
     ]
-    max_ch = 6
+    # 3 × 6SRM = 18 frames.
+    expected_frames = sum(channel_count_for(m.dev_type) for m in modules)
+    assert expected_frames == 18
     link = await _make_v38_link(v38_server.port)
     driver = SrmDriver(link)
     try:
         loop = asyncio.get_running_loop()
         t0 = loop.time()
-        await driver.broadcast_v38(True, modules, max_ch)
+        await driver.broadcast_v38(True, modules)
         elapsed = loop.time() - t0
 
         # 18 frames.  If serialised behind _v38_write_lock the
@@ -223,8 +230,8 @@ async def test_broadcast_v38_dispatches_concurrently(v38_server) -> None:
         # bursts within ~500ms of the first) — the persistent
         # ScuLink connection is silent and doesn't contribute a
         # burst timestamp here.
-        burst_times = v38_server.connect_times[-(len(modules) * max_ch):]
-        assert len(burst_times) == len(modules) * max_ch
+        burst_times = v38_server.connect_times[-expected_frames:]
+        assert len(burst_times) == expected_frames
         spread = max(burst_times) - min(burst_times)
         assert spread < 0.5, (
             f"connection spread {spread:.3f}s too wide — expected "
@@ -299,15 +306,17 @@ async def test_broadcast_v38_replica_trusts_relaystatus_reply(v38_server) -> Non
 
 
 # ---------------------------------------------------------------------
-# 5) `max_channels=None` auto-computes from the largest module.
+# 5) Frame count uses per-module channel count (NOT max across modules).
+#    Operator-confirmed rule 2026-02-11.
 # ---------------------------------------------------------------------
 
 
-async def test_broadcast_v38_max_channels_defaults_to_widest_module(
+async def test_broadcast_v38_uses_per_module_channel_count(
     v38_server,
 ) -> None:
-    # Mix a 4SRM with a 6SRM — max should snap to 6, and BOTH modules
-    # get 6 sends (the extra 2 on the 4SRM harmlessly overshoot).
+    # Mix a 4SRM with a 6SRM — the 4SRM gets 4 frames, the 6SRM gets 6.
+    # Total on wire = 4 + 6 = 10 frames (NOT 12 as the old "max
+    # channels" rule would have produced).
     modules = [
         DeviceId(dev_type=DeviceType.SRM_4S, scu=0, address=3, sub_address=0),
         DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=1, sub_address=0),
@@ -316,7 +325,6 @@ async def test_broadcast_v38_max_channels_defaults_to_widest_module(
     driver = SrmDriver(link)
     try:
         await driver.broadcast_v38(True, modules)  # no max_channels arg
-        # 2 modules × 6 channels = 12 frames.
-        assert len(v38_server.received_bursts) == 12
+        assert len(v38_server.received_bursts) == 4 + 6
     finally:
         await link.stop()

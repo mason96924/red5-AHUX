@@ -168,6 +168,11 @@
     background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
     transition: border-color .2s, background .2s;
   }
+  /* [hidden] would normally set display:none, but the class rule
+     above wins on specificity — restore the behaviour explicitly so
+     JS can hide the bar via `.hidden = true` when nothing on the
+     canvas is selected (2026-02-11). */
+  .assign-bar[hidden] { display: none; }
   .assign-bar.needs-action {
     border-color: var(--accent);
     background: rgba(217,122,48,0.10);
@@ -609,7 +614,7 @@
   <!-- ============ RIGHT RAIL: FIXTURE INSPECTOR ============ -->
   <aside class="right">
     <h2>SRM Devices <span id="dev-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
-    <div class="assign-bar" data-testid="assign-bar">
+    <div class="assign-bar" data-testid="assign-bar" hidden>
       <div class="assign-count" id="assign-count">0 selected</div>
       <div class="assign-actions">
         <button id="btn-assign-onoff" class="assign-btn onoff"
@@ -1875,6 +1880,12 @@ function toggleSrmSelection(did, additive) {
 function updateAssignBar() {
   const n = state.selectedDeviceIds.size;
   const bar = document.querySelector('.assign-bar');
+  // Hide the whole strip until at least one canvas element is
+  // selected -- operator asked for zero-chrome when nothing is
+  // highlighted (2026-02-11).  The broadcast-bar below remains
+  // visible independently since All On / All Off don't need a
+  // selection.
+  bar.hidden = (n === 0);
   document.getElementById('assign-count').textContent =
     n === 0 ? '0 selected' : `${n} selected`;
   const on = n > 0;

@@ -347,24 +347,31 @@ class SrmDriver(AbstractDevice):
     ) -> None:
         """V3.8 hardware broadcast ALL ON / ALL OFF.
 
-        Operator-confirmed protocol (2026-07-25 hardware capture):
+        Operator-confirmed protocol (2026-07-25 hardware capture,
+        clarified 2026-02-11):
 
         * Wire opcode = ``0x07`` (RelayOverride), data byte = ``0x01``
           (ON) or ``0x00`` (OFF).
-        * For each SRM-family module, fire N frames back-to-back where
-          ``N = max_channels`` — the max channel count across every
-          discovered SRM module (per operator choice: SRM_4S=4,
-          SRM_6S/6E=6, SRM_48S=48).  A 4SRM in a mixed 4+6 install
-          therefore receives 6 sends; the extra two land on non-
-          existent channels and are harmlessly dropped by the module.
-        * All frames are dispatched *concurrently* via
-          ``asyncio.gather`` on independent one-shot TCP sockets so
+        * **Per-module channel count** — each module receives EXACTLY
+          ``channel_count_for(module.dev_type)`` frames.  A 4SRM gets
+          4 sends, a 6-family module (SRM_6S / SRM_6E, shared wire
+          code 0x15) gets 6.  In a mixed 4+6 install this means the
+          4SRM never sees frames aimed at non-existent channels 5-6.
+        * All frames across ALL modules are dispatched *concurrently*
+          via ``asyncio.gather`` on independent one-shot TCP sockets so
           they arrive at the SCU almost simultaneously — the sender
           does NOT wait for individual RX packets between frames.
         * Each affected module answers with a single ``0x25``
           RelayStatus once its relays settle; ``_on_v38_bytes``
           decodes it and the ``Replica`` is updated with the mask the
           hardware actually reports (source of truth = hardware).
+
+        Args:
+            max_channels: **Deprecated / ignored.**  Retained only for
+                backwards compatibility with callers that used to pass
+                the max across modules.  The per-module lookup above
+                supersedes it; this argument no longer influences the
+                frame count.
 
         No-op when ``modules`` is empty so the REST layer can call
         this unconditionally on a freshly-booted SCU with no known
@@ -373,13 +380,17 @@ class SrmDriver(AbstractDevice):
         if not modules:
             log.info("V3.8 broadcast: no modules to target, skipping")
             return
-        if max_channels is None:
-            max_channels = max(
-                channel_count_for(m.dev_type) for m in modules
-            )
+        # ``max_channels`` intentionally ignored -- per-module count is
+        # the operator-confirmed rule (see docstring).  Keep the arg
+        # name so the REST layer + tests can pass it through without
+        # a breaking refactor.
+        _ = max_channels
         frames: list[bytes] = []
+        per_module_counts: list[int] = []
         for module in modules:
-            for ch_idx in range(max_channels):
+            n_ch = channel_count_for(module.dev_type)
+            per_module_counts.append(n_ch)
+            for ch_idx in range(n_ch):
                 per_ch = DeviceId(
                     dev_type=module.dev_type,
                     scu=module.scu,
@@ -392,8 +403,9 @@ class SrmDriver(AbstractDevice):
                     RelayOverrideV38(device=per_ch, state=state).encode()
                 )
         log.info(
-            "V3.8 broadcast %s → %d module(s) × %d ch = %d frames (concurrent)",
-            "ON" if state else "OFF", len(modules), max_channels, len(frames),
+            "V3.8 broadcast %s → %d module(s) [%s] = %d frames (concurrent)",
+            "ON" if state else "OFF", len(modules),
+            "+".join(str(n) for n in per_module_counts), len(frames),
         )
         await self._v38_burst_send(frames)
 

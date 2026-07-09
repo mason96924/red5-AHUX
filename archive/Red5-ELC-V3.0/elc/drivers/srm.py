@@ -145,6 +145,13 @@ class SrmDriver(AbstractDevice):
         about (i.e. every registered device on the same module), so
         the Replica / UI update uniformly.
 
+        Unsolicited RX from a physical wall-switch toggle is also
+        supposed to arrive here (same opcode 0x25, same 12-byte
+        layout).  If the SCU uses a different opcode or length for
+        wall-switch events, we log every candidate frame's opcode +
+        length + payload so a hardware capture can identify the
+        exact byte layout and we can extend the decoder.
+
         Unknown / partial frames are skipped one byte at a time until
         a valid preamble is found.
         """
@@ -158,6 +165,8 @@ class SrmDriver(AbstractDevice):
                 del self._v38_buffer[: -3]
                 return
             if idx > 0:
+                log.info("V3.8 RX skipping %d pre-preamble byte(s): %s",
+                         idx, bytes(self._v38_buffer[:idx]).hex())
                 del self._v38_buffer[:idx]
             if len(self._v38_buffer) < FRAME_LEN:
                 return
@@ -165,12 +174,56 @@ class SrmDriver(AbstractDevice):
             status = RelayStatusV38.try_decode(candidate)
             if status is not None:
                 del self._v38_buffer[:FRAME_LEN]
+                log.info(
+                    "V3.8 RX decoded RelayStatus dev_type=0x%02X scu=%d "
+                    "addr=%d mask=0x%02X",
+                    int(status.device.dev_type),
+                    status.device.scu, status.device.address,
+                    status.state_mask,
+                )
                 await self._fan_out_status(status)
                 continue
-            # 12 bytes starting with preamble but not a RelayStatus we
-            # know (could be a different opcode we haven't wired yet
-            # -- fail report, dali, dsw).  Skip preamble and scan on.
+            # 12 bytes starting with a preamble but not decodable as a
+            # RelayStatus we know.  Dump every byte + interpret the
+            # ETLC header fields so a physical wall-switch capture can
+            # be turned into a new opcode handler in one edit.
+            #
+            # This is intentionally noisy (WARNING) so it surfaces in
+            # the operator's logs — every unhandled unsolicited frame
+            # is a wall-switch event we're currently blind to.
+            self._log_unknown_v38_frame(candidate)
             del self._v38_buffer[:1]
+
+    def _log_unknown_v38_frame(self, frame: bytes) -> None:
+        """Loud, structured log for a 12-byte frame we couldn't decode.
+
+        Called from :meth:`_on_v38_bytes` whenever ``RelayStatusV38.
+        try_decode`` returns ``None`` even though the frame has a
+        valid preamble.  Includes opcode, length byte, payload, and
+        checksum-match status so a hardware capture is directly
+        actionable — no re-run of ``probe-v38.py`` needed.
+        """
+        from elc.codec.etlc38 import (
+            TYPE_WRAP as _TW, RX_FRAME_LEN as _RXL, checksum as _cs,
+        )
+        if len(frame) != _RXL:
+            return
+        type_byte = frame[3]
+        len_byte = frame[4]
+        payload = frame[5:11]
+        cs_byte = frame[11]
+        cs_calc = _cs(payload)
+        opcode = payload[4] if len(payload) >= 5 else None
+        log.warning(
+            "V3.8 RX UNKNOWN 12-byte frame: %s  |  type=0x%02X "
+            "len=%d opcode=0x%s payload=%s cs=0x%02X calc=0x%02X %s",
+            frame.hex(),
+            type_byte, len_byte,
+            f"{opcode:02X}" if opcode is not None else "??",
+            payload.hex(),
+            cs_byte, cs_calc,
+            "OK" if cs_byte == cs_calc and type_byte == _TW else "MISMATCH",
+        )
 
     async def _fan_out_status(self, status: RelayStatusV38) -> None:
         """Emit one RelayState per channel implied by the module bitmask.

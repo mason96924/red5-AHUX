@@ -1267,9 +1267,32 @@ function openModuleModal(key) {
 
 function closeModuleModal() {
   state.moduleModal = null;
-  document.getElementById('module-modal').classList.remove('open');
+  const back = document.getElementById('module-modal');
+  back.classList.remove('open');
+  // Defensive: clear any stuck drag transparency in case dragend never
+  // fired (e.g. the operator dropped on an invalid target while the
+  // browser was mid-throttle).  Without this, the panel could re-open
+  // at 35% opacity next time.
+  back.classList.remove('dragging');
+  // Reset the panel's inline position styles set by _makePanelDraggable
+  // so the next open lands centred again instead of stuck at
+  // whichever coord the operator last dragged to.  Keeps the "come
+  // back to overview" behaviour predictable.
+  const panel = back.querySelector('.mm-panel');
+  if (panel) {
+    panel.style.position = '';
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.margin = '';
+  }
   _syncModuleModalUrl();
   renderSrmGrid();  // clear the .opened highlight
+  // Bring the module overview back into view — matters on narrow
+  // viewports where the right rail may have scrolled.
+  const grid = document.getElementById('srm-grid');
+  if (grid && typeof grid.scrollIntoView === 'function') {
+    grid.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 }
 
 function _syncModuleModalUrl() {
@@ -3814,7 +3837,16 @@ function openFloorModal() {
   _makePanelDraggable(back.querySelector('.mm-panel'));
 }
 function closeFloorModal() {
-  document.getElementById('floor-modal').classList.remove('open');
+  const back = document.getElementById('floor-modal');
+  back.classList.remove('open');
+  back.classList.remove('dragging');
+  const panel = back.querySelector('.mm-panel');
+  if (panel) {
+    panel.style.position = '';
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.margin = '';
+  }
 }
 document.getElementById('btn-floor-details').onclick = openFloorModal;
 document.getElementById('fm-close').onclick = closeFloorModal;
@@ -3832,7 +3864,16 @@ function openScheduleModal() {
   _makePanelDraggable(back.querySelector('.mm-panel'));
 }
 function closeScheduleModal() {
-  document.getElementById('sched-modal').classList.remove('open');
+  const back = document.getElementById('sched-modal');
+  back.classList.remove('open');
+  back.classList.remove('dragging');
+  const panel = back.querySelector('.mm-panel');
+  if (panel) {
+    panel.style.position = '';
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.margin = '';
+  }
 }
 document.getElementById('btn-schedules').onclick = openScheduleModal;
 document.getElementById('sm-close').onclick = closeScheduleModal;

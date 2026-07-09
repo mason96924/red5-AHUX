@@ -40,6 +40,10 @@ and a channel-detail modal.
 - [x] Property editor (`type`, `max_lux`, `beam_radius`, `cct_k`,
       `shape`, `tube_type`) now lives inside the modal, applying
       to the current selection via bulk-assign + PUT.
+- [x] **Copy from…** dropdown at the top of the property editor —
+      grouped by module, pre-fills every field from an existing
+      assigned channel (any module, any floor).  Turns "make these 8
+      match that one" into two clicks.
 - [x] Auto-drop unplaced channels at a small grid inside the current
       floor's 10% inset on "Apply" — operator can multi-select N
       channels and see them all on the plan in one go.

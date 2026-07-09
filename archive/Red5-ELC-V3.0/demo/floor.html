@@ -681,6 +681,12 @@
       <!-- Property editor (visible only in multi-select mode) -->
       <div class="mm-props" id="mm-props"
            data-testid="mm-props" style="display:none">
+        <label>Copy from</label>
+        <select id="mm-copy-from" data-testid="mm-copy-from"
+                style="grid-column: 2 / -1"
+                title="Pre-fill every field below from an already-assigned channel">
+          <option value="">— pick a template channel —</option>
+        </select>
         <label>Type</label>
         <select id="mm-type" data-testid="mm-type">
           <option value="onoff">On/Off relay</option>
@@ -1130,6 +1136,7 @@ function openModuleModal(key) {
     `${parts[0]} · SCU ${parts[1]} · Addr ${parts[2]} · ${chs.length} ch`;
   document.getElementById('module-modal').classList.add('open');
   _syncModuleModalUrl();
+  _mmPopulateCopyFrom(key);
   _mmPrefillProps(chs);
   renderModuleModal();
 }
@@ -1176,6 +1183,60 @@ function _mmPrefillProps(chs) {
       document.getElementById('mm-tube').value = el.tube_type || 'none';
       return;
     }
+  }
+}
+
+// Rebuild the "Copy from…" dropdown from every currently-assigned
+// lighting element (any module, any floor).  Grouped by (family, scu,
+// addr) so the option list scans naturally as the operator hunts for
+// a template channel.  The current module is excluded from the list
+// — copying "from itself" would be a no-op.
+function _mmPopulateCopyFrom(currentKey) {
+  const sel = document.getElementById('mm-copy-from');
+  if (!sel) return;
+  // Reset (keep the placeholder option only).
+  sel.innerHTML = '<option value="">— pick a template channel —</option>';
+  const entries = [];
+  for (const [did, el] of state.lightingElements.entries()) {
+    const p = String(did).split('/');
+    if (p.length !== 4) continue;
+    const modKey = `${p[0]}/${p[1]}/${p[2]}`;
+    if (modKey === currentKey) continue;   // skip current module
+    entries.push({ did, el, modKey, sub: parseInt(p[3], 10) || 0 });
+  }
+  entries.sort((a, b) => {
+    if (a.modKey !== b.modKey) return a.modKey.localeCompare(b.modKey);
+    return a.sub - b.sub;
+  });
+  if (entries.length === 0) {
+    sel.disabled = true;
+    sel.title = 'No other assigned channels to copy from yet';
+    return;
+  }
+  sel.disabled = false;
+  sel.title = 'Pre-fill every field below from an already-assigned channel';
+  let lastGroup = null;
+  let currentGroup = null;
+  for (const { did, el, modKey } of entries) {
+    if (modKey !== lastGroup) {
+      currentGroup = document.createElement('optgroup');
+      currentGroup.label = modKey;
+      sel.appendChild(currentGroup);
+      lastGroup = modKey;
+    }
+    const chNum = did.split('/')[3];
+    const summary = [
+      el.type === 'dimmer_0_10v' ? '0-10V' : 'On/Off',
+      `${el.max_lux ?? 500}lx`,
+      `${el.beam_radius_m ?? 4}m`,
+      `${el.cct_k ?? 4000}K`,
+      el.shape || 'point',
+      (el.tube_type && el.tube_type !== 'none') ? el.tube_type : null,
+    ].filter(Boolean).join(' · ');
+    const opt = document.createElement('option');
+    opt.value = did;
+    opt.textContent = `ch ${chNum} — ${summary}`;
+    currentGroup.appendChild(opt);
   }
 }
 
@@ -1395,6 +1456,21 @@ document.getElementById('mm-batch-on').onclick    = () => _mmBatchRelay(true);
 document.getElementById('mm-batch-off').onclick   = () => _mmBatchRelay(false);
 document.getElementById('mm-batch-clear').onclick = _mmBatchClear;
 document.getElementById('mm-apply').onclick       = _mmApplyProps;
+document.getElementById('mm-copy-from').addEventListener('change', (ev) => {
+  const did = ev.target.value;
+  if (!did) return;
+  const el = state.lightingElements.get(did);
+  if (!el) return;
+  document.getElementById('mm-type').value  = el.type || 'onoff';
+  document.getElementById('mm-lux').value   = el.max_lux ?? 500;
+  document.getElementById('mm-beam').value  = el.beam_radius_m ?? 4;
+  document.getElementById('mm-cct').value   = el.cct_k ?? 4000;
+  document.getElementById('mm-shape').value = el.shape || 'point';
+  document.getElementById('mm-tube').value  = el.tube_type || 'none';
+  toast(`Copied properties from ${did}`);
+  // Reset the picker so the same choice can be re-applied later.
+  ev.target.value = '';
+});
 
 // Restore modal from ?module=... on load — deferred until after the
 // initial device inventory refresh has populated state.devices.

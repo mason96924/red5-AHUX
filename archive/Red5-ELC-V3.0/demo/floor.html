@@ -66,96 +66,115 @@
     color: var(--muted); margin: 8px 0 10px;
   }
 
-  /* ---- LHS Floor Select real-estate (2026-02-11) --------------------
-     Two sub-panels stacked left|right inside a narrow column carved
-     out of the canvas area:
-       (a) Building side-view -- stacked floor strips, each strip = one
-           floor.  Selected floor tinted purple; click to select,
-           the ⤴ button on the strip imports a DXF for that floor.
-       (b) 2.5D isometric image slot -- optional decorative view of
-           the building the operator can import.  Persisted as a
-           data URL in localStorage under 'elc.floor.building_image'
-           so it survives reloads on the same browser.
-  --------------------------------------------------------------------- */
+  /* ---- LHS Floor Select real-estate (2026-02-11 v2) -----------------
+     Single column with an interactive 2.5D building side-view.  Each
+     discovered floor becomes a clickable overlay strip on the image,
+     bottom-up (ground floor at the bottom).  Selected floor gets a
+     purple outline; click = select + open floor-details modal;
+     hover exposes a ⤴ button to import a DXF into a new floor.
+     Rejected the earlier two-column split (strips + separate image)
+     -- operator asked for a single column with overlays on 2026-02-11. */
   aside.floor-select {
     background: var(--panel);
     border-right: 1px solid var(--line);
-    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    display: flex; flex-direction: column; gap: 8px;
     padding: 10px 8px; overflow: hidden;
-  }
-  aside.floor-select .fs-col {
-    display: flex; flex-direction: column; min-height: 0; gap: 6px;
   }
   aside.floor-select .fs-head {
     color: var(--muted); font-size: 9.5px; letter-spacing: .12em;
-    text-transform: uppercase; margin-bottom: 2px;
+    text-transform: uppercase;
     display: flex; justify-content: space-between; align-items: center;
+    flex: 0 0 auto;
   }
+  aside.floor-select .fs-head .fs-actions { display: flex; gap: 4px; }
   aside.floor-select .fs-head button {
     background: transparent; border: 1px solid var(--line); color: var(--muted);
     font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer;
     text-transform: none; letter-spacing: 0;
   }
-  aside.floor-select .fs-head button:hover { color: var(--text); border-color: var(--accent); }
-  .building-view {
-    display: flex; flex-direction: column-reverse;
-    gap: 3px; overflow: auto; padding: 4px 0;
-    background: linear-gradient(180deg, rgba(90,113,140,0.08), transparent 40%);
-    border: 1px dashed #2a3340; border-radius: 5px;
-    flex: 1; min-height: 0;
+  aside.floor-select .fs-head button:hover {
+    color: var(--text); border-color: var(--accent);
   }
-  .building-view .floor-strip {
-    position: relative; padding: 6px 8px; min-height: 26px;
-    background: #10151c; border: 1px solid var(--line); border-radius: 4px;
-    color: var(--muted); font-family: var(--mono); font-size: 10.5px;
-    display: flex; align-items: center; justify-content: space-between;
-    cursor: pointer; user-select: none;
-    transition: background .1s, border-color .1s, color .1s;
-  }
-  .building-view .floor-strip:hover { border-color: #3a4552; color: var(--text); }
-  .building-view .floor-strip.selected {
-    background: linear-gradient(180deg, rgba(192,132,252,0.28), rgba(192,132,252,0.10));
-    border-color: #c084fc; color: #f2e6ff;
-    box-shadow: 0 0 0 1px rgba(192,132,252,0.35), 0 0 8px rgba(192,132,252,0.20);
-  }
-  .building-view .floor-strip .fs-name {
-    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .building-view .floor-strip .fs-has-dxf { color: var(--ok); font-size: 8px; margin-right: 3px; }
-  .building-view .floor-strip .fs-import {
-    background: transparent; border: none; color: var(--muted);
-    cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
-    opacity: 0; transition: opacity .1s;
-  }
-  .building-view .floor-strip:hover .fs-import,
-  .building-view .floor-strip.selected .fs-import { opacity: 1; }
-  .building-view .floor-strip .fs-import:hover { color: var(--accent); }
-  .building-view .fs-empty {
-    color: #4a5361; text-align: center; padding: 10px 8px;
-    font-size: 10.5px; font-style: italic;
-  }
-  .building-image {
-    flex: 1; min-height: 0;
+
+  /* Wrapper that hosts the 2.5D image + all floor-overlay boxes. */
+  .building-2d5 {
+    position: relative; flex: 1; min-height: 0;
     border: 1px dashed #2a3340; border-radius: 5px;
     background: #10151c;
     display: flex; align-items: center; justify-content: center;
-    overflow: hidden; position: relative; cursor: pointer;
+    overflow: hidden;
   }
-  .building-image:hover { border-color: var(--accent); }
-  .building-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .building-image .bi-empty {
+  .building-2d5:hover { border-color: #3a4552; }
+  .building-2d5 .b25-canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    padding: 8px;
+  }
+  .building-2d5 .b25-canvas svg,
+  .building-2d5 .b25-canvas img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 0 4px rgba(0,0,0,0.4));
+  }
+
+  /* Overlay strips -- position absolute, stacked bottom-up (i.e. floor
+     0 is at the bottom of the wrapper).  Container height gets divided
+     evenly across N floors. */
+  .building-2d5 .floor-overlays {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column-reverse;
+    pointer-events: none;    /* individual strips re-enable */
+  }
+  .building-2d5 .fo-strip {
+    flex: 1; min-height: 0;
+    pointer-events: auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 8px; margin: 1px 4px;
+    border: 1px solid rgba(255,255,255,0.10); border-radius: 3px;
+    background: rgba(0,0,0,0.25);
+    color: rgba(226, 232, 240, 0.75);
+    font-family: var(--mono); font-size: 10px;
+    cursor: pointer; user-select: none;
+    backdrop-filter: blur(1px);
+    transition: background .12s, border-color .12s, color .12s, transform .12s;
+  }
+  .building-2d5 .fo-strip:hover {
+    background: rgba(0,0,0,0.55);
+    border-color: rgba(255,255,255,0.35);
+    color: var(--text);
+  }
+  .building-2d5 .fo-strip.selected {
+    background: rgba(192,132,252,0.30);
+    border-color: #c084fc;
+    color: #fff;
+    box-shadow: 0 0 0 2px rgba(192,132,252,0.35),
+                0 0 14px rgba(192,132,252,0.32);
+    transform: scale(1.01);
+  }
+  .building-2d5 .fo-strip .fo-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .building-2d5 .fo-strip .fo-import {
+    background: transparent; border: none; color: inherit;
+    cursor: pointer; padding: 0 4px; font-size: 12px; line-height: 1;
+    opacity: 0.7;
+  }
+  .building-2d5 .fo-strip .fo-import:hover { color: var(--accent); }
+  .building-2d5 .b25-empty {
     color: var(--muted); font-size: 10px; text-align: center;
-    padding: 12px 8px; line-height: 1.4;
+    padding: 20px 12px; line-height: 1.5; pointer-events: none;
   }
-  .building-image .bi-empty b { color: var(--text); }
-  .building-image .bi-clear {
+  .building-2d5 .b25-empty b { color: var(--text); }
+  .building-2d5 .b25-clear {
     position: absolute; top: 4px; right: 4px;
     background: rgba(0,0,0,0.55); border: 1px solid var(--line);
     color: var(--muted); font-size: 10px; padding: 2px 6px;
-    border-radius: 3px; cursor: pointer; opacity: 0; transition: opacity .1s;
+    border-radius: 3px; cursor: pointer; opacity: 0;
+    transition: opacity .1s; z-index: 5;
   }
-  .building-image:hover .bi-clear { opacity: 1; }
-  .building-image .bi-clear:hover { color: var(--bad); border-color: var(--bad); }
+  .building-2d5:hover .b25-clear { opacity: 1; }
+  .building-2d5 .b25-clear:hover { color: var(--bad); border-color: var(--bad); }
 
   /* Floor list rows in the left rail */
   .floor-row {
@@ -521,13 +540,6 @@
         <option value="">— pick a floor —</option>
       </select>
     </label>
-    <!-- Details opens the floor properties + DXF import modal.
-         Only enabled when a floor is currently selected. -->
-    <button id="btn-floor-details" class="ghost"
-            data-testid="floor-details-btn" disabled
-            title="Edit the selected floor's name, dimensions, or import a DXF">
-      Details
-    </button>
     <!-- Schedules opens the schedule-assignment editor (formerly at
          /editor) as an iframe modal, so operators never leave the
          floor page to bind schedules to groups. -->
@@ -692,36 +704,28 @@
 <main>
   <!-- ============ LEFT: FLOOR SELECT REAL ESTATE ============ -->
   <aside class="floor-select" data-testid="floor-select-panel">
-    <div class="fs-col">
-      <div class="fs-head">
-        <span>Building</span>
+    <div class="fs-head">
+      <span>Building</span>
+      <span class="fs-actions">
         <button id="fs-add-floor" title="Add a new floor"
                 data-testid="fs-add-floor">＋ Floor</button>
-      </div>
-      <div id="building-view" class="building-view"
-           data-testid="building-view">
-        <div class="fs-empty">No floors yet</div>
-      </div>
-      <!-- Hidden DXF file input used by the ⤴ button on each strip.
-           Assigned a data-target-floor-id when the strip is clicked. -->
-      <input type="file" id="fs-dxf-file" accept=".dxf" hidden
-             data-testid="fs-dxf-input" />
-    </div>
-    <div class="fs-col">
-      <div class="fs-head">
-        <span>2.5D view</span>
         <button id="bi-import" title="Import a 2.5D isometric image of the building"
-                data-testid="bi-import">⤴ Import</button>
-      </div>
-      <div id="building-image" class="building-image"
-           data-testid="building-image" title="Click to import an image">
-        <div class="bi-empty">
-          Click to import a<br><b>2.5D isometric</b> image<br>of the building.
-        </div>
-      </div>
-      <input type="file" id="bi-file" accept="image/*" hidden
-             data-testid="bi-file-input" />
+                data-testid="bi-import">⤴ Image</button>
+      </span>
     </div>
+    <!-- Interactive 2.5D building.  Contains:
+         (1) `.b25-canvas` — the image / default SVG (isometric side-view).
+         (2) `.floor-overlays` — one clickable div per floor stacked
+             bottom-up (ground at physical bottom).  Selected floor
+             gets the purple outline; click = select + open details;
+             ⤴ per-strip = import DXF as a new floor.
+    -->
+    <div id="building-2d5" class="building-2d5" data-testid="building-2d5">
+      <div class="b25-canvas" id="b25-canvas"></div>
+      <div class="floor-overlays" id="floor-overlays"></div>
+    </div>
+    <input type="file" id="bi-file" accept="image/*" hidden
+           data-testid="bi-file-input" />
   </aside>
 
   <!-- ============ CENTER: STAGE + CANVAS ============ -->
@@ -1094,108 +1098,185 @@ function renderFloorList() {
   newOpt.dataset.testid = 'floor-opt-new';
   picker.appendChild(newOpt);
   picker.value = prev;
-  // Enable/disable the Details button based on whether a floor is loaded.
-  const dbtn = document.getElementById('btn-floor-details');
-  if (dbtn) dbtn.disabled = !state.currentFloor;
   // Also refresh the LHS Building side-view whenever the floor list
   // is redrawn -- keeps the strip highlight in sync with the current
   // floor selection.
   renderBuildingView();
 }
 
-// ---- LHS Building side-view -------------------------------------------
-// Stacked strips (one per floor).  The stripe order follows the
-// name-suffix number if we can parse one out of the floor name
-// ("Ground", "L1", "2F", "Level 3", etc.); otherwise falls back to
-// creation order.  Bottom of the stack = ground floor because the
-// column uses `flex-direction: column-reverse`.
+// ---- LHS 2.5D Building side-view (2026-02-11 v2) --------------------
+// Single-column layout with an interactive 2.5D building image plus
+// clickable floor overlays stacked bottom-up on top of it.  Selected
+// floor gets a purple outline; click = select + open floor-details
+// modal; ⤴ per-overlay imports a DXF as a new floor.
+//
+// Data-URL image (imported by the operator) is persisted in
+// localStorage under BI_LS_KEY.  Absent = show the default inline
+// SVG so the panel never looks empty.
+const BI_LS_KEY = 'elc.floor.building_image';
+
+// A pleasant default 2.5D silhouette of a mid-rise building.  Renders
+// crisply at any size (SVG), so no need to bundle a stock photo.  The
+// building has intentionally floor-agnostic geometry -- floor
+// overlays are laid on top by JS.  Operators who want a real photo
+// can hit "⤴ Image".
+const DEFAULT_BUILDING_SVG = `
+  <svg viewBox="0 0 220 320" xmlns="http://www.w3.org/2000/svg"
+       preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <linearGradient id="wall" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#2b3644"/>
+        <stop offset="1" stop-color="#1a2129"/>
+      </linearGradient>
+      <linearGradient id="side" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#1a2129"/>
+        <stop offset="1" stop-color="#0e131a"/>
+      </linearGradient>
+      <linearGradient id="glass" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0" stop-color="#5a7a9c" stop-opacity="0.55"/>
+        <stop offset="1" stop-color="#3a5570" stop-opacity="0.35"/>
+      </linearGradient>
+    </defs>
+    <!-- Ground -->
+    <path d="M8 300 L40 288 L212 288 L180 300 Z" fill="#0c1116"
+          stroke="#243040" stroke-width="0.6"/>
+    <!-- Side wall (3D depth) -->
+    <path d="M40 40 L60 30 L60 288 L40 300 Z" fill="url(#side)"
+          stroke="#3a4658" stroke-width="0.6"/>
+    <!-- Roof -->
+    <path d="M40 40 L60 30 L200 30 L180 40 Z" fill="#1a2129"
+          stroke="#3a4658" stroke-width="0.6"/>
+    <!-- Front facade -->
+    <rect x="40" y="40" width="140" height="260" fill="url(#wall)"
+          stroke="#3a4658" stroke-width="0.6"/>
+    <!-- Windows (a reasonable-looking grid, deliberately not aligned
+         to overlay strips so operators know overlays are logical
+         floors, not image-anchored). -->
+    <g fill="url(#glass)" stroke="#4a637d" stroke-width="0.4">
+      <rect x="52" y="52"  width="20" height="26" rx="1"/>
+      <rect x="80" y="52"  width="20" height="26" rx="1"/>
+      <rect x="108" y="52" width="20" height="26" rx="1"/>
+      <rect x="136" y="52" width="20" height="26" rx="1"/>
+      <rect x="52" y="92"  width="20" height="26" rx="1"/>
+      <rect x="80" y="92"  width="20" height="26" rx="1"/>
+      <rect x="108" y="92" width="20" height="26" rx="1"/>
+      <rect x="136" y="92" width="20" height="26" rx="1"/>
+      <rect x="52" y="132" width="20" height="26" rx="1"/>
+      <rect x="80" y="132" width="20" height="26" rx="1"/>
+      <rect x="108" y="132" width="20" height="26" rx="1"/>
+      <rect x="136" y="132" width="20" height="26" rx="1"/>
+      <rect x="52" y="172" width="20" height="26" rx="1"/>
+      <rect x="80" y="172" width="20" height="26" rx="1"/>
+      <rect x="108" y="172" width="20" height="26" rx="1"/>
+      <rect x="136" y="172" width="20" height="26" rx="1"/>
+      <rect x="52" y="212" width="20" height="26" rx="1"/>
+      <rect x="80" y="212" width="20" height="26" rx="1"/>
+      <rect x="108" y="212" width="20" height="26" rx="1"/>
+      <rect x="136" y="212" width="20" height="26" rx="1"/>
+      <!-- Ground floor -- taller windows / lobby -->
+      <rect x="52" y="252" width="26" height="38" rx="1"/>
+      <rect x="86" y="252" width="26" height="38" rx="1"/>
+      <rect x="120" y="252" width="26" height="38" rx="1"/>
+      <rect x="150" y="252" width="16" height="38" rx="1"/>
+    </g>
+    <!-- Entrance door -->
+    <rect x="94" y="270" width="16" height="20" rx="1"
+          fill="#0c1116" stroke="#4a637d" stroke-width="0.4"/>
+  </svg>`;
+
 function _floorSortKey(f) {
-  // Extract the first integer we find in the name.  Names like
-  // "Ground floor" (no digit) sort as 0.
+  // Extract the first integer we find in the name.
   const m = String(f.name || '').match(/-?\d+/);
   return m ? parseInt(m[0], 10) : 0;
 }
 
+function _renderBuildingCanvas() {
+  const canvas = document.getElementById('b25-canvas');
+  if (!canvas) return;
+  const dataUrl = localStorage.getItem(BI_LS_KEY);
+  if (dataUrl) {
+    canvas.innerHTML =
+      `<img src="${dataUrl}" alt="Imported 2.5D building view" />`;
+    // Show a small × to clear the imported image (returns to default SVG).
+    const wrap = document.getElementById('building-2d5');
+    let clr = wrap.querySelector('.b25-clear');
+    if (!clr) {
+      clr = document.createElement('button');
+      clr.className = 'b25-clear';
+      clr.dataset.testid = 'b25-clear';
+      clr.title = 'Remove imported image';
+      clr.textContent = '×';
+      clr.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        localStorage.removeItem(BI_LS_KEY);
+        _renderBuildingCanvas();
+      });
+      wrap.appendChild(clr);
+    }
+  } else {
+    canvas.innerHTML = DEFAULT_BUILDING_SVG;
+    const wrap = document.getElementById('building-2d5');
+    const clr = wrap.querySelector('.b25-clear');
+    if (clr) clr.remove();
+  }
+}
+
 function renderBuildingView() {
-  const host = document.getElementById('building-view');
-  if (!host) return;
+  const overlays = document.getElementById('floor-overlays');
+  if (!overlays) return;
   const selId = state.currentFloor ? state.currentFloor.id : null;
   if (!state.floors.length) {
-    host.innerHTML = `<div class="fs-empty">
-      No floors yet.<br>Click <b>＋ Floor</b><br>or import a DXF.
+    overlays.innerHTML = `<div class="b25-empty">
+      No floors yet.<br>Click <b>＋ Floor</b> above<br>to create one.
     </div>`;
     return;
   }
-  // Sort by parsed level number ascending; the column-reverse in CSS
-  // then places higher numbers visually on top.
+  // Sort ascending by parsed level number so column-reverse renders
+  // low floors visually at the bottom.
   const sorted = [...state.floors].sort(
     (a, b) => _floorSortKey(a) - _floorSortKey(b)
   );
-  host.innerHTML = '';
+  overlays.innerHTML = '';
   for (const f of sorted) {
     const strip = document.createElement('div');
-    strip.className = 'floor-strip' + (f.id === selId ? ' selected' : '');
+    strip.className = 'fo-strip' + (f.id === selId ? ' selected' : '');
     strip.dataset.floorId = f.id;
-    strip.dataset.testid = `floor-strip-${f.name}`;
-    // Presence-of-DXF indicator: we treat any floor whose bg_image /
-    // dxf is populated as "has geometry".  The floor list endpoint
-    // doesn't expose that directly today, so use a heuristic: if the
-    // floor row carries a non-default background hint (dxf_scaled or
-    // similar) show a ✓; otherwise leave blank.  Cheap for the demo.
-    const hasDxf = !!(f.bg_image || f.dxf_path || f.has_dxf);
+    strip.dataset.testid = `floor-overlay-${f.name}`;
     strip.innerHTML = `
-      <span class="fs-name" title="${escapeHtml(f.name)}">
-        ${hasDxf ? '<span class="fs-has-dxf">●</span>' : ''}${escapeHtml(f.name)}
+      <span class="fo-name" title="${escapeHtml(f.name)}">
+        ${escapeHtml(f.name)}
       </span>
-      <button class="fs-import"
-              title="Import a DXF as a new floor (uses this strip's name as a hint)"
-              data-testid="fs-import-${f.name}">⤴</button>`;
-    strip.addEventListener('click', (ev) => {
-      if (ev.target.closest('.fs-import')) return;
-      selectFloor(f.id);
+      <button class="fo-import"
+              title="Import a DXF as a new floor"
+              data-testid="floor-overlay-import-${f.name}">⤴</button>`;
+    // Click on strip (not the ⤴ button) = select floor + open detail.
+    strip.addEventListener('click', async (ev) => {
+      if (ev.target.closest('.fo-import')) return;
+      if (f.id !== selId) {
+        await selectFloor(f.id);
+      }
+      if (typeof openFloorModal === 'function') openFloorModal();
     });
-    strip.querySelector('.fs-import').addEventListener('click', (ev) => {
+    strip.querySelector('.fo-import').addEventListener('click', (ev) => {
       ev.stopPropagation();
-      // Reuse the existing hidden DXF file input on the toolbar --
-      // its onchange handler already runs the /floors/import-dxf
-      // flow and refreshes the list.
+      // Reuse the existing hidden DXF input -- its onchange handler
+      // runs the /floors/import-dxf flow and refreshes the list.
       const inp = document.getElementById('dxf-input');
       if (inp) inp.click();
       else toast('DXF import unavailable — hidden file input missing', true);
     });
-    host.appendChild(strip);
+    overlays.appendChild(strip);
   }
 }
 
-// ---- 2.5D building image slot ------------------------------------------
-// Purely UI-side for now: file → data URL → localStorage → <img>.
-// Kept small (< 4 MB) because localStorage tops out around 5-10 MB.
-const BI_LS_KEY = 'elc.floor.building_image';
-function _restoreBuildingImage() {
-  const host = document.getElementById('building-image');
-  if (!host) return;
-  const dataUrl = localStorage.getItem(BI_LS_KEY);
-  if (!dataUrl) return;
-  host.innerHTML = `
-    <img src="${dataUrl}" alt="Building 2.5D view" />
-    <button class="bi-clear" title="Remove the imported image"
-            data-testid="bi-clear">×</button>`;
-  host.querySelector('.bi-clear').addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    localStorage.removeItem(BI_LS_KEY);
-    host.innerHTML = `<div class="bi-empty">
-      Click to import a<br><b>2.5D isometric</b> image<br>of the building.
-    </div>`;
-  });
-}
+// ---- 2.5D image import (data URL in localStorage) --------------------
 function _initBuildingImageSlot() {
-  const host = document.getElementById('building-image');
   const importBtn = document.getElementById('bi-import');
   const fileInp = document.getElementById('bi-file');
-  if (!host || !fileInp) return;
-  const openPicker = (ev) => { ev.stopPropagation(); fileInp.click(); };
-  host.addEventListener('click', openPicker);
-  if (importBtn) importBtn.addEventListener('click', openPicker);
+  if (!fileInp) return;
+  if (importBtn) {
+    importBtn.addEventListener('click', () => fileInp.click());
+  }
   fileInp.addEventListener('change', () => {
     const f = fileInp.files && fileInp.files[0];
     if (!f) return;
@@ -1208,7 +1289,7 @@ function _initBuildingImageSlot() {
     reader.onload = () => {
       try {
         localStorage.setItem(BI_LS_KEY, reader.result);
-        _restoreBuildingImage();
+        _renderBuildingCanvas();
       } catch (e) {
         toast('Could not save image (localStorage full?)', true);
       }
@@ -1227,11 +1308,11 @@ document.getElementById('fs-add-floor').addEventListener('click', () => {
   picker.dispatchEvent(new Event('change'));
 });
 
-// Boot the LHS panel once the DOM is ready.  refreshFloors() (which is
-// called at page boot -- see the very bottom of this script) triggers
-// renderFloorList which in turn calls renderBuildingView, so the
-// strips will populate as soon as the floors are fetched.
-_restoreBuildingImage();
+// Boot the LHS panel: draw the default SVG (or restore imported image)
+// and wire the image-import file input.  refreshFloors() (at page
+// boot) then triggers renderBuildingView() so overlays layer on top
+// once the floor list arrives.
+_renderBuildingCanvas();
 _initBuildingImageSlot();
 
 // Backwards-compat: legacy polylines had their anchor pinned to
@@ -4204,7 +4285,9 @@ function closeFloorModal() {
     panel.style.margin = '';
   }
 }
-document.getElementById('btn-floor-details').onclick = openFloorModal;
+// The Details button was removed 2026-02-11 -- floor properties are
+// now opened by clicking a floor overlay on the LHS 2.5D building view.
+// The openFloorModal function is still called from that path.
 document.getElementById('fm-close').onclick = closeFloorModal;
 document.getElementById('floor-modal').addEventListener('click', (ev) => {
   if (ev.target.id === 'floor-modal') closeFloorModal();

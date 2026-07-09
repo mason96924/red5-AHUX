@@ -111,6 +111,41 @@ def build_router(
         registered = await replica.register(dev)
         return {"ok": True, "device": str(dev), "registered": registered}
 
+    @router.post("/discover-srms")
+    async def discover_srms() -> dict[str, Any]:
+        """Discover the SCU's SRM-family channels and register them.
+
+        Today this walks the advertised inventory (``ELC_DEVICES_JSON``
+        in physical mode, or the built-in mock grid otherwise),
+        **filtered to the SRM device family only** (``SRM``, ``SRM_4S``,
+        ``SRM_6S``, ``SRM_6E`` / ``SRM_ERM`` / ``SRM_4E``, ``SRM_48S``).
+        Every matching channel is registered in the replica without
+        firing any relay -- safe to call against live hardware.
+
+        Roadmap: when the SrmDriver grows a real over-the-wire sweep
+        (``discover_srms(scu, max_addr)`` that issues StatusQuery per
+        candidate and awaits response), this endpoint switches to
+        driving that sweep and returns whatever responds -- **without
+        any frontend change**.  See docs/RED5-ETLC-V3.8-PROTOCOL.md
+        §1.a for the 10-bit address space discovery walks.
+        """
+        srm_devices = [d for d in _demo_devices if d.dev_type.name.startswith("SRM")]
+        registered_now: list[str] = []
+        already_known: list[str] = []
+        for d in srm_devices:
+            if await replica.register(d):
+                registered_now.append(str(d))
+            else:
+                already_known.append(str(d))
+        return {
+            "ok": True,
+            "source": _data_source,
+            "family_filter": "SRM",
+            "count": len(srm_devices),
+            "registered": registered_now,
+            "already_known": already_known,
+        }
+
     @router.get("/devices/{device_id:path}")
     async def get_device(device_id: str) -> dict[str, Any]:
         dev = _parse_device_id(device_id)

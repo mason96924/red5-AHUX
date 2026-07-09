@@ -54,7 +54,7 @@ and a channel-detail modal.
       "select all channels into canvas selection" behaviour for the
       align/delete toolbar workflows.
 
-### Phase C — UX consolidation  ✅ DONE (2026-07-09 batch 2)
+### Phase C — UX consolidation  ✅ DONE (2026-07-09 batch 2 + 3)
 - [x] LHS floor list collapsed into a header **Floor** dropdown; the
       `＋ New floor…` action lives inside the dropdown itself.
 - [x] Floor details moved into a **pop-up modal** opened via a new
@@ -69,9 +69,26 @@ and a channel-detail modal.
       checkbox) — fixes the "multi-select feels all-or-nothing" bug
       where only the tiny native checkbox glyph landed clicks.
 - [x] Module-modal channel rows are now **drag sources** in
-      Individual mode: drag an assigned channel straight onto the
-      canvas to place it (same MIME the canvas drop handler already
-      consumes for the legacy SRM tiles).
+      Individual mode — assigned AND unassigned.  Un-assigned drop
+      auto-upserts a sane `onoff` default so the drop always
+      completes in one action; refinement (lux/beam/CCT/shape) is
+      done later via Multi-Select Apply.
+- [x] All three modals are now **draggable** via their header
+      (`.mm-hdr`), clamped to the viewport so they can never go
+      fully off-screen.  Positions stick between opens (until
+      reload).
+- [x] `.mm-backdrop.dragging` — when a channel drag begins inside a
+      modal, the backdrop turns transparent AND `pointer-events: none`
+      so the canvas underneath receives the drop event.  The modal
+      panel fades to 35% opacity so the operator can still see where
+      the drag came from.
+- [x] Header **Discover SRMs** button + backend `POST
+      /api/elc/discover-srms` endpoint — SRM-family filter applied
+      server-side.  Today registers every advertised SRM channel; the
+      exact same endpoint switches to a real over-the-wire StatusQuery
+      sweep of the 10-bit address space (ETLC §1.a) once
+      `SrmDriver.discover_srms()` lands — **no frontend change
+      required at that point**.
 
 ### Phase C — Follow-ups (deferred)
 - [ ] One-shot cleanup: delete orphaned legacy 0-based placements

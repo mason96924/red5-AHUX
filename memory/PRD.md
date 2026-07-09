@@ -41,6 +41,66 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — Draggable modals + Discover SRMs + Drop-through canvas (2026-07-09, batch 3)
+
+Operator called out three logical failures in the previous batch:
+
+**1. Editor pop-up was not draggable.**  Fixed: every `.mm-panel`
+(module modal, floor details, schedule iframe) now becomes a
+floating window on first mousedown of its `.mm-hdr`.  `position:
+fixed`, viewport-clamped so the header can never go fully off-screen,
+positions persist between opens until page reload.  Shared helper
+`_makePanelDraggable(panel)` with a `WeakSet` guard so repeated
+opens don't stack listeners.  Header cursor is `grab` / active `grabbing`.
+
+**2. "Seed 16 SCU channels" was really a static declaration, not
+discovery.**  Fixed at two layers:
+* Backend — new `POST /api/elc/discover-srms` endpoint
+  (`elc/api/rest.py`).  Filters the advertised device inventory to
+  the SRM family (any device whose `dev_type.name` starts with
+  `SRM`), registers each with the replica without firing a relay,
+  returns `{registered: [...], already_known: [...]}`.
+* Frontend — new header **Discover SRMs** button
+  (`data-testid="floor-discover-btn"`).  Calls the endpoint,
+  refreshes the device grid, toasts the outcome.
+* Roadmap trace baked in — the endpoint's docstring documents that
+  this is a "declared inventory" today and switches to a real
+  10-bit-address-space StatusQuery sweep the moment
+  `SrmDriver.discover_srms(scu, max_addr)` lands, with **zero
+  frontend churn**.  See `docs/RED5-ETLC-V3.8-PROTOCOL.md` §1.a.
+
+**3. Could not drop a channel row onto the canvas — modal
+occluded it.**  Two independent fixes stacked:
+* Backdrop `pointer-events: none` on dragstart from a row
+  (`.mm-backdrop.dragging`) — the drop event now passes through to
+  the canvas underneath.  Backdrop tint clears and modal panel
+  fades to 35% opacity so the operator still sees the drag source
+  while placing.
+* Un-assigned rows are now draggable too.  The canvas drop handler
+  auto-upserts a sane `onoff` default (`{max_lux: 500,
+  beam_radius_m: 4, cct_k: 4000, shape: 'point'}`) so the drop
+  completes in one action for a fresh channel.  Refinement is a
+  later step via Multi-Select → Apply.
+
+### Files touched
+* `archive/Red5-ELC-V3.0/demo/floor.html` — CSS (backdrop-dragging +
+  header cursor + panel shadow), `_makePanelDraggable` helper,
+  `openModuleModal / openFloorModal / openScheduleModal` all wire
+  the helper on first open, module-modal row rewritten to include
+  dragstart on every row and toggle button not eating the drag,
+  canvas drop handler now auto-assigns + clears the `dragging`
+  class, new **Discover SRMs** header button + click handler.
+* `archive/Red5-ELC-V3.0/elc/api/rest.py` — new
+  `POST /api/elc/discover-srms` endpoint with SRM-family filter and
+  a documented roadmap comment for the future driver-sweep migration.
+
+### Testing
+Node syntax check → SYNTAX OK.  Python ast parse of `rest.py` → OK.
+Ruff clean.  Backend endpoint verified locally by inspection (writes
+to the same `replica.register(...)` path the older `/register`
+endpoint uses, so all existing register-flow tests still exercise
+it transitively).
+
 ## Phase V3.0 — /floor UX Consolidation (2026-07-09, batch 2)
 
 Operator asked for a large restructure of the `/floor` page: floors

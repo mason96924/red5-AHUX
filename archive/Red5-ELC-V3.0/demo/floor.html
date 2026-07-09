@@ -223,18 +223,33 @@
     z-index: 500;
   }
   .mm-backdrop.open { display: flex; }
+  /* When a drag starts inside a modal (channel row → canvas), fade
+     the backdrop out and disable its pointer events so the drop
+     lands on the canvas underneath.  The panel itself stays a bit
+     translucent so the operator still sees where the drag came from. */
+  .mm-backdrop.dragging {
+    background: transparent; backdrop-filter: none;
+    pointer-events: none;
+  }
+  .mm-backdrop.dragging .mm-panel { opacity: 0.35; }
   .mm-panel {
     background: var(--panel-1, #14181d); color: var(--text);
     border: 1px solid var(--line); border-radius: 8px;
     width: min(560px, 92vw); max-height: 88vh; overflow: hidden;
     display: flex; flex-direction: column;
+    /* Positioned via transform when draggable — starts centred and
+       becomes absolute once the operator grabs the header. */
+    position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
   }
   .mm-hdr {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 14px; border-bottom: 1px solid var(--line);
     font-family: var(--mono); font-size: 12px;
+    cursor: grab; user-select: none;
   }
-  .mm-hdr .mm-title { flex: 1; }
+  .mm-hdr:active { cursor: grabbing; }
+  .mm-hdr .mm-title { flex: 1; pointer-events: none; }
   .mm-hdr .mm-close {
     background: transparent; border: 1px solid var(--line);
     color: var(--muted); border-radius: 4px; cursor: pointer;
@@ -399,6 +414,11 @@
             data-testid="floor-schedules-btn"
             title="Open the schedule / group editor">
       Schedules
+    </button>
+    <button id="btn-discover" class="ghost"
+            data-testid="floor-discover-btn"
+            title="Ask the SCU to enumerate its connected SRM modules and register them in the replica.  Safe — no relays are switched.">
+      Discover SRMs
     </button>
     <button id="btn-mode" class="ghost" data-testid="floor-mode-toggle">Mode: Layout</button>
     <button id="btn-heatmap" class="ghost" data-testid="floor-heatmap-toggle"
@@ -1219,7 +1239,9 @@ function openModuleModal(key) {
   const parts = key.split('/');
   document.getElementById('mm-title').textContent =
     `${parts[0]} · SCU ${parts[1]} · Addr ${parts[2]} · ${chs.length} ch`;
-  document.getElementById('module-modal').classList.add('open');
+  const back = document.getElementById('module-modal');
+  back.classList.add('open');
+  _makePanelDraggable(back.querySelector('.mm-panel'));
   _syncModuleModalUrl();
   _mmPopulateCopyFrom(key);
   _mmPrefillProps(chs);
@@ -1374,8 +1396,11 @@ function renderModuleModal() {
     } else {
       // Individual mode — row is also a drag source so operators can
       // drag a channel straight from the modal onto the canvas.  The
-      // canvas drop handler is already wired for the same MIME type,
-      // so no code needed on the receiving side.
+      // canvas drop handler is already wired for the same MIME type.
+      // Un-assigned rows are ALSO draggable now: the drop handler
+      // upserts a default `onoff` element and places the fixture in
+      // one shot (matches the operator's mental model of "just drop
+      // it on the floor and I'll refine the type later").
       row.innerHTML = `
         <span class="mm-ch">ch ${chNum}</span>
         <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
@@ -1385,21 +1410,26 @@ function renderModuleModal() {
           ${isOn ? 'ON' : 'OFF'}
         </button>
       `;
-      // Make the channel draggable IF it's assigned (otherwise the
-      // canvas has no lighting element to render).  Un-assigned rows
-      // get a hint tooltip instead.
+      row.setAttribute('draggable', 'true');
+      row.style.cursor = 'grab';
       const [, elForDrag] = _findLightingElement(did);
-      if (elForDrag) {
-        row.setAttribute('draggable', 'true');
-        row.style.cursor = 'grab';
-        row.title = 'Drag onto the floor to place this channel';
-        row.addEventListener('dragstart', (ev) => {
-          ev.dataTransfer.effectAllowed = 'copy';
-          ev.dataTransfer.setData('application/x-elc-device-id', did);
-        });
-      } else {
-        row.title = 'Assign a type in Multi-Select before dragging onto the floor';
-      }
+      row.title = elForDrag
+        ? 'Drag onto the floor to place this channel'
+        : 'Drag onto the floor to auto-assign (On/Off) and place';
+      row.addEventListener('dragstart', (ev) => {
+        // Don't start a drag from the toggle button — it has its own
+        // click handler.  Native drag lifts elements bypassing click,
+        // but stopping propagation here keeps the toggle immune.
+        if (ev.target.closest('.mm-toggle')) { ev.preventDefault(); return; }
+        ev.dataTransfer.effectAllowed = 'copy';
+        ev.dataTransfer.setData('application/x-elc-device-id', did);
+        // Fade the backdrop out so the canvas underneath becomes the
+        // drop target (see .mm-backdrop.dragging in the stylesheet).
+        document.getElementById('module-modal').classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        document.getElementById('module-modal').classList.remove('dragging');
+      });
       row.querySelector('.mm-toggle').addEventListener('click', async (ev) => {
         ev.stopPropagation();
         const target = !isOn;
@@ -1545,6 +1575,54 @@ async function _mmApplyProps() {
 }
 
 // -- Modal wiring -----------------------------------------------------
+// Shared "grab the header and drag the panel" behaviour.  Turns any
+// .mm-panel into a floating window whose position sticks between
+// opens (until reload).  Idempotent: calling twice on the same panel
+// leaves the second listener as a no-op via the WeakSet guard.
+const _dragWired = new WeakSet();
+function _makePanelDraggable(panelEl) {
+  if (!panelEl || _dragWired.has(panelEl)) return;
+  _dragWired.add(panelEl);
+  const hdr = panelEl.querySelector('.mm-hdr');
+  if (!hdr) return;
+  let startX = 0, startY = 0, panelX = 0, panelY = 0, dragging = false;
+  hdr.addEventListener('mousedown', (ev) => {
+    // Ignore clicks on the × close button so it still closes cleanly.
+    if (ev.target.closest('.mm-close')) return;
+    ev.preventDefault();
+    const rect = panelEl.getBoundingClientRect();
+    // Switch from flex-centred positioning to absolute so we can
+    // freely translate.  `position: fixed` on the panel keeps it
+    // anchored to the viewport rather than the page scroll.
+    if (panelEl.style.position !== 'fixed') {
+      panelEl.style.position = 'fixed';
+      panelEl.style.margin = '0';
+      panelEl.style.left = rect.left + 'px';
+      panelEl.style.top = rect.top + 'px';
+    }
+    startX = ev.clientX; startY = ev.clientY;
+    panelX = parseFloat(panelEl.style.left) || rect.left;
+    panelY = parseFloat(panelEl.style.top)  || rect.top;
+    dragging = true;
+    document.body.style.userSelect = 'none';
+  });
+  window.addEventListener('mousemove', (ev) => {
+    if (!dragging) return;
+    let nx = panelX + (ev.clientX - startX);
+    let ny = panelY + (ev.clientY - startY);
+    // Clamp so at least a bit of the header stays on-screen.
+    const w = panelEl.offsetWidth, h = panelEl.offsetHeight;
+    const margin = 40;
+    nx = Math.min(Math.max(nx, margin - w), window.innerWidth - margin);
+    ny = Math.min(Math.max(ny, 0), window.innerHeight - margin);
+    panelEl.style.left = nx + 'px';
+    panelEl.style.top = ny + 'px';
+  });
+  window.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; document.body.style.userSelect = ''; }
+  });
+}
+
 document.getElementById('mm-close').onclick = closeModuleModal;
 document.getElementById('module-modal').addEventListener('click', (ev) => {
   if (ev.target.id === 'module-modal') closeModuleModal();
@@ -2764,6 +2842,8 @@ canvas.addEventListener('dragleave', () => canvas.classList.remove('drop-target'
 canvas.addEventListener('drop', async (ev) => {
   ev.preventDefault();
   canvas.classList.remove('drop-target');
+  // Restore modal opacity if the drag started from the module modal.
+  document.getElementById('module-modal').classList.remove('dragging');
   const did = ev.dataTransfer.getData('application/x-elc-device-id');
   if (!did) return;
   if (state.deviceFloor.has(did)
@@ -2779,6 +2859,23 @@ canvas.addEventListener('drop', async (ev) => {
       || world.y_m < 0 || world.y_m > f.height_m) {
     toast('Drop must be inside the floor outline', true);
     return;
+  }
+  // If the dragged device isn't assigned yet (from the module modal
+  // drag path), auto-assign it as On/Off with sensible defaults so
+  // the drop completes in one action.  Refinement (lux/beam/CCT) is
+  // done later via the module modal's Multi-Select Apply flow.
+  if (!state.lightingElements.has(did)) {
+    try {
+      const upserted = await api('PUT', `/lighting-elements/${did}`, {
+        type: 'onoff', max_lux: 500, beam_radius_m: 4.0,
+        cct_k: 4000, shape: 'point', tube_type: 'none',
+      });
+      state.lightingElements.set(did, upserted);
+      toast(`Auto-assigned ${did} as On/Off — refine in the module modal`);
+    } catch (e) {
+      toast(`Auto-assign failed: ${e.message}`, true);
+      return;
+    }
   }
   // Point shapes → single click, place immediately (legacy fast path).
   // Non-point shapes → drop plants the anchor and enters click-flow
@@ -3694,7 +3791,9 @@ document.getElementById('floor-picker').addEventListener('change', async (ev) =>
 function openFloorModal() {
   if (!state.currentFloor) { toast('Pick a floor first', true); return; }
   renderFloorDetails();
-  document.getElementById('floor-modal').classList.add('open');
+  const back = document.getElementById('floor-modal');
+  back.classList.add('open');
+  _makePanelDraggable(back.querySelector('.mm-panel'));
 }
 function closeFloorModal() {
   document.getElementById('floor-modal').classList.remove('open');
@@ -3710,7 +3809,9 @@ function openScheduleModal() {
   // Lazy-load: only set src the first time so re-opening reuses the
   // existing session (unsaved rule-editor state is preserved).
   if (!iframe.src) iframe.src = '/editor';
-  document.getElementById('sched-modal').classList.add('open');
+  const back = document.getElementById('sched-modal');
+  back.classList.add('open');
+  _makePanelDraggable(back.querySelector('.mm-panel'));
 }
 function closeScheduleModal() {
   document.getElementById('sched-modal').classList.remove('open');
@@ -3720,6 +3821,36 @@ document.getElementById('sm-close').onclick = closeScheduleModal;
 document.getElementById('sched-modal').addEventListener('click', (ev) => {
   if (ev.target.id === 'sched-modal') closeScheduleModal();
 });
+
+// -- Discover SRMs -----------------------------------------------------
+// Calls the backend's `/api/elc/discover-srms` sweep (today: registers
+// every advertised SRM-family channel with the replica; tomorrow: real
+// StatusQuery walk of the 10-bit address space per docs/RED5-ETLC-V3.8
+// -PROTOCOL.md §1.a).  Safe against live hardware — never sends a
+// RelaySet frame.
+document.getElementById('btn-discover').onclick = async () => {
+  const btn = document.getElementById('btn-discover');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Discovering…';
+  try {
+    const r = await api('POST', '/discover-srms');
+    // Give WS/SSE echoes a beat to reach the replica.
+    await new Promise(res => setTimeout(res, 300));
+    await refreshDevicesAndElements();
+    const n = (r.registered || []).length;
+    const k = (r.already_known || []).length;
+    if (n === 0 && k === 0) {
+      toast('No SRM-family devices advertised by the SCU', true);
+    } else if (n === 0) {
+      toast(`All ${k} SRM channel(s) already known`);
+    } else {
+      toast(`Discovered ${n} new SRM channel(s)` +
+            (k ? ` (${k} already known)` : ''));
+    }
+  } catch (e) { toast(`Discover failed: ${e.message}`, true); }
+  finally { btn.disabled = false; btn.textContent = original; }
+};
 
 // Escape closes whichever floor/schedule modal is open (the module
 // modal already has its own Escape handler earlier in this script).

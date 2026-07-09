@@ -6,25 +6,27 @@ Operator wants the right-hand panel restructured from a flat 16-tile
 channel grid into a module-first hierarchy with live-state indicators
 and a channel-detail modal.
 
-### Phase A — Module-first sidebar + live dots + broadcast  🟨 IN PROGRESS
-- [ ] Replace the flat channel grid with **module boxes** (one per
+### Phase A — Module-first sidebar + live dots + broadcast  ✅ DONE (2026-07-09)
+- [x] Replace the flat channel grid with **module boxes** (one per
       unique `(dev_type, scu, address)` triple in `state.devices`)
-- [ ] Each module box shows:
+- [x] Each module box shows:
     * Header line: `SRM_6E · SCU 0 · Addr 1` (device family + bus + address)
     * Row of channel dots — one dot per sub_address in the module
     * Dot colour: green = ON, dim grey = OFF, hollow = unknown
     * Live-update via SSE `relay_state` events (already flowing)
-- [ ] Top-of-panel **Broadcast** cluster:
+- [x] Top-of-panel **Broadcast** cluster:
     * "All On" — POST relay=true to every registered device (per-
       channel loops; multi-relay opcode 0x08 lands after Phase B
       hardware verification)
     * "All Off" — mirror
     * Confirmation dialog is always shown (safer)
-- [ ] Preserve current selection semantics: clicking a module box
+- [x] Preserve current selection semantics: clicking a module box
       still adds all its channels to `state.selectedDeviceIds`,
       so the existing align/delete cluster in the toolbar keeps
       working
-- [ ] `data-testid` attributes on every new interactive element
+- [x] `data-testid` attributes on every new interactive element
+      (`broadcast-bar`, `broadcast-on`, `broadcast-off`,
+      `module-box-{type}-{scu}-{addr}`, `mod-dot-{device_id}`)
 
 ### Phase B — Channel detail modal
 - [ ] Clicking a module box opens a **modal** with:
@@ -83,4 +85,25 @@ and a channel-detail modal.
 - 4eRM vs 6eRM disambiguation (both use type code 0x16)
 - Deploy-lock button (temporary "read-only" mode for critical ops)
 
-*Last updated: 2026-07-09 Phase A kickoff.*
+*Last updated: 2026-07-09 Phase A **complete** — Broadcast All On/All
+Off cluster wired above the module grid with confirmation dialog and
+data-testid coverage.  Phase B next: click a module box to open the
+channel-detail modal.*
+
+---
+
+## 2026-07-09 — ETLC V3.8 addressing scheme clarified (operator note)
+
+Operator confirmation captured verbatim in
+`archive/Red5-ELC-V3.0/docs/RED5-ETLC-V3.8-PROTOCOL.md` §1.a — future
+agents implementing device enumeration or new drivers **must** read
+that section before writing any codec/driver code.
+
+TL;DR:
+* Wire byte 5 = 8-bit device_type.
+* Wire byte 6 = **low 6 bits = SCU (0..63), high 2 bits = addr[9:8]**.
+* Wire byte 7 = **addr[7:0]**.
+* Therefore module_address is **10 bits (0..1023)** per (SCU, family).
+* Device families to walk for a full `PanelInfo` sweep:
+  `6srm, 4srm, elcc48, erm, dsw, dsw4, dsw8, gds4, gds8, gds16,
+   dm, wgm, shg`  (13 families × 64 SCUs × 1024 addrs).

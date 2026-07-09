@@ -16,10 +16,14 @@ with a dated bullet.
 ```
 byte  0..3   preamble = ASCII "ELC@"  (45 4C 43 40)
 byte  4      class byte = 0x07  (SRM/ERM family)
-byte  5      device type    (SRM_6S=0x15, SRM_4S=0x14, SRM_6E=0x16, ...)
-byte  6      SCU bus number (physical SCU broadcasts as 0)
-byte  7      module address
-byte  8      sub-address    (relay channel index, 0-based)
+byte  5      device type    (SRM_6S=0x15, SRM_4S=0x14, SRM_6E=0x16, ...)  [P0]
+byte  6      SCU byte       (LOW 6 bits = SCU number 0..63;                [P1]
+                             HIGH 2 bits = MSBs of the module address)
+byte  7      module address (LOW 8 bits — combined with the HIGH 2 bits    [P2]
+                             from byte 6 to form a 10-bit module address,
+                             0..1023 modules per device type)
+byte  8      sub-address    (relay channel index, 0-based on the wire;
+                             the V3.0 UI presents it 1-based to operators)
 byte  9      opcode         (0x07=RelayOverride, 0x25=RelayStatus)
 byte  10     data byte      (state or channel bitmask, opcode-dependent)
 byte  11     checksum       = (0x87 - sum(bytes[4..10])) & 0xFF
@@ -29,6 +33,61 @@ byte  11     checksum       = (0x87 - sum(bytes[4..10])) & 0xFF
 frames does NOT match hardware.  Real preamble is `45 4C 43 40`
 ("ELC@") and frames are 12 bytes.  We suspect the `0xFFFFFFFF` prose
 was for a different device class or a discontinued wire version.
+
+### 1.a. Addressing scheme — operator-confirmed 2026-07-09
+
+Bytes `[P0, P1, P2]` (relative to the payload — i.e. wire bytes 5, 6, 7)
+together identify **one physical module** on an SCU bus.  Bit layout,
+authoritative:
+
+```
+                          bit  7 6 5 4 3 2 1 0
+byte 5 (device_type)      ─── [ D D D D D D D D ]   8 bits, device family code
+byte 6 (SCU + addr high)  ─── [ A A|S S S S S S ]   HIGH 2 bits = addr[9:8]
+                                                    LOW  6 bits = scu (0..63)
+byte 7 (addr low)         ─── [ A A A A A A A A ]   LOW  8 bits = addr[7:0]
+
+    module_address (10 bit) = ((byte6 >> 6) << 8) | byte7    → 0..1023
+    scu            (6  bit) =   byte6 & 0x3F                 → 0..63
+```
+
+Consequences:
+* **64 SCUs max** per controller / bus (6-bit SCU field).
+* **1024 module addresses max** per (SCU, device_type) tuple —
+  each device family has its own address space.
+* **Enumeration via PanelInfo** — an operator wanting to discover the
+  full topology of an SCU walks `(device_type, scu, addr)` for every
+  known device family with `addr ∈ [0, 1023]` and issues a `PanelInfo`
+  query; the SCU responds only for populated slots.
+
+### 1.b. Device family codes to iterate for PanelInfo enumeration
+
+The 13 SRM-class families currently defined by the ETLC V3.8 spec —
+each family occupies its own 10-bit address space per SCU, so a full
+site sweep is `13 × 64 × 1024 = 851,968` addressable slots (sparse in
+practice; only populated slots reply):
+
+| Family    | Notes                                             |
+|-----------|---------------------------------------------------|
+| `6srm`    | 6-channel switching relay module (`0x15`)         |
+| `4srm`    | 4-channel switching relay module (`0x14`)         |
+| `elcc48`  | 48-channel controller card                        |
+| `erm`     | Extended relay module — 4e / 6e variants (`0x16`) |
+| `dsw`     | Dimming switch (generic)                          |
+| `dsw4`    | 4-channel dimming switch                          |
+| `dsw8`    | 8-channel dimming switch                          |
+| `gds4`    | 4-channel general-purpose digital-signal driver   |
+| `gds8`    | 8-channel general-purpose digital-signal driver   |
+| `gds16`   | 16-channel general-purpose digital-signal driver  |
+| `dm`      | Dimmer module                                     |
+| `wgm`     | Wall-gang module                                  |
+| `shg`     | Shade / drape controller                          |
+
+Byte codes for `dsw*`, `gds*`, `dm`, `wgm`, `shg`, `elcc48` are still
+awaiting a hardware RX capture — they must be filled in section 2
+before we implement drivers for them.  The addressing math above,
+however, is universal across the whole SRM family per operator
+confirmation on 2026-07-09.
 
 ## 2. Device Type Codes (SRM family)
 

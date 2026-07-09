@@ -193,6 +193,29 @@
   .assign-btn.dimmer:not(:disabled) { color: #6ba7dc; border-color: rgba(74,131,184,0.4); }
   .assign-btn.clear:not(:disabled)  { color: var(--muted); }
 
+  /* Broadcast cluster — top-of-panel All-On / All-Off buttons that
+     fan out per-channel to every registered device.  Kept visually
+     distinct from the per-selection assign bar (which acts only on
+     the current selection). */
+  .broadcast-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; margin: 6px 0 8px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: rgba(255,255,255,0.02);
+  }
+  .broadcast-bar .bc-label {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    flex: 1;
+  }
+  .broadcast-btn {
+    padding: 4px 10px; font-family: var(--mono); font-size: 11px;
+    border-radius: 4px; border: 1px solid var(--line); cursor: pointer;
+    background: var(--panel-2, transparent); color: var(--text);
+  }
+  .broadcast-btn.on  { border-color: #78c878; color: #78c878; }
+  .broadcast-btn.off { border-color: #d97a30; color: #d97a30; }
+  .broadcast-btn:hover:not(:disabled) { filter: brightness(1.25); }
+  .broadcast-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   #srm-grid { display: flex; flex-direction: column; gap: 6px; }
   .module-box { border: 1px solid var(--line); border-radius: 6px;
                 padding: 6px 8px; background: var(--panel-bg, transparent);
@@ -437,6 +460,15 @@
         <button id="btn-assign-clear" class="assign-btn clear"
                 data-testid="assign-clear" disabled>Clear</button>
       </div>
+    </div>
+    <div class="broadcast-bar" data-testid="broadcast-bar">
+      <div class="bc-label" id="broadcast-label">Broadcast · 0 modules</div>
+      <button id="btn-broadcast-on" class="broadcast-btn on"
+              data-testid="broadcast-on" disabled
+              title="Send RelayOverride=ON to every registered channel">All On</button>
+      <button id="btn-broadcast-off" class="broadcast-btn off"
+              data-testid="broadcast-off" disabled
+              title="Send RelayOverride=OFF to every registered channel">All Off</button>
     </div>
     <div id="srm-grid" data-testid="srm-grid">
       <div class="empty">No SRM devices yet. Open <a href="/editor">Editor</a>
@@ -741,6 +773,7 @@ async function refreshDevicesAndElements() {
   }));
   renderSrmGrid();
   updateAssignBar();
+  updateBroadcastBar();
   paintCanvas();
 }
 
@@ -748,6 +781,7 @@ function renderSrmGrid() {
   const host = document.getElementById('srm-grid');
   const count = document.getElementById('dev-count');
   count.textContent = state.devices.length ? `(${state.devices.length})` : '';
+  updateBroadcastBar();
   if (state.devices.length === 0) {
     host.innerHTML = `<div class="empty">No SRM devices yet.
       Open <a href="/editor">Editor</a> → click the <code>Seed</code> button,
@@ -823,6 +857,68 @@ function renderSrmGrid() {
     host.appendChild(box);
   }
 }
+
+// -- Broadcast cluster ----------------------------------------------
+// The buttons at the top of the SRM panel (All On / All Off) fan out
+// to every registered channel via per-channel `POST /devices/{id}/relay`.
+// This is deliberately per-channel today — the multi-relay opcode 0x08
+// (batched) lands after Phase B hardware verification (see ROADMAP.md).
+// A `confirm()` is always shown because these buttons are destructive
+// on a live site.
+function updateBroadcastBar() {
+  const modules = new Set();
+  for (const d of state.devices) {
+    const p = String(d.device).split('/');
+    if (p.length === 4) modules.add(`${p[0]}/${p[1]}/${p[2]}`);
+  }
+  const nMod = modules.size;
+  const nCh = state.devices.length;
+  const label = document.getElementById('broadcast-label');
+  const on = document.getElementById('btn-broadcast-on');
+  const off = document.getElementById('btn-broadcast-off');
+  if (!label || !on || !off) return;
+  if (nCh === 0) {
+    label.textContent = 'Broadcast · no devices';
+    on.disabled = true; off.disabled = true;
+  } else {
+    label.textContent = `Broadcast · ${nMod} module${nMod === 1 ? '' : 's'} · ${nCh} ch`;
+    on.disabled = false; off.disabled = false;
+  }
+}
+
+async function broadcastRelay(state_target) {
+  const ids = state.devices.map(d => d.device);
+  if (ids.length === 0) return;
+  const label = state_target ? 'ON' : 'OFF';
+  const ok = window.confirm(
+    `Broadcast ALL ${label} to ${ids.length} channels across ` +
+    `${new Set(ids.map(x => x.split('/').slice(0,3).join('/'))).size} module(s)?\n\n` +
+    `This sends a RelayOverride to every registered channel.`
+  );
+  if (!ok) return;
+  const on = document.getElementById('btn-broadcast-on');
+  const off = document.getElementById('btn-broadcast-off');
+  on.disabled = true; off.disabled = true;
+  let okCount = 0, failCount = 0;
+  // Fan out sequentially — the SCU driver serialises on _v38_write_lock
+  // anyway, and per-channel POSTs already return in ~150ms each; parallel
+  // fetches just queue in the browser without helping the wire.
+  for (const did of ids) {
+    try {
+      await api('POST', `/devices/${did}/relay`, { state: state_target });
+      okCount += 1;
+    } catch (_e) { failCount += 1; }
+  }
+  updateBroadcastBar();
+  if (failCount === 0) {
+    toast(`Broadcast ${label}: ${okCount} channel(s) OK`);
+  } else {
+    toast(`Broadcast ${label}: ${okCount} OK, ${failCount} failed`, true);
+  }
+}
+
+document.getElementById('btn-broadcast-on').onclick  = () => broadcastRelay(true);
+document.getElementById('btn-broadcast-off').onclick = () => broadcastRelay(false);
 
 // Map an arbitrary device_id string to whichever entry in the current
 // SRM inventory has matching (type, address, sub-address).  Ignores

@@ -41,6 +41,64 @@
 >   `--skip-parity-check`) when shipping a route that is V2.0-only by
 >   design (e.g. V3.0 ELC dev console).
 
+## Phase V3.0 — UX Redesign Phase A + ETLC V3.8 Addressing Doc (2026-07-09)
+
+**Session date**: 2026-07-09 (fork resume).
+
+### P0 — UX Redesign Phase A landed
+Operator asked for the flat 16-tile channel grid on the right rail of
+`/floor` to be restructured into **module boxes** — one per
+`(dev_type, scu, address)` triple — with live channel-state dots and
+top-level Broadcast controls.  Phase A shipped:
+* `demo/floor.html`:
+  * `renderSrmGrid()` rewritten to group `state.devices` by module,
+    render a header line (`SRM_6E · SCU 0 · Addr 1`) and a row of
+    channel dots (green=ON, dim=OFF, hollow=unknown).
+  * New **Broadcast cluster** at the top of the SRM panel:
+    `data-testid="broadcast-bar"` wrapper, `broadcast-on` and
+    `broadcast-off` buttons.  Confirmation dialog is always shown;
+    fans out per-channel `POST /devices/{id}/relay` for every
+    registered device (multi-relay opcode 0x08 deferred to Phase B).
+  * `updateBroadcastBar()` wired into `renderSrmGrid()` so the label
+    (`Broadcast · N modules · M ch`) and disabled state stay in sync
+    with the live device inventory.
+  * Module click still adds all channels to `state.selectedDeviceIds`
+    so the existing align/delete toolbar keeps working — Phase B will
+    swap this for a channel-detail modal.
+* `data-testid` coverage: `broadcast-bar`, `broadcast-on`,
+  `broadcast-off`, `module-box-{type}-{scu}-{addr}`,
+  `mod-dot-{device_id}`.
+
+**Next up (Phase B)**: click-a-module opens a channel-detail modal
+with per-channel toggles, multi-select, and the property editor
+(type / max_lux / beam_radius / cct_k / shape / tube_type) migrated
+into the modal.  See `/app/memory/ROADMAP.md`.
+
+### Operator note — ETLC V3.8 Addressing scheme documented
+Operator (2026-07-09) clarified the wire-byte layout for future
+`PanelInfo` topology enumeration.  Captured verbatim in
+`archive/Red5-ELC-V3.0/docs/RED5-ETLC-V3.8-PROTOCOL.md` §1.a and §1.b.
+
+TL;DR — future agents MUST read those sections before writing any
+codec or driver code for new device families:
+* Wire byte 5 = 8-bit `device_type`.
+* Wire byte 6 = **low 6 bits = SCU number (0..63)**, high 2 bits =
+  `module_address[9:8]`.
+* Wire byte 7 = `module_address[7:0]`.
+* Combined: `scu ∈ [0,63]`, `module_address ∈ [0,1023]` per
+  (SCU, device_type).
+* Full-site sweep via `PanelInfo` walks 13 device families ×
+  64 SCUs × 1024 addresses (sparse in practice — only populated
+  slots reply).
+* Documented families: `6srm, 4srm, elcc48, erm, dsw, dsw4, dsw8,
+  gds4, gds8, gds16, dm, wgm, shg`.
+
+Byte codes for `elcc48 / dsw* / gds* / dm / wgm / shg` are still
+pending a hardware RX capture — the doc's device-code table (§2)
+must be filled in before we implement drivers for them.  The
+addressing math is universal across the SRM family per operator
+confirmation on 2026-07-09.
+
 ## Phase V3.0 — Stress Broadcast Fix + Phase 4 Day 3 Scheduler Runner (2026-02)
 
 **Session date**: 2026-02 (fork resume).

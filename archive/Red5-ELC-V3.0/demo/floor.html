@@ -193,7 +193,22 @@
   .assign-btn.dimmer:not(:disabled) { color: #6ba7dc; border-color: rgba(74,131,184,0.4); }
   .assign-btn.clear:not(:disabled)  { color: var(--muted); }
 
-  #srm-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+  #srm-grid { display: flex; flex-direction: column; gap: 6px; }
+  .module-box { border: 1px solid var(--line); border-radius: 6px;
+                padding: 6px 8px; background: var(--panel-bg, transparent);
+                cursor: pointer; transition: border-color 120ms; }
+  .module-box:hover { border-color: var(--accent, #6ba7dc); }
+  .module-box.selected { outline: 2px solid #c084fc; }
+  .module-box .mod-hdr { font-family: var(--mono); font-size: 10px;
+                         color: var(--muted); margin-bottom: 4px;
+                         display: flex; justify-content: space-between; }
+  .module-box .mod-dots { display: flex; gap: 4px; flex-wrap: wrap; }
+  .mod-dot { width: 14px; height: 14px; border-radius: 50%;
+             border: 1px solid var(--muted); background: transparent;
+             font-size: 8px; line-height: 12px; text-align: center;
+             color: var(--muted); }
+  .mod-dot.on { background: #78c878; border-color: #78c878; color: #0a2410; }
+  .mod-dot.off { background: rgba(255,255,255,0.05); }
   .srm-tile {
     position: relative; padding: 8px 8px 6px; border: 2px solid var(--line);
     border-radius: 6px; background: var(--panel-2); cursor: pointer;
@@ -740,77 +755,72 @@ function renderSrmGrid() {
     return;
   }
   host.innerHTML = '';
-  const currentFloorId = state.currentFloor?.id;
+
+  // Group by (dev_type, scu, address) to produce one box per module.
+  // Channels within a module are ordered by sub_address so the dots
+  // read left-to-right in physical channel order.
+  const modules = new Map();  // key -> {type, scu, addr, channels: [d,...]}
   for (const d of state.devices) {
-    const did = d.device;
-    const el = state.lightingElements.get(did);
-    const placement = state.deviceFloor.get(did);
-    const placedHere = placement && placement.floor_id === currentFloorId;
-    const placedElsewhere = placement && !placedHere;
-
-    const tile = document.createElement('div');
-    tile.className = 'srm-tile';
-    tile.dataset.deviceId = did;
-    tile.dataset.testid = `srm-tile-${did}`;
-    if (el?.type === 'onoff')        tile.classList.add('assigned-onoff');
-    if (el?.type === 'dimmer_0_10v') tile.classList.add('assigned-dimmer');
-    if (state.selectedDeviceIds.has(did)) tile.classList.add('selected');
-    if (placedHere)      tile.classList.add('placed-here');
-    if (placedElsewhere) tile.classList.add('placed-elsewhere');
-
-    // Always draggable at the HTML level so we can intercept the
-    // attempt and show an explanatory toast on unassigned / other-floor
-    // tiles.  The dragstart handler decides whether to actually start.
-    tile.setAttribute('draggable', 'true');
-
-    // Tooltip explains state on hover / long-press.
-    if (placedElsewhere) {
-      tile.title = `Placed on floor "${placement.floor_name}" — un-place from there first.`;
-    } else if (placedHere) {
-      tile.title = `Placed on this floor.  Drag on the canvas to reposition.`;
-    } else if (!el) {
-      tile.title = `Unassigned — select and click On/Off or 0-10V to assign a type before dropping.`;
-    } else {
-      tile.title = `${el.type === 'onoff' ? 'On/Off' : '0-10V'} · ${el.max_lux} lux · ${el.beam_radius_m} m.  Drag onto the plan.`;
+    const p = String(d.device).split('/');
+    if (p.length !== 4) continue;
+    const [t, scu, addr] = p;
+    const key = `${t}/${scu}/${addr}`;
+    if (!modules.has(key)) {
+      modules.set(key, { type: t, scu, addr, channels: [] });
     }
+    modules.get(key).channels.push(d);
+  }
+  for (const m of modules.values()) {
+    m.channels.sort((a, b) =>
+      parseInt(a.device.split('/')[3]) - parseInt(b.device.split('/')[3])
+    );
+  }
 
-    const typeLabel = el
-      ? (el.type === 'onoff' ? 'ON/OFF' : '0-10V')
-      : 'unassigned';
-    tile.innerHTML = `
-      <div class="did-line">${escapeHtml(did)}</div>
-      <div class="type-line">${typeLabel}</div>`;
+  for (const m of modules.values()) {
+    const box = document.createElement('div');
+    box.className = 'module-box';
+    box.dataset.moduleKey = `${m.type}/${m.scu}/${m.addr}`;
+    box.dataset.testid = `module-box-${m.type}-${m.scu}-${m.addr}`;
+    // Selected when *any* of the module's channels is in the selection.
+    const anySelected = m.channels.some(
+      d => state.selectedDeviceIds.has(d.device)
+    );
+    if (anySelected) box.classList.add('selected');
+    box.title = `Module ${m.type} on SCU ${m.scu}, address ${m.addr}.  ` +
+                `Click to select all ${m.channels.length} channels.`;
 
-    tile.addEventListener('click', (ev) => {
-      // Ctrl / Cmd / Shift toggles additive selection.
+    const dotsHtml = m.channels.map(d => {
+      const live = state.liveDevices.get(d.device) || {};
+      const chNum = d.device.split('/')[3];
+      const cls = live.relay_state === true ? 'mod-dot on'
+                : live.relay_state === false ? 'mod-dot off'
+                : 'mod-dot';
+      return `<span class="${cls}" data-testid="mod-dot-${d.device}"
+                     title="ch ${chNum}: ${live.relay_state === true ? 'ON'
+                            : live.relay_state === false ? 'OFF' : 'unknown'}"
+              >${chNum}</span>`;
+    }).join('');
+
+    box.innerHTML = `
+      <div class="mod-hdr">
+        <span>${escapeHtml(m.type)}</span>
+        <span>SCU ${escapeHtml(m.scu)} · Addr ${escapeHtml(m.addr)}</span>
+      </div>
+      <div class="mod-dots">${dotsHtml}</div>
+    `;
+
+    // Click a module → add all its channels to the selection (Phase B
+    // will open a channel-detail modal here instead).
+    box.addEventListener('click', (ev) => {
       const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
-      toggleSrmSelection(did, additive);
+      if (!additive) state.selectedDeviceIds.clear();
+      for (const d of m.channels) state.selectedDeviceIds.add(d.device);
+      renderSrmGrid();
+      updateAssignBar();
+      if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
+      paintCanvas();
     });
-    tile.addEventListener('dblclick', () => openElementEditor(did));
-    // Drag-source
-    tile.addEventListener('dragstart', (ev) => {
-      if (!el) {
-        ev.preventDefault();
-        toast('Assign a type first — click On/Off or 0-10V above.', true);
-        return;
-      }
-      if (placedElsewhere) {
-        ev.preventDefault();
-        toast(`Already placed on floor "${placement.floor_name}".`, true);
-        return;
-      }
-      if (state.mode !== 'layout' || !state.currentFloor) {
-        ev.preventDefault();
-        if (!state.currentFloor) toast('Select a floor first (left rail).', true);
-        return;
-      }
-      tile.classList.add('dragging');
-      ev.dataTransfer.setData('application/x-elc-device-id', did);
-      ev.dataTransfer.effectAllowed = 'copy';
-    });
-    tile.addEventListener('dragend', () => tile.classList.remove('dragging'));
-
-    host.appendChild(tile);
+    host.appendChild(box);
   }
 }
 

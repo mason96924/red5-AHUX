@@ -64,7 +64,19 @@ def attach_sse(app: FastAPI, replica: Replica, *, path: str = "/api/elc/events-s
                     try:
                         event = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_SECS)
                     except asyncio.TimeoutError:
+                        # Twin heartbeat: emit BOTH a raw SSE comment
+                        # (keeps proxies happy on wire level) AND a
+                        # proper `data:` event so the browser's
+                        # onmessage handler runs and can update its
+                        # last-seen-event timestamp.  Distinguishing
+                        # "live but idle" from "silently dead" was
+                        # impossible when the heartbeat was comment-
+                        # only (EventSource swallows comments).
                         yield b": hb\n\n"
+                        yield (
+                            f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                            .encode("utf-8")
+                        )
                         continue
                     yield f"data: {json.dumps(event)}\n\n".encode("utf-8")
             finally:

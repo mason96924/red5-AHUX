@@ -4408,6 +4408,10 @@ function startLiveStream() {
 function _startSse() {
   try {
     liveSse = new EventSource(`${API}/events-sse`);
+    // Reset silent-count -- we're waiting for the FIRST event of this
+    // new connection.  Prevents _kickSseIfSilent from thrashing right
+    // after a reconnect if the stream is legitimately quiet.
+    _liveLastEventAt = 0;
     liveSse.onmessage = (m) => onLiveEvent(JSON.parse(m.data));
     liveSse.onopen = () => {
       _liveSseOpenAt = Date.now();
@@ -4430,8 +4434,33 @@ function _startSse() {
 // Live-pill state + updater.  Runs on every onLiveEvent AND on a
 // 3-second timer so the "stale/dead" transition shows without an
 // event arriving.
+//
+// 2026-02-11: added a self-healing kick.  If we've received nothing
+// for >SSE_SILENT_KICK_SECS (well beyond the 15s server heartbeat)
+// we assume the stream is silently dead (intermediate proxy dropped
+// the pipe without a FIN, so EventSource still thinks it's OPEN)
+// and force a fresh reconnect.  Operator flagged this after leaving
+// the demo idle for a while, then hardware switches stopped
+// reflecting in the UI (2026-02-11 report).
+const SSE_SILENT_KICK_SECS = 45;
 let _liveLastEventAt = 0;
 let _liveSseOpenAt = 0;
+let _liveLastKickAt = 0;
+
+function _kickSseIfSilent() {
+  if (!liveSse) return;
+  if (_liveLastEventAt === 0) return;       // haven't started counting
+  const now = Date.now();
+  const silentFor = (now - _liveLastEventAt) / 1000;
+  if (silentFor < SSE_SILENT_KICK_SECS) return;
+  // Don't kick more often than once every SSE_SILENT_KICK_SECS.
+  if ((now - _liveLastKickAt) < SSE_SILENT_KICK_SECS * 1000) return;
+  _liveLastKickAt = now;
+  console.warn(`[SSE] silent for ${Math.round(silentFor)}s — forcing reconnect`);
+  try { liveSse.close(); } catch (_) {}
+  liveSse = null;
+  _startSse();
+}
 function _updateLivePill() {
   const pill = document.getElementById('live-pill');
   const text = document.getElementById('live-text');
@@ -4473,6 +4502,10 @@ function _updateLivePill() {
   }
 }
 setInterval(_updateLivePill, 3000);
+// Piggyback the silent-kick check on the same 3s cadence.  Cheap
+// (just a subtraction) and keeps the reconnect logic responsive
+// without another timer.
+setInterval(_kickSseIfSilent, 3000);
 
 // Belt on top of SSE — every 5 s, pull the replica's authoritative
 // device snapshot and reconcile state.liveDevices.  If SSE misses an
@@ -4513,9 +4546,16 @@ function stopLiveStream() {
   if (liveSse) { try { liveSse.close(); } catch {} liveSse = null; }
 }
 function onLiveEvent(ev) {
-  // Diagnostic: log every event so browser dev-tools shows exactly
-  // what the UI is receiving.  If wall-switch RX arrives on the
-  // server but nothing shows up here, the break is in the SSE
+  // Heartbeat: silent bookkeeping so the silent-kick logic knows the
+  // stream is alive.  Do NOT console.log -- would spam every 15s.
+  if (ev.type === 'heartbeat') {
+    _liveLastEventAt = Date.now();
+    _updateLivePill();
+    return;
+  }
+  // Diagnostic: log every real event so browser dev-tools shows
+  // exactly what the UI is receiving.  If wall-switch RX arrives on
+  // the server but nothing shows up here, the break is in the SSE
   // subscription / transport, not in this handler.
   console.log('[SSE]', ev.type, ev.device || '', ev);
   _liveLastEventAt = Date.now();

@@ -442,9 +442,23 @@
     </button>
     <button id="btn-discover" class="ghost"
             data-testid="floor-discover-btn"
+            hidden aria-hidden="true"
             title="Ask the SCU to enumerate its connected SRM modules and register them in the replica.  Safe — no relays are switched.">
       Discover SRMs
     </button>
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:0;padding:0;
+                  color:var(--muted);font-size:11px;letter-spacing:.06em;
+                  text-transform:uppercase;width:auto">
+      SCU
+      <select id="scu-picker" data-testid="floor-scu-picker"
+              title="SCU bus address to auto-discover on load.  Change to rescan another SCU."
+              style="width:auto;padding:4px 8px;font-size:11px">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>
+    </label>
     <button id="btn-mode" class="ghost" data-testid="floor-mode-toggle">Mode: Layout</button>
     <button id="btn-heatmap" class="ghost" data-testid="floor-heatmap-toggle"
             title="Colour-code each room by average lux vs. code-compliance minimum">Heatmap: Off</button>
@@ -3947,13 +3961,19 @@ document.getElementById('sched-modal').addEventListener('click', (ev) => {
 // StatusQuery walk of the 10-bit address space per docs/RED5-ETLC-V3.8
 // -PROTOCOL.md §1.a).  Safe against live hardware — never sends a
 // RelaySet frame.
-document.getElementById('btn-discover').onclick = async () => {
-  const btn = document.getElementById('btn-discover');
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Discovering…';
+//
+// Exposed as a named function so the boot sequence and the SCU-picker
+// change handler can both trigger it — the on-page "Discover SRMs"
+// button was removed in favour of automatic discovery.
+async function discoverSrms(opts = {}) {
+  const scu = Number(
+    opts.scu !== undefined
+      ? opts.scu
+      : (document.getElementById('scu-picker')?.value ?? 0)
+  );
+  const silent = !!opts.silent;
   try {
-    const r = await api('POST', '/discover-srms');
+    const r = await api('POST', `/discover-srms?scu=${encodeURIComponent(scu)}`);
     // Give the SCU StatusQuery echoes a beat to reach the replica
     // and cascade through SSE.  ~600 ms covers a 6-module scan at
     // 90 ms per one-shot socket (SCU firmware settles for ~150 ms
@@ -3974,21 +3994,45 @@ document.getElementById('btn-discover').onclick = async () => {
     renderSrmGrid();
     if (state.moduleModal) renderModuleModal();
     paintCanvas();
-    const n = (r.registered || []).length;
-    const k = (r.already_known || []).length;
-    const s = r.modules_scanned || 0;
-    const scanNote = s > 0 ? ` · scanned ${s} module state(s)` : '';
-    if (n === 0 && k === 0) {
-      toast('No SRM-family devices advertised by the SCU', true);
-    } else if (n === 0) {
-      toast(`All ${k} SRM channel(s) already known${scanNote}`);
-    } else {
-      toast(`Discovered ${n} new SRM channel(s)` +
-            (k ? ` (${k} already known)` : '') + scanNote);
+    // Persist the SCU that just succeeded so the next page load
+    // scans the same bus without asking the operator.
+    try { localStorage.setItem('elc.floor.scu', String(scu)); } catch (_) {}
+    if (!silent) {
+      const n = (r.registered || []).length;
+      const k = (r.already_known || []).length;
+      const s = r.modules_scanned || 0;
+      const scanNote = s > 0 ? ` · scanned ${s} module state(s)` : '';
+      if (n === 0 && k === 0) {
+        toast(`No SRM-family devices on SCU ${scu}`, true);
+      } else if (n === 0) {
+        toast(`SCU ${scu}: all ${k} SRM channel(s) already known${scanNote}`);
+      } else {
+        toast(`SCU ${scu}: discovered ${n} new channel(s)` +
+              (k ? ` (${k} already known)` : '') + scanNote);
+      }
     }
-  } catch (e) { toast(`Discover failed: ${e.message}`, true); }
-  finally { btn.disabled = false; btn.textContent = original; }
-};
+    return r;
+  } catch (e) {
+    if (!silent) toast(`Discover failed: ${e.message}`, true);
+    throw e;
+  }
+}
+
+// Kept as a no-op fallback in case something still references the
+// removed #btn-discover element -- clicking it invokes the same flow.
+document.getElementById('btn-discover').onclick = () => discoverSrms();
+
+// SCU picker: initialise from localStorage, and re-scan whenever the
+// operator switches buses.
+(function initScuPicker() {
+  const sel = document.getElementById('scu-picker');
+  if (!sel) return;
+  const saved = localStorage.getItem('elc.floor.scu');
+  if (saved !== null && Array.from(sel.options).some(o => o.value === saved)) {
+    sel.value = saved;
+  }
+  sel.addEventListener('change', () => discoverSrms());
+})();
 
 // Escape closes whichever floor/schedule modal is open (the module
 // modal already has its own Escape handler earlier in this script).
@@ -4219,6 +4263,13 @@ refreshFloors().then(async () => {
   await refreshDevicesAndElements();
   const lastId = localStorage.getItem('elc.floor.selected');
   if (lastId && state.floors.some(f => f.id === lastId)) selectFloor(lastId);
+  // Auto-discover on load — replaces the removed "Discover SRMs"
+  // button.  Uses the last-selected SCU bus from localStorage
+  // (initialised by initScuPicker()) so multi-SCU installs come
+  // back on the same bus the operator was last working with.
+  // Silent so the boot flow doesn't fire a toast for the common
+  // case; failures still surface via the diagnostic pills.
+  discoverSrms({ silent: true }).catch(() => {});
 });
 </script>
 </body>

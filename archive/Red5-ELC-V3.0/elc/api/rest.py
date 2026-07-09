@@ -113,8 +113,14 @@ def build_router(
         return {"ok": True, "device": str(dev), "registered": registered}
 
     @router.post("/discover-srms")
-    async def discover_srms() -> dict[str, Any]:
+    async def discover_srms(scu: int = 0) -> dict[str, Any]:
         """Broadcast-discover SRM-family modules on the SCU.
+
+        Args:
+            scu: SCU bus address to query (0-15).  The frontend passes
+                the operator's last-selected SCU here so multi-SCU
+                installs can be enumerated one bus at a time.  Defaults
+                to 0 which matches the single-SCU dev/mock layout.
 
         Per operator-confirmed V3.8 §1.a/§1.b (2026-07-09):
         * Only TWO device-type codes matter for the SRM family:
@@ -137,11 +143,13 @@ def build_router(
         register loop -- the MockScu already carries synthetic state.
         """
         # Mock-mode / dev-mode: no wire, just register the advertised
-        # inventory so the UI has something to show.
+        # inventory so the UI has something to show.  Filter to the
+        # requested SCU bus so multi-SCU demo JSON files behave the
+        # same as physical hardware (each bus discovered independently).
         if _data_source != "physical":
             srm_devices = [
                 d for d in _demo_devices
-                if d.dev_type.name.startswith("SRM")
+                if d.dev_type.name.startswith("SRM") and d.scu == scu
             ]
             registered_now: list[str] = []
             already_known: list[str] = []
@@ -155,6 +163,7 @@ def build_router(
                 "source": _data_source,
                 "mode": "advertised_inventory",
                 "family_filter": "SRM",
+                "scu": scu,
                 "count": len(srm_devices),
                 "registered": registered_now,
                 "already_known": already_known,
@@ -169,7 +178,7 @@ def build_router(
         scanned_types: list[str] = []
         for dt in (_DT.SRM_4S, _DT.SRM_6S):     # 0x14, 0x15
             try:
-                await driver.panel_info(dt, scu=0)
+                await driver.panel_info(dt, scu=scu)
                 scanned_types.append(f"0x{int(dt):02X}")
             except Exception:                    # noqa: BLE001
                 # One family failing (e.g. no 4SRMs on this SCU) is
@@ -188,6 +197,7 @@ def build_router(
             "source": _data_source,
             "mode": "broadcast_query",
             "family_filter": "SRM",
+            "scu": scu,
             "queried_types": scanned_types,
             "modules_scanned": len(scanned_types),
             "registered": new_ids,

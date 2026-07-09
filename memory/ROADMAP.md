@@ -104,8 +104,12 @@ and a channel-detail modal.
 ### P1 - Hardware protocol
 - [x] ETLC V3.8 wire codec verified against vendor tool capture
 - [x] Bi-directional hardware sync (canvas ↔ physical relays)
-- [ ] Multi-relay opcode `0x08` (batched updates, more efficient
-      than per-channel 0x07 for broadcast operations)
+- [x] Broadcast ALL ON / ALL OFF burst — opcode `0x07`, N frames
+      per module (N = widest SRM channel count), fired concurrently
+      via `asyncio.gather` (2026-02-25)
+- [ ] Multi-relay opcode `0x08` (batched module-wide updates —
+      would collapse the N-frame burst into a single frame per
+      module; operator has not yet supplied the exact byte layout)
 - [ ] 0-10V analog dim wire frame (Phase 6.2) — currently a UI stub
       emitting `dim_level` events with `mocked: true`
 - [ ] 48SRM channel-layout empirical verification

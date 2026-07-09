@@ -4,6 +4,58 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-25 — V3.0 Phase 6.1M: ETLC V3.8 burst-broadcast (opcode 0x07)
+
+### What shipped
+
+- **Broadcast ALL ON / ALL OFF via burst opcode `0x07`** matching the
+  operator-confirmed 2026-07-25 hardware protocol note.  Per module,
+  N concurrent frames land on the SCU (N = max channel count across
+  discovered SRM-family modules — 4 for 4SRM-only, 6 when any 6SRM/
+  6ERM is present, 48 for 48SRM) using `asyncio.gather` over
+  independent one-shot TCP sockets.  No inter-frame delay, no per-
+  frame serialisation lock — matches "almost simultaneously without
+  waiting for the RX".
+  - New driver method: `SrmDriver.broadcast_v38(state, modules,
+    max_channels=None)` in `elc/drivers/srm.py`.  Auto-derives
+    `max_channels` from `channel_count_for(dev_type)` when omitted.
+  - New burst helper: `SrmDriver._v38_burst_send(frames)` — bypasses
+    the `_v38_write_lock` used by singular relay ops.
+  - Legacy `driver.broadcast(...)` wildcard-`RelaySet` path is
+    unchanged so mock/dev-mode and Phase-4 broadcast-complete tests
+    keep working byte-for-byte.
+- **REST `POST /api/elc/broadcast`** now enumerates registered SRM
+  modules from the replica, dedupes by `(dev_type, scu, address)`,
+  and routes v38 links through `broadcast_v38`.  Response includes
+  `mode: "v38_burst"` + `modules` + `max_channels` + `frames`
+  counters so the UI can surface exactly how many frames landed on
+  the wire.  Empty-inventory case returns a `note` hinting the
+  operator to run `POST /discover-srms` first.
+- **Frontend broadcast bar** (`demo/floor.html`) now fires one
+  server-side call instead of a browser-serialised loop of per-
+  channel POSTs.  Toast surfaces `modules × ch = frames` for
+  transparency; falls back to a helpful "no SRM modules known"
+  toast when the discovery step hasn't run yet.
+- **`Replica` remains the source of truth** — each module answers
+  with a single `0x25 RelayStatus`, `_on_v38_bytes` decodes the
+  channel mask, and `Replica` mirrors whatever the hardware
+  reports (not the commanded state).  Confirmed by the new
+  regression test.
+- **`docs/RED5-ETLC-V3.8-PROTOCOL.md` §7** now documents the burst
+  protocol byte-for-byte.
+- **6 new regression tests** in
+  `tests/drivers/test_srm_broadcast_v38.py`:
+  - Frame count = `modules × max_channels`, opcode 0x07, correct
+    state byte (parametrised ON/OFF).
+  - Dispatched concurrently (< 1s for 18 frames; < 0.5s dial
+    spread) — pins the anti-serialisation contract.
+  - Empty-module list is a no-op.
+  - `Replica` trusts the SCU's `0x25` reply mask.
+  - `max_channels=None` auto-derives from widest module.
+- **Full suite still green: 394 tests pass** (391 pre-existing +
+  3 net new after parametrisation).
+
+
 ## 2026-02-11 — V3.0 Phase 6.1L: ETLC V3.8 hardware protocol scaffolding
 
 ### What shipped

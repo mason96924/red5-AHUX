@@ -337,6 +337,116 @@ class SrmDriver(AbstractDevice):
         frame = self._registry.encode_message(RelaySet(device=wildcard, state=state))
         await self._link.send(frame)
 
+    async def broadcast_v38(
+        self,
+        state: bool,
+        modules: list[DeviceId],
+        max_channels: int | None = None,
+    ) -> None:
+        """V3.8 hardware broadcast ALL ON / ALL OFF.
+
+        Operator-confirmed protocol (2026-07-25 hardware capture):
+
+        * Wire opcode = ``0x07`` (RelayOverride), data byte = ``0x01``
+          (ON) or ``0x00`` (OFF).
+        * For each SRM-family module, fire N frames back-to-back where
+          ``N = max_channels`` — the max channel count across every
+          discovered SRM module (per operator choice: SRM_4S=4,
+          SRM_6S/6E=6, SRM_48S=48).  A 4SRM in a mixed 4+6 install
+          therefore receives 6 sends; the extra two land on non-
+          existent channels and are harmlessly dropped by the module.
+        * All frames are dispatched *concurrently* via
+          ``asyncio.gather`` on independent one-shot TCP sockets so
+          they arrive at the SCU almost simultaneously — the sender
+          does NOT wait for individual RX packets between frames.
+        * Each affected module answers with a single ``0x25``
+          RelayStatus once its relays settle; ``_on_v38_bytes``
+          decodes it and the ``Replica`` is updated with the mask the
+          hardware actually reports (source of truth = hardware).
+
+        No-op when ``modules`` is empty so the REST layer can call
+        this unconditionally on a freshly-booted SCU with no known
+        panels.
+        """
+        if not modules:
+            log.info("V3.8 broadcast: no modules to target, skipping")
+            return
+        if max_channels is None:
+            max_channels = max(
+                channel_count_for(m.dev_type) for m in modules
+            )
+        frames: list[bytes] = []
+        for module in modules:
+            for ch_idx in range(max_channels):
+                per_ch = DeviceId(
+                    dev_type=module.dev_type,
+                    scu=module.scu,
+                    address=module.address,
+                    # 1-based internal (matches _fan_out_status /
+                    # RelayOverrideV38.encode wire semantics).
+                    sub_address=ch_idx + 1,
+                )
+                frames.append(
+                    RelayOverrideV38(device=per_ch, state=state).encode()
+                )
+        log.info(
+            "V3.8 broadcast %s → %d module(s) × %d ch = %d frames (concurrent)",
+            "ON" if state else "OFF", len(modules), max_channels, len(frames),
+        )
+        await self._v38_burst_send(frames)
+
+    async def _v38_burst_send(self, frames: list[bytes]) -> None:
+        """Fire ``frames`` on the wire as concurrent, no-wait one-shots.
+
+        Each frame gets its own fresh TCP connection opened in parallel
+        via ``asyncio.gather`` — matches the operator-confirmed
+        'send N times almost simultaneously without waiting for RX'
+        broadcast protocol.  RX bytes drained from every socket are
+        fed into ``_on_v38_bytes`` so the resulting ``0x25``
+        RelayStatus frames update the Replica.
+
+        Unlike :meth:`_v38_one_shot_send` this does NOT hold
+        ``_v38_write_lock`` — the whole point of a burst is that the
+        frames land on the SCU with as little inter-frame delay as
+        possible.  This intentionally bypasses the single-connection
+        serialisation guard used by normal per-relay ops; only
+        explicit broadcast paths should call it.
+        """
+        import socket
+        host = getattr(self._link, "host", None)
+        port = getattr(self._link, "port", None)
+        if host is None or port is None:
+            log.warning("V3.8 burst: link has no host/port; skipping")
+            return
+        loop = asyncio.get_running_loop()
+
+        def _blocking_one(data: bytes) -> bytes:
+            try:
+                with socket.create_connection((host, port), timeout=2.0) as s:
+                    s.sendall(data)
+                    s.settimeout(0.4)
+                    buf = bytearray()
+                    try:
+                        while True:
+                            chunk = s.recv(4096)
+                            if not chunk:
+                                break
+                            buf.extend(chunk)
+                    except socket.timeout:
+                        pass
+                    return bytes(buf)
+            except Exception as e:  # noqa: BLE001
+                log.warning("V3.8 burst frame send failed: %s", e)
+                return b""
+
+        tasks = [
+            loop.run_in_executor(None, _blocking_one, f) for f in frames
+        ]
+        responses = await asyncio.gather(*tasks, return_exceptions=False)
+        for resp in responses:
+            if resp:
+                await self._on_v38_bytes(resp)
+
     async def query(
         self,
         device: DeviceId,

@@ -266,8 +266,64 @@ def build_router(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"link {link.name} not connected (state={link.state.value})",
             )
+        # V3.8 hardware path: enumerate registered SRM-family modules
+        # from the replica, dedupe by (dev_type, scu, address) since the
+        # replica stores per-channel snapshots, then fire opcode 0x07
+        # RelayOverride frames concurrently (see driver.broadcast_v38).
+        # Falls back to the legacy wildcard RelaySet for mock / non-v38
+        # links so the tests + editor demo keep working unchanged.
+        if getattr(link, "wire_version", "legacy") == "v38":
+            from elc.codec.etlc38 import channel_count_for
+            srm_families = {
+                DeviceType.SRM, DeviceType.SRM_4S,
+                DeviceType.SRM_6S, DeviceType.SRM_48S,
+            }  # SRM_6E / SRM_ERM / SRM_4E all alias to SRM_6S per IntEnum
+            seen: set[tuple[int, int, int]] = set()
+            modules: list[DeviceId] = []
+            for snap in replica.all():
+                d = snap.device
+                if d.dev_type not in srm_families:
+                    continue
+                key = (int(d.dev_type), d.scu, d.address)
+                if key in seen:
+                    continue
+                seen.add(key)
+                modules.append(DeviceId(
+                    dev_type=d.dev_type,
+                    scu=d.scu,
+                    address=d.address,
+                    sub_address=0,
+                ))
+            if modules:
+                max_ch = max(channel_count_for(m.dev_type) for m in modules)
+                await driver.broadcast_v38(body.state, modules, max_ch)
+                return {
+                    "ok": True,
+                    "broadcast": True,
+                    "state": body.state,
+                    "mode": "v38_burst",
+                    "modules": len(modules),
+                    "max_channels": max_ch,
+                    "frames": len(modules) * max_ch,
+                }
+            # No known SRM modules yet — surface that to the caller so
+            # the operator can hit "Discover SRMs" first instead of
+            # silently doing nothing.
+            return {
+                "ok": True,
+                "broadcast": True,
+                "state": body.state,
+                "mode": "v38_burst",
+                "modules": 0,
+                "note": "no SRM modules known; run POST /discover-srms first",
+            }
         await driver.broadcast(body.state)
-        return {"ok": True, "broadcast": True, "state": body.state}
+        return {
+            "ok": True,
+            "broadcast": True,
+            "state": body.state,
+            "mode": "legacy_wildcard",
+        }
 
     # ---- Phase 4 scheduler engine control --------------------------------
     # These are only mounted when a SchedulerEngine was wired into the

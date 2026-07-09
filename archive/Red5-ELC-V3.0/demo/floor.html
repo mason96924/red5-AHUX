@@ -1215,30 +1215,40 @@ async function broadcastRelay(state_target) {
   const ids = state.devices.map(d => d.device);
   if (ids.length === 0) return;
   const label = state_target ? 'ON' : 'OFF';
+  const moduleCount = new Set(
+    ids.map(x => x.split('/').slice(0,3).join('/'))
+  ).size;
   const ok = window.confirm(
     `Broadcast ALL ${label} to ${ids.length} channels across ` +
-    `${new Set(ids.map(x => x.split('/').slice(0,3).join('/'))).size} module(s)?\n\n` +
-    `This sends a RelayOverride to every registered channel.`
+    `${moduleCount} module(s)?\n\n` +
+    `Sends opcode 0x07 concurrently to every discovered SRM module.`
   );
   if (!ok) return;
   const on = document.getElementById('btn-broadcast-on');
   const off = document.getElementById('btn-broadcast-off');
   on.disabled = true; off.disabled = true;
-  let okCount = 0, failCount = 0;
-  // Fan out sequentially — the SCU driver serialises on _v38_write_lock
-  // anyway, and per-channel POSTs already return in ~150ms each; parallel
-  // fetches just queue in the browser without helping the wire.
-  for (const did of ids) {
-    try {
-      await api('POST', `/devices/${did}/relay`, { state: state_target });
-      okCount += 1;
-    } catch (_e) { failCount += 1; }
-  }
-  updateBroadcastBar();
-  if (failCount === 0) {
-    toast(`Broadcast ${label}: ${okCount} channel(s) OK`);
-  } else {
-    toast(`Broadcast ${label}: ${okCount} OK, ${failCount} failed`, true);
+  try {
+    // V3.8 burst broadcast: one server-side call fans out opcode
+    // 0x07 across every registered SRM module in parallel and
+    // trusts the module's 0x25 RelayStatus reply as source of
+    // truth (the SSE stream will animate the resulting state
+    // change).  Falls back to legacy wildcard RelaySet on mock.
+    const r = await api('POST', '/broadcast', { state: state_target });
+    if (r && r.mode === 'v38_burst') {
+      const frames = r.frames ?? (r.modules * (r.max_channels || 0));
+      toast(
+        `Broadcast ${label}: ${r.modules} module(s) × ` +
+        `${r.max_channels} ch = ${frames} frame(s) fired`
+      );
+    } else if (r && r.modules === 0) {
+      toast(`Broadcast ${label}: no SRM modules known — run Discover first`, true);
+    } else {
+      toast(`Broadcast ${label} sent`);
+    }
+  } catch (e) {
+    toast(`Broadcast ${label} failed: ${e.message || e}`, true);
+  } finally {
+    updateBroadcastBar();
   }
 }
 

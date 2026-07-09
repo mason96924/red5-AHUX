@@ -259,3 +259,35 @@ Master TX to turn 6sRM/scu=0/addr=2/channel=0 ON (computed, TBD verified)
    socket after a handshake we haven't yet identified.
 
 *Last hardware capture: 2026-02-11 (log lines 20:44 – 21:25).*
+
+## 7. Broadcast ALL ON / ALL OFF — burst 0x07 (2026-07-25)
+
+Operator-confirmed hardware protocol note (2026-07-25):
+
+> There must be a broadcast OFF.  The ALL on/off should use `07 01/00`
+> (for On/Off).  You send this command 6 or 4 times depending on the
+> number of relays in the module almost simultaneously without
+> waiting for the RX data packets.  When it completes, the module
+> returns with the `25` value as the return value with relay status.
+
+Concretely, the master implementation
+(`SrmDriver.broadcast_v38` + REST `POST /api/elc/broadcast`) fans out
+one `0x07 RelayOverride` frame per (module, channel) pair, sized to
+the *widest* SRM-family module discovered on the SCU (4 for a
+4SRM-only install, 6 when any 6SRM/6ERM is present, 48 for a
+48SRM).  A 4SRM in a mixed 4+6 install therefore receives 6 frames
+each broadcast — the extra two land on non-existent channels and are
+dropped by the module.
+
+* Frames are dispatched **concurrently** — one fresh TCP socket per
+  frame, all opened via `asyncio.gather`.  There is no per-frame
+  serialisation lock and no artificial inter-frame delay.
+* Each affected module answers with a single `0x25 RelayStatus`
+  frame carrying its resulting channel mask.  `SrmDriver._on_v38_bytes`
+  decodes that and the `Replica` is updated to match — **the module's
+  reported mask is the source of truth**, not the commanded state.
+* Legacy / mock (`wire_version != "v38"`) links still use the old
+  single-frame wildcard-`RelaySet` path so unit tests and the
+  MockScuServer demo continue to work unchanged.
+
+Regression pins: `tests/drivers/test_srm_broadcast_v38.py`.

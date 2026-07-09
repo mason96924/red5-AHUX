@@ -124,6 +124,48 @@
     background: #0e131a; border: 1px solid var(--line); border-radius: 3px;
     font-family: var(--mono); font-size: 11px;
   }
+
+  /* --- Grouped module chip in group card members list ------------------
+     Members were previously one chip per channel -- gets noisy fast on
+     4+6+6 installs.  Operator asked (2026-02-11) to collapse members
+     to one compact chip per MODULE with numbered dots for the
+     relays that are members.  Non-member relays are dimmed so
+     operators can spot at a glance which channels of the module
+     are in the group. */
+  .member-mod-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 7px; margin: 2px 4px 2px 0;
+    background: #0e131a; border: 1px solid var(--line); border-radius: 4px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--text);
+  }
+  .member-mod-tag .mm-title { color: var(--muted); font-size: 10px; }
+  .member-mod-tag .mm-dots  { display: inline-flex; gap: 3px; }
+  .member-mod-tag .mm-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 1px solid var(--muted); background: transparent;
+    font-size: 7.5px; line-height: 10px; text-align: center;
+    color: var(--muted); cursor: default;
+    transition: opacity .1s;
+  }
+  /* MEMBER of this group -> solid orange (matches Floor OFF colour;
+     schedule state is what drives on/off, not simple relay state, so
+     we use a neutral "assigned" tint here). */
+  .member-mod-tag .mm-dot.member {
+    background: #d97a30; border-color: #d97a30; color: #0a1418;
+    cursor: pointer;
+  }
+  .member-mod-tag .mm-dot.member:hover {
+    background: var(--bad); border-color: var(--bad); color: #fff;
+  }
+  /* Non-member relay -> transparent + dim so operator sees the module
+     still has spare channels available to add. */
+  .member-mod-tag .mm-dot:not(.member) { opacity: 0.35; }
+  .member-mod-tag .mm-x {
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
+    margin-left: 2px;
+  }
+  .member-mod-tag .mm-x:hover { color: var(--bad); }
   .schedule-tag .swatch { width: 8px; height: 8px; border-radius: 2px; }
   .tag-x { background: none; border: none; color: var(--muted);
            cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; }
@@ -982,22 +1024,70 @@ async function fillGroupDetail(card, gid) {
       schHost.appendChild(t);
     }
   }
-  // members
+  // members — grouped by module for a compact "one tile per module,
+  // dots for member relays" view (operator UX ask 2026-02-11).
   if (!detail.members || detail.members.length === 0) {
     memHost.innerHTML = `<span class="empty">drop devices here…</span>`;
   } else {
     memHost.innerHTML = '';
+    // Bucket member device ids by their module key.
+    const byModule = new Map();  // moduleKey -> Set<sub_address_int>
+    const memberSet = new Set(detail.members);
     for (const did of detail.members) {
-      const t = document.createElement('span');
-      t.className = 'member-tag';
-      t.dataset.testid = `grp-${gid}-mem-${did}`;
-      t.innerHTML = `${escapeHtml(did)}
-        <button class="tag-x" title="Remove">×</button>`;
-      t.querySelector('.tag-x').addEventListener('click', async () => {
-        try { await api('DELETE', `/groups/${gid}/members/${did}`); await refreshAll(); }
-        catch (e) { toast(e.message, true); }
+      const mk = moduleKeyForDevice(did);
+      const sub = parseInt(did.split('/')[3] || '0', 10);
+      if (!byModule.has(mk)) byModule.set(mk, new Set());
+      byModule.get(mk).add(sub);
+    }
+    const orderedKeys = [...byModule.keys()].sort();
+    for (const mk of orderedKeys) {
+      const memberSubs = byModule.get(mk);
+      // Look up total channel count from state.devices so we can
+      // draw ALL dots (member + non-member).  If the module isn't in
+      // state.devices (e.g. member persisted for a device the
+      // replica dropped), fall back to showing only the members.
+      const modChans = state.devices
+        .filter(d => moduleKeyForDevice(d.device) === mk)
+        .map(d => parseInt(d.device.split('/')[3] || '0', 10))
+        .sort((a, b) => a - b);
+      const allSubs = modChans.length
+        ? modChans
+        : [...memberSubs].sort((a, b) => a - b);
+      const tag = document.createElement('span');
+      tag.className = 'member-mod-tag';
+      tag.dataset.testid = `grp-${gid}-mem-mod-${mk}`;
+      tag.innerHTML = `
+        <span class="mm-title">${escapeHtml(mk)}</span>
+        <span class="mm-dots">${allSubs.map(s => {
+          const isMember = memberSubs.has(s);
+          const did = `${mk}/${s}`;
+          return `<span class="mm-dot${isMember ? ' member' : ''}"
+                        data-device-id="${escapeHtml(did)}"
+                        title="${escapeHtml(did)}${isMember ? ' — click to remove' : ' (not a member)'}"
+                        >${s}</span>`;
+        }).join('')}</span>
+        <button class="mm-x" title="Remove all ${memberSubs.size} relay(s) of ${mk} from group"
+                data-testid="grp-${gid}-mem-mod-${mk}-remove-all">×</button>`;
+      // Click a MEMBER dot -> remove that one channel from group.
+      for (const dot of tag.querySelectorAll('.mm-dot.member')) {
+        dot.addEventListener('click', async () => {
+          const did = dot.dataset.deviceId;
+          try {
+            await api('DELETE', `/groups/${gid}/members/${did}`);
+            await refreshAll();
+          } catch (e) { toast(e.message, true); }
+        });
+      }
+      // Click × -> bulk-remove every member of this module.
+      tag.querySelector('.mm-x').addEventListener('click', async () => {
+        try {
+          for (const s of memberSubs) {
+            await api('DELETE', `/groups/${gid}/members/${mk}/${s}`);
+          }
+          await refreshAll();
+        } catch (e) { toast(e.message, true); }
       });
-      memHost.appendChild(t);
+      memHost.appendChild(tag);
     }
   }
 }

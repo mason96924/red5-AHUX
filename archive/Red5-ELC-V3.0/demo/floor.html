@@ -742,16 +742,11 @@
       <button class="mm-close" id="mm-close"
               data-testid="mm-close" title="Close">×</button>
     </div>
-    <div class="mm-tabs">
-      <button class="mm-tab active" id="mm-tab-individual"
-              data-testid="mm-tab-individual">Individual</button>
-      <button class="mm-tab" id="mm-tab-multi"
-              data-testid="mm-tab-multi">Multi-Select</button>
-    </div>
     <div class="mm-body">
-      <!-- Batch action bar (visible only in multi-select mode) -->
+      <!-- Batch action bar — always visible.  Buttons disable when
+           the checkbox selection is empty. -->
       <div class="mm-batch" id="mm-batch"
-           data-testid="mm-batch" style="display:none">
+           data-testid="mm-batch">
         <button id="mm-select-all"
                 data-testid="mm-select-all">Select all</button>
         <button id="mm-select-none"
@@ -767,9 +762,9 @@
         <button id="mm-batch-clear" class="clear"
                 data-testid="mm-batch-clear" disabled>Un-assign</button>
       </div>
-      <!-- Property editor (visible only in multi-select mode) -->
-      <div class="mm-props" id="mm-props"
-           data-testid="mm-props" style="display:none">
+      <!-- Property editor — always visible.  Save applies to whichever
+           channels are checked in the rows below. -->
+      <div class="mm-props" id="mm-props" data-testid="mm-props">
         <label>Copy from</label>
         <select id="mm-copy-from" data-testid="mm-copy-from"
                 style="grid-column: 2 / -1"
@@ -809,7 +804,7 @@
         </select>
         <button class="mm-apply" id="mm-apply"
                 data-testid="mm-apply" disabled>
-          Apply to selection
+          Save changes to selection
         </button>
       </div>
       <!-- Channel rows -->
@@ -1250,7 +1245,7 @@ function openModuleModal(key) {
   const chs = _moduleChannels(key);
   if (chs.length === 0) { toast('Module has no channels', true); return; }
   state.moduleModal = {
-    key, mode: 'individual', selected: new Set(),
+    key, selected: new Set(),
   };
   const parts = key.split('/');
   document.getElementById('mm-title').textContent =
@@ -1302,18 +1297,113 @@ function _syncModuleModalUrl() {
   window.history.replaceState(null, '', u.toString());
 }
 
-function _mmSwitchMode(mode) {
+function _mmSwitchMode(_mode) {
+  // Legacy no-op — modes were merged 2026-07-09.  The tab buttons no
+  // longer exist; every row now has both a checkbox and a toggle,
+  // and the property editor + batch bar are always visible.
+}
+
+function renderModuleModal() {
   if (!state.moduleModal) return;
-  state.moduleModal.mode = mode;
-  if (mode === 'individual') state.moduleModal.selected.clear();
-  document.getElementById('mm-tab-individual')
-    .classList.toggle('active', mode === 'individual');
-  document.getElementById('mm-tab-multi')
-    .classList.toggle('active', mode === 'multi');
-  const isMulti = (mode === 'multi');
-  document.getElementById('mm-batch').style.display = isMulti ? 'flex' : 'none';
-  document.getElementById('mm-props').style.display = isMulti ? 'grid' : 'none';
-  renderModuleModal();
+  const { key, selected } = state.moduleModal;
+  const chs = _moduleChannels(key);
+  const host = document.getElementById('mm-rows');
+  host.innerHTML = '';
+
+  for (const d of chs) {
+    const did = d.device;
+    const chNum = did.split('/')[3];
+    const live = state.liveDevices.get(did) || {};
+    const isOn = live.relay_state === true;
+    const isOff = live.relay_state === false;
+    const dotCls = isOn ? 'mod-dot on' : isOff ? 'mod-dot off' : 'mod-dot';
+    const [, el] = _findLightingElement(did);
+    const badge = el
+      ? `<span class="mm-badge ${el.type === 'dimmer_0_10v' ? 'dimmer' : 'onoff'}"
+              title="Assigned as ${el.type}">${el.type === 'dimmer_0_10v' ? '0-10V' : 'On/Off'}</span>`
+      : `<span class="mm-badge" title="No element type assigned yet">unassigned</span>`;
+
+    const row = document.createElement('div');
+    row.className = 'mm-row';
+    row.dataset.testid = `mm-row-${did}`;
+    // Merged UX: every row has BOTH a checkbox (for multi-select
+    // property Save) AND a live toggle button (individual on/off).
+    // Draggable onto the canvas — assigned rows go straight in,
+    // un-assigned rows get an auto-onoff default on drop.
+    row.innerHTML = `
+      <input type="checkbox" class="mm-cb"
+             data-testid="mm-cb-${did}"
+             ${selected.has(did) ? 'checked' : ''}/>
+      <span class="mm-ch">ch ${chNum}</span>
+      <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
+      ${badge}
+      <button class="mm-toggle ${isOn ? 'on' : 'off'}"
+              data-testid="mm-toggle-${did}"
+              title="Toggle this channel (POST /devices/${did}/relay)">
+        ${isOn ? 'ON' : 'OFF'}
+      </button>
+    `;
+    row.setAttribute('draggable', 'true');
+    row.style.cursor = 'grab';
+    row.title = el
+      ? 'Drag onto the floor to place  ·  Click to select  ·  Toggle changes hardware'
+      : 'Drag onto the floor to auto-assign (On/Off) and place  ·  Or tick + Save with a chosen type';
+
+    // Whole-row click toggles the checkbox — excluding the toggle
+    // button (which fires the relay) and the checkbox itself (native
+    // click handling flips it).
+    const cb = row.querySelector('.mm-cb');
+    const tglBtn = row.querySelector('.mm-toggle');
+    row.addEventListener('click', (ev) => {
+      if (ev.target === cb || ev.target.closest('.mm-toggle')) return;
+      cb.checked = !cb.checked;
+      if (cb.checked) selected.add(did); else selected.delete(did);
+      _mmRefreshBatchState();
+    });
+    cb.addEventListener('change', (ev) => {
+      if (ev.target.checked) selected.add(did); else selected.delete(did);
+      _mmRefreshBatchState();
+      ev.stopPropagation();
+    });
+
+    // Toggle button — relays the channel on the wire.
+    tglBtn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const target = !isOn;
+      ev.target.disabled = true;
+      try {
+        await api('POST', `/devices/${did}/relay`, { state: target });
+        const l = state.liveDevices.get(did) || {};
+        l.relay_state = target;
+        state.liveDevices.set(did, l);
+        renderModuleModal();
+        renderSrmGrid();
+      } catch (e) {
+        toast(`Toggle failed: ${e.message}`, true);
+        ev.target.disabled = false;
+      }
+    });
+
+    // Drag-source wiring — same MIME as the legacy SRM tiles so the
+    // canvas drop handler picks it up.  Un-assigned rows are handled
+    // by the drop handler (auto-upserts a sensible onoff default).
+    row.addEventListener('dragstart', (ev) => {
+      if (ev.target.closest('.mm-toggle')
+       || ev.target.closest('.mm-cb')) {
+        ev.preventDefault();
+        return;
+      }
+      ev.dataTransfer.effectAllowed = 'copy';
+      ev.dataTransfer.setData('application/x-elc-device-id', did);
+      document.getElementById('module-modal').classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      document.getElementById('module-modal').classList.remove('dragging');
+    });
+
+    host.appendChild(row);
+  }
+  _mmRefreshBatchState();
 }
 
 // Prefill the property editor from the first assigned channel in the
@@ -1386,111 +1476,6 @@ function _mmPopulateCopyFrom(currentKey) {
     opt.textContent = `ch ${chNum} — ${summary}`;
     currentGroup.appendChild(opt);
   }
-}
-
-function renderModuleModal() {
-  if (!state.moduleModal) return;
-  const { key, mode, selected } = state.moduleModal;
-  const chs = _moduleChannels(key);
-  const host = document.getElementById('mm-rows');
-  host.innerHTML = '';
-
-  for (const d of chs) {
-    const did = d.device;
-    const chNum = did.split('/')[3];
-    const live = state.liveDevices.get(did) || {};
-    const isOn = live.relay_state === true;
-    const isOff = live.relay_state === false;
-    const dotCls = isOn ? 'mod-dot on' : isOff ? 'mod-dot off' : 'mod-dot';
-    const [, el] = _findLightingElement(did);
-    const badge = el
-      ? `<span class="mm-badge ${el.type === 'dimmer_0_10v' ? 'dimmer' : 'onoff'}"
-              title="Assigned as ${el.type}">${el.type === 'dimmer_0_10v' ? '0-10V' : 'On/Off'}</span>`
-      : `<span class="mm-badge" title="No element type assigned yet">unassigned</span>`;
-
-    const row = document.createElement('div');
-    row.className = 'mm-row';
-    row.dataset.testid = `mm-row-${did}`;
-    if (mode === 'multi') {
-      row.innerHTML = `
-        <input type="checkbox" class="mm-cb"
-               data-testid="mm-cb-${did}"
-               ${selected.has(did) ? 'checked' : ''}/>
-        <span class="mm-ch">ch ${chNum}</span>
-        <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
-        ${badge}
-      `;
-      // Whole-row click toggles the checkbox so any target in the row
-      // works (the checkbox itself, the channel label, the badge).
-      // Fixes the "only ALL or nothing" report where clicking the
-      // checkbox's tiny hit-target felt like it wasn't landing.
-      row.style.cursor = 'pointer';
-      const cb = row.querySelector('.mm-cb');
-      row.addEventListener('click', (ev) => {
-        if (ev.target !== cb) {
-          cb.checked = !cb.checked;
-        }
-        if (cb.checked) selected.add(did); else selected.delete(did);
-        _mmRefreshBatchState();
-        ev.stopPropagation();
-      });
-    } else {
-      // Individual mode — row is also a drag source so operators can
-      // drag a channel straight from the modal onto the canvas.  The
-      // canvas drop handler is already wired for the same MIME type.
-      // Un-assigned rows are ALSO draggable now: the drop handler
-      // upserts a default `onoff` element and places the fixture in
-      // one shot (matches the operator's mental model of "just drop
-      // it on the floor and I'll refine the type later").
-      row.innerHTML = `
-        <span class="mm-ch">ch ${chNum}</span>
-        <span class="${dotCls}" title="${isOn ? 'ON' : isOff ? 'OFF' : 'unknown'}"></span>
-        ${badge}
-        <button class="mm-toggle ${isOn ? 'on' : 'off'}"
-                data-testid="mm-toggle-${did}">
-          ${isOn ? 'ON' : 'OFF'}
-        </button>
-      `;
-      row.setAttribute('draggable', 'true');
-      row.style.cursor = 'grab';
-      const [, elForDrag] = _findLightingElement(did);
-      row.title = elForDrag
-        ? 'Drag onto the floor to place this channel'
-        : 'Drag onto the floor to auto-assign (On/Off) and place';
-      row.addEventListener('dragstart', (ev) => {
-        // Don't start a drag from the toggle button — it has its own
-        // click handler.  Native drag lifts elements bypassing click,
-        // but stopping propagation here keeps the toggle immune.
-        if (ev.target.closest('.mm-toggle')) { ev.preventDefault(); return; }
-        ev.dataTransfer.effectAllowed = 'copy';
-        ev.dataTransfer.setData('application/x-elc-device-id', did);
-        // Fade the backdrop out so the canvas underneath becomes the
-        // drop target (see .mm-backdrop.dragging in the stylesheet).
-        document.getElementById('module-modal').classList.add('dragging');
-      });
-      row.addEventListener('dragend', () => {
-        document.getElementById('module-modal').classList.remove('dragging');
-      });
-      row.querySelector('.mm-toggle').addEventListener('click', async (ev) => {
-        ev.stopPropagation();
-        const target = !isOn;
-        ev.target.disabled = true;
-        try {
-          await api('POST', `/devices/${did}/relay`, { state: target });
-          const l = state.liveDevices.get(did) || {};
-          l.relay_state = target;
-          state.liveDevices.set(did, l);
-          renderModuleModal();
-          renderSrmGrid();
-        } catch (e) {
-          toast(`Toggle failed: ${e.message}`, true);
-          ev.target.disabled = false;
-        }
-      });
-    }
-    host.appendChild(row);
-  }
-  _mmRefreshBatchState();
 }
 
 function _mmRefreshBatchState() {
@@ -1671,8 +1656,6 @@ document.getElementById('module-modal').addEventListener('click', (ev) => {
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && state.moduleModal) closeModuleModal();
 });
-document.getElementById('mm-tab-individual').onclick = () => _mmSwitchMode('individual');
-document.getElementById('mm-tab-multi').onclick      = () => _mmSwitchMode('multi');
 document.getElementById('mm-select-all').onclick = () => {
   if (!state.moduleModal) return;
   for (const d of _moduleChannels(state.moduleModal.key)) {
@@ -1960,6 +1943,11 @@ document.getElementById('ee-toggle').onclick = async () => {
     state.liveDevices.set(did, live);
     state.liveDevices.set(editingId, live);
     refreshOpsPanel();
+    // Bug fix (2026-07-09): the right-rail module dots read from
+    // state.liveDevices.  Repaint them here so a canvas-side toggle
+    // is visible immediately without waiting for the SSE echo.
+    renderSrmGrid();
+    if (state.moduleModal) renderModuleModal();
   } catch (e) { toast(`Toggle failed: ${e.message}`, true); }
 };
 

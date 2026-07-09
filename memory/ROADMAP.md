@@ -54,7 +54,7 @@ and a channel-detail modal.
       "select all channels into canvas selection" behaviour for the
       align/delete toolbar workflows.
 
-### Phase C — UX consolidation  ✅ DONE (2026-07-09 batch 2 + 3)
+### Phase C — UX consolidation  ✅ DONE (2026-07-09 batches 2 + 3 + 4)
 - [x] LHS floor list collapsed into a header **Floor** dropdown; the
       `＋ New floor…` action lives inside the dropdown itself.
 - [x] Floor details moved into a **pop-up modal** opened via a new
@@ -65,30 +65,30 @@ and a channel-detail modal.
 - [x] **Schedules** header button opens the schedule / group editor
       (`/editor`) inside an iframe modal — the operator never leaves
       the floor page to bind schedules to groups.
-- [x] Module-modal row click hit-target widened (whole row toggles
-      checkbox) — fixes the "multi-select feels all-or-nothing" bug
-      where only the tiny native checkbox glyph landed clicks.
-- [x] Module-modal channel rows are now **drag sources** in
-      Individual mode — assigned AND unassigned.  Un-assigned drop
-      auto-upserts a sane `onoff` default so the drop always
-      completes in one action; refinement (lux/beam/CCT/shape) is
-      done later via Multi-Select Apply.
-- [x] All three modals are now **draggable** via their header
-      (`.mm-hdr`), clamped to the viewport so they can never go
-      fully off-screen.  Positions stick between opens (until
-      reload).
-- [x] `.mm-backdrop.dragging` — when a channel drag begins inside a
-      modal, the backdrop turns transparent AND `pointer-events: none`
-      so the canvas underneath receives the drop event.  The modal
-      panel fades to 35% opacity so the operator can still see where
-      the drag came from.
-- [x] Header **Discover SRMs** button + backend `POST
-      /api/elc/discover-srms` endpoint — SRM-family filter applied
-      server-side.  Today registers every advertised SRM channel; the
-      exact same endpoint switches to a real over-the-wire StatusQuery
-      sweep of the 10-bit address space (ETLC §1.a) once
-      `SrmDriver.discover_srms()` lands — **no frontend change
-      required at that point**.
+- [x] Module modal — **modes merged (batch 4)**.  No more
+      Individual / Multi-Select tabs; every row shows both a
+      checkbox (for multi-row Save) AND an ON/OFF toggle button
+      (for immediate relay operations).  Property editor and batch
+      bar are always visible.  "Apply" renamed to
+      "Save changes to selection".
+- [x] Module modal channel rows are drag sources — assigned AND
+      un-assigned.  Un-assigned drop auto-upserts a sane `onoff`
+      default.
+- [x] All three modals draggable via header, viewport-clamped.
+      Panel position resets to centred on close.
+- [x] `.mm-backdrop.dragging` transparent + pointer-events:none so
+      the canvas underneath receives the drop.
+- [x] Header **Discover SRMs** button + backend
+      `POST /api/elc/discover-srms` (SRM-family only).
+- [x] Purple `.opened` highlight on the module box whose modal is
+      open — restores the visual that was orphaned when the click
+      behaviour changed.
+- [x] Canvas element-editor toggle now calls `renderSrmGrid()` and
+      `renderModuleModal()` — module dots + open-modal rows flip
+      immediately, no waiting for the SSE echo.
+- [x] Property Save is reflected on canvas via `paintCanvas()` inside
+      `_mmApplyProps` — already in place; verified with the merged
+      layout that gives the Save button a permanent home.
 
 ### Phase C — Follow-ups (deferred)
 - [ ] One-shot cleanup: delete orphaned legacy 0-based placements

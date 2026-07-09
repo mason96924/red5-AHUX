@@ -792,8 +792,11 @@
           <option value="polyline">Polyline</option>
           <option value="regular_polygon">Regular polygon</option>
         </select>
-        <label>Tube</label>
-        <select id="mm-tube" data-testid="mm-tube">
+        <!-- Tube type is meaningful only for line-shaped fixtures.
+             The wrapper hides both the label and the <select> as a
+             pair so the grid row collapses cleanly. -->
+        <label id="mm-tube-label" style="display:none">Tube</label>
+        <select id="mm-tube" data-testid="mm-tube" style="display:none">
           <option value="none">Unspecified</option>
           <option value="led_strip">LED strip</option>
           <option value="T2">T2 (7 mm)</option>
@@ -803,8 +806,8 @@
           <option value="T12">T12 (38 mm)</option>
         </select>
         <button class="mm-apply" id="mm-apply"
-                data-testid="mm-apply" disabled>
-          Save changes to selection
+                data-testid="mm-apply">
+          Save changes
         </button>
       </div>
       <!-- Channel rows -->
@@ -1419,9 +1422,11 @@ function _mmPrefillProps(chs) {
       document.getElementById('mm-cct').value = el.cct_k ?? 4000;
       document.getElementById('mm-shape').value = el.shape || 'point';
       document.getElementById('mm-tube').value = el.tube_type || 'none';
+      _mmSyncTubeVisibility();
       return;
     }
   }
+  _mmSyncTubeVisibility();
 }
 
 // Rebuild the "Copy from…" dropdown from every currently-assigned
@@ -1481,11 +1486,32 @@ function _mmPopulateCopyFrom(currentKey) {
 function _mmRefreshBatchState() {
   if (!state.moduleModal) return;
   const n = state.moduleModal.selected.size;
+  const totalCh = _moduleChannels(state.moduleModal.key).length;
   document.getElementById('mm-sel-count').textContent = String(n);
-  const dis = (n === 0);
-  for (const id of ['mm-batch-on', 'mm-batch-off', 'mm-batch-clear', 'mm-apply']) {
-    document.getElementById(id).disabled = dis;
-  }
+  // Batch relay + un-assign act on the current selection only, so
+  // they stay gated on n > 0.  Save is different: with zero rows
+  // checked, we fall back to "apply to every channel in this module"
+  // so the button is never a dead-end — operators who just opened a
+  // module and edited a property expect Save to Just Work.
+  const relayDis = (n === 0);
+  document.getElementById('mm-batch-on').disabled = relayDis;
+  document.getElementById('mm-batch-off').disabled = relayDis;
+  document.getElementById('mm-batch-clear').disabled = relayDis;
+  const applyBtn = document.getElementById('mm-apply');
+  applyBtn.disabled = false;   // never disabled — always saves something
+  applyBtn.textContent = n === 0
+    ? `Save changes to all ${totalCh} channels`
+    : `Save changes to ${n} selected`;
+}
+
+// Toggle the tube-type row's visibility based on the current shape.
+// Line-shaped fixtures are the only ones where tube diameter matters
+// (T2/T4/T5/T8/T12); every other shape hides both label + select.
+function _mmSyncTubeVisibility() {
+  const shape = document.getElementById('mm-shape').value;
+  const show = (shape === 'line');
+  document.getElementById('mm-tube-label').style.display = show ? '' : 'none';
+  document.getElementById('mm-tube').style.display = show ? '' : 'none';
 }
 
 async function _mmBatchRelay(target) {
@@ -1538,15 +1564,28 @@ async function _mmBatchClear() {
 
 async function _mmApplyProps() {
   if (!state.moduleModal) return;
-  const ids = [...state.moduleModal.selected];
+  // Fallback: when nothing is checked, apply to every channel in the
+  // currently-opened module.  Matches the "I opened this module to
+  // configure it — Save changes everything unless I narrow the scope"
+  // mental model.  The button label already tells the operator which
+  // scope will be used.
+  let ids = [...state.moduleModal.selected];
+  if (ids.length === 0) {
+    ids = _moduleChannels(state.moduleModal.key).map(d => d.device);
+  }
   if (ids.length === 0) return;
+  // Only include tube_type when shape=line (the property is
+  // meaningless otherwise; server persists whatever we send).
+  const shape = document.getElementById('mm-shape').value || 'point';
   const payload = {
     type:          document.getElementById('mm-type').value,
     max_lux:       parseFloat(document.getElementById('mm-lux').value) || 500,
     beam_radius_m: parseFloat(document.getElementById('mm-beam').value) || 4.0,
     cct_k:         parseInt(document.getElementById('mm-cct').value, 10) || 4000,
-    shape:         document.getElementById('mm-shape').value || 'point',
-    tube_type:     document.getElementById('mm-tube').value || 'none',
+    shape,
+    tube_type:     (shape === 'line')
+                     ? (document.getElementById('mm-tube').value || 'none')
+                     : 'none',
   };
   try {
     // Step 1 — ensure every id is assigned to the chosen type (idempotent
@@ -1672,6 +1711,7 @@ document.getElementById('mm-batch-on').onclick    = () => _mmBatchRelay(true);
 document.getElementById('mm-batch-off').onclick   = () => _mmBatchRelay(false);
 document.getElementById('mm-batch-clear').onclick = _mmBatchClear;
 document.getElementById('mm-apply').onclick       = _mmApplyProps;
+document.getElementById('mm-shape').addEventListener('change', _mmSyncTubeVisibility);
 document.getElementById('mm-copy-from').addEventListener('change', (ev) => {
   const did = ev.target.value;
   if (!did) return;
@@ -1683,6 +1723,7 @@ document.getElementById('mm-copy-from').addEventListener('change', (ev) => {
   document.getElementById('mm-cct').value   = el.cct_k ?? 4000;
   document.getElementById('mm-shape').value = el.shape || 'point';
   document.getElementById('mm-tube').value  = el.tube_type || 'none';
+  _mmSyncTubeVisibility();
   toast(`Copied properties from ${did}`);
   // Reset the picker so the same choice can be re-applied later.
   ev.target.value = '';

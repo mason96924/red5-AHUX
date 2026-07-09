@@ -34,6 +34,40 @@ frames does NOT match hardware.  Real preamble is `45 4C 43 40`
 ("ELC@") and frames are 12 bytes.  We suspect the `0xFFFFFFFF` prose
 was for a different device class or a discontinued wire version.
 
+### 1.c. PanelInfo query — vendor-captured wire bytes (2026-07-09)
+
+The vendor tool **SCU Smart Manager V1.6.9** emits the following
+6-byte payload when the operator issues a PanelInfo broadcast (TX
+verified byte-for-byte from the tool's log window):
+
+```
+byte 0    dev_type       0x14 (4SRM)  or  0x15 (6SRM / 6ERM shared)
+byte 1    scu byte       0x03  (scu=0, addr[9:8]=0b11)
+byte 2    addr byte      0xFF  (addr[7:0])
+byte 3    sub-address    0x00  (module-wide query)
+byte 4    OPCODE         0x14  (PanelInfo / StatusQuery)
+byte 5    data byte      0x11  (query parameter — fixed)
+```
+
+The SCU replies with **one `RelayStatus` frame per populated module**
+of the queried device type.  Each response carries the module's real
+`(scu, address)` and the current channel bitmask.  For a
+`dev_type = 0x15` broadcast, both 6SRM and 6ERM devices respond
+(they share `0x15` on the wire).
+
+Vendor-verified example (2026-07-09, hardware at 192.168.1.222:9760):
+```
+TX  15 03 FF 00 14 11   [cs]      ← broadcast 6SRM/6ERM
+RX  15 00 02 00 25 24   [cs]      ← 6-family module at scu=0, addr=2, mask=0x24 (ch3+ch6 ON)
+RX  15 00 01 00 25 00   [cs]      ← 6-family module at scu=0, addr=1, all off
+TX  14 03 FF 00 14 11   [cs]      ← broadcast 4SRM
+RX  14 00 03 00 25 03   [cs]      ← 4SRM at scu=0, addr=3, mask=0x03 (ch1+ch2 ON)
+```
+
+`elc/codec/etlc38.py::StatusQueryV38` encodes byte-perfect against
+this capture, and `RelayStatusV38.try_decode` round-trips every
+response in the log above.
+
 ### 1.a. Addressing scheme — operator-confirmed 2026-07-09
 
 Bytes `[P0, P1, P2]` (relative to the payload — i.e. wire bytes 5, 6, 7)

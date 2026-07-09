@@ -32,14 +32,25 @@ DI1_TAIL: Final[bytes] = b"\x11\x12\x13\x14"
 
 OPCODE_RELAY_OVERRIDE: Final[int] = 0x07
 OPCODE_RELAY_STATUS: Final[int] = 0x25
-# Master → SCU "please tell me the current relay state of this
-# module".  Kept in sync with the legacy StatusQuery opcode (0x16)
-# in elc/codec/messages.py so V3.8 shares the semantic even if the
-# vendor tool never emits it -- the SCU echoes an unsolicited
-# RelayStatus (0x25) in response, which _on_v38_bytes already
-# decodes.  Safe: the SCU never fires a relay in response to a
-# query frame.
-OPCODE_STATUS_QUERY: Final[int] = 0x16
+# Master → SCU "please tell me the current relay state" (PanelInfo).
+# Byte-verified against SCU Smart Manager V1.6.9 vendor capture,
+# 2026-07-09.  TX payload for 6SRM broadcast reads:
+#
+#     15 03 FF 00 14 11
+#     ^^ ^^ ^^ ^^ ^^ ^^
+#     |  |  |  |  |  |
+#     |  |  |  |  |  data byte (fixed 0x11 -- query parameter)
+#     |  |  |  |  opcode 0x14
+#     |  |  |  sub-address (0 for module-wide)
+#     |  |  addr[7:0]
+#     |  scu<<2 | addr[9:8]
+#     dev_type
+#
+# SCU replies with one RelayStatus (opcode 0x25) frame per populated
+# module of the queried device type -- see _on_v38_bytes.  Safe: the
+# SCU never fires a relay in response to a query frame.
+OPCODE_STATUS_QUERY: Final[int] = 0x14
+STATUS_QUERY_DATA: Final[int] = 0x11
 
 TX_FRAME_LEN: Final[int] = 16
 RX_FRAME_LEN: Final[int] = 12
@@ -230,6 +241,6 @@ class StatusQueryV38:
             addr_byte,
             self.device.sub_address & 0xFF,
             OPCODE_STATUS_QUERY,
-            0x00,                          # reserved / data byte
+            STATUS_QUERY_DATA,             # vendor-captured 0x11
         ]) + DI1_TAIL
         return _wrap(payload)

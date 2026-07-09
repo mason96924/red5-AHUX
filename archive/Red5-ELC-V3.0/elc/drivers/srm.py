@@ -14,6 +14,7 @@ from elc.codec.etlc38 import (
     RelayOverrideV38,
     RelayStatusV38,
     StatusQueryV38,
+    channel_count_for,
     channels_from_mask,
 )
 from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState, StatusQuery
@@ -232,14 +233,20 @@ class SrmDriver(AbstractDevice):
         The SCU sends a module-wide status; downstream code
         (Replica, UI) reasons in per-channel ``RelayState``.  Bridge
         the two here.
+
+        Channel count is family-dependent: 4 for 4SRM, 6 for the
+        6SRM/6ERM shared family (0x15), 48 for 48SRM.  Publishing
+        exactly the right number is critical -- 4SRMs used to receive
+        6 phantom RelayStates each, creating two orphan channels
+        (sub_address 5-6) that never map to a real relay.
         """
+        n_ch = channel_count_for(status.device.dev_type)
         # 1-based channel numbering on the wire: state_mask bit N
         # corresponds to physical channel N+1 (sub_address N+1 in our
-        # 1-based internal model).  6 channels covers 6sRM/6eRM;
-        # 4sRM ignores channels 5-6 in the mask.
-        channels = channels_from_mask(status.state_mask, 6)
-        log.info("V3.8 RX RelayStatus %s mask=0x%02X → %s",
-                 status.device, status.state_mask,
+        # 1-based internal model).
+        channels = channels_from_mask(status.state_mask, n_ch)
+        log.info("V3.8 RX RelayStatus %s mask=0x%02X (%d ch) → %s",
+                 status.device, status.state_mask, n_ch,
                  [i + 1 for i, on in enumerate(channels) if on] or "all OFF")
         for chan_idx, is_on in enumerate(channels):
             per_channel = DeviceId(

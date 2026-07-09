@@ -205,6 +205,22 @@ def channels_from_mask(mask: int, module_channel_count: int = 6) -> list[bool]:
     return [(mask >> i) & 1 == 1 for i in range(module_channel_count)]
 
 
+def channel_count_for(dev_type: DeviceType) -> int:
+    """Number of relay channels for a given SRM-family device type.
+
+    Operator-confirmed 2026-07-09 -- 4SRM has 4 channels, the
+    6-family (both 6SRM and 6ERM, sharing 0x15) has 6, and 48SRM
+    (byte code TBD) has 48.  Anything unknown defaults to 6 so a
+    novel family degrades gracefully rather than truncating state.
+    """
+    if dev_type == DeviceType.SRM_4S:
+        return 4
+    if dev_type == DeviceType.SRM_48S:
+        return 48
+    # SRM_6S / SRM_6E / SRM_ERM / SRM_4E all alias to 0x15 → 6 channels.
+    return 6
+
+
 @dataclass(frozen=True)
 class StatusQueryV38:
     """Master → SCU "read module state" (opcode 0x16).

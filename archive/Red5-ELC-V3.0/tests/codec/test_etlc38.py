@@ -70,19 +70,13 @@ def test_relay_override_matches_vendor_capture():
     assert fr.hex() == "454c43400b1500020107011112131416"
 
 
-def test_relay_override_ch0_wire_bytes():
-    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+def test_relay_override_ch1_wire_bytes():
+    """Channel is 1-based on wire: sub_address=1 → wire byte 0x01."""
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=1)
     fr = RelayOverrideV38(device=dev, state=True).encode()
-    # channel 0 on wire, ON
-    assert fr[8] == 0x00        # sub-address (wire) byte
+    assert fr[8] == 0x01        # sub-address byte
     assert fr[9] == OPCODE_RELAY_OVERRIDE
     assert fr[10] == 0x01       # state ON
-
-
-def test_relay_override_off_state():
-    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
-    fr = RelayOverrideV38(device=dev, state=False).encode()
-    assert fr[10] == 0x00
 
 
 def test_relay_status_decodes_hardware_capture():

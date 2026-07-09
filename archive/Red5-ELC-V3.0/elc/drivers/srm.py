@@ -179,20 +179,20 @@ class SrmDriver(AbstractDevice):
         (Replica, UI) reasons in per-channel ``RelayState``.  Bridge
         the two here.
         """
-        # Assume 6-channel width for now; other widths can be derived
-        # from ``status.device.dev_type`` in a follow-up.  6 covers
-        # the operator's 6sRM/6eRM inventory; 4sRM sits on the same
-        # 6-bit horizon but ignores channels 4-5.
+        # 1-based channel numbering on the wire: state_mask bit N
+        # corresponds to physical channel N+1 (sub_address N+1 in our
+        # 1-based internal model).  6 channels covers 6sRM/6eRM;
+        # 4sRM ignores channels 5-6 in the mask.
         channels = channels_from_mask(status.state_mask, 6)
         log.info("V3.8 RX RelayStatus %s mask=0x%02X → %s",
                  status.device, status.state_mask,
-                 [i for i, on in enumerate(channels) if on] or "all OFF")
+                 [i + 1 for i, on in enumerate(channels) if on] or "all OFF")
         for chan_idx, is_on in enumerate(channels):
             per_channel = DeviceId(
                 dev_type=status.device.dev_type,
                 scu=status.device.scu,
                 address=status.device.address,
-                sub_address=chan_idx,
+                sub_address=chan_idx + 1,
             )
             msg = RelayState(device=per_channel, state=is_on)
             await self.on_state_change.publish(msg)

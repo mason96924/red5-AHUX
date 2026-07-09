@@ -74,13 +74,12 @@ def main() -> int:
     ap.add_argument("--addr", type=int, default=2,
                     help="Module address (1-based on wire).")
     ap.add_argument("--channel-ui", type=int, default=1,
-                    help="Channel number as shown in the UI (1-based); "
-                         "we subtract 1 to get the wire value.")
+                    help="Channel number (1-based on wire, direct).")
     ap.add_argument("--state", choices=("on", "off"), default="on")
     ap.add_argument("--timeout", type=float, default=2.0)
     args = ap.parse_args()
 
-    channel_wire = args.channel_ui - 1
+    channel_wire = args.channel_ui   # 1-based, direct to wire
     frame = build_relay_override(
         dev_type=args.dev_type, scu=args.scu, module_addr=args.addr,
         channel_wire=channel_wire, state_on=(args.state == "on"),

@@ -1,23 +1,23 @@
 [
-  { "_comment": "1x 6eRM: module address 1, 6 channels. SCU=0 matches what the physical SCU broadcasts as its own bus number.",
-    "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 0 },
-  { "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 1 },
+  { "_comment": "6eRM: 1-based channels 1-6 (wire byte matches directly).",
+    "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 1 },
   { "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 2 },
   { "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 3 },
   { "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 4 },
   { "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 5 },
+  { "dev_type": "SRM_6E", "scu": 0, "address": 1, "sub_address": 6 },
 
-  { "_comment": "1x 6sRM: module address 2, 6 channels.",
-    "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 0 },
-  { "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 1 },
+  { "_comment": "6sRM: channels 1-6.",
+    "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 1 },
   { "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 2 },
   { "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 3 },
   { "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 4 },
   { "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 5 },
+  { "dev_type": "SRM_6S", "scu": 0, "address": 2, "sub_address": 6 },
 
-  { "_comment": "1x 4sRM: module address 3, 4 channels.",
-    "dev_type": "SRM_4S", "scu": 0, "address": 3, "sub_address": 0 },
-  { "dev_type": "SRM_4S", "scu": 0, "address": 3, "sub_address": 1 },
+  { "_comment": "4sRM: channels 1-4.",
+    "dev_type": "SRM_4S", "scu": 0, "address": 3, "sub_address": 1 },
   { "dev_type": "SRM_4S", "scu": 0, "address": 3, "sub_address": 2 },
-  { "dev_type": "SRM_4S", "scu": 0, "address": 3, "sub_address": 3 }
+  { "dev_type": "SRM_4S", "scu": 0, "address": 3, "sub_address": 3 },
+  { "dev_type": "SRM_4S", "scu": 0, "address": 3, "sub_address": 4 }
 ]

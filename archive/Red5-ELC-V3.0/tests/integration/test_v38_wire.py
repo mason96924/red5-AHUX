@@ -155,7 +155,7 @@ async def test_v38_inbound_relay_status_fans_out_per_channel(v38_stack):
             break
         await asyncio.sleep(0.02)
 
-    assert caught == {0: True, 1: True, 2: False, 3: False, 4: False, 5: False}
+    assert caught == {1: True, 2: True, 3: False, 4: False, 5: False, 6: False}
 
 
 async def test_v38_split_reads_still_parse(v38_stack):
@@ -178,10 +178,10 @@ async def test_v38_split_reads_still_parse(v38_stack):
         if caught:
             break
         await asyncio.sleep(0.02)
-    # We fan out 6 channels even for a 4sRM (channels 4-5 will report
-    # False from the bitmask); the important thing is channel 0 is on.
+    # We fan out 6 channels even for a 4sRM; ch 5-6 will report
+    # False.  Important thing: ch 1 is on.
     on = [(i, s) for i, s in caught if s]
-    assert on == [(0, True)]
+    assert on == [(1, True)]
 
 
 async def test_v38_ignores_garbage_before_preamble(v38_stack):
@@ -199,4 +199,4 @@ async def test_v38_ignores_garbage_before_preamble(v38_stack):
         if any(s for _, s in caught):
             break
         await asyncio.sleep(0.02)
-    assert (0, True) in caught
+    assert (1, True) in caught

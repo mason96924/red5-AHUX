@@ -834,6 +834,26 @@ function _normaliseToInventory(did) {
   return did;
 }
 
+// Look up a lighting element by device_id, tolerant of SCU-number
+// changes / enum-alias renames.  Returns [key, element] or [null, null].
+// Same normalisation strategy as _normaliseToInventory but scans
+// state.lightingElements (which is keyed by the ORIGINAL assignment
+// id, not the current inventory id).
+function _findLightingElement(did) {
+  if (state.lightingElements.has(did)) return [did, state.lightingElements.get(did)];
+  const parts = String(did).split('/');
+  if (parts.length !== 4) return [null, null];
+  const [wantType, , wantAddr, wantSub] = parts;
+  for (const [key, el] of state.lightingElements.entries()) {
+    const p = String(key).split('/');
+    if (p.length !== 4) continue;
+    if (p[0] === wantType && p[2] === wantAddr && p[3] === wantSub) {
+      return [key, el];
+    }
+  }
+  return [null, null];
+}
+
 function toggleSrmSelection(did, additive) {
   if (!additive) {
     // Solo selection also opens the inline editor (single-tile mode).
@@ -854,10 +874,14 @@ function toggleSrmSelection(did, additive) {
     populateDimInputsFromSelection();
   }
   // Auto-open editor when exactly one device is selected AND already assigned.
+  // Look up via _findLightingElement so canonical-vs-legacy device_id
+  // string mismatches (e.g. old SCU=1 placements after SCU=0 rev) still
+  // resolve to the correct lighting element.
   if (state.selectedDeviceIds.size === 1) {
     const only = [...state.selectedDeviceIds][0];
-    if (state.lightingElements.has(only)) openElementEditor(only);
-    else                                    closeElementEditor();
+    const [key, _el] = _findLightingElement(only);
+    if (key) openElementEditor(key);
+    else     closeElementEditor();
   } else {
     closeElementEditor();
   }

@@ -4263,13 +4263,19 @@ refreshFloors().then(async () => {
   await refreshDevicesAndElements();
   const lastId = localStorage.getItem('elc.floor.selected');
   if (lastId && state.floors.some(f => f.id === lastId)) selectFloor(lastId);
-  // Auto-discover on load — replaces the removed "Discover SRMs"
-  // button.  Uses the last-selected SCU bus from localStorage
-  // (initialised by initScuPicker()) so multi-SCU installs come
-  // back on the same bus the operator was last working with.
-  // Silent so the boot flow doesn't fire a toast for the common
-  // case; failures still surface via the diagnostic pills.
-  discoverSrms({ silent: true }).catch(() => {});
+  // Auto-discover on load ONLY if the operator has a known SCU from
+  // a previous session (persisted by discoverSrms).  Otherwise the
+  // page waits for an explicit SCU-picker change to trigger the
+  // first scan -- avoids blasting SCU 0 by default on multi-SCU
+  // installs where 0 may be wrong.  Silent so the boot flow doesn't
+  // fire a toast for the common case; failures still surface via
+  // the diagnostic pills.
+  const savedScu = localStorage.getItem('elc.floor.scu');
+  if (savedScu !== null) {
+    discoverSrms({ scu: savedScu, silent: true }).catch(() => {});
+  } else {
+    toast('Select an SCU to scan for modules');
+  }
 });
 </script>
 </body>

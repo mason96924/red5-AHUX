@@ -126,6 +126,8 @@ class SrmDriver(AbstractDevice):
         # One in-flight send at a time.  Guards against overlapping
         # connect attempts to a single-connection SCU.
         async with self._v38_write_lock:
+            log.info("V3.8 TX (%d B) → %s:%s: %s",
+                     len(data), host, port, data.hex())
             try:
                 response = await loop.run_in_executor(None, _blocking_send_recv)
             except Exception as e:  # noqa: BLE001
@@ -442,6 +444,9 @@ class SrmDriver(AbstractDevice):
         tasks = [
             loop.run_in_executor(None, _blocking_one, f) for f in frames
         ]
+        log.info("V3.8 TX burst (%d frames) → %s:%s: %s",
+                 len(frames), host, port,
+                 " | ".join(f.hex() for f in frames))
         responses = await asyncio.gather(*tasks, return_exceptions=False)
         for resp in responses:
             if resp:

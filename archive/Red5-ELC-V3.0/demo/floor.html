@@ -32,6 +32,22 @@
     padding: 18px 24px 14px; border-bottom: 1px solid var(--line); gap: 14px;
   }
   header h1 { margin: 0; font-size: 17px; letter-spacing: .04em; font-weight: 600; }
+  /* Brand mark: "RED5" is red, and the whole heading tilts on a
+     shallow italic angle (~7deg) for a subtle stylised feel that
+     doesn't scream comic-sans italic.  We use `transform: skewX`
+     rather than font-style: italic so we can control the exact
+     slope (operator asked "slight angle, not too steep"). */
+  header h1.brand {
+    font-style: italic;
+    transform: skewX(-3deg);
+    transform-origin: left center;
+    letter-spacing: .03em;
+    font-weight: 700;
+  }
+  header h1.brand .brand-red {
+    color: #e11d48;               /* red, close to the pantone red-5 */
+    text-shadow: 0 0 6px rgba(225,29,72,0.35);
+  }
   header h1 .sub { color: var(--muted); font-weight: 400; margin-left: 10px;
                     font-size: 11px; letter-spacing: .18em; text-transform: uppercase; }
   .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -483,7 +499,7 @@
 <body>
 
 <header>
-  <h1>RED5-ELC · FLOOR<span class="sub">PHASE 6.1 · TOP-DOWN</span></h1>
+  <h1 class="brand"><span class="brand-red">RED5</span>.ELC STUDIO<span class="sub">PHASE 6.1 · TOP-DOWN</span></h1>
   <div class="toolbar">
     <span class="pill" id="conn-pill" data-testid="floor-conn-pill">
       <span class="dot"></span><span id="conn-text">checking…</span>
@@ -498,19 +514,14 @@
           title="Last SSE event received">
       <span class="dot"></span><span id="live-text">SSE: —</span>
     </span>
-    <!-- Floor navigation: single dropdown replaces the LHS floor list.
-         The "＋ New floor" option at the bottom triggers the create
-         flow (was a separate toolbar button previously). -->
-    <label style="display:inline-flex;align-items:center;gap:6px;margin:0;padding:0;
-                  color:var(--muted);font-size:11px;letter-spacing:.06em;
-                  text-transform:uppercase;width:auto">
-      Floor
-      <select id="floor-picker" data-testid="floor-picker"
-              style="width:auto;padding:4px 8px;font-size:11px;min-width:150px"
-              title="Select an existing floor, or choose ＋ New floor to create one">
-        <option value="">— pick a floor —</option>
-      </select>
-    </label>
+    <!-- Floor picker used to live here; the LHS 2.5D building slabs
+         now handle selection.  The <select> stays in the DOM (hidden)
+         because renderFloorList / fs-add-floor / DXF import all still
+         drive it programmatically -- ripping it out would need those
+         call sites refactored too. -->
+    <select id="floor-picker" data-testid="floor-picker" hidden aria-hidden="true">
+      <option value="">— pick a floor —</option>
+    </select>
     <!-- Schedules opens the schedule-assignment editor (formerly at
          /editor) as an iframe modal, so operators never leave the
          floor page to bind schedules to groups. -->
@@ -716,8 +727,8 @@
     </div>
     <div class="stage-empty" id="stage-empty">
       No floor selected.<br>
-      Pick one from the <b>Floor</b> dropdown above,
-      or choose <code>＋ New floor…</code> to create one.
+      Click a floor slab on the <b>Building</b> panel to the left,
+      or hit <code>＋ Floor</code> to create one.
     </div>
   </section>
 

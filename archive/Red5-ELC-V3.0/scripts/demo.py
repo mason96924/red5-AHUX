@@ -199,6 +199,8 @@ async def main() -> None:
     print(" Other useful env vars:", flush=True)
     print("   ELC_DEVICES_JSON=demo/samples/scu-6e6s4s.json  (module layout)", flush=True)
     print("   DEMO_PORT=8888                                 (HTTP port)", flush=True)
+    print("   DEMO_HOST=127.0.0.1                            (bind addr — set to 0.0.0.0", flush=True)
+    print("                                                    when reverse-proxying from another host)", flush=True)
     print("=" * 68, flush=True)
     print("", flush=True)
 
@@ -378,11 +380,17 @@ async def main() -> None:
         chaos_task = asyncio.create_task(chaos_monkey())
 
     # ---- Run uvicorn in-process -------------------------------------
+    # Bind host is configurable via DEMO_HOST so the same script can:
+    #   * default to 127.0.0.1 for local dev + same-box nginx proxy
+    #   * bind 0.0.0.0 when nginx / a load balancer runs elsewhere
+    # See /app/memory/PRD.md §"V3.0 Reverse-proxy rule" for the
+    # nginx server block template.
     import uvicorn
+    bind_host = os.environ.get("DEMO_HOST", "127.0.0.1")
 
     config = uvicorn.Config(
         stack.app,
-        host="127.0.0.1",
+        host=bind_host,
         port=port,
         log_level="warning",
         lifespan="off",

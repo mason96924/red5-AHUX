@@ -17,6 +17,20 @@
 > ```
 > Trim only when the change is purely informational (no code touched).
 
+## V3.0 REVERSE-PROXY RULE (added 2026-02-11)
+> Public access is via `elc.dcred5-studio.com` proxied to
+> `127.0.0.1:8888`.  Canonical nginx server block lives in
+> `archive/Red5-ELC-V3.0/docs/NGINX-REVERSE-PROXY.md`.
+>
+> Critical: the `/api/elc/events-sse` endpoint MUST have its own
+> `location` block with `proxy_buffering off`, `proxy_cache off`,
+> `proxy_read_timeout 24h`, and `Connection ""` — otherwise SSE
+> streams freeze after ~60s and the UI dots stop tracking hardware
+> state.  Do NOT collapse the SSE block into the catch-all `location /`.
+>
+> `demo.py` respects `DEMO_HOST` (default `127.0.0.1`) — set to
+> `0.0.0.0` only if nginx is on a different host.
+
 ## V3.0 BROADCAST 0x07 PER-MODULE RULE (DO NOT SKIP — added 2026-02-11)
 > Operator-confirmed protocol for `driver.broadcast_v38`:
 > 1. Wire opcode = `0x07` (RelayOverride), data byte = `0x01` (ON) /

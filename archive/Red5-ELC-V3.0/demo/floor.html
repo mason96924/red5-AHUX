@@ -54,8 +54,8 @@
   button.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
   button.ghost { background: transparent; }
 
-  main { display: grid; grid-template-columns: 1fr 300px;
-         height: calc(100vh - 60px); gap: 0; }
+  main { display: grid; grid-template-columns: 240px 1fr 300px;
+         height: calc(100vh - 60px); gap: 0; overflow: hidden; }
   aside {
     background: var(--panel); border-right: 1px solid var(--line);
     padding: 14px; overflow-y: auto;
@@ -65,6 +65,97 @@
     font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
     color: var(--muted); margin: 8px 0 10px;
   }
+
+  /* ---- LHS Floor Select real-estate (2026-02-11) --------------------
+     Two sub-panels stacked left|right inside a narrow column carved
+     out of the canvas area:
+       (a) Building side-view -- stacked floor strips, each strip = one
+           floor.  Selected floor tinted purple; click to select,
+           the ⤴ button on the strip imports a DXF for that floor.
+       (b) 2.5D isometric image slot -- optional decorative view of
+           the building the operator can import.  Persisted as a
+           data URL in localStorage under 'elc.floor.building_image'
+           so it survives reloads on the same browser.
+  --------------------------------------------------------------------- */
+  aside.floor-select {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    padding: 10px 8px; overflow: hidden;
+  }
+  aside.floor-select .fs-col {
+    display: flex; flex-direction: column; min-height: 0; gap: 6px;
+  }
+  aside.floor-select .fs-head {
+    color: var(--muted); font-size: 9.5px; letter-spacing: .12em;
+    text-transform: uppercase; margin-bottom: 2px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  aside.floor-select .fs-head button {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer;
+    text-transform: none; letter-spacing: 0;
+  }
+  aside.floor-select .fs-head button:hover { color: var(--text); border-color: var(--accent); }
+  .building-view {
+    display: flex; flex-direction: column-reverse;
+    gap: 3px; overflow: auto; padding: 4px 0;
+    background: linear-gradient(180deg, rgba(90,113,140,0.08), transparent 40%);
+    border: 1px dashed #2a3340; border-radius: 5px;
+    flex: 1; min-height: 0;
+  }
+  .building-view .floor-strip {
+    position: relative; padding: 6px 8px; min-height: 26px;
+    background: #10151c; border: 1px solid var(--line); border-radius: 4px;
+    color: var(--muted); font-family: var(--mono); font-size: 10.5px;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none;
+    transition: background .1s, border-color .1s, color .1s;
+  }
+  .building-view .floor-strip:hover { border-color: #3a4552; color: var(--text); }
+  .building-view .floor-strip.selected {
+    background: linear-gradient(180deg, rgba(192,132,252,0.28), rgba(192,132,252,0.10));
+    border-color: #c084fc; color: #f2e6ff;
+    box-shadow: 0 0 0 1px rgba(192,132,252,0.35), 0 0 8px rgba(192,132,252,0.20);
+  }
+  .building-view .floor-strip .fs-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .building-view .floor-strip .fs-has-dxf { color: var(--ok); font-size: 8px; margin-right: 3px; }
+  .building-view .floor-strip .fs-import {
+    background: transparent; border: none; color: var(--muted);
+    cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
+    opacity: 0; transition: opacity .1s;
+  }
+  .building-view .floor-strip:hover .fs-import,
+  .building-view .floor-strip.selected .fs-import { opacity: 1; }
+  .building-view .floor-strip .fs-import:hover { color: var(--accent); }
+  .building-view .fs-empty {
+    color: #4a5361; text-align: center; padding: 10px 8px;
+    font-size: 10.5px; font-style: italic;
+  }
+  .building-image {
+    flex: 1; min-height: 0;
+    border: 1px dashed #2a3340; border-radius: 5px;
+    background: #10151c;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: relative; cursor: pointer;
+  }
+  .building-image:hover { border-color: var(--accent); }
+  .building-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .building-image .bi-empty {
+    color: var(--muted); font-size: 10px; text-align: center;
+    padding: 12px 8px; line-height: 1.4;
+  }
+  .building-image .bi-empty b { color: var(--text); }
+  .building-image .bi-clear {
+    position: absolute; top: 4px; right: 4px;
+    background: rgba(0,0,0,0.55); border: 1px solid var(--line);
+    color: var(--muted); font-size: 10px; padding: 2px 6px;
+    border-radius: 3px; cursor: pointer; opacity: 0; transition: opacity .1s;
+  }
+  .building-image:hover .bi-clear { opacity: 1; }
+  .building-image .bi-clear:hover { color: var(--bad); border-color: var(--bad); }
 
   /* Floor list rows in the left rail */
   .floor-row {
@@ -599,6 +690,40 @@
 </header>
 
 <main>
+  <!-- ============ LEFT: FLOOR SELECT REAL ESTATE ============ -->
+  <aside class="floor-select" data-testid="floor-select-panel">
+    <div class="fs-col">
+      <div class="fs-head">
+        <span>Building</span>
+        <button id="fs-add-floor" title="Add a new floor"
+                data-testid="fs-add-floor">＋ Floor</button>
+      </div>
+      <div id="building-view" class="building-view"
+           data-testid="building-view">
+        <div class="fs-empty">No floors yet</div>
+      </div>
+      <!-- Hidden DXF file input used by the ⤴ button on each strip.
+           Assigned a data-target-floor-id when the strip is clicked. -->
+      <input type="file" id="fs-dxf-file" accept=".dxf" hidden
+             data-testid="fs-dxf-input" />
+    </div>
+    <div class="fs-col">
+      <div class="fs-head">
+        <span>2.5D view</span>
+        <button id="bi-import" title="Import a 2.5D isometric image of the building"
+                data-testid="bi-import">⤴ Import</button>
+      </div>
+      <div id="building-image" class="building-image"
+           data-testid="building-image" title="Click to import an image">
+        <div class="bi-empty">
+          Click to import a<br><b>2.5D isometric</b> image<br>of the building.
+        </div>
+      </div>
+      <input type="file" id="bi-file" accept="image/*" hidden
+             data-testid="bi-file-input" />
+    </div>
+  </aside>
+
   <!-- ============ CENTER: STAGE + CANVAS ============ -->
   <section class="stage">
     <div class="mode-badge layout" id="mode-badge">LAYOUT</div>
@@ -972,7 +1097,142 @@ function renderFloorList() {
   // Enable/disable the Details button based on whether a floor is loaded.
   const dbtn = document.getElementById('btn-floor-details');
   if (dbtn) dbtn.disabled = !state.currentFloor;
+  // Also refresh the LHS Building side-view whenever the floor list
+  // is redrawn -- keeps the strip highlight in sync with the current
+  // floor selection.
+  renderBuildingView();
 }
+
+// ---- LHS Building side-view -------------------------------------------
+// Stacked strips (one per floor).  The stripe order follows the
+// name-suffix number if we can parse one out of the floor name
+// ("Ground", "L1", "2F", "Level 3", etc.); otherwise falls back to
+// creation order.  Bottom of the stack = ground floor because the
+// column uses `flex-direction: column-reverse`.
+function _floorSortKey(f) {
+  // Extract the first integer we find in the name.  Names like
+  // "Ground floor" (no digit) sort as 0.
+  const m = String(f.name || '').match(/-?\d+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
+function renderBuildingView() {
+  const host = document.getElementById('building-view');
+  if (!host) return;
+  const selId = state.currentFloor ? state.currentFloor.id : null;
+  if (!state.floors.length) {
+    host.innerHTML = `<div class="fs-empty">
+      No floors yet.<br>Click <b>＋ Floor</b><br>or import a DXF.
+    </div>`;
+    return;
+  }
+  // Sort by parsed level number ascending; the column-reverse in CSS
+  // then places higher numbers visually on top.
+  const sorted = [...state.floors].sort(
+    (a, b) => _floorSortKey(a) - _floorSortKey(b)
+  );
+  host.innerHTML = '';
+  for (const f of sorted) {
+    const strip = document.createElement('div');
+    strip.className = 'floor-strip' + (f.id === selId ? ' selected' : '');
+    strip.dataset.floorId = f.id;
+    strip.dataset.testid = `floor-strip-${f.name}`;
+    // Presence-of-DXF indicator: we treat any floor whose bg_image /
+    // dxf is populated as "has geometry".  The floor list endpoint
+    // doesn't expose that directly today, so use a heuristic: if the
+    // floor row carries a non-default background hint (dxf_scaled or
+    // similar) show a ✓; otherwise leave blank.  Cheap for the demo.
+    const hasDxf = !!(f.bg_image || f.dxf_path || f.has_dxf);
+    strip.innerHTML = `
+      <span class="fs-name" title="${escapeHtml(f.name)}">
+        ${hasDxf ? '<span class="fs-has-dxf">●</span>' : ''}${escapeHtml(f.name)}
+      </span>
+      <button class="fs-import"
+              title="Import a DXF as a new floor (uses this strip's name as a hint)"
+              data-testid="fs-import-${f.name}">⤴</button>`;
+    strip.addEventListener('click', (ev) => {
+      if (ev.target.closest('.fs-import')) return;
+      selectFloor(f.id);
+    });
+    strip.querySelector('.fs-import').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      // Reuse the existing hidden DXF file input on the toolbar --
+      // its onchange handler already runs the /floors/import-dxf
+      // flow and refreshes the list.
+      const inp = document.getElementById('dxf-input');
+      if (inp) inp.click();
+      else toast('DXF import unavailable — hidden file input missing', true);
+    });
+    host.appendChild(strip);
+  }
+}
+
+// ---- 2.5D building image slot ------------------------------------------
+// Purely UI-side for now: file → data URL → localStorage → <img>.
+// Kept small (< 4 MB) because localStorage tops out around 5-10 MB.
+const BI_LS_KEY = 'elc.floor.building_image';
+function _restoreBuildingImage() {
+  const host = document.getElementById('building-image');
+  if (!host) return;
+  const dataUrl = localStorage.getItem(BI_LS_KEY);
+  if (!dataUrl) return;
+  host.innerHTML = `
+    <img src="${dataUrl}" alt="Building 2.5D view" />
+    <button class="bi-clear" title="Remove the imported image"
+            data-testid="bi-clear">×</button>`;
+  host.querySelector('.bi-clear').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    localStorage.removeItem(BI_LS_KEY);
+    host.innerHTML = `<div class="bi-empty">
+      Click to import a<br><b>2.5D isometric</b> image<br>of the building.
+    </div>`;
+  });
+}
+function _initBuildingImageSlot() {
+  const host = document.getElementById('building-image');
+  const importBtn = document.getElementById('bi-import');
+  const fileInp = document.getElementById('bi-file');
+  if (!host || !fileInp) return;
+  const openPicker = (ev) => { ev.stopPropagation(); fileInp.click(); };
+  host.addEventListener('click', openPicker);
+  if (importBtn) importBtn.addEventListener('click', openPicker);
+  fileInp.addEventListener('change', () => {
+    const f = fileInp.files && fileInp.files[0];
+    if (!f) return;
+    if (f.size > 4 * 1024 * 1024) {
+      toast('Image too large (>4 MB) — pick a smaller file', true);
+      fileInp.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        localStorage.setItem(BI_LS_KEY, reader.result);
+        _restoreBuildingImage();
+      } catch (e) {
+        toast('Could not save image (localStorage full?)', true);
+      }
+    };
+    reader.readAsDataURL(f);
+    fileInp.value = '';
+  });
+}
+
+// Wire the LHS "＋ Floor" header button to the same "new floor" flow
+// the toolbar dropdown uses (sentinel value = '__new__').
+document.getElementById('fs-add-floor').addEventListener('click', () => {
+  const picker = document.getElementById('floor-picker');
+  if (!picker) return;
+  picker.value = '__new__';
+  picker.dispatchEvent(new Event('change'));
+});
+
+// Boot the LHS panel once the DOM is ready.  refreshFloors() (which is
+// called at page boot -- see the very bottom of this script) triggers
+// renderFloorList which in turn calls renderBuildingView, so the
+// strips will populate as soon as the floors are fetched.
+_restoreBuildingImage();
+_initBuildingImageSlot();
 
 // Backwards-compat: legacy polylines had their anchor pinned to
 // vertex[0], which overlaps a vertex handle and blocks "drag whole

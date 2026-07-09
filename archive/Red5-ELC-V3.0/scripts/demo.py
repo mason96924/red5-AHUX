@@ -55,6 +55,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from elc.api import build_stack  # noqa: E402
 from elc.codec import encode  # noqa: E402
 from elc.codec.device_id import ADDR_BITS, SUBADDR_BITS, DeviceId, DeviceType  # noqa: E402
+from elc.codec.etlc38 import channel_count_for  # noqa: E402
 from elc.codec.messages import BroadcastComplete, FailReport, RelaySet, RelayState  # noqa: E402
 from elc.codec.registry import default_registry  # noqa: E402
 
@@ -95,31 +96,63 @@ def _warn_typoed_env() -> None:
             )
 
 
+def _entry_to_devices(entry: dict) -> list[DeviceId]:
+    """Turn one JSON entry into one or more DeviceIds.
+
+    * ``dev_type`` is required (and must be a valid ``DeviceType`` name);
+      entries missing it are treated as pure-comment objects and dropped.
+    * If ``sub_address`` is provided, the entry maps to a single channel
+      (legacy per-channel behaviour).
+    * If ``sub_address`` is **omitted**, the entry is auto-expanded into
+      one DeviceId per channel (1..N) using
+      :func:`channel_count_for` so operators can write one JSON line per
+      *module* instead of N lines per channel.
+    """
+    if "dev_type" not in entry:
+        return []
+    dev_type = DeviceType[entry["dev_type"]]
+    scu = int(entry["scu"])
+    address = int(entry["address"])
+    if "sub_address" in entry:
+        return [DeviceId(
+            dev_type=dev_type,
+            scu=scu,
+            address=address,
+            sub_address=int(entry["sub_address"]),
+        )]
+    n_ch = channel_count_for(dev_type)
+    return [
+        DeviceId(dev_type=dev_type, scu=scu, address=address, sub_address=sub)
+        for sub in range(1, n_ch + 1)
+    ]
+
+
 def _load_device_set() -> list[DeviceId]:
     """Return the DeviceId list for the demo.
 
-    * If ``ELC_DEVICES_JSON`` points at a readable file, parse it and
-      turn each entry into a DeviceId.  Unknown ``dev_type`` names
-      raise so misconfiguration fails loud.  Entries missing
-      ``dev_type`` are skipped so JSON files can carry pure-comment
-      objects if needed.
-    * Otherwise fall back to 30 SRMs on scu=1 -- the historical mock
-      layout that /floor's grid expects.
+    Resolution order:
+      1. ``ELC_DEVICES_JSON`` — explicit override path (module- or
+         channel-granular; auto-expanded when ``sub_address`` is absent).
+      2. ``demo/samples/scu-6e6s4s.json`` — the canonical operator
+         hardware layout (1× 6eRM @1, 1× 6sRM @2, 1× 4sRM @3).  Used as
+         the default so ``python scripts/demo.py`` with no env vars
+         boots against the real-world module mix rather than a 30-SRM
+         synthetic grid.
+      3. Legacy synthetic fallback — 30× SRM modules spaced by 10, kept
+         only for absolute backwards compatibility if the sample file
+         is missing.
     """
     _warn_typoed_env()
     path = os.environ.get("ELC_DEVICES_JSON")
+    if not path:
+        default_sample = REPO_ROOT / "demo" / "samples" / "scu-6e6s4s.json"
+        if default_sample.is_file():
+            path = str(default_sample)
     if path:
         raw = json.loads(Path(path).read_text())
         out: list[DeviceId] = []
         for entry in raw:
-            if "dev_type" not in entry:
-                continue
-            out.append(DeviceId(
-                dev_type=DeviceType[entry["dev_type"]],
-                scu=int(entry["scu"]),
-                address=int(entry["address"]),
-                sub_address=int(entry["sub_address"]),
-            ))
+            out.extend(_entry_to_devices(entry))
         return out
     return [
         DeviceId(dev_type=DeviceType.SRM, scu=1, address=10 * (i + 1), sub_address=0)

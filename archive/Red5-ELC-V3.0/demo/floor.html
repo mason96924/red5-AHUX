@@ -331,6 +331,14 @@
                 cursor: pointer; transition: border-color 120ms; }
   .module-box:hover { border-color: var(--accent, #6ba7dc); }
   .module-box.selected { outline: 2px solid #c084fc; }
+  /* Currently-opened module — the one whose channel-detail modal is
+     up.  Same purple outline as legacy .selected plus a subtle tint
+     so it reads through the modal's 35%-opacity drag state. */
+  .module-box.opened {
+    outline: 2px solid #c084fc;
+    background: rgba(192,132,252,0.08);
+  }
+  .module-box.opened .mod-hdr { color: #c084fc; }
   .module-box .mod-hdr { font-family: var(--mono); font-size: 10px;
                          color: var(--muted); margin-bottom: 4px;
                          display: flex; justify-content: space-between; }
@@ -1104,13 +1112,21 @@ function renderSrmGrid() {
     box.className = 'module-box';
     box.dataset.moduleKey = `${m.type}/${m.scu}/${m.addr}`;
     box.dataset.testid = `module-box-${m.type}-${m.scu}-${m.addr}`;
-    // Selected when *any* of the module's channels is in the selection.
+    // Selected when *any* of the module's channels is in the canvas
+    // selection (legacy behaviour, kept for the align/delete toolbar).
     const anySelected = m.channels.some(
       d => state.selectedDeviceIds.has(d.device)
     );
     if (anySelected) box.classList.add('selected');
+    // Opened when the channel-detail modal is currently up for this
+    // module.  Distinct from `.selected` so the operator can see
+    // "this is what I'm editing" through the drag-transparent modal.
+    if (state.moduleModal
+        && state.moduleModal.key === `${m.type}/${m.scu}/${m.addr}`) {
+      box.classList.add('opened');
+    }
     box.title = `Module ${m.type} on SCU ${m.scu}, address ${m.addr}.  ` +
-                `Click to select all ${m.channels.length} channels.`;
+                `Click to open channel modal.`;
 
     const dotsHtml = m.channels.map(d => {
       const live = state.liveDevices.get(d.device) || {};
@@ -1246,12 +1262,14 @@ function openModuleModal(key) {
   _mmPopulateCopyFrom(key);
   _mmPrefillProps(chs);
   renderModuleModal();
+  renderSrmGrid();  // paint the .opened highlight on the module box
 }
 
 function closeModuleModal() {
   state.moduleModal = null;
   document.getElementById('module-modal').classList.remove('open');
   _syncModuleModalUrl();
+  renderSrmGrid();  // clear the .opened highlight
 }
 
 function _syncModuleModalUrl() {

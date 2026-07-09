@@ -96,6 +96,14 @@ def _warn_typoed_env() -> None:
             )
 
 
+# Module label overrides — populated from devices.json so operators
+# can write "SRM_6E" in the JSON and have the UI display it as
+# "SRM_6E" even though on the wire the byte is 0x15 (same as SRM_6S).
+# See _entry_to_devices below.  Keyed on (scu, address) since 6E and
+# 6S can't coexist at the same (type=0x15, address) tuple.
+MODULE_LABEL_OVERRIDES: dict[tuple[int, int], str] = {}
+
+
 def _entry_to_devices(entry: dict) -> list[DeviceId]:
     """Turn one JSON entry into one or more DeviceIds.
 
@@ -107,12 +115,23 @@ def _entry_to_devices(entry: dict) -> list[DeviceId]:
       one DeviceId per channel (1..N) using
       :func:`channel_count_for` so operators can write one JSON line per
       *module* instead of N lines per channel.
+    * If the JSON label differs from the canonical enum name (e.g.
+      ``"SRM_6E"`` collapses to ``SRM_6S`` because they share wire code
+      0x15), the ORIGINAL string is recorded in
+      ``MODULE_LABEL_OVERRIDES`` so the UI can retain the 6E vs 6S
+      distinction even though the codec cannot.
     """
     if "dev_type" not in entry:
         return []
-    dev_type = DeviceType[entry["dev_type"]]
+    raw_label = str(entry["dev_type"])
+    dev_type = DeviceType[raw_label]
     scu = int(entry["scu"])
     address = int(entry["address"])
+    # If the raw label doesn't match the canonical enum member name
+    # (SRM_6E → SRM_6S), record the raw label as a display override
+    # keyed on (scu, addr) for use by the frontend.
+    if raw_label != dev_type.name:
+        MODULE_LABEL_OVERRIDES[(scu, address)] = raw_label
     if "sub_address" in entry:
         return [DeviceId(
             dev_type=dev_type,
@@ -333,6 +352,23 @@ async def main() -> None:
     @stack.app.get("/floor", include_in_schema=False)
     async def floor() -> FileResponse:
         return FileResponse(str(demo_dir / "floor.html"), headers=_NO_CACHE)
+
+    @stack.app.get("/api/elc/module-labels", include_in_schema=False)
+    async def module_labels() -> dict:
+        """Return {"<scu>/<addr>": "<display-label>"} for every module
+        whose devices.json label differs from the canonical enum
+        member name (e.g. ``SRM_6E`` vs ``SRM_6S``).  The Floor page
+        uses this to preserve the operator's original label in the
+        UI even though the codec collapses aliases.  Empty when the
+        demo has no overrides (i.e. the JSON already used canonical
+        names).
+        """
+        return {
+            "overrides": {
+                f"{scu}/{addr}": label
+                for (scu, addr), label in MODULE_LABEL_OVERRIDES.items()
+            }
+        }
 
     @stack.app.get("/samples/{name}", include_in_schema=False)
     async def sample_file(name: str) -> FileResponse:

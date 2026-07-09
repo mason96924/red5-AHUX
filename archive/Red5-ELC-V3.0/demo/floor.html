@@ -96,71 +96,42 @@
     color: var(--text); border-color: var(--accent);
   }
 
-  /* Wrapper that hosts the 2.5D image + all floor-overlay boxes. */
+  /* Wrapper that hosts the dynamic SVG (or imported image). */
   .building-2d5 {
     position: relative; flex: 1; min-height: 0;
     border: 1px dashed #2a3340; border-radius: 5px;
     background: #10151c;
-    display: flex; align-items: center; justify-content: center;
     overflow: hidden;
   }
   .building-2d5:hover { border-color: #3a4552; }
   .building-2d5 .b25-canvas {
-    position: absolute; inset: 0; width: 100%; height: 100%;
+    position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    padding: 8px;
+    padding: 6px;
   }
   .building-2d5 .b25-canvas svg,
   .building-2d5 .b25-canvas img {
     max-width: 100%; max-height: 100%;
-    object-fit: contain;
     display: block;
     filter: drop-shadow(0 0 4px rgba(0,0,0,0.4));
   }
-
-  /* Overlay strips -- position absolute, stacked bottom-up (i.e. floor
-     0 is at the bottom of the wrapper).  Container height gets divided
-     evenly across N floors. */
-  .building-2d5 .floor-overlays {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column-reverse;
-    pointer-events: none;    /* individual strips re-enable */
+  /* SVG interactive slabs (dynamic, one per floor) */
+  .building-2d5 .slab {
+    cursor: pointer;
+    transition: filter .12s, opacity .12s;
   }
-  .building-2d5 .fo-strip {
-    flex: 1; min-height: 0;
-    pointer-events: auto;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 4px 8px; margin: 1px 4px;
-    border: 1px solid rgba(255,255,255,0.10); border-radius: 3px;
-    background: rgba(0,0,0,0.25);
-    color: rgba(226, 232, 240, 0.75);
-    font-family: var(--mono); font-size: 10px;
-    cursor: pointer; user-select: none;
-    backdrop-filter: blur(1px);
-    transition: background .12s, border-color .12s, color .12s, transform .12s;
+  .building-2d5 .slab:hover { filter: brightness(1.35); }
+  .building-2d5 .slab.selected .slab-front {
+    filter: drop-shadow(0 0 6px rgba(192,132,252,0.7));
   }
-  .building-2d5 .fo-strip:hover {
-    background: rgba(0,0,0,0.55);
-    border-color: rgba(255,255,255,0.35);
-    color: var(--text);
+  .building-2d5 .slab-label {
+    pointer-events: none;
+    font-family: var(--mono); font-size: 8.5px;
+    fill: rgba(226,232,240,0.65);
   }
-  .building-2d5 .fo-strip.selected {
-    background: rgba(192,132,252,0.30);
-    border-color: #c084fc;
-    color: #fff;
-    box-shadow: 0 0 0 2px rgba(192,132,252,0.35),
-                0 0 14px rgba(192,132,252,0.32);
-    transform: scale(1.01);
+  .building-2d5 .slab.selected .slab-label {
+    fill: #fff; font-weight: bold;
   }
-  .building-2d5 .fo-strip .fo-name {
-    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .building-2d5 .fo-strip .fo-import {
-    background: transparent; border: none; color: inherit;
-    cursor: pointer; padding: 0 4px; font-size: 12px; line-height: 1;
-    opacity: 0.7;
-  }
-  .building-2d5 .fo-strip .fo-import:hover { color: var(--accent); }
   .building-2d5 .b25-empty {
     color: var(--muted); font-size: 10px; text-align: center;
     padding: 20px 12px; line-height: 1.5; pointer-events: none;
@@ -713,16 +684,15 @@
                 data-testid="bi-import">⤴ Image</button>
       </span>
     </div>
-    <!-- Interactive 2.5D building.  Contains:
-         (1) `.b25-canvas` — the image / default SVG (isometric side-view).
-         (2) `.floor-overlays` — one clickable div per floor stacked
-             bottom-up (ground at physical bottom).  Selected floor
-             gets the purple outline; click = select + open details;
-             ⤴ per-strip = import DXF as a new floor.
+    <!-- Interactive 2.5D building.  The default view is a dynamic
+         SVG where each floor is drawn as a physical slab of the
+         building (isometric slice-of-cake).  Clicking a slab
+         selects the floor and opens the details modal.  When the
+         operator imports a custom image, the slabs are hidden and
+         the image is shown flat (no interactive slicing).
     -->
     <div id="building-2d5" class="building-2d5" data-testid="building-2d5">
       <div class="b25-canvas" id="b25-canvas"></div>
-      <div class="floor-overlays" id="floor-overlays"></div>
     </div>
     <input type="file" id="bi-file" accept="image/*" hidden
            data-testid="bi-file-input" />
@@ -1016,7 +986,20 @@ const state = {
   selectedDeviceIds: new Set(),   // multi-select in the SRM grid
   editingDeviceId: null,   // currently opened in the inline element editor
   liveDevices: new Map(),  // device_id -> { relay_state, last_fail_code }
+  moduleLabels: {},        // "<scu>/<addr>" -> "<label override>" (e.g.
+                           // "SRM_6E" when JSON used the alias name).
+                           // Populated once from /api/elc/module-labels
+                           // at boot; unaffected by SSE.
 };
+
+// Return the display label for a module.  If devices.json labelled
+// this (scu, addr) with an alias name (e.g. "SRM_6E" for 0x15
+// instead of the canonical "SRM_6S"), that override wins.  Falls
+// back to the canonical DeviceType name otherwise.
+function moduleLabelFor(devTypeName, scu, addr) {
+  const key = `${scu}/${addr}`;
+  return state.moduleLabels[key] || devTypeName;
+}
 
 // -------- Utilities --------
 async function api(method, path, body) {
@@ -1104,101 +1087,169 @@ function renderFloorList() {
   renderBuildingView();
 }
 
-// ---- LHS 2.5D Building side-view (2026-02-11 v2) --------------------
-// Single-column layout with an interactive 2.5D building image plus
-// clickable floor overlays stacked bottom-up on top of it.  Selected
-// floor gets a purple outline; click = select + open floor-details
-// modal; ⤴ per-overlay imports a DXF as a new floor.
+// ---- LHS 2.5D Building side-view (2026-02-11 v3 — "slice of cake") --
+// Each floor is drawn as a physical slab of an isometric building.
+// Selected slab is filled purple so the highlight fits the building
+// shape exactly (operator ask 2026-02-11).  Clicking a slab selects
+// the floor + opens the floor-details modal.  When the operator
+// imports a custom image, the interactive slab SVG is replaced by
+// the flat image (no slicing on arbitrary photos).
 //
 // Data-URL image (imported by the operator) is persisted in
-// localStorage under BI_LS_KEY.  Absent = show the default inline
-// SVG so the panel never looks empty.
+// localStorage under BI_LS_KEY.  Absent = show the dynamic slab SVG.
 const BI_LS_KEY = 'elc.floor.building_image';
 
-// A pleasant default 2.5D silhouette of a mid-rise building.  Renders
-// crisply at any size (SVG), so no need to bundle a stock photo.  The
-// building has intentionally floor-agnostic geometry -- floor
-// overlays are laid on top by JS.  Operators who want a real photo
-// can hit "⤴ Image".
-const DEFAULT_BUILDING_SVG = `
-  <svg viewBox="0 0 220 320" xmlns="http://www.w3.org/2000/svg"
-       preserveAspectRatio="xMidYMid meet">
+function _floorSortKey(f) {
+  const m = String(f.name || '').match(/-?\d+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
+// Dynamic isometric building SVG.  One <g class="slab"> per floor,
+// stacked bottom-up (ground floor sits at physical bottom).  Layout
+// coordinates are chosen so the total viewBox height (320 units)
+// maps roughly 1:1 to whatever container height we're given -- the
+// SVG scales uniformly, keeping the slab proportions readable.
+function _buildDynamicBuildingSvg(floors) {
+  const selId = state.currentFloor ? state.currentFloor.id : null;
+  // Sort ascending by parsed level number so index 0 = ground.
+  const sorted = [...floors].sort(
+    (a, b) => _floorSortKey(a) - _floorSortKey(b)
+  );
+  const N = Math.max(sorted.length, 1);
+  // Geometry constants (viewBox units).
+  const wallLeft = 40, wallRight = 180;
+  const wallTop = 30, wallBot = 290;
+  const depth = 20;               // isometric offset (right + up)
+  const slabH = (wallBot - wallTop) / N;
+
+  const defs = `
     <defs>
-      <linearGradient id="wall" x1="0" x2="1" y1="0" y2="0">
+      <linearGradient id="gradWall" x1="0" x2="1" y1="0" y2="0">
         <stop offset="0" stop-color="#2b3644"/>
         <stop offset="1" stop-color="#1a2129"/>
       </linearGradient>
-      <linearGradient id="side" x1="0" x2="1" y1="0" y2="0">
+      <linearGradient id="gradSide" x1="0" x2="1" y1="0" y2="0">
         <stop offset="0" stop-color="#1a2129"/>
         <stop offset="1" stop-color="#0e131a"/>
       </linearGradient>
-      <linearGradient id="glass" x1="0" x2="0" y1="0" y2="1">
+      <linearGradient id="gradSel" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0"  stop-color="#c084fc" stop-opacity="0.85"/>
+        <stop offset="1"  stop-color="#7c3aed" stop-opacity="0.85"/>
+      </linearGradient>
+      <linearGradient id="gradSelSide" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#7c3aed" stop-opacity="0.85"/>
+        <stop offset="1" stop-color="#4c1d95" stop-opacity="0.85"/>
+      </linearGradient>
+      <linearGradient id="gradWindow" x1="0" x2="0" y1="0" y2="1">
         <stop offset="0" stop-color="#5a7a9c" stop-opacity="0.55"/>
         <stop offset="1" stop-color="#3a5570" stop-opacity="0.35"/>
       </linearGradient>
-    </defs>
-    <!-- Ground -->
-    <path d="M8 300 L40 288 L212 288 L180 300 Z" fill="#0c1116"
-          stroke="#243040" stroke-width="0.6"/>
-    <!-- Side wall (3D depth) -->
-    <path d="M40 40 L60 30 L60 288 L40 300 Z" fill="url(#side)"
-          stroke="#3a4658" stroke-width="0.6"/>
-    <!-- Roof -->
-    <path d="M40 40 L60 30 L200 30 L180 40 Z" fill="#1a2129"
-          stroke="#3a4658" stroke-width="0.6"/>
-    <!-- Front facade -->
-    <rect x="40" y="40" width="140" height="260" fill="url(#wall)"
-          stroke="#3a4658" stroke-width="0.6"/>
-    <!-- Windows (a reasonable-looking grid, deliberately not aligned
-         to overlay strips so operators know overlays are logical
-         floors, not image-anchored). -->
-    <g fill="url(#glass)" stroke="#4a637d" stroke-width="0.4">
-      <rect x="52" y="52"  width="20" height="26" rx="1"/>
-      <rect x="80" y="52"  width="20" height="26" rx="1"/>
-      <rect x="108" y="52" width="20" height="26" rx="1"/>
-      <rect x="136" y="52" width="20" height="26" rx="1"/>
-      <rect x="52" y="92"  width="20" height="26" rx="1"/>
-      <rect x="80" y="92"  width="20" height="26" rx="1"/>
-      <rect x="108" y="92" width="20" height="26" rx="1"/>
-      <rect x="136" y="92" width="20" height="26" rx="1"/>
-      <rect x="52" y="132" width="20" height="26" rx="1"/>
-      <rect x="80" y="132" width="20" height="26" rx="1"/>
-      <rect x="108" y="132" width="20" height="26" rx="1"/>
-      <rect x="136" y="132" width="20" height="26" rx="1"/>
-      <rect x="52" y="172" width="20" height="26" rx="1"/>
-      <rect x="80" y="172" width="20" height="26" rx="1"/>
-      <rect x="108" y="172" width="20" height="26" rx="1"/>
-      <rect x="136" y="172" width="20" height="26" rx="1"/>
-      <rect x="52" y="212" width="20" height="26" rx="1"/>
-      <rect x="80" y="212" width="20" height="26" rx="1"/>
-      <rect x="108" y="212" width="20" height="26" rx="1"/>
-      <rect x="136" y="212" width="20" height="26" rx="1"/>
-      <!-- Ground floor -- taller windows / lobby -->
-      <rect x="52" y="252" width="26" height="38" rx="1"/>
-      <rect x="86" y="252" width="26" height="38" rx="1"/>
-      <rect x="120" y="252" width="26" height="38" rx="1"/>
-      <rect x="150" y="252" width="16" height="38" rx="1"/>
-    </g>
-    <!-- Entrance door -->
-    <rect x="94" y="270" width="16" height="20" rx="1"
-          fill="#0c1116" stroke="#4a637d" stroke-width="0.4"/>
-  </svg>`;
+    </defs>`;
 
-function _floorSortKey(f) {
-  // Extract the first integer we find in the name.
-  const m = String(f.name || '').match(/-?\d+/);
-  return m ? parseInt(m[0], 10) : 0;
+  // Ground shadow (below the building).
+  const ground = `<path d="M8 300 L40 288 L212 288 L180 300 Z"
+                        fill="#0c1116" stroke="#243040" stroke-width="0.6"/>`;
+
+  const slabs = [];
+  for (let i = 0; i < N; i++) {
+    const f = sorted[i];
+    const isSel = f && f.id === selId;
+    const yTop = wallBot - (i + 1) * slabH;
+    const yBot = wallBot - i * slabH;
+    const wallFill = isSel ? 'url(#gradSel)' : 'url(#gradWall)';
+    const sideFill = isSel ? 'url(#gradSelSide)' : 'url(#gradSide)';
+    const stroke   = isSel ? '#c084fc' : '#3a4658';
+    const strokeW  = isSel ? '1.4' : '0.6';
+    // Ground floor: taller-looking windows / door.  Others: 2-3 windows.
+    const isGround = i === 0;
+    // Window count depends on slabH (skinnier slabs = fewer visible windows).
+    const winRows = 1;
+    const winCount = 4;
+    const winW = 20, winPad = 12;
+    const winSpan = winCount * winW + (winCount - 1) * (winPad - winW);
+    const winStart = wallLeft + ( (wallRight - wallLeft) - (winCount * winPad + winW) ) / 2 + 6;
+    // Padding of windows inside the slab
+    const winH = Math.max(6, slabH * 0.55);
+    const winY = yTop + (slabH - winH) / 2;
+    const windows = [];
+    for (let w = 0; w < winCount; w++) {
+      if (isGround && w === Math.floor(winCount / 2) - 1) {
+        // Door in the ground floor (replace 2nd window with a door).
+        const doorH = Math.min(slabH * 0.75, 30);
+        const doorY = yBot - doorH;
+        const doorW = 14;
+        const doorX = winStart + w * winPad;
+        windows.push(`<rect x="${doorX}" y="${doorY}" width="${doorW}"
+                             height="${doorH}" rx="1"
+                             fill="#0c1116" stroke="#4a637d" stroke-width="0.4"/>`);
+        continue;
+      }
+      const x = winStart + w * winPad;
+      windows.push(`<rect x="${x}" y="${winY}" width="${winW * 0.8}"
+                           height="${winH}" rx="1"
+                           fill="url(#gradWindow)"
+                           stroke="#4a637d" stroke-width="0.4"/>`);
+    }
+
+    // Front wall face for this slab.
+    const front = `<rect class="slab-front"
+                          x="${wallLeft}" y="${yTop}"
+                          width="${wallRight - wallLeft}" height="${slabH}"
+                          fill="${wallFill}" stroke="${stroke}"
+                          stroke-width="${strokeW}"/>`;
+    // Isometric side (right face) for this slab.
+    const side = `<path class="slab-side" d="
+        M${wallRight},${yTop}
+        L${wallRight + depth},${yTop - depth}
+        L${wallRight + depth},${yBot - depth}
+        L${wallRight},${yBot} Z"
+        fill="${sideFill}" stroke="${stroke}" stroke-width="${strokeW}"/>`;
+    // Slab label (inside the wall).
+    const label = f
+      ? `<text class="slab-label" x="${wallLeft + 6}" y="${yTop + slabH / 2 + 3}">
+           ${escapeHtml(f.name)}
+         </text>`
+      : '';
+    // Whole slab is one clickable group.
+    slabs.push(`
+      <g class="slab${isSel ? ' selected' : ''}"
+         data-floor-id="${f ? f.id : ''}"
+         data-testid="floor-slab-${f ? escapeHtml(f.name) : 'placeholder'}">
+        ${front}
+        ${side}
+        ${windows.join('')}
+        ${label}
+      </g>`);
+  }
+
+  // Roof cap sits atop the top-most slab.
+  const yRoof = wallTop;
+  const roof = `<path d="
+      M${wallLeft},${yRoof}
+      L${wallLeft + depth},${yRoof - depth}
+      L${wallRight + depth},${yRoof - depth}
+      L${wallRight},${yRoof} Z"
+      fill="#1a2129" stroke="#3a4658" stroke-width="0.6"/>`;
+
+  return `
+    <svg viewBox="0 0 220 320" xmlns="http://www.w3.org/2000/svg"
+         preserveAspectRatio="xMidYMid meet">
+      ${defs}
+      ${ground}
+      ${slabs.join('')}
+      ${roof}
+    </svg>`;
 }
 
 function _renderBuildingCanvas() {
   const canvas = document.getElementById('b25-canvas');
   if (!canvas) return;
   const dataUrl = localStorage.getItem(BI_LS_KEY);
+  const wrap = document.getElementById('building-2d5');
   if (dataUrl) {
+    // Custom image mode: no slicing, no interactive slabs.
     canvas.innerHTML =
       `<img src="${dataUrl}" alt="Imported 2.5D building view" />`;
-    // Show a small × to clear the imported image (returns to default SVG).
-    const wrap = document.getElementById('building-2d5');
     let clr = wrap.querySelector('.b25-clear');
     if (!clr) {
       clr = document.createElement('button');
@@ -1213,60 +1264,31 @@ function _renderBuildingCanvas() {
       });
       wrap.appendChild(clr);
     }
-  } else {
-    canvas.innerHTML = DEFAULT_BUILDING_SVG;
-    const wrap = document.getElementById('building-2d5');
-    const clr = wrap.querySelector('.b25-clear');
-    if (clr) clr.remove();
-  }
-}
-
-function renderBuildingView() {
-  const overlays = document.getElementById('floor-overlays');
-  if (!overlays) return;
-  const selId = state.currentFloor ? state.currentFloor.id : null;
-  if (!state.floors.length) {
-    overlays.innerHTML = `<div class="b25-empty">
-      No floors yet.<br>Click <b>＋ Floor</b> above<br>to create one.
-    </div>`;
     return;
   }
-  // Sort ascending by parsed level number so column-reverse renders
-  // low floors visually at the bottom.
-  const sorted = [...state.floors].sort(
-    (a, b) => _floorSortKey(a) - _floorSortKey(b)
-  );
-  overlays.innerHTML = '';
-  for (const f of sorted) {
-    const strip = document.createElement('div');
-    strip.className = 'fo-strip' + (f.id === selId ? ' selected' : '');
-    strip.dataset.floorId = f.id;
-    strip.dataset.testid = `floor-overlay-${f.name}`;
-    strip.innerHTML = `
-      <span class="fo-name" title="${escapeHtml(f.name)}">
-        ${escapeHtml(f.name)}
-      </span>
-      <button class="fo-import"
-              title="Import a DXF as a new floor"
-              data-testid="floor-overlay-import-${f.name}">⤴</button>`;
-    // Click on strip (not the ⤴ button) = select floor + open detail.
-    strip.addEventListener('click', async (ev) => {
-      if (ev.target.closest('.fo-import')) return;
-      if (f.id !== selId) {
-        await selectFloor(f.id);
-      }
+  // Default: dynamic slab SVG.  Regenerated whenever the floor list
+  // or selection changes.
+  const clr = wrap.querySelector('.b25-clear');
+  if (clr) clr.remove();
+  canvas.innerHTML = _buildDynamicBuildingSvg(state.floors);
+  // Wire click on each slab to select the floor + open details.
+  canvas.querySelectorAll('.slab').forEach(g => {
+    const fid = g.dataset.floorId;
+    if (!fid) return;    // placeholder slab (no floors defined)
+    g.addEventListener('click', async () => {
+      const cur = state.currentFloor ? state.currentFloor.id : null;
+      if (fid !== cur) await selectFloor(fid);
       if (typeof openFloorModal === 'function') openFloorModal();
     });
-    strip.querySelector('.fo-import').addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      // Reuse the existing hidden DXF input -- its onchange handler
-      // runs the /floors/import-dxf flow and refreshes the list.
-      const inp = document.getElementById('dxf-input');
-      if (inp) inp.click();
-      else toast('DXF import unavailable — hidden file input missing', true);
-    });
-    overlays.appendChild(strip);
-  }
+  });
+}
+
+// External hook the rest of the code already calls when the floor
+// selection changes -- keep the name so we don't have to hunt down
+// every caller.  Now just delegates to _renderBuildingCanvas which
+// bakes selection into the SVG directly.
+function renderBuildingView() {
+  _renderBuildingCanvas();
 }
 
 // ---- 2.5D image import (data URL in localStorage) --------------------
@@ -1308,10 +1330,8 @@ document.getElementById('fs-add-floor').addEventListener('click', () => {
   picker.dispatchEvent(new Event('change'));
 });
 
-// Boot the LHS panel: draw the default SVG (or restore imported image)
-// and wire the image-import file input.  refreshFloors() (at page
-// boot) then triggers renderBuildingView() so overlays layer on top
-// once the floor list arrives.
+// Boot the LHS panel.  refreshFloors() (at page boot) triggers
+// renderBuildingView() so the SVG rebuilds once floors arrive.
 _renderBuildingCanvas();
 _initBuildingImageSlot();
 
@@ -1528,7 +1548,7 @@ function renderSrmGrid() {
 
     box.innerHTML = `
       <div class="mod-hdr">
-        <span>${escapeHtml(m.type)}</span>
+        <span>${escapeHtml(moduleLabelFor(m.type, m.scu, m.addr))}</span>
         <span>SCU ${escapeHtml(m.scu)} · Addr ${escapeHtml(m.addr)}</span>
       </div>
       <div class="mod-dots">${dotsHtml}</div>
@@ -1650,7 +1670,7 @@ function openModuleModal(key) {
   };
   const parts = key.split('/');
   document.getElementById('mm-title').textContent =
-    `${parts[0]} · SCU ${parts[1]} · Addr ${parts[2]} · ${chs.length} ch`;
+    `${moduleLabelFor(parts[0], parts[1], parts[2])} · SCU ${parts[1]} · Addr ${parts[2]} · ${chs.length} ch`;
   const back = document.getElementById('module-modal');
   back.classList.add('open');
   _makePanelDraggable(back.querySelector('.mm-panel'));
@@ -4688,6 +4708,18 @@ function _prefixFor(devType, scu) {
 
 // -------- Boot --------
 refreshConn(); setInterval(refreshConn, 4000);
+// Fetch the module-label overrides once (no need to re-poll -- these
+// come from the demo.py-side JSON at startup and never change during
+// a session).  Populates state.moduleLabels so renderSrmGrid /
+// module-modal titles can honour operator-authored labels like
+// "SRM_6E" vs the codec's canonical "SRM_6S".
+fetch(`${API}/module-labels`).then(r => r.ok ? r.json() : null)
+  .then(data => {
+    if (data && data.overrides) {
+      state.moduleLabels = data.overrides;
+      if (typeof renderSrmGrid === 'function') renderSrmGrid();
+    }
+  }).catch(() => {});
 // Start the SSE live stream unconditionally at boot — was previously
 // gated behind operator mode which meant zero live updates in the
 // default layout mode.  See updateModeBadge() for details.

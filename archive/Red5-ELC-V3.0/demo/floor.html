@@ -2064,15 +2064,19 @@ document.getElementById('btn-mode').onclick = () => {
     badge.className = 'mode-badge operator';
     hint.style.display = 'none';
     canvas.classList.add('mode-operator');
-    startLiveStream();
   } else {
     btn.textContent = 'Mode: Layout';
     badge.textContent = 'LAYOUT';
     badge.className = 'mode-badge layout';
     hint.style.display = 'block';
     canvas.classList.remove('mode-operator');
-    stopLiveStream();
   }
+  // Live stream is on in BOTH modes — 2026-07-09 fix.  Previously we
+  // only started SSE in operator mode and stopped it in layout mode,
+  // which meant wall-switch RX never reached the UI while the
+  // operator was placing fixtures.  Mode is a UI intent (drag-place
+  // vs toggle-relay), not a subscription intent.
+  startLiveStream();
   paintCanvas();
 };
 
@@ -4196,6 +4200,10 @@ function _prefixFor(devType, scu) {
 
 // -------- Boot --------
 refreshConn(); setInterval(refreshConn, 4000);
+// Start the SSE live stream unconditionally at boot — was previously
+// gated behind operator mode which meant zero live updates in the
+// default layout mode.  See updateModeBadge() for details.
+startLiveStream();
 refreshFloors().then(async () => {
   fitCanvas();
   await refreshDevicesAndElements();

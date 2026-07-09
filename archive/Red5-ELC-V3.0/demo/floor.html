@@ -402,6 +402,16 @@
     <span class="pill" id="conn-pill" data-testid="floor-conn-pill">
       <span class="dot"></span><span id="conn-text">checking…</span>
     </span>
+    <!-- Live-event freshness pill.  Turns green + shows "live" when
+         an SSE event arrived in the last 15s, amber "stale" when 15-
+         60s stale, red "no events" past 60s.  Lets the operator see
+         at a glance whether wall-switch RX is even reaching the
+         browser -- so we're never guessing again which link in the
+         chain is broken. -->
+    <span class="pill" id="live-pill" data-testid="floor-live-pill"
+          title="Last SSE event received">
+      <span class="dot"></span><span id="live-text">SSE: —</span>
+    </span>
     <!-- Floor navigation: single dropdown replaces the LHS floor list.
          The "＋ New floor" option at the bottom triggers the create
          flow (was a separate toolbar button previously). -->
@@ -4030,10 +4040,15 @@ function _startSse() {
   try {
     liveSse = new EventSource(`${API}/events-sse`);
     liveSse.onmessage = (m) => onLiveEvent(JSON.parse(m.data));
+    liveSse.onopen = () => {
+      _liveSseOpenAt = Date.now();
+      _updateLivePill();
+    };
     // EventSource has native auto-reconnect on transient failures,
     // but a permanent close (readyState === CLOSED) needs a manual
     // kick.  Poll every 5s and revive if dead.
     liveSse.onerror = () => {
+      _updateLivePill();
       if (liveSse && liveSse.readyState === EventSource.CLOSED) {
         setTimeout(_startSse, 2000);
       }
@@ -4042,6 +4057,53 @@ function _startSse() {
     setTimeout(_startSse, 2000);
   }
 }
+
+// Live-pill state + updater.  Runs on every onLiveEvent AND on a
+// 3-second timer so the "stale/dead" transition shows without an
+// event arriving.
+let _liveLastEventAt = 0;
+let _liveSseOpenAt = 0;
+function _updateLivePill() {
+  const pill = document.getElementById('live-pill');
+  const text = document.getElementById('live-text');
+  if (!pill || !text) return;
+  const readyState = liveSse ? liveSse.readyState : null;
+  const now = Date.now();
+  if (readyState === EventSource.CLOSED || readyState === null) {
+    pill.style.borderColor = '#b04040';
+    pill.style.color = '#e88080';
+    text.textContent = 'SSE: closed';
+    return;
+  }
+  if (readyState === EventSource.CONNECTING) {
+    pill.style.borderColor = '#d0b060';
+    pill.style.color = '#e8d090';
+    text.textContent = 'SSE: connecting…';
+    return;
+  }
+  // OPEN
+  if (_liveLastEventAt === 0) {
+    pill.style.borderColor = '#6ba7dc';
+    pill.style.color = '#a8c8e8';
+    text.textContent = 'SSE: waiting…';
+    return;
+  }
+  const age = Math.round((now - _liveLastEventAt) / 1000);
+  if (age < 15) {
+    pill.style.borderColor = '#78c878';
+    pill.style.color = '#a8e0a8';
+    text.textContent = `SSE: live · ${age}s`;
+  } else if (age < 60) {
+    pill.style.borderColor = '#d97a30';
+    pill.style.color = '#e8b088';
+    text.textContent = `SSE: stale · ${age}s`;
+  } else {
+    pill.style.borderColor = '#b04040';
+    pill.style.color = '#e88080';
+    text.textContent = `SSE: silent · ${age}s`;
+  }
+}
+setInterval(_updateLivePill, 3000);
 
 // Belt on top of SSE — every 5 s, pull the replica's authoritative
 // device snapshot and reconcile state.liveDevices.  If SSE misses an
@@ -4082,6 +4144,13 @@ function stopLiveStream() {
   if (liveSse) { try { liveSse.close(); } catch {} liveSse = null; }
 }
 function onLiveEvent(ev) {
+  // Diagnostic: log every event so browser dev-tools shows exactly
+  // what the UI is receiving.  If wall-switch RX arrives on the
+  // server but nothing shows up here, the break is in the SSE
+  // subscription / transport, not in this handler.
+  console.log('[SSE]', ev.type, ev.device || '', ev);
+  _liveLastEventAt = Date.now();
+  _updateLivePill();
   let dirty = false;
   if (ev.type === 'relay_state') {
     const d = state.liveDevices.get(ev.device) || {};

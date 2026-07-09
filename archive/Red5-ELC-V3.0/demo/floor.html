@@ -824,11 +824,25 @@ function _normaliseToInventory(did) {
   const parts = String(did).split('/');
   if (parts.length !== 4) return did;
   const [wantType, , wantAddr, wantSub] = parts;
+  const wantSubN = parseInt(wantSub, 10);
+  // First pass: exact sub-address match.
   for (const d of state.devices) {
     const p = String(d.device).split('/');
     if (p.length !== 4) continue;
     if (p[0] === wantType && p[2] === wantAddr && p[3] === wantSub) {
       return d.device;
+    }
+  }
+  // Second pass: allow ±1 sub-address drift (0-based ↔ 1-based).
+  if (!Number.isNaN(wantSubN)) {
+    for (const d of state.devices) {
+      const p = String(d.device).split('/');
+      if (p.length !== 4) continue;
+      if (p[0] !== wantType || p[2] !== wantAddr) continue;
+      const subN = parseInt(p[3], 10);
+      if (!Number.isNaN(subN) && Math.abs(subN - wantSubN) === 1) {
+        return d.device;
+      }
     }
   }
   return did;
@@ -844,10 +858,17 @@ function _findLightingElement(did) {
   const parts = String(did).split('/');
   if (parts.length !== 4) return [null, null];
   const [wantType, , wantAddr, wantSub] = parts;
+  const wantSubN = parseInt(wantSub, 10);
   for (const [key, el] of state.lightingElements.entries()) {
     const p = String(key).split('/');
     if (p.length !== 4) continue;
-    if (p[0] === wantType && p[2] === wantAddr && p[3] === wantSub) {
+    if (p[0] !== wantType || p[2] !== wantAddr) continue;
+    // Direct sub-address match wins.
+    if (p[3] === wantSub) return [key, el];
+    // Off-by-one tolerance for 0-based ↔ 1-based channel migration.
+    const keySubN = parseInt(p[3], 10);
+    if (!Number.isNaN(wantSubN) && !Number.isNaN(keySubN)
+        && Math.abs(wantSubN - keySubN) === 1) {
       return [key, el];
     }
   }
@@ -923,12 +944,18 @@ async function bulkClearAssignment() {
   const ids = [...state.selectedDeviceIds];
   if (!confirm(`Un-assign ${ids.length} device(s)?  Any placements will be removed.`)) return;
   try {
+    // For each selected id, also try the ±1 sub-address neighbours in
+    // lightingElements to catch the 0-based / 1-based migration
+    // orphans.  ``_findLightingElement`` does the fuzzy lookup so
+    // legacy assignments still get deleted.
     for (const did of ids) {
-      if (state.lightingElements.has(did)) {
-        await api('DELETE', `/lighting-elements/${did}`);
+      const [key] = _findLightingElement(did);
+      const target = key || did;
+      if (state.lightingElements.has(target)) {
+        await api('DELETE', `/lighting-elements/${target}`);
       }
-      state.lightingElements.delete(did);
-      state.deviceFloor.delete(did);
+      state.lightingElements.delete(target);
+      state.deviceFloor.delete(target);
     }
     // Refresh floors — server may have stripped fixtures we no longer own.
     await refreshFloors();
@@ -2803,13 +2830,35 @@ async function deleteSelectedPlacements() {
   if (state.mode !== 'layout' || state.selectedDeviceIds.size === 0) return;
   const f = state.currentFloor;
   if (!f) return;
-  const doomed = new Set(state.selectedDeviceIds);
-  const next = f.fixtures.filter(x => !doomed.has(x.device_id));
+  // Build a set of device_ids that should be removed, tolerating
+  // legacy-vs-canonical mismatches from the 0-based → 1-based channel
+  // migration.  A fixture matches if either its raw device_id is in
+  // the selection, OR its fuzzy (type, addr, sub) tuple corresponds
+  // to any selected id (allowing sub ± 1 for the 0/1-base drift).
+  const rawSel = state.selectedDeviceIds;
+  const selTriples = new Set();
+  for (const s of rawSel) {
+    const p = String(s).split('/');
+    if (p.length === 4) selTriples.add(`${p[0]}/${p[2]}/${p[3]}`);
+  }
+  const matchesSelection = (fx) => {
+    if (rawSel.has(fx.device_id)) return true;
+    const p = String(fx.device_id).split('/');
+    if (p.length !== 4) return false;
+    const [t, , a, sub] = p;
+    if (selTriples.has(`${t}/${a}/${sub}`)) return true;
+    // Off-by-one on sub_address (0 → 1 migration).
+    const subN = parseInt(sub, 10);
+    if (!Number.isNaN(subN)) {
+      if (selTriples.has(`${t}/${a}/${subN + 1}`)) return true;
+      if (selTriples.has(`${t}/${a}/${subN - 1}`)) return true;
+    }
+    return false;
+  };
+  const next = f.fixtures.filter(x => !matchesSelection(x));
   if (next.length === f.fixtures.length) return;
   const removed = f.fixtures.length - next.length;
   await savePlacements(next);
-  // Clear the selection now that the fixtures are gone so the
-  // selection-actions cluster (align/delete) collapses cleanly.
   state.selectedDeviceIds.clear();
   updateAssignBar();
   syncShapeSubcontrols();

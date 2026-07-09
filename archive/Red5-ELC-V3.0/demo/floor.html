@@ -1019,16 +1019,20 @@ document.getElementById('ee-close').onclick = closeElementEditor;
 // the label; we don't optimistically write here so the UI shows the
 // authoritative post-echo state.
 document.getElementById('ee-toggle').onclick = async () => {
-  const did = state.editingDeviceId;
-  if (!did) return;
-  const live = state.liveDevices.get(did) || {};
+  const editingId = state.editingDeviceId;
+  if (!editingId) return;
+  // The element-editor is keyed by the original assignment ID (may
+  // carry legacy SCU=1 etc).  For the *wire* command we must target
+  // the current-inventory device (SCU=0 on wire per hardware).
+  const did = _normaliseToInventory(editingId);
+  const live = state.liveDevices.get(did) || state.liveDevices.get(editingId) || {};
   const target = !(live.relay_state === true);   // treat unknown as OFF
   try {
     await api('POST', `/devices/${did}/relay`, { state: target });
-    // Optimistically flip the UI too, in case the SSE echo is slow /
-    // in mock mode where the echo comes from MockScu (near-instant).
+    // Optimistically flip both keys so any UI reader is consistent.
     live.relay_state = target;
     state.liveDevices.set(did, live);
+    state.liveDevices.set(editingId, live);
     refreshOpsPanel();
   } catch (e) { toast(`Toggle failed: ${e.message}`, true); }
 };
@@ -1038,8 +1042,9 @@ document.getElementById('ee-toggle').onclick = async () => {
 // so the UI feels live.
 let _dimDebounce = null;
 document.getElementById('ee-dim').addEventListener('input', (ev) => {
-  const did = state.editingDeviceId;
-  if (!did) return;
+  const editingId = state.editingDeviceId;
+  if (!editingId) return;
+  const did = _normaliseToInventory(editingId);
   const pct = parseInt(ev.target.value, 10) || 0;
   document.getElementById('ee-dim-pct').textContent = `${pct}%`;
   // Reflect locally so the slider tracks the finger; server confirms
@@ -1047,6 +1052,7 @@ document.getElementById('ee-dim').addEventListener('input', (ev) => {
   const live = state.liveDevices.get(did) || {};
   live.dim_level = pct / 100;
   state.liveDevices.set(did, live);
+  state.liveDevices.set(editingId, live);
   clearTimeout(_dimDebounce);
   _dimDebounce = setTimeout(async () => {
     try {

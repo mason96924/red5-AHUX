@@ -1205,7 +1205,21 @@ async function fillGroupDetail(card, gid) {
       modWrap.style.cssText = 'margin-left:12px;';
       const orderedKeys = [...modulesOnFloor.keys()].sort();
       for (const mk of orderedKeys) {
-        const allSubs = [...modulesOnFloor.get(mk)].sort((a, b) => a - b);
+        // Show ALL relays of this module from state.devices (the
+        // physical hardware channel list) -- NOT just the subs that
+        // happen to be placed on this floor.  A 6-channel module
+        // renders 6 dots even if only some are placed / members.
+        // (2026-02-11 operator: "SHOW each module with full relays
+        // whether filled or not").
+        let allSubs = state.devices
+          .filter(d => moduleKeyForDevice(d.device) === mk)
+          .map(d => parseInt(d.device.split('/')[3] || '0', 10))
+          .sort((a, b) => a - b);
+        if (!allSubs.length) {
+          // Fallback: state.devices doesn't know this module (e.g.
+          // stale placement).  Use placed subs as best-effort.
+          allSubs = [...modulesOnFloor.get(mk)].sort((a, b) => a - b);
+        }
         const memberSubs = allSubs.filter(s => memberSet.has(`${mk}/${s}`));
         const tag = document.createElement('span');
         tag.className = 'member-mod-tag';

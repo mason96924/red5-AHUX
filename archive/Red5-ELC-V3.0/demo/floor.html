@@ -659,15 +659,16 @@
     </label>
     <!-- Phase 6.1g — align controls, visible only when 2+ fixtures
          are selected.  Align H = same Y (centres on a horizontal
-         line); Align V = same X (centres on a vertical line).  Uses
-         the mean of the selection as the target so nothing jumps
-         far. -->
+         line); Align V = same X (centres on a vertical line).  The
+         FIRST-selected fixture is the frame of reference; other
+         selected fixtures move to match its coordinate (2026-02-11
+         operator ask). -->
     <span id="align-wrap" style="display:none;gap:4px;align-items:center">
       <button id="align-h" class="ghost" data-testid="align-h"
-              title="Align selected fixture centres on a horizontal line (same Y)"
+              title="Align selected fixtures to the FIRST-selected fixture's Y (same horizontal line)"
               style="padding:4px 8px;font-size:11px">Align H</button>
       <button id="align-v" class="ghost" data-testid="align-v"
-              title="Align selected fixture centres on a vertical line (same X)"
+              title="Align selected fixtures to the FIRST-selected fixture's X (same vertical line)"
               style="padding:4px 8px;font-size:11px">Align V</button>
     </span>
     <!-- Delete-from-canvas button: visible when 1+ fixtures are selected
@@ -3922,19 +3923,26 @@ function syncShapeSubcontrols() {
 }
 
 // Align every selected fixture's anchor on a common horizontal
-// (``axis`` = 'y') or vertical (``axis`` = 'x') line at the arithmetic
-// mean of the selection.  Polyline vertices are translated by the
-// same delta so their shape stays intact.  A single-fixture selection
-// is a no-op.  Async so it waits for the persistence round-trip.
+// (``axis`` = 'y') or vertical (``axis`` = 'x') line.  The FIRST
+// selected fixture is the frame of reference -- its x_m (for
+// vertical) or y_m (for horizontal) becomes the shared target;
+// all other selected fixtures move to match (2026-02-11 operator
+// ask).  Polyline vertices are translated by the same delta so
+// their shape stays intact.  A single-fixture selection is a
+// no-op.  Async so it waits for the persistence round-trip.
 async function alignSelected(axis) {
   const sel = Array.from(state.selectedDeviceIds || []).map(
     did => state.currentFloor?.fixtures.find(f => f.device_id === did)
   ).filter(Boolean);
   if (sel.length < 2) return;
-  let target = 0;
-  for (const fx of sel) target += (axis === 'y') ? fx.y_m : fx.x_m;
-  target /= sel.length;
+  // Anchor = first selected fixture.  JS Sets preserve insertion
+  // order, so [...state.selectedDeviceIds][0] is exactly the item
+  // the operator clicked first (before any Ctrl-clicks).
+  const anchor = sel[0];
+  const target = (axis === 'y') ? anchor.y_m : anchor.x_m;
+  let moved = 0;
   for (const fx of sel) {
+    if (fx === anchor) continue;
     const old = (axis === 'y') ? fx.y_m : fx.x_m;
     const delta = target - old;
     if (Math.abs(delta) < 1e-6) continue;
@@ -3947,10 +3955,15 @@ async function alignSelected(axis) {
         ? [vx, vy + delta]
         : [vx + delta, vy]);
     }
+    moved++;
+  }
+  if (moved === 0) {
+    toast('Already aligned to the anchor');
+    return;
   }
   paintCanvas();
   await savePlacements(state.currentFloor.fixtures);
-  toast(`Aligned ${sel.length} fixtures on ${axis === 'y' ? 'horizontal' : 'vertical'} axis`);
+  toast(`Aligned ${moved} fixture(s) to ${axis === 'y' ? 'horizontal' : 'vertical'} anchor (${anchor.device_id})`);
 }
 document.getElementById('align-h').onclick = () => alignSelected('y');
 document.getElementById('align-v').onclick = () => alignSelected('x');

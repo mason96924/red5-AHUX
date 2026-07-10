@@ -4994,16 +4994,24 @@ function _renderTreePhysical() {
   }
   const html = ['<ul>'];
   for (const scu of data.scus) {
-    const online = scu.online
-      ? `<span class="tree-badge tb-online">online</span>`
-      : `<span class="tree-badge tb-offline">${scu.primary ? 'offline' : 'not linked'}</span>`;
+    let statusBadge;
+    if (scu.primary) {
+      statusBadge = scu.online
+        ? `<span class="tree-badge tb-online">online</span>`
+        : `<span class="tree-badge tb-offline">link down</span>`;
+    } else {
+      // Multi-SCU-link isn't wired yet — extra buses listed in
+      // project.json are shown for reference but don't have a live
+      // transport bound.  Grey pill, not red, to avoid alarming.
+      statusBadge = `<span class="tree-badge tb-unk" title="Additional SCU bus — awaiting per-SCU link">reference</span>`;
+    }
     const host = scu.host
       ? `<span class="meta">${_treeEscape(scu.host)}:${scu.port}</span>`
       : `<span class="meta">port ${scu.port}</span>`;
     html.push(`<li data-kind="scu" data-id="${_treeEscape(scu.id)}">`);
     html.push(`<span class="caret"></span>`);
     html.push(`<span class="tree-node k-scu" data-kind="scu" data-id="${_treeEscape(scu.id)}">`);
-    html.push(`<span class="icon">■</span><span class="name">${_treeEscape(scu.name)}</span>${host}${online}</span>`);
+    html.push(`<span class="icon">■</span><span class="name">${_treeEscape(scu.name)}</span>${host}${statusBadge}</span>`);
     html.push('<ul>');
     for (const mod of scu.modules) {
       const modKey = `${scu.id}/${mod.address}/${mod.dev_type}`;

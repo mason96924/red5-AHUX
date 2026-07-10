@@ -553,9 +553,32 @@ async def main() -> None:
 
         # ---- SCUs / modules --------------------------------------------
         scus_out: list[dict] = []
-        link_online = str(getattr(stack.link, "state", "")) == "connected"
+        _link_state = getattr(stack.link, "state", None)
+        link_online = getattr(_link_state, "value", str(_link_state)) == "connected"
         primary_host = getattr(stack.link, "host", "") or ""
         primary_port = getattr(stack.link, "port", 0) or 0
+
+        # The demo maintains a single ScuLink today; pair it to exactly
+        # one SCU in project.json (first host+port match, else the first
+        # SCU whose host is blank -- which just means "use whatever the
+        # demo booted with", the common case for env-driven setups).
+        # Multi-link support (one transport per SCU bus) is future work;
+        # until then only the paired SCU reflects link state.
+        primary_scu_id: int | None = None
+        if cfg:
+            for scu in cfg.scus:
+                if (scu.host and primary_host
+                        and scu.host == primary_host
+                        and scu.port == primary_port):
+                    primary_scu_id = scu.id
+                    break
+            if primary_scu_id is None:
+                for scu in cfg.scus:
+                    if not scu.host:
+                        primary_scu_id = scu.id
+                        break
+            if primary_scu_id is None and cfg.scus:
+                primary_scu_id = cfg.scus[0].id
         if cfg:
             for scu in cfg.scus:
                 modules_out = []
@@ -585,9 +608,7 @@ async def main() -> None:
                 # Only the primary SCU (the one build_stack dialled) is
                 # considered "online".  Additional buses in project.json
                 # are metadata-only until a per-SCU link is wired.
-                is_primary = (
-                    scu.host == primary_host and scu.port == primary_port
-                ) or (scu.id == 0 and not primary_host)
+                is_primary = (scu.id == primary_scu_id)
                 scus_out.append({
                     "id": scu.id,
                     "name": scu.name,

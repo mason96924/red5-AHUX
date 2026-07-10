@@ -151,11 +151,41 @@
     font-family: var(--mono); background: #0e131a; padding: 1px 5px;
     border: 1px solid var(--line); border-radius: 3px; font-size: 11px;
   }
-  /* Leaflet dark-mode tweaks so tiles fit the app palette */
+  /* Map modal (Leaflet + OSM) --------------------------------- */
+  #map-modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.62);
+    z-index: 998; display: none; align-items: center; justify-content: center;
+  }
+  #map-modal-overlay.show { display: flex; }
+  #map-modal {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; width: min(880px, 94vw); max-height: 88vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 12px 48px rgba(0,0,0,.55);
+  }
+  #map-modal header {
+    padding: 12px 18px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--panel-2);
+  }
+  #map-modal header h3 {
+    margin: 0; font-size: 13px; color: var(--accent-2);
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  #map-modal .body { padding: 14px 18px; }
+  #map-modal footer {
+    padding: 10px 18px; border-top: 1px solid var(--line);
+    background: var(--panel-2);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+  }
+  #map-modal .picked {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  #map-modal .picked b { color: var(--accent-2); }
   #leaflet-map {
-    height: 320px; width: 100%; border-radius: 4px;
+    height: 480px; width: 100%; border-radius: 4px;
     border: 1px solid var(--line); background: #0e131a;
-    margin-top: 4px;
   }
   #leaflet-map .leaflet-container { background: #0e131a; }
   .leaflet-control-attribution {
@@ -164,14 +194,14 @@
   }
   .leaflet-control-attribution a { color: var(--accent-2) !important; }
   #map-search-row {
-    display: flex; gap: 6px; margin-top: 10px; align-items: center;
+    display: flex; gap: 6px; margin-bottom: 10px; align-items: center;
   }
-  #map-search-row input {
-    flex: 1;
+  #map-search-row input { flex: 1; }
+  #btn-pick-map {
+    background: #1a2028; color: var(--accent-2);
+    border: 1px solid var(--accent); font-weight: 500;
   }
-  #map-hint {
-    font-size: 10px; color: var(--muted); margin-top: 4px;
-  }
+  #btn-pick-map:hover { background: #2a3040; }
 </style>
 </head>
 <body>
@@ -216,7 +246,11 @@
         <label>Longitude (°)</label>
         <input type="number" step="any" id="p-lng" data-testid="p-lng" />
       </div>
-      <div style="flex:0 0 auto;align-self:flex-end">
+      <div style="flex:0 0 auto;align-self:flex-end;display:flex;gap:6px">
+        <button id="btn-pick-map" data-testid="btn-pick-map"
+                title="Open map modal to click / drag / search a location">
+          📍 Pick on map
+        </button>
         <button id="btn-use-location" data-testid="btn-use-location"
                 title="Fills lat/lng from your browser (with permission)">
           Use browser location
@@ -238,19 +272,7 @@
     <div class="sun-preview" id="sun-preview" data-testid="sun-preview">
       Enter coordinates → sun times preview will appear here.
     </div>
-
-    <!-- Map picker: click / drag / search to set lat & lng -->
-    <div id="map-search-row">
-      <input type="text" id="map-search" data-testid="map-search"
-             placeholder="Search a place (e.g. 'Cubbon Park Bangalore')…"
-             autocomplete="off" />
-      <button id="btn-map-search" data-testid="btn-map-search">Find</button>
-    </div>
-    <div id="leaflet-map" data-testid="leaflet-map"></div>
-    <div id="map-hint">
-      Click the map or drag the pin to set the site.  Search uses
-      OpenStreetMap Nominatim (public geocoder, no API key).
-    </div>
+  </section>
   </section>
 
   <!-- ============================================================
@@ -295,6 +317,37 @@
 </main>
 
 <div id="toast" data-testid="toast"></div>
+
+<!-- Map picker modal (Leaflet + OSM Nominatim search) -->
+<div id="map-modal-overlay" data-testid="map-modal-overlay">
+  <div id="map-modal" role="dialog" aria-labelledby="map-modal-title">
+    <header>
+      <h3 id="map-modal-title">Pick a location</h3>
+      <button id="btn-map-close" data-testid="btn-map-close"
+              title="Discard and close" style="padding:2px 10px">✕</button>
+    </header>
+    <div class="body">
+      <div id="map-search-row">
+        <input type="text" id="map-search" data-testid="map-search"
+               placeholder="Search a place (e.g. 'Cubbon Park Bangalore')…"
+               autocomplete="off" />
+        <button id="btn-map-search" data-testid="btn-map-search">Find</button>
+      </div>
+      <div id="leaflet-map" data-testid="leaflet-map"></div>
+    </div>
+    <footer>
+      <div class="picked" id="map-picked" data-testid="map-picked">
+        Pick: <b>—</b>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="btn-map-cancel" data-testid="btn-map-cancel">Cancel</button>
+        <button id="btn-map-apply" class="primary" data-testid="btn-map-apply">
+          Apply
+        </button>
+      </div>
+    </footer>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -624,53 +677,74 @@ for (const id of ["p-name", "p-tz", "p-lat", "p-lng",
   document.getElementById(id).addEventListener("input", updatePreview);
 }
 
-// -------- Leaflet map picker --------
-// Click / drag pin / search → lat/lng inputs.  When inputs change
-// (from typing or "Use browser location") the pin follows.  OSM
-// tiles + Nominatim geocoder are free and need no API key.
+// -------- Leaflet map picker (opens in a modal) --------
+// The map lives inside a modal that opens via "📍 Pick on map".
+// Inside the modal: click / drag pin / search to pick coords, then
+// Apply commits them to the lat/lng inputs (and sun-times updates).
+// Cancel or ✕ discards the pick.  OSM tiles + Nominatim geocoder
+// (free, no API key).
 let leafletMap = null;
 let leafletMarker = null;
-let _mapSyncing = false;  // guard against feedback loops
+let _pickLat = null, _pickLng = null;
 
-function initMap() {
+function openMapModal() {
+  const overlay = document.getElementById("map-modal-overlay");
+  overlay.classList.add("show");
   const startLat = parseFloat(document.getElementById("p-lat").value) || 20;
   const startLng = parseFloat(document.getElementById("p-lng").value) || 78;
-  leafletMap = L.map("leaflet-map", {
-    zoomControl: true, attributionControl: true,
-  }).setView([startLat, startLng], 5);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; <a href='https://www.openstreetmap.org/copyright' target='_blank'>OpenStreetMap</a>",
-  }).addTo(leafletMap);
-  leafletMarker = L.marker([startLat, startLng], { draggable: true }).addTo(leafletMap);
-  leafletMarker.on("dragend", () => {
-    const pos = leafletMarker.getLatLng();
-    _writeLatLng(pos.lat, pos.lng);
-  });
-  leafletMap.on("click", (ev) => {
-    leafletMarker.setLatLng(ev.latlng);
-    _writeLatLng(ev.latlng.lat, ev.latlng.lng);
-  });
-  // Feedback: when lat/lng inputs change from OUTSIDE the map
-  // (typing, "Use browser location", initial load) → move pin.
-  for (const id of ["p-lat", "p-lng"]) {
-    document.getElementById(id).addEventListener("input", () => {
-      if (_mapSyncing || !leafletMarker) return;
-      const la = parseFloat(document.getElementById("p-lat").value);
-      const ln = parseFloat(document.getElementById("p-lng").value);
-      if (!isFinite(la) || !isFinite(ln)) return;
-      leafletMarker.setLatLng([la, ln]);
-      leafletMap.setView([la, ln], Math.max(leafletMap.getZoom(), 10));
+  _pickLat = startLat; _pickLng = startLng;
+  _updatePickedLabel();
+  // Init the map lazily on first open (Leaflet needs a visible
+  // container to size tiles correctly).  Later opens reuse the
+  // instance and just recentre.
+  if (!leafletMap) {
+    leafletMap = L.map("leaflet-map", {
+      zoomControl: true, attributionControl: true,
+    }).setView([startLat, startLng], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; <a href='https://www.openstreetmap.org/copyright' target='_blank'>OpenStreetMap</a>",
+    }).addTo(leafletMap);
+    leafletMarker = L.marker([startLat, startLng], { draggable: true }).addTo(leafletMap);
+    leafletMarker.on("dragend", () => {
+      const p = leafletMarker.getLatLng();
+      _pickLat = p.lat; _pickLng = p.lng; _updatePickedLabel();
     });
+    leafletMap.on("click", (ev) => {
+      leafletMarker.setLatLng(ev.latlng);
+      _pickLat = ev.latlng.lat; _pickLng = ev.latlng.lng; _updatePickedLabel();
+    });
+  } else {
+    leafletMarker.setLatLng([startLat, startLng]);
+    leafletMap.setView([startLat, startLng], Math.max(leafletMap.getZoom(), 5));
   }
+  // Leaflet needs invalidateSize after visibility change so tiles
+  // render at the modal's dimensions.
+  setTimeout(() => leafletMap.invalidateSize(), 60);
 }
 
-function _writeLatLng(lat, lng) {
-  _mapSyncing = true;
-  document.getElementById("p-lat").value = lat.toFixed(6);
-  document.getElementById("p-lng").value = lng.toFixed(6);
+function closeMapModal() {
+  document.getElementById("map-modal-overlay").classList.remove("show");
+  document.getElementById("map-search").value = "";
+}
+
+function applyMapPick() {
+  if (_pickLat == null || _pickLng == null) { closeMapModal(); return; }
+  const latEl = document.getElementById("p-lat");
+  const lngEl = document.getElementById("p-lng");
+  latEl.value = _pickLat.toFixed(6);
+  lngEl.value = _pickLng.toFixed(6);
+  latEl.dispatchEvent(new Event("input", { bubbles: true }));
+  lngEl.dispatchEvent(new Event("input", { bubbles: true }));
   updatePreview();
-  _mapSyncing = false;
+  toast(`Location applied: ${_pickLat.toFixed(4)}, ${_pickLng.toFixed(4)}`);
+  closeMapModal();
+}
+
+function _updatePickedLabel() {
+  document.getElementById("map-picked").innerHTML = (_pickLat == null)
+    ? "Pick: <b>—</b>"
+    : `Pick: <b>${_pickLat.toFixed(6)}, ${_pickLng.toFixed(6)}</b>`;
 }
 
 async function searchPlace() {
@@ -678,8 +752,6 @@ async function searchPlace() {
   if (!q) return;
   toast("Geocoding via OpenStreetMap…");
   try {
-    // Nominatim usage policy: 1 req/s.  Adding a sensible User-Agent
-    // isn't possible from the browser -- the Referer suffices.
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
     const r = await fetch(url, { headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -689,19 +761,33 @@ async function searchPlace() {
     const la = parseFloat(hit.lat), ln = parseFloat(hit.lon);
     leafletMarker.setLatLng([la, ln]);
     leafletMap.setView([la, ln], 13);
-    _writeLatLng(la, ln);
+    _pickLat = la; _pickLng = ln; _updatePickedLabel();
     toast(`Found: ${hit.display_name}`);
   } catch (e) {
     toast("Geocode failed: " + e.message, true);
   }
 }
+document.getElementById("btn-pick-map").addEventListener("click", openMapModal);
+document.getElementById("btn-map-close").addEventListener("click", closeMapModal);
+document.getElementById("btn-map-cancel").addEventListener("click", closeMapModal);
+document.getElementById("btn-map-apply").addEventListener("click", applyMapPick);
 document.getElementById("btn-map-search").addEventListener("click", searchPlace);
 document.getElementById("map-search").addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") { ev.preventDefault(); searchPlace(); }
 });
+// Click outside modal card to close (but not on the card itself)
+document.getElementById("map-modal-overlay").addEventListener("click", (ev) => {
+  if (ev.target.id === "map-modal-overlay") closeMapModal();
+});
+// ESC to close
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" &&
+      document.getElementById("map-modal-overlay").classList.contains("show")) {
+    closeMapModal();
+  }
+});
 
-// Init the map after loadProject fills lat/lng so it centres correctly.
-loadProject().then(() => setTimeout(initMap, 100));
+loadProject();
 </script>
 </body>
 </html>

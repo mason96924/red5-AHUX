@@ -3337,11 +3337,17 @@ function paintCanvas() {
       }
 
       // Label -- offset from the anchor so it doesn't sit on top
-      // of the shape body.
+      // of the shape body.  Use the device_id
+      // (dev_type/scu/addr/channel) so the label is uniform
+      // regardless of how the fixture was placed -- single drop
+      // from the module modal, Apply-All bulk placement, and every
+      // other path all print the same canonical identifier
+      // (2026-02-11 operator ask).  Falls back to fx.id if the
+      // fixture somehow lacks a device_id.
       ctx.fillStyle = '#d8dde4';
       ctx.font = '11px ui-monospace, monospace';
       ctx.textBaseline = 'middle';
-      ctx.fillText(fx.id, cx + 10, cy);
+      ctx.fillText(fx.device_id || fx.id, cx + 10, cy);
     }
   }
 

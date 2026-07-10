@@ -1068,16 +1068,17 @@ function renderGroups() {
           const summary = await _bulkAddToGroup(g, modules);
           toast(summary);
         } else if (payload.type === 'floor' || payload.type === 'floors') {
-          // Floor drop: add every unmasked relay of every module of
-          // the payload's floors.  Payload shape:
-          //   { type: 'floor',  floor: <id>, modules: [{module, channels}] }
-          //   { type: 'floors', floors: [{id, modules: [...]}] }
+          // Floor drop uses SET semantics (2026-02-11 operator fix):
+          // dropping a floor makes the group's members for that
+          // floor exactly match the CURRENT mask.  Any relay on the
+          // floor that is unmasked is a member after drop; any
+          // relay that is masked is NOT.  Relays outside the floor
+          // are untouched.  This eliminates the "delete floor then
+          // reconfigure mask then drop" ritual -- one drop syncs.
           const floors = payload.type === 'floor'
             ? [{ id: payload.floor, modules: payload.modules || [] }]
             : (payload.floors || []);
-          const allMods = [];
-          for (const fl of floors) allMods.push(...(fl.modules || []));
-          const summary = await _bulkAddToGroup(g, allMods);
+          const summary = await _syncFloorsToGroup(g, floors);
           toast(`${floors.length} floor(s) → ${g.name}: ${summary}`);
         }
         await refreshAll();
@@ -1351,6 +1352,56 @@ async function _bulkAddToGroup(g, modules) {
   const note = skipped ? ` (${skipped} skipped — already members?)` : '';
   return `${added} relay(s) from ${mods} module(s) added to ${g.name}${note}`;
 }
+
+// --- Floor-drop SET semantics (2026-02-11) ---------------------------
+// Drops a floor onto a group by SYNCING: after the drop, the group's
+// membership for THIS floor's placed devices equals exactly the
+// payload's unmasked channels.  Devices from other floors are
+// untouched.  This turns the mask checkboxes into a "schedule
+// setting for this module" that always takes effect on next drop.
+async function _syncFloorsToGroup(g, floors) {
+  // Fetch current members once so we can diff without extra roundtrips.
+  let detail;
+  try { detail = await api('GET', `/groups/${g.id}`); }
+  catch (_) { detail = { members: [] }; }
+  const currentMembers = new Set(detail.members || []);
+  let added = 0, removed = 0, totalTargets = 0;
+  for (const fl of floors) {
+    const floorDevIds = new Set(state.floorPlacements[fl.id] || []);
+    // Target = union of channels across all modules in the payload
+    // (these are the mask-unmasked, floor-scoped device_ids that
+    // dragstart just resolved from localStorage).
+    const target = new Set();
+    for (const m of (fl.modules || [])) {
+      for (const did of (m.channels || [])) target.add(did);
+    }
+    totalTargets += target.size;
+    // Remove: currently members AND on this floor AND NOT in target
+    for (const did of floorDevIds) {
+      if (currentMembers.has(did) && !target.has(did)) {
+        try {
+          await api('DELETE', `/groups/${g.id}/members/${did}`);
+          removed++;
+        } catch (_) { /* best-effort */ }
+      }
+    }
+    // Add: in target AND NOT currently a member
+    for (const did of target) {
+      if (!currentMembers.has(did)) {
+        try {
+          await api('POST', `/groups/${g.id}/members`, { device_id: did });
+          added++;
+        } catch (_) { /* best-effort */ }
+      }
+    }
+  }
+  const parts = [];
+  if (added)   parts.push(`+${added}`);
+  if (removed) parts.push(`-${removed}`);
+  const delta = parts.length ? parts.join(' / ') : 'no change';
+  return `synced (${delta}, target ${totalTargets} ch)`;
+}
+
 
 // --- Floor-first Devices panel --------------------------------------
 // LHS shows floors; each floor is drag-and-droppable; click opens a

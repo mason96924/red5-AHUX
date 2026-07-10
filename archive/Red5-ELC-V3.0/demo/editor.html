@@ -288,6 +288,49 @@
      visual cue via the 🏢 emoji in the header (see renderDevices).
      Keep the class as a hook for future floor-only styling. */
   .module-box.floor-tile { }
+
+  /* ---- Floor Popout -----------------------------------------------------
+     Non-modal floating panel that opens when a floor tile is
+     clicked.  Deliberately no backdrop -- the operator needs to be
+     able to drag modules out of the popout onto group cards behind.
+     Positioned in the top-right of the viewport by default; the
+     header acts as a drag handle so it can be moved out of the way. */
+  .floor-popout {
+    position: fixed;
+    top: 78px;      /* just below the header bar */
+    right: 340px;   /* clear of the Devices column on the right */
+    width: 380px;
+    max-height: calc(100vh - 100px);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6),
+                0 0 0 1px rgba(192,132,252,0.35);
+    z-index: 200;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .floor-popout[hidden] { display: none; }
+  .floor-popout header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    background: #0e131a; border-bottom: 1px solid var(--line);
+    cursor: move; user-select: none;
+  }
+  .floor-popout header h3 {
+    margin: 0; font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .floor-popout header .close-x {
+    background: transparent; border: none; color: var(--muted);
+    font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .floor-popout header .close-x:hover { color: var(--bad); }
+  .floor-popout .body {
+    padding: 10px; overflow: auto; flex: 1;
+  }
+  .floor-popout footer {
+    padding: 6px 10px; border-top: 1px solid var(--line);
+    background: #0e131a;
+  }
   .module-box.dragging { opacity: 0.5; }
   .module-box .mod-hdr {
     font-family: var(--mono); font-size: 10px; color: var(--muted);
@@ -762,33 +805,27 @@
   </div>
 </div>
 
-<!-- ============ Floor Modal (2026-02-11) =============================
-     Opens when the operator clicks a floor tile in the LHS Devices
-     panel.  Shows every module associated with that floor (via
-     lighting-element placements) as draggable tiles, with the same
-     per-module relay expansion + mask checkboxes as the previous
-     inline view.  Modules can be Ctrl/Cmd-clicked for multi-select,
-     then dragged as a bundle onto a group card.  The backdrop is
-     click-to-dismiss (except when clicking inside the dialog). --> 
-<div class="modal-backdrop" id="floor-modal-backdrop"
-     data-testid="floor-modal-backdrop">
-  <div class="modal" style="max-width: 540px; width: 90%;">
-    <header>
-      <h3 id="floor-modal-title" data-testid="floor-modal-title">Floor</h3>
-      <button class="close-x" data-testid="floor-modal-close"
-              data-modal-close id="floor-modal-close">×</button>
-    </header>
-    <div class="body" id="floor-modal-body"
-         style="max-height: 65vh; overflow: auto;">
-      <!-- filled by renderFloorModal() -->
-    </div>
-    <footer>
-      <span style="color:var(--muted);font-size:11px">
-        Ctrl-click to multi-select · Drag onto a group to add
-      </span>
-      <button class="ghost" data-modal-close id="floor-modal-done">Done</button>
-    </footer>
+<!-- ============ Floor Popout (2026-02-11 refined) =====================
+     Non-modal floating panel that pops out when a floor tile in the
+     LHS Devices column is clicked.  Sits over the Devices column
+     (not center-of-screen) with NO backdrop, so operators can drag
+     modules directly from the popout onto group cards behind
+     without dismissing.  Draggable by the header.  Close via × or
+     the small "Done" button. --> 
+<div id="floor-popout" class="floor-popout" data-testid="floor-popout" hidden>
+  <header data-role="floor-popout-drag-handle">
+    <h3 id="floor-modal-title" data-testid="floor-modal-title">Floor</h3>
+    <button class="close-x" data-testid="floor-modal-close"
+            id="floor-modal-close" title="Close">×</button>
+  </header>
+  <div class="body" id="floor-modal-body">
+    <!-- filled by renderFloorModal() -->
   </div>
+  <footer>
+    <span style="color:var(--muted);font-size:11px">
+      Ctrl-click to multi-select · Drag onto a group
+    </span>
+  </footer>
 </div>
 
 <script>
@@ -1422,20 +1459,13 @@ function renderDevices() {
 // modal by its header lets the operator move it out of the way to
 // drop onto group cards behind.
 function renderFloorModal() {
-  const backdrop = document.getElementById('floor-modal-backdrop');
-  if (state.openedFloorId === null) {
-    backdrop.classList.remove('show');
-    return;
-  }
+  const pop = document.getElementById('floor-popout');
+  if (state.openedFloorId === null) { pop.hidden = true; return; }
   const floor = state.floors.find(f => f.id === state.openedFloorId);
-  if (!floor) {
-    state.openedFloorId = null;
-    backdrop.classList.remove('show');
-    return;
-  }
+  if (!floor) { state.openedFloorId = null; pop.hidden = true; return; }
   const enriched = { ...floor, deviceIds: state.floorPlacements[floor.id] || [] };
   const mods = _floorModulesForFloor(enriched);
-  backdrop.classList.add('show');
+  pop.hidden = false;
   const body = document.getElementById('floor-modal-body');
   document.getElementById('floor-modal-title').textContent =
     `Floor: ${floor.name} — ${mods.length} module(s)`;
@@ -2201,6 +2231,49 @@ function randomColor() {
 // ---------- boot ------------------------------------------------------------
 refreshConn(); setInterval(refreshConn, 4000);
 refreshAll().catch(e => toast(e.message, true));
+
+// ---- Floor Popout: close + draggable header ----
+(function initFloorPopout() {
+  const pop = document.getElementById('floor-popout');
+  const closeBtn = document.getElementById('floor-modal-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      state.openedFloorId = null;
+      pop.hidden = true;
+    });
+  }
+  // Click outside the header/body/footer does NOT close (this is a
+  // pop-out, not a modal).  Escape key closes for convenience.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !pop.hidden) {
+      state.openedFloorId = null;
+      pop.hidden = true;
+    }
+  });
+  // Header drag = move popout around the viewport.
+  const handle = pop.querySelector('[data-role="floor-popout-drag-handle"]');
+  if (!handle) return;
+  let dragOffset = null;
+  handle.addEventListener('mousedown', (ev) => {
+    if (ev.target.closest('.close-x')) return;
+    const r = pop.getBoundingClientRect();
+    dragOffset = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    ev.preventDefault();
+  });
+  window.addEventListener('mousemove', (ev) => {
+    if (!dragOffset) return;
+    // Constrain to viewport with a small margin.
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    let nx = ev.clientX - dragOffset.x;
+    let ny = ev.clientY - dragOffset.y;
+    nx = Math.max(4, Math.min(nx, window.innerWidth - w - 4));
+    ny = Math.max(4, Math.min(ny, window.innerHeight - h - 4));
+    pop.style.top = `${ny}px`;
+    pop.style.left = `${nx}px`;
+    pop.style.right = 'auto';
+  });
+  window.addEventListener('mouseup', () => { dragOffset = null; });
+})();
 
 // Phase 3: operator-mode toggle wiring + restore from localStorage.
 document.getElementById('op-toggle').addEventListener('click', toggleOperator);

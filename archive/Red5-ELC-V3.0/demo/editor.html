@@ -157,6 +157,16 @@
   .member-mod-tag .mm-dot.member:hover {
     background: var(--bad); border-color: var(--bad); color: #fff;
   }
+  /* Non-member dot -- clickable to ADD the relay to the group
+     (2026-02-11 refinement).  Solid on hover shows the "add"
+     affordance in the group's accent colour. */
+  .member-mod-tag .mm-dot.addable {
+    cursor: pointer;
+  }
+  .member-mod-tag .mm-dot.addable:hover {
+    background: var(--ok); border-color: var(--ok);
+    color: #052e10; opacity: 1;
+  }
   /* Non-member relay -> transparent + dim so operator sees the module
      still has spare channels available to add. */
   .member-mod-tag .mm-dot:not(.member) { opacity: 0.35; }
@@ -1198,9 +1208,16 @@ async function fillGroupDetail(card, gid) {
             const style = isMember
               ? `style="background:${groupColor};border-color:${groupColor};color:#0a1418"`
               : '';
-            return `<span class="mm-dot${isMember ? ' member' : ''}"
+            // Non-member dot is now also clickable: adds that relay
+            // to the group.  Member dot click still removes.
+            // Distinguishing hover text tells the operator which
+            // way the click will go (2026-02-11 UX ask).
+            const hint = isMember
+              ? '— click to remove'
+              : '— click to add';
+            return `<span class="mm-dot${isMember ? ' member' : ' addable'}"
                           data-device-id="${escapeHtml(did)}" ${style}
-                          title="${escapeHtml(did)}${isMember ? ' — click to remove' : ' (not a member)'}"
+                          title="${escapeHtml(did)} ${hint}"
                           >${s}</span>`;
           }).join('')}</span>
           <button class="mm-x" title="Remove all ${memberSubs.size} relay(s) of ${mk} from group"
@@ -1210,6 +1227,18 @@ async function fillGroupDetail(card, gid) {
             const did = dot.dataset.deviceId;
             try {
               await api('DELETE', `/groups/${gid}/members/${did}`);
+              await refreshAll();
+            } catch (e) { toast(e.message, true); }
+          });
+        }
+        // 2026-02-11: non-member dots are now clickable too -- add
+        // the relay to this group.  Backend rejects duplicates so
+        // no client-side check needed.
+        for (const dot of tag.querySelectorAll('.mm-dot.addable')) {
+          dot.addEventListener('click', async () => {
+            const did = dot.dataset.deviceId;
+            try {
+              await api('POST', `/groups/${gid}/members`, { device_id: did });
               await refreshAll();
             } catch (e) { toast(e.message, true); }
           });
@@ -1346,14 +1375,20 @@ function _floorModulesForFloor(floor) {
   const modules = [];
   for (const mk of [...modKeys].sort()) {
     const { channels, includedIds, excluded } = _channelsForModule(mk);
-    // But restrict to channels that are actually placed on THIS floor
-    // (a module could have some channels on floor 1 and others on
-    // floor 2 -- each floor only owns its own subset).
+    // 2026-02-11 refinement: show EVERY channel of the module (not
+    // just those placed on this floor) so operators can see which
+    // channels of the module ALSO exist elsewhere.  `placedSet`
+    // decides the visual "on-this-floor" vs "on-another-floor"
+    // distinction; the popout module tile draws solid dots for
+    // placed and hollow dots for not-placed-on-this-floor.
     const placedSet = new Set(floor.deviceIds);
-    const floorChans = channels.filter(c => placedSet.has(c.device));
+    // Restrict the drop payload to ONLY channels actually placed on
+    // this floor -- dragging a module still targets this floor's
+    // subset (matches operator intent: "add relays from this floor
+    // to a group").
     const floorIncluded = includedIds.filter(id => placedSet.has(id));
     modules.push({
-      key: mk, channels: floorChans, includedIds: floorIncluded, excluded,
+      key: mk, channels, includedIds: floorIncluded, excluded, placedSet,
     });
   }
   return modules;
@@ -1494,8 +1529,19 @@ function renderFloorModal() {
         ${m.channels.map(c => {
           const sub = c.device.split('/')[3] || '';
           const st = _dotStateFor(c);
-          return `<span class="mod-dot ${st}" data-device-id="${escapeHtml(c.device)}"
-                        title="${escapeHtml(c.device)}">${escapeHtml(sub)}</span>`;
+          const placed = m.placedSet && m.placedSet.has(c.device);
+          // Solid dot -> channel is placed on THIS floor (its state
+          // colour still reflects on/off/alarm).  Hollow dot ->
+          // channel exists on the module but isn't on this floor;
+          // rendered with reduced opacity so operators see the
+          // "there are more relays available" hint (2026-02-11).
+          const cls = placed ? `mod-dot ${st}` : 'mod-dot';
+          const style = placed ? '' : 'style="opacity:.30;background:transparent;color:var(--muted)"';
+          const title = placed
+            ? escapeHtml(c.device)
+            : `${escapeHtml(c.device)} (not on this floor)`;
+          return `<span class="${cls}" data-device-id="${escapeHtml(c.device)}"
+                        ${style} title="${title}">${escapeHtml(sub)}</span>`;
         }).join('')}
       </div>`;
     // Click: toggle expand; Ctrl-click: multi-select.

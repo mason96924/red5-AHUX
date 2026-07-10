@@ -416,6 +416,99 @@ async def main() -> None:
             media_type="application/octet-stream",
         )
 
+    # ------------------------------------------------------------------
+    # Setup / Settings (2026-02-11 operator ask -- "starting point"
+    # wizard for a fresh install).  See elc.config.project for the
+    # JSON schema and elc.util.astro for sunrise/sunset compute.
+    # ------------------------------------------------------------------
+    from elc.config.project import (
+        ProjectConfig,
+        DEFAULT_PROJECT_PATH,
+        load_project,
+        save_project,
+        is_configured,
+    )
+    from elc.util.astro import sun_times_for
+    from fastapi import HTTPException
+    from fastapi.responses import RedirectResponse
+
+    @stack.app.get("/api/elc/project", include_in_schema=False)
+    async def get_project() -> dict:
+        """Return the current ``configs/project.json`` or {} when absent."""
+        cfg = load_project(DEFAULT_PROJECT_PATH)
+        return {
+            "configured": is_configured(DEFAULT_PROJECT_PATH),
+            "path": str(DEFAULT_PROJECT_PATH),
+            "project": cfg.model_dump() if cfg else None,
+        }
+
+    @stack.app.post("/api/elc/project", include_in_schema=False)
+    async def post_project(body: dict) -> dict:
+        """Validate + persist ``configs/project.json``.  Backs up the
+        previous file to ``project.json.bak`` before writing.  The
+        client (Settings page) should call
+        ``/api/elc/project/expand-devices`` afterwards to hot-reload
+        the running demo's device inventory.
+        """
+        try:
+            cfg = ProjectConfig.model_validate(body)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"invalid project.json: {e}")
+        save_project(cfg, DEFAULT_PROJECT_PATH)
+        return {"ok": True, "path": str(DEFAULT_PROJECT_PATH)}
+
+    @stack.app.post("/api/elc/project/expand-devices", include_in_schema=False)
+    async def expand_devices() -> dict:
+        """Expand the SCU→module hierarchy in project.json into the
+        flat device-id list the running demo uses.  Returns the
+        expanded rows; a hot-reload of the driver is a separate
+        operator step (restart demo.py) since the SCU link is bound
+        at boot.
+        """
+        cfg = load_project(DEFAULT_PROJECT_PATH)
+        if cfg is None:
+            raise HTTPException(status_code=404, detail="no project.json yet")
+        return {"devices": cfg.to_devices_json(), "scus": len(cfg.scus)}
+
+    @stack.app.get("/api/elc/sun-times", include_in_schema=False)
+    async def sun_times(date_iso: str = "") -> dict:
+        """Compute today's (or ``date_iso``'s) sunrise/sunset for the
+        project's site coordinates.  Falls back to UTC / (0, 0) if
+        no project.json exists yet -- useful for the Settings wizard
+        preview while the operator is still typing.
+        """
+        cfg = load_project(DEFAULT_PROJECT_PATH)
+        prof = cfg.project if cfg else None
+        from datetime import date as date_cls
+        on = date_cls.fromisoformat(date_iso) if date_iso else None
+        try:
+            return sun_times_for(
+                latitude=prof.latitude if prof else 0.0,
+                longitude=prof.longitude if prof else 0.0,
+                tz_name=prof.timezone if prof else "UTC",
+                on=on,
+                sunrise_offset_min=prof.sunrise_offset_min if prof else 0,
+                sunset_offset_min=prof.sunset_offset_min if prof else 0,
+            )
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"sun-times: {e}")
+
+    @stack.app.get("/settings", include_in_schema=False)
+    async def settings_page() -> FileResponse:
+        """Serve the setup / configuration wizard."""
+        return FileResponse(str(demo_dir / "settings.html"))
+
+    # Bootstrap redirect: when the operator lands on /floor with no
+    # project.json yet, send them to /settings first.  Deep-link to
+    # /floor?force=1 still works so agents/ops can bypass the redirect.
+    @stack.app.middleware("http")
+    async def _redirect_to_settings_when_bare(request, call_next):
+        if request.url.path in ("/", "/floor", "/editor"):
+            if not is_configured(DEFAULT_PROJECT_PATH):
+                if request.query_params.get("force") != "1":
+                    return RedirectResponse(url="/settings", status_code=302)
+        return await call_next(request)
+
     # ---- Sprinkle a few random failures so the WS log shows variety -
     # Mock-mode only.  When a real SCU is on the wire, failures come
     # from actual hardware -- injecting synthetic FailReports would

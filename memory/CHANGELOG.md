@@ -33,6 +33,63 @@ captures what has been implemented and when.
 - **Tests**: 394/394 pytest passing.
 
 
+## 2026-02-11 — Settings wizard (bootstrap flow) + astro sun-times
+
+### What shipped
+
+- **New `configs/project.json`** — one human-readable file capturing
+  the site's identity: project profile (name, timezone, lat/lng,
+  sunrise/sunset offsets) + SCU list + per-SCU module inventory
+  (dev_type / address / note / discovered flag).
+- **`elc/config/project.py`** -- pydantic model + atomic save/load
+  (temp-file + rename, `.bak` backup on overwrite).  Validators
+  reject duplicate SCU ids / duplicate module addresses / bad
+  dev_types.  `to_devices_json()` expands the SCU→module hierarchy
+  into the flat `[{dev_type, scu, address}, ...]` list the demo's
+  `_load_device_set` already consumes.
+- **`elc/util/astro.py`** -- wraps `astral>=3.2` (pure Python).
+  `sun_times_for(lat, lng, tz_name, on=?, sunrise_offset_min=?,
+  sunset_offset_min=?)` returns dawn / sunrise / solar_noon /
+  sunset / dusk (local + UTC), day_length_min.  Applies offsets to
+  sunrise/sunset only; civil twilight boundaries untouched.
+- **REST endpoints** (in `scripts/demo.py`, `include_in_schema=False`):
+  * `GET  /api/elc/project`               -- read
+  * `POST /api/elc/project`               -- validate + persist
+  * `POST /api/elc/project/expand-devices` -- flat device list
+  * `GET  /api/elc/sun-times?date_iso=?` -- today's or given-date
+    solar events for the project coords
+  * `GET  /settings`                       -- serves settings.html
+- **Bootstrap redirect middleware**: `/`, `/floor`, `/editor` are
+  302→`/settings` when no project.json (or empty) exists.  Bypass
+  via `?force=1` on any of those routes.
+- **`demo/settings.html`** -- wizard UI with 3 sections:
+  1. Project profile (name/tz/lat-lng/offsets), "Use browser location"
+     button that fills lat/lng from `navigator.geolocation`, live
+     sun-times preview strip.
+  2. SCUs & Modules: repeatable SCU blocks (bus id, name, host, port,
+     Discover, × Remove).  Each SCU has an inline modules table with
+     dev_type dropdown, address, note, × delete.  Discover button
+     merges results from `/discover-srms` (marks each merged row
+     `discovered: true`).
+  3. Preview & Save: live JSON preview + sticky footer (Reload / Save
+     & continue → auto-redirects to /floor after save).
+- **Tests** (`tests/config/test_project_config.py`): 11 new tests
+  covering channel-count-by-type, validator rejections, save/load
+  round-trip + backup, absent-file → None, `is_configured` gating,
+  `to_devices_json` shape, sun-times keys / Bangalore sanity /
+  offset-shift semantics.  Full suite: **410/410 passing** (up from
+  399).
+
+### Deferred
+
+- Hot-reload of the driver on save: today the JSON is committed but
+  the SCU link stays bound to the previous inventory; operator
+  restarts `demo.py` to pick up new modules.  A hot-reload path
+  (driver.rebind + rediscover) is a follow-up.
+- Timezone dropdown (currently free-text `p-tz`): swap for the
+  IANA-tz list once we settle on a source (browser Intl or bundled).
+
+
 ## 2026-02-11 — SCU Data Reports (opcode 0x14, protocol §8)
 
 ### What shipped

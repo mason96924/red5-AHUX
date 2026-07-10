@@ -4,32 +4,38 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
-## 2026-02-11 — Schedule Editor UX: full-floor member view + stale-mask fix
+## 2026-02-11 — Schedule Editor: Group ↔ Popout sync + placedSet bug fix
 
 ### What shipped
 
-- **Groups → Members: full floor structure**.  When any relay from a
-  floor is a group member, the group card now renders the ENTIRE
-  floor -- every module on that floor with every relay drawn as a
-  dot (`renderGroups`, `demo/editor.html`).  Solid = current member,
-  hollow = not-yet-member but clickable to add.  Header count now
-  reads `X mod · M/T ch` (members / total on floor).  Floor-level ×
-  only removes actual members; hollow non-member dots are not
-  touched (2026-02-11 operator ask: "click on the relay to make it
-  solid or hollow will be the action of including or excluding in
-  the membership of the group").
-- **Stale mask on module drag fixed** (`renderFloorModal`,
-  `_renderModuleDetail`).  Module tile `dragstart` now re-reads the
-  mask from `localStorage` LIVE via `_channelsForModule(mk)` instead
-  of using the closed-over snapshot captured at popout render time.
-  Additionally, the mask-checkbox `change` handler now calls
-  `renderFloorModal()` alongside `renderDevices()` so the tile dots
-  flip solid<->hollow immediately.  Reproduces the operator's flow:
-  configure mask -> delete floor -> recreate floor -> reconfigure
-  mask -> drag onto group -> **current** mask ships in the drop
-  payload (previously the pre-delete snapshot was used).
-- **"Unplaced" bucket removed** from Groups view (previously carried
-  over from stale members without a floor mapping).
+- **Group card is the source of truth.**  `refreshAll` fetches
+  every group's members in parallel into `state.groupMembers`.  On
+  popout open, `_syncMaskFromGroup` overwrites the localStorage
+  mask for each module on the floor so checkbox-checked = "member
+  of linked group".  Popout title shows `— linked to group: [Name]`.
+- **`state.contextGroupId`** is set by any group interaction (dot
+  click, floor ×, drop) so the popout mirrors the last-touched
+  group.  `_lastPopoutSyncKey` invalidated after refreshAll to
+  reflect fresh state.
+- **Floor × in group card resets ALL relays** of every module on the
+  floor (uses `state.devices` to enumerate, not just
+  `state.floorPlacements`).  No residual memberships remain.
+- **placedSet filter removed from `_floorModulesForFloor`** -- the
+  ROOT of "drop didn't override" bug.  Previously, checking a relay
+  that wasn't literally in `state.floorPlacements` (common because
+  placement doesn't always list every channel of every module) got
+  silently filtered from the drag payload.  Now: if a module has
+  ANY placement on the floor, ALL its channels are draggable.
+- **Floor drop uses SET semantics** (`_syncFloorsToGroup`).  For
+  the modules in the payload, the group's members are made to
+  exactly equal the payload's channels: DELETEs current members
+  not in payload; POSTs channels not yet members.  Toast reports
+  `synced (+X / -Y, target N ch)`.
+- **Group members view (unchanged, kept from prior iteration)**:
+  every module on a group's floor shows ALL channels as dots
+  (solid = member, hollow = not).  Click any dot to toggle.  No
+  × on module rows; × on floor header now wipes all channels of
+  all modules.
 - **Tests**: 394/394 pytest passing.
 
 

@@ -340,6 +340,24 @@
   .floor-popout footer {
     padding: 6px 10px; border-top: 1px solid var(--line);
     background: #0e131a;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .popout-save-btn, .popout-discard-btn {
+    font-family: var(--mono); font-size: 11px;
+    padding: 3px 10px; border-radius: 3px;
+    border: 1px solid var(--line); background: #1a2028;
+    color: var(--text); cursor: pointer;
+    transition: background .12s, border-color .12s, opacity .12s;
+  }
+  .popout-save-btn:disabled, .popout-discard-btn:disabled {
+    opacity: .38; cursor: not-allowed;
+  }
+  .popout-save-btn:not(:disabled) {
+    background: #6b8e23; border-color: #8faf46; color: #f5f5dc;
+  }
+  .popout-save-btn:not(:disabled):hover { background: #7fa32b; }
+  .popout-discard-btn:not(:disabled):hover {
+    background: #2a1a1a; border-color: #a66;
   }
   .module-box.dragging { opacity: 0.5; }
   .module-box .mod-hdr {
@@ -832,9 +850,19 @@
     <!-- filled by renderFloorModal() -->
   </div>
   <footer>
-    <span style="color:var(--muted);font-size:11px">
+    <span style="color:var(--muted);font-size:11px;flex:1">
       Ctrl-click to multi-select · Drag onto a group
     </span>
+    <button id="floor-modal-save" data-testid="floor-modal-save"
+            class="popout-save-btn" disabled
+            title="Save relay checkbox edits — required before drag/drop syncs them">
+      Save
+    </button>
+    <button id="floor-modal-discard" data-testid="floor-modal-discard"
+            class="popout-discard-btn" disabled
+            title="Revert pending edits to last saved state">
+      Discard
+    </button>
   </footer>
 </div>
 
@@ -863,6 +891,15 @@ const state = {
   // apply, overriding the target group for this floor.
   groupMembers: {},
   contextGroupId: null,
+  // ---- Popout Save/Discard draft (2026-02-11 operator ask) -----------
+  // While the floor popout is open, checkbox edits go into an in-
+  // memory `popoutDraft` (module_key -> Set<sub_excluded>).  ONLY on
+  // "Save" are the drafts written to localStorage (the persistent
+  // mask that the drag payload reads).  "Discard" wipes the draft.
+  // popoutDraftFloorId tags which floor the draft belongs to so we
+  // don't leak drafts across floors.
+  popoutDraft: {},
+  popoutDraftFloorId: null,
 };
 
 const DOW = ["mon","tue","wed","thu","fri","sat","sun"];
@@ -1325,11 +1362,65 @@ function _saveMaskForModule(moduleKey, excludedSet) {
   else localStorage.setItem(key, [...excludedSet].sort((a,b)=>a-b).join(','));
 }
 
-function _channelsForModule(moduleKey) {
+// Effective mask for the POPOUT VIEW ONLY.  Returns the draft if
+// the operator has pending edits for this module, else the last
+// saved mask from localStorage.  Drag payloads bypass this and go
+// straight to _maskSetForModule (localStorage) -- meaning drops
+// reflect the SAVED state, not the draft (2026-02-11 operator ask
+// for an explicit Save button).
+function _effectiveMaskForPopout(moduleKey) {
+  if (Object.prototype.hasOwnProperty.call(state.popoutDraft, moduleKey))
+    return state.popoutDraft[moduleKey];
+  return _maskSetForModule(moduleKey);
+}
+
+function _popoutIsDirty() {
+  return Object.keys(state.popoutDraft || {}).length > 0;
+}
+
+function _popoutRefreshDirtyChrome() {
+  const saveBtn = document.getElementById('floor-modal-save');
+  const discardBtn = document.getElementById('floor-modal-discard');
+  if (!saveBtn) return;
+  const dirty = _popoutIsDirty();
+  saveBtn.disabled = !dirty;
+  discardBtn.disabled = !dirty;
+  saveBtn.textContent = dirty
+    ? `Save (${Object.keys(state.popoutDraft).length} module${
+        Object.keys(state.popoutDraft).length > 1 ? 's' : ''})`
+    : 'Save';
+}
+
+function _saveDraftMasks() {
+  // Flush draft to localStorage (the persistent, drag-payload
+  // source).  Clear the draft afterwards.
+  const modules = Object.keys(state.popoutDraft);
+  for (const mk of modules) {
+    _saveMaskForModule(mk, state.popoutDraft[mk]);
+  }
+  state.popoutDraft = {};
+  state.popoutDraftFloorId = null;
+  _popoutRefreshDirtyChrome();
+  toast(`Saved mask changes for ${modules.length} module(s)`);
+  // Re-render tiles + LHS to reflect the new committed mask.
+  renderDevices();
+  renderFloorModal();
+}
+
+function _discardDraftMasks() {
+  state.popoutDraft = {};
+  state.popoutDraftFloorId = null;
+  _popoutRefreshDirtyChrome();
+  toast('Discarded pending mask edits');
+  renderFloorModal();
+}
+
+function _channelsForModule(moduleKey, maskOverride) {
   // Return { channels: [snap...], includedIds: [device_id...] } for one
   // module.  `channels` is sorted by sub_address ascending; includedIds
-  // respects the local mask.
-  const excluded = _maskSetForModule(moduleKey);
+  // respects the local mask.  `maskOverride` (optional) lets the
+  // popout render use its unsaved draft instead of localStorage.
+  const excluded = maskOverride || _maskSetForModule(moduleKey);
   const chans = state.devices
     .filter(d => moduleKeyForDevice(d.device) === moduleKey)
     .slice()
@@ -1440,26 +1531,20 @@ function _floorsWithPlacements() {
   return out;
 }
 
-function _floorModulesForFloor(floor) {
+function _floorModulesForFloor(floor, opts) {
   // Given a floor (with .deviceIds), group its devices into modules
-  // and enrich each with { channels, includedIds, excluded } exactly
-  // like the previous flat-grid did.
+  // and enrich each with { channels, includedIds, excluded }.
+  // When opts.useDraft is truthy, the popout draft mask is used
+  // instead of localStorage so unsaved edits show up in the tile
+  // dots but do NOT affect drag payloads.
+  const useDraft = opts && opts.useDraft;
   const modKeys = new Set();
   for (const did of floor.deviceIds) modKeys.add(moduleKeyForDevice(did));
   const modules = [];
   for (const mk of [...modKeys].sort()) {
-    const { channels, includedIds, excluded } = _channelsForModule(mk);
-    // 2026-02-11 refinement: show EVERY channel of the module (not
-    // just those placed on this floor) so operators can see which
-    // channels of the module ALSO exist elsewhere.  `placedSet`
-    // decides the visual "on-this-floor" vs "on-another-floor"
-    // distinction; the popout module tile draws solid dots for
-    // placed and hollow dots for not-placed-on-this-floor.
+    const maskOverride = useDraft ? _effectiveMaskForPopout(mk) : undefined;
+    const { channels, includedIds, excluded } = _channelsForModule(mk, maskOverride);
     const placedSet = new Set(floor.deviceIds);
-    // Restrict the drop payload to ONLY channels actually placed on
-    // this floor -- dragging a module still targets this floor's
-    // subset (matches operator intent: "add relays from this floor
-    // to a group").
     const floorIncluded = includedIds.filter(id => placedSet.has(id));
     modules.push({
       key: mk, channels, includedIds: floorIncluded, excluded, placedSet,
@@ -1619,17 +1704,27 @@ function renderFloorModal() {
   if (state.openedFloorId === null) { pop.hidden = true; return; }
   const floor = state.floors.find(f => f.id === state.openedFloorId);
   if (!floor) { state.openedFloorId = null; pop.hidden = true; return; }
+  // Drop stale drafts when switching floors -- edits are scoped to
+  // the floor whose popout was open.
+  if (state.popoutDraftFloorId != null
+      && state.popoutDraftFloorId !== floor.id) {
+    state.popoutDraft = {};
+    state.popoutDraftFloorId = null;
+  }
   // Sync mask from context group on FIRST render for this
   // (floor, contextGroup) combo.  Subsequent renders (e.g. from
-  // checkbox change) keep the operator's edits intact.
+  // checkbox click) keep the operator's edits intact.  Also skip
+  // the sync if the operator has unsaved draft edits -- their
+  // in-progress work must not be blown away by a background
+  // refreshAll that invalidated _lastPopoutSyncKey.
   const contextGid = _resolveContextGroupForFloor(floor.id);
   const syncKey = `${floor.id}::${contextGid}`;
-  if (_lastPopoutSyncKey !== syncKey) {
+  if (_lastPopoutSyncKey !== syncKey && !_popoutIsDirty()) {
     _syncMaskFromGroup(floor.id, contextGid);
     _lastPopoutSyncKey = syncKey;
   }
   const enriched = { ...floor, deviceIds: state.floorPlacements[floor.id] || [] };
-  const mods = _floorModulesForFloor(enriched);
+  const mods = _floorModulesForFloor(enriched, { useDraft: true });
   pop.hidden = false;
   const body = document.getElementById('floor-modal-body');
   const linkedName = contextGid
@@ -1726,6 +1821,8 @@ function renderFloorModal() {
     if (isOpen) grid.appendChild(_renderModuleDetail(m.key, m.channels, m.excluded));
   }
   body.appendChild(grid);
+  // Reflect current dirty state on Save/Discard buttons.
+  _popoutRefreshDirtyChrome();
 }
 
 // Helper to look up module display label from state.moduleLabels
@@ -1762,17 +1859,22 @@ function _renderModuleDetail(moduleKey, channels, excluded) {
              title="Include on module-drop" />
       <span class="relay-id">${escapeHtml(c.device)}</span>
       <span class="relay-state ${st}"></span>`;
-    // Mask toggle -- persist, then re-render both the LHS floor
-    // tiles (masked-count) AND the popout so the tile's dots flip
-    // solid<->hollow immediately and the module dragstart closure
-    // picks up the new mask (2026-02-11 stale-mask bug fix).
+    // Mask toggle -- writes to the popout DRAFT only.  The drag
+    // payload / drop / group sync only sees these edits after the
+    // operator clicks the footer "Save" button (2026-02-11: added
+    // explicit Save so drag/drop reflects intent).
     row.querySelector('input').addEventListener('change', (ev) => {
       ev.stopPropagation();
-      const set = _maskSetForModule(moduleKey);
+      // Seed the draft entry from current effective mask, so
+      // partial edits accumulate correctly across multiple relays.
+      const seed = state.popoutDraft[moduleKey]
+        || new Set(_effectiveMaskForPopout(moduleKey));
+      const set = new Set(seed);
       if (ev.target.checked) set.delete(sub);
       else set.add(sub);
-      _saveMaskForModule(moduleKey, set);
-      renderDevices();
+      state.popoutDraft[moduleKey] = set;
+      state.popoutDraftFloorId = state.openedFloorId;
+      _popoutRefreshDirtyChrome();
       renderFloorModal();
     });
     // Individual relay drag = same payload the old flat grid produced,
@@ -2448,10 +2550,23 @@ refreshAll().catch(e => toast(e.message, true));
   const closeBtn = document.getElementById('floor-modal-close');
   if (closeBtn) {
     closeBtn.addEventListener('click', () => {
+      // If there are unsaved draft edits, confirm before discarding.
+      if (_popoutIsDirty()) {
+        if (!confirm('Discard unsaved relay mask edits?')) return;
+        state.popoutDraft = {};
+        state.popoutDraftFloorId = null;
+      }
       state.openedFloorId = null;
       pop.hidden = true;
     });
   }
+  // Save button: flush draft to localStorage.  The next drag/drop
+  // will now reflect the saved intent.
+  const saveBtn = document.getElementById('floor-modal-save');
+  if (saveBtn) saveBtn.addEventListener('click', _saveDraftMasks);
+  // Discard: throw away the draft, revert to saved.
+  const discardBtn = document.getElementById('floor-modal-discard');
+  if (discardBtn) discardBtn.addEventListener('click', _discardDraftMasks);
   // Click outside the header/body/footer does NOT close (this is a
   // pop-out, not a modal).  Escape key closes for convenience.
   document.addEventListener('keydown', (e) => {

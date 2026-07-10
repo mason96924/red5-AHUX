@@ -3907,14 +3907,30 @@ function syncShapeSubcontrols() {
   const isPoly = state.shape === 'regular_polygon';
   const isLine = state.shape === 'line';
   const kind = state.polygonKind;
+  // Also inspect the current selection so dim inputs surface when the
+  // operator wants to EDIT a fixture whose shape doesn't match the
+  // current placement dropdown (2026-02-11 operator ask -- length
+  // input for tubes was hidden after switching the placement shape).
+  const sel = Array.from(state.selectedDeviceIds || []).map(
+    did => state.currentFloor?.fixtures.find(f => f.device_id === did)
+  ).filter(Boolean);
+  const selShapes = new Set(sel.map(fx =>
+    state.lightingElements.get(fx.device_id)?.shape || 'point'));
+  const selKinds  = new Set(sel.map(fx => fx.polygon_kind || null));
+  const selHasLine    = selShapes.has('line');
+  const selHasCirc    = selShapes.has('regular_polygon') && selKinds.has('circle');
+  const selHasPoly    = selShapes.has('regular_polygon') && selKinds.has('polygon');
+  const selHasRect    = selShapes.has('regular_polygon') && selKinds.has('rectangle');
   kindWrap.style.display  = isPoly ? 'inline-flex' : 'none';
   sidesWrap.style.display = (isPoly && kind === 'polygon') ? 'inline-flex' : 'none';
-  tubeWrap.style.display  = isLine ? 'inline-flex' : 'none';
-  lenWrap.style.display   = isLine ? 'inline-flex' : 'none';
-  angWrap.style.display   = isLine ? 'inline-flex' : 'none';
+  tubeWrap.style.display  = (isLine || selHasLine) ? 'inline-flex' : 'none';
+  lenWrap.style.display   = (isLine || selHasLine) ? 'inline-flex' : 'none';
+  angWrap.style.display   = (isLine || selHasLine) ? 'inline-flex' : 'none';
   radWrap.style.display   =
-    (isPoly && (kind === 'circle' || kind === 'polygon')) ? 'inline-flex' : 'none';
-  wWrap.style.display     = (isPoly && kind === 'rectangle') ? 'inline-flex' : 'none';
+    ((isPoly && (kind === 'circle' || kind === 'polygon'))
+      || selHasCirc || selHasPoly) ? 'inline-flex' : 'none';
+  wWrap.style.display     =
+    ((isPoly && kind === 'rectangle') || selHasRect) ? 'inline-flex' : 'none';
   // Align controls surface once the operator has ≥2 fixtures in the
   // selection -- they only make sense on a group.
   const alignWrap = document.getElementById('align-wrap');

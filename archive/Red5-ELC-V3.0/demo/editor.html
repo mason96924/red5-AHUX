@@ -1226,9 +1226,7 @@ async function fillGroupDetail(card, gid) {
                           data-device-id="${escapeHtml(did)}" ${style}
                           title="${escapeHtml(did)} ${hint}"
                           >${s}</span>`;
-          }).join('')}</span>
-          <button class="mm-x" title="Remove all ${memberSubs.length} relay(s) of ${mk} from group"
-                  data-testid="grp-${gid}-mem-mod-${mk}-remove-all">×</button>`;
+          }).join('')}</span>`;
         for (const dot of tag.querySelectorAll('.mm-dot.member')) {
           dot.addEventListener('click', async () => {
             const did = dot.dataset.deviceId;
@@ -1247,13 +1245,6 @@ async function fillGroupDetail(card, gid) {
             } catch (e) { toast(e.message, true); }
           });
         }
-        tag.querySelector('.mm-x').addEventListener('click', async () => {
-          try {
-            for (const s of memberSubs)
-              await api('DELETE', `/groups/${gid}/members/${mk}/${s}`);
-            await refreshAll();
-          } catch (e) { toast(e.message, true); }
-        });
         modWrap.appendChild(tag);
       }
       memHost.appendChild(modWrap);

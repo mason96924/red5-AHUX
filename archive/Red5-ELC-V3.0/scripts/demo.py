@@ -149,19 +149,36 @@ def _entry_to_devices(entry: dict) -> list[DeviceId]:
 def _load_device_set() -> list[DeviceId]:
     """Return the DeviceId list for the demo.
 
-    Resolution order:
-      1. ``ELC_DEVICES_JSON`` — explicit override path (module- or
+    Resolution order (2026-02-11: project.json now primary):
+      1. ``configs/project.json`` — the Settings wizard's output.
+         When present + non-empty, this IS the operator's inventory
+         and no env vars are needed.
+      2. ``ELC_DEVICES_JSON`` — explicit override path (module- or
          channel-granular; auto-expanded when ``sub_address`` is absent).
-      2. ``demo/samples/scu-6e6s4s.json`` — the canonical operator
+         Kept for scripting / CI / pre-Settings-page installs.
+      3. ``demo/samples/scu-6e6s4s.json`` — the canonical operator
          hardware layout (1× 6eRM @1, 1× 6sRM @2, 1× 4sRM @3).  Used as
-         the default so ``python scripts/demo.py`` with no env vars
-         boots against the real-world module mix rather than a 30-SRM
-         synthetic grid.
-      3. Legacy synthetic fallback — 30× SRM modules spaced by 10, kept
-         only for absolute backwards compatibility if the sample file
-         is missing.
+         the default so ``python scripts/demo.py`` with no config
+         still boots against the real-world module mix.
+      4. Legacy synthetic fallback — 30× SRM modules spaced by 10,
+         kept only for absolute backwards compatibility if the
+         sample file is missing.
     """
     _warn_typoed_env()
+    # Priority 1: configs/project.json (Settings wizard output).
+    try:
+        from elc.config.project import load_project, is_configured
+        if is_configured():
+            cfg = load_project()
+            if cfg is not None:
+                out: list[DeviceId] = []
+                for entry in cfg.to_devices_json():
+                    out.extend(_entry_to_devices(entry))
+                return out
+    except Exception as e:  # noqa: BLE001
+        # Config parse error shouldn't hard-fail boot; fall through.
+        log.warning("project.json load failed, falling back: %s", e)
+    # Priority 2 + 3: env var, then bundled sample.
     path = os.environ.get("ELC_DEVICES_JSON")
     if not path:
         default_sample = REPO_ROOT / "demo" / "samples" / "scu-6e6s4s.json"
@@ -169,7 +186,7 @@ def _load_device_set() -> list[DeviceId]:
             path = str(default_sample)
     if path:
         raw = json.loads(Path(path).read_text())
-        out: list[DeviceId] = []
+        out = []
         for entry in raw:
             out.extend(_entry_to_devices(entry))
         return out
@@ -208,26 +225,43 @@ async def main() -> None:
     print(" How to run against PHYSICAL SCU + real 6eRM/6sRM/4sRM:", flush=True)
     print("   export PYTHONUNBUFFERED=1", flush=True)
     print("   export ELC_DATA_SOURCE=physical", flush=True)
-    print("   export ELC_SCU_HOST=<scu-ip>       # e.g. 192.168.1.222", flush=True)
-    print("   export ELC_SCU_PORT=<scu-port>     # e.g. 9760", flush=True)
     print("   python scripts/demo.py 2>&1 | tee /tmp/demo.log", flush=True)
+    print("   -> open http://127.0.0.1:8888/settings first time to", flush=True)
+    print("      set SCU IP/port + module list; then Save & Continue.", flush=True)
     print("", flush=True)
     print(" Watch just the ETLC V3.8 wire traffic in another terminal:", flush=True)
     print("   tail -f /tmp/demo.log | grep 'V3\\.8'", flush=True)
     print("", flush=True)
+    print(" Config precedence (2026-02-11):", flush=True)
+    print("   1. configs/project.json    (Settings wizard output — preferred)", flush=True)
+    print("   2. ELC_SCU_HOST/PORT env   (scripting / CI override)", flush=True)
+    print("   3. ELC_DEVICES_JSON env    (legacy path)", flush=True)
+    print("   4. demo/samples/scu-6e6s4s.json  (bundled default)", flush=True)
+    print("", flush=True)
     print(" Other useful env vars:", flush=True)
-    print("   ELC_DEVICES_JSON=demo/samples/scu-6e6s4s.json  (module layout)", flush=True)
-    print("   DEMO_PORT=8888                                 (HTTP port)", flush=True)
-    print("   DEMO_HOST=127.0.0.1                            (bind addr — set to 0.0.0.0", flush=True)
-    print("                                                    when reverse-proxying from another host)", flush=True)
+    print("   DEMO_PORT=8888                       (HTTP port)", flush=True)
+    print("   DEMO_HOST=127.0.0.1                  (bind addr — set to 0.0.0.0", flush=True)
+    print("                                         when reverse-proxying from another host)", flush=True)
     print("=" * 68, flush=True)
     print("", flush=True)
 
     # ---- Boot the data source ---------------------------------------
     scu = None                        # MockScuServer instance, or None for physical
     if source == "physical":
-        scu_host = os.environ.get("ELC_SCU_HOST", "192.168.1.222")
-        scu_port = int(os.environ.get("ELC_SCU_PORT", "9760"))
+        # Prefer configs/project.json's first SCU host/port (Settings
+        # wizard output) over env vars.  Env vars still win when set,
+        # so scripted / CI overrides remain effective.
+        _proj_host, _proj_port = None, None
+        try:
+            from elc.config.project import load_project
+            _cfg = load_project()
+            if _cfg and _cfg.scus:
+                _proj_host = _cfg.scus[0].host or None
+                _proj_port = _cfg.scus[0].port or None
+        except Exception:  # noqa: BLE001
+            pass
+        scu_host = os.environ.get("ELC_SCU_HOST") or _proj_host or "192.168.1.222"
+        scu_port = int(os.environ.get("ELC_SCU_PORT") or _proj_port or 9760)
         log.info("╔══════════════════════════════════════════════════════════╗")
         log.info("║ DATA SOURCE: PHYSICAL SCU @ %-25s ║", f"{scu_host}:{scu_port}")
         log.info("║ Devices: %-48s ║",

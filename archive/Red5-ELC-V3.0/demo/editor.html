@@ -1124,7 +1124,8 @@ async function fillGroupDetail(card, gid) {
   // operator ask).  Each floor bucket is collapsible; each module row
   // uses the same "dots for channels + × for bulk remove" chrome the
   // per-module view used, but nested under a floor header.  Devices
-  // that haven't been placed on any floor go under "Unplaced".
+  // that have no floor mapping are skipped (2026-02-11: "Unplaced"
+  // bucket removed per operator feedback -- it had no meaning).
   const groupColor = (state.groups.find(x => x.id === gid) || {}).color
                      || '#d97a30';
   if (!detail.members || detail.members.length === 0) {
@@ -1136,10 +1137,13 @@ async function fillGroupDetail(card, gid) {
     for (const fid of Object.keys(state.floorPlacements || {})) {
       for (const d of (state.floorPlacements[fid] || [])) devToFloor[d] = fid;
     }
-    // Bucket members: floor_id -> module_key -> Set<sub_address>
+    // Bucket members: floor_id -> module_key -> Set<sub_address>.
+    // Members without a floor mapping are skipped (see comment
+    // above: no "Unplaced" bucket).
     const buckets = new Map();
     for (const did of detail.members) {
-      const fid = devToFloor[did] || '__unplaced__';
+      const fid = devToFloor[did];
+      if (!fid) continue;
       const mk = moduleKeyForDevice(did);
       const sub = parseInt(did.split('/')[3] || '0', 10);
       if (!buckets.has(fid)) buckets.set(fid, new Map());
@@ -1149,7 +1153,6 @@ async function fillGroupDetail(card, gid) {
     }
     // Deterministic order: floors sorted by name; modules by key.
     const floorNameFor = fid => {
-      if (fid === '__unplaced__') return 'Unplaced';
       const f = state.floors.find(x => x.id === fid);
       return f ? f.name : fid;
     };
@@ -1527,21 +1530,24 @@ function renderFloorModal() {
       </div>
       <div class="mod-dots">
         ${m.channels.map(c => {
-          const sub = c.device.split('/')[3] || '';
+          const sub = parseInt(c.device.split('/')[3] || '0', 10);
           const st = _dotStateFor(c);
-          const placed = m.placedSet && m.placedSet.has(c.device);
-          // Solid dot -> channel is placed on THIS floor (its state
-          // colour still reflects on/off/alarm).  Hollow dot ->
-          // channel exists on the module but isn't on this floor;
-          // rendered with reduced opacity so operators see the
-          // "there are more relays available" hint (2026-02-11).
-          const cls = placed ? `mod-dot ${st}` : 'mod-dot';
-          const style = placed ? '' : 'style="opacity:.30;background:transparent;color:var(--muted)"';
-          const title = placed
-            ? escapeHtml(c.device)
-            : `${escapeHtml(c.device)} (not on this floor)`;
+          const isMasked = m.excluded.has(sub);
+          // Solid dot -> relay is INCLUDED (not masked) when this
+          // module is dropped into a group.  Hollow dot -> relay is
+          // MASKED (excluded on drop).  Live-state colour (on/off/
+          // alarm) still shown on solid dots.  Toggle via the
+          // checkboxes in the expanded relay-detail panel below the
+          // tile (2026-02-11 clarified).
+          const cls = isMasked ? 'mod-dot' : `mod-dot ${st}`;
+          const style = isMasked
+            ? 'style="opacity:.30;background:transparent;color:var(--muted)"'
+            : '';
+          const title = isMasked
+            ? `${escapeHtml(c.device)} (masked — excluded on module-drop)`
+            : escapeHtml(c.device);
           return `<span class="${cls}" data-device-id="${escapeHtml(c.device)}"
-                        ${style} title="${title}">${escapeHtml(sub)}</span>`;
+                        ${style} title="${title}">${sub}</span>`;
         }).join('')}
       </div>`;
     // Click: toggle expand; Ctrl-click: multi-select.

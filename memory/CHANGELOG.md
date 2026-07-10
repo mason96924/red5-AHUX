@@ -4,6 +4,31 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11 — Schedule Editor UX: remove "Unplaced" bucket, clarify popout dot semantics
+
+### What shipped
+
+- **Groups → Members view**: dropped the `Unplaced` fallback bucket.
+  Group members without a floor mapping are now silently skipped
+  (`renderGroups` in `demo/editor.html`, ~L1127-L1155).  Per operator
+  feedback: "Unplaced has no meaning".  All meaningful members land
+  under a real Floor header now.
+- **Floor popout dot semantics** (already in place, verified today):
+  in `renderFloorModal`, module tile dots draw **solid** when the
+  relay is *unmasked* (included on module-drop) and **hollow** when
+  *masked* (excluded on drop).  This is driven purely by the
+  per-module mask checkbox state (`_maskSetForModule`), NOT by
+  placed/unplaced.  Toggling the checkbox in the expanded relay
+  detail row re-renders the tile immediately.
+- **Group members clickable dots** (already in place, verified
+  today): every relay dot inside a Group member card is clickable —
+  solid (member) removes the relay from the group, hollow (addable)
+  adds it.  Non-member dots use the `.mm-dot.addable` class and hit
+  `POST /groups/{gid}/members`.
+- **Tests**: 394/394 pytest passing (`python -m pytest` in
+  `/app/archive/Red5-ELC-V3.0/`).
+
+
 ## 2026-02-25 — V3.0 Phase 6.1M: ETLC V3.8 burst-broadcast (opcode 0x07)
 
 ### What shipped

@@ -656,7 +656,19 @@ async function saveProject() {
     await api("POST", "/project", cfg);
     try { await api("POST", "/project/expand-devices"); } catch (_) {}
     toast(`Saved to configs/project.json — redirecting to Building…`);
-    setTimeout(() => { location.href = "/floor?force=1"; }, 1200);
+    // location.replace = harder-to-cancel navigation (no history
+    // entry), fires immediately.  Fallback assign() after 1.5s in
+    // case an extension / preload blocked the first one.
+    const target = "/floor?force=1";
+    setTimeout(() => {
+      try { window.location.replace(target); }
+      catch (_) { window.location.href = target; }
+    }, 350);
+    setTimeout(() => {
+      if (!window.location.pathname.startsWith("/floor")) {
+        window.location.assign(target);
+      }
+    }, 1800);
   } catch (e) {
     hint.textContent = "⚠ " + e.message;
     hint.classList.add("show");

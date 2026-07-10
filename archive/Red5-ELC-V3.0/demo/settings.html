@@ -222,8 +222,8 @@
   <span class="brand" data-testid="brand-logo">RED5.ELC STUDIO</span>
   <nav class="nav">
     <a href="/settings?force=1" class="active" data-testid="nav-settings">Settings</a>
-    <a href="/floor?force=1" data-testid="nav-floor">Floor</a>
     <a href="/editor?force=1" data-testid="nav-editor">Editor</a>
+    <a href="/floor?force=1" data-testid="nav-building">Building</a>
   </nav>
 </header>
 
@@ -655,7 +655,7 @@ async function saveProject() {
   try {
     await api("POST", "/project", cfg);
     try { await api("POST", "/project/expand-devices"); } catch (_) {}
-    toast(`Saved to configs/project.json — redirecting to /floor…`);
+    toast(`Saved to configs/project.json — redirecting to Building…`);
     setTimeout(() => { location.href = "/floor?force=1"; }, 1200);
   } catch (e) {
     hint.textContent = "⚠ " + e.message;

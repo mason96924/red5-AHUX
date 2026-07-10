@@ -4,29 +4,33 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
-## 2026-02-11 — Schedule Editor UX: remove "Unplaced" bucket, clarify popout dot semantics
+## 2026-02-11 — Schedule Editor UX: full-floor member view + stale-mask fix
 
 ### What shipped
 
-- **Groups → Members view**: dropped the `Unplaced` fallback bucket.
-  Group members without a floor mapping are now silently skipped
-  (`renderGroups` in `demo/editor.html`, ~L1127-L1155).  Per operator
-  feedback: "Unplaced has no meaning".  All meaningful members land
-  under a real Floor header now.
-- **Floor popout dot semantics** (already in place, verified today):
-  in `renderFloorModal`, module tile dots draw **solid** when the
-  relay is *unmasked* (included on module-drop) and **hollow** when
-  *masked* (excluded on drop).  This is driven purely by the
-  per-module mask checkbox state (`_maskSetForModule`), NOT by
-  placed/unplaced.  Toggling the checkbox in the expanded relay
-  detail row re-renders the tile immediately.
-- **Group members clickable dots** (already in place, verified
-  today): every relay dot inside a Group member card is clickable —
-  solid (member) removes the relay from the group, hollow (addable)
-  adds it.  Non-member dots use the `.mm-dot.addable` class and hit
-  `POST /groups/{gid}/members`.
-- **Tests**: 394/394 pytest passing (`python -m pytest` in
-  `/app/archive/Red5-ELC-V3.0/`).
+- **Groups → Members: full floor structure**.  When any relay from a
+  floor is a group member, the group card now renders the ENTIRE
+  floor -- every module on that floor with every relay drawn as a
+  dot (`renderGroups`, `demo/editor.html`).  Solid = current member,
+  hollow = not-yet-member but clickable to add.  Header count now
+  reads `X mod · M/T ch` (members / total on floor).  Floor-level ×
+  only removes actual members; hollow non-member dots are not
+  touched (2026-02-11 operator ask: "click on the relay to make it
+  solid or hollow will be the action of including or excluding in
+  the membership of the group").
+- **Stale mask on module drag fixed** (`renderFloorModal`,
+  `_renderModuleDetail`).  Module tile `dragstart` now re-reads the
+  mask from `localStorage` LIVE via `_channelsForModule(mk)` instead
+  of using the closed-over snapshot captured at popout render time.
+  Additionally, the mask-checkbox `change` handler now calls
+  `renderFloorModal()` alongside `renderDevices()` so the tile dots
+  flip solid<->hollow immediately.  Reproduces the operator's flow:
+  configure mask -> delete floor -> recreate floor -> reconfigure
+  mask -> drag onto group -> **current** mask ships in the drop
+  payload (previously the pre-delete snapshot was used).
+- **"Unplaced" bucket removed** from Groups view (previously carried
+  over from stale members without a floor mapping).
+- **Tests**: 394/394 pytest passing.
 
 
 ## 2026-02-25 — V3.0 Phase 6.1M: ETLC V3.8 burst-broadcast (opcode 0x07)

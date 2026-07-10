@@ -1121,11 +1121,13 @@ async function fillGroupDetail(card, gid) {
     }
   }
   // members — hierarchical tree grouped by floor > module (2026-02-11
-  // operator ask).  Each floor bucket is collapsible; each module row
-  // uses the same "dots for channels + × for bulk remove" chrome the
-  // per-module view used, but nested under a floor header.  Devices
-  // that have no floor mapping are skipped (2026-02-11: "Unplaced"
-  // bucket removed per operator feedback -- it had no meaning).
+  // operator ask, revised).  Once ANY relay from a floor is a group
+  // member, the group card shows the full floor structure -- every
+  // module on that floor with every relay drawn as a dot.  Solid
+  // dots = current members; hollow dots = not-yet-members but the
+  // operator can click to add.  Clicking a member dot removes it.
+  // This lets the operator include/exclude relay-by-relay directly
+  // from the group card without going back to the Devices panel.
   const groupColor = (state.groups.find(x => x.id === gid) || {}).color
                      || '#d97a30';
   if (!detail.members || detail.members.length === 0) {
@@ -1137,31 +1139,40 @@ async function fillGroupDetail(card, gid) {
     for (const fid of Object.keys(state.floorPlacements || {})) {
       for (const d of (state.floorPlacements[fid] || [])) devToFloor[d] = fid;
     }
-    // Bucket members: floor_id -> module_key -> Set<sub_address>.
-    // Members without a floor mapping are skipped (see comment
-    // above: no "Unplaced" bucket).
-    const buckets = new Map();
+    // Which floors have at least one member?  Members without a
+    // floor mapping are skipped ("Unplaced" bucket removed per
+    // operator feedback -- it had no meaning).
+    const memberSet = new Set(detail.members);
+    const floorsInGroup = new Set();
     for (const did of detail.members) {
       const fid = devToFloor[did];
-      if (!fid) continue;
-      const mk = moduleKeyForDevice(did);
-      const sub = parseInt(did.split('/')[3] || '0', 10);
-      if (!buckets.has(fid)) buckets.set(fid, new Map());
-      const perFloor = buckets.get(fid);
-      if (!perFloor.has(mk)) perFloor.set(mk, new Set());
-      perFloor.get(mk).add(sub);
+      if (fid) floorsInGroup.add(fid);
     }
-    // Deterministic order: floors sorted by name; modules by key.
+    // Deterministic order: floors sorted by name.
     const floorNameFor = fid => {
       const f = state.floors.find(x => x.id === fid);
       return f ? f.name : fid;
     };
-    const orderedFloors = [...buckets.keys()].sort(
+    const orderedFloors = [...floorsInGroup].sort(
       (a, b) => floorNameFor(a).localeCompare(floorNameFor(b))
     );
     for (const fid of orderedFloors) {
-      const perFloor = buckets.get(fid);
-      const flTotal = [...perFloor.values()].reduce((s, ss) => s + ss.size, 0);
+      // Enumerate ALL modules on this floor (not just modules with
+      // an existing member) so hollow dots for non-member relays
+      // are clickable-addable in-place.
+      const floorDevIds = state.floorPlacements[fid] || [];
+      const modulesOnFloor = new Map();  // mk -> Set<sub>
+      for (const did of floorDevIds) {
+        const mk = moduleKeyForDevice(did);
+        const sub = parseInt(did.split('/')[3] || '0', 10);
+        if (!modulesOnFloor.has(mk)) modulesOnFloor.set(mk, new Set());
+        modulesOnFloor.get(mk).add(sub);
+      }
+      // Member counts for this floor's header (only actual members
+      // -- not the total relays of the floor).
+      const flMemberCount = floorDevIds
+        .filter(d => memberSet.has(d)).length;
+      const flTotalCount = floorDevIds.length;
       const flHdr = document.createElement('div');
       flHdr.style.cssText = 'display:flex;align-items:center;gap:6px;'
         + 'margin:6px 0 3px;padding:2px 4px;background:#0e131a;'
@@ -1172,58 +1183,50 @@ async function fillGroupDetail(card, gid) {
           🏢 ${escapeHtml(floorNameFor(fid))}
         </span>
         <span style="font-size:9.5px;color:var(--muted)">
-          ${perFloor.size} mod · ${flTotal} ch
+          ${modulesOnFloor.size} mod · ${flMemberCount}/${flTotalCount} ch
         </span>
-        <button class="mm-x" title="Remove all ${flTotal} relay(s) of this floor from group"
+        <button class="mm-x" title="Remove all ${flMemberCount} relay(s) of this floor from group"
                 data-testid="grp-${gid}-mem-floor-${fid}-remove-all"
                 style="margin-left:auto;background:none;border:none;
                        color:var(--muted);cursor:pointer;font-size:12px;
                        line-height:1;padding:0 4px">×</button>`;
       flHdr.querySelector('.mm-x').addEventListener('click', async () => {
         try {
-          for (const [mk, subs] of perFloor.entries())
-            for (const s of subs)
-              await api('DELETE', `/groups/${gid}/members/${mk}/${s}`);
+          for (const did of floorDevIds) {
+            if (memberSet.has(did))
+              await api('DELETE', `/groups/${gid}/members/${did}`);
+          }
           await refreshAll();
         } catch (e) { toast(e.message, true); }
       });
       memHost.appendChild(flHdr);
       const modWrap = document.createElement('div');
       modWrap.style.cssText = 'margin-left:12px;';
-      const orderedKeys = [...perFloor.keys()].sort();
+      const orderedKeys = [...modulesOnFloor.keys()].sort();
       for (const mk of orderedKeys) {
-        const memberSubs = perFloor.get(mk);
-        const modChans = state.devices
-          .filter(d => moduleKeyForDevice(d.device) === mk)
-          .map(d => parseInt(d.device.split('/')[3] || '0', 10))
-          .sort((a, b) => a - b);
-        const allSubs = modChans.length
-          ? modChans
-          : [...memberSubs].sort((a, b) => a - b);
+        const allSubs = [...modulesOnFloor.get(mk)].sort((a, b) => a - b);
+        const memberSubs = allSubs.filter(s => memberSet.has(`${mk}/${s}`));
         const tag = document.createElement('span');
         tag.className = 'member-mod-tag';
         tag.dataset.testid = `grp-${gid}-mem-mod-${mk}`;
         tag.innerHTML = `
           <span class="mm-title">${escapeHtml(moduleLabelForKey(mk))}</span>
           <span class="mm-dots">${allSubs.map(s => {
-            const isMember = memberSubs.has(s);
             const did = `${mk}/${s}`;
+            const isMember = memberSet.has(did);
             const style = isMember
               ? `style="background:${groupColor};border-color:${groupColor};color:#0a1418"`
               : '';
-            // Non-member dot is now also clickable: adds that relay
-            // to the group.  Member dot click still removes.
-            // Distinguishing hover text tells the operator which
-            // way the click will go (2026-02-11 UX ask).
-            const hint = isMember
-              ? '— click to remove'
-              : '— click to add';
+            // Non-member dot is also clickable: adds that relay to
+            // the group.  Member dot click removes it.  Hover text
+            // tells the operator which way the click will go.
+            const hint = isMember ? '— click to remove' : '— click to add';
             return `<span class="mm-dot${isMember ? ' member' : ' addable'}"
                           data-device-id="${escapeHtml(did)}" ${style}
                           title="${escapeHtml(did)} ${hint}"
                           >${s}</span>`;
           }).join('')}</span>
-          <button class="mm-x" title="Remove all ${memberSubs.size} relay(s) of ${mk} from group"
+          <button class="mm-x" title="Remove all ${memberSubs.length} relay(s) of ${mk} from group"
                   data-testid="grp-${gid}-mem-mod-${mk}-remove-all">×</button>`;
         for (const dot of tag.querySelectorAll('.mm-dot.member')) {
           dot.addEventListener('click', async () => {
@@ -1234,9 +1237,6 @@ async function fillGroupDetail(card, gid) {
             } catch (e) { toast(e.message, true); }
           });
         }
-        // 2026-02-11: non-member dots are now clickable too -- add
-        // the relay to this group.  Backend rejects duplicates so
-        // no client-side check needed.
         for (const dot of tag.querySelectorAll('.mm-dot.addable')) {
           dot.addEventListener('click', async () => {
             const did = dot.dataset.deviceId;
@@ -1567,14 +1567,19 @@ function renderFloorModal() {
     box.addEventListener('dragstart', (ev) => {
       box.classList.add('dragging');
       const inSel = state.selectedModuleKeys.has(m.key);
+      // Read the CURRENT mask from localStorage at drag time.  Do
+      // NOT use the closed-over `m.includedIds` -- that snapshot was
+      // taken at popout render time and would ship a stale mask if
+      // the operator toggled checkboxes since (2026-02-11 bug).
+      const liveIncluded = mk => _channelsForModule(mk).includedIds;
       let payload;
       if (inSel && state.selectedModuleKeys.size > 1) {
         const bundle = mods
           .filter(x => state.selectedModuleKeys.has(x.key))
-          .map(x => ({ module: x.key, channels: x.includedIds }));
+          .map(x => ({ module: x.key, channels: liveIncluded(x.key) }));
         payload = { type: 'modules', modules: bundle };
       } else {
-        payload = { type: 'module', module: m.key, channels: m.includedIds };
+        payload = { type: 'module', module: m.key, channels: liveIncluded(m.key) };
       }
       ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
       ev.dataTransfer.effectAllowed = 'copy';
@@ -1620,7 +1625,10 @@ function _renderModuleDetail(moduleKey, channels, excluded) {
              title="Include on module-drop" />
       <span class="relay-id">${escapeHtml(c.device)}</span>
       <span class="relay-state ${st}"></span>`;
-    // Mask toggle
+    // Mask toggle -- persist, then re-render both the LHS floor
+    // tiles (masked-count) AND the popout so the tile's dots flip
+    // solid<->hollow immediately and the module dragstart closure
+    // picks up the new mask (2026-02-11 stale-mask bug fix).
     row.querySelector('input').addEventListener('change', (ev) => {
       ev.stopPropagation();
       const set = _maskSetForModule(moduleKey);
@@ -1628,6 +1636,7 @@ function _renderModuleDetail(moduleKey, channels, excluded) {
       else set.add(sub);
       _saveMaskForModule(moduleKey, set);
       renderDevices();
+      renderFloorModal();
     });
     // Individual relay drag = same payload the old flat grid produced,
     // so the existing group drop handler for type:'device' still works.

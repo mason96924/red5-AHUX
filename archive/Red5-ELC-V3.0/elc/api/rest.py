@@ -354,6 +354,45 @@ def build_router(
             "mode": "legacy_wildcard",
         }
 
+    @router.get("/relay-data")
+    async def relay_data(device: str, data_type: int) -> dict[str, Any]:
+        """Fetch an on-demand data report from an SRM module.
+
+        Wraps ``SrmDriver.request_relay_data_v38`` (opcode 0x14 with a
+        data-type sub-code -- see protocol doc §8).  Legal
+        ``data_type`` values today (2026-02-11):
+
+          * ``0x06`` (6)  Relay Total Count + On Time (parsed)
+          * ``0x07`` (7)  Relay Daily On Time         (raw only)
+          * ``0x08`` (8)  Relay Monthly On Time       (raw only)
+          * ``0x0A`` (10) Power Daily                 (raw only)
+          * ``0x0B`` (11) Power Monthly               (raw only)
+          * ``0x11`` (17) Relay State bitmask         (existing path)
+
+        Query params:
+            device:    device_id like ``6SRM/0/2/1``
+            data_type: integer (accepts decimal or 0x-hex from query)
+
+        Returns a JSON blob with ``raw_hex`` (always) + parsed fields
+        when we have a decoder for that data type.  No DB
+        persistence -- pure query.
+
+        Safe against live hardware: this opcode never fires a relay.
+        """
+        if link.state is not LinkState.CONNECTED:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"link {link.name} not connected (state={link.state.value})",
+            )
+        if getattr(link, "wire_version", "legacy") != "v38":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="/relay-data requires a V3.8 link",
+            )
+        dev = _parse_device_id(device)
+        result = await driver.request_relay_data_v38(dev, data_type & 0xFF)
+        return {"ok": True, **result}
+
     # ---- Phase 4 scheduler engine control --------------------------------
     # These are only mounted when a SchedulerEngine was wired into the
     # stack (build_stack() passes one; small test harnesses that skip

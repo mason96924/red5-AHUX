@@ -291,3 +291,77 @@ dropped by the module.
   MockScuServer demo continue to work unchanged.
 
 Regression pins: `tests/drivers/test_srm_broadcast_v38.py`.
+
+## 8. Data Request family (opcode 0x14, variable DF0 sub-code)
+
+**Operator-confirmed 2026-02-11.**  Opcode `0x14` is a generic
+"Data Request" family; the byte at position DF0 (payload[5], i.e.
+byte 10 of the wire frame) selects WHICH report the SCU should
+return.  The existing `RelayState` PanelInfo query (§2) is just
+one flavour (`DF0 = 0x11`).
+
+### Data-type sub-codes
+
+| DF0 (hex) | Report                                  | Parser status |
+|:---------:|-----------------------------------------|---------------|
+| `0x06`    | Relay Total Count + Total/Month/Day On-Time | ✅ implemented |
+| `0x07`    | Relay Daily On Time                     | 🟡 raw only   |
+| `0x08`    | Relay Monthly On Time                   | 🟡 raw only   |
+| `0x0A`    | Power Daily Value                       | 🟡 raw only   |
+| `0x0B`    | Power Monthly Value                     | 🟡 raw only   |
+| `0x11`    | Relay State bitmask (returned as 0x25)  | ✅ existing   |
+
+### TX payload layout (10 bytes)
+
+```
+[dev_type] [scu+addr_hi] [addr_lo] [sub_address] [0x14] [DF0]  <DI1 tail: 11 12 13 14>
+```
+
+Same 16-byte wire frame as `RelayOverride` / `StatusQuery`.
+
+### RX payload layout (variable, DF-payload after byte 5)
+
+```
+byte 0 : dev_type        (echoed)
+byte 1 : scu + addr_hi   (echoed, encoded)
+byte 2 : addr_lo         (echoed)
+byte 3 : sub_address     (channel; echoed)
+byte 4 : 0x14            (opcode echoed)
+byte 5 : DF0             (data-type-specific; may echo request DF0 or begin the value bytes)
+byte 6+: DF1, DF2, ..., DFn
+last   : checksum
+```
+
+The `LL` byte (frame position 4) tells us total remaining bytes,
+so the RX reader must be length-driven (unlike the fixed 12-byte
+`RelayStatus` frame).
+
+### DF-payload for `DF0 = 0x06` (Relay Total & On-Time)
+
+Per operator confirmation (2026-02-11):
+
+```
+DF0-DF2 : Relay Total Cycle    (u24 BE)
+DF3-DF5 : Relay Total On Time  (u24 BE)
+DF6-DF7 : Relay Month On Time  (u16 BE)
+DF8-DF9 : Relay Day On Time    (u16 BE)
+```
+
+Units for the on-time fields are provisional (`seconds`) until a
+real hardware capture confirms.  See `parse_payload()` in
+`elc/codec/etlc38.py::DataReportV38`.
+
+### Consumer path
+
+* TX: `SrmDriver.request_relay_data_v38(device, data_type)` — fresh
+  one-shot TCP connection (SCU single-connection constraint).
+* REST: `GET /api/elc/relay-data?device={did}&type={hex_or_dec}` —
+  returns JSON with parsed fields + `raw_hex` for operator
+  inspection.  No DB persistence — pure query.
+* UI: floor page relay drill-down (§ TBD).
+
+### Safety
+
+Issuing any `0x14` data request never fires a relay.  The SCU
+does not treat this opcode as an override.
+

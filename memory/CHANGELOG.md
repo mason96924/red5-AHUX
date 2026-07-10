@@ -12,6 +12,84 @@ captures what has been implemented and when.
   every group's members in parallel into `state.groupMembers`.  On
   popout open, `_syncMaskFromGroup` overwrites the localStorage
   mask for each module on the floor so checkbox-checked = "member
+  of linked group".  Popout title shows `— linked to group: [Name]`
+  and a `[N changes staged]` amber badge when marks deviate.
+- **`state.contextGroupId`** is set by any group interaction (dot
+  click, floor ×, drop) so the popout mirrors the last-touched
+  group.  `_lastPopoutSyncKey` invalidated after refreshAll to
+  reflect fresh state.
+- **Floor × in group card resets ALL relays** of every module on the
+  floor (uses `state.devices` to enumerate).  No residual memberships.
+- **`placedSet` filter removed from `_floorModulesForFloor`** -- the
+  ROOT of "drop didn't override" bug.  Previously, checking a relay
+  that wasn't literally in `state.floorPlacements` (common because
+  placement doesn't always list every channel of every module) got
+  silently filtered from the drag payload.
+- **Floor drop uses SET semantics** (`_syncFloorsToGroup`).  For
+  the modules in the payload, the group's members are made to
+  exactly equal the payload's channels: DELETEs current members
+  not in payload; POSTs channels not yet members.  Toast reports
+  `synced (+X / -Y, target N ch)`.
+- **Tests**: 394/394 pytest passing.
+
+
+## 2026-02-11 — SCU Data Reports (opcode 0x14, protocol §8)
+
+### What shipped
+
+- **Codec** (`elc/codec/etlc38.py`):
+  * New constants: `OPCODE_DATA_REQUEST` (alias of 0x14),
+    `DATA_TYPE_RELAY_STATE` (0x11), `DATA_TYPE_TOTAL_ONTIME` (0x06),
+    `DATA_TYPE_DAILY_ONTIME` (0x07), `DATA_TYPE_MONTHLY_ONTIME`
+    (0x08), `DATA_TYPE_DAILY_POWER` (0x0A),
+    `DATA_TYPE_MONTHLY_POWER` (0x0B).
+  * `DataRequestV38(device, data_type)` generalises the existing
+    `StatusQueryV38` -- `data_type=0x11` is byte-equivalent (regression
+    covered by test).
+  * `DataReportV38` -- variable-length RX decoder (LL-byte-driven).
+    `try_decode(frame, expected_data_type)` returns a report; the
+    `parse_payload()` method parses `0x06` into
+    `{total_cycle, total_ontime, month_ontime, day_ontime}` per
+    operator-confirmed DF layout, and returns raw hex only for the
+    other data types (pending real hardware capture).
+- **Driver** (`elc/drivers/srm.py`):
+  * `SrmDriver.request_relay_data_v38(device, data_type, timeout=1.5)`
+    -- fresh one-shot TCP query (SCU single-connection constraint),
+    length-driven RX read, decodes via `DataReportV38`, returns dict.
+- **REST** (`elc/api/rest.py`):
+  * `GET /api/elc/relay-data?device={did}&data_type={hex_or_dec}` --
+    wraps the driver method.  Returns parsed fields + `raw_hex` +
+    `tx_hex`.  No DB persistence.  503 when link disconnected; 400
+    when link is not V3.8.
+- **UI** (`demo/floor.html`):
+  * Relay drill-down panel (`#ee-ops`) now includes a **"SCU
+    Reports"** section with 5 buttons: Total & On-Time / Daily On-
+    Time / Monthly On-Time / Daily Power / Monthly Power.  Result
+    pane shows parsed values (when we have a decoder) + tx / rx
+    hex for operator inspection.  Live query only -- no history.
+- **Protocol doc** (`docs/RED5-ETLC-V3.8-PROTOCOL.md`):
+  * New §8 documenting the data-request family, TX + RX layouts,
+    per-data-type DF interpretations, consumer paths, safety
+    guarantees.
+- **Tests**: 5 new codec tests (encode DF0, back-compat with
+  StatusQueryV38 wire bytes, 0x06 payload parse, unknown-type raw
+  fallback, checksum-corruption reject).  Full suite: 399/399.
+
+### Deferred items
+
+- Real DF-layout parsers for `0x07/0x08/0x0A/0x0B` -- awaiting
+  hardware RX capture (raw hex is exposed in UI + REST so operator
+  can validate then extend `parse_payload`).
+- Units for on-time counters (currently marked `seconds` -- TBD).
+
+
+
+### What shipped
+
+- **Group card is the source of truth.**  `refreshAll` fetches
+  every group's members in parallel into `state.groupMembers`.  On
+  popout open, `_syncMaskFromGroup` overwrites the localStorage
+  mask for each module on the floor so checkbox-checked = "member
   of linked group".  Popout title shows `— linked to group: [Name]`.
 - **`state.contextGroupId`** is set by any group interaction (dot
   click, floor ×, drop) so the popout mirrors the last-touched

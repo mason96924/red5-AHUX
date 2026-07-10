@@ -314,6 +314,109 @@ class SrmDriver(AbstractDevice):
         from elc.codec.etlc38 import ADDR_BROADCAST
         await self.query_module_v38(dev_type, scu, ADDR_BROADCAST)
 
+    async def request_relay_data_v38(
+        self,
+        device: DeviceId,
+        data_type: int,
+        *,
+        timeout: float = 1.5,
+    ) -> dict:
+        """Fetch a data-type report from the module (opcode 0x14).
+
+        See protocol doc §8.  Sends a :class:`DataRequestV38` on a
+        fresh TCP connection (SCU is single-connection), reads the
+        variable-length response, decodes it into a
+        :class:`DataReportV38`, and returns a JSON-serialisable dict
+        with parsed fields + `raw_hex` for operator inspection.
+
+        Safe against live hardware -- issuing this query never fires
+        a relay.  Returns ``{"error": "..."}`` on timeout / decode
+        failure so the REST layer can pass the message straight
+        through to the operator UI.
+        """
+        import socket
+        from elc.codec.etlc38 import DataRequestV38, DataReportV38
+        host = getattr(self._link, "host", None)
+        port = getattr(self._link, "port", None)
+        if host is None or port is None:
+            return {"error": "link has no host/port"}
+        frame = DataRequestV38(device=device, data_type=data_type).encode()
+        loop = asyncio.get_running_loop()
+
+        def _blocking_query() -> bytes:
+            with socket.create_connection((host, port), timeout=timeout) as s:
+                s.sendall(frame)
+                s.settimeout(timeout)
+                buf = bytearray()
+                # Read until we get a full framed response.  The RX
+                # length is variable; peek at byte 4 (LL) once we
+                # have >=5 bytes and read the rest.
+                deadline = loop.time() + timeout
+                while True:
+                    try:
+                        chunk = s.recv(4096)
+                    except socket.timeout:
+                        break
+                    if not chunk:
+                        break
+                    buf.extend(chunk)
+                    if len(buf) >= 5:
+                        # crude framing: preamble+type+LL then LL bytes
+                        idx = buf.find(PREAMBLE)
+                        if idx >= 0 and len(buf) - idx >= 5:
+                            need = 5 + buf[idx + 4]
+                            if len(buf) - idx >= need:
+                                break
+                    if loop.time() >= deadline:
+                        break
+            return bytes(buf)
+
+        async with self._v38_write_lock:
+            log.info(
+                "V3.8 TX DataRequest dev=%s data_type=0x%02X (%d B: %s)",
+                device, data_type, len(frame), frame.hex(),
+            )
+            try:
+                raw = await asyncio.wait_for(
+                    loop.run_in_executor(None, _blocking_query),
+                    timeout=timeout + 0.5,
+                )
+            except (asyncio.TimeoutError, Exception) as e:  # noqa: BLE001
+                log.warning("V3.8 DataRequest failed: %s", e)
+                return {
+                    "error": f"{type(e).__name__}: {e}",
+                    "tx_hex": frame.hex(),
+                }
+            await asyncio.sleep(0.15)
+
+        if not raw:
+            return {"error": "no response", "tx_hex": frame.hex()}
+        # Find a preamble and try to decode as DataReport (variable-len).
+        idx = raw.find(PREAMBLE)
+        if idx < 0:
+            return {"error": "no preamble in response",
+                    "rx_hex": raw.hex(), "tx_hex": frame.hex()}
+        if len(raw) < idx + 5:
+            return {"error": "response too short for LL byte",
+                    "rx_hex": raw.hex(), "tx_hex": frame.hex()}
+        ll = raw[idx + 4]
+        candidate = raw[idx:idx + 5 + ll]
+        report = DataReportV38.try_decode(candidate, expected_data_type=data_type)
+        if report is None:
+            return {
+                "error": "decode failed (see raw)",
+                "rx_hex": raw.hex(),
+                "tx_hex": frame.hex(),
+                "data_type": data_type,
+            }
+        return {
+            "device": str(report.device),
+            "data_type": data_type,
+            "data_type_hex": f"0x{data_type:02X}",
+            "tx_hex": frame.hex(),
+            **report.parse_payload(),
+        }
+
 
     async def broadcast(
         self,

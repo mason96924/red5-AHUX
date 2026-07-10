@@ -142,3 +142,87 @@ def test_channels_from_mask():
     assert channels_from_mask(0x3F, 6) == [True] * 6
     assert channels_from_mask(0x00, 6) == [False] * 6
     assert channels_from_mask(0x0F, 4) == [True, True, True, True]
+
+
+# ---- Opcode 0x14 Data Request family (protocol doc §8) ------------
+# Operator-confirmed 2026-02-11: opcode 0x14 with variable DF0
+# sub-code returns on-demand reports (total count, on-time counters,
+# power).  DF0 = 0x11 (existing) returns relay state via 0x25.
+
+from elc.codec.etlc38 import (  # noqa: E402
+    DataRequestV38,
+    DataReportV38,
+    DATA_TYPE_RELAY_STATE,
+    DATA_TYPE_TOTAL_ONTIME,
+    DATA_TYPE_DAILY_ONTIME,
+    DATA_TYPE_DAILY_POWER,
+    OPCODE_DATA_REQUEST,
+    _wrap,
+)
+
+
+def test_data_request_encodes_data_type_at_df0():
+    # DF0 is byte 5 of the payload (after dev_type, scu, addr, sub, opcode).
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    frame = DataRequestV38(device=dev, data_type=DATA_TYPE_TOTAL_ONTIME).encode()
+    # Frame:  45 4C 43 | 40 | LL | dev_type scu addr sub 0x14 DF0 <DI1> | cs
+    assert frame[0:3] == b"\x45\x4C\x43"
+    assert frame[3] == 0x40
+    payload = frame[5:-1]
+    assert payload[4] == OPCODE_DATA_REQUEST
+    assert payload[5] == DATA_TYPE_TOTAL_ONTIME
+
+
+def test_data_request_backcompat_status_query_wire_bytes():
+    # data_type=0x11 must be byte-equivalent to the existing StatusQueryV38.
+    from elc.codec.etlc38 import StatusQueryV38
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    a = DataRequestV38(device=dev, data_type=DATA_TYPE_RELAY_STATE).encode()
+    b = StatusQueryV38(device=dev).encode()
+    assert a == b
+
+
+def _build_data_report_frame(dev, data_type: int, df_bytes: bytes) -> bytes:
+    """Helper: build a plausible RX 0x14 response frame for testing."""
+    from elc.codec.etlc38 import encode_scu_addr
+    scu_byte, addr_byte = encode_scu_addr(dev.scu, dev.address)
+    payload = bytes([
+        int(dev.dev_type) & 0xFF, scu_byte, addr_byte,
+        dev.sub_address & 0xFF, OPCODE_DATA_REQUEST,
+    ]) + df_bytes
+    return _wrap(payload)
+
+
+def test_data_report_0x06_parses_total_ontime_fields():
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=1)
+    # DF0-DF2 total_cycle=0x0000FF=255, DF3-DF5 total_ontime=0x000100=256,
+    # DF6-DF7 month_ontime=0x0020=32, DF8-DF9 day_ontime=0x0010=16.
+    df = bytes([0x00, 0x00, 0xFF, 0x00, 0x01, 0x00, 0x00, 0x20, 0x00, 0x10])
+    frame = _build_data_report_frame(dev, DATA_TYPE_TOTAL_ONTIME, df)
+    rep = DataReportV38.try_decode(frame, expected_data_type=DATA_TYPE_TOTAL_ONTIME)
+    assert rep is not None
+    parsed = rep.parse_payload()
+    assert parsed["total_cycle"] == 255
+    assert parsed["total_ontime"] == 256
+    assert parsed["month_ontime"] == 32
+    assert parsed["day_ontime"] == 16
+    assert "raw_hex" in parsed
+    assert rep.device.sub_address == 1
+
+
+def test_data_report_unknown_datatype_returns_raw_only():
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    df = bytes([0x0A, 0x11, 0x22, 0x33])  # arbitrary
+    frame = _build_data_report_frame(dev, DATA_TYPE_DAILY_POWER, df)
+    rep = DataReportV38.try_decode(frame, expected_data_type=DATA_TYPE_DAILY_POWER)
+    assert rep is not None
+    parsed = rep.parse_payload()
+    # Known-unknown: no parsed fields, just raw.
+    assert set(parsed.keys()) == {"raw_hex", "df_hex"}
+
+
+def test_data_report_reject_corrupt_checksum():
+    dev = DeviceId(dev_type=DeviceType.SRM_6S, scu=0, address=2, sub_address=0)
+    frame = bytearray(_build_data_report_frame(dev, DATA_TYPE_DAILY_ONTIME, bytes(4)))
+    frame[-1] ^= 0xFF  # trash checksum
+    assert DataReportV38.try_decode(bytes(frame), expected_data_type=DATA_TYPE_DAILY_ONTIME) is None

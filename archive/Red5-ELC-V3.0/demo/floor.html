@@ -794,6 +794,60 @@
                 style="font-size:9px;padding:1px 4px;border:1px solid var(--muted);
                        border-radius:3px;color:var(--muted)">STUB</span>
         </div>
+
+        <!-- SCU Data Reports (opcode 0x14, protocol §8).  Fetches
+             on-demand relay usage / power metrics from the module
+             over a fresh TCP query.  Safe: never fires a relay. -->
+        <div id="ee-reports" style="margin-top:10px;padding-top:8px;
+                                    border-top:1px dashed var(--line)">
+          <div style="display:flex;align-items:center;gap:6px;
+                      margin-bottom:6px">
+            <label style="margin:0;font-size:11px">
+              SCU Reports
+              <span style="font-size:9px;color:var(--muted)">— live query</span>
+            </label>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+            <button class="ghost ee-rpt-btn" data-rpt="0x06"
+                    data-testid="ee-rpt-0x06"
+                    style="padding:2px 8px;font-size:10px"
+                    title="Data type 0x06: Relay Total Count + On Time counters">
+              Total &amp; On-Time
+            </button>
+            <button class="ghost ee-rpt-btn" data-rpt="0x07"
+                    data-testid="ee-rpt-0x07"
+                    style="padding:2px 8px;font-size:10px"
+                    title="Data type 0x07: Relay Daily On Time (raw only)">
+              Daily On-Time
+            </button>
+            <button class="ghost ee-rpt-btn" data-rpt="0x08"
+                    data-testid="ee-rpt-0x08"
+                    style="padding:2px 8px;font-size:10px"
+                    title="Data type 0x08: Relay Monthly On Time (raw only)">
+              Monthly On-Time
+            </button>
+            <button class="ghost ee-rpt-btn" data-rpt="0x0A"
+                    data-testid="ee-rpt-0x0A"
+                    style="padding:2px 8px;font-size:10px"
+                    title="Data type 0x0A: Power Daily Value (raw only)">
+              Daily Power
+            </button>
+            <button class="ghost ee-rpt-btn" data-rpt="0x0B"
+                    data-testid="ee-rpt-0x0B"
+                    style="padding:2px 8px;font-size:10px"
+                    title="Data type 0x0B: Power Monthly Value (raw only)">
+              Monthly Power
+            </button>
+          </div>
+          <div id="ee-rpt-out" data-testid="ee-rpt-out"
+               style="font-family:var(--mono);font-size:10px;
+                      color:var(--muted);white-space:pre-wrap;
+                      background:#0c1218;border:1px solid var(--line);
+                      border-radius:3px;padding:6px 8px;min-height:28px;
+                      max-height:200px;overflow:auto">
+            <span style="color:var(--muted)">Click a report button to query the SCU.</span>
+          </div>
+        </div>
       </div>
 
       <label>Type</label>
@@ -2449,6 +2503,56 @@ document.getElementById('ee-dim').addEventListener('input', (ev) => {
       await api('POST', `/devices/${did}/dim`, { level: pct / 100 });
     } catch (e) { toast(`Dim failed: ${e.message}`, true); }
   }, 120);
+});
+
+// Wire SCU Data Report buttons -- opcode 0x14 (protocol §8).  Hits
+// GET /api/elc/relay-data and paints the parsed / raw payload into
+// #ee-rpt-out.  Live query only; nothing is persisted.  Safe: the
+// SCU never fires a relay in response to a data request.
+const REPORT_LABEL = {
+  '0x06': 'Total & On-Time',
+  '0x07': 'Daily On-Time',
+  '0x08': 'Monthly On-Time',
+  '0x0A': 'Daily Power',
+  '0x0B': 'Monthly Power',
+};
+function _fmtReport(dataTypeHex, r) {
+  const label = REPORT_LABEL[dataTypeHex] || dataTypeHex;
+  const ts = new Date().toLocaleTimeString();
+  const lines = [`# ${label}  (${dataTypeHex} · fetched ${ts})`];
+  if (r.error) {
+    lines.push(`ERROR: ${r.error}`);
+  } else {
+    // Emit known parsed fields first, then raw.
+    for (const k of ['total_cycle', 'total_ontime', 'month_ontime', 'day_ontime']) {
+      if (k in r) {
+        const u = (r.units && r.units[k]) ? ` ${r.units[k]}` : '';
+        lines.push(`${k.padEnd(14)} = ${r[k]}${u}`);
+      }
+    }
+  }
+  if (r.tx_hex) lines.push(`tx:  ${r.tx_hex}`);
+  if (r.raw_hex) lines.push(`rx:  ${r.raw_hex}`);
+  else if (r.rx_hex) lines.push(`rx:  ${r.rx_hex}`);
+  if (r.df_hex) lines.push(`df:  ${r.df_hex}`);
+  return lines.join('\n');
+}
+document.querySelectorAll('.ee-rpt-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const editingId = state.editingDeviceId;
+    if (!editingId) return;
+    const did = _normaliseToInventory(editingId);
+    const dtHex = btn.dataset.rpt;
+    const dtInt = parseInt(dtHex, 16);
+    const out = document.getElementById('ee-rpt-out');
+    out.textContent = `Querying ${REPORT_LABEL[dtHex] || dtHex} …`;
+    try {
+      const r = await api('GET', `/relay-data?device=${encodeURIComponent(did)}&data_type=${dtInt}`);
+      out.textContent = _fmtReport(dtHex, r);
+    } catch (e) {
+      out.textContent = `# ERROR fetching ${dtHex}\n${e.message || e}`;
+    }
+  });
 });
 document.getElementById('ee-save').onclick = async () => {
   const did = state.editingDeviceId;

@@ -5,6 +5,13 @@
 <meta http-equiv="Cache-Control" content="no-cache" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Red5-ELC · Settings</title>
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
 <style>
   :root {
     --bg: #0c0f13;
@@ -144,6 +151,27 @@
     font-family: var(--mono); background: #0e131a; padding: 1px 5px;
     border: 1px solid var(--line); border-radius: 3px; font-size: 11px;
   }
+  /* Leaflet dark-mode tweaks so tiles fit the app palette */
+  #leaflet-map {
+    height: 320px; width: 100%; border-radius: 4px;
+    border: 1px solid var(--line); background: #0e131a;
+    margin-top: 4px;
+  }
+  #leaflet-map .leaflet-container { background: #0e131a; }
+  .leaflet-control-attribution {
+    font-size: 9px !important; background: rgba(14,19,26,.7) !important;
+    color: var(--muted) !important;
+  }
+  .leaflet-control-attribution a { color: var(--accent-2) !important; }
+  #map-search-row {
+    display: flex; gap: 6px; margin-top: 10px; align-items: center;
+  }
+  #map-search-row input {
+    flex: 1;
+  }
+  #map-hint {
+    font-size: 10px; color: var(--muted); margin-top: 4px;
+  }
 </style>
 </head>
 <body>
@@ -209,6 +237,19 @@
     </div>
     <div class="sun-preview" id="sun-preview" data-testid="sun-preview">
       Enter coordinates → sun times preview will appear here.
+    </div>
+
+    <!-- Map picker: click / drag / search to set lat & lng -->
+    <div id="map-search-row">
+      <input type="text" id="map-search" data-testid="map-search"
+             placeholder="Search a place (e.g. 'Cubbon Park Bangalore')…"
+             autocomplete="off" />
+      <button id="btn-map-search" data-testid="btn-map-search">Find</button>
+    </div>
+    <div id="leaflet-map" data-testid="leaflet-map"></div>
+    <div id="map-hint">
+      Click the map or drag the pin to set the site.  Search uses
+      OpenStreetMap Nominatim (public geocoder, no API key).
     </div>
   </section>
 
@@ -560,8 +601,13 @@ document.getElementById("btn-use-location").addEventListener("click", () => {
   toast("Requesting location…");
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      document.getElementById("p-lat").value = pos.coords.latitude.toFixed(6);
-      document.getElementById("p-lng").value = pos.coords.longitude.toFixed(6);
+      const latEl = document.getElementById("p-lat");
+      const lngEl = document.getElementById("p-lng");
+      latEl.value = pos.coords.latitude.toFixed(6);
+      lngEl.value = pos.coords.longitude.toFixed(6);
+      // Dispatch input so the map pin listener also picks it up.
+      latEl.dispatchEvent(new Event("input", { bubbles: true }));
+      lngEl.dispatchEvent(new Event("input", { bubbles: true }));
       updatePreview();
       toast(`Location set: ${pos.coords.latitude.toFixed(3)}, ${pos.coords.longitude.toFixed(3)}`);
     },
@@ -572,13 +618,90 @@ document.getElementById("btn-use-location").addEventListener("click", () => {
 document.getElementById("btn-reload").addEventListener("click", loadProject);
 document.getElementById("btn-save").addEventListener("click", saveProject);
 
-// Wire profile inputs → updatePreview
+// Wire profile inputs → updatePreview (and lat/lng → map sync)
 for (const id of ["p-name", "p-tz", "p-lat", "p-lng",
                   "p-sunrise-offset", "p-sunset-offset"]) {
   document.getElementById(id).addEventListener("input", updatePreview);
 }
 
-loadProject();
+// -------- Leaflet map picker --------
+// Click / drag pin / search → lat/lng inputs.  When inputs change
+// (from typing or "Use browser location") the pin follows.  OSM
+// tiles + Nominatim geocoder are free and need no API key.
+let leafletMap = null;
+let leafletMarker = null;
+let _mapSyncing = false;  // guard against feedback loops
+
+function initMap() {
+  const startLat = parseFloat(document.getElementById("p-lat").value) || 20;
+  const startLng = parseFloat(document.getElementById("p-lng").value) || 78;
+  leafletMap = L.map("leaflet-map", {
+    zoomControl: true, attributionControl: true,
+  }).setView([startLat, startLng], 5);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; <a href='https://www.openstreetmap.org/copyright' target='_blank'>OpenStreetMap</a>",
+  }).addTo(leafletMap);
+  leafletMarker = L.marker([startLat, startLng], { draggable: true }).addTo(leafletMap);
+  leafletMarker.on("dragend", () => {
+    const pos = leafletMarker.getLatLng();
+    _writeLatLng(pos.lat, pos.lng);
+  });
+  leafletMap.on("click", (ev) => {
+    leafletMarker.setLatLng(ev.latlng);
+    _writeLatLng(ev.latlng.lat, ev.latlng.lng);
+  });
+  // Feedback: when lat/lng inputs change from OUTSIDE the map
+  // (typing, "Use browser location", initial load) → move pin.
+  for (const id of ["p-lat", "p-lng"]) {
+    document.getElementById(id).addEventListener("input", () => {
+      if (_mapSyncing || !leafletMarker) return;
+      const la = parseFloat(document.getElementById("p-lat").value);
+      const ln = parseFloat(document.getElementById("p-lng").value);
+      if (!isFinite(la) || !isFinite(ln)) return;
+      leafletMarker.setLatLng([la, ln]);
+      leafletMap.setView([la, ln], Math.max(leafletMap.getZoom(), 10));
+    });
+  }
+}
+
+function _writeLatLng(lat, lng) {
+  _mapSyncing = true;
+  document.getElementById("p-lat").value = lat.toFixed(6);
+  document.getElementById("p-lng").value = lng.toFixed(6);
+  updatePreview();
+  _mapSyncing = false;
+}
+
+async function searchPlace() {
+  const q = document.getElementById("map-search").value.trim();
+  if (!q) return;
+  toast("Geocoding via OpenStreetMap…");
+  try {
+    // Nominatim usage policy: 1 req/s.  Adding a sensible User-Agent
+    // isn't possible from the browser -- the Referer suffices.
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const arr = await r.json();
+    if (!arr.length) { toast("No match found", true); return; }
+    const hit = arr[0];
+    const la = parseFloat(hit.lat), ln = parseFloat(hit.lon);
+    leafletMarker.setLatLng([la, ln]);
+    leafletMap.setView([la, ln], 13);
+    _writeLatLng(la, ln);
+    toast(`Found: ${hit.display_name}`);
+  } catch (e) {
+    toast("Geocode failed: " + e.message, true);
+  }
+}
+document.getElementById("btn-map-search").addEventListener("click", searchPlace);
+document.getElementById("map-search").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") { ev.preventDefault(); searchPlace(); }
+});
+
+// Init the map after loadProject fills lat/lng so it centres correctly.
+loadProject().then(() => setTimeout(initMap, 100));
 </script>
 </body>
 </html>

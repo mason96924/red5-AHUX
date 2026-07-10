@@ -3443,6 +3443,24 @@ function paintCanvas() {
     }
     ctx.restore();
   }
+
+  // Rubber-band marquee overlay -- drawn last so it sits above all
+  // fixtures / heat / grid.  Screen-space rectangle, translucent fill
+  // with a dashed outline so it reads as a transient selection tool.
+  if (dragState && dragState.mode === 'marquee') {
+    const x0 = Math.min(dragState.startSx, dragState.curSx);
+    const y0 = Math.min(dragState.startSy, dragState.curSy);
+    const w  = Math.abs(dragState.curSx - dragState.startSx);
+    const h  = Math.abs(dragState.curSy - dragState.startSy);
+    ctx.save();
+    ctx.fillStyle = 'rgba(96, 165, 250, 0.15)';
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.9)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeRect(x0, y0, w, h);
+    ctx.restore();
+  }
 }
 
 // Animation loop only runs when we need it (operator mode w/ alarms).
@@ -4164,12 +4182,27 @@ canvas.addEventListener('mousedown', (ev) => {
       return;
     }
   }
+  // Empty-canvas mousedown -> begin rubber-band (marquee) multi-select.
+  // Swipe adds fixtures whose anchor falls inside the drawn rectangle to
+  // the existing selection (additive by default -- no modifier needed).
+  dragState = { mode: 'marquee', startSx: sx, startSy: sy,
+                curSx: sx, curSy: sy, moved: false };
+  paintCanvas();
 });
 
 canvas.addEventListener('mousemove', (ev) => {
   if (!dragState) return;
   const rect = canvas.getBoundingClientRect();
   const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+  // Rubber-band marquee: just update the far corner + repaint; the
+  // actual selection AABB test happens on mouseup.
+  if (dragState.mode === 'marquee') {
+    dragState.curSx = sx;
+    dragState.curSy = sy;
+    dragState.moved = true;
+    paintCanvas();
+    return;
+  }
   const t = computeTransform();
   const fx = dragState.fx;
   const mode = dragState.mode;
@@ -4243,6 +4276,53 @@ canvas.addEventListener('mousemove', (ev) => {
 
 canvas.addEventListener('mouseup', async () => {
   if (!dragState) return;
+  // Rubber-band marquee release -> AABB intersection test against
+  // every fixture anchor, additive to the existing SRM selection.
+  if (dragState.mode === 'marquee') {
+    const m = dragState;
+    dragState = null;
+    // Ignore near-zero drags so a plain click on empty canvas is a no-op
+    // (previously the mousedown early-return path).
+    if (!m.moved
+        || (Math.abs(m.curSx - m.startSx) < 3
+            && Math.abs(m.curSy - m.startSy) < 3)) {
+      paintCanvas();
+      return;
+    }
+    const t = computeTransform();
+    if (!t || !state.currentFloor) { paintCanvas(); return; }
+    const x0 = Math.min(m.startSx, m.curSx);
+    const x1 = Math.max(m.startSx, m.curSx);
+    const y0 = Math.min(m.startSy, m.curSy);
+    const y1 = Math.max(m.startSy, m.curSy);
+    let added = 0;
+    for (const fx of state.currentFloor.fixtures) {
+      const cx = t.xOffset + fx.x_m * t.m2px;
+      const cy = t.yOffset + fx.y_m * t.m2px;
+      if (cx < x0 || cx > x1 || cy < y0 || cy > y1) continue;
+      const did = _normaliseToInventory(fx.device_id);
+      if (!state.selectedDeviceIds.has(did)) {
+        state.selectedDeviceIds.add(did);
+        added++;
+      }
+    }
+    // Sync right rail + toolbar + assign bar (mirrors toggleSrmSelection).
+    renderSrmGrid();
+    updateAssignBar();
+    if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
+    // If exactly one device is now selected AND assigned, open its editor
+    // -- mirrors the single-select behaviour operators expect.
+    if (state.selectedDeviceIds.size === 1) {
+      const only = [...state.selectedDeviceIds][0];
+      const [key] = _findLightingElement(only);
+      if (key) openElementEditor(key); else closeElementEditor();
+    } else {
+      closeElementEditor();
+    }
+    paintCanvas();
+    if (added) toast(`+${added} selected (${state.selectedDeviceIds.size} total)`);
+    return;
+  }
   const moved = dragState.moved;
   dragState = null;
   if (moved) await savePlacements(state.currentFloor.fixtures);

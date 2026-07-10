@@ -4,6 +4,51 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11 — Canvas swipe (rubber-band) multi-select
+
+### What shipped
+
+- **Rubber-band selection on the top-down canvas** in
+  `demo/floor.html`.  Operators can now drag a rectangle over empty
+  canvas area to bulk-select fixtures instead of shift-clicking
+  each one.
+- **Additive by default**: swiping adds the fixtures whose anchor
+  lies inside the box to `state.selectedDeviceIds`; existing
+  selection is preserved.  No modifier keys required (per operator
+  choice, 2026-02-11).
+- **Empty-canvas only**: marquee only starts when mousedown does
+  NOT hit an existing fixture handle or anchor -- single-fixture
+  click-select and drag-to-move remain unchanged.
+
+### Details
+
+**Frontend (`demo/floor.html`):**
+- `canvas.mousedown`: after the two fixture hit-test passes fall
+  through, sets `dragState = { mode: 'marquee', startSx, startSy,
+  curSx, curSy, moved:false }`.
+- `canvas.mousemove`: early branch when `dragState.mode ===
+  'marquee'` -- just updates `curSx/curSy` + `paintCanvas()` (no
+  fixture geometry mutation).
+- `canvas.mouseup`: on `mode === 'marquee'` release, computes AABB
+  in screen space, iterates `state.currentFloor.fixtures`, adds
+  every fixture whose `(x_m, y_m)` anchor maps into the rectangle
+  to `state.selectedDeviceIds` (via `_normaliseToInventory` so
+  legacy SCU-numbered placements still match).  Guards against
+  no-op mousedown (drag < 3 px) so a plain empty click stays a
+  no-op.  Fans out to `renderSrmGrid()` + `updateAssignBar()` +
+  `syncShapeSubcontrols()` + `openElementEditor`/`closeElementEditor`
+  to mirror the existing single-click sync pattern.  Emits a toast
+  `+N selected (M total)` when new fixtures were added.
+- `paintCanvas()`: draws a translucent blue (`rgba(96,165,250,0.15)`)
+  fill + dashed `rgba(96,165,250,0.9)` outline for the live marquee
+  when `dragState.mode === 'marquee'`.
+
+**Tests:** 410 / 410 green (no backend change).  Frontend verified
+via Playwright: swipe over 3 fixtures at 5/15/25 m selected the two
+that fell inside the marquee and left the third untouched;
+right-rail "2 SELECTED" bar + Align H/V + Delete buttons activated
+correctly.
+
 ## 2026-02-11 — Schedule Editor: Group ↔ Popout sync + placedSet bug fix
 
 ### What shipped

@@ -276,6 +276,18 @@
     border-color: #c084fc;
     background: rgba(192,132,252,0.08);
   }
+  /* Multi-selected (Ctrl-click) but not currently expanded -- shown
+     with a lighter purple outline so operators can see the entire
+     selection at once before dragging.  Used for floor tiles in the
+     LHS AND module tiles in the Floor Modal. */
+  .module-box.multi-sel {
+    outline: 2px solid rgba(192,132,252,0.55);
+    outline-offset: -2px;
+  }
+  /* Floor tile is the same base module-box style but with a small
+     visual cue via the 🏢 emoji in the header (see renderDevices).
+     Keep the class as a hook for future floor-only styling. */
+  .module-box.floor-tile { }
   .module-box.dragging { opacity: 0.5; }
   .module-box .mod-hdr {
     font-family: var(--mono); font-size: 10px; color: var(--muted);
@@ -750,6 +762,35 @@
   </div>
 </div>
 
+<!-- ============ Floor Modal (2026-02-11) =============================
+     Opens when the operator clicks a floor tile in the LHS Devices
+     panel.  Shows every module associated with that floor (via
+     lighting-element placements) as draggable tiles, with the same
+     per-module relay expansion + mask checkboxes as the previous
+     inline view.  Modules can be Ctrl/Cmd-clicked for multi-select,
+     then dragged as a bundle onto a group card.  The backdrop is
+     click-to-dismiss (except when clicking inside the dialog). --> 
+<div class="modal-backdrop" id="floor-modal-backdrop"
+     data-testid="floor-modal-backdrop">
+  <div class="modal" style="max-width: 540px; width: 90%;">
+    <header>
+      <h3 id="floor-modal-title" data-testid="floor-modal-title">Floor</h3>
+      <button class="close-x" data-testid="floor-modal-close"
+              data-modal-close id="floor-modal-close">×</button>
+    </header>
+    <div class="body" id="floor-modal-body"
+         style="max-height: 65vh; overflow: auto;">
+      <!-- filled by renderFloorModal() -->
+    </div>
+    <footer>
+      <span style="color:var(--muted);font-size:11px">
+        Ctrl-click to multi-select · Drag onto a group to add
+      </span>
+      <button class="ghost" data-modal-close id="floor-modal-done">Done</button>
+    </footer>
+  </div>
+</div>
+
 <script>
 // ---------- state -----------------------------------------------------------
 const state = {
@@ -759,6 +800,12 @@ const state = {
   deviceGroups: {},  // device_id → [{gid, priority, color, name}]  (derived)
   settings: null,    // {latitude, longitude, timezone, weather_enabled, engine_mode}
   editingSid: null,  // schedule id currently open in the rule modal
+  // ---- Floor-first Devices panel (2026-02-11) ----
+  floors: [],                     // [{id, name, ...}]
+  floorPlacements: {},            // floor_id -> [device_id, …] (from /floor-devices)
+  selectedFloorIds: new Set(),    // multi-select in the LHS floor list
+  openedFloorId: null,            // which floor's modal is open (null = none)
+  selectedModuleKeys: new Set(),  // multi-select modules INSIDE the floor modal
 };
 
 const DOW = ["mon","tue","wed","thu","fri","sat","sun"];
@@ -959,28 +1006,32 @@ function renderGroups() {
         } else if (payload.type === 'device') {
           await api('POST', `/groups/${g.id}/members`, { device_id: payload.id });
           toast(`Device added to ${g.name}`);
-        } else if (payload.type === 'module') {
-          // Bundle-drop: add every UNMASKED channel of the module.
+        } else if (payload.type === 'module' || payload.type === 'modules') {
+          // Bundle-drop: add every UNMASKED channel of every module in
+          // the payload.  Payload shape:
+          //   { type: 'module',  module: 'SRM_6S/0/1', channels: [...] }
+          //   { type: 'modules', modules: [{module, channels}, ...] }
           // Backend model is unchanged -- each channel lands as its
           // own row in `group_members`, matching the per-relay drop
           // path.  The mask is a UI-only "include on drop" filter
           // persisted in localStorage (see _maskSetForModule).
-          const ids = payload.channels || [];
-          if (ids.length === 0) {
-            toast(`Module ${payload.module} has no unmasked relays to add`, true);
-          } else {
-            let added = 0, skipped = 0;
-            for (const did of ids) {
-              try {
-                await api('POST', `/groups/${g.id}/members`, { device_id: did });
-                added++;
-              } catch (_) { skipped++; }
-            }
-            const note = skipped
-              ? ` (${skipped} skipped -- already members?)`
-              : '';
-            toast(`${added} relay(s) from ${payload.module} added to ${g.name}${note}`);
-          }
+          const modules = payload.type === 'module'
+            ? [{ module: payload.module, channels: payload.channels || [] }]
+            : (payload.modules || []);
+          const summary = await _bulkAddToGroup(g, modules);
+          toast(summary);
+        } else if (payload.type === 'floor' || payload.type === 'floors') {
+          // Floor drop: add every unmasked relay of every module of
+          // the payload's floors.  Payload shape:
+          //   { type: 'floor',  floor: <id>, modules: [{module, channels}] }
+          //   { type: 'floors', floors: [{id, modules: [...]}] }
+          const floors = payload.type === 'floor'
+            ? [{ id: payload.floor, modules: payload.modules || [] }]
+            : (payload.floors || []);
+          const allMods = [];
+          for (const fl of floors) allMods.push(...(fl.modules || []));
+          const summary = await _bulkAddToGroup(g, allMods);
+          toast(`${floors.length} floor(s) → ${g.name}: ${summary}`);
         }
         await refreshAll();
       } catch (e) { toast(e.message, true); }
@@ -1022,77 +1073,120 @@ async function fillGroupDetail(card, gid) {
       schHost.appendChild(t);
     }
   }
-  // members — grouped by module for a compact "one tile per module,
-  // dots for member relays" view (operator UX ask 2026-02-11).
-  // Member dots inherit the group's own colour so the members list
-  // reads as visually part of the group card (2026-02-11 refinement).
+  // members — hierarchical tree grouped by floor > module (2026-02-11
+  // operator ask).  Each floor bucket is collapsible; each module row
+  // uses the same "dots for channels + × for bulk remove" chrome the
+  // per-module view used, but nested under a floor header.  Devices
+  // that haven't been placed on any floor go under "Unplaced".
   const groupColor = (state.groups.find(x => x.id === gid) || {}).color
                      || '#d97a30';
   if (!detail.members || detail.members.length === 0) {
-    memHost.innerHTML = `<span class="empty">drop devices here…</span>`;
+    memHost.innerHTML = `<span class="empty">drop floors, modules, or devices here…</span>`;
   } else {
     memHost.innerHTML = '';
-    // Bucket member device ids by their module key.
-    const byModule = new Map();  // moduleKey -> Set<sub_address_int>
-    const memberSet = new Set(detail.members);
+    // Reverse map: device_id -> floor_id (from state.floorPlacements)
+    const devToFloor = {};
+    for (const fid of Object.keys(state.floorPlacements || {})) {
+      for (const d of (state.floorPlacements[fid] || [])) devToFloor[d] = fid;
+    }
+    // Bucket members: floor_id -> module_key -> Set<sub_address>
+    const buckets = new Map();
     for (const did of detail.members) {
+      const fid = devToFloor[did] || '__unplaced__';
       const mk = moduleKeyForDevice(did);
       const sub = parseInt(did.split('/')[3] || '0', 10);
-      if (!byModule.has(mk)) byModule.set(mk, new Set());
-      byModule.get(mk).add(sub);
+      if (!buckets.has(fid)) buckets.set(fid, new Map());
+      const perFloor = buckets.get(fid);
+      if (!perFloor.has(mk)) perFloor.set(mk, new Set());
+      perFloor.get(mk).add(sub);
     }
-    const orderedKeys = [...byModule.keys()].sort();
-    for (const mk of orderedKeys) {
-      const memberSubs = byModule.get(mk);
-      // Look up total channel count from state.devices so we can
-      // draw ALL dots (member + non-member).  If the module isn't in
-      // state.devices (e.g. member persisted for a device the
-      // replica dropped), fall back to showing only the members.
-      const modChans = state.devices
-        .filter(d => moduleKeyForDevice(d.device) === mk)
-        .map(d => parseInt(d.device.split('/')[3] || '0', 10))
-        .sort((a, b) => a - b);
-      const allSubs = modChans.length
-        ? modChans
-        : [...memberSubs].sort((a, b) => a - b);
-      const tag = document.createElement('span');
-      tag.className = 'member-mod-tag';
-      tag.dataset.testid = `grp-${gid}-mem-mod-${mk}`;
-      tag.innerHTML = `
-        <span class="mm-title">${escapeHtml(mk)}</span>
-        <span class="mm-dots">${allSubs.map(s => {
-          const isMember = memberSubs.has(s);
-          const did = `${mk}/${s}`;
-          const style = isMember
-            ? `style="background:${groupColor};border-color:${groupColor};color:#0a1418"`
-            : '';
-          return `<span class="mm-dot${isMember ? ' member' : ''}"
-                        data-device-id="${escapeHtml(did)}" ${style}
-                        title="${escapeHtml(did)}${isMember ? ' — click to remove' : ' (not a member)'}"
-                        >${s}</span>`;
-        }).join('')}</span>
-        <button class="mm-x" title="Remove all ${memberSubs.size} relay(s) of ${mk} from group"
-                data-testid="grp-${gid}-mem-mod-${mk}-remove-all">×</button>`;
-      // Click a MEMBER dot -> remove that one channel from group.
-      for (const dot of tag.querySelectorAll('.mm-dot.member')) {
-        dot.addEventListener('click', async () => {
-          const did = dot.dataset.deviceId;
-          try {
-            await api('DELETE', `/groups/${gid}/members/${did}`);
-            await refreshAll();
-          } catch (e) { toast(e.message, true); }
-        });
-      }
-      // Click × -> bulk-remove every member of this module.
-      tag.querySelector('.mm-x').addEventListener('click', async () => {
+    // Deterministic order: floors sorted by name; modules by key.
+    const floorNameFor = fid => {
+      if (fid === '__unplaced__') return 'Unplaced';
+      const f = state.floors.find(x => x.id === fid);
+      return f ? f.name : fid;
+    };
+    const orderedFloors = [...buckets.keys()].sort(
+      (a, b) => floorNameFor(a).localeCompare(floorNameFor(b))
+    );
+    for (const fid of orderedFloors) {
+      const perFloor = buckets.get(fid);
+      const flTotal = [...perFloor.values()].reduce((s, ss) => s + ss.size, 0);
+      const flHdr = document.createElement('div');
+      flHdr.style.cssText = 'display:flex;align-items:center;gap:6px;'
+        + 'margin:6px 0 3px;padding:2px 4px;background:#0e131a;'
+        + 'border-left:3px solid ' + groupColor + ';border-radius:2px;';
+      flHdr.dataset.testid = `grp-${gid}-mem-floor-${fid}`;
+      flHdr.innerHTML = `
+        <span style="font-size:10.5px;color:var(--text)">
+          🏢 ${escapeHtml(floorNameFor(fid))}
+        </span>
+        <span style="font-size:9.5px;color:var(--muted)">
+          ${perFloor.size} mod · ${flTotal} ch
+        </span>
+        <button class="mm-x" title="Remove all ${flTotal} relay(s) of this floor from group"
+                data-testid="grp-${gid}-mem-floor-${fid}-remove-all"
+                style="margin-left:auto;background:none;border:none;
+                       color:var(--muted);cursor:pointer;font-size:12px;
+                       line-height:1;padding:0 4px">×</button>`;
+      flHdr.querySelector('.mm-x').addEventListener('click', async () => {
         try {
-          for (const s of memberSubs) {
-            await api('DELETE', `/groups/${gid}/members/${mk}/${s}`);
-          }
+          for (const [mk, subs] of perFloor.entries())
+            for (const s of subs)
+              await api('DELETE', `/groups/${gid}/members/${mk}/${s}`);
           await refreshAll();
         } catch (e) { toast(e.message, true); }
       });
-      memHost.appendChild(tag);
+      memHost.appendChild(flHdr);
+      const modWrap = document.createElement('div');
+      modWrap.style.cssText = 'margin-left:12px;';
+      const orderedKeys = [...perFloor.keys()].sort();
+      for (const mk of orderedKeys) {
+        const memberSubs = perFloor.get(mk);
+        const modChans = state.devices
+          .filter(d => moduleKeyForDevice(d.device) === mk)
+          .map(d => parseInt(d.device.split('/')[3] || '0', 10))
+          .sort((a, b) => a - b);
+        const allSubs = modChans.length
+          ? modChans
+          : [...memberSubs].sort((a, b) => a - b);
+        const tag = document.createElement('span');
+        tag.className = 'member-mod-tag';
+        tag.dataset.testid = `grp-${gid}-mem-mod-${mk}`;
+        tag.innerHTML = `
+          <span class="mm-title">${escapeHtml(moduleLabelForKey(mk))}</span>
+          <span class="mm-dots">${allSubs.map(s => {
+            const isMember = memberSubs.has(s);
+            const did = `${mk}/${s}`;
+            const style = isMember
+              ? `style="background:${groupColor};border-color:${groupColor};color:#0a1418"`
+              : '';
+            return `<span class="mm-dot${isMember ? ' member' : ''}"
+                          data-device-id="${escapeHtml(did)}" ${style}
+                          title="${escapeHtml(did)}${isMember ? ' — click to remove' : ' (not a member)'}"
+                          >${s}</span>`;
+          }).join('')}</span>
+          <button class="mm-x" title="Remove all ${memberSubs.size} relay(s) of ${mk} from group"
+                  data-testid="grp-${gid}-mem-mod-${mk}-remove-all">×</button>`;
+        for (const dot of tag.querySelectorAll('.mm-dot.member')) {
+          dot.addEventListener('click', async () => {
+            const did = dot.dataset.deviceId;
+            try {
+              await api('DELETE', `/groups/${gid}/members/${did}`);
+              await refreshAll();
+            } catch (e) { toast(e.message, true); }
+          });
+        }
+        tag.querySelector('.mm-x').addEventListener('click', async () => {
+          try {
+            for (const s of memberSubs)
+              await api('DELETE', `/groups/${gid}/members/${mk}/${s}`);
+            await refreshAll();
+          } catch (e) { toast(e.message, true); }
+        });
+        modWrap.appendChild(tag);
+      }
+      memHost.appendChild(modWrap);
     }
   }
 }
@@ -1167,78 +1261,258 @@ function _dotStateFor(snap) {
   return '';
 }
 
+// --- Bulk-add helper (module drop, modules drop, floor drop) ---------
+// Given a list of {module, channels} entries, POST every channel to
+// /groups/{gid}/members.  Returns a human-readable summary suitable
+// for a toast.  Skipped rows (usually already-member 409s) are
+// silently counted.
+async function _bulkAddToGroup(g, modules) {
+  let added = 0, skipped = 0, mods = 0;
+  for (const m of modules) {
+    const ids = m.channels || [];
+    if (!ids.length) continue;
+    mods++;
+    for (const did of ids) {
+      try {
+        await api('POST', `/groups/${g.id}/members`, { device_id: did });
+        added++;
+      } catch (_) { skipped++; }
+    }
+  }
+  const note = skipped ? ` (${skipped} skipped — already members?)` : '';
+  return `${added} relay(s) from ${mods} module(s) added to ${g.name}${note}`;
+}
+
+// --- Floor-first Devices panel --------------------------------------
+// LHS shows floors; each floor is drag-and-droppable; click opens a
+// Floor Modal with module tiles + relay detail expansion.  Multi-
+// select floors with Ctrl/Cmd-click.
+
+function _floorsWithPlacements() {
+  // Return floors that have at least one placed device_id.  Empty
+  // floors are shown too but visually dimmed so operators know to
+  // place fixtures on the Floor page first.
+  const out = [];
+  for (const f of state.floors) {
+    const devs = state.floorPlacements[f.id] || [];
+    out.push({ ...f, deviceIds: devs });
+  }
+  return out;
+}
+
+function _floorModulesForFloor(floor) {
+  // Given a floor (with .deviceIds), group its devices into modules
+  // and enrich each with { channels, includedIds, excluded } exactly
+  // like the previous flat-grid did.
+  const modKeys = new Set();
+  for (const did of floor.deviceIds) modKeys.add(moduleKeyForDevice(did));
+  const modules = [];
+  for (const mk of [...modKeys].sort()) {
+    const { channels, includedIds, excluded } = _channelsForModule(mk);
+    // But restrict to channels that are actually placed on THIS floor
+    // (a module could have some channels on floor 1 and others on
+    // floor 2 -- each floor only owns its own subset).
+    const placedSet = new Set(floor.deviceIds);
+    const floorChans = channels.filter(c => placedSet.has(c.device));
+    const floorIncluded = includedIds.filter(id => placedSet.has(id));
+    modules.push({
+      key: mk, channels: floorChans, includedIds: floorIncluded, excluded,
+    });
+  }
+  return modules;
+}
+
+function _payloadForFloor(floor) {
+  // Build a { type: 'floor', floor, modules: [{module, channels}] }
+  // payload suitable for dragging.
+  const mods = _floorModulesForFloor(floor).map(m => ({
+    module: m.key, channels: m.includedIds,
+  }));
+  return { type: 'floor', floor: floor.id, modules: mods };
+}
+
 function renderDevices() {
   const host = document.getElementById('dev-grid');
   document.getElementById('dev-count').textContent = state.devices.length;
-  if (state.devices.length === 0) {
+  if (!state.floors.length) {
     host.innerHTML = `<div class="empty-state">
-      No devices seen yet.<br>
-      Open <a href="/floor">/floor</a> and pick an SCU to auto-discover modules.
+      No floors defined yet.<br>
+      Open <a href="/floor">/floor</a> to create floors and place fixtures.
     </div>`;
     return;
   }
-  // Group flat channel list into modules.
-  const modules = new Map();  // moduleKey -> ordered channel snapshots
-  for (const d of state.devices) {
-    const mk = moduleKeyForDevice(d.device);
-    if (!modules.has(mk)) modules.set(mk, []);
-    modules.get(mk).push(d);
+  const floors = _floorsWithPlacements();
+  const grid = document.createElement('div');
+  grid.className = 'module-grid';   // reuse existing column styling
+  for (const f of floors) {
+    const mods = _floorModulesForFloor(f);
+    const totalCh = mods.reduce((s, m) => s + m.channels.length, 0);
+    const includedCh = mods.reduce((s, m) => s + m.includedIds.length, 0);
+    const empty = mods.length === 0;
+    const isSel = state.selectedFloorIds.has(f.id);
+    const box = document.createElement('div');
+    box.className = 'module-box floor-tile' + (isSel ? ' opened' : '');
+    box.style.opacity = empty ? '0.55' : '';
+    box.dataset.floorId = f.id;
+    box.dataset.testid = `floor-tile-${f.name}`;
+    box.draggable = !empty;
+    box.innerHTML = `
+      <div class="mod-hdr">
+        <span class="mod-title">🏢 ${escapeHtml(f.name)}</span>
+        <span class="mod-mask-count">${mods.length} mod · ${includedCh}/${totalCh} ch</span>
+      </div>
+      <div class="mod-dots">
+        ${mods.length === 0
+          ? '<span style="color:var(--muted);font-size:10px">no fixtures placed — use /floor</span>'
+          : mods.map(m => {
+              const st = m.channels.every(c => c.relay_state === true)
+                ? 'on' : (m.channels.every(c => c.relay_state === false) ? 'off' : '');
+              return `<span class="mod-dot ${st}"
+                            title="${escapeHtml(m.key)} · ${m.includedIds.length}/${m.channels.length} ch">${
+                        escapeHtml(m.key.split('/')[2])   /* addr */
+                      }</span>`;
+            }).join('')}
+      </div>`;
+    // Ctrl/Cmd-click: toggle multi-select.  Shift-click: range.
+    // Plain click: open the floor modal.
+    box.addEventListener('click', (ev) => {
+      if (ev.metaKey || ev.ctrlKey) {
+        if (state.selectedFloorIds.has(f.id)) state.selectedFloorIds.delete(f.id);
+        else state.selectedFloorIds.add(f.id);
+        renderDevices();
+        return;
+      }
+      if (empty) {
+        toast('No fixtures placed on this floor yet — use /floor', true);
+        return;
+      }
+      state.openedFloorId = f.id;
+      state.selectedModuleKeys.clear();
+      renderFloorModal();
+    });
+    // Drag: if this floor is part of a selection, emit a multi-floor
+    // payload; otherwise a single floor.
+    box.addEventListener('dragstart', (ev) => {
+      if (empty) { ev.preventDefault(); return; }
+      box.classList.add('dragging');
+      const inSel = state.selectedFloorIds.has(f.id);
+      let payload;
+      if (inSel && state.selectedFloorIds.size > 1) {
+        const bundle = floors
+          .filter(x => state.selectedFloorIds.has(x.id))
+          .map(x => _payloadForFloor(x));
+        payload = { type: 'floors', floors: bundle.map(p => ({ id: p.floor, modules: p.modules })) };
+      } else {
+        payload = _payloadForFloor(f);
+      }
+      ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    box.addEventListener('dragend', () => box.classList.remove('dragging'));
+    grid.appendChild(box);
   }
-  // Deterministic module order — by key string.
-  const orderedKeys = [...modules.keys()].sort();
-
   host.innerHTML = '';
+  host.appendChild(grid);
+}
+
+// --- Floor Modal ------------------------------------------------------
+// Overlay dialog showing all modules of the currently-opened floor.
+// Modules are tiles; click a tile toggles its inline relay detail;
+// Ctrl-click multi-selects modules for a bulk drag.  Dragging the
+// modal by its header lets the operator move it out of the way to
+// drop onto group cards behind.
+function renderFloorModal() {
+  const backdrop = document.getElementById('floor-modal-backdrop');
+  if (state.openedFloorId === null) {
+    backdrop.classList.remove('show');
+    return;
+  }
+  const floor = state.floors.find(f => f.id === state.openedFloorId);
+  if (!floor) {
+    state.openedFloorId = null;
+    backdrop.classList.remove('show');
+    return;
+  }
+  const enriched = { ...floor, deviceIds: state.floorPlacements[floor.id] || [] };
+  const mods = _floorModulesForFloor(enriched);
+  backdrop.classList.add('show');
+  const body = document.getElementById('floor-modal-body');
+  document.getElementById('floor-modal-title').textContent =
+    `Floor: ${floor.name} — ${mods.length} module(s)`;
+  body.innerHTML = '';
   const grid = document.createElement('div');
   grid.className = 'module-grid';
-  for (const mk of orderedKeys) {
-    const { channels, includedIds, excluded } = _channelsForModule(mk);
+  for (const m of mods) {
+    const isSel = state.selectedModuleKeys.has(m.key);
+    const isOpen = m.key === _openedModuleKey;
     const box = document.createElement('div');
-    box.className = 'module-box';
-    box.dataset.moduleKey = mk;
-    box.dataset.testid = `module-${mk}`;
+    box.className = 'module-box'
+                    + (isOpen ? ' opened' : '')
+                    + (isSel  ? ' multi-sel' : '');
+    box.dataset.moduleKey = m.key;
     box.draggable = true;
-    if (mk === _openedModuleKey) box.classList.add('opened');
-    const chCount = channels.length;
-    const maskNote = excluded.size
-      ? `<span class="mod-mask-count">${includedIds.length}/${chCount} on drop</span>`
+    box.dataset.testid = `fm-module-${m.key}`;
+    const maskNote = m.excluded.size
+      ? `<span class="mod-mask-count">${m.includedIds.length}/${m.channels.length} on drop</span>`
       : '';
     box.innerHTML = `
       <div class="mod-hdr">
-        <span class="mod-title">${escapeHtml(mk)}</span>
+        <span class="mod-title">${escapeHtml(moduleLabelForKey(m.key))}</span>
         ${maskNote}
       </div>
       <div class="mod-dots">
-        ${channels.map(c => {
+        ${m.channels.map(c => {
           const sub = c.device.split('/')[3] || '';
           const st = _dotStateFor(c);
           return `<span class="mod-dot ${st}" data-device-id="${escapeHtml(c.device)}"
                         title="${escapeHtml(c.device)}">${escapeHtml(sub)}</span>`;
         }).join('')}
       </div>`;
-    // Module tile drag: bundle-drop into a group.
+    // Click: toggle expand; Ctrl-click: multi-select.
+    box.addEventListener('click', (ev) => {
+      if (ev.target.closest('.mod-dot')) return;
+      if (ev.metaKey || ev.ctrlKey) {
+        if (state.selectedModuleKeys.has(m.key))
+          state.selectedModuleKeys.delete(m.key);
+        else
+          state.selectedModuleKeys.add(m.key);
+        renderFloorModal();
+        return;
+      }
+      _openedModuleKey = (_openedModuleKey === m.key) ? null : m.key;
+      renderFloorModal();
+    });
     box.addEventListener('dragstart', (ev) => {
       box.classList.add('dragging');
-      ev.dataTransfer.setData('text/plain', JSON.stringify({
-        type: 'module', module: mk, channels: includedIds,
-      }));
+      const inSel = state.selectedModuleKeys.has(m.key);
+      let payload;
+      if (inSel && state.selectedModuleKeys.size > 1) {
+        const bundle = mods
+          .filter(x => state.selectedModuleKeys.has(x.key))
+          .map(x => ({ module: x.key, channels: x.includedIds }));
+        payload = { type: 'modules', modules: bundle };
+      } else {
+        payload = { type: 'module', module: m.key, channels: m.includedIds };
+      }
+      ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
       ev.dataTransfer.effectAllowed = 'copy';
     });
     box.addEventListener('dragend', () => box.classList.remove('dragging'));
-    // Click toggles the inline detail panel.
-    box.addEventListener('click', (ev) => {
-      // Avoid toggling when the operator is initiating a drag from a
-      // dot; the click event still fires but only if there's no drag.
-      if (ev.target.closest('.mod-dot')) return;
-      _openedModuleKey = (_openedModuleKey === mk) ? null : mk;
-      renderDevices();
-    });
     grid.appendChild(box);
-    // Inline detail panel — same column, directly below.
-    if (mk === _openedModuleKey) {
-      grid.appendChild(_renderModuleDetail(mk, channels, excluded));
-    }
+    if (isOpen) grid.appendChild(_renderModuleDetail(m.key, m.channels, m.excluded));
   }
-  host.appendChild(grid);
+  body.appendChild(grid);
+}
+
+// Helper to look up module display label from state.moduleLabels
+// (populated by the Floor page's /module-labels fetch, if present in
+// the editor session; falls back to raw key).
+function moduleLabelForKey(mk) {
+  // mk = "SRM_6S/0/1" → maybe override says "SRM_6E/0/1"
+  const bits = mk.split('/');
+  if (bits.length < 3) return mk;
+  const override = (state.moduleLabels || {})[`${bits[1]}/${bits[2]}`];
+  return override ? `${override}/${bits[1]}/${bits[2]}` : mk;
 }
 
 function _renderModuleDetail(moduleKey, channels, excluded) {
@@ -1501,30 +1775,38 @@ function toggleOperator() {
 
 // ---------- refreshAll ------------------------------------------------------
 async function refreshAll() {
-  const [groupsRes, schRes, devRes, setRes] = await Promise.all([
-    api('GET', '/groups'),
-    api('GET', '/schedules'),
-    api('GET', '/devices'),
-    api('GET', '/settings'),
-  ]);
+  const [groupsRes, schRes, devRes, setRes, floorsRes, placeRes, labelsRes] =
+    await Promise.all([
+      api('GET', '/groups'),
+      api('GET', '/schedules'),
+      api('GET', '/devices'),
+      api('GET', '/settings'),
+      api('GET', '/floors').catch(() => ({ floors: [] })),
+      // /floor-devices is only mounted by demo.py; fall back to
+      // an empty map when running against a slim backend.
+      fetch('/api/elc/floor-devices').then(r => r.ok ? r.json() : { placements: {} })
+        .catch(() => ({ placements: {} })),
+      fetch('/api/elc/module-labels').then(r => r.ok ? r.json() : { overrides: {} })
+        .catch(() => ({ overrides: {} })),
+    ]);
   state.groups = groupsRes.groups || [];
   state.schedules = schRes.schedules || [];
-  // Sort by (scu, module_address, dev_type, relay_channel) so the
-  // grid reflects the physical DIN-rail walk order regardless of the
-  // race-y seed-in-parallel arrival at the replica.
   state.devices = (devRes || []).slice().sort((a, b) => {
     const A = a.device.split('/'), B = b.device.split('/');
-    // parts: [dev_type, scu, address, sub_address]
     return (parseInt(A[1]) - parseInt(B[1]))
         || (parseInt(A[2]) - parseInt(B[2]))
         || A[0].localeCompare(B[0])
         || (parseInt(A[3]) - parseInt(B[3]));
   });
   state.settings = setRes.settings || null;
+  state.floors = floorsRes.floors || [];
+  state.floorPlacements = placeRes.placements || {};
+  state.moduleLabels = labelsRes.overrides || {};
   await rebuildDeviceGroupsIndex();
   renderSchedules();
   renderGroups();
   renderDevices();
+  if (state.openedFloorId !== null) renderFloorModal();
 }
 
 // ---------- form wiring -----------------------------------------------------

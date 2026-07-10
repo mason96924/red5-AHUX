@@ -353,6 +353,35 @@ async def main() -> None:
     async def floor() -> FileResponse:
         return FileResponse(str(demo_dir / "floor.html"), headers=_NO_CACHE)
 
+    @stack.app.get("/api/elc/floor-devices", include_in_schema=False)
+    async def floor_devices() -> dict:
+        """Return {floor_id: [device_id, …]} derived from each floor's
+        fixture placements.  Powers the Editor's Devices panel which
+        lists floors and, per floor, the modules whose relays have
+        been placed on that floor's canvas.  Empty when no floors
+        exist or when no fixtures have been placed yet.
+        """
+        from elc.floors import store as _floor_store
+        out: dict[str, list[str]] = {}
+        try:
+            floors = _floor_store.list_floors()
+        except Exception:               # noqa: BLE001
+            return {"placements": {}}
+        for f in floors:
+            try:
+                detail = _floor_store.get_floor(f["id"], include_svg=False)
+            except Exception:           # noqa: BLE001
+                continue
+            devs = [
+                fx.get("device_id")
+                for fx in (detail.get("fixtures") or [])
+                if fx.get("device_id")
+            ]
+            # Deduplicate but preserve first-seen order.
+            seen: set[str] = set()
+            out[f["id"]] = [d for d in devs if not (d in seen or seen.add(d))]
+        return {"placements": out}
+
     @stack.app.get("/api/elc/module-labels", include_in_schema=False)
     async def module_labels() -> dict:
         """Return {"<scu>/<addr>": "<display-label>"} for every module

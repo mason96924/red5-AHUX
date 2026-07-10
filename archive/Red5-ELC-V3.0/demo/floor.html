@@ -494,6 +494,144 @@
   }
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.bad { border-color: var(--bad); }
+
+  /* ================ Tree strip (Building page) ==================== */
+  #tree-strip {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 260ms ease;
+  }
+  #tree-strip.open { max-height: 640px; }
+  .tree-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--line);
+    background: #10141a;
+    font-size: 12px;
+  }
+  .tree-view-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .tree-view-switch button {
+    background: transparent; color: var(--muted); border: 0;
+    padding: 4px 12px; cursor: pointer; font: inherit; font-size: 11px;
+  }
+  .tree-view-switch button.on { background: var(--panel-2); color: var(--text); }
+  .tree-live-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px; border-radius: 999px; font-size: 11px;
+    background: rgba(78,203,113,0.10);
+    border: 1px solid rgba(78,203,113,0.4);
+    color: var(--ok);
+  }
+  .tree-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: tree-pulse 1.6s ease-in-out infinite; }
+  @keyframes tree-pulse { 50% { opacity: 0.35; } }
+  #tree-search {
+    flex: 1; max-width: 340px;
+    padding: 4px 8px;
+    background: #0b0f13; color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px;
+    font: inherit; font-size: 12px;
+  }
+  .tree-header .refresh {
+    padding: 3px 10px; background: transparent; border: 1px solid var(--line);
+    border-radius: 4px; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px;
+  }
+  .tree-header .refresh:hover { color: var(--text); border-color: var(--accent); }
+  .tree-header .hint { color: var(--muted); font-size: 11px; margin-left: auto; }
+
+  .tree-body {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    max-height: 560px; overflow: auto;
+    font: 12px/1.45 var(--mono);
+  }
+  .tree-column { padding: 10px 14px; border-right: 1px solid var(--line); }
+  .tree-column:last-child { border-right: 0; }
+  .tree-column.hidden-view { display: none; }
+  .tree-column.solo { grid-column: 1 / -1; }
+  .tree-col-title {
+    color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+    font-size: 10px; margin-bottom: 8px; padding-bottom: 6px;
+    border-bottom: 1px dashed var(--line);
+  }
+
+  .tree ul { list-style: none; margin: 0; padding-left: 16px; position: relative; }
+  .tree > ul { padding-left: 4px; }
+  .tree li { position: relative; padding: 3px 0 3px 20px; }
+  .tree li::before {
+    content: ''; position: absolute; left: 4px; top: 0; bottom: 0;
+    border-left: 1px solid var(--line);
+  }
+  .tree li::after {
+    content: ''; position: absolute; left: 4px; top: 12px; width: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .tree li:last-child::before { height: 12px; }
+  .tree > ul > li::before, .tree > ul > li::after { border: 0; }
+  .tree > ul > li { padding-left: 4px; }
+  .tree li.collapsed > ul { display: none; }
+  .tree li.hidden-node { display: none; }
+
+  .caret {
+    display: inline-block; width: 10px; color: var(--muted);
+    cursor: pointer; user-select: none;
+  }
+  .caret::before { content: '▾'; }
+  .tree li.collapsed > .caret::before { content: '▸'; }
+  .caret.empty::before { content: ''; }
+
+  .tree-node {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 2px 6px; border-radius: 3px; cursor: pointer;
+  }
+  .tree-node:hover { background: rgba(217,122,48,0.10); }
+  .tree-node.selected { background: rgba(217,122,48,0.20); outline: 1px solid rgba(217,122,48,0.5); }
+  .tree-node .icon { width: 12px; text-align: center; opacity: 0.85; }
+  .tree-node .name { color: var(--text); }
+  .tree-node .meta { color: var(--muted); font-size: 11px; }
+  .tree-node.k-scu   .name { color: #60a5fa; }
+  .tree-node.k-srm   .name { color: #34d399; }
+  .tree-node.k-floor .name { color: #38bdf8; }
+  .tree-node.k-group .name { color: #a78bfa; }
+  .tree-node.k-sched .name { color: #fb7185; }
+  .tree-node.k-relay .name { color: var(--text); }
+
+  .tree-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; line-height: 1.4; margin-left: 4px;
+  }
+  .tb-on      { background: rgba(78,203,113,0.15);  color: var(--ok); border: 1px solid rgba(78,203,113,0.4); }
+  .tb-off     { background: rgba(107,118,132,0.12); color: var(--muted); border: 1px solid var(--line); }
+  .tb-unk     { background: rgba(107,118,132,0.08); color: #4a5262; border: 1px solid var(--line); }
+  .tb-dim     { background: rgba(227,179,65,0.15);  color: var(--warn); border: 1px solid rgba(227,179,65,0.4); }
+  .tb-group   { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.4); }
+  .tb-floor   { background: rgba(56,189,248,0.15);  color: #38bdf8; border: 1px solid rgba(56,189,248,0.4); }
+  .tb-sched   { background: rgba(251,113,133,0.15); color: #fb7185; border: 1px solid rgba(251,113,133,0.4); }
+  .tb-count   { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+  .tb-offline { background: rgba(236,91,86,0.15); color: var(--bad); border: 1px solid rgba(236,91,86,0.4); }
+  .tb-online  { background: rgba(78,203,113,0.15); color: var(--ok); border: 1px solid rgba(78,203,113,0.4); }
+
+  #tree-ctx-menu {
+    position: fixed; z-index: 400;
+    background: #10141a; border: 1px solid var(--line); border-radius: 5px;
+    padding: 4px 0; min-width: 200px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    display: none;
+    font: 12px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
+  }
+  #tree-ctx-menu.show { display: block; }
+  #tree-ctx-menu button {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 6px 12px;
+    background: transparent; border: 0; color: var(--text);
+    font: inherit; text-align: left; cursor: pointer;
+  }
+  #tree-ctx-menu button:hover { background: rgba(217,122,48,0.10); }
+  #tree-ctx-menu button.danger { color: var(--bad); }
+  #tree-ctx-menu .shortcut { margin-left: auto; color: var(--muted); font-size: 10px; }
+  #tree-ctx-menu .divider { height: 1px; margin: 4px 0; background: var(--line); }
+
+  #btn-tree.on { border-color: var(--accent); color: var(--accent-2); }
 </style>
 </head>
 <body>
@@ -529,6 +667,11 @@
             data-testid="floor-schedules-btn"
             title="Open the schedule / group editor">
       Schedules
+    </button>
+    <button id="btn-tree" class="ghost"
+            data-testid="floor-tree-btn"
+            title="Expand the site tree — SCUs, floors, groups, schedules">
+      ▼ Tree
     </button>
     <button id="btn-discover" class="ghost"
             data-testid="floor-discover-btn"
@@ -683,6 +826,38 @@
     </button>
   </div>
 </header>
+
+<!-- ================ Tree strip (collapsible) ==================== -->
+<section id="tree-strip" data-testid="tree-strip" aria-hidden="true">
+  <div class="tree-header">
+    <div class="tree-view-switch" data-testid="tree-view-switch">
+      <button data-view="both" class="on" data-testid="tree-view-both">Both</button>
+      <button data-view="physical" data-testid="tree-view-physical">Physical</button>
+      <button data-view="logical" data-testid="tree-view-logical">Logical</button>
+    </div>
+    <span class="tree-live-pill" data-testid="tree-live-pill" title="Live via SSE — relay states update in real time">
+      <span class="tree-live-dot"></span>Live · SSE
+    </span>
+    <input id="tree-search" type="search" placeholder="Filter · e.g. SRM_6S/0/1/3 or 'Lobby'"
+           data-testid="tree-search" autocomplete="off" />
+    <button class="refresh" id="tree-refresh" data-testid="tree-refresh"
+            title="Re-fetch groups / schedules / floors from the server">↻ Refresh</button>
+    <span class="hint">Right-click a node for actions</span>
+  </div>
+  <div class="tree-body" id="tree-body">
+    <div class="tree-column" data-col="physical" id="tree-col-physical">
+      <div class="tree-col-title">Physical · SCU → Module → Relay</div>
+      <div class="tree" id="tree-physical" data-testid="tree-physical"></div>
+    </div>
+    <div class="tree-column" data-col="logical" id="tree-col-logical">
+      <div class="tree-col-title">Logical · Floors · Groups · Schedules</div>
+      <div class="tree" id="tree-logical" data-testid="tree-logical"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Tree right-click context menu -->
+<div id="tree-ctx-menu" data-testid="tree-ctx-menu"></div>
 
 <main>
   <!-- ============ LEFT: FLOOR SELECT REAL ESTATE ============ -->
@@ -4769,6 +4944,559 @@ function startLiveStream() {
   _startLiveReconcile();
 }
 
+// ==================================================================
+// Tree strip (SCUs · Modules · Relays · Floors · Groups · Schedules)
+// Collapsible top-bar section on the Building page.  Data comes from
+// GET /api/elc/tree (one denormalised rollup) and stays live via the
+// existing SSE stream (see onLiveEvent below).
+// ==================================================================
+const _tree = {
+  open: false,
+  view: 'both',            // 'both' | 'physical' | 'logical'
+  data: null,              // last-fetched /api/elc/tree payload
+  filter: '',              // case-insensitive substring
+  selected: null,          // {kind, id} of the currently-highlighted node
+  ctxTarget: null,         // {kind, id, device_id?} being right-clicked
+};
+
+function _treeEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// Given a relay {relay_state, dim_level} produce the state badge HTML.
+function _treeStateBadge(r) {
+  if (r.dim_level != null && r.dim_level > 0 && r.dim_level < 1) {
+    const pct = Math.round(r.dim_level * 100);
+    return `<span class="tree-badge tb-dim">${pct}%</span>`;
+  }
+  if (r.relay_state === true)  return `<span class="tree-badge tb-on">ON</span>`;
+  if (r.relay_state === false) return `<span class="tree-badge tb-off">OFF</span>`;
+  return `<span class="tree-badge tb-unk">—</span>`;
+}
+
+function _treeBadgesForRelay(r) {
+  const groups = (r.groups || []).map(g =>
+    `<span class="tree-badge tb-group" title="Group">${_treeEscape(g.name)}</span>`
+  ).join('');
+  const floor = r.floor
+    ? `<span class="tree-badge tb-floor" title="Floor">${_treeEscape(r.floor.name)}</span>`
+    : '';
+  return _treeStateBadge(r) + groups + floor;
+}
+
+function _renderTreePhysical() {
+  const data = _tree.data;
+  if (!data) return '';
+  if (!data.scus.length) {
+    return `<div style="color:var(--muted);padding:8px 4px">No SCUs configured — open <a href="/settings">Settings</a> to add one.</div>`;
+  }
+  const html = ['<ul>'];
+  for (const scu of data.scus) {
+    const online = scu.online
+      ? `<span class="tree-badge tb-online">online</span>`
+      : `<span class="tree-badge tb-offline">${scu.primary ? 'offline' : 'not linked'}</span>`;
+    const host = scu.host
+      ? `<span class="meta">${_treeEscape(scu.host)}:${scu.port}</span>`
+      : `<span class="meta">port ${scu.port}</span>`;
+    html.push(`<li data-kind="scu" data-id="${_treeEscape(scu.id)}">`);
+    html.push(`<span class="caret"></span>`);
+    html.push(`<span class="tree-node k-scu" data-kind="scu" data-id="${_treeEscape(scu.id)}">`);
+    html.push(`<span class="icon">■</span><span class="name">${_treeEscape(scu.name)}</span>${host}${online}</span>`);
+    html.push('<ul>');
+    for (const mod of scu.modules) {
+      const modKey = `${scu.id}/${mod.address}/${mod.dev_type}`;
+      html.push(`<li data-kind="module" data-id="${_treeEscape(modKey)}">`);
+      html.push(`<span class="caret"></span>`);
+      html.push(`<span class="tree-node k-srm" data-kind="module" data-id="${_treeEscape(modKey)}">`);
+      html.push(`<span class="icon">□</span><span class="name">${_treeEscape(mod.dev_type)}</span>`);
+      html.push(`<span class="meta">Addr ${mod.address}</span>`);
+      html.push(`<span class="tree-badge tb-count">${mod.channels} relays</span>`);
+      html.push(`</span>`);
+      html.push('<ul>');
+      for (const relay of mod.relays) {
+        html.push(`<li data-kind="relay" data-id="${_treeEscape(relay.device_id)}" data-device-id="${_treeEscape(relay.device_id)}">`);
+        html.push(`<span class="caret empty"></span>`);
+        html.push(`<span class="tree-node k-relay" data-kind="relay" data-id="${_treeEscape(relay.device_id)}">`);
+        html.push(`<span class="icon">·</span><span class="name">${_treeEscape(relay.device_id)}</span>`);
+        html.push(_treeBadgesForRelay(relay));
+        html.push(`</span></li>`);
+      }
+      html.push('</ul></li>');
+    }
+    html.push('</ul></li>');
+  }
+  html.push('</ul>');
+  return html.join('');
+}
+
+function _renderTreeLogical() {
+  const data = _tree.data;
+  if (!data) return '';
+  const html = ['<ul>'];
+
+  // Floors
+  html.push(`<li data-kind="floors-root">`);
+  html.push(`<span class="caret"></span>`);
+  html.push(`<span class="tree-node k-floor" data-kind="floors-root">`);
+  html.push(`<span class="icon">▤</span><span class="name">Floors</span>`);
+  html.push(`<span class="tree-badge tb-count">${data.floors.length}</span></span>`);
+  html.push('<ul>');
+  for (const f of data.floors) {
+    html.push(`<li data-kind="floor" data-id="${_treeEscape(f.id)}">`);
+    html.push(`<span class="caret empty"></span>`);
+    html.push(`<span class="tree-node k-floor" data-kind="floor" data-id="${_treeEscape(f.id)}">`);
+    html.push(`<span class="icon">·</span><span class="name">${_treeEscape(f.name)}</span>`);
+    if (f.width_m && f.height_m) {
+      html.push(`<span class="meta">${f.width_m}×${f.height_m} m</span>`);
+    }
+    html.push(`<span class="tree-badge tb-count">${f.fixture_count} fixtures</span>`);
+    html.push(`</span></li>`);
+  }
+  html.push('</ul></li>');
+
+  // Groups
+  html.push(`<li data-kind="groups-root">`);
+  html.push(`<span class="caret"></span>`);
+  html.push(`<span class="tree-node k-group" data-kind="groups-root">`);
+  html.push(`<span class="icon">◈</span><span class="name">Groups</span>`);
+  html.push(`<span class="tree-badge tb-count">${data.groups.length}</span></span>`);
+  html.push('<ul>');
+  // Build a quick lookup: relay device_id -> current state (from physical tree)
+  const stateByDid = {};
+  for (const scu of data.scus) for (const m of scu.modules) for (const r of m.relays) {
+    stateByDid[r.device_id] = r;
+  }
+  for (const g of data.groups) {
+    html.push(`<li data-kind="group" data-id="${_treeEscape(g.id)}" class="collapsed">`);
+    html.push(`<span class="caret"></span>`);
+    html.push(`<span class="tree-node k-group" data-kind="group" data-id="${_treeEscape(g.id)}">`);
+    html.push(`<span class="icon">·</span><span class="name">${_treeEscape(g.name)}</span>`);
+    html.push(`<span class="tree-badge tb-count">${g.members.length} relays</span>`);
+    for (const s of g.schedules) {
+      html.push(`<span class="tree-badge tb-sched" title="Schedule">${_treeEscape(s.name)}</span>`);
+    }
+    html.push(`</span>`);
+    html.push('<ul>');
+    for (const did of g.members) {
+      const r = stateByDid[did] || { device_id: did, relay_state: null, dim_level: null };
+      html.push(`<li data-kind="relay" data-id="${_treeEscape(did)}" data-device-id="${_treeEscape(did)}">`);
+      html.push(`<span class="caret empty"></span>`);
+      html.push(`<span class="tree-node k-relay" data-kind="relay" data-id="${_treeEscape(did)}">`);
+      html.push(`<span class="icon">→</span><span class="name">${_treeEscape(did)}</span>`);
+      html.push(_treeStateBadge(r));
+      html.push(`</span></li>`);
+    }
+    html.push('</ul></li>');
+  }
+  html.push('</ul></li>');
+
+  // Schedules
+  html.push(`<li data-kind="schedules-root">`);
+  html.push(`<span class="caret"></span>`);
+  html.push(`<span class="tree-node k-sched" data-kind="schedules-root">`);
+  html.push(`<span class="icon">◷</span><span class="name">Schedules</span>`);
+  html.push(`<span class="tree-badge tb-count">${data.schedules.length}</span></span>`);
+  html.push('<ul>');
+  for (const s of data.schedules) {
+    const enabled = s.enabled === false
+      ? `<span class="tree-badge tb-off">disabled</span>` : '';
+    html.push(`<li data-kind="schedule" data-id="${_treeEscape(s.id)}" class="collapsed">`);
+    html.push(`<span class="caret"></span>`);
+    html.push(`<span class="tree-node k-sched" data-kind="schedule" data-id="${_treeEscape(s.id)}">`);
+    html.push(`<span class="icon">·</span><span class="name">${_treeEscape(s.name)}</span>`);
+    html.push(`<span class="tree-badge tb-count">${(s.groups||[]).length} groups</span>`);
+    html.push(enabled);
+    html.push(`</span>`);
+    html.push('<ul>');
+    for (const g of (s.groups || [])) {
+      html.push(`<li data-kind="group" data-id="${_treeEscape(g.id)}">`);
+      html.push(`<span class="caret empty"></span>`);
+      html.push(`<span class="tree-node k-group" data-kind="group" data-id="${_treeEscape(g.id)}">`);
+      html.push(`<span class="icon">◈</span><span class="name">${_treeEscape(g.name)}</span>`);
+      html.push(`</span></li>`);
+    }
+    html.push('</ul></li>');
+  }
+  html.push('</ul></li>');
+
+  html.push('</ul>');
+  return html.join('');
+}
+
+async function _fetchTree() {
+  try {
+    const r = await fetch(`${API}/tree`);
+    if (!r.ok) throw new Error(`tree HTTP ${r.status}`);
+    _tree.data = await r.json();
+    _rerenderTree();
+  } catch (e) {
+    console.error('tree fetch failed', e);
+    document.getElementById('tree-physical').innerHTML =
+      `<div style="color:var(--bad);padding:8px 4px">Failed to load tree: ${_treeEscape(e.message||e)}</div>`;
+    document.getElementById('tree-logical').innerHTML = '';
+  }
+}
+
+function _rerenderTree() {
+  const p = document.getElementById('tree-physical');
+  const l = document.getElementById('tree-logical');
+  if (!p || !l) return;
+  p.innerHTML = _renderTreePhysical();
+  l.innerHTML = _renderTreeLogical();
+  _applyTreeFilter();
+}
+
+function _applyTreeFilter() {
+  const q = _tree.filter.trim().toLowerCase();
+  const strip = document.getElementById('tree-strip');
+  if (!strip) return;
+  const items = strip.querySelectorAll('li');
+  // First pass: check each leaf node's text.  A parent is visible if
+  // ANY descendant matches.
+  const matches = new WeakSet();
+  const check = (li) => {
+    const node = li.querySelector(':scope > .tree-node');
+    const own = q && node && node.textContent.toLowerCase().includes(q);
+    let childMatch = false;
+    li.querySelectorAll(':scope > ul > li').forEach(c => {
+      if (check(c)) childMatch = true;
+    });
+    if (!q || own || childMatch) {
+      li.classList.remove('hidden-node');
+      matches.add(li);
+      // Auto-expand branches that contain matches
+      if (q && childMatch) li.classList.remove('collapsed');
+      return true;
+    } else {
+      li.classList.add('hidden-node');
+      return false;
+    }
+  };
+  strip.querySelectorAll(':scope .tree > ul > li').forEach(check);
+}
+
+function _updateTreeViewCols() {
+  const p = document.getElementById('tree-col-physical');
+  const l = document.getElementById('tree-col-logical');
+  if (!p || !l) return;
+  p.classList.remove('hidden-view', 'solo');
+  l.classList.remove('hidden-view', 'solo');
+  if (_tree.view === 'physical') { l.classList.add('hidden-view'); p.classList.add('solo'); }
+  else if (_tree.view === 'logical') { p.classList.add('hidden-view'); l.classList.add('solo'); }
+}
+
+function _toggleTree(force) {
+  _tree.open = (typeof force === 'boolean') ? force : !_tree.open;
+  const strip = document.getElementById('tree-strip');
+  const btn = document.getElementById('btn-tree');
+  strip.classList.toggle('open', _tree.open);
+  strip.setAttribute('aria-hidden', String(!_tree.open));
+  btn.classList.toggle('on', _tree.open);
+  btn.textContent = (_tree.open ? '▲ Tree' : '▼ Tree');
+  if (_tree.open && !_tree.data) _fetchTree();
+}
+
+// Live-update relay state badges in-place without a full re-render.
+function _liveUpdateTreeRelay(deviceId, patch) {
+  if (!_tree.data || !deviceId) return;
+  let found = null;
+  for (const scu of _tree.data.scus) {
+    for (const m of scu.modules) {
+      for (const r of m.relays) {
+        if (r.device_id === deviceId) { found = r; break; }
+      }
+      if (found) break;
+    }
+    if (found) break;
+  }
+  if (found) Object.assign(found, patch);
+  // Re-paint every occurrence (physical + inside groups in logical view)
+  const nodes = document.querySelectorAll(
+    `#tree-strip [data-kind="relay"][data-device-id="${CSS.escape(deviceId)}"] > .tree-node`
+  );
+  const rState = found || { relay_state: patch.relay_state, dim_level: patch.dim_level };
+  nodes.forEach(node => {
+    // Rebuild badges after the "name" span
+    const nameSpan = node.querySelector('.name');
+    if (!nameSpan) return;
+    // Remove any existing badges/meta after the name
+    let sib = nameSpan.nextSibling;
+    while (sib) {
+      const next = sib.nextSibling;
+      if (sib.classList && (sib.classList.contains('tree-badge') || sib.classList.contains('meta'))) {
+        sib.remove();
+      }
+      sib = next;
+    }
+    node.insertAdjacentHTML('beforeend',
+      node.classList.contains('k-relay') && node.closest('#tree-physical')
+        ? _treeBadgesForRelay(rState)
+        : _treeStateBadge(rState)
+    );
+  });
+}
+
+function _treeCtxMenuHtml(target) {
+  const items = [];
+  if (target.kind === 'relay') {
+    items.push({ label: 'Jump to on canvas',   act: 'focus-canvas', shortcut: 'Enter' });
+    items.push({ label: 'Edit element…',       act: 'edit-element' });
+    items.push({ label: 'Assign to group…',    act: 'assign-group' });
+    items.push({ divider: true });
+    items.push({ label: 'Toggle ON/OFF',       act: 'toggle',       shortcut: 'Space' });
+    items.push({ label: 'Set dim level…',      act: 'set-dim' });
+    items.push({ divider: true });
+    items.push({ label: 'Delete placement',    act: 'delete-placement', danger: true, shortcut: 'Del' });
+  } else if (target.kind === 'group') {
+    items.push({ label: 'Open in Schedule editor', act: 'open-scheduler' });
+    items.push({ label: 'Rename…',             act: 'rename' });
+    items.push({ divider: true });
+    items.push({ label: 'Delete group',        act: 'delete-group', danger: true });
+  } else if (target.kind === 'schedule') {
+    items.push({ label: 'Open in Schedule editor', act: 'open-scheduler' });
+    items.push({ label: 'Rename…',             act: 'rename' });
+    items.push({ label: 'Toggle enabled',      act: 'toggle-schedule' });
+    items.push({ divider: true });
+    items.push({ label: 'Delete schedule',     act: 'delete-schedule', danger: true });
+  } else if (target.kind === 'floor') {
+    items.push({ label: 'Open on canvas',      act: 'open-floor' });
+    items.push({ label: 'Rename…',             act: 'rename' });
+    items.push({ divider: true });
+    items.push({ label: 'Delete floor',        act: 'delete-floor', danger: true });
+  } else if (target.kind === 'module') {
+    items.push({ label: 'Select module’s relays', act: 'select-module' });
+  } else if (target.kind === 'scu') {
+    items.push({ label: 'Open in Settings',    act: 'open-settings' });
+  } else {
+    return '';
+  }
+  return items.map(it => {
+    if (it.divider) return '<div class="divider"></div>';
+    const cls = it.danger ? ' class="danger"' : '';
+    const short = it.shortcut ? `<span class="shortcut">${it.shortcut}</span>` : '';
+    return `<button${cls} data-act="${it.act}">${_treeEscape(it.label)}${short}</button>`;
+  }).join('');
+}
+
+function _openTreeCtx(target, x, y) {
+  const menu = document.getElementById('tree-ctx-menu');
+  const html = _treeCtxMenuHtml(target);
+  if (!html) { menu.classList.remove('show'); return; }
+  menu.innerHTML = html;
+  menu.classList.add('show');
+  menu.style.left = `${Math.min(x, window.innerWidth - 220)}px`;
+  menu.style.top  = `${Math.min(y, window.innerHeight - menu.offsetHeight - 8)}px`;
+  _tree.ctxTarget = target;
+}
+
+function _closeTreeCtx() {
+  document.getElementById('tree-ctx-menu').classList.remove('show');
+  _tree.ctxTarget = null;
+}
+
+async function _treeCtxAction(act) {
+  const tgt = _tree.ctxTarget;
+  if (!tgt) return;
+  _closeTreeCtx();
+  if (tgt.kind === 'relay') {
+    const did = tgt.id;
+    if (act === 'focus-canvas') {
+      state.selectedDeviceIds.clear();
+      state.selectedDeviceIds.add(_normaliseToInventory(did));
+      renderSrmGrid(); updateAssignBar();
+      if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
+      const [key] = _findLightingElement(did);
+      if (key) openElementEditor(key);
+      paintCanvas();
+      toast(`Focused ${did}`);
+    } else if (act === 'edit-element') {
+      const [key] = _findLightingElement(did);
+      if (key) openElementEditor(key); else toast(`No element for ${did}`, true);
+    } else if (act === 'toggle') {
+      // Read current state and flip
+      const relay = (function() {
+        for (const scu of (_tree.data && _tree.data.scus) || []) {
+          for (const m of scu.modules) for (const r of m.relays) if (r.device_id === did) return r;
+        }
+        return null;
+      })();
+      const next = !(relay && relay.relay_state);
+      try {
+        await fetch(`${API}/devices/${encodeURIComponent(did)}/relay`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({state: next}),
+        });
+        toast(`${did} → ${next ? 'ON' : 'OFF'}`);
+      } catch (e) { toast(`Toggle failed: ${e}`, true); }
+    } else if (act === 'set-dim') {
+      const v = prompt(`Dim level for ${did} (0–100 %):`, '50');
+      if (v == null) return;
+      const pct = Math.max(0, Math.min(100, parseFloat(v) || 0));
+      try {
+        await fetch(`${API}/devices/${encodeURIComponent(did)}/dim`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({level: pct / 100}),
+        });
+        toast(`${did} dim → ${pct}%`);
+      } catch (e) { toast(`Dim failed: ${e}`, true); }
+    } else if (act === 'assign-group') {
+      // Best-effort: open Schedule editor iframe (existing modal)
+      const btn = document.getElementById('btn-schedules');
+      if (btn) btn.click();
+    } else if (act === 'delete-placement') {
+      const conf = confirm(`Remove ${did} from its floor placement?`);
+      if (!conf) return;
+      const floor = state.currentFloor;
+      if (!floor) { toast('No active floor', true); return; }
+      floor.fixtures = (floor.fixtures || []).filter(fx => fx.device_id !== did);
+      await savePlacements(floor.fixtures);
+      toast(`Removed ${did} from floor`);
+      _fetchTree();
+    }
+  } else if (tgt.kind === 'group' || tgt.kind === 'schedule') {
+    if (act === 'open-scheduler') document.getElementById('btn-schedules')?.click();
+    else if (act === 'rename') {
+      const cur = (function() {
+        const arr = tgt.kind === 'group' ? _tree.data.groups : _tree.data.schedules;
+        return (arr.find(x => x.id === tgt.id) || {}).name || '';
+      })();
+      const name = prompt(`Rename ${tgt.kind}:`, cur);
+      if (!name || name === cur) return;
+      try {
+        await fetch(`${API}/${tgt.kind}s/${tgt.id}`, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({name}),
+        });
+        _fetchTree();
+        toast(`Renamed to ${name}`);
+      } catch (e) { toast(`Rename failed: ${e}`, true); }
+    } else if (act === 'toggle-schedule') {
+      const cur = (_tree.data.schedules.find(x => x.id === tgt.id) || {}).enabled !== false;
+      try {
+        await fetch(`${API}/schedules/${tgt.id}`, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({enabled: !cur}),
+        });
+        _fetchTree();
+        toast(`Schedule ${cur ? 'disabled' : 'enabled'}`);
+      } catch (e) { toast(`Toggle failed: ${e}`, true); }
+    } else if (act === 'delete-group' || act === 'delete-schedule') {
+      if (!confirm(`Delete this ${tgt.kind}? This cannot be undone.`)) return;
+      try {
+        await fetch(`${API}/${tgt.kind}s/${tgt.id}`, { method: 'DELETE' });
+        _fetchTree();
+        toast(`${tgt.kind} deleted`);
+      } catch (e) { toast(`Delete failed: ${e}`, true); }
+    }
+  } else if (tgt.kind === 'floor') {
+    if (act === 'open-floor') {
+      // Trigger floor picker programmatically (existing flow uses <select>)
+      const picker = document.getElementById('floor-picker');
+      if (picker) { picker.value = tgt.id; picker.dispatchEvent(new Event('change')); }
+    } else if (act === 'rename') {
+      const cur = (_tree.data.floors.find(x => x.id === tgt.id) || {}).name || '';
+      const name = prompt('Rename floor:', cur);
+      if (!name || name === cur) return;
+      try {
+        await fetch(`${API}/floors/${tgt.id}`, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({name}),
+        });
+        _fetchTree();
+      } catch (e) { toast(`Rename failed: ${e}`, true); }
+    } else if (act === 'delete-floor') {
+      if (!confirm('Delete this floor and all its fixture placements?')) return;
+      try {
+        await fetch(`${API}/floors/${tgt.id}`, { method: 'DELETE' });
+        _fetchTree();
+        toast('Floor deleted');
+      } catch (e) { toast(`Delete failed: ${e}`, true); }
+    }
+  } else if (tgt.kind === 'module') {
+    if (act === 'select-module') {
+      // Add every relay of the module to the SRM selection
+      const [scuIdStr, addrStr, devType] = tgt.id.split('/');
+      const scuId = parseInt(scuIdStr, 10), addr = parseInt(addrStr, 10);
+      const scu = _tree.data.scus.find(s => s.id === scuId);
+      const mod = scu && scu.modules.find(m => m.address === addr && m.dev_type === devType);
+      if (!mod) return;
+      for (const r of mod.relays) {
+        state.selectedDeviceIds.add(_normaliseToInventory(r.device_id));
+      }
+      renderSrmGrid(); updateAssignBar();
+      paintCanvas();
+      toast(`+${mod.relays.length} selected (${state.selectedDeviceIds.size} total)`);
+    }
+  } else if (tgt.kind === 'scu') {
+    if (act === 'open-settings') window.location.href = '/settings';
+  }
+}
+
+// Wire up the strip once DOM is ready.
+(function _initTreeStrip() {
+  const btn = document.getElementById('btn-tree');
+  if (!btn) return;
+  btn.addEventListener('click', () => _toggleTree());
+
+  document.getElementById('tree-refresh')?.addEventListener('click', () => _fetchTree());
+  document.getElementById('tree-search')?.addEventListener('input', (e) => {
+    _tree.filter = e.target.value || '';
+    _applyTreeFilter();
+  });
+  document.querySelectorAll('.tree-view-switch button').forEach(b => {
+    b.addEventListener('click', () => {
+      _tree.view = b.dataset.view;
+      document.querySelectorAll('.tree-view-switch button').forEach(x =>
+        x.classList.toggle('on', x === b));
+      _updateTreeViewCols();
+    });
+  });
+
+  // Delegate: click on caret toggles collapse; click on node selects.
+  const strip = document.getElementById('tree-strip');
+  strip.addEventListener('click', (ev) => {
+    if (ev.target.classList.contains('caret') && !ev.target.classList.contains('empty')) {
+      const li = ev.target.closest('li');
+      if (li) li.classList.toggle('collapsed');
+      return;
+    }
+    const node = ev.target.closest('.tree-node');
+    if (!node) return;
+    strip.querySelectorAll('.tree-node.selected').forEach(n => n.classList.remove('selected'));
+    node.classList.add('selected');
+    const kind = node.dataset.kind, id = node.dataset.id;
+    _tree.selected = { kind, id };
+    if (kind === 'relay') {
+      // Sync canvas selection (replace, not additive — single-click)
+      state.selectedDeviceIds.clear();
+      state.selectedDeviceIds.add(_normaliseToInventory(id));
+      renderSrmGrid(); updateAssignBar();
+      if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
+      paintCanvas();
+    }
+  });
+  strip.addEventListener('contextmenu', (ev) => {
+    const node = ev.target.closest('.tree-node');
+    if (!node) return;
+    ev.preventDefault();
+    const kind = node.dataset.kind, id = node.dataset.id;
+    _openTreeCtx({ kind, id }, ev.clientX, ev.clientY);
+  });
+  document.getElementById('tree-ctx-menu').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-act]');
+    if (!b) return;
+    _treeCtxAction(b.dataset.act);
+  });
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest('#tree-ctx-menu')) _closeTreeCtx();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') _closeTreeCtx();
+  });
+})();
+
 function _startSse() {
   try {
     liveSse = new EventSource(`${API}/events-sse`);
@@ -4930,12 +5658,14 @@ function onLiveEvent(ev) {
     d.relay_state = ev.state;
     state.liveDevices.set(ev.device, d);
     applyLiveOpsUpdate(ev.device);
+    if (_tree.data) _liveUpdateTreeRelay(ev.device, { relay_state: ev.state });
     dirty = true;
   } else if (ev.type === 'dim_level') {
     const d = state.liveDevices.get(ev.device) || {};
     d.dim_level = ev.level;
     state.liveDevices.set(ev.device, d);
     applyLiveOpsUpdate(ev.device);
+    if (_tree.data) _liveUpdateTreeRelay(ev.device, { dim_level: ev.level });
   } else if (ev.type === 'broadcast_complete') {
     const prefix = _prefixFor(ev.dev_type, ev.scu);
     if (!prefix) return;
@@ -4943,6 +5673,11 @@ function onLiveEvent(ev) {
       if (dev.startsWith(prefix)) d.relay_state = ev.state;
     }
     if (state.editingDeviceId) applyLiveOpsUpdate(state.editingDeviceId);
+    if (_tree.data) {
+      for (const scu of _tree.data.scus) for (const m of scu.modules) for (const r of m.relays) {
+        if (r.device_id.startsWith(prefix)) _liveUpdateTreeRelay(r.device_id, { relay_state: ev.state });
+      }
+    }
     dirty = true;
   } else if (ev.type === 'fail_report') {
     const d = state.liveDevices.get(ev.device) || {};

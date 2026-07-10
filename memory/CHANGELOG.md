@@ -4,6 +4,80 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11 — Building page: Tree view (SCU / SRM / relay / floor / group / schedule)
+
+### What shipped
+
+- **Collapsible "Tree" strip** in the Building page header.  Clicking
+  the top-right ▼ Tree button slides a two-column panel down between
+  the nav and the canvas showing every relationship in the site at
+  a glance -- physical hardware topology and logical schedule/group
+  hierarchy side-by-side.
+- **View switch** -- Both / Physical / Logical, so operators can
+  focus one side or cross-reference (default: Both).
+- **Physical column** (`SCU → Module → Relay`) with per-relay badges:
+  live state (ON / OFF / dim %), every group the relay belongs to,
+  and the floor it's placed on.
+- **Logical column** (`Floors` / `Groups` / `Schedules`) with reverse
+  indexes: each group expands to show its members with live state,
+  each schedule expands to show its assigned groups.
+- **Live via SSE** -- relay state badges update in real time from
+  the existing `/events-sse` stream (no extra socket).  Handles
+  `relay_state`, `dim_level`, and `broadcast_complete` events.
+- **Filter box** -- case-insensitive substring across every node's
+  text; auto-expands matching branches, hides non-matching siblings.
+- **Right-click context menu** wired to every node type:
+  - relay: Jump to on canvas · Edit element · Assign to group ·
+    Toggle ON/OFF · Set dim level · Delete placement
+  - group: Open in Schedule editor · Rename · Delete
+  - schedule: Open in Schedule editor · Rename · Toggle enabled · Delete
+  - floor: Open on canvas · Rename · Delete
+  - module: Select module's relays (bulk-select on canvas)
+  - scu: Open in Settings
+- **Canvas ↔ tree sync** -- left-clicking a relay node selects the
+  device on the canvas, refreshes the SRM grid, and opens its
+  lighting-element editor (if configured).
+
+### Details
+
+**Backend (`scripts/demo.py`):**
+- New endpoint `GET /api/elc/tree` returns one denormalised rollup:
+  project meta, SCUs (with online flag), modules, relays (with live
+  state from the replica + reverse `groups[]` + `floor`), floors
+  (id/name/dims/fixture count), groups (with member device_ids and
+  assigned schedules), and schedules (with reverse `groups[]`).
+  Composes from `elc.config.store.list_groups/list_schedules`,
+  `elc.floors.store.list_floors`, `stack.replica.all()`, and
+  `elc.codec.etlc38.channel_count_for` per module type.
+
+**Frontend (`demo/floor.html`):**
+- New CSS block (tree strip, view switch, tree lines, badges,
+  context menu) added just before `</style>`.
+- New DOM: `<section id="tree-strip">` between `</header>` and
+  `<main>`, plus a floating `<div id="tree-ctx-menu">`.
+- New JS module `_tree` (~350 lines) added just before
+  `_startSse()`: `_fetchTree`, `_renderTreePhysical`,
+  `_renderTreeLogical`, `_applyTreeFilter`, `_liveUpdateTreeRelay`,
+  context-menu open/close, `_treeCtxAction` for each node kind.
+- `onLiveEvent` now also patches the tree's live badges via
+  `_liveUpdateTreeRelay` for `relay_state`, `dim_level`, and
+  `broadcast_complete` events (only when the strip has been
+  fetched at least once, so idle sessions have zero overhead).
+- Top-nav button `#btn-tree` toggles the strip's `.open` class
+  (CSS `max-height` animation).
+
+**Tests:** 410 / 410 backend tests still green (no test change).
+Frontend verified via Playwright: seeded 3 fixtures + 2 groups + 1
+schedule via `/api/elc/floors|groups|schedules`, opened the tree
+strip, and confirmed:
+- both-view renders Physical (SRM_6S Addr 1 · 6 relays with Lobby /
+  Corridor / L1·Ground badges) + Logical (Floors, Groups collapsible,
+  Schedules) columns side-by-side;
+- Physical-only view hides Logical column and vice versa;
+- Filter "Corridor" narrows Physical to just `SRM_6S/0/1/3` and
+  Logical to just the Corridor group with matching branches
+  auto-expanded.
+
 ## 2026-02-11 — Canvas swipe (rubber-band) multi-select
 
 ### What shipped

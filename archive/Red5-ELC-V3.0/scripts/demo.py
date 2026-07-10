@@ -527,6 +527,169 @@ async def main() -> None:
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"sun-times: {e}")
 
+    # ------------------------------------------------------------------
+    # Tree view rollup — a single denormalised snapshot the /floor page
+    # renders as the collapsible "Tree" strip.  Composes:
+    #   * SCUs / modules / relays  (from project.json + live replica)
+    #   * Floors                    (from floors store)
+    #   * Groups + membership       (from config store)
+    #   * Schedules + group links   (from config store)
+    #   * Reverse indexes:           relay -> [group,...], floor,
+    #                                group -> [schedule,...]
+    # Kept as one round-trip (vs. the browser stitching 5 endpoints)
+    # so operators see a consistent snapshot; the SSE stream continues
+    # to push per-relay state deltas after the initial load.
+    # ------------------------------------------------------------------
+    @stack.app.get("/api/elc/tree", include_in_schema=False)
+    async def tree_view() -> dict:
+        from elc.config import store as cfg_store
+        from elc.floors import store as floor_store
+
+        cfg = load_project(DEFAULT_PROJECT_PATH)
+        project_meta = {
+            "name": cfg.project.name if cfg else "(unconfigured)",
+            "configured": is_configured(DEFAULT_PROJECT_PATH),
+        }
+
+        # ---- SCUs / modules --------------------------------------------
+        scus_out: list[dict] = []
+        link_online = str(getattr(stack.link, "state", "")) == "connected"
+        primary_host = getattr(stack.link, "host", "") or ""
+        primary_port = getattr(stack.link, "port", 0) or 0
+        if cfg:
+            for scu in cfg.scus:
+                modules_out = []
+                for mod in scu.modules:
+                    try:
+                        channels = channel_count_for(DeviceType[mod.dev_type])
+                    except Exception:  # noqa: BLE001
+                        channels = 6
+                    relays = []
+                    for ch in range(1, channels + 1):
+                        did = f"{mod.dev_type}/{scu.id}/{mod.address}/{ch}"
+                        relays.append({
+                            "device_id": did,
+                            "scu": scu.id,
+                            "dev_type": mod.dev_type,
+                            "address": mod.address,
+                            "channel": ch,
+                        })
+                    modules_out.append({
+                        "dev_type": mod.dev_type,
+                        "address": mod.address,
+                        "note": mod.note,
+                        "discovered": bool(mod.discovered),
+                        "channels": channels,
+                        "relays": relays,
+                    })
+                # Only the primary SCU (the one build_stack dialled) is
+                # considered "online".  Additional buses in project.json
+                # are metadata-only until a per-SCU link is wired.
+                is_primary = (
+                    scu.host == primary_host and scu.port == primary_port
+                ) or (scu.id == 0 and not primary_host)
+                scus_out.append({
+                    "id": scu.id,
+                    "name": scu.name,
+                    "host": scu.host,
+                    "port": scu.port,
+                    "online": bool(link_online and is_primary),
+                    "primary": is_primary,
+                    "modules": modules_out,
+                })
+
+        # ---- Floors + fixture -> floor reverse index --------------------
+        floors_raw = floor_store.list_floors(db_path=None)
+        floors_out = []
+        fixture_floor: dict[str, dict] = {}
+        for f in floors_raw:
+            fixtures = f.get("fixtures", []) or []
+            summary = {
+                "id": f["id"],
+                "name": f["name"],
+                "width_m": f.get("width_m"),
+                "height_m": f.get("height_m"),
+                "fixture_count": len(fixtures),
+            }
+            floors_out.append(summary)
+            for fx in fixtures:
+                did = fx.get("device_id")
+                if did:
+                    fixture_floor[did] = {"id": f["id"], "name": f["name"]}
+
+        # ---- Groups + reverse index (relay -> groups) -------------------
+        groups_raw = cfg_store.list_groups()
+        groups_out: list[dict] = []
+        relay_groups: dict[str, list[dict]] = {}
+        group_schedules_index: dict[str, list[dict]] = {}
+        for g in groups_raw:
+            detail = cfg_store.get_group(g["id"])
+            members = detail.get("members", [])
+            scheds = [
+                {"id": s["id"], "name": s["name"], "color": s.get("color")}
+                for s in detail.get("schedules", [])
+            ]
+            groups_out.append({
+                "id": g["id"],
+                "name": g["name"],
+                "color": g.get("color"),
+                "members": members,
+                "schedules": scheds,
+            })
+            group_schedules_index[g["id"]] = scheds
+            for did in members:
+                relay_groups.setdefault(did, []).append(
+                    {"id": g["id"], "name": g["name"], "color": g.get("color")}
+                )
+
+        # ---- Schedules + reverse index (schedule -> groups) -------------
+        schedules_raw = cfg_store.list_schedules()
+        schedule_groups: dict[str, list[dict]] = {}
+        for g in groups_raw:
+            for s in group_schedules_index.get(g["id"], []):
+                schedule_groups.setdefault(s["id"], []).append(
+                    {"id": g["id"], "name": g["name"], "color": g.get("color")}
+                )
+        schedules_out = []
+        for s in schedules_raw:
+            schedules_out.append({
+                "id": s["id"],
+                "name": s["name"],
+                "color": s.get("color"),
+                "enabled": bool(s.get("enabled", True)),
+                "rules": s.get("rules"),
+                "groups": schedule_groups.get(s["id"], []),
+            })
+
+        # ---- Attach live state + reverse indexes to every relay ---------
+        replica_snaps = {
+            str(snap.device): snap for snap in stack.replica.all()
+        }
+        for scu in scus_out:
+            for mod in scu["modules"]:
+                for relay in mod["relays"]:
+                    did = relay["device_id"]
+                    snap = replica_snaps.get(did)
+                    relay["relay_state"] = (
+                        snap.relay_state if snap else None
+                    )
+                    relay["dim_level"] = (
+                        snap.dim_level if snap else None
+                    )
+                    relay["last_fail_code"] = (
+                        snap.last_fail_code if snap else None
+                    )
+                    relay["groups"] = relay_groups.get(did, [])
+                    relay["floor"] = fixture_floor.get(did)
+
+        return {
+            "project": project_meta,
+            "scus": scus_out,
+            "floors": floors_out,
+            "groups": groups_out,
+            "schedules": schedules_out,
+        }
+
     @stack.app.get("/settings", include_in_schema=False)
     async def settings_page() -> FileResponse:
         """Serve the setup / configuration wizard."""

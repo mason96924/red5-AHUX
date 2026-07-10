@@ -1633,6 +1633,22 @@ function renderFloorModal() {
   }
   const enriched = { ...floor, deviceIds: state.floorPlacements[floor.id] || [] };
   const mods = _floorModulesForFloor(enriched);
+  // Compute the "changes staged" count: for each channel of each
+  // module on this floor, compare popout intent (unchecked = would
+  // exclude; checked = would include) to the linked group's actual
+  // membership.  A diff means dropping now WILL change the group.
+  let stagedChanges = 0;
+  if (contextGid != null) {
+    const memberSet = state.groupMembers[contextGid] || new Set();
+    for (const m of mods) {
+      for (const c of m.channels) {
+        const sub = parseInt(c.device.split('/')[3] || '0', 10);
+        const stagedIncluded = !m.excluded.has(sub);
+        const isMember = memberSet.has(c.device);
+        if (stagedIncluded !== isMember) stagedChanges++;
+      }
+    }
+  }
   pop.hidden = false;
   const body = document.getElementById('floor-modal-body');
   const linkedName = contextGid
@@ -1645,8 +1661,25 @@ function renderFloorModal() {
     : ` <span style="font-size:10px;color:var(--muted);font-weight:normal">
           — not linked to any group
         </span>`;
+  // Staged-changes badge.  Amber when >0 so the operator knows a
+  // drop right now will actually change something; hidden when
+  // popout marks match the linked group's state exactly.
+  const stagedHtml = (contextGid != null && stagedChanges > 0)
+    ? ` <span data-testid="popout-staged-changes"
+             style="font-size:10px;color:#0a1418;background:#e0a94a;
+                    padding:1px 6px;border-radius:8px;font-weight:600;
+                    margin-left:4px" title="Drop the floor to commit">
+        ${stagedChanges} change${stagedChanges > 1 ? 's' : ''} staged
+      </span>`
+    : (contextGid != null
+        ? ` <span data-testid="popout-staged-changes"
+                 style="font-size:10px;color:var(--muted);margin-left:4px"
+                 title="Popout matches group state">
+            · in sync
+          </span>`
+        : '');
   document.getElementById('floor-modal-title').innerHTML =
-    `Floor: ${escapeHtml(floor.name)} — ${mods.length} module(s)${linkedHtml}`;
+    `Floor: ${escapeHtml(floor.name)} — ${mods.length} module(s)${linkedHtml}${stagedHtml}`;
   body.innerHTML = '';
   const grid = document.createElement('div');
   grid.className = 'module-grid';

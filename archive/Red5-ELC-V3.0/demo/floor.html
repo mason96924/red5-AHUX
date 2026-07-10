@@ -4550,16 +4550,38 @@ document.getElementById('btn-discover').onclick = () => discoverSrms();
 
 // SCU picker: initialise from localStorage, and re-scan whenever the
 // operator switches buses.  The paired IP-host field below shows the
-// last-known dial address for the currently-selected SCU bus (per
-// operator ask 2026-02-11: "SCU IP address setting and info when SCU
-// number is selected").  For now the IP is UI-side metadata only
-// (localStorage under 'elc.floor.scu.<n>.host'); once a multi-SCU-link
-// backend lands it'll become the source-of-truth for that link's dial
-// target.
+// last-known dial address for the currently-selected SCU bus.
+// Source-of-truth priority (2026-02-11 operator ask "SCU IP set in
+// Settings not showing in Building"):
+//   1. configs/project.json  (via GET /api/elc/project)
+//   2. localStorage           (session override, kept for edits)
+// On page load we hydrate localStorage FROM project.json so the
+// input reflects what was saved in Settings.  Manual edits here
+// still save back to localStorage as a per-browser override until
+// the operator re-saves in the Settings wizard.
 (function initScuPicker() {
   const sel = document.getElementById('scu-picker');
   const ipInput = document.getElementById('scu-host');
   if (!sel) return;
+
+  // Fetch project.json ONCE at page load and seed localStorage per
+  // SCU host so the existing _syncIpField() lookup just works.
+  // Non-blocking -- if the endpoint fails or the file is absent the
+  // input simply falls back to whatever's already in localStorage.
+  const _hydrateFromProject = async () => {
+    try {
+      const r = await fetch(`${API}/project`);
+      if (!r.ok) return;
+      const j = await r.json();
+      const scus = (j.project && j.project.scus) || [];
+      for (const s of scus) {
+        if (s.host) {
+          localStorage.setItem(`elc.floor.scu.${s.id}.host`, s.host);
+        }
+      }
+    } catch (_) { /* absent / offline: fine, use localStorage */ }
+  };
+
   const saved = localStorage.getItem('elc.floor.scu');
   if (saved !== null && Array.from(sel.options).some(o => o.value === saved)) {
     sel.value = saved;
@@ -4568,7 +4590,9 @@ document.getElementById('btn-discover').onclick = () => discoverSrms();
     const n = sel.value;
     if (ipInput) ipInput.value = localStorage.getItem(`elc.floor.scu.${n}.host`) || '';
   };
-  _syncIpField();
+  // Hydrate first, THEN sync (so the input shows the project.json
+  // value on first paint).
+  _hydrateFromProject().then(_syncIpField);
 
   sel.addEventListener('change', () => {
     _syncIpField();

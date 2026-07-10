@@ -1866,14 +1866,22 @@ async function broadcastRelay(state_target) {
     // truth (the SSE stream will animate the resulting state
     // change).  Falls back to legacy wildcard RelaySet on mock.
     const r = await api('POST', '/broadcast', { state: state_target });
-    if (r && r.mode === 'v38_burst') {
+    if (r && r.mode === 'v38_burst' && r.modules > 0) {
       const frames = r.frames ?? (r.modules * (r.max_channels || 0));
       toast(
         `Broadcast ${label}: ${r.modules} module(s) × ` +
         `${r.max_channels} ch = ${frames} frame(s) fired`
       );
     } else if (r && r.modules === 0) {
-      toast(`Broadcast ${label}: no SRM modules known — run Discover first`, true);
+      // v38_burst with 0 modules OR any response reporting modules===0.
+      // Nothing was actually put on the wire; tell the operator loudly
+      // and offer the fix inline so they don't stare at silent hardware.
+      toast(
+        `Broadcast ${label}: NO SRM modules registered yet. ` +
+        `Open the SCU picker and re-select the bus to run Discover, ` +
+        `or hit the SRM inventory in the Editor.`,
+        true
+      );
     } else {
       toast(`Broadcast ${label} sent`);
     }

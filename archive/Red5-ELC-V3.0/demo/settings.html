@@ -136,6 +136,19 @@
   }
   #toast.show { opacity: 1; }
   #toast.err { border-color: var(--bad); background: #2a1a1a; }
+  /* Inline banner beside the save button for validation errors --
+     more discoverable than a briefly-flashing toast. */
+  #save-hint {
+    color: var(--warn); font-size: 12px; margin-right: 12px;
+    padding: 4px 10px; border: 1px solid #55450d;
+    background: #2a2213; border-radius: 3px;
+    display: none; animation: pulse-warn 1s ease-in-out;
+  }
+  #save-hint.show { display: inline-block; }
+  @keyframes pulse-warn {
+    0%, 100% { box-shadow: 0 0 0 rgba(227,179,65,0); }
+    50%      { box-shadow: 0 0 12px rgba(227,179,65,.5); }
+  }
   .footer-actions {
     position: sticky; bottom: 0; background: rgba(12,15,19,.95);
     padding: 14px 0; border-top: 1px solid var(--line);
@@ -305,6 +318,7 @@
   </section>
 
   <div class="footer-actions">
+    <span id="save-hint" data-testid="save-hint"></span>
     <button id="btn-reload" data-testid="btn-reload"
             title="Reload from configs/project.json (discards unsaved changes)">
       Reload
@@ -570,6 +584,11 @@ function collectProject() {
 function updatePreview() {
   const cfg = collectProject();
   document.getElementById("preview-json").textContent = JSON.stringify(cfg, null, 2);
+  // Clear the "add-a-SCU" warning as soon as the operator adds one.
+  const hint = document.getElementById("save-hint");
+  if (cfg.scus.length && cfg.scus.some(s => s.modules.length > 0)) {
+    hint.classList.remove("show");
+  }
   updateSunPreview();
 }
 let _sunDebounce = null;
@@ -614,9 +633,20 @@ async function loadProject() {
 }
 
 async function saveProject() {
+  const hint = document.getElementById("save-hint");
+  hint.classList.remove("show");
   const cfg = collectProject();
   // Minimum requirement: at least one SCU with one module
   if (!cfg.scus.length || cfg.scus.every(s => s.modules.length === 0)) {
+    // Persistent inline warning next to the Save button + scroll +
+    // pulse the SCUs section so the operator can't miss it.
+    hint.textContent = "⚠ Add at least one SCU with one module first ↓";
+    hint.classList.add("show");
+    const sec = document.getElementById("sec-scus");
+    sec.scrollIntoView({ behavior: "smooth", block: "center" });
+    sec.style.transition = "box-shadow .4s";
+    sec.style.boxShadow = "0 0 0 2px var(--warn)";
+    setTimeout(() => { sec.style.boxShadow = ""; }, 2200);
     toast("Add at least one SCU with one module before saving", true);
     return;
   }
@@ -624,12 +654,12 @@ async function saveProject() {
   btn.disabled = true;
   try {
     await api("POST", "/project", cfg);
-    // Expand and hot-reload devices where possible (driver reload
-    // still needs a demo.py restart, but the JSON is committed).
     try { await api("POST", "/project/expand-devices"); } catch (_) {}
     toast(`Saved to configs/project.json — redirecting to /floor…`);
     setTimeout(() => { location.href = "/floor?force=1"; }, 1200);
   } catch (e) {
+    hint.textContent = "⚠ " + e.message;
+    hint.classList.add("show");
     toast("Save failed: " + e.message, true);
     btn.disabled = false;
   }

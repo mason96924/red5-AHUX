@@ -853,6 +853,16 @@ const state = {
   selectedFloorIds: new Set(),    // multi-select in the LHS floor list
   openedFloorId: null,            // which floor's modal is open (null = none)
   selectedModuleKeys: new Set(),  // multi-select modules INSIDE the floor modal
+  // ---- Popout ↔ Group sync (2026-02-11 operator ask) ----
+  // groupMembers: gid -> Set<device_id>   (populated in refreshAll)
+  // contextGroupId: which group the popout mirrors; updated by any
+  // group interaction (card click, dot click, drop).  The popout
+  // renders checkboxes = "member of contextGroup" and the mask in
+  // localStorage is overwritten from that group on every popout
+  // open so the two views stay in sync.  On drop, SET semantics
+  // apply, overriding the target group for this floor.
+  groupMembers: {},
+  contextGroupId: null,
 };
 
 const DOW = ["mon","tue","wed","thu","fri","sat","sun"];
@@ -1041,6 +1051,8 @@ function renderGroups() {
       let payload;
       try { payload = JSON.parse(ev.dataTransfer.getData('text/plain')); }
       catch (_) { return; }
+      // Any drop-onto-group makes THIS group the popout's context.
+      state.contextGroupId = g.id;
       try {
         if (payload.type === 'schedule') {
           // priority = current_max_in_this_group + 1
@@ -1192,6 +1204,7 @@ async function fillGroupDetail(card, gid) {
                        color:var(--muted);cursor:pointer;font-size:12px;
                        line-height:1;padding:0 4px">×</button>`;
       flHdr.querySelector('.mm-x').addEventListener('click', async () => {
+        state.contextGroupId = gid;
         try {
           for (const did of floorDevIds) {
             if (memberSet.has(did))
@@ -1244,6 +1257,7 @@ async function fillGroupDetail(card, gid) {
         for (const dot of tag.querySelectorAll('.mm-dot.member')) {
           dot.addEventListener('click', async () => {
             const did = dot.dataset.deviceId;
+            state.contextGroupId = gid;
             try {
               await api('DELETE', `/groups/${gid}/members/${did}`);
               await refreshAll();
@@ -1253,6 +1267,7 @@ async function fillGroupDetail(card, gid) {
         for (const dot of tag.querySelectorAll('.mm-dot.addable')) {
           dot.addEventListener('click', async () => {
             const did = dot.dataset.deviceId;
+            state.contextGroupId = gid;
             try {
               await api('POST', `/groups/${gid}/members`, { device_id: did });
               await refreshAll();
@@ -1552,17 +1567,83 @@ function renderDevices() {
 // Ctrl-click multi-selects modules for a bulk drag.  Dragging the
 // modal by its header lets the operator move it out of the way to
 // drop onto group cards behind.
+
+// Resolve which group the popout should mirror.  Preference:
+//   1. state.contextGroupId if it still has any relay of this floor
+//   2. otherwise, first group (by name) that contains any relay
+//   3. null if the floor is in no group
+function _resolveContextGroupForFloor(floorId) {
+  const floorDevs = state.floorPlacements[floorId] || [];
+  const inGroup = gid => {
+    const m = state.groupMembers[gid] || new Set();
+    return floorDevs.some(did => m.has(did));
+  };
+  if (state.contextGroupId != null && inGroup(state.contextGroupId))
+    return state.contextGroupId;
+  const sorted = [...(state.groups || [])].sort(
+    (a, b) => (a.name || '').localeCompare(b.name || '')
+  );
+  for (const g of sorted) if (inGroup(g.id)) return g.id;
+  return null;
+}
+
+// Overwrite localStorage mask for every module of `floorId` to
+// mirror membership in `gid` (or clear the mask if gid is null).
+// For each channel of each module: if the device is NOT a member,
+// mark its sub_address as excluded (checkbox unchecked).
+function _syncMaskFromGroup(floorId, gid) {
+  const memberSet = gid != null
+    ? (state.groupMembers[gid] || new Set())
+    : new Set();
+  const floorDevs = state.floorPlacements[floorId] || [];
+  const modKeys = new Set(floorDevs.map(did => moduleKeyForDevice(did)));
+  for (const mk of modKeys) {
+    const chans = state.devices
+      .filter(d => moduleKeyForDevice(d.device) === mk);
+    const excluded = new Set();
+    for (const c of chans) {
+      const sub = parseInt(c.device.split('/')[3] || '0', 10);
+      if (!memberSet.has(c.device)) excluded.add(sub);
+    }
+    _saveMaskForModule(mk, excluded);
+  }
+}
+
+// Key that tells us when the last popout sync happened, so we only
+// re-sync when either the floor changes OR the context group
+// changes -- not on every checkbox click (which triggers a re-render).
+let _lastPopoutSyncKey = null;
+
 function renderFloorModal() {
   const pop = document.getElementById('floor-popout');
   if (state.openedFloorId === null) { pop.hidden = true; return; }
   const floor = state.floors.find(f => f.id === state.openedFloorId);
   if (!floor) { state.openedFloorId = null; pop.hidden = true; return; }
+  // Sync mask from context group on FIRST render for this
+  // (floor, contextGroup) combo.  Subsequent renders (e.g. from
+  // checkbox change) keep the operator's edits intact.
+  const contextGid = _resolveContextGroupForFloor(floor.id);
+  const syncKey = `${floor.id}::${contextGid}`;
+  if (_lastPopoutSyncKey !== syncKey) {
+    _syncMaskFromGroup(floor.id, contextGid);
+    _lastPopoutSyncKey = syncKey;
+  }
   const enriched = { ...floor, deviceIds: state.floorPlacements[floor.id] || [] };
   const mods = _floorModulesForFloor(enriched);
   pop.hidden = false;
   const body = document.getElementById('floor-modal-body');
-  document.getElementById('floor-modal-title').textContent =
-    `Floor: ${floor.name} — ${mods.length} module(s)`;
+  const linkedName = contextGid
+    ? (state.groups.find(g => g.id === contextGid) || {}).name || '?'
+    : null;
+  const linkedHtml = linkedName
+    ? ` <span style="font-size:10px;color:var(--muted);font-weight:normal">
+          — linked to group: <b style="color:var(--text)">${escapeHtml(linkedName)}</b>
+        </span>`
+    : ` <span style="font-size:10px;color:var(--muted);font-weight:normal">
+          — not in any group yet
+        </span>`;
+  document.getElementById('floor-modal-title').innerHTML =
+    `Floor: ${escapeHtml(floor.name)} — ${mods.length} module(s)${linkedHtml}`;
   body.innerHTML = '';
   const grid = document.createElement('div');
   grid.className = 'module-grid';
@@ -1938,6 +2019,15 @@ async function refreshAll() {
     ]);
   state.groups = groupsRes.groups || [];
   state.schedules = schRes.schedules || [];
+  // Fetch every group's members so the popout can sync checkboxes
+  // against the current group state without extra roundtrips.
+  state.groupMembers = {};
+  await Promise.all((state.groups || []).map(async (g) => {
+    try {
+      const detail = await api('GET', `/groups/${g.id}`);
+      state.groupMembers[g.id] = new Set(detail.members || []);
+    } catch (_) { state.groupMembers[g.id] = new Set(); }
+  }));
   state.devices = (devRes || []).slice().sort((a, b) => {
     const A = a.device.split('/'), B = b.device.split('/');
     return (parseInt(A[1]) - parseInt(B[1]))
@@ -1950,6 +2040,9 @@ async function refreshAll() {
   state.floorPlacements = placeRes.placements || {};
   state.moduleLabels = labelsRes.overrides || {};
   await rebuildDeviceGroupsIndex();
+  // Invalidate popout sync so the next renderFloorModal picks up
+  // the freshly-fetched group membership as the checkbox state.
+  _lastPopoutSyncKey = null;
   renderSchedules();
   renderGroups();
   renderDevices();

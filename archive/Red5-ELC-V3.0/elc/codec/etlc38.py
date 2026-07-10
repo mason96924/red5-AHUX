@@ -305,6 +305,18 @@ class DataRequestV38:
     fires a relay.  The `sub_address` (byte 3) targets a specific
     channel of the module (0-based; 0 = module-wide when the report
     is inherently module-scoped).
+
+    .. note::
+       Byte 3 is device-family dependent (protocol doc §8, future):
+
+       * SRM / eRM (this codec today) -- ``sub_address`` = channel
+         (1..6).
+       * DALI (future)               -- ``group_number`` (1..64).
+
+       DALI reports are ALSO multi-frame: several RX frames with
+       the same group byte must be concatenated in arrival order
+       before decoding.  Not implemented here; see doc §8 "Future
+       -- DALI device family".
     """
 
     device: DeviceId

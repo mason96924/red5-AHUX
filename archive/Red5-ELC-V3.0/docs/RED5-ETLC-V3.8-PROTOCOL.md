@@ -365,3 +365,26 @@ real hardware capture confirms.  See `parse_payload()` in
 Issuing any `0x14` data request never fires a relay.  The SCU
 does not treat this opcode as an override.
 
+### Future — DALI device family (byte 3 semantics + multi-frame)
+
+**Not implemented today; FYI note only** (2026-02-11 operator ask).
+The interpretation of byte 3 in the frame depends on the addressed
+device type:
+
+| Device family | Byte 3 meaning                | Range   |
+|---------------|-------------------------------|---------|
+| SRM / eRM     | `sub_address` (relay channel) | 1..6    |
+| DALI          | `group_number`                | 1..64   |
+
+DALI data reports are also **multi-frame**: a single logical
+report is fragmented across several `0x14` RX frames that share
+the same `group_number` byte.  The receiver must buffer the
+fragments (in arrival order, ideally with a fragment counter
+somewhere in the DF payload) and concatenate before decoding.  We
+have no DALI hardware in the current setup, so the codec and
+driver deliberately assume single-frame + `sub_address` semantics.
+When DALI lands, add a `dev_type`-aware routing layer in
+`DataReportV38.try_decode` that peels off byte 3 as `group_number`
+for DALI devices and stitches fragments in the driver's
+`request_relay_data_v38`.
+

@@ -4,6 +4,41 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12v — Windows sort by POSITION on the floor plan
+
+### Root cause of "no difference on Task 2"
+
+Previous sort used `_windowCardinalLetter(angle_deg)` which infers
+the cardinal from the window's **drag angle**.  That's ambiguous:
+horizontal windows on the NORTH wall and on the SOUTH wall both
+have `angle_deg = 0` (or 180 depending on drag direction), so any
+given window's cardinal tag was essentially random.  The sort was
+running correctly but grouped windows by an unhelpful angle-based
+tag rather than by which wall the operator actually sees them on.
+
+### Fix
+
+- New helper `_windowPositionalCardinalLetter(w, f)` — derives the
+  cardinal from the window's ABSOLUTE POSITION relative to the
+  floor's centre (larger `|dx|` → E/W; larger `|dy|` → N/S).  DXF
+  screen convention: smaller `y_m` = NORTH.  Removed the old
+  `_windowCardinalLetter(deg)` (was only used by the panel).
+- `_defaultWindowName` and `_sortedWindowsForDisplay` now use the
+  positional helper, so:
+  * Auto-names (`N_W1`, `E_W1`, …) reflect the wall the window is
+    visibly attached to.
+  * The Windows-panel list groups strictly by that same visible
+    wall, in compass order N → E → S → W.
+- Simulated with a 40 × 25 floor + 6 windows spread around all
+  four walls in mixed insertion order: sort produced
+  `N, N, E, E, S, W` as expected.
+
+### Tests
+
+- **462/462 pytest green.**
+- Embedded `<script>` parses.
+
+
 ## 2026-02-12u — Sun light source + windows compass-order sort
 
 ### What shipped

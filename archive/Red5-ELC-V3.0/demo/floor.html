@@ -1258,6 +1258,19 @@ function moduleLabelFor(devTypeName, scu, addr) {
   return devTypeName;
 }
 
+// Rewrite a full device_id string (``TYPE/scu/addr/channel``) so the
+// TYPE part reflects what the operator typed in Settings.  Used
+// wherever we surface a device_id verbatim in the UI -- element
+// editor header, canvas labels, tree view leaves, toasts.  Silently
+// passes through anything that isn't a 4-segment DeviceId.
+function displayDeviceId(did) {
+  if (!did) return did;
+  const p = String(did).split('/');
+  if (p.length !== 4) return did;
+  const [t, scu, addr, ch] = p;
+  return `${moduleLabelFor(t, Number(scu), Number(addr))}/${scu}/${addr}/${ch}`;
+}
+
 // -------- Utilities --------
 async function api(method, path, body) {
   const opts = { method, headers: {} };
@@ -2766,7 +2779,7 @@ function openElementEditor(deviceId) {
   if (!el) return;
   state.editingDeviceId = deviceId;
   document.getElementById('element-editor').style.display = 'block';
-  document.getElementById('ee-device').textContent = deviceId;
+  document.getElementById('ee-device').textContent = displayDeviceId(deviceId);
   document.getElementById('ee-type').value = el.type;
   document.getElementById('ee-lux').value = el.max_lux;
   document.getElementById('ee-beam').value = el.beam_radius_m;

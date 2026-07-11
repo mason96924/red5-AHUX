@@ -4,6 +4,20 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11c — Element-editor header respects Settings-typed name
+
+The "Editing X" header in the right-rail element editor was
+writing the raw replica-canonical device_id (``SRM_6S/0/2/1``)
+instead of the Settings-typed form (``SRM_6E/0/2/1``).  Added a
+new helper `displayDeviceId(did)` in `demo/floor.html` that
+rewrites the type segment through `moduleLabelFor()`, and wired
+the element-editor `#ee-device` label to it.  Same helper is now
+available for any other spot that surfaces a raw device_id
+verbatim (canvas labels, tree leaves, toasts).
+
+Verified live: element editor for the SRM_6E-typed module at
+address 2 now reads ``Editing SRM_6E/0/2/1``.  Pytest 458/458.
+
 ## 2026-02-11b — SRM_6E / SRM_6S aliasing fix (per-floor filter + label)
 
 ### Symptoms

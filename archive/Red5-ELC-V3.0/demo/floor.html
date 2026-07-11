@@ -6363,6 +6363,35 @@ function _sortedWindowsForDisplay(wins) {
   return arr;
 }
 
+// 2026-02-12w — Debug helper exposed on `window` so the operator
+// can paste `debugWindowSort()` into DevTools console and see
+// exactly which cardinal my classifier assigns to each window,
+// alongside the floor's dimensions.  If badges/sort look wrong on
+// the operator's screen, the output of this makes the mismatch
+// obvious.
+window.debugWindowSort = function () {
+  const f = state.currentFloor;
+  if (!f) { console.log('No floor loaded.'); return; }
+  console.log('Floor:', f.name, 'width_m=', f.width_m,
+              'height_m=', f.height_m,
+              '  centre = (' + ((f.width_m||0)/2).toFixed(2) +
+              ', ' + ((f.height_m||0)/2).toFixed(2) + ')');
+  const wins = f.windows || [];
+  console.table(wins.map((w, i) => ({
+    insertion_idx: i,
+    id: w.id.slice(0, 6),
+    x_m: (w.x_m || 0).toFixed(2),
+    y_m: (w.y_m || 0).toFixed(2),
+    angle_deg: (w.angle_deg || 0).toFixed(1),
+    cardinal: _windowPositionalCardinalLetter(w),
+    auto_name: _defaultWindowName(w, wins),
+    override: w.name || '',
+  })));
+  const sorted = _sortedWindowsForDisplay(wins);
+  console.log('Sorted display order:',
+    sorted.map(w => _windowDisplayName(w, wins)).join(', '));
+};
+
 // Multi-select state: window IDs currently ticked in the Windows panel.
 // Cleared on floor-switch (see selectFloor), preserved across panel
 // open/close so the operator can toggle the panel without losing their
@@ -6518,6 +6547,18 @@ function renderWindowsPanel() {
   const rowsHtml = _sortedWindowsForDisplay(wins).map((w, i) => {
     const displayName = _windowDisplayName(w, wins);
     const lenSuffix = `${(w.length_m || 0).toFixed(2)} m`;
+    // 2026-02-12w — show the derived cardinal as a subtle badge so
+    // the operator can see at a glance which wall the sort is
+    // grouping this window under.  Also serves as debug evidence
+    // that the classifier is doing the right thing.
+    const dirLetter = _windowPositionalCardinalLetter(w);
+    const dirBadge =
+      `<span class="wp-dir" data-testid="wp-dir-${i + 1}"` +
+      ` title="Cardinal wall inferred from window position on the floor plan"` +
+      ` style="font-family:var(--mono);font-size:9px;font-weight:700;` +
+             `color:#96d2ff;background:rgba(150,210,255,0.14);` +
+             `border:1px solid rgba(150,210,255,0.35);` +
+             `border-radius:3px;padding:1px 5px;flex-shrink:0">${dirLetter}</span>`;
     const selected = _isWinSelected(w.id);
     const rowBg = selected
       ? 'background:rgba(150,210,255,0.10);border-left:2px solid #96d2ff;'
@@ -6538,6 +6579,9 @@ function renderWindowsPanel() {
                  ` ${selected ? 'checked' : ''}` +
                  ` style="accent-color:#96d2ff;cursor:pointer" />` +
         `</label>` +
+        // Cardinal-wall badge (N/E/S/W) — visible evidence of the
+        // sort key and a handy at-a-glance orientation cue.
+        dirBadge +
         // Editable name input — SIBLING of the label so clicks actually
         // land here and don't bubble to the checkbox.
         `<input type="text" class="wp-name" data-wid="${w.id}"` +

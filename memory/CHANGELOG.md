@@ -4,6 +4,39 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12w — Windows panel: visible cardinal badge + debug helper
+
+### Why
+
+Operator still reports "sort has no effect" despite the position-
+based classifier being unit-verified.  Two most likely reasons:
+- the floor's `width_m`/`height_m` are 0 or missing at the moment
+  the panel renders, so every window classifies as the same
+  cardinal, OR
+- the browser is caching an older `floor.html` despite the
+  `Cache-Control: no-store` headers on that route (unlikely but
+  possible with a reverse proxy in the way).
+
+### What shipped
+
+- Each row in the Windows panel now shows a **small pill badge**
+  (`data-testid="wp-dir-{i}"`) with the derived cardinal letter
+  `N`/`E`/`S`/`W`.  If the sort looks wrong, the badges reveal
+  whether the classifier picked the wrong cardinal (fixable) or
+  the sort is running but the rows disagree (would indicate a
+  render bug).
+- New debug helper `window.debugWindowSort()`: paste it into the
+  browser's DevTools console and it dumps a table of every
+  window's `x_m`, `y_m`, `angle_deg`, computed `cardinal`,
+  `auto_name`, and any operator override — plus the floor's
+  centre.  Makes any classifier mismatch obvious.
+
+### Tests
+
+- **462/462 pytest green.**
+- Embedded `<script>` parses.
+
+
 ## 2026-02-12v — Windows sort by POSITION on the floor plan
 
 ### Root cause of "no difference on Task 2"

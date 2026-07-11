@@ -4,6 +4,29 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12z — SRM sidebar: SCU ID + IP header strip
+
+### What shipped
+
+- New info strip at the top of the right-hand SRM Devices rail
+  (`#srm-scu-info`, sits immediately below the `<h2>SRM Devices>`
+  heading, above the assign-bar).  Shows:
+  * The currently selected **SCU bus ID** (0–3, in accent colour).
+  * The **IP / hostname** stored for that SCU (from the per-SCU
+    `elc.floor.scu.<n>.host` localStorage key, mirrored into the
+    toolbar's `#scu-host` input).
+- Live-updated via `_updateSrmScuInfo()` on: SCU picker change,
+  IP field `input` + `blur`, initial project hydration.  Empty
+  hostname shows as a muted "unset" badge so the operator can
+  tell at a glance whether the SCU has a link target configured.
+- Testids: `srm-scu-info`, `srm-scu-info-id`, `srm-scu-info-ip`.
+
+### Tests
+
+- **462/462 pytest green.**
+- Embedded `<script>` parses.
+
+
 ## 2026-02-12y — Sort by name + building slabs at 10% opacity
 
 ### What shipped

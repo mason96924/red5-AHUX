@@ -1051,6 +1051,25 @@
   <!-- ============ RIGHT RAIL: FIXTURE INSPECTOR ============ -->
   <aside class="right">
     <h2>SRM Devices <span id="dev-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
+    <!-- 2026-02-12z — SCU ID + IP summary strip.  Live-updated by
+         _updateSrmScuInfo(): reflects whatever SCU is currently
+         picked in the top toolbar (#scu-picker) plus its stored
+         IP/hostname (#scu-host).  Purely informational — click the
+         values to jump-scroll the toolbar controls into view. -->
+    <div id="srm-scu-info" data-testid="srm-scu-info"
+         style="display:flex;justify-content:space-between;align-items:center;
+                gap:8px;padding:6px 10px;margin-bottom:8px;
+                background:var(--panel-2);border:1px solid var(--line);
+                border-radius:6px;font-family:var(--mono);font-size:11px">
+      <span style="color:var(--muted);letter-spacing:.06em;text-transform:uppercase;font-size:10px">SCU</span>
+      <span id="srm-scu-info-id"   data-testid="srm-scu-info-id"
+            style="color:var(--accent);font-weight:700">–</span>
+      <span style="color:var(--line)">·</span>
+      <span id="srm-scu-info-ip"   data-testid="srm-scu-info-ip"
+            style="color:var(--text);flex:1;text-align:right;
+                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="Current IP / hostname for this SCU bus (edit in the top toolbar)">unset</span>
+    </div>
     <div class="assign-bar" data-testid="assign-bar" hidden>
       <div class="assign-count" id="assign-count">0 selected</div>
       <div class="assign-actions">
@@ -5383,6 +5402,7 @@ document.getElementById('btn-discover').onclick = () => discoverSrms();
   const _syncIpField = () => {
     const n = sel.value;
     if (ipInput) ipInput.value = localStorage.getItem(`elc.floor.scu.${n}.host`) || '';
+    _updateSrmScuInfo();
   };
   // Hydrate first, THEN sync (so the input shows the project.json
   // value on first paint).
@@ -5399,13 +5419,32 @@ document.getElementById('btn-discover').onclick = () => discoverSrms();
       const v = (ipInput.value || '').trim();
       if (v) localStorage.setItem(key, v);
       else localStorage.removeItem(key);
+      _updateSrmScuInfo();
     };
     ipInput.addEventListener('blur', _save);
+    ipInput.addEventListener('input', _updateSrmScuInfo);
     ipInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); ipInput.blur(); }
     });
   }
 })();
+
+// 2026-02-12z — Right-rail SCU header updater.
+// Reads the currently-selected SCU picker + IP host input and
+// paints them into the SRM sidebar's info strip.  Called on every
+// SCU change, IP blur, and initial hydration.
+function _updateSrmScuInfo() {
+  const sel   = document.getElementById('scu-picker');
+  const inp   = document.getElementById('scu-host');
+  const idEl  = document.getElementById('srm-scu-info-id');
+  const ipEl  = document.getElementById('srm-scu-info-ip');
+  if (!idEl || !ipEl) return;
+  const scu = sel ? sel.value : '–';
+  const ip  = ((inp && inp.value) || '').trim();
+  idEl.textContent = String(scu);
+  ipEl.textContent = ip || 'unset';
+  ipEl.style.color = ip ? 'var(--text)' : 'var(--muted)';
+}
 
 // Escape closes whichever floor/schedule modal is open (the module
 // modal already has its own Escape handler earlier in this script).

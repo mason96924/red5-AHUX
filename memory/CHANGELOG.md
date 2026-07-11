@@ -4,6 +4,29 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12n — Sun-compass 50 % translucent
+
+### What shipped
+
+- `#sun-compass` background alpha 0.85 → **0.50**.  Everything
+  behind the compass (2.5D building panel, sun-ray arrow, floor
+  slabs) is now visible through the widget.
+
+### Why
+
+Operator: "Make the Sun path section transparent say about 50 %
+so that the sun ray can be seen in the building image section in
+the left hand side bar."
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright: `#sun-compass` computed `background` returns
+  `rgba(16, 20, 26, 0.5)`; sun-ray overlay is visible through the
+  compass area on the screenshot.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12m — Windows panel simplified · LIVE/HOUR buttons · building sun-ray
 
 ### What shipped

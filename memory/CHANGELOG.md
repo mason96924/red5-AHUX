@@ -4,6 +4,50 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12c — Windows panel: multi-select + batch blinds
+
+### What shipped
+
+- **Per-row checkbox** and a sticky **batch bar** at the top of the
+  Windows panel:
+    - `Select all` checkbox (drives every row on/off).
+    - `N of M selected` live counter.
+    - `Blinds →` batch slider (0-100%, step 1) — disabled when
+      nothing is selected; defaults to the average blind level of
+      the current selection.
+- **Selected rows** are visually highlighted with a subtle
+  `rgba(255,140,20,0.10)` background + 2 px accent left-border.
+- **Batch slider drag** updates *only* the ticked windows in one
+  pass, syncs each row's individual Blinds slider + value in-place
+  (no re-render, focus preserved), repaints the canvas, and saves
+  on release.
+- **Selection state** (`state.windowSel`, a `Set` of window IDs)
+  persists while the panel is toggled open/closed, and clears
+  automatically on floor-switch (`selectFloor`).  Stale IDs are
+  pruned every render, so deleting a window doesn't leave dead
+  ticks behind.
+
+### Why
+
+Operator: "One or more (or all) windows in the windows list could
+be highlighted and the open operation could be applied to all."
+Common daylight-simulation ops (raise all blinds at dusk, close
+all south-facing at noon) previously required N slider drags —
+now it's one.
+
+### Tests
+
+- 458/458 pytest still green (`python -m pytest`).
+- Manual Playwright smoke on 3-window floor:
+    - Initial: `0 of 3 selected`, batch slider disabled.
+    - Tick W1 + W3 → `2 of 3 selected`, batch slider enabled at
+      the (10+90)/2 = 50% average.
+    - Batch → 75% → W1=0.75, W2 unchanged=0.50, W3=0.75 (persisted).
+    - `Select all` → 3 of 3.
+    - Batch → 0% → all three saved at 0.00 server-side.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12b — Windows panel: length + angle sliders, canvas drag
 
 ### What shipped

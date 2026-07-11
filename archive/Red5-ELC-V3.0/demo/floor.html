@@ -1686,6 +1686,7 @@ async function selectFloor(id) {
   _recentreLegacyPolylines(full);
   state.currentFloor = full;
   state.selectedDeviceIds.clear();
+  if (state.windowSel) state.windowSel.clear();
   closeElementEditor();
   document.getElementById('stage-empty').style.display = 'none';
   await renderFloorDetails();
@@ -5633,6 +5634,14 @@ function _windowCardinal(deg) {
   return best.name;
 }
 
+// Multi-select state: window IDs currently ticked in the Windows panel.
+// Cleared on floor-switch (see selectFloor), preserved across panel
+// open/close so the operator can toggle the panel without losing their
+// selection.
+state.windowSel = new Set();
+
+function _isWinSelected(id) { return state.windowSel && state.windowSel.has(id); }
+
 function renderWindowsPanel() {
   const body = document.getElementById('wp-body');
   if (!body) return;
@@ -5648,31 +5657,92 @@ function renderWindowsPanel() {
       '</div>';
     return;
   }
+  // Prune selection of any IDs no longer present (e.g. after a delete).
+  for (const id of Array.from(state.windowSel)) {
+    if (!wins.find(w => w.id === id)) state.windowSel.delete(id);
+  }
   // Cap length slider at 2× the current floor's longer dimension so
   // it always covers the plausible range without being unwieldy.
   const maxLen = Math.max(
     2, 2 * Math.max(f.width_m || 0, f.height_m || 0));
-  body.innerHTML = wins.map((w, i) => {
+
+  const selCount = state.windowSel.size;
+  const allChecked = selCount === wins.length;
+  // Average blind level of the current selection, for the batch slider
+  // default position when there are 1+ selected.
+  const selWins = wins.filter(w => _isWinSelected(w.id));
+  const avgBlindPct = selWins.length
+    ? Math.round(
+        (selWins.reduce((s, w) => s + (w.blind_level || 0), 0) / selWins.length)
+        * 100)
+    : 0;
+  const batchDisabled = selCount === 0;
+
+  // ----- Batch bar (sticky top): Select-all + N-selected + batch slider
+  const rowSliderStyle =
+    'display:flex;align-items:center;gap:6px;margin-top:3px';
+  const capStyle =
+    'font-size:9px;color:var(--muted);width:44px;flex-shrink:0';
+  const valStyle =
+    'min-width:44px;text-align:right;font-family:var(--mono);color:var(--muted)';
+  const sliderStyle =
+    'flex:1;accent-color:var(--accent);min-width:0';
+
+  const batchBar =
+    `<div class="wp-batch" data-testid="wp-batch"` +
+    ` style="position:sticky;top:0;background:#10141a;z-index:1;` +
+           `padding:6px 2px 8px;border-bottom:1px solid var(--line);` +
+           `margin-bottom:2px;font-size:11px">` +
+      `<div style="display:flex;align-items:center;justify-content:space-between;` +
+                  `margin-bottom:4px">` +
+        `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;` +
+                     `font-family:var(--mono);color:var(--text);margin:0">` +
+          `<input type="checkbox" id="wp-select-all"` +
+                 ` data-testid="wp-select-all"` +
+                 ` ${allChecked ? 'checked' : ''}` +
+                 ` style="accent-color:var(--accent);cursor:pointer" />` +
+          `Select all` +
+        `</label>` +
+        `<span data-testid="wp-sel-count"` +
+              ` style="font-family:var(--mono);color:var(--muted);font-size:10px">` +
+          `${selCount} of ${wins.length} selected` +
+        `</span>` +
+      `</div>` +
+      `<div style="${rowSliderStyle};opacity:${batchDisabled ? '0.35' : '1'}">` +
+        `<span style="${capStyle}" title="Set blinds on every ticked window">Blinds →</span>` +
+        `<input type="range" min="0" max="100" step="1" value="${avgBlindPct}"` +
+               ` id="wp-batch-blind" data-testid="wp-batch-blind"` +
+               ` ${batchDisabled ? 'disabled' : ''}` +
+               ` style="${sliderStyle}" />` +
+        `<span id="wp-batch-blind-val" data-testid="wp-batch-blind-val"` +
+              ` style="${valStyle}">${avgBlindPct}%</span>` +
+      `</div>` +
+    `</div>`;
+
+  const rowsHtml = wins.map((w, i) => {
     const pct = Math.round((w.blind_level || 0) * 100);
     const dir = _windowCardinal(w.angle_deg);
     const label = `W${i + 1} · ${dir} · ${(w.length_m || 0).toFixed(2)} m`;
     const ang  = Math.round(((w.angle_deg || 0) + 540) % 360 - 180);
-    const rowSliderStyle =
-      'display:flex;align-items:center;gap:6px;margin-top:3px';
-    const capStyle =
-      'font-size:9px;color:var(--muted);width:44px;flex-shrink:0';
-    const valStyle =
-      'min-width:44px;text-align:right;font-family:var(--mono);color:var(--muted)';
-    const sliderStyle =
-      'flex:1;accent-color:var(--accent);min-width:0';
+    const selected = _isWinSelected(w.id);
+    const rowBg = selected
+      ? 'background:rgba(255,140,20,0.10);border-left:2px solid var(--accent);'
+      : 'border-left:2px solid transparent;';
     return (
-      `<div class="wp-row" data-wid="${w.id}"` +
+      `<div class="wp-row${selected ? ' wp-row-selected' : ''}" data-wid="${w.id}"` +
       ` data-testid="wp-row-${i + 1}"` +
-      ` style="padding:8px 2px;border-bottom:1px solid var(--line);font-size:11px">` +
+      ` style="padding:6px 4px 8px;border-bottom:1px solid var(--line);` +
+             `font-size:11px;${rowBg}">` +
         `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">` +
-          `<span class="wp-label" data-wid="${w.id}"` +
-                ` data-testid="wp-label-${i + 1}"` +
-                ` style="font-family:var(--mono);color:var(--text)">${label}</span>` +
+          `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0">` +
+            `<input type="checkbox" class="wp-sel" data-wid="${w.id}"` +
+                   ` data-testid="wp-sel-${i + 1}"` +
+                   ` ${selected ? 'checked' : ''}` +
+                   ` style="accent-color:var(--accent);cursor:pointer" />` +
+            `<span class="wp-label" data-wid="${w.id}"` +
+                  ` data-testid="wp-label-${i + 1}"` +
+                  ` style="font-family:var(--mono);color:var(--text)">${label}</span>` +
+          `</label>` +
           `<button class="wp-del" data-wid="${w.id}"` +
                  ` data-testid="wp-del-${i + 1}" title="Delete window"` +
                  ` style="background:none;border:0;color:var(--bad);` +
@@ -5712,6 +5782,10 @@ function renderWindowsPanel() {
       `</div>`
     );
   }).join('');
+
+  body.innerHTML = batchBar + rowsHtml;
+
+  // Wire per-row handlers.
   for (const el of body.querySelectorAll('.wp-blind')) {
     el.addEventListener('input', _onBlindSliderInput);
     el.addEventListener('change', _saveWindows);
@@ -5727,6 +5801,54 @@ function renderWindowsPanel() {
   for (const el of body.querySelectorAll('.wp-del')) {
     el.addEventListener('click', _onDeleteWindow);
   }
+  for (const el of body.querySelectorAll('.wp-sel')) {
+    el.addEventListener('change', _onWindowSelToggle);
+  }
+  const selAll = body.querySelector('#wp-select-all');
+  if (selAll) selAll.addEventListener('change', _onWindowSelAllToggle);
+  const batchBlind = body.querySelector('#wp-batch-blind');
+  if (batchBlind) {
+    batchBlind.addEventListener('input', _onBatchBlindInput);
+    batchBlind.addEventListener('change', _saveWindows);
+  }
+}
+
+function _onWindowSelToggle(ev) {
+  const wid = ev.target.dataset.wid;
+  if (ev.target.checked) state.windowSel.add(wid);
+  else state.windowSel.delete(wid);
+  renderWindowsPanel();
+}
+
+function _onWindowSelAllToggle(ev) {
+  const wins = (state.currentFloor && state.currentFloor.windows) || [];
+  if (ev.target.checked) {
+    state.windowSel = new Set(wins.map(w => w.id));
+  } else {
+    state.windowSel.clear();
+  }
+  renderWindowsPanel();
+}
+
+function _onBatchBlindInput(ev) {
+  const val = (parseInt(ev.target.value, 10) || 0) / 100;
+  const f = state.currentFloor; if (!f) return;
+  const wins = f.windows || [];
+  let n = 0;
+  for (const w of wins) {
+    if (!_isWinSelected(w.id)) continue;
+    if (val > 0.01) w._lastBlind = val;
+    w.blind_level = val;
+    // Update per-row slider + value in-place (no re-render, keeps focus).
+    const rowSlider = document.querySelector(`.wp-blind[data-wid="${w.id}"]`);
+    if (rowSlider) rowSlider.value = Math.round(val * 100);
+    const rowVal = document.querySelector(`.wp-blind-val[data-wid="${w.id}"]`);
+    if (rowVal) rowVal.textContent = `${Math.round(val * 100)}%`;
+    n++;
+  }
+  const batchVal = document.getElementById('wp-batch-blind-val');
+  if (batchVal) batchVal.textContent = `${Math.round(val * 100)}%`;
+  if (n > 0) paintCanvas();
 }
 
 function _onBlindSliderInput(ev) {

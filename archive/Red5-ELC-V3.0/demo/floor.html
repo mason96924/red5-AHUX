@@ -148,7 +148,7 @@
   .building-2d5 .b25-canvas > img {
     position: relative;
     z-index: 2;
-    opacity: 0.25;              /* 25% — slabs still selectable, sun wash reads through */
+    opacity: 0.10;              /* 10% per operator ask — sun wash reads through, slabs still selectable */
   }
   /* SVG interactive slabs (dynamic, one per floor) */
   .building-2d5 .slab {
@@ -6385,21 +6385,23 @@ function _windowDisplayName(w, wins) {
   return (w.name && w.name.trim()) || _defaultWindowName(w, wins);
 }
 
-// 2026-02-12u — Compass-order sort key for the windows list.
-// Operator asked for the list to be grouped by cardinal direction:
-// N first, then E, then S, then W (clockwise from north).  Within
-// a group we preserve insertion order so auto-name suffixes (_W1,
-// _W2, …) stay contiguous.
-const _WINDOW_DIR_RANK = { N: 0, E: 1, S: 2, W: 3 };
+// 2026-02-12y — Windows-panel display sort: alphabetical by
+// display name, natural collation (so `_W2` comes before `_W10`).
+// Operator ask: "Whenever Windows-Blinds modal is opened, make it
+// sort by the name first."  Renamed windows sort by their custom
+// name; unrenamed windows sort by their auto default (e.g. `N_W1`,
+// `N_W2`, `E_W1`, `S_W1`, `W_W1`).  Insertion order is the final
+// tiebreaker for absolute stability across renders.
+const _NAME_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true, sensitivity: 'base',
+});
 function _sortedWindowsForDisplay(wins) {
   const arr = (wins || []).slice();
-  // Stable-decorated sort: index is the original insertion index,
-  // preserved as the tiebreaker inside a direction group.
   arr.forEach((w, i) => { w.__ord = i; });
   arr.sort((a, b) => {
-    const ra = _WINDOW_DIR_RANK[_windowPositionalCardinalLetter(a)] ?? 99;
-    const rb = _WINDOW_DIR_RANK[_windowPositionalCardinalLetter(b)] ?? 99;
-    return (ra - rb) || (a.__ord - b.__ord);
+    const na = _windowDisplayName(a, wins);
+    const nb = _windowDisplayName(b, wins);
+    return _NAME_COLLATOR.compare(na, nb) || (a.__ord - b.__ord);
   });
   arr.forEach(w => { delete w.__ord; });
   return arr;

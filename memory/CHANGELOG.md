@@ -4,6 +4,31 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12y — Sort by name + building slabs at 10% opacity
+
+### What shipped
+
+- **Windows-panel sort is now alphabetical by display name**
+  with **natural (numeric-aware) collation** via `Intl.Collator`
+  (`{numeric:true}`).  So `N_W2` correctly precedes `N_W10`
+  instead of being placed after it.  Renamed windows sort by
+  their custom name.  Insertion order is the final tiebreaker.
+  Result on a mixed set:
+  `E_W1 , E_W2 , Lobby , N_W1 , N_W2 , N_W10 , S_W1 , W_W1`.
+- **Building slabs opacity dropped from 0.25 → 0.10** per operator
+  ask: the panel was reading too dark against the sun wash.  Sun
+  wash + moving light source now clearly bleed through the block;
+  slabs remain clickable (overlay still `pointer-events:none`,
+  slabs still at `z-index:2`).
+
+### Tests
+
+- **462/462 pytest green.**
+- Node natural-sort simulation: `E_W1 , E_W2 , Lobby , N_W1 ,
+  N_W2 , N_W10 , S_W1 , W_W1` — as expected.
+- Embedded `<script>` parses.
+
+
 ## 2026-02-12x — Windows: canvas Align H/V + marquee (swipe) select
 
 ### What shipped

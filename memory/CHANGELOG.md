@@ -4,6 +4,35 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12r — Windows panel: Align H / Align V
+
+### What shipped
+
+- **`Align H` / `Align V` buttons** added to the Windows-panel
+  sticky batch bar (`demo/floor.html`, `renderWindowsPanel`).
+  Visible only when 2+ windows are ticked (`selCount >= 2`),
+  mirroring the fixture align controls (`#align-h` / `#align-v`).
+- **`alignSelectedWindows(axis)`** — new function next to
+  `renderWindowsPanel`.  First-selected window is the anchor
+  (`state.windowSel` is a `Set`, insertion-ordered → `[0]` =
+  first tick).  `axis='y'` snaps all other selected windows'
+  `y_m` to the anchor's `y_m` (Align H → common horizontal line);
+  `axis='x'` snaps `x_m` (Align V → common vertical line).
+  No-op if the delta is < 1e-6 for every window ("Already
+  aligned to the anchor" toast).  Otherwise `paintCanvas()` +
+  `_saveWindows()` (persists via `PATCH /floors/{id}` with
+  updated `windows` payload) + toast reporting count + axis.
+- Test IDs: `wp-align-wrap`, `wp-align-h`, `wp-align-v`.
+
+### Tests
+
+- **458/458 pytest green** (`python -m pytest` in `.venv`).
+- Embedded `<script>` block parses cleanly (Node
+  `new Function(js)` smoke check).
+- No new backend routes — reuses the existing
+  `PATCH /floors/{id}` windows persistence path.
+
+
 ## 2026-02-12q — Building panel: whole-area sun intensity fill
 
 ### What shipped

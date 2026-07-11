@@ -6347,7 +6347,7 @@ function renderWindowsPanel() {
            `padding:6px 2px 8px;border-bottom:1px solid var(--line);` +
            `margin-bottom:2px;font-size:11px">` +
       `<div style="display:flex;align-items:center;justify-content:space-between;` +
-                  `margin-bottom:4px">` +
+                  `margin-bottom:4px;gap:6px;flex-wrap:wrap">` +
         `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;` +
                      `font-family:var(--mono);color:var(--text);margin:0">` +
           `<input type="checkbox" id="wp-select-all"` +
@@ -6356,6 +6356,21 @@ function renderWindowsPanel() {
                  ` style="accent-color:var(--accent);cursor:pointer" />` +
           `Select all` +
         `</label>` +
+        // Phase 6.1g parity — align controls for Windows, visible only
+        // when 2+ windows are selected.  Align H = same y_m (centres
+        // on a horizontal line); Align V = same x_m (centres on a
+        // vertical line).  FIRST-selected window is the anchor
+        // (matches the fixture align semantics at line 4544).
+        `<span id="wp-align-wrap" data-testid="wp-align-wrap"` +
+              ` style="display:${selCount >= 2 ? 'inline-flex' : 'none'};` +
+                     `gap:4px;align-items:center">` +
+          `<button id="wp-align-h" data-testid="wp-align-h"` +
+                 ` title="Align selected windows to the FIRST-selected window's Y (same horizontal line)"` +
+                 ` style="${nudgeBtnStyle};padding:2px 8px">Align H</button>` +
+          `<button id="wp-align-v" data-testid="wp-align-v"` +
+                 ` title="Align selected windows to the FIRST-selected window's X (same vertical line)"` +
+                 ` style="${nudgeBtnStyle};padding:2px 8px">Align V</button>` +
+        `</span>` +
         `<span data-testid="wp-sel-count"` +
               ` style="font-family:var(--mono);color:var(--muted);font-size:10px">` +
           `${selCount} of ${wins.length} selected` +
@@ -6463,6 +6478,46 @@ function renderWindowsPanel() {
   }
   const selAll = body.querySelector('#wp-select-all');
   if (selAll) selAll.addEventListener('change', _onWindowSelAllToggle);
+  const alignH = body.querySelector('#wp-align-h');
+  if (alignH) alignH.addEventListener('click', () => alignSelectedWindows('y'));
+  const alignV = body.querySelector('#wp-align-v');
+  if (alignV) alignV.addEventListener('click', () => alignSelectedWindows('x'));
+}
+
+// Align every selected window's centre on a common horizontal
+// (``axis`` = 'y') or vertical (``axis`` = 'x') line.  The FIRST
+// selected window is the anchor -- its x_m (for vertical) or y_m
+// (for horizontal) becomes the shared target; all other selected
+// windows move to match.  Mirrors the fixture alignSelected() at
+// line 4544 (2026-02-12r operator ask: "Align H and Align V
+// should be available for Windows as well").
+async function alignSelectedWindows(axis) {
+  const f = state.currentFloor;
+  if (!f || !Array.isArray(f.windows)) return;
+  const selIds = Array.from(state.windowSel || []);
+  if (selIds.length < 2) return;
+  // JS Sets preserve insertion order -- selIds[0] is the FIRST-selected.
+  const anchor = f.windows.find(w => w.id === selIds[0]);
+  if (!anchor) return;
+  const target = (axis === 'y') ? anchor.y_m : anchor.x_m;
+  let moved = 0;
+  for (const wid of selIds) {
+    if (wid === anchor.id) continue;
+    const w = f.windows.find(x => x.id === wid);
+    if (!w) continue;
+    const old = (axis === 'y') ? w.y_m : w.x_m;
+    if (Math.abs(target - old) < 1e-6) continue;
+    if (axis === 'y') w.y_m = target;
+    else              w.x_m = target;
+    moved++;
+  }
+  if (moved === 0) {
+    toast('Already aligned to the anchor');
+    return;
+  }
+  paintCanvas();
+  await _saveWindows();
+  toast(`Aligned ${moved} window(s) to ${axis === 'y' ? 'horizontal' : 'vertical'} anchor`);
 }
 
 function _onWindowSelToggle(ev) {

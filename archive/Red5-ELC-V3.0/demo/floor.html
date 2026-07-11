@@ -982,17 +982,23 @@
                style="width:100%;accent-color:#ffb020;margin-top:4px;
                       display:block" />
         <div style="display:flex;justify-content:space-between;
-                    align-items:center;margin-top:2px">
-          <span style="font-size:8px;color:var(--muted)">Hour</span>
-          <button id="sun-compass-now" data-testid="sun-compass-now"
-                  style="background:#1a1f28;border:1px solid var(--line);
-                         color:var(--muted);cursor:pointer;
-                         padding:1px 7px;font-family:var(--mono);
-                         font-size:8px;line-height:1;border-radius:3px;
+                    align-items:center;margin-top:2px;gap:4px">
+          <button id="sun-compass-live-btn" data-testid="sun-compass-live-btn"
+                  style="flex:1;background:#1a2028;
+                         border:1px solid #ffb020;color:#ffb020;
+                         cursor:pointer;padding:2px 6px;
+                         font-family:var(--mono);font-size:9px;
+                         line-height:1;border-radius:3px;
                          letter-spacing:.08em"
-                  title="Return the compass to live wall-clock time">
-            NOW
-          </button>
+                  title="Wall-clock live mode">LIVE</button>
+          <button id="sun-compass-hour-btn" data-testid="sun-compass-hour-btn"
+                  style="flex:1;background:#1a1f28;
+                         border:1px solid var(--line);color:var(--muted);
+                         cursor:pointer;padding:2px 6px;
+                         font-family:var(--mono);font-size:9px;
+                         line-height:1;border-radius:3px;
+                         letter-spacing:.08em"
+                  title="Play the sun path hour-by-hour">▶ HOUR</button>
         </div>
       </div>
     </div>
@@ -5505,6 +5511,8 @@ function _renderSunCompass() {
       hourSl.value = String(d.getHours() * 60 + d.getMinutes());
     }
   }
+  _syncSunCompassButtons();
+  _renderBuildingSunRay();
 }
 
 // Wire the scrubber + NOW button once, on script load.  Uses the
@@ -5512,8 +5520,9 @@ function _renderSunCompass() {
 // direct-beam sim and the compass are always driven by a single
 // clock.  Default = live (ambientScrub === null).
 (function _wireSunCompassScrubber() {
-  const slider = document.getElementById('sun-compass-hour');
-  const nowBtn = document.getElementById('sun-compass-now');
+  const slider  = document.getElementById('sun-compass-hour');
+  const liveBtn = document.getElementById('sun-compass-live-btn');
+  const hourBtn = document.getElementById('sun-compass-hour-btn');
   if (slider) {
     slider.addEventListener('input', (ev) => {
       const mins = parseInt(ev.target.value, 10) || 0;
@@ -5523,16 +5532,134 @@ function _renderSunCompass() {
         Math.floor(mins / 60), mins % 60, 0,
       );
       state.ambientScrub = scrubbed.toISOString();
+      _stopSunHourPlay();
+      _syncSunCompassButtons();
       _fetchAmbient(state.ambientScrub);
     });
   }
-  if (nowBtn) {
-    nowBtn.addEventListener('click', () => {
+  if (liveBtn) {
+    liveBtn.addEventListener('click', () => {
       state.ambientScrub = null;
+      _stopSunHourPlay();
+      _syncSunCompassButtons();
       _fetchAmbient(null);
     });
   }
+  if (hourBtn) {
+    hourBtn.addEventListener('click', () => {
+      // Toggle hour-by-hour playback of the current day.
+      if (state.sunHourPlayer) { _stopSunHourPlay(); }
+      else                     { _startSunHourPlay(); }
+    });
+  }
 })();
+
+// Advance one hour every 1.2 s.  Wraps 23→0.
+state.sunHourPlayer = null;
+function _startSunHourPlay() {
+  const slider = document.getElementById('sun-compass-hour');
+  if (!slider) return;
+  state.sunHourPlayer = setInterval(() => {
+    const cur = parseInt(slider.value, 10) || 0;
+    const hr = Math.floor(cur / 60);
+    const next = ((hr + 1) % 24) * 60;
+    slider.value = String(next);
+    const now = new Date();
+    const scrubbed = new Date(
+      now.getFullYear(), now.getMonth(), now.getDate(),
+      Math.floor(next / 60), 0, 0,
+    );
+    state.ambientScrub = scrubbed.toISOString();
+    _fetchAmbient(state.ambientScrub);
+  }, 1200);
+  _syncSunCompassButtons();
+}
+function _stopSunHourPlay() {
+  if (state.sunHourPlayer) {
+    clearInterval(state.sunHourPlayer);
+    state.sunHourPlayer = null;
+  }
+  _syncSunCompassButtons();
+}
+function _syncSunCompassButtons() {
+  const liveBtn = document.getElementById('sun-compass-live-btn');
+  const hourBtn = document.getElementById('sun-compass-hour-btn');
+  const isLive  = !state.ambientScrub && !state.sunHourPlayer;
+  const isPlay  = !!state.sunHourPlayer;
+  if (liveBtn) {
+    liveBtn.style.borderColor = isLive ? '#ffb020' : 'var(--line)';
+    liveBtn.style.color       = isLive ? '#ffb020' : 'var(--muted)';
+    liveBtn.style.background  = isLive ? '#1a2028' : '#1a1f28';
+  }
+  if (hourBtn) {
+    hourBtn.textContent       = isPlay ? '■ PAUSE' : '▶ HOUR';
+    hourBtn.style.borderColor = isPlay ? '#ffb020' : 'var(--line)';
+    hourBtn.style.color       = isPlay ? '#ffb020' : 'var(--muted)';
+    hourBtn.style.background  = isPlay ? '#1a2028' : '#1a1f28';
+  }
+}
+
+// Sun-ray overlay on the 2.5D Building diagram.  Draws an orange
+// ray from a point on the perimeter of the building panel toward
+// the panel centre, so operators can see at a glance which face
+// of the building the sun is hitting.  Hidden when sun is below
+// horizon.  Overlay is a single absolutely-positioned SVG that we
+// lazily append the first time the compass renders.
+function _renderBuildingSunRay() {
+  const a = state.ambient;
+  const host = document.getElementById('building-2d5');
+  if (!a || !host) return;
+  let overlay = document.getElementById('building-sun-ray');
+  if (!overlay) {
+    overlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    overlay.setAttribute('id', 'building-sun-ray');
+    overlay.setAttribute('data-testid', 'building-sun-ray');
+    overlay.setAttribute('viewBox', '-100 -100 200 200');
+    overlay.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    overlay.style.cssText =
+      'position:absolute;inset:0;pointer-events:none;z-index:4;' +
+      'opacity:0.9';
+    overlay.innerHTML =
+      '<defs>' +
+        '<marker id="sunArrow" viewBox="0 0 10 10" refX="10" refY="5"' +
+                ' markerWidth="5" markerHeight="5" orient="auto">' +
+          '<path d="M 0 0 L 10 5 L 0 10 Z" fill="#ffb020"/>' +
+        '</marker>' +
+      '</defs>' +
+      '<line id="building-sun-ray-line" x1="0" y1="0" x2="0" y2="0"' +
+            ' stroke="#ffb020" stroke-width="2.5" stroke-linecap="round"' +
+            ' opacity="0.9" marker-end="url(#sunArrow)"/>';
+    host.appendChild(overlay);
+  }
+  const line = overlay.querySelector('#building-sun-ray-line');
+  const alt = a.sun.altitude_deg || 0;
+  const az  = a.sun.azimuth_deg  || 0;
+  if (alt <= 0) {
+    if (line) { line.setAttribute('x2', '0'); line.setAttribute('y2', '0'); }
+    overlay.style.display = 'none';
+    return;
+  }
+  overlay.style.display = '';
+  // Convert azimuth to a vector: 0°=N=up (screen -Y).  Distance from
+  // building centre to the source of the ray = 80 (viewBox is 200-wide).
+  const azRad = (az * Math.PI) / 180;
+  const dirX = Math.sin(azRad);
+  const dirY = -Math.cos(azRad);
+  const R = 80;
+  // Start at the perimeter along direction TOWARD the sun.
+  const sx = dirX * R, sy = dirY * R;
+  // End near centre but stop short of it so the arrowhead is visible.
+  const inset = 22;
+  const ex = -dirX * inset, ey = -dirY * inset;
+  line.setAttribute('x1', sx.toFixed(1));
+  line.setAttribute('y1', sy.toFixed(1));
+  line.setAttribute('x2', ex.toFixed(1));
+  line.setAttribute('y2', ey.toFixed(1));
+  // Fade the ray at very low altitudes so the near-sunset look is
+  // more subtle.
+  const opacity = Math.min(1, alt / 30);
+  line.setAttribute('opacity', opacity.toFixed(2));
+}
 
 function _startAmbientPoll() {
   _fetchAmbient(null);
@@ -6255,10 +6382,8 @@ function renderWindowsPanel() {
     `</div>`;
 
   const rowsHtml = wins.map((w, i) => {
-    const pct = Math.round((w.blind_level || 0) * 100);
     const dir = _windowCardinal(w.angle_deg);
     const label = `W${i + 1} · ${dir} · ${(w.length_m || 0).toFixed(2)} m`;
-    const ang  = Math.round(((w.angle_deg || 0) + 540) % 360 - 180);
     const selected = _isWinSelected(w.id);
     const rowBg = selected
       ? 'background:rgba(150,210,255,0.10);border-left:2px solid #96d2ff;'
@@ -6266,99 +6391,32 @@ function renderWindowsPanel() {
     return (
       `<div class="wp-row${selected ? ' wp-row-selected' : ''}" data-wid="${w.id}"` +
       ` data-testid="wp-row-${i + 1}"` +
-      ` style="padding:6px 4px 8px;border-bottom:1px solid var(--line);` +
-             `font-size:11px;${rowBg}">` +
-        `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">` +
-          `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0">` +
-            `<input type="checkbox" class="wp-sel" data-wid="${w.id}"` +
-                   ` data-testid="wp-sel-${i + 1}"` +
-                   ` ${selected ? 'checked' : ''}` +
-                   ` style="accent-color:var(--accent);cursor:pointer" />` +
-            `<span class="wp-label" data-wid="${w.id}"` +
-                  ` data-testid="wp-label-${i + 1}"` +
-                  ` style="font-family:var(--mono);color:var(--text)">${label}</span>` +
-          `</label>` +
-          `<button class="wp-del" data-wid="${w.id}"` +
-                 ` data-testid="wp-del-${i + 1}" title="Delete window"` +
-                 ` style="background:none;border:0;color:var(--bad);` +
-                        `cursor:pointer;padding:0 4px;font-size:12px">✕</button>` +
-        `</div>` +
-        `<div style="${rowSliderStyle}">` +
-          `<span style="${capStyle}">Blinds</span>` +
-          `<input type="range" min="0" max="100" step="1" value="${pct}"` +
-                 ` class="wp-slider wp-blind" data-wid="${w.id}"` +
-                 ` data-testid="wp-slider-${i + 1}"` +
-                 ` style="${sliderStyle}" />` +
-          `<span class="wp-blind-val wp-value" data-wid="${w.id}"` +
-                ` data-testid="wp-value-${i + 1}"` +
-                ` style="${valStyle}">${pct}%</span>` +
-        `</div>` +
-        `<div style="${rowSliderStyle}">` +
-          `<span style="${capStyle}">Length</span>` +
-          `<input type="range" min="0.2" max="${maxLen.toFixed(2)}" step="0.05"` +
-                 ` value="${(w.length_m || 0.5).toFixed(2)}"` +
-                 ` class="wp-slider wp-length" data-wid="${w.id}"` +
-                 ` data-testid="wp-length-${i + 1}"` +
-                 ` style="${sliderStyle}" />` +
-          `<button class="wp-length-minus" data-wid="${w.id}"` +
-                 ` data-testid="wp-length-minus-${i + 1}"` +
-                 ` title="Shrink by 10 cm"` +
-                 ` style="${nudgeBtnStyle}">−</button>` +
-          `<span class="wp-length-val" data-wid="${w.id}"` +
-                ` data-testid="wp-length-val-${i + 1}"` +
-                ` style="${valStyle}">${(w.length_m || 0).toFixed(2)} m</span>` +
-          `<button class="wp-length-plus" data-wid="${w.id}"` +
-                 ` data-testid="wp-length-plus-${i + 1}"` +
-                 ` title="Grow by 10 cm"` +
-                 ` style="${nudgeBtnStyle}">+</button>` +
-        `</div>` +
-        `<div style="${rowSliderStyle}">` +
-          `<span style="${capStyle}">Angle</span>` +
-          `<input type="range" min="-180" max="180" step="1" value="${ang}"` +
-                 ` class="wp-slider wp-angle" data-wid="${w.id}"` +
-                 ` data-testid="wp-angle-${i + 1}"` +
-                 ` style="${sliderStyle}" />` +
-          `<span class="wp-angle-val" data-wid="${w.id}"` +
-                ` data-testid="wp-angle-val-${i + 1}"` +
-                ` style="${valStyle}">${ang}°</span>` +
-        `</div>` +
+      ` style="padding:6px 4px;border-bottom:1px solid var(--line);` +
+             `font-size:11px;${rowBg}` +
+             `display:flex;justify-content:space-between;align-items:center">` +
+        `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0;flex:1;min-width:0">` +
+          `<input type="checkbox" class="wp-sel" data-wid="${w.id}"` +
+                 ` data-testid="wp-sel-${i + 1}"` +
+                 ` ${selected ? 'checked' : ''}` +
+                 ` style="accent-color:#96d2ff;cursor:pointer;flex-shrink:0" />` +
+          `<span class="wp-label" data-wid="${w.id}"` +
+                ` data-testid="wp-label-${i + 1}"` +
+                ` style="font-family:var(--mono);color:var(--text);` +
+                       `overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>` +
+        `</label>` +
+        `<button class="wp-del" data-wid="${w.id}"` +
+               ` data-testid="wp-del-${i + 1}" title="Delete window"` +
+               ` style="background:none;border:0;color:var(--bad);` +
+                      `cursor:pointer;padding:0 4px;font-size:12px;` +
+                      `flex-shrink:0">✕</button>` +
       `</div>`
     );
   }).join('');
 
   body.innerHTML = batchBar + rowsHtml;
 
-  // Wire per-row handlers.
-  for (const el of body.querySelectorAll('.wp-blind')) {
-    el.addEventListener('input', _onBlindSliderInput);
-    el.addEventListener('change', _saveWindows);
-  }
-  for (const el of body.querySelectorAll('.wp-length')) {
-    el.addEventListener('input', _onLengthSliderInput);
-    el.addEventListener('change', _saveWindows);
-  }
-  for (const el of body.querySelectorAll('.wp-angle')) {
-    el.addEventListener('input', _onAngleSliderInput);
-    el.addEventListener('change', _saveWindows);
-  }
-  for (const el of body.querySelectorAll('.wp-del')) {
-    el.addEventListener('click', _onDeleteWindow);
-  }
-  for (const el of body.querySelectorAll('.wp-length-minus')) {
-    el.addEventListener('click', (e) => _onLengthNudge(e, -0.1));
-  }
-  for (const el of body.querySelectorAll('.wp-length-plus')) {
-    el.addEventListener('click', (e) => _onLengthNudge(e, +0.1));
-  }
-  const batchLenMinus = body.querySelector('#wp-batch-length-minus');
-  if (batchLenMinus) batchLenMinus.addEventListener('click', () => _onBatchLengthNudge(-0.1));
-  const batchLenPlus  = body.querySelector('#wp-batch-length-plus');
-  if (batchLenPlus)  batchLenPlus.addEventListener('click',  () => _onBatchLengthNudge(+0.1));
-  for (const el of body.querySelectorAll('.wp-sel')) {
-    el.addEventListener('change', _onWindowSelToggle);
-  }
-  const selAll = body.querySelector('#wp-select-all');
-  if (selAll) selAll.addEventListener('change', _onWindowSelAllToggle);
+  // Wire top-bar sliders (the only control surface now — per-row
+  // sliders were removed 2026-02-12m per operator request).
   const batchBlind = body.querySelector('#wp-batch-blind');
   if (batchBlind) {
     batchBlind.addEventListener('input', _onBatchBlindInput);
@@ -6374,6 +6432,19 @@ function renderWindowsPanel() {
     batchAngle.addEventListener('input', _onBatchAngleInput);
     batchAngle.addEventListener('change', _saveWindows);
   }
+  const batchLenMinus = body.querySelector('#wp-batch-length-minus');
+  if (batchLenMinus) batchLenMinus.addEventListener('click', () => _onBatchLengthNudge(-0.1));
+  const batchLenPlus  = body.querySelector('#wp-batch-length-plus');
+  if (batchLenPlus)  batchLenPlus.addEventListener('click',  () => _onBatchLengthNudge(+0.1));
+
+  for (const el of body.querySelectorAll('.wp-sel')) {
+    el.addEventListener('change', _onWindowSelToggle);
+  }
+  for (const el of body.querySelectorAll('.wp-del')) {
+    el.addEventListener('click', _onDeleteWindow);
+  }
+  const selAll = body.querySelector('#wp-select-all');
+  if (selAll) selAll.addEventListener('change', _onWindowSelAllToggle);
 }
 
 function _onWindowSelToggle(ev) {

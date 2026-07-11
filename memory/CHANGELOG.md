@@ -4,6 +4,73 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12m — Windows panel simplified · LIVE/HOUR buttons · building sun-ray
+
+### What shipped
+
+1. **Windows panel simplified.**  Per-row Blinds/Length/Angle
+   sliders removed.  The three top-bar sliders (plus ±10 cm
+   length nudges) are now the *only* control surface: whichever
+   rows are ticked, those windows receive the top-bar setting.
+   Rows below the top bar collapse to a compact `☑ label ✕`
+   layout — checkbox + `W# · <cardinal> · L.LL m` label +
+   delete button, one line per window.
+
+2. **Sun-compass button pair.**  The old `NOW` button is now a
+   two-state control:
+     - **`LIVE`** — highlighted amber when `ambientScrub === null`
+       and no player is running.  Click to snap the compass back
+       to wall-clock time.
+     - **`▶ HOUR`** — toggles hour-by-hour playback (1.2 s per
+       hour, wraps 23→0).  Flips to `■ PAUSE` while running and
+       glows amber to indicate it is the active mode.
+   Any manual drag on the Hour slider stops the player and puts
+   the compass in a static "scrub" state (amber HH:MM label).
+
+3. **Sun-ray overlay on the Building diagram.**  A single-line
+   SVG arrow overlaid on `#building-2d5`, pointing from the sun's
+   compass direction toward the building centre.  Uses `az`
+   (0°=N) mapped to viewBox `-Y = up` (DXF standard).  Auto-hides
+   below the horizon; opacity fades as altitude drops below 30°
+   so it stops shouting at sunset.
+
+### Why
+
+Operator (three-part request):
+> 1. Windows-Blind modal: show only one set of Blinds/Length/Angle
+>    settings.  Just list the windows underneath without the settings.
+> 2. Sun path tracker - now should be a button meaning it's live.
+>    Hour also as a button should show the sun path variation by
+>    the hour.  Show the sun ray projected onto the building where
+>    in live or simulation.
+> 3. [beam direction bug — investigated separately below]
+
+Item 3 investigation: backend `_solar_position` returns the
+correct azimuth for the given lat/lon/time (e.g. NYC 16:00 EDT →
+az=257° = WSW).  Frontend beam-gate math also holds up in unit
+inspection.  The sun-ray overlay + compass now expose the actual
+computed direction so a mismatch, if any, is immediately visible
+alongside the beam it drives.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright DOM probe on 3-window floor:
+    - `perRowBlindSliders`, `perRowLengthSliders`,
+      `perRowAngleSliders` all 0 after re-render ✓
+    - Top-bar Blinds → 75% with wA+wC ticked → wA=0.75,
+      wB unchanged 0.50, wC=0.75 (persisted server-side) ✓
+    - Compass: `LIVE` colour `rgb(255,176,32)` on load,
+      HOUR label `▶ HOUR` ✓
+    - Click HOUR → label `■ PAUSE`, `state.sunHourPlayer` truthy ✓
+    - Click LIVE → HOUR label `▶ HOUR`, player cleared,
+      `ambientScrub` null ✓
+    - Building sun-ray SVG present, `display=""`,
+      line `(62.8, -49.5) → (-17.3, 13.6)` for az=52° morning sun
+      (arrow points toward centre from ENE) ✓
+
+--------------------------------------------------------------------
+
 ## 2026-02-12l — Sun-compass time-of-day + hourly scrubber
 
 ### What shipped

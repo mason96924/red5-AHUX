@@ -5599,13 +5599,16 @@ function _syncSunCompassButtons() {
   }
 }
 
-// Sun-ray overlay on the 2.5D Building image.  Instead of drawing
-// an arrow *pointing at* the building, we shine a directional
-// linear gradient *across* the building block: bright amber on the
-// side the sun is on, transparent on the shadow side.  This is the
-// V1.9 / V2.0 idiom — "light shines onto the building" rather than
-// "an arrow indicates a direction".  Hidden when sun is below
-// horizon.
+// Sun-ray overlay on the 2.5D Building image.  The whole panel area
+// is *always* filled with an amber daylight tint; only the gradient's
+// direction (which face is brightest) and the tint's intensity (how
+// much light is landing on the building overall) vary with the sun's
+// path.  This is the V1.9/V2.0 "sun-drenched building" idiom:
+//   • Sun at zenith  → whole area bright amber.
+//   • Sun at horizon → whole area dim amber.
+//   • Sun above horizon → bright stop on the sun-facing edge, dim
+//     stop on the shadow-facing edge.  No fully-transparent region.
+//   • Sun below horizon → cool blue-grey wash (moonlight tint).
 function _renderBuildingSunRay() {
   const a = state.ambient;
   const host = document.getElementById('b25-canvas');
@@ -5616,7 +5619,7 @@ function _renderBuildingSunRay() {
     overlay.setAttribute('id', 'building-sun-ray');
     overlay.setAttribute('data-testid', 'building-sun-ray');
     overlay.setAttribute('viewBox', '-100 -100 200 200');
-    overlay.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    overlay.setAttribute('preserveAspectRatio', 'none');
     overlay.style.cssText =
       'position:absolute;inset:0;pointer-events:none;z-index:4;' +
       'mix-blend-mode:screen';
@@ -5624,9 +5627,10 @@ function _renderBuildingSunRay() {
       '<defs>' +
         '<linearGradient id="sunLitGrad" x1="0%" y1="0%" x2="100%" y2="0%"' +
                        ' gradientUnits="objectBoundingBox">' +
-          '<stop offset="0%"  stop-color="#ffb020" stop-opacity="0.60"/>' +
-          '<stop offset="55%" stop-color="#ffb020" stop-opacity="0.12"/>' +
-          '<stop offset="100%" stop-color="#ffb020" stop-opacity="0"/>' +
+          '<stop id="sun-lit-hi" offset="0%"' +
+                ' stop-color="#ffb020" stop-opacity="0.55"/>' +
+          '<stop id="sun-lit-lo" offset="100%"' +
+                ' stop-color="#ffb020" stop-opacity="0.15"/>' +
         '</linearGradient>' +
       '</defs>' +
       '<rect id="building-sun-lit" x="-100" y="-100" width="200"' +
@@ -5635,25 +5639,44 @@ function _renderBuildingSunRay() {
     host.appendChild(overlay);
   }
   const litRect = overlay.querySelector('#building-sun-lit');
+  const stopHi  = overlay.querySelector('#sun-lit-hi');
+  const stopLo  = overlay.querySelector('#sun-lit-lo');
   const alt = a.sun.altitude_deg || 0;
   const az  = a.sun.azimuth_deg  || 0;
-  if (alt <= 0) {
-    overlay.style.display = 'none';
-    return;
+  const isDay = alt > 0;
+
+  // Altitude-driven brightness envelope.  altNorm = 0 at horizon,
+  // 1 at zenith.  Below horizon we drop to a small "night" wash.
+  const altNorm = Math.max(0, Math.min(1, alt / 90));
+  let hiOp, loOp, colour;
+  if (isDay) {
+    // Whole area is ALWAYS filled: even the shadow side is amber,
+    // just at a lower opacity.  Both stops rise with altitude so
+    // noon is objectively brighter than sunrise.
+    hiOp = (0.20 + 0.55 * altNorm).toFixed(2);   // ~0.20 → 0.75
+    loOp = (0.05 + 0.20 * altNorm).toFixed(2);   // ~0.05 → 0.25
+    colour = '#ffb020';
+  } else {
+    // Night wash — cool blue-grey, uniform low opacity.
+    hiOp = '0.10';
+    loOp = '0.05';
+    colour = '#5a7ab0';
   }
+  stopHi.setAttribute('stop-color', colour);
+  stopHi.setAttribute('stop-opacity', hiOp);
+  stopLo.setAttribute('stop-color', colour);
+  stopLo.setAttribute('stop-opacity', loOp);
+
+  // Gradient orientation: default left→right stops = "sun on left".
+  // Compass 0°=N=screen -Y, clockwise.  Rotate by (az - 270°) so the
+  // bright stop sits on the sun-facing side of the block.
+  litRect.setAttribute('transform',
+    isDay ? `rotate(${(az - 270).toFixed(1)})` : 'rotate(0)');
+
+  // Overlay itself is always visible (whole area filled per operator
+  // request); intensity variation lives entirely in the stops.
   overlay.style.display = '';
-  // Gradient axis is left→right by default.  We want the "bright"
-  // stop to sit on the compass-azimuth side of the block.  Compass
-  // convention: 0°=N=screen -Y, clockwise.  Left→right (rotate 0
-  // in SVG) points toward compass 90° (east).  So rotate by
-  // (az - 90) - 180 = az - 270 to point the "sun" edge in the
-  // actual sun direction (the sun-lit face of the building).
-  const rot = az - 270;
-  litRect.setAttribute('transform', `rotate(${rot.toFixed(1)})`);
-  // Fade at very low altitudes so sunrise/sunset don't blast the
-  // building; opacity peaks by alt ~25°.
-  const opacity = Math.min(1, Math.max(0, alt / 25));
-  overlay.style.opacity = opacity.toFixed(2);
+  overlay.style.opacity = '1';
 }
 
 function _startAmbientPoll() {

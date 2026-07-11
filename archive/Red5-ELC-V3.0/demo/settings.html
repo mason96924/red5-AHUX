@@ -460,6 +460,7 @@ function renderScus() {
         <thead><tr>
           <th style="width:120px">Module type</th>
           <th style="width:80px">Address</th>
+          <th style="width:70px" title="Floor strand — F0 (Ground) through F200, or B1 through B50">Floor</th>
           <th>Note</th>
           <th style="width:80px" class="actions"></th>
         </tr></thead>
@@ -485,9 +486,17 @@ function renderScus() {
                  data-testid="scu-${si}-mod-${mi}-addr" class="mod-addr" />
         </td>
         <td>
+          <input type="text" value="${escapeHtml(m.floor || 'F0')}"
+                 data-testid="scu-${si}-mod-${mi}-floor" class="mod-floor"
+                 pattern="^(F(0|[1-9][0-9]?|1[0-9]{2}|200)|B([1-9]|[1-4][0-9]|50))$"
+                 title="F0..F200 or B1..B50"
+                 style="width:60px;text-transform:uppercase"
+                 placeholder="F0" />
+        </td>
+        <td>
           <input type="text" value="${escapeHtml(m.note || "")}"
                  data-testid="scu-${si}-mod-${mi}-note" class="mod-note"
-                 placeholder="Zone / room description" />
+                 placeholder="Zone / room" style="min-width:120px" />
           ${m.discovered ? `<span class="discovered-badge">discovered</span>` : ""}
         </td>
         <td class="actions">
@@ -515,7 +524,8 @@ function renderScus() {
     });
     block.querySelector(".btn-add-mod").addEventListener("click", () => {
       scu.modules.push({
-        dev_type: "SRM_6S", address: nextFreeAddr(scu), note: "", discovered: false,
+        dev_type: "SRM_6S", address: nextFreeAddr(scu),
+        floor: "F0", note: "", discovered: false,
       });
       renderScus(); updatePreview();
     });
@@ -526,6 +536,15 @@ function renderScus() {
       });
       tr.querySelector(".mod-addr").addEventListener("input", e => {
         scu.modules[mi].address = parseInt(e.target.value, 10) || 1; updatePreview();
+      });
+      tr.querySelector(".mod-floor").addEventListener("input", e => {
+        // Uppercase live; validation happens server-side on Save
+        // (the pattern attribute gives the browser's built-in
+        // red-outline hint for obviously-wrong entries).
+        const v = String(e.target.value || "").toUpperCase();
+        e.target.value = v;
+        scu.modules[mi].floor = v || "F0";
+        updatePreview();
       });
       tr.querySelector(".mod-note").addEventListener("input", e => {
         scu.modules[mi].note = e.target.value; updatePreview();
@@ -559,7 +578,7 @@ async function discoverScu(si) {
       if (dt == null || addr == null) continue;
       if (scuId !== scu.id) continue;
       if (scu.modules.some(m => m.address === addr)) continue;
-      scu.modules.push({ dev_type: dt, address: addr, note: "", discovered: true });
+      scu.modules.push({ dev_type: dt, address: addr, floor: "F0", note: "", discovered: true });
       added++;
     }
     renderScus();

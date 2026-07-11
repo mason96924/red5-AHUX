@@ -159,6 +159,49 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _backfill_floor_strands(conn: sqlite3.Connection) -> None:
+    """Populate ``floors.strand_label`` for legacy rows.
+
+    Called once from :func:`_ensure_schema` on boot.  Derives labels
+    from the operator-authored floor ``name`` (``L1`` -> ``F1``,
+    ``Ground`` -> ``F0``, unknown -> ``F0``).  Uniqueness collisions
+    (two legacy floors both parsing to the same strand) are broken by
+    appending ``_2``, ``_3`` ... so the raw label survives; the
+    operator can then reconcile in Settings.
+
+    Lazy-imports :mod:`elc.config.project` to keep this store module
+    free of a hard dependency on pydantic at import time (the store
+    is used by lightweight scripts that don't need the wizard).
+    """
+    from elc.config.project import strand_from_legacy_name  # lazy
+
+    rows = conn.execute(
+        "SELECT id, name FROM floors WHERE strand_label IS NULL"
+    ).fetchall()
+    if not rows:
+        return
+    taken = {
+        r["strand_label"] for r in conn.execute(
+            "SELECT strand_label FROM floors WHERE strand_label IS NOT NULL"
+        ).fetchall()
+    }
+    for row in rows:
+        base = strand_from_legacy_name(row["name"] or "")
+        label = base
+        n = 2
+        # Two legacy floors that both parse to "F0" (e.g. "Ground" +
+        # "Mezzanine") both need a slot; keep the base for the first
+        # one and disambiguate the rest so the migration never fails.
+        while label in taken:
+            label = f"{base}_{n}"
+            n += 1
+        taken.add(label)
+        conn.execute(
+            "UPDATE floors SET strand_label = ? WHERE id = ?",
+            (label, row["id"]),
+        )
+
+
 def _new_id() -> str:
     return uuid.uuid4().hex
 
@@ -204,12 +247,25 @@ def _ensure_schema(db_path: str | None = None) -> None:
             # Phase 6.1e — Line-shape sub-type (T2/T4/T5/T8/T12 + LED strip).
             ("lighting_elements",
              "ALTER TABLE lighting_elements ADD COLUMN tube_type TEXT NOT NULL DEFAULT 'none'"),
+            # 2026-02-11 — Settings-driven floor identity.  A floor's
+            # ``strand_label`` (F0..F200 / B1..B50) is now its canonical
+            # identity; the operator-editable ``name`` stays for display.
+            # NULL default so ALTER TABLE succeeds; a one-shot backfill
+            # below derives the label from the legacy ``name`` for any
+            # row still missing one.  The UNIQUE index is created only
+            # after backfill so the migration is idempotent.
+            ("floors", "ALTER TABLE floors ADD COLUMN strand_label TEXT DEFAULT NULL"),
         ]
         for _tbl, stmt in _MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
                 pass    # column already exists
+
+        # ---- One-shot backfill: derive strand_label from name ----------
+        # New rows get strand_label at INSERT time; legacy rows are
+        # patched here on first boot after the 2026-02-11 refactor.
+        _backfill_floor_strands(conn)
 
 
 def init(db_path: str | None = None) -> None:

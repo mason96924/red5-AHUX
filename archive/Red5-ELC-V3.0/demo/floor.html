@@ -865,8 +865,6 @@
     <div class="fs-head">
       <span>Building</span>
       <span class="fs-actions">
-        <button id="fs-add-floor" title="Add a new floor"
-                data-testid="fs-add-floor">＋ Floor</button>
         <button id="bi-import" title="Import a 2.5D isometric image of the building"
                 data-testid="bi-import">⤴ Image</button>
       </span>
@@ -1305,7 +1303,9 @@ function renderFloorList() {
   for (const f of state.floors) {
     const opt = document.createElement('option');
     opt.value = f.id;
-    opt.textContent = `${f.name}  ·  ${f.width_m.toFixed(1)}×${f.height_m.toFixed(1)}m`;
+    opt.textContent = f.strand_label
+      ? `${f.strand_label}  ·  ${f.name}  ·  ${f.width_m.toFixed(1)}×${f.height_m.toFixed(1)}m`
+      : `${f.name}  ·  ${f.width_m.toFixed(1)}×${f.height_m.toFixed(1)}m`;
     opt.dataset.testid = `floor-opt-${f.name}`;
     picker.appendChild(opt);
   }
@@ -1341,6 +1341,13 @@ function renderFloorList() {
 const BI_LS_KEY = 'elc.floor.building_image';
 
 function _floorSortKey(f) {
+  // 2026-02-11 — Prefer the strand label (F0..F200 / B1..B50).  Falls
+  // back to legacy name-based parsing so pre-refactor floors still
+  // sort sensibly on first boot.  Basements → negative, ground → 0,
+  // above-ground → positive.
+  const s = String(f.strand_label || '').toUpperCase();
+  if (s.startsWith('B')) return -parseInt(s.slice(1), 10);
+  if (s.startsWith('F')) return  parseInt(s.slice(1), 10);
   const m = String(f.name || '').match(/-?\d+/);
   return m ? parseInt(m[0], 10) : 0;
 }
@@ -1445,11 +1452,18 @@ function _buildDynamicBuildingSvg(floors) {
         L${wallRight + depth},${yBot - depth}
         L${wallRight},${yBot} Z"
         fill="${sideFill}" stroke="${stroke}" stroke-width="${strokeW}"/>`;
-    // Slab label (inside the wall).
+    // Slab label (inside the wall).  Prefer the strand label
+    // (F0/F1/B1) as the primary identity, followed by the operator-
+    // authored name when it differs (2026-02-11).
     const label = f
-      ? `<text class="slab-label" x="${wallLeft + 6}" y="${yTop + slabH / 2 + 3}">
-           ${escapeHtml(f.name)}
-         </text>`
+      ? (function() {
+          const strand = (f.strand_label || '').toUpperCase();
+          const disp = strand && strand !== (f.name || '').toUpperCase()
+            ? `${strand} · ${f.name}` : (strand || f.name || '');
+          return `<text class="slab-label" x="${wallLeft + 6}" y="${yTop + slabH / 2 + 3}">
+           ${escapeHtml(disp)}
+         </text>`;
+        })()
       : '';
     // Whole slab is one clickable group.
     slabs.push(`
@@ -1564,7 +1578,10 @@ function _initBuildingImageSlot() {
 
 // Wire the LHS "＋ Floor" header button to the same "new floor" flow
 // the toolbar dropdown uses (sentinel value = '__new__').
-document.getElementById('fs-add-floor').addEventListener('click', () => {
+// 2026-02-11 — "+ Floor" button removed; floors are now derived from
+// Settings' Floor column.  Keep the listener null-safe in case some
+// legacy popup still exposes an add-floor entry point.
+document.getElementById('fs-add-floor')?.addEventListener('click', () => {
   const picker = document.getElementById('floor-picker');
   if (!picker) return;
   picker.value = '__new__';
@@ -1721,6 +1738,45 @@ async function refreshDevicesAndElements() {
   }
 }
 
+// ---------------- Settings-driven module inventory ---------------
+// The Settings page owns which floor each SRM module belongs to
+// (2026-02-11).  We cache a light snapshot of project.json here so
+// renderSrmGrid can filter to just the modules that belong to the
+// currently-selected floor.  Refreshed on floor change + when the
+// operator returns from /settings (window focus refetches).
+const _projSnap = {
+  scusById: new Map(),     // scu.id -> {name, host, port}
+  moduleFloor: new Map(),  // "type/scuId/addr" -> "F0" / "B1" / ...
+  ready: false,
+};
+
+async function _refreshProjectSnapshot() {
+  try {
+    const r = await fetch(`${API}/project`);
+    if (!r.ok) return;
+    const j = await r.json();
+    const cfg = j && j.project;
+    _projSnap.scusById.clear();
+    _projSnap.moduleFloor.clear();
+    if (cfg && Array.isArray(cfg.scus)) {
+      for (const scu of cfg.scus) {
+        _projSnap.scusById.set(String(scu.id), {
+          id: scu.id, name: scu.name, host: scu.host, port: scu.port,
+        });
+        for (const m of scu.modules || []) {
+          const key = `${m.dev_type}/${scu.id}/${m.address}`;
+          _projSnap.moduleFloor.set(key, (m.floor || 'F0').toUpperCase());
+        }
+      }
+    }
+    _projSnap.ready = true;
+    renderSrmGrid();
+  } catch (e) { /* leave snapshot unchanged */ }
+}
+// Refetch on window focus so a Settings-page save is reflected the
+// moment the operator switches back to Building.
+window.addEventListener('focus', () => { _refreshProjectSnapshot(); });
+
 function renderSrmGrid() {
   const host = document.getElementById('srm-grid');
   const count = document.getElementById('dev-count');
@@ -1754,7 +1810,68 @@ function renderSrmGrid() {
     );
   }
 
-  for (const m of modules.values()) {
+  // Settings-driven per-floor filter (2026-02-11).  The Building
+  // page shows only modules whose Settings' Floor field matches the
+  // currently-open floor's ``strand_label``.  When Settings hasn't
+  // populated the snapshot yet (first-boot race), fall back to
+  // showing every module so the operator isn't staring at a blank
+  // panel.
+  const currentStrand = (state.currentFloor
+    && (state.currentFloor.strand_label || '').toUpperCase()) || '';
+  const totalModules = modules.size;
+  const scope = _projSnap.ready && currentStrand
+    ? [...modules.values()].filter(m => {
+        const label = _projSnap.moduleFloor.get(`${m.type}/${m.scu}/${m.addr}`);
+        return (label || 'F0').toUpperCase() === currentStrand;
+      })
+    : [...modules.values()];
+
+  // Summary line at the top -- "N of M SRMs on this floor".  Only
+  // shown once the Settings snapshot has landed and we actually have
+  // a floor context (otherwise the counts would be nonsensical).
+  if (_projSnap.ready && currentStrand) {
+    const sum = document.createElement('div');
+    sum.className = 'srm-floor-summary';
+    sum.dataset.testid = 'srm-floor-summary';
+    sum.style.cssText =
+      'padding:6px 8px;margin:0 0 8px 0;font-size:11px;'
+      + 'color:var(--muted);font-family:var(--mono);'
+      + 'border-left:2px solid var(--accent);background:rgba(217,122,48,0.05)';
+    sum.textContent = `${scope.length} of ${totalModules} SRM${totalModules === 1 ? '' : 's'} on this floor (${currentStrand})`;
+    host.appendChild(sum);
+  }
+
+  // Group the filtered modules by SCU so the operator sees one
+  // header per SCU-bus that contributes to this floor.  If only a
+  // single SCU is involved, we skip the header (2026-02-11 rule 5c).
+  const bySc = new Map();  // scuId -> [module...]
+  for (const m of scope) {
+    if (!bySc.has(m.scu)) bySc.set(m.scu, []);
+    bySc.get(m.scu).push(m);
+  }
+  const showScuHeaders = bySc.size > 1;
+
+  for (const [scuId, mods] of bySc.entries()) {
+    if (showScuHeaders) {
+      const scuInfo = _projSnap.scusById.get(String(scuId)) || {};
+      const label = scuInfo.name || `SCU ${scuId}`;
+      const hostStr = scuInfo.host
+        ? `${scuInfo.host}:${scuInfo.port || 4001}`
+        : `id ${scuId}`;
+      const scuHdr = document.createElement('div');
+      scuHdr.className = 'srm-scu-header';
+      scuHdr.dataset.testid = `srm-scu-header-${scuId}`;
+      scuHdr.style.cssText =
+        'display:flex;justify-content:space-between;align-items:center;'
+        + 'padding:5px 8px;margin:8px 0 4px 0;font-size:11px;'
+        + 'background:var(--panel-2);border:1px solid var(--line);'
+        + 'border-radius:4px;color:var(--text);font-family:var(--mono)';
+      scuHdr.innerHTML =
+        `<span><span style="color:#60a5fa">■</span> ${escapeHtml(label)}</span>`
+        + `<span style="color:var(--muted)">${escapeHtml(hostStr)}</span>`;
+      host.appendChild(scuHdr);
+    }
+    for (const m of mods) {
     const box = document.createElement('div');
     box.className = 'module-box';
     box.dataset.moduleKey = `${m.type}/${m.scu}/${m.addr}`;
@@ -1812,6 +1929,18 @@ function renderSrmGrid() {
       openModuleModal(`${m.type}/${m.scu}/${m.addr}`);
     });
     host.appendChild(box);
+    }  // end for (const m of mods)
+  }    // end for (const [scuId, mods] of bySc.entries())
+
+  // If the filter narrowed us to zero, tell the operator plainly.
+  if (_projSnap.ready && currentStrand && scope.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.dataset.testid = 'srm-empty-floor';
+    empty.innerHTML = `No SRMs assigned to <b>${escapeHtml(currentStrand)}</b>.
+      Open <a href="/settings">Settings</a> and set a module's Floor to
+      <code>${escapeHtml(currentStrand)}</code>.`;
+    host.appendChild(empty);
   }
 }
 
@@ -4950,6 +5079,9 @@ function startLiveStream() {
   // the editor iframe (which always uses SSE) kept updating.
   _startSse();
   _startLiveReconcile();
+  // Kick off the Settings snapshot fetch so the SRM panel can filter
+  // to just the modules on the currently-selected floor (2026-02-11).
+  _refreshProjectSnapshot();
 }
 
 // ==================================================================

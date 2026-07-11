@@ -483,13 +483,31 @@ async def main() -> None:
         client (Settings page) should call
         ``/api/elc/project/expand-devices`` afterwards to hot-reload
         the running demo's device inventory.
+
+        Side-effect (2026-02-11): every unique ``module.floor`` strand
+        label the operator typed materialises as a real floor row via
+        :func:`get_or_create_floor_by_strand`, so the Building page
+        can render slabs without the operator having to click any
+        "+ Floor" button.
         """
         try:
             cfg = ProjectConfig.model_validate(body)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"invalid project.json: {e}")
         save_project(cfg, DEFAULT_PROJECT_PATH)
-        return {"ok": True, "path": str(DEFAULT_PROJECT_PATH)}
+        # Auto-create any missing floors so the Building page has
+        # something to render.  Existing floors are left untouched;
+        # a strand no longer referenced by any module is NOT
+        # auto-deleted (safer -- the operator may still have fixture
+        # placements on it).
+        from elc.floors.store import get_or_create_floor_by_strand
+        created: list[str] = []
+        for label in cfg.strand_labels():
+            row = get_or_create_floor_by_strand(label)
+            if row.get("created_at") == row.get("updated_at"):
+                created.append(label)
+        return {"ok": True, "path": str(DEFAULT_PROJECT_PATH),
+                "floors_created": created}
 
     @stack.app.post("/api/elc/project/expand-devices", include_in_schema=False)
     async def expand_devices() -> dict:
@@ -600,6 +618,7 @@ async def main() -> None:
                     modules_out.append({
                         "dev_type": mod.dev_type,
                         "address": mod.address,
+                        "floor": mod.floor,
                         "note": mod.note,
                         "discovered": bool(mod.discovered),
                         "channels": channels,
@@ -628,6 +647,7 @@ async def main() -> None:
             summary = {
                 "id": f["id"],
                 "name": f["name"],
+                "strand_label": f.get("strand_label"),
                 "width_m": f.get("width_m"),
                 "height_m": f.get("height_m"),
                 "fixture_count": len(fixtures),
@@ -636,7 +656,10 @@ async def main() -> None:
             for fx in fixtures:
                 did = fx.get("device_id")
                 if did:
-                    fixture_floor[did] = {"id": f["id"], "name": f["name"]}
+                    fixture_floor[did] = {
+                        "id": f["id"], "name": f["name"],
+                        "strand_label": f.get("strand_label"),
+                    }
 
         # ---- Groups + reverse index (relay -> groups) -------------------
         groups_raw = cfg_store.list_groups()

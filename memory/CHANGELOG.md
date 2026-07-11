@@ -4,6 +4,96 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11 — Settings-driven floor identity (strand labels)
+
+### What shipped
+
+- **Floors are now identified by a *strand label*** typed in Settings.
+  Format: ``F0..F200`` (F0 = Ground, no ``G``, no ``B0``) or
+  ``B1..B50``.  The Settings-page "SCUs & Modules" table gained a
+  new **Floor** column between Address and Note; every unique label
+  the operator types automatically materialises as a real floor row
+  on `POST /api/elc/project`, so the operator never has to click a
+  "+ Floor" button again -- which has been removed from the Building
+  page.
+- **RHS "SRM Devices" panel filters per-floor**.  When the operator
+  selects a floor slab, the panel shows only modules whose Settings
+  Floor field matches that floor's strand label, plus a
+  ``N of M SRMs on this floor (F1)`` summary at the top.  If more
+  than one SCU serves the same floor, the modules group under
+  per-SCU headers (``SCU-Test · 192.168.1.222:4001``); single-SCU
+  floors skip the header level (module boxes already carry
+  ``SCU N · Addr M``).
+- **Building side-view (2.5D slabs)** sorts by strand
+  (``B50 → B1 → F0 → F1 → F200``) and labels each slab
+  ``F1 · <operator name>`` so the identity is visible even when the
+  name diverges.
+- **Floor picker** now shows ``F1 · <name> · WxH m``.
+- **Legacy floors auto-migrate** on first boot.  ``L1`` → ``F1``,
+  ``Ground`` → ``F0``, ``Basement 3`` → ``B3``, ``L999`` → ``F0``,
+  unknown → ``F0``.  Name-collision case appends ``_2`` /``_3`` so
+  no legacy row is silently dropped.
+
+### Details
+
+**Data model:**
+- `elc/config/project.py`:
+  - New `validate_strand_label(s)`, `strand_sort_key(s)`,
+    `strand_from_legacy_name(s)` helpers.
+  - `ModuleEntry.floor` field with `field_validator` that upper-cases
+    and range-checks (F0..F200 / B1..B50).
+  - `ProjectConfig.strand_labels()` returns unique labels across
+    all modules in canonical order.
+- `elc/config/store.py`:
+  - New ALTER TABLE migration: `floors.strand_label TEXT NULL`.
+  - One-shot backfill (`_backfill_floor_strands`) on first boot
+    after the migration.
+- `elc/floors/store.py`:
+  - `list_floors` / `get_floor` / `create_floor` / `update_floor`
+    all round-trip `strand_label`.
+  - New `get_or_create_floor_by_strand(label)` -- idempotent, used
+    by the `/api/elc/project` save handler to materialise floors.
+
+**API changes:**
+- `POST /api/elc/project` now creates any missing floor whose
+  strand label appears in the payload's modules, and returns
+  ``floors_created: [labels...]`` for operator visibility.
+- `GET /api/elc/tree` exposes `strand_label` on floor rows and
+  `floor` on module rows.
+
+**Frontend:**
+- `demo/settings.html`: Floor column added to the SCUs & Modules
+  table with pattern-validated input (browser-native red outline
+  on invalid), Note column shrunk.  Discover-flow defaults new
+  rows to ``F0``.
+- `demo/floor.html`:
+  - "+ Floor" button removed from the Building panel header.
+  - `_projSnap` module cache (fetched on boot + on window focus)
+    holds SCU host/port + `moduleFloor` lookup.
+  - `renderSrmGrid` filters modules by `_projSnap.moduleFloor`
+    against the current floor's `strand_label`, renders the
+    per-floor summary, groups by SCU with headers (hidden when
+    single-SCU), and emits a
+    "no SRMs assigned to X, open Settings" placeholder when the
+    filter empties the panel.
+  - `_floorSortKey` prefers `strand_label` (basement negative,
+    ground zero, above-ground positive) with legacy name fallback.
+  - 2.5D slab labels show ``strand · name``; floor picker shows
+    ``strand · name · WxH m``.
+
+**Tests:** 458 / 458 green (48 new).  New file
+`tests/config/test_floor_strand.py` covers label validation,
+sort ordering, legacy-name migration, ModuleEntry normalisation,
+`strand_labels()` canonical order, and
+`get_or_create_floor_by_strand` idempotency + upper-case
+normalisation + distinct-row creation.
+
+Frontend verified live via Playwright: posted a project.json with
+three modules on F0/F1/B1, ran `/discover-srms`, then cycled the
+floor picker across all three slabs and confirmed the RHS panel
+showed exactly the right module box + "1 of 3 SRMs on this floor
+(F0/F1/B1)" summary each time.
+
 ## 2026-02-11 — Building page: Tree view (SCU / SRM / relay / floor / group / schedule)
 
 ### What shipped

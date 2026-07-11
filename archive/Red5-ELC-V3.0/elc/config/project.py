@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -36,6 +37,95 @@ DEFAULT_PROJECT_PATH = Path(
     os.environ.get("ELC_PROJECT_JSON", "configs/project.json")
 )
 
+# ----------------------------------------------------------------------
+# Floor strand labels
+# ----------------------------------------------------------------------
+# The Settings-page "Floor" column drives the *identity* of every floor
+# in the project.  Format is a single-letter prefix + integer index:
+#
+#   F0        Ground floor (canonical -- do NOT use "G")
+#   F1..F200  Above-ground floors
+#   B1..B50   Below-ground (basement) floors.  ``B0`` is NOT allowed.
+#
+# Uniqueness / ordering is by strand label (see :func:`strand_sort_key`).
+# ``floors`` DB rows carry the label alongside their operator-editable
+# ``name`` -- Settings drives which floors exist, and the Building page
+# renders them by strand order.
+
+_STRAND_RE = re.compile(r"^(F(?:0|[1-9]\d?|1\d{2}|200)|B(?:[1-9]|[1-4]\d|50))$")
+
+
+def validate_strand_label(value: str) -> str:
+    """Normalise + validate a floor strand label.  ``value`` may be
+    lowercase; trailing whitespace is stripped.  Raises ``ValueError``
+    on any deviation from the ``F0..F200`` / ``B1..B50`` grammar."""
+    if value is None:
+        raise ValueError("floor strand label required")
+    s = str(value).strip().upper()
+    if not _STRAND_RE.match(s):
+        raise ValueError(
+            f"invalid floor strand label {value!r} -- "
+            "must be F0..F200 or B1..B50 (no B0, no G)"
+        )
+    return s
+
+
+def strand_sort_key(label: str) -> int:
+    """Integer sort key so ``sorted(labels, key=strand_sort_key)`` gives
+    ``B50 < B49 < ... < B1 < F0 < F1 < ... < F200`` (basement lowest,
+    ground zero, above-ground positive)."""
+    if not label:
+        return 0
+    if label[0] == "B":
+        return -int(label[1:])
+    if label[0] == "F":
+        return int(label[1:])
+    return 0
+
+
+def strand_from_legacy_name(name: str) -> str:
+    """Best-effort migration helper -- derive a strand label from an
+    operator-authored floor name so pre-refactor rows keep working.
+    Falls back to ``F0`` (Ground) on anything unparseable.
+
+    Mapping::
+
+        "Ground" / ""                     -> F0
+        "L1" / "Level 1" / "Floor 1"      -> F1
+        "L 12" / "Floor-12"               -> F12
+        "B1" / "Basement 1"               -> B1
+        "Mezzanine"                       -> F0  (fallback)
+    """
+    n = (name or "").strip().lower()
+    if not n or "ground" in n:
+        return "F0"
+    # Word-level basement / floor detection FIRST so "Basement 3" and
+    # "Floor 12" hit before the letter-prefix fallback below.
+    if "basement" in n or "cellar" in n or "sub-floor" in n or "subfloor" in n:
+        m0 = re.search(r"\b(\d{1,2})\b", n)
+        if m0:
+            num = int(m0.group(1))
+            if 1 <= num <= 50:
+                return f"B{num}"
+        return "B1"
+    m = re.search(r"\b([fbl])\s*[-_]?\s*(\d{1,3})\b", n, re.I)
+    if m:
+        prefix = m.group(1).upper()
+        num = int(m.group(2))
+        if prefix == "L":
+            prefix = "F"
+        if prefix == "F" and 0 <= num <= 200:
+            return f"F{num}"
+        if prefix == "B" and 1 <= num <= 50:
+            return f"B{num}"
+    # Bare number -> assume above ground
+    m2 = re.search(r"\b(\d{1,3})\b", n)
+    if m2:
+        num = int(m2.group(1))
+        if 0 <= num <= 200:
+            return f"F{num}"
+    return "F0"
+
 
 class ModuleEntry(BaseModel):
     """One relay module wired to an SCU."""
@@ -43,10 +133,18 @@ class ModuleEntry(BaseModel):
     dev_type: Literal["SRM_6E", "SRM_6S", "SRM_4S"]
     address: int = Field(..., ge=1, le=1023,
                          description="Physical bus address of the module (1..1023).")
+    floor: str = Field(default="F0",
+                       description="Floor strand label -- F0..F200 or B1..B50.  "
+                       "Drives which floors exist in the project (2026-02-11).")
     note: str = Field(default="", max_length=120,
                       description="Operator-facing description (room / zone).")
     discovered: bool = Field(default=False,
                              description="True if this row came from /discover-srms rather than manual entry.")
+
+    @field_validator("floor", mode="before")
+    @classmethod
+    def _normalise_floor(cls, v: str) -> str:
+        return validate_strand_label(v or "F0")
 
     @property
     def channel_count(self) -> int:
@@ -116,6 +214,16 @@ class ProjectConfig(BaseModel):
                     "address": m.address,
                 })
         return out
+
+    def strand_labels(self) -> list[str]:
+        """Return the unique set of floor strand labels referenced by
+        any module, in canonical order (basements first, then ground,
+        then above-ground)."""
+        seen: set[str] = set()
+        for scu in self.scus:
+            for m in scu.modules:
+                seen.add(m.floor)
+        return sorted(seen, key=strand_sort_key)
 
 
 def load_project(path: Path = DEFAULT_PROJECT_PATH) -> ProjectConfig | None:

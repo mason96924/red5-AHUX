@@ -48,6 +48,7 @@ def _row_to_floor(row: Any) -> dict[str, Any]:
     return {
         "id": row["id"],
         "name": row["name"],
+        "strand_label": row["strand_label"] if "strand_label" in row.keys() else None,
         "svg": row["svg"],
         "width_m": row["width_m"],
         "height_m": row["height_m"],
@@ -327,8 +328,9 @@ def list_floors(db_path: str | None = None) -> list[dict[str, Any]]:
     to keep the listing response small)."""
     with get_conn(db_path) as conn:
         rows = conn.execute(
-            "SELECT id, name, '' AS svg, width_m, height_m, fixtures_json, "
-            "rooms_json, created_at, updated_at FROM floors ORDER BY name"
+            "SELECT id, name, strand_label, '' AS svg, width_m, height_m, "
+            "fixtures_json, rooms_json, created_at, updated_at "
+            "FROM floors ORDER BY name"
         ).fetchall()
     return [_row_to_floor(r) for r in rows]
 
@@ -337,17 +339,68 @@ def get_floor(
     floor_id: str, *, include_svg: bool = True, db_path: str | None = None,
 ) -> dict[str, Any]:
     with get_conn(db_path) as conn:
-        cols = ("id, name, svg, width_m, height_m, fixtures_json, "
-                "rooms_json, created_at, updated_at")
+        cols = ("id, name, strand_label, svg, width_m, height_m, "
+                "fixtures_json, rooms_json, created_at, updated_at")
         if not include_svg:
-            cols = ("id, name, '' AS svg, width_m, height_m, fixtures_json, "
-                    "rooms_json, created_at, updated_at")
+            cols = ("id, name, strand_label, '' AS svg, width_m, height_m, "
+                    "fixtures_json, rooms_json, created_at, updated_at")
         row = conn.execute(
             f"SELECT {cols} FROM floors WHERE id = ?", (floor_id,),
         ).fetchone()
     if row is None:
         raise NotFound(f"floor {floor_id!r} not found")
     return _row_to_floor(row)
+
+
+def get_or_create_floor_by_strand(
+    strand_label: str,
+    *,
+    default_name: str | None = None,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Fetch the floor whose ``strand_label`` matches (case-insensitive
+    after upper-casing), or create it if absent.  Used by the
+    ``/api/elc/project`` save handler so every strand label the
+    operator types in Settings materialises as a real floor row that
+    the Building page can render.
+
+    ``default_name`` seeds the operator-editable display name only on
+    initial create; if the row already exists, its ``name`` is left
+    untouched (Settings drives identity, but the operator owns the
+    display label).
+    """
+    label = str(strand_label or "").strip().upper()
+    if not label:
+        raise BadInput("strand_label required")
+    with get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, name, strand_label, svg, width_m, height_m, "
+            "fixtures_json, rooms_json, created_at, updated_at "
+            "FROM floors WHERE strand_label = ?", (label,),
+        ).fetchone()
+        if row is not None:
+            return _row_to_floor(row)
+        # Create -- pick a display name that doesn't clash with the
+        # UNIQUE(name) index.  ``strand_label`` is the identity; the
+        # name is just a label the operator can change later.
+        base = default_name or label
+        name = base
+        suffix = 2
+        while conn.execute(
+            "SELECT 1 FROM floors WHERE name = ?", (name,)
+        ).fetchone() is not None:
+            name = f"{base} ({suffix})"
+            suffix += 1
+        fid = _new_id()
+        now = _now()
+        conn.execute(
+            "INSERT INTO floors "
+            "(id, name, strand_label, svg, width_m, height_m, "
+            "fixtures_json, rooms_json, created_at, updated_at) "
+            "VALUES (?, ?, ?, '', 20.0, 15.0, '[]', '[]', ?, ?)",
+            (fid, name, label, now, now),
+        )
+    return get_floor(fid, include_svg=False, db_path=db_path)
 
 
 def create_floor(
@@ -358,6 +411,7 @@ def create_floor(
     height_m: float = 15.0,
     fixtures: list[dict[str, Any]] | None = None,
     rooms: list[dict[str, Any]] | None = None,
+    strand_label: str | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
     name = str(name).strip()
@@ -370,16 +424,17 @@ def create_floor(
     fixtures_norm = _validate_fixtures(fixtures)
     rooms_norm = _validate_rooms(rooms)
     _check_device_uniqueness(fixtures_norm, db_path=db_path)
+    label = str(strand_label or "").strip().upper() or None
     fid = _new_id()
     now = _now()
     try:
         with get_conn(db_path) as conn:
             conn.execute(
                 "INSERT INTO floors "
-                "(id, name, svg, width_m, height_m, fixtures_json, "
+                "(id, name, strand_label, svg, width_m, height_m, fixtures_json, "
                 "rooms_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (fid, name, svg, width_m, height_m,
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (fid, name, label, svg, width_m, height_m,
                  json.dumps(fixtures_norm), json.dumps(rooms_norm),
                  now, now),
             )
@@ -399,6 +454,7 @@ def update_floor(
     height_m: float | None = None,
     fixtures: list[dict[str, Any]] | None = None,
     rooms: list[dict[str, Any]] | None = None,
+    strand_label: str | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
     """Partial-update — only fields provided are touched.  Passing
@@ -412,6 +468,12 @@ def update_floor(
             raise BadInput("name cannot be empty")
         sets.append("name = ?")
         args.append(n)
+    if strand_label is not None:
+        label = str(strand_label).strip().upper()
+        if not label:
+            raise BadInput("strand_label cannot be empty")
+        sets.append("strand_label = ?")
+        args.append(label)
     if svg is not None:
         if len(svg.encode("utf-8")) > _MAX_SVG_BYTES:
             raise BadInput(f"svg exceeds {_MAX_SVG_BYTES // 1024} KB cap")
@@ -463,5 +525,6 @@ def delete_floor(floor_id: str, db_path: str | None = None) -> None:
 
 
 __all__ = [
-    "create_floor", "delete_floor", "get_floor", "list_floors", "update_floor",
+    "create_floor", "delete_floor", "get_floor",
+    "get_or_create_floor_by_strand", "list_floors", "update_floor",
 ]

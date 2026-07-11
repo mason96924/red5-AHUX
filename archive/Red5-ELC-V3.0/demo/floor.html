@@ -5419,97 +5419,138 @@ function _paintWindowsAndBeams(t) {
     // Interior normal = 90° CCW from segment direction.
     const nx = -Math.sin(rad), ny = Math.cos(rad);
 
-    // 1) Interior daylight beam (only when sun is up + not fully blinded).
+    // 1) Interior daylight beam (only when sun is up).
+    // Even fully-closed blinds show a faint edge-leak halo, so this
+    // block runs whenever the sun face-hits the window (dot > 0.05),
+    // regardless of blind_level.  What varies per blind position:
+    //   - Crisp slit beam scales as (1 - blind).  Skipped when the
+    //     window is essentially fully closed.
+    //   - Diffuse bloom (light scattered by half-closed slats) peaks
+    //     at blind = 0.5 and vanishes at both ends.
+    //   - Edge-leak halo (constant slat-gap leakage) always paints
+    //     while the sun hits the face.
     const blind = Math.min(Math.max(w.blind_level || 0, 0), 1);
-    if (sunAlt > 0 && lux > 50 && blind < 0.98) {
-      // Sun direction unit vector on floor plane (azimuth in world XY,
-      // where +Y is "north" on the DXF).  Canvas Y-axis is inverted.
+    if (sunAlt > 0 && lux > 50) {
       const azRad = sunAz * Math.PI / 180;
       const sx = Math.sin(azRad), sy = -Math.cos(azRad);
-      // Beam direction = sun-ray direction that reaches interior = -sun
-      // projected onto interior normal.  Only positive dot means light
-      // actually hits this window face.
       const dot = -sx * nx + -sy * ny;
       if (dot > 0.05) {
-        const throwM = 4 + 8 * dot;   // deeper penetration when sun is head-on
-        // Base intensity = dot × (1-blind) × normalised lux (0..1)
+        const throwM = 4 + 8 * dot;
         const luxNorm = Math.min(lux / 60000, 1);
-        const intensity = dot * (1 - blind) * luxNorm * 0.6;
-        // Beam colour follows the ambient colour, slightly warmer.
+        // Three independent contributions.  Formulas tuned so the
+        // total intensity is monotonically decreasing in blind_level
+        // (verified at blind = 0.0 / 0.5 / 1.0):
+        //   direct(0)     = 0.60·dot·luxNorm       ← full slit
+        //   direct(0.5)   = 0.30·dot·luxNorm       ← half slit
+        //   direct(1.0)   = 0                       ← no slit
+        //   bloom(0)      = 0
+        //   bloom(0.5)    = 0.15·dot·luxNorm       ← peak halo
+        //   bloom(1.0)    = 0
+        //   leak          = 0.04·dot·luxNorm        ← always
+        // Total at 0.0 ≈ 0.64; at 0.5 ≈ 0.49; at 1.0 ≈ 0.04.
+        const intensityDirect = dot * (1 - blind) * luxNorm * 0.60;
+        const intensityBloom  = 2 * blind * (1 - blind) * luxNorm * dot * 0.30;
+        const intensityLeak   = dot * luxNorm * 0.04;
         const rgb = A ? A.ambient.color_rgb : [220, 200, 160];
         const beamDirX = -sx, beamDirY = -sy;
 
-        // 2026-02-12g — Extended-slit sunbeam.  Instead of a
-        // radial-gradient wedge anchored at the window centroid (the
-        // old Phase 2A point-source shortcut), project the window's
-        // two endpoints along the beam direction by ``throwM`` metres.
-        // The result is a proper rectangular sunbeam on the floor,
-        // whose width matches the window and whose length matches the
-        // sun's depth of penetration.
         const [p1px, p1py] = _worldToPx({ x_m: x1, y_m: y1 }, t);
         const [p2px, p2py] = _worldToPx({ x_m: x2, y_m: y2 }, t);
         const dxPx = beamDirX * throwM * t.m2px;
         const dyPx = beamDirY * throwM * t.m2px;
         const q3x = p2px + dxPx, q3y = p2py + dyPx;
         const q4x = p1px + dxPx, q4y = p1py + dyPx;
-        // Linear gradient perpendicular to the window bar: bright at
-        // the window edge (0.0), transparent at the projected far
-        // edge (1.0).  Anchored at the midpoints of the two long
-        // edges so the gradient axis follows the beam direction even
-        // for oblique sun angles.
         const midBackX  = (p1px + p2px) / 2;
         const midBackY  = (p1py + p2py) / 2;
         const midFrontX = midBackX + dxPx;
         const midFrontY = midBackY + dyPx;
-        const grad = ctx.createLinearGradient(
-          midBackX, midBackY, midFrontX, midFrontY);
-        grad.addColorStop(0.0,
-          `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity.toFixed(3)})`);
-        grad.addColorStop(1.0,
-          `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
 
-        // Clip the sunbeam to the room containing the window's
-        // interior side, so it can't spill into adjacent rooms.
-        // Bleed into those adjacent rooms is handled separately by
-        // _paintReflectiveBleed below.
+        // Room containment lookup (used by both the clip below and
+        // the Phase 2B roomBoost accumulator further down).
         const sample = { x_m: w.x_m + nx * 0.5, y_m: w.y_m + ny * 0.5 };
         const rooms = Array.isArray(f.rooms) ? f.rooms : [];
         let containingIdx = -1;
         for (let i = 0; i < rooms.length; i++) {
           if (_pointInRoom(sample, rooms[i])) { containingIdx = i; break; }
         }
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        if (containingIdx >= 0) {
-          const V = rooms[containingIdx].vertices
-                 || rooms[containingIdx].points || [];
-          if (V.length >= 3) {
-            ctx.beginPath();
-            const [v0x, v0y] = _worldToPx({ x_m: V[0][0], y_m: V[0][1] }, t);
-            ctx.moveTo(v0x, v0y);
-            for (let k = 1; k < V.length; k++) {
-              const [vx, vy] = _worldToPx({ x_m: V[k][0], y_m: V[k][1] }, t);
-              ctx.lineTo(vx, vy);
-            }
-            ctx.closePath();
-            ctx.clip();
-          }
-        }
-        ctx.beginPath();
-        ctx.moveTo(p1px, p1py);
-        ctx.lineTo(p2px, p2py);
-        ctx.lineTo(q3x, q3y);
-        ctx.lineTo(q4x, q4y);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-        ctx.restore();
 
-        // Phase 2B: room-boost bookkeeping for reflective bleed.  We
-        // already found `containingIdx` above so no extra polygon test.
+        // Helper: apply the containing-room clip inside a save/restore.
+        const withRoomClip = (paintFn) => {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          if (containingIdx >= 0) {
+            const V = rooms[containingIdx].vertices
+                   || rooms[containingIdx].points || [];
+            if (V.length >= 3) {
+              ctx.beginPath();
+              const [v0x, v0y] = _worldToPx({ x_m: V[0][0], y_m: V[0][1] }, t);
+              ctx.moveTo(v0x, v0y);
+              for (let k = 1; k < V.length; k++) {
+                const [vx, vy] = _worldToPx({ x_m: V[k][0], y_m: V[k][1] }, t);
+                ctx.lineTo(vx, vy);
+              }
+              ctx.closePath();
+              ctx.clip();
+            }
+          }
+          paintFn();
+          ctx.restore();
+        };
+
+        // -- Direct slit beam (skipped when effectively fully closed).
+        if (blind < 0.98 && intensityDirect > 0.005) {
+          const grad = ctx.createLinearGradient(
+            midBackX, midBackY, midFrontX, midFrontY);
+          grad.addColorStop(0.0,
+            `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensityDirect.toFixed(3)})`);
+          grad.addColorStop(1.0,
+            `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+          withRoomClip(() => {
+            ctx.beginPath();
+            ctx.moveTo(p1px, p1py);
+            ctx.lineTo(p2px, p2py);
+            ctx.lineTo(q3x, q3y);
+            ctx.lineTo(q4x, q4y);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+          });
+        }
+
+        // -- Diffuse bloom + always-on edge-leak.
+        // Both are painted as a radial gradient centred on the window
+        // midpoint, biased slightly INTO the room along the interior
+        // normal (so the bloom sits under the slats, not out on the
+        // building exterior).  Radius scales with window length so a
+        // 4 m curtain-wall gets a proportionally bigger halo than a
+        // porthole.
+        const haloTotal = intensityBloom + intensityLeak;
+        if (haloTotal > 0.005) {
+          const winLenPx = Math.hypot(p2px - p1px, p2py - p1py);
+          const haloBiasPx = 0.6 * t.m2px;   // 0.6 m into the room
+          const haloCx = midBackX + nx * haloBiasPx;
+          const haloCy = midBackY - ny * haloBiasPx;   // canvas Y inverted
+          const haloR = Math.max(40, winLenPx * 0.9 + 24);
+          const grad2 = ctx.createRadialGradient(
+            haloCx, haloCy, 0, haloCx, haloCy, haloR);
+          grad2.addColorStop(0.0,
+            `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${haloTotal.toFixed(3)})`);
+          grad2.addColorStop(1.0,
+            `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+          withRoomClip(() => {
+            ctx.fillStyle = grad2;
+            ctx.fillRect(haloCx - haloR, haloCy - haloR, haloR * 2, haloR * 2);
+          });
+        }
+
+        // Phase 2B: sum every contribution into the room boost so the
+        // reflective bleed reacts to blind position too (a partly
+        // closed blind bleeds slightly LESS into the neighbour, and a
+        // fully-closed blind leaves only the edge-leak trickle).
         if (containingIdx >= 0) {
           roomBoost.set(containingIdx,
-            (roomBoost.get(containingIdx) || 0) + intensity);
+            (roomBoost.get(containingIdx) || 0)
+            + intensityDirect + intensityBloom + intensityLeak);
         }
       }
     }

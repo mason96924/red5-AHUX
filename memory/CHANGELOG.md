@@ -4,6 +4,50 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12i — Bloom + edge-leak: light through blinds
+
+### What shipped
+
+Two extra light-through-blinds contributions on top of the crisp
+slit beam, so partly-closed and fully-closed blinds now look
+distinct instead of just being a dimmer copy of the sunbeam.
+
+- **Diffuse bloom** — a radial gradient centred on the window
+  midpoint, biased 0.6 m into the room along the interior normal.
+  Alpha follows a bell curve `4·blind·(1−blind)` scaled by
+  `dot·luxNorm·0.15`, peaking at `blind=0.5` and vanishing at
+  both ends.  Radius scales with window length so a curtain-wall
+  gets a proportionally bigger halo than a porthole.
+- **Edge-leak halo** — the same-shape gradient with constant alpha
+  `dot·luxNorm·0.04`, painted whenever the sun hits the window
+  face regardless of blind position, representing the always-on
+  slat-gap leakage.
+- **Room-boost bookkeeping** for Phase 2B bleed now sums all three
+  contributions (direct + bloom + leak), so an adjacent room sees
+  slightly less bleed when the source room's blinds are half-shut
+  and a tiny trickle even when they're fully shut.
+- Everything still clips to the containing-room polygon (Phase 2B
+  guarantee preserved).
+
+### Why
+
+Operator: "How do I see the light bleeding thru the window
+blinds?"  → until now the answer was "you can't", because the
+old code scaled both direct and bleed by `(1 − blind)` uniformly.
+Now blinds have a proper three-lobe response.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright pixel probe on a single 3 m south window under a
+  head-on clear-day sun (dot ≈ 1):
+    - `(5, 3)` inside slit:  348 → 275 → 202 → 128 → 55  (monotone)
+    - `(7, 1)` off-slit halo: 61 → 75 → **79** → 75 → 61  (bell curve)
+  → all three lobes isolate cleanly; total intensity is monotone
+    decreasing in blind; edge-leak remains at fully-closed.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12h — Bidirectional window highlight (canvas ↔ panel)
 
 ### What shipped

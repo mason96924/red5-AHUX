@@ -6523,21 +6523,22 @@ function _windowCardinal(deg) {
   return best.name;
 }
 
-// 2026-02-12v — Position-based cardinal for the Windows panel.
+// 2026-02-12v/af — Angle-first, position-second cardinal classifier
+// for the Windows-panel badge + auto-name.
 //
-// The angle-based inference (angle_deg = axis of the bar) is
-// ambiguous: a horizontal window on the NORTH wall and one on the
-// SOUTH wall both have angle_deg=0 (or 180 depending on drag
-// direction).  For the Windows-panel list ordering + auto-name,
-// that ambiguity gave arbitrary N/S/E/W tags depending on which
-// way the operator dragged.  Instead we look at the window's
-// ABSOLUTE POSITION relative to the floor's centre.  Near the top
-// of the plan = NORTH, bottom = SOUTH, left = WEST, right = EAST.
-// Whichever axis has the larger displacement wins.
-//
-// DXF convention on this codebase: screen +Y = SOUTH (canvas paint
-// code does `cy = yOffset + w.y_m * m2px` — y grows downward on
-// screen, so smaller y_m = up on screen = NORTH).
+// Rule (operator ask, 2026-02-12af):
+//   1. Read the window's own axis (`angle_deg`).  A window bar is a
+//      line segment, so 30° and 210° describe the same orientation
+//      — normalise to `[0, 180)`.
+//   2. If the bar is closer to HORIZONTAL (angle near 0° or 180°),
+//      it must sit on the NORTH or SOUTH wall → use the window's
+//      `y_m` relative to the floor centre to pick which one
+//      (smaller y_m = north on screen; DXF convention).
+//   3. If the bar is closer to VERTICAL (angle near 90°), it sits
+//      on the EAST or WEST wall → use `x_m` to disambiguate.
+//   4. This is far more resilient than the pure-position rule: even
+//      an off-centre window near a corner is classified by which
+//      wall it's ON, not just where it happens to sit.
 function _windowPositionalCardinalLetter(w, f) {
   f = f || state.currentFloor;
   if (!f) return 'N';   // safe default before a floor is loaded
@@ -6545,10 +6546,18 @@ function _windowPositionalCardinalLetter(w, f) {
   const cy = (f.height_m || 0) / 2;
   const dx = (w.x_m || 0) - cx;
   const dy = (w.y_m || 0) - cy;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    return dx >= 0 ? 'E' : 'W';
+  // Normalise angle to [0, 180).  A bar at 210° is the same
+  // orientation as one at 30°.
+  const ang = (((w.angle_deg || 0) % 180) + 180) % 180;
+  // How close is the bar to horizontal (0° or 180°) vs vertical (90°)?
+  const distFromHoriz = Math.min(ang, 180 - ang);   // 0 = perfectly horizontal
+  const distFromVert  = Math.abs(ang - 90);          // 0 = perfectly vertical
+  if (distFromHoriz <= distFromVert) {
+    // Horizontal bar → N or S wall.
+    return dy >= 0 ? 'S' : 'N';
   }
-  return dy >= 0 ? 'S' : 'N';
+  // Vertical bar → E or W wall.
+  return dx >= 0 ? 'E' : 'W';
 }
 
 // 2026-02-12s — Auto-generated identifier for a window, using its

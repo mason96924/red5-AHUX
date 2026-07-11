@@ -4622,6 +4622,28 @@ canvas.addEventListener('mousedown', (ev) => {
   const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
   if (!state.currentFloor) return;
 
+  // Phase 2A window drag: left-click within 10 px of any window bar
+  // grabs it for rigid translation.  We test windows BEFORE fixtures
+  // so a window bar drawn atop a fixture still wins the hit.
+  if (ev.button === 0
+      && Array.isArray(state.currentFloor.windows)
+      && state.currentFloor.windows.length) {
+    const tW = computeTransform();
+    if (tW) {
+      for (const w of state.currentFloor.windows) {
+        const d = _pointToWindowDistPx(sx, sy, w, tW);
+        if (d < 10) {
+          const cx = tW.xOffset + w.x_m * tW.m2px;
+          const cy = tW.yOffset + w.y_m * tW.m2px;
+          dragState = { win: w, mode: 'window-anchor',
+                        offX: cx - sx, offY: cy - sy, moved: false };
+          document.body.style.cursor = 'grabbing';
+          return;
+        }
+      }
+    }
+  }
+
   // Hit-test existing placed fixtures — click selects the device
   // (highlighting its tile in the right rail) and starts a drag.
   //
@@ -4674,6 +4696,16 @@ canvas.addEventListener('mousemove', (ev) => {
   if (!dragState) return;
   const rect = canvas.getBoundingClientRect();
   const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+  // Window drag: translate the bar's centre; length + angle stay.
+  if (dragState.mode === 'window-anchor') {
+    const t = computeTransform(); if (!t) return;
+    const w = dragState.win;
+    w.x_m = (sx + dragState.offX - t.xOffset) / t.m2px;
+    w.y_m = (sy + dragState.offY - t.yOffset) / t.m2px;
+    dragState.moved = true;
+    paintCanvas();
+    return;
+  }
   // Rubber-band marquee: just update the far corner + repaint; the
   // actual selection AABB test happens on mouseup.
   if (dragState.mode === 'marquee') {
@@ -4756,6 +4788,18 @@ canvas.addEventListener('mousemove', (ev) => {
 
 canvas.addEventListener('mouseup', async () => {
   if (!dragState) return;
+  // Window drag release -> save + rerender.  Handled BEFORE the marquee
+  // block so a window drag never accidentally becomes a marquee AABB.
+  if (dragState.mode === 'window-anchor') {
+    const moved = dragState.moved;
+    dragState = null;
+    document.body.style.cursor = '';
+    if (moved) {
+      await _saveWindows();
+      renderWindowsPanel();   // labels don't change, but keep panel consistent
+    }
+    return;
+  }
   // Rubber-band marquee release -> AABB intersection test against
   // every fixture anchor, additive to the existing SRM selection.
   if (dragState.mode === 'marquee') {
@@ -5499,6 +5543,33 @@ async function _saveWindows() {
   } catch (e) { toast(`Save failed: ${e}`, true); }
 }
 
+// Segment endpoints (in screen px) of a window on the current canvas.
+// Windows are drawn along their own axis of ``length_m`` and centred
+// on ``(x_m, y_m)`` -- we mirror the paint code so drag hit-testing
+// and blind-toggle hit-testing agree on where the bar actually is.
+function _windowSegmentPx(w, t) {
+  const len = w.length_m || 0.5;
+  const ang = ((w.angle_deg || 0) * Math.PI) / 180;
+  const half = (len / 2) * t.m2px;
+  const cx = t.xOffset + w.x_m * t.m2px;
+  const cy = t.yOffset + w.y_m * t.m2px;
+  const dx = Math.cos(ang) * half;
+  const dy = Math.sin(ang) * half;
+  return { cx, cy, p1x: cx - dx, p1y: cy - dy, p2x: cx + dx, p2y: cy + dy };
+}
+
+// Distance from screen-space point to a window's bar segment.
+function _pointToWindowDistPx(sx, sy, w, t) {
+  const s = _windowSegmentPx(w, t);
+  const vx = s.p2x - s.p1x, vy = s.p2y - s.p1y;
+  const wx = sx - s.p1x,   wy = sy - s.p1y;
+  const c2 = vx * vx + vy * vy;
+  const u  = c2 > 0 ? Math.max(0, Math.min(1, (vx * wx + vy * wy) / c2)) : 0;
+  const px = s.p1x + u * vx;
+  const py = s.p1y + u * vy;
+  return Math.hypot(sx - px, sy - py);
+}
+
 // Right-click on a window bar → quick toggle: 0 ↔ last non-zero.
 // (Detailed blind adjustment lives in the floating Windows panel; the
 // old canvas popover was replaced 2026-02-12 because right-click
@@ -5511,12 +5582,12 @@ canvas.addEventListener('contextmenu', (ev) => {
   const rect = canvas.getBoundingClientRect();
   const t = computeTransform(); if (!t) return;
   const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
-  // Hit test: find nearest window whose bar centroid is within 14 px.
+  // Segment-based hit test so long windows are grabbable along their
+  // whole length, not only within 14 px of the centre.
   let hit = null, best = Infinity;
   for (const w of wins) {
-    const [px, py] = _worldToPx({x_m: w.x_m, y_m: w.y_m}, t);
-    const d = Math.hypot(sx - px, sy - py);
-    if (d < 14 && d < best) { best = d; hit = w; }
+    const d = _pointToWindowDistPx(sx, sy, w, t);
+    if (d < 10 && d < best) { best = d; hit = w; }
   }
   if (!hit) return;
   ev.preventDefault();
@@ -5572,43 +5643,85 @@ function renderWindowsPanel() {
       '<div data-testid="wp-empty"' +
       ' style="padding:16px 6px;font-size:11px;color:var(--muted);text-align:center">' +
       'No windows on this floor.<br>' +
-      'Press <b>W</b> then click two wall points on the canvas to place one.' +
+      'Press <b>W</b> then click two wall points on the canvas to place one,<br>' +
+      'or drag placed windows to reposition.' +
       '</div>';
     return;
   }
+  // Cap length slider at 2× the current floor's longer dimension so
+  // it always covers the plausible range without being unwieldy.
+  const maxLen = Math.max(
+    2, 2 * Math.max(f.width_m || 0, f.height_m || 0));
   body.innerHTML = wins.map((w, i) => {
     const pct = Math.round((w.blind_level || 0) * 100);
     const dir = _windowCardinal(w.angle_deg);
-    const label = `W${i + 1}`;
+    const label = `W${i + 1} · ${dir} · ${(w.length_m || 0).toFixed(2)} m`;
+    const ang  = Math.round(((w.angle_deg || 0) + 540) % 360 - 180);
+    const rowSliderStyle =
+      'display:flex;align-items:center;gap:6px;margin-top:3px';
+    const capStyle =
+      'font-size:9px;color:var(--muted);width:44px;flex-shrink:0';
+    const valStyle =
+      'min-width:44px;text-align:right;font-family:var(--mono);color:var(--muted)';
+    const sliderStyle =
+      'flex:1;accent-color:var(--accent);min-width:0';
     return (
       `<div class="wp-row" data-wid="${w.id}"` +
       ` data-testid="wp-row-${i + 1}"` +
       ` style="padding:8px 2px;border-bottom:1px solid var(--line);font-size:11px">` +
-        `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">` +
-          `<span style="font-family:var(--mono);color:var(--text)">` +
-            `${label} · ${(w.length_m || 0).toFixed(2)} m · ${dir}` +
-          `</span>` +
+        `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">` +
+          `<span class="wp-label" data-wid="${w.id}"` +
+                ` data-testid="wp-label-${i + 1}"` +
+                ` style="font-family:var(--mono);color:var(--text)">${label}</span>` +
           `<button class="wp-del" data-wid="${w.id}"` +
                  ` data-testid="wp-del-${i + 1}" title="Delete window"` +
                  ` style="background:none;border:0;color:var(--bad);` +
                         `cursor:pointer;padding:0 4px;font-size:12px">✕</button>` +
         `</div>` +
-        `<div style="display:flex;align-items:center;gap:8px">` +
-          `<span style="font-size:9px;color:var(--muted);width:26px" title="Blinds fully open">open</span>` +
+        `<div style="${rowSliderStyle}">` +
+          `<span style="${capStyle}">Blinds</span>` +
           `<input type="range" min="0" max="100" step="1" value="${pct}"` +
-                 ` class="wp-slider" data-wid="${w.id}"` +
+                 ` class="wp-slider wp-blind" data-wid="${w.id}"` +
                  ` data-testid="wp-slider-${i + 1}"` +
-                 ` style="flex:1;accent-color:var(--accent)" />` +
-          `<span class="wp-value" data-wid="${w.id}"` +
+                 ` style="${sliderStyle}" />` +
+          `<span class="wp-blind-val wp-value" data-wid="${w.id}"` +
                 ` data-testid="wp-value-${i + 1}"` +
-                ` style="min-width:34px;text-align:right;` +
-                       `font-family:var(--mono);color:var(--muted)">${pct}%</span>` +
+                ` style="${valStyle}">${pct}%</span>` +
+        `</div>` +
+        `<div style="${rowSliderStyle}">` +
+          `<span style="${capStyle}">Length</span>` +
+          `<input type="range" min="0.2" max="${maxLen.toFixed(2)}" step="0.05"` +
+                 ` value="${(w.length_m || 0.5).toFixed(2)}"` +
+                 ` class="wp-slider wp-length" data-wid="${w.id}"` +
+                 ` data-testid="wp-length-${i + 1}"` +
+                 ` style="${sliderStyle}" />` +
+          `<span class="wp-length-val" data-wid="${w.id}"` +
+                ` data-testid="wp-length-val-${i + 1}"` +
+                ` style="${valStyle}">${(w.length_m || 0).toFixed(2)} m</span>` +
+        `</div>` +
+        `<div style="${rowSliderStyle}">` +
+          `<span style="${capStyle}">Angle</span>` +
+          `<input type="range" min="-180" max="180" step="1" value="${ang}"` +
+                 ` class="wp-slider wp-angle" data-wid="${w.id}"` +
+                 ` data-testid="wp-angle-${i + 1}"` +
+                 ` style="${sliderStyle}" />` +
+          `<span class="wp-angle-val" data-wid="${w.id}"` +
+                ` data-testid="wp-angle-val-${i + 1}"` +
+                ` style="${valStyle}">${ang}°</span>` +
         `</div>` +
       `</div>`
     );
   }).join('');
-  for (const el of body.querySelectorAll('.wp-slider')) {
+  for (const el of body.querySelectorAll('.wp-blind')) {
     el.addEventListener('input', _onBlindSliderInput);
+    el.addEventListener('change', _saveWindows);
+  }
+  for (const el of body.querySelectorAll('.wp-length')) {
+    el.addEventListener('input', _onLengthSliderInput);
+    el.addEventListener('change', _saveWindows);
+  }
+  for (const el of body.querySelectorAll('.wp-angle')) {
+    el.addEventListener('input', _onAngleSliderInput);
     el.addEventListener('change', _saveWindows);
   }
   for (const el of body.querySelectorAll('.wp-del')) {
@@ -5624,9 +5737,45 @@ function _onBlindSliderInput(ev) {
   const val = (parseInt(ev.target.value, 10) || 0) / 100;
   if (val > 0.01) w._lastBlind = val;
   w.blind_level = val;
-  const valEl = document.querySelector(`.wp-value[data-wid="${wid}"]`);
+  const valEl = document.querySelector(`.wp-blind-val[data-wid="${wid}"]`);
   if (valEl) valEl.textContent = `${Math.round(val * 100)}%`;
   paintCanvas();
+}
+
+function _onLengthSliderInput(ev) {
+  const wid = ev.target.dataset.wid;
+  const f = state.currentFloor; if (!f) return;
+  const w = (f.windows || []).find(x => x.id === wid);
+  if (!w) return;
+  const val = parseFloat(ev.target.value) || 0.2;
+  w.length_m = val;
+  const valEl = document.querySelector(`.wp-length-val[data-wid="${wid}"]`);
+  if (valEl) valEl.textContent = `${val.toFixed(2)} m`;
+  _syncWindowLabel(w);
+  paintCanvas();
+}
+
+function _onAngleSliderInput(ev) {
+  const wid = ev.target.dataset.wid;
+  const f = state.currentFloor; if (!f) return;
+  const w = (f.windows || []).find(x => x.id === wid);
+  if (!w) return;
+  const val = parseFloat(ev.target.value) || 0;
+  w.angle_deg = val;
+  const valEl = document.querySelector(`.wp-angle-val[data-wid="${wid}"]`);
+  if (valEl) valEl.textContent = `${Math.round(val)}°`;
+  _syncWindowLabel(w);
+  paintCanvas();
+}
+
+function _syncWindowLabel(w) {
+  const wins = (state.currentFloor && state.currentFloor.windows) || [];
+  const i = wins.indexOf(w);
+  if (i < 0) return;
+  const lbl = document.querySelector(`.wp-label[data-wid="${w.id}"]`);
+  if (!lbl) return;
+  const dir = _windowCardinal(w.angle_deg);
+  lbl.textContent = `W${i + 1} · ${dir} · ${(w.length_m || 0).toFixed(2)} m`;
 }
 
 async function _onDeleteWindow(ev) {

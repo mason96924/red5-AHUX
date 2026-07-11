@@ -4,6 +4,54 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12b — Windows panel: length + angle sliders, canvas drag
+
+### What shipped
+
+- **Length + Angle sliders** in every Windows-panel row alongside
+  the existing Blinds slider.  Each row now has three sliders with
+  live monospaced readouts:
+    - Blinds — 0-100%, step 1
+    - Length — 0.2 m … 2 × floor's longest side, step 0.05
+    - Angle — -180° … 180°, step 1
+  Row header updates live to `W# · <cardinal> · L.LL m` as sliders
+  move; changes autosave on `change`.
+
+- **Canvas drag = reposition** for placed windows.
+  `mousedown` inside 10 px of any window bar (segment-distance,
+  not centroid) grabs the bar for rigid translation; `mouseup`
+  saves via `PATCH /api/elc/floors/{id}`.  Works regardless of
+  bar length or angle.  Left-click only — right-click still
+  toggles blinds 0 ↔ last-value.
+
+- **Segment-based hit-testing**: `_windowSegmentPx` and
+  `_pointToWindowDistPx` helpers replace the old centroid-only
+  test, so long or oblique window bars are grabbable along their
+  whole length instead of only near the centre.
+
+- **Empty-state hint** updated to mention drag ("… or drag placed
+  windows to reposition.").
+
+### Why
+
+Operator feedback: "Windows placement is too cumbersome. line/tube
+replacement. 1) length-setting 2) windows drawn should be
+draggable for easy replacement 3) angle-setting — all these with
+slide bar for open control."  This ships all three.
+
+### Tests
+
+- 458/458 pytest still green (`python -m pytest`).
+- Manual Playwright smoke: seeded 1 window at (3, 0.3), length 2.5,
+  angle 0°.  Panel showed 3 sliders + label `W1 · south · 2.50 m`.
+  Length slider → 4.00 m updated label to `W1 · south · 4.00 m`.
+  Angle slider → 90° updated label to `W1 · west · 4.00 m` and
+  rotated the canvas bar to vertical.  Canvas mousedown+move+up
+  translated the bar to world (5.99, 5.00); GET on the floor
+  returned the same values → persisted.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12 — Windows/Blinds floating panel
 
 ### What shipped

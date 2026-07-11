@@ -3864,6 +3864,12 @@ function paintCanvas() {
     ctx.restore();
   }
 
+  // 2026-02-11e — Windows + daylight beam projection.  Paints AFTER
+  // fixtures so the beam wedges sit above room polygons but below any
+  // interactive marquee overlay.  Uses state.ambient for the current
+  // sun position + illuminance.
+  _paintWindowsAndBeams(t);
+
   // Rubber-band marquee overlay -- drawn last so it sits above all
   // fixtures / heat / grid.  Screen-space rectangle, translucent fill
   // with a dashed outline so it reads as a transient selection tool.
@@ -5292,6 +5298,245 @@ document.getElementById('ambient-live')?.addEventListener('click', () => {
   document.getElementById('ambient-live').style.display = 'none';
   _fetchAmbient(null);
 });
+
+// ==================================================================
+// Windows + interior daylight beam projection (Phase 2A)
+// ==================================================================
+state.windowMode = null;    // {phase: 'p1'|'p2', p1: {x_m,y_m}}
+state.windowsDirty = false;
+
+function _paintWindowsAndBeams(t) {
+  const f = state.currentFloor;
+  if (!f || !Array.isArray(f.windows) || !f.windows.length) return;
+  const A = state.ambient;
+  const sunAlt = A ? A.sun.altitude_deg : -90;
+  const sunAz  = A ? A.sun.azimuth_deg : 0;
+  const lux    = A ? A.ambient.illuminance_lux : 0;
+  const label  = A ? A.ambient.label : 'night';
+
+  for (const w of f.windows) {
+    // World-space endpoints of the wall segment the window occupies.
+    const half = (w.length_m || 1.2) / 2;
+    const rad  = (w.angle_deg || 0) * Math.PI / 180;
+    const dx = Math.cos(rad) * half, dy = Math.sin(rad) * half;
+    const x1 = w.x_m - dx, y1 = w.y_m - dy;
+    const x2 = w.x_m + dx, y2 = w.y_m + dy;
+    // Interior normal = 90° CCW from segment direction.
+    const nx = -Math.sin(rad), ny = Math.cos(rad);
+
+    // 1) Interior daylight beam (only when sun is up + not fully blinded).
+    const blind = Math.min(Math.max(w.blind_level || 0, 0), 1);
+    if (sunAlt > 0 && lux > 50 && blind < 0.98) {
+      // Sun direction unit vector on floor plane (azimuth in world XY,
+      // where +Y is "north" on the DXF).  Canvas Y-axis is inverted.
+      const azRad = sunAz * Math.PI / 180;
+      const sx = Math.sin(azRad), sy = -Math.cos(azRad);
+      // Beam direction = sun-ray direction that reaches interior = -sun
+      // projected onto interior normal.  Only positive dot means light
+      // actually hits this window face.
+      const dot = -sx * nx + -sy * ny;
+      if (dot > 0.05) {
+        const centerPx = _worldToPx({x_m: w.x_m, y_m: w.y_m}, t);
+        const throwM = 4 + 8 * dot;   // deeper penetration when sun is head-on
+        const throwPx = throwM * t.m2px;
+        const beamHalfAngle = Math.PI / 3.5;
+        // Base intensity = dot × (1-blind) × normalised lux (0..1)
+        const luxNorm = Math.min(lux / 60000, 1);
+        const intensity = dot * (1 - blind) * luxNorm * 0.6;
+        // Beam colour follows the ambient colour, slightly warmer.
+        const rgb = A ? A.ambient.color_rgb : [220, 200, 160];
+        const beamDirX = -sx, beamDirY = -sy;
+        const startAngle = Math.atan2(beamDirY, beamDirX) - beamHalfAngle;
+        const endAngle   = Math.atan2(beamDirY, beamDirX) + beamHalfAngle;
+        // Radial gradient wedge.
+        const grad = ctx.createRadialGradient(
+          centerPx[0], centerPx[1], 0,
+          centerPx[0], centerPx[1], throwPx,
+        );
+        grad.addColorStop(0.0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${intensity.toFixed(3)})`);
+        grad.addColorStop(1.0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(centerPx[0], centerPx[1]);
+        ctx.arc(centerPx[0], centerPx[1], throwPx, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 2) Window bar itself (drawn AFTER beam so it sits on top).
+    const [p1x, p1y] = _worldToPx({x_m: x1, y_m: y1}, t);
+    const [p2x, p2y] = _worldToPx({x_m: x2, y_m: y2}, t);
+    ctx.save();
+    // Colour reflects blind opacity: light-blue open → grey closed.
+    const openness = 1 - blind;
+    const r = Math.round(150 * openness + 70 * blind);
+    const g = Math.round(210 * openness + 70 * blind);
+    const b = Math.round(255 * openness + 90 * blind);
+    ctx.strokeStyle = `rgb(${r},${g},${b})`;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(p1x, p1y);
+    ctx.lineTo(p2x, p2y);
+    ctx.stroke();
+    // Tiny normal-direction tick so orientation is unambiguous.
+    const midX = (p1x + p2x) / 2, midY = (p1y + p2y) / 2;
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.7)`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(midX, midY);
+    ctx.lineTo(midX + nx * 12, midY - ny * 12);   // canvas Y inverted
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function _worldToPx(p, t) {
+  return [t.xOffset + p.x_m * t.m2px, t.yOffset + p.y_m * t.m2px];
+}
+
+// Keyboard "w" toggles window-placement mode.  Two clicks on the
+// canvas define the endpoints; the window is centred between them
+// with computed length + angle.
+document.addEventListener('keydown', (ev) => {
+  if (ev.target && (ev.target.tagName === 'INPUT'
+                    || ev.target.tagName === 'TEXTAREA')) return;
+  if (ev.key === 'w' || ev.key === 'W') {
+    if (!state.currentFloor) return;
+    state.windowMode = state.windowMode ? null : { phase: 'p1' };
+    toast(state.windowMode
+      ? 'Window mode: click two endpoints on a wall to place. Esc to cancel.'
+      : 'Window mode off.');
+    document.body.style.cursor = state.windowMode ? 'crosshair' : '';
+  } else if (ev.key === 'Escape' && state.windowMode) {
+    state.windowMode = null;
+    document.body.style.cursor = '';
+    toast('Window mode cancelled.');
+  }
+});
+canvas.addEventListener('click', async (ev) => {
+  if (!state.windowMode || !state.currentFloor) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const rect = canvas.getBoundingClientRect();
+  const t = computeTransform(); if (!t) return;
+  const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+  const wp = { x_m: (sx - t.xOffset) / t.m2px, y_m: (sy - t.yOffset) / t.m2px };
+  if (state.windowMode.phase === 'p1') {
+    state.windowMode.p1 = wp;
+    state.windowMode.phase = 'p2';
+    toast('First endpoint set. Click the second endpoint.');
+    return;
+  }
+  const p1 = state.windowMode.p1;
+  const dx = wp.x_m - p1.x_m, dy = wp.y_m - p1.y_m;
+  const length = Math.hypot(dx, dy);
+  if (length < 0.2) { toast('Window too short (min 0.2 m).', true); return; }
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  const newWin = {
+    id: crypto.randomUUID(),
+    x_m: (p1.x_m + wp.x_m) / 2,
+    y_m: (p1.y_m + wp.y_m) / 2,
+    length_m: length, angle_deg: angle,
+    blind_level: 0.0, sill_height_m: 1.0, head_height_m: 2.2,
+  };
+  const wins = [...(state.currentFloor.windows || []), newWin];
+  state.currentFloor.windows = wins;
+  state.windowMode = null;
+  document.body.style.cursor = '';
+  await _saveWindows();
+  toast(`Window placed (${length.toFixed(2)} m). Right-click to set blinds.`);
+  paintCanvas();
+}, true);
+
+async function _saveWindows() {
+  const f = state.currentFloor;
+  if (!f) return;
+  try {
+    await fetch(`${API}/floors/${f.id}`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ windows: f.windows }),
+    });
+  } catch (e) { toast(`Save failed: ${e}`, true); }
+}
+
+// Right-click on a window → blind slider popover.
+canvas.addEventListener('contextmenu', (ev) => {
+  if (!state.currentFloor) return;
+  const f = state.currentFloor;
+  const wins = f.windows || [];
+  if (!wins.length) return;
+  const rect = canvas.getBoundingClientRect();
+  const t = computeTransform(); if (!t) return;
+  const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+  // Hit test: find nearest window whose bar centroid is within 14 px.
+  let hit = null, best = Infinity;
+  for (const w of wins) {
+    const [px, py] = _worldToPx({x_m: w.x_m, y_m: w.y_m}, t);
+    const d = Math.hypot(sx - px, sy - py);
+    if (d < 14 && d < best) { best = d; hit = w; }
+  }
+  if (!hit) return;
+  ev.preventDefault();
+  _openBlindPopover(hit, ev.clientX, ev.clientY);
+});
+
+function _openBlindPopover(win, x, y) {
+  const existing = document.getElementById('blind-popover');
+  if (existing) existing.remove();
+  const div = document.createElement('div');
+  div.id = 'blind-popover';
+  div.style.cssText =
+    `position:fixed;left:${x}px;top:${y}px;z-index:500;`
+    + 'background:#10141a;border:1px solid var(--line);border-radius:5px;'
+    + 'padding:10px 12px;box-shadow:0 8px 20px rgba(0,0,0,0.5);'
+    + 'font-family:ui-sans-serif,system-ui;font-size:12px;color:var(--text);'
+    + 'min-width:220px';
+  div.innerHTML = `
+    <div style="margin-bottom:8px;font-size:11px;color:var(--muted)">
+      Blind level · ${(win.length_m||0).toFixed(2)} m window
+    </div>
+    <input type="range" min="0" max="100" value="${Math.round((win.blind_level||0)*100)}"
+           style="width:100%;accent-color:var(--accent)"
+           data-testid="blind-slider" />
+    <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--muted)">
+      <span>open</span>
+      <span data-testid="blind-value">${Math.round((win.blind_level||0)*100)}%</span>
+      <span>closed</span>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:6px;justify-content:flex-end">
+      <button class="ghost" data-act="delete" style="color:var(--bad)">Delete</button>
+      <button class="ghost" data-act="close">Close</button>
+    </div>
+  `;
+  document.body.appendChild(div);
+  const slider = div.querySelector('input');
+  const value  = div.querySelector('[data-testid="blind-value"]');
+  slider.addEventListener('input', () => {
+    win.blind_level = (parseInt(slider.value, 10) || 0) / 100;
+    value.textContent = `${slider.value}%`;
+    paintCanvas();
+  });
+  slider.addEventListener('change', _saveWindows);
+  div.querySelector('[data-act="close"]').addEventListener('click', () => div.remove());
+  div.querySelector('[data-act="delete"]').addEventListener('click', async () => {
+    state.currentFloor.windows = (state.currentFloor.windows || [])
+      .filter(w => w.id !== win.id);
+    div.remove();
+    await _saveWindows();
+    paintCanvas();
+    toast('Window deleted.');
+  });
+  setTimeout(() => {
+    const off = (e) => {
+      if (!div.contains(e.target)) { div.remove(); document.removeEventListener('click', off); }
+    };
+    document.addEventListener('click', off);
+  }, 100);
+}
 
 // ==================================================================
 // Tree strip (SCUs · Modules · Relays · Floors · Groups · Schedules)

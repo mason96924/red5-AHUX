@@ -45,15 +45,18 @@ _MAX_SVG_BYTES = 5 * 1024 * 1024  # 5 MB — flip to filesystem past this
 
 
 def _row_to_floor(row: Any) -> dict[str, Any]:
+    keys = row.keys()
     return {
         "id": row["id"],
         "name": row["name"],
-        "strand_label": row["strand_label"] if "strand_label" in row.keys() else None,
+        "strand_label": row["strand_label"] if "strand_label" in keys else None,
         "svg": row["svg"],
         "width_m": row["width_m"],
         "height_m": row["height_m"],
+        "ceiling_height_m": row["ceiling_height_m"] if "ceiling_height_m" in keys else 3.0,
         "fixtures": json.loads(row["fixtures_json"]),
         "rooms": json.loads(row["rooms_json"] or "[]"),
+        "windows": json.loads(row["windows_json"] or "[]") if "windows_json" in keys else [],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -329,7 +332,7 @@ def list_floors(db_path: str | None = None) -> list[dict[str, Any]]:
     with get_conn(db_path) as conn:
         rows = conn.execute(
             "SELECT id, name, strand_label, '' AS svg, width_m, height_m, "
-            "fixtures_json, rooms_json, created_at, updated_at "
+            "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at "
             "FROM floors ORDER BY name"
         ).fetchall()
     return [_row_to_floor(r) for r in rows]
@@ -340,10 +343,10 @@ def get_floor(
 ) -> dict[str, Any]:
     with get_conn(db_path) as conn:
         cols = ("id, name, strand_label, svg, width_m, height_m, "
-                "fixtures_json, rooms_json, created_at, updated_at")
+                "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at")
         if not include_svg:
             cols = ("id, name, strand_label, '' AS svg, width_m, height_m, "
-                    "fixtures_json, rooms_json, created_at, updated_at")
+                    "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at")
         row = conn.execute(
             f"SELECT {cols} FROM floors WHERE id = ?", (floor_id,),
         ).fetchone()
@@ -375,7 +378,7 @@ def get_or_create_floor_by_strand(
     with get_conn(db_path) as conn:
         row = conn.execute(
             "SELECT id, name, strand_label, svg, width_m, height_m, "
-            "fixtures_json, rooms_json, created_at, updated_at "
+            "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at "
             "FROM floors WHERE strand_label = ?", (label,),
         ).fetchone()
         if row is not None:
@@ -396,8 +399,8 @@ def get_or_create_floor_by_strand(
         conn.execute(
             "INSERT INTO floors "
             "(id, name, strand_label, svg, width_m, height_m, "
-            "fixtures_json, rooms_json, created_at, updated_at) "
-            "VALUES (?, ?, ?, '', 20.0, 15.0, '[]', '[]', ?, ?)",
+            "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at) "
+            "VALUES (?, ?, ?, '', 20.0, 15.0, '[]', '[]', '[]', 3.0, ?, ?)",
             (fid, name, label, now, now),
         )
     return get_floor(fid, include_svg=False, db_path=db_path)
@@ -432,8 +435,8 @@ def create_floor(
             conn.execute(
                 "INSERT INTO floors "
                 "(id, name, strand_label, svg, width_m, height_m, fixtures_json, "
-                "rooms_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "rooms_json, windows_json, ceiling_height_m, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 3.0, ?, ?)",
                 (fid, name, label, svg, width_m, height_m,
                  json.dumps(fixtures_norm), json.dumps(rooms_norm),
                  now, now),
@@ -454,6 +457,8 @@ def update_floor(
     height_m: float | None = None,
     fixtures: list[dict[str, Any]] | None = None,
     rooms: list[dict[str, Any]] | None = None,
+    windows: list[dict[str, Any]] | None = None,
+    ceiling_height_m: float | None = None,
     strand_label: str | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
@@ -498,6 +503,34 @@ def update_floor(
         rooms_norm = _validate_rooms(rooms)
         sets.append("rooms_json = ?")
         args.append(json.dumps(rooms_norm))
+    if windows is not None:
+        # Minimal-shape validation for windows -- each entry must have
+        # x_m/y_m/length_m/angle_deg; blind_level defaults to 0, and
+        # sill/head heights fall back to 1.0/2.2 m if omitted.
+        wins_norm = []
+        for w in (windows or []):
+            if not isinstance(w, dict):
+                raise BadInput("each window must be an object")
+            try:
+                wins_norm.append({
+                    "id":            str(w.get("id") or _new_id()),
+                    "x_m":           float(w["x_m"]),
+                    "y_m":           float(w["y_m"]),
+                    "length_m":      float(w.get("length_m", 1.2)),
+                    "angle_deg":     float(w.get("angle_deg", 0.0)) % 360.0,
+                    "blind_level":   min(max(float(w.get("blind_level", 0.0)), 0.0), 1.0),
+                    "sill_height_m": float(w.get("sill_height_m", 1.0)),
+                    "head_height_m": float(w.get("head_height_m", 2.2)),
+                })
+            except (KeyError, TypeError, ValueError) as e:
+                raise BadInput(f"invalid window: {e}") from e
+        sets.append("windows_json = ?")
+        args.append(json.dumps(wins_norm))
+    if ceiling_height_m is not None:
+        if ceiling_height_m <= 0 or ceiling_height_m > 30:
+            raise BadInput("ceiling_height_m must be 0..30 m")
+        sets.append("ceiling_height_m = ?")
+        args.append(float(ceiling_height_m))
     if not sets:
         return get_floor(floor_id, db_path=db_path)
     sets.append("updated_at = ?")

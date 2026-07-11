@@ -4,6 +4,68 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11f — Daylight sim Phase 2A: windows + beams + blinds
+
+### What shipped
+
+- **Windows are now first-class floor data.**  New `windows_json`
+  + `ceiling_height_m` columns on the ``floors`` table (idempotent
+  ALTER migrations).  Each window record::
+
+      {id, x_m, y_m, length_m, angle_deg,
+       blind_level, sill_height_m, head_height_m}
+
+  `x_m/y_m` is the window centre; `angle_deg` is the wall-segment
+  direction so the interior normal is 90° CCW of it.
+
+- **API**: `PATCH /api/elc/floors/{id}` accepts `windows`,
+  `ceiling_height_m` in addition to the existing fields.
+  Server-side validates each window (types + `blind_level` clamped
+  to 0..1); rejects invalid entries with 400.
+
+- **Canvas placement** (`demo/floor.html`):
+    - Press **`w`** on the canvas to enter Window-placement mode.
+      Click two points on a wall → a window is centred between them
+      with computed `length_m` + `angle_deg`.  Auto-saves via PATCH.
+      **`Esc`** cancels.
+    - Windows render as a light-blue bar with a tick perpendicular
+      to the wall showing the interior normal direction.
+    - **Right-click** on a window opens a **blind-level slider**
+      popover (0 % open → 100 % closed) with live preview + a
+      Delete button.
+
+- **Interior beam projection**.  In `paintCanvas` after the fixture
+  pass, every window computes:
+    * Sun-vs-window dot product from the current `state.ambient`.
+    * If the sun is above the horizon, the window faces the sun
+      (dot > 0.05), and blind_level < 0.98, project a radial-
+      gradient wedge into the room using the ambient colour, with
+      intensity = ``dot × (1 - blind) × min(lux / 60 000, 1) × 0.6``.
+    * Composite mode `lighter` so beams from multiple windows sum
+      correctly.
+
+- **Ceiling height** exposed on `floor.ceiling_height_m` (default
+  3.0 m); wired through create/update/read paths.  Ready for the
+  Phase 2B reflective-bleed model.
+
+### Verified
+
+Playwright end-to-end: placed two windows on a 30×20 m floor (one
+on the south wall, one on the east with blind_level=0.5).  Scrubbed
+time to 09:00 UTC (sun alt 68°, azimuth 3°) → a bright warm wedge
+projects downward from the south wall window into the room, exactly
+matching the sun's direction; east-facing window contributes
+minimally (correctly attenuated).  Pytest 458/458 still green.
+
+### Deferred to Phase 2B
+
+- Per-project `elevation_m` field.
+- `neighbouring_building_polygons` for cast-shadow modelling.
+- Reflective bleed of beam energy into adjacent room polygons.
+- Auto-detecting windows from DXF `WINDOWS` / `WIN` layer.
+- Small sun-icon overlay on the 2.5D Building side-view showing
+  the sun's arc as the time slider is dragged.
+
 ## 2026-02-11e — Outdoor ambient light spectrum (Phase 1 of daylight sim)
 
 ### What shipped

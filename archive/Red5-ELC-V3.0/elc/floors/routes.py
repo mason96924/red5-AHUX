@@ -138,6 +138,9 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 height_m=payload.get("height_m"),
                 fixtures=payload.get("fixtures"),
                 rooms=payload.get("rooms"),
+                windows=payload.get("windows"),
+                ceiling_height_m=payload.get("ceiling_height_m"),
+                strand_label=payload.get("strand_label"),
                 db_path=db_path,
             )
         except Exception as e:

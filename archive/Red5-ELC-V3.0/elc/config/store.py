@@ -255,6 +255,14 @@ def _ensure_schema(db_path: str | None = None) -> None:
             # row still missing one.  The UNIQUE index is created only
             # after backfill so the migration is idempotent.
             ("floors", "ALTER TABLE floors ADD COLUMN strand_label TEXT DEFAULT NULL"),
+            # 2026-02-11e — Daylight sim Phase 2.  Windows on the DXF
+            # (list of {id, x_m, y_m, length_m, angle_deg, blind_level,
+            # sill_height_m, head_height_m}) drive interior beam projections.
+            # ``ceiling_height_m`` = floor-to-ceiling height in metres.
+            # (``height_m`` already existed as the floor-plan Y dimension,
+            # so we introduce a new field rather than overloading it.)
+            ("floors", "ALTER TABLE floors ADD COLUMN windows_json TEXT NOT NULL DEFAULT '[]'"),
+            ("floors", "ALTER TABLE floors ADD COLUMN ceiling_height_m REAL NOT NULL DEFAULT 3.0"),
         ]
         for _tbl, stmt in _MIGRATIONS:
             try:

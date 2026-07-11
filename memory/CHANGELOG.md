@@ -4,6 +4,54 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12k — Sun-path compass in Building panel (V1.9 parity)
+
+### What shipped
+
+- **`#sun-compass` SVG dial** in the NE corner of the Building
+  panel (`<aside class="floor-select">`), styled to match the
+  V3.0 blue palette.  Ported from V1.9's `SunCompass` React badge
+  but reimplemented as vanilla SVG for the V3.0 codebase.
+- **N at top** (DXF standard: floor plans are north-bound).
+  Compass ring + N/E/S/W cardinal letters in the `#96d2ff`
+  window-blue accent, plus a dashed inner ring for depth.
+- **Live sun marker**: rotated group with a ray-line + disc.  The
+  group is rotated by `azimuth_deg` (0° clockwise from N per the
+  V1.9 solver output); the disc sits along −Y at radius
+  `54 × (1 − altitude/90)` px — so the marker slides from the
+  ring inward as the sun climbs and reaches the centre at zenith.
+  Disc radius scales `2.5–5 px` with altitude.
+- **Night handling**: when altitude ≤ 0, the ray hides and the
+  disc dims to a `#4a5468` moon-grey.  The header's live-indicator
+  dot follows the same colour so at a glance you can see whether
+  we're in a lit branch of the sim.
+- **AZ / EL readout** in monospaced text under the dial.
+- **Auto-updates** on every `_fetchAmbient()` return, so the
+  compass tracks both the 5-minute background poll and the
+  time-scrub slider live without an extra listener.
+
+### Why
+
+Operator: "Please refer to V1.9/V2.0, the sun path tracker. I
+need this and put this in the same left hand side where the
+building diagram is. Put it on NE of building diagram space."
+Ships in the requested position with the DXF-north-up
+orientation.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright DOM probes:
+    - North sun az=0, alt=60 → marker `transform=rotate(0.0)`,
+      disc `cy=-18` (72 % of the way to centre = zenith-ish).
+    - East sun az=90, alt=30 → `rotate(90.0)`.
+    - Night alt=-5 → disc `fill=#4a5468`, ray `display=none`,
+      readout `EL -5°`.
+    - Widget renders inside `.building-2d5`, top:8px right:8px,
+      does not intercept clicks (pointer-events:none).
+
+--------------------------------------------------------------------
+
 ## 2026-02-12j — Fix beam direction for opposite-side windows
 
 ### What shipped

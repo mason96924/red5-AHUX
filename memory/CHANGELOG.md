@@ -4,6 +4,55 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11e — Outdoor ambient light spectrum (Phase 1 of daylight sim)
+
+### What shipped
+
+- **Weather provider abstraction** (`elc/weather.py`) that composes
+  three data sources with graceful fallback:
+    1. OpenWeatherMap  -- when ``OPENWEATHER_KEY`` env var is set
+    2. Open-Meteo      -- free, no API key, canonical default
+    3. NOAA (US-only)  -- last resort when the primary two fail
+  Cached in-process for 5 min to stay under OWM's free-tier budget.
+  Failure of every provider serves an "offline" placeholder so the
+  UI never has to blank the canvas.
+- **Solar geometry** (self-contained NOAA algorithm, ~0.1° precision)
+  returning `(altitude_deg, azimuth_deg)` for any lat/lon + ISO ts.
+- **Illuminance model** that maps solar altitude + cloud cover +
+  precipitation to horizontal-plane lux, calibrated against the CIE
+  values: ~110 000 lx at clear noon, ~17 500 lx overcast noon,
+  1..600 lx twilight, ~0..1 lx starlight.
+- **Colour spectrum** matching the operator's ask: deep blue-black
+  at night, warm orange near the horizon, cool grey overcast, warm
+  beige on a sunny day.  Continuous perceptual (log) brightness scale.
+- New endpoint `GET /api/elc/ambient?at=<ISO>` returning
+  ``{at, sun, weather, ambient: {illuminance_lux, color_rgb,
+  color_hex, label}}``.
+- **Canvas paint update**: the entire canvas is now filled first
+  with the ambient colour, then the DXF/floor rectangle covers just
+  the interior in the panel background colour, so the surrounding
+  area transitions through the sun/weather spectrum.
+- **Ambient widget** in the header showing swatch + label + lux.
+  Click to reveal a **time-scrub slider** (00:00–23:59 minutes-of-
+  day) + **Live** button; slider previews any hour of the day for
+  the current date, Live returns to real-time.  Polls every 5 min
+  when unscrubbed.
+
+### Verified
+
+Playwright end-to-end: at UTC "now" (night at the pod's site) the
+canvas painted `#060913`; scrubbing to 12:00 UTC shifted to
+`#bfb8a1` (overcast noon, 17 587 lx via Open-Meteo real data); no
+API key required.  Pytest 458/458 still green.
+
+### Deferred to Phase 4-5 (next session)
+
+- Per-window `blind_level` slider (0..1) + right-click "Blinds…" UI.
+- Interior daylight beam through each window (Simple-beam model
+  with reflective bleed to adjacent rooms).
+- `elevation_m` on project + `height_m` per floor +
+  `neighbouring_building_polygons` for shadow modelling.
+
 ## 2026-02-11d — Multi-select persistence, SCU-reports dropdown, displayDeviceId sweep
 
 ### Bug fix: multi-select shape / tube / length changes now persist

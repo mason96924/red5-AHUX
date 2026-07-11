@@ -673,6 +673,23 @@
             title="Expand the site tree — SCUs, floors, groups, schedules">
       ▼ Tree
     </button>
+    <span id="ambient-widget" data-testid="ambient-widget"
+          style="display:inline-flex;align-items:center;gap:6px;
+                 padding:2px 8px;margin-left:6px;
+                 background:var(--panel-2);border:1px solid var(--line);
+                 border-radius:4px;font-size:11px;color:var(--muted)"
+          title="Outdoor ambient — click to scrub time or return to Live">
+      <span id="ambient-swatch"
+            style="display:inline-block;width:12px;height:12px;
+                   border:1px solid var(--line);border-radius:2px;
+                   background:#333"></span>
+      <span id="ambient-label">—</span>
+      <input id="ambient-time" type="range" min="0" max="1439" value="0"
+             data-testid="ambient-time"
+             style="width:110px;accent-color:var(--accent);display:none">
+      <button id="ambient-live" class="ghost" data-testid="ambient-live"
+              style="padding:1px 6px;font-size:10px;display:none">Live</button>
+    </span>
     <button id="btn-discover" class="ghost"
             data-testid="floor-discover-btn"
             hidden aria-hidden="true"
@@ -3405,12 +3422,27 @@ function paintHeatmapOverlay(t, f) {
 function paintCanvas() {
   const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
+  // 2026-02-11d — Ambient outdoor colour paints the ENTIRE canvas
+  // first; the DXF/floor rectangle below then covers just the interior
+  // so the operator sees the surrounding "outside" area shift from
+  // deep blue-black at night → beige at midday, reflecting the
+  // location's sun path + weather.  Cached in ``state.ambient`` and
+  // refreshed by ``_pollAmbient`` (or the time-scrub slider).
+  if (state.ambient && state.ambient.color_hex) {
+    ctx.fillStyle = state.ambient.color_hex;
+    ctx.fillRect(0, 0, rect.width, rect.height);
+  }
   const f = state.currentFloor;
   if (!f) return;
   const t = computeTransform();
 
   // 1) background SVG.
   if (backgroundImg) {
+    // Solid fill under the SVG so its transparent areas (typical for
+    // DXF exports) don't reveal the outside-area colour.
+    ctx.fillStyle = '#0d1218';
+    ctx.fillRect(t.xOffset, t.yOffset,
+                 f.width_m * t.m2px, f.height_m * t.m2px);
     ctx.globalAlpha = 0.85;
     ctx.drawImage(
       backgroundImg,
@@ -3419,7 +3451,11 @@ function paintCanvas() {
     );
     ctx.globalAlpha = 1;
   } else {
-    // Plain floor outline if no SVG.
+    // Plain floor outline if no SVG.  Fill with the panel background
+    // so the outside-area colour is visually contained.
+    ctx.fillStyle = '#0d1218';
+    ctx.fillRect(t.xOffset, t.yOffset,
+                 f.width_m * t.m2px, f.height_m * t.m2px);
     ctx.strokeStyle = '#232b36';
     ctx.lineWidth = 1;
     ctx.strokeRect(
@@ -5173,7 +5209,89 @@ function startLiveStream() {
   // Kick off the Settings snapshot fetch so the SRM panel can filter
   // to just the modules on the currently-selected floor (2026-02-11).
   _refreshProjectSnapshot();
+  // Ambient outdoor colour + illuminance -- polled every 5 min so the
+  // canvas "outside" area reflects the sun path + weather at the
+  // project's lat/lon.  Time-scrub slider (below) can override the
+  // "now" query to preview any hour of the day (2026-02-11d).
+  _startAmbientPoll();
 }
+
+// ==================================================================
+// Ambient outdoor colour + time-scrub slider
+// ==================================================================
+state.ambient = null;
+state.ambientScrub = null;   // ISO ts when time-scrub is active
+let _ambientTimer = null;
+
+async function _fetchAmbient(atIso) {
+  try {
+    const url = atIso
+      ? `${API}/ambient?at=${encodeURIComponent(atIso)}`
+      : `${API}/ambient`;
+    const r = await fetch(url);
+    if (!r.ok) return;
+    state.ambient = await r.json();
+    _syncAmbientWidget();
+    paintCanvas();
+  } catch (e) { /* silent -- endpoint returns 'offline' payload */ }
+}
+
+function _syncAmbientWidget() {
+  const a = state.ambient;
+  if (!a) return;
+  const swatch = document.getElementById('ambient-swatch');
+  const label  = document.getElementById('ambient-label');
+  if (swatch) swatch.style.background = a.ambient.color_hex;
+  if (label) {
+    const lux = Math.round(a.ambient.illuminance_lux);
+    label.textContent = `${a.ambient.label} · ${lux} lx`;
+    label.title =
+      `sun alt ${a.sun.altitude_deg}°  az ${a.sun.azimuth_deg}° · ` +
+      `cloud ${Math.round(a.weather.cloud_cover*100)}% · ` +
+      `provider ${a.weather.provider}`;
+  }
+}
+
+function _startAmbientPoll() {
+  _fetchAmbient(null);
+  if (_ambientTimer) clearInterval(_ambientTimer);
+  _ambientTimer = setInterval(() => {
+    if (state.ambientScrub) return;   // paused while scrubbing
+    _fetchAmbient(null);
+  }, 5 * 60 * 1000);
+}
+
+// Time-scrub slider: click the ambient widget to reveal the range +
+// Live button.  Slider is minutes-of-day (0..1439).  Uses the
+// project's current date; only the time-of-day varies.
+document.getElementById('ambient-widget')?.addEventListener('click', (ev) => {
+  if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'BUTTON') return;
+  const slider = document.getElementById('ambient-time');
+  const liveBtn = document.getElementById('ambient-live');
+  const visible = slider.style.display !== 'none';
+  slider.style.display  = visible ? 'none' : 'inline-block';
+  liveBtn.style.display = visible ? 'none' : 'inline-block';
+  if (!visible && state.ambient) {
+    const now = new Date(state.ambient.at);
+    slider.value = String(now.getUTCHours() * 60 + now.getUTCMinutes());
+  }
+});
+document.getElementById('ambient-time')?.addEventListener('input', (ev) => {
+  const mins = parseInt(ev.target.value, 10) || 0;
+  const now = new Date();
+  const scrubbed = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+    Math.floor(mins / 60), mins % 60, 0,
+  ));
+  state.ambientScrub = scrubbed.toISOString();
+  _fetchAmbient(state.ambientScrub);
+});
+document.getElementById('ambient-live')?.addEventListener('click', () => {
+  state.ambientScrub = null;
+  document.getElementById('ambient-time').style.display = 'none';
+  document.getElementById('ambient-live').style.display = 'none';
+  _fetchAmbient(null);
+});
 
 // ==================================================================
 // Tree strip (SCUs · Modules · Relays · Floors · Groups · Schedules)

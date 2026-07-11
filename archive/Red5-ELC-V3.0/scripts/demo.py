@@ -546,6 +546,30 @@ async def main() -> None:
             raise HTTPException(status_code=400, detail=f"sun-times: {e}")
 
     # ------------------------------------------------------------------
+    # Ambient outdoor illuminance + color for the Building page's
+    # "outside area" paint.  Returns sun geometry, weather sample, and
+    # a derived RGB colour for either "now" or the supplied timestamp.
+    # ------------------------------------------------------------------
+    @stack.app.get("/api/elc/ambient", include_in_schema=False)
+    async def ambient(at: str = "") -> dict:
+        from elc.weather import compute_ambient
+        from datetime import datetime as _dt
+        cfg = load_project(DEFAULT_PROJECT_PATH)
+        prof = cfg.project if cfg else None
+        lat = float(prof.latitude) if prof else 0.0
+        lon = float(prof.longitude) if prof else 0.0
+        ts_dt = None
+        if at:
+            try:
+                ts_dt = _dt.fromisoformat(at.replace("Z", "+00:00"))
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(status_code=400, detail=f"bad ISO ts: {e}")
+        try:
+            return await compute_ambient(lat, lon, ts_dt)
+        except Exception as e:      # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"ambient: {e}")
+
+    # ------------------------------------------------------------------
     # Tree view rollup — a single denormalised snapshot the /floor page
     # renders as the collapsible "Tree" strip.  Composes:
     #   * SCUs / modules / relays  (from project.json + live replica)

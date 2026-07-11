@@ -4,6 +4,57 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12f — Daylight sim Phase 2B: reflective bleed to adjacent rooms
+
+### What shipped
+
+Adjacent-room daylight bleed on top of the Phase 2A direct beam
+sim in `demo/floor.html::_paintWindowsAndBeams`.
+
+- **Per-window room attribution**: for every window that emits a
+  direct beam (Phase 2A `dot > 0.05`, non-blinded), we sample
+  0.5 m along the interior normal, do an even-odd polygon test
+  against `f.rooms`, and accumulate an `intensity` boost onto the
+  containing room.
+- **Shared-wall adjacency detection**
+  (`_computeRoomAdjacencies`): for every pair of edges from
+  different rooms we test colinearity (both endpoints within 0.15
+  m of the other segment) and projected overlap > 0.5 m, returning
+  the overlap midpoint + length in world coords.  Corner touches
+  don't count.
+- **Bleed paint** (`_paintReflectiveBleed`): for each room with a
+  direct-daylight boost, splash a soft radial gradient onto every
+  adjacent room, anchored at the shared-wall midpoint.  Intensity
+  = `boost × 0.35 (albedo) × min(1, overlap_len/4)`.  Throw 3 m.
+  Clipped to the neighbour polygon so light can't jump two walls
+  in one hop.
+- Uses the ambient color_rgb so bleed matches the exterior tint
+  (warm at midday, blue-grey at dusk).
+
+### Why
+
+Task 1 of the in-progress list: "Light from sunbeams entering a
+room will calculate reflection and illuminate adjacent rooms."
+This is the visible-order-of-magnitude effect, not a radiosity
+solver.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright pixel-sweep on a 2-room floor sharing a vertical
+  interior wall (Room A west, Room B east) with three windows on
+  A's north/south/west walls.  Sweeping sun azimuth 0..315° at
+  altitude 55°, background baseline = 55 brightness:
+    - az=  0°: A=310, B_near=385, B_far=55
+    - az= 45°: A=213, B_near=132, B_far=55  ← clean bleed signal
+    - az=135°..225°: A=B=55  ← nothing lit ⇒ nothing bled
+    - az=315°: A=213, B_near=261, B_far= 99
+  → bleed only exists when direct light exists (correct), dies off
+    with distance in the neighbour (correct), and adjacency
+    reported the shared wall at (5, 4) length 8 m (correct).
+
+--------------------------------------------------------------------
+
 ## 2026-02-12e — Length ±10 cm nudges + window-blue slider colour
 
 ### What shipped

@@ -5393,6 +5393,10 @@ function _paintWindowsAndBeams(t) {
   const sunAz  = A ? A.sun.azimuth_deg : 0;
   const lux    = A ? A.ambient.illuminance_lux : 0;
   const label  = A ? A.ambient.label : 'night';
+  // Phase 2B: track per-room direct-daylight boost so we can bleed a
+  // fraction of it into neighbouring rooms through their shared walls.
+  // Keyed by index into f.rooms so we don't need stable room IDs.
+  const roomBoost = new Map();
 
   for (const w of f.windows) {
     // World-space endpoints of the wall segment the window occupies.
@@ -5444,6 +5448,18 @@ function _paintWindowsAndBeams(t) {
         ctx.globalCompositeOperation = 'lighter';
         ctx.fill();
         ctx.restore();
+
+        // Phase 2B: attribute this beam to whichever room its beam
+        // centroid falls in.  Sample 0.5 m INTO the interior (along
+        // the wall normal) so the point is not on the wall itself.
+        const sample = { x_m: w.x_m + nx * 0.5, y_m: w.y_m + ny * 0.5 };
+        const rooms = Array.isArray(f.rooms) ? f.rooms : [];
+        for (let i = 0; i < rooms.length; i++) {
+          if (_pointInRoom(sample, rooms[i])) {
+            roomBoost.set(i, (roomBoost.get(i) || 0) + intensity);
+            break;
+          }
+        }
       }
     }
 
@@ -5473,6 +5489,150 @@ function _paintWindowsAndBeams(t) {
     ctx.stroke();
     ctx.restore();
   }
+
+  // Phase 2B: reflective bleed into rooms adjacent to any lit room.
+  // Runs after every direct beam has been painted so bleed sits on
+  // top of the room fill but under fixtures + marquee.
+  if (roomBoost.size) _paintReflectiveBleed(f, t, A, roomBoost);
+}
+
+// Even-odd point-in-polygon.  Room vertices are stored as arrays
+// ``[[x_m, y_m], ...]`` (see elc/floors/store.py::_validate_rooms), so
+// we take the same shape here to stay consistent with findContainingRoom.
+function _pointInRoom(p, room) {
+  const V = room && (room.vertices || room.points);
+  if (!Array.isArray(V) || V.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = V.length - 1; i < V.length; j = i++) {
+    const xi = V[i][0], yi = V[i][1];
+    const xj = V[j][0], yj = V[j][1];
+    const intersect = ((yi > p.y_m) !== (yj > p.y_m))
+      && (p.x_m < (xj - xi) * (p.y_m - yi) / ((yj - yi) || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// Adjacency detection: find room pairs that share a wall.  Two edges
+// count as "shared" when both endpoints of one lie within `tol` m of
+// the other segment AND their projected overlap length is > 0.5 m
+// (short colinear touches at corners don't count as an opening).
+// Returns a Map<roomIdx, Array<{j, mx_m, my_m, len_m}>> where
+// (mx_m, my_m) is the overlap midpoint in world coords.
+function _computeRoomAdjacencies(rooms) {
+  const adj = new Map();
+  const tol = 0.15;
+  const edges = [];   // {roomIdx, ax, ay, bx, by}
+  for (let i = 0; i < rooms.length; i++) {
+    const V = rooms[i].vertices || rooms[i].points || [];
+    for (let k = 0; k < V.length; k++) {
+      const p1 = V[k], p2 = V[(k + 1) % V.length];
+      edges.push({ roomIdx: i, ax: p1[0], ay: p1[1], bx: p2[0], by: p2[1] });
+    }
+  }
+  for (let a = 0; a < edges.length; a++) {
+    for (let b = a + 1; b < edges.length; b++) {
+      const ea = edges[a], eb = edges[b];
+      if (ea.roomIdx === eb.roomIdx) continue;
+      const info = _segmentOverlap(
+        ea.ax, ea.ay, ea.bx, ea.by,
+        eb.ax, eb.ay, eb.bx, eb.by,
+        tol);
+      if (!info || info.len_m < 0.5) continue;
+      if (!adj.has(ea.roomIdx)) adj.set(ea.roomIdx, []);
+      if (!adj.has(eb.roomIdx)) adj.set(eb.roomIdx, []);
+      adj.get(ea.roomIdx).push({ j: eb.roomIdx, mx_m: info.mx_m, my_m: info.my_m, len_m: info.len_m });
+      adj.get(eb.roomIdx).push({ j: ea.roomIdx, mx_m: info.mx_m, my_m: info.my_m, len_m: info.len_m });
+    }
+  }
+  return adj;
+}
+
+// If segments AB and CD are colinear within `tol` and overlap, return
+// the overlap midpoint + length; otherwise null.  All args in metres.
+function _segmentOverlap(ax, ay, bx, by, cx, cy, dx, dy, tol) {
+  const dAC = _pointLineDistancePx(cx, cy, ax, ay, bx, by);
+  const dAD = _pointLineDistancePx(dx, dy, ax, ay, bx, by);
+  if (dAC > tol || dAD > tol) return null;
+  const vx = bx - ax, vy = by - ay;
+  const vv = vx * vx + vy * vy;
+  if (vv < 1e-9) return null;
+  const tC = ((cx - ax) * vx + (cy - ay) * vy) / vv;
+  const tD = ((dx - ax) * vx + (dy - ay) * vy) / vv;
+  const lo = Math.max(0, Math.min(tC, tD));
+  const hi = Math.min(1, Math.max(tC, tD));
+  if (hi <= lo) return null;
+  const midT = (lo + hi) / 2;
+  const len_m = (hi - lo) * Math.sqrt(vv);
+  return {
+    mx_m: ax + midT * vx,
+    my_m: ay + midT * vy,
+    len_m,
+  };
+}
+
+function _pointLineDistancePx(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay;
+  const vv = vx * vx + vy * vy || 1e-9;
+  const t  = ((px - ax) * vx + (py - ay) * vy) / vv;
+  const tc = Math.max(0, Math.min(1, t));
+  const cx = ax + tc * vx, cy = ay + tc * vy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+// Paint the reflective bleed.  For every room that received direct
+// daylight (`roomBoost`), find its neighbours via shared walls and
+// splash a soft radial gradient on the neighbour side, anchored at
+// the shared-wall midpoint.  Intensity = boost × albedo × opening
+// factor.  Clipped to the neighbour polygon so we never spill light
+// into rooms two walls away in a single hop.
+const _REFLECTIVE_ALBEDO = 0.35;
+function _paintReflectiveBleed(f, t, A, roomBoost) {
+  const rooms = Array.isArray(f.rooms) ? f.rooms : [];
+  if (!rooms.length) return;
+  const adj = _computeRoomAdjacencies(rooms);
+  if (!adj.size) return;
+  const rgb = A ? A.ambient.color_rgb : [220, 200, 160];
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [srcIdx, boost] of roomBoost.entries()) {
+    const neighbours = adj.get(srcIdx) || [];
+    for (const nb of neighbours) {
+      const openingFactor = Math.min(1, nb.len_m / 4);
+      const intensity = boost * _REFLECTIVE_ALBEDO * openingFactor;
+      if (intensity < 0.005) continue;
+      const centrePx = _worldToPx({ x_m: nb.mx_m, y_m: nb.my_m }, t);
+      const throwPx = 3.0 * t.m2px;
+      const grad = ctx.createRadialGradient(
+        centrePx[0], centrePx[1], 0,
+        centrePx[0], centrePx[1], throwPx,
+      );
+      grad.addColorStop(0.0,
+        `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity.toFixed(3)})`);
+      grad.addColorStop(1.0,
+        `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+      // Clip to neighbour polygon so bleed stops at that room's walls.
+      const V = rooms[nb.j].vertices || rooms[nb.j].points || [];
+      if (V.length < 3) continue;
+      ctx.save();
+      ctx.beginPath();
+      const [mx0, my0] = _worldToPx({ x_m: V[0][0], y_m: V[0][1] }, t);
+      ctx.moveTo(mx0, my0);
+      for (let k = 1; k < V.length; k++) {
+        const [px, py] = _worldToPx({ x_m: V[k][0], y_m: V[k][1] }, t);
+        ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.clip();
+      ctx.fillStyle = grad;
+      ctx.fillRect(
+        centrePx[0] - throwPx, centrePx[1] - throwPx,
+        throwPx * 2, throwPx * 2,
+      );
+      ctx.restore();
+    }
+  }
+  ctx.restore();
 }
 
 function _worldToPx(p, t) {

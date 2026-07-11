@@ -4,6 +4,43 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12e — Length ±10 cm nudges + window-blue slider colour
+
+### What shipped
+
+- **Length ± buttons** on every Length row (per-window and batch):
+  small pill buttons flanking the metres readout, each click
+  nudges the length by 10 cm (0.1 m).  Clamped to [0.2 m,
+  2 × longest floor side].  Autosaves after every click.
+- **Slider accent colour** on all Windows-panel sliders (Blinds /
+  Length / Angle, per-row and batch) changed from the app-wide
+  orange accent to the window bar's own light-blue
+  `#96d2ff` (rgb 150, 210, 255) so the control visually maps to
+  the thing it drives.
+- **Selected-row highlight** re-tinted from orange to the same
+  light-blue (10% background + 2 px left border) for the same
+  reason.
+
+### Why
+
+Operator: "Windows length adjustment, make provide +/- sign for
+step increment of 10 cm.  Make the active color of windows
+setting (i.e. active slider background) matching the color of
+windows."  Both changes ship together.
+
+### Tests
+
+- 458/458 pytest still green.
+- Manual Playwright smoke, 2-window floor (2.00 m / 3.00 m):
+    - Row `+` on W1: 2.00 → 2.10 m.  Row `−` x3: 2.10 → 1.80 m
+      (persisted 1.80).
+    - Select-all, batch `+` x2: W1 1.80 → 2.00 m, W2 3.00 →
+      3.20 m (both persisted).
+    - Computed slider `accent-color` reads `rgb(150, 210, 255)`.
+    - Selected row inline style contains `rgba(150,210,255`.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12d — Windows panel: batch Length + Angle
 
 ### What shipped

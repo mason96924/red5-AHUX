@@ -5698,8 +5698,16 @@ function renderWindowsPanel() {
     'font-size:9px;color:var(--muted);width:44px;flex-shrink:0';
   const valStyle =
     'min-width:44px;text-align:right;font-family:var(--mono);color:var(--muted)';
+  // Slider active-track colour matches the window bar's light-blue
+  // (rgb 150,210,255 = the fully-open window paint colour) so the UI
+  // control reads at a glance as "adjusts this specific window".
   const sliderStyle =
-    'flex:1;accent-color:var(--accent);min-width:0';
+    'flex:1;accent-color:#96d2ff;min-width:0';
+  // Small pill buttons flanking the length readout for ±10 cm nudges.
+  const nudgeBtnStyle =
+    'background:#1a1f28;border:1px solid var(--line);color:var(--text);' +
+    'cursor:pointer;padding:1px 7px;font-family:var(--mono);font-size:11px;' +
+    'line-height:1;border-radius:3px;flex-shrink:0';
 
   const batchBar =
     `<div class="wp-batch" data-testid="wp-batch"` +
@@ -5737,8 +5745,16 @@ function renderWindowsPanel() {
                ` id="wp-batch-length" data-testid="wp-batch-length"` +
                ` ${batchDisabled ? 'disabled' : ''}` +
                ` style="${sliderStyle}" />` +
+        `<button id="wp-batch-length-minus" data-testid="wp-batch-length-minus"` +
+               ` ${batchDisabled ? 'disabled' : ''}` +
+               ` title="Shrink every ticked window by 10 cm"` +
+               ` style="${nudgeBtnStyle}">−</button>` +
         `<span id="wp-batch-length-val" data-testid="wp-batch-length-val"` +
               ` style="${valStyle}">${avgLenM.toFixed(2)} m</span>` +
+        `<button id="wp-batch-length-plus" data-testid="wp-batch-length-plus"` +
+               ` ${batchDisabled ? 'disabled' : ''}` +
+               ` title="Grow every ticked window by 10 cm"` +
+               ` style="${nudgeBtnStyle}">+</button>` +
       `</div>` +
       `<div style="${rowSliderStyle};opacity:${batchDisabled ? '0.35' : '1'}">` +
         `<span style="${capStyle}" title="Set angle on every ticked window">Angle →</span>` +
@@ -5758,7 +5774,7 @@ function renderWindowsPanel() {
     const ang  = Math.round(((w.angle_deg || 0) + 540) % 360 - 180);
     const selected = _isWinSelected(w.id);
     const rowBg = selected
-      ? 'background:rgba(255,140,20,0.10);border-left:2px solid var(--accent);'
+      ? 'background:rgba(150,210,255,0.10);border-left:2px solid #96d2ff;'
       : 'border-left:2px solid transparent;';
     return (
       `<div class="wp-row${selected ? ' wp-row-selected' : ''}" data-wid="${w.id}"` +
@@ -5797,9 +5813,17 @@ function renderWindowsPanel() {
                  ` class="wp-slider wp-length" data-wid="${w.id}"` +
                  ` data-testid="wp-length-${i + 1}"` +
                  ` style="${sliderStyle}" />` +
+          `<button class="wp-length-minus" data-wid="${w.id}"` +
+                 ` data-testid="wp-length-minus-${i + 1}"` +
+                 ` title="Shrink by 10 cm"` +
+                 ` style="${nudgeBtnStyle}">−</button>` +
           `<span class="wp-length-val" data-wid="${w.id}"` +
                 ` data-testid="wp-length-val-${i + 1}"` +
                 ` style="${valStyle}">${(w.length_m || 0).toFixed(2)} m</span>` +
+          `<button class="wp-length-plus" data-wid="${w.id}"` +
+                 ` data-testid="wp-length-plus-${i + 1}"` +
+                 ` title="Grow by 10 cm"` +
+                 ` style="${nudgeBtnStyle}">+</button>` +
         `</div>` +
         `<div style="${rowSliderStyle}">` +
           `<span style="${capStyle}">Angle</span>` +
@@ -5833,6 +5857,16 @@ function renderWindowsPanel() {
   for (const el of body.querySelectorAll('.wp-del')) {
     el.addEventListener('click', _onDeleteWindow);
   }
+  for (const el of body.querySelectorAll('.wp-length-minus')) {
+    el.addEventListener('click', (e) => _onLengthNudge(e, -0.1));
+  }
+  for (const el of body.querySelectorAll('.wp-length-plus')) {
+    el.addEventListener('click', (e) => _onLengthNudge(e, +0.1));
+  }
+  const batchLenMinus = body.querySelector('#wp-batch-length-minus');
+  if (batchLenMinus) batchLenMinus.addEventListener('click', () => _onBatchLengthNudge(-0.1));
+  const batchLenPlus  = body.querySelector('#wp-batch-length-plus');
+  if (batchLenPlus)  batchLenPlus.addEventListener('click',  () => _onBatchLengthNudge(+0.1));
   for (const el of body.querySelectorAll('.wp-sel')) {
     el.addEventListener('change', _onWindowSelToggle);
   }
@@ -5931,6 +5965,60 @@ function _onBatchAngleInput(ev) {
   const batchVal = document.getElementById('wp-batch-angle-val');
   if (batchVal) batchVal.textContent = `${Math.round(val)}°`;
   if (n > 0) paintCanvas();
+}
+
+// Length nudge: clamp + apply delta metres, sync row slider/value/label,
+// update batch slider if visible, paint, save.  ``maxLen`` mirrors the
+// per-panel-render cap (2 × longest floor side).
+function _clampLength(v) {
+  const f = state.currentFloor;
+  const maxLen = f
+    ? Math.max(2, 2 * Math.max(f.width_m || 0, f.height_m || 0))
+    : 15;
+  return Math.min(maxLen, Math.max(0.2, v));
+}
+
+function _applyLengthToWindow(w, newLen) {
+  w.length_m = newLen;
+  const rowSlider = document.querySelector(`.wp-length[data-wid="${w.id}"]`);
+  if (rowSlider) rowSlider.value = newLen.toFixed(2);
+  const rowVal = document.querySelector(`.wp-length-val[data-wid="${w.id}"]`);
+  if (rowVal) rowVal.textContent = `${newLen.toFixed(2)} m`;
+  _syncWindowLabel(w);
+}
+
+async function _onLengthNudge(ev, delta) {
+  const wid = ev.currentTarget.dataset.wid;
+  const f = state.currentFloor; if (!f) return;
+  const w = (f.windows || []).find(x => x.id === wid);
+  if (!w) return;
+  const next = _clampLength((w.length_m || 0.5) + delta);
+  if (next === w.length_m) return;
+  _applyLengthToWindow(w, next);
+  paintCanvas();
+  await _saveWindows();
+}
+
+async function _onBatchLengthNudge(delta) {
+  const f = state.currentFloor; if (!f) return;
+  const wins = f.windows || [];
+  let n = 0;
+  let last = null;
+  for (const w of wins) {
+    if (!_isWinSelected(w.id)) continue;
+    const next = _clampLength((w.length_m || 0.5) + delta);
+    if (next === w.length_m) continue;
+    _applyLengthToWindow(w, next);
+    last = next;
+    n++;
+  }
+  if (last !== null) {
+    const batchSlider = document.getElementById('wp-batch-length');
+    if (batchSlider) batchSlider.value = last.toFixed(2);
+    const batchVal = document.getElementById('wp-batch-length-val');
+    if (batchVal) batchVal.textContent = `${last.toFixed(2)} m`;
+  }
+  if (n > 0) { paintCanvas(); await _saveWindows(); }
 }
 
 function _onBlindSliderInput(ev) {

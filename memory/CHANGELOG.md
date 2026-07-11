@@ -4,6 +4,42 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12x — Windows: canvas Align H/V + marquee (swipe) select
+
+### What shipped
+
+**1. Marquee (mouse-swipe) selection now includes windows**
+
+- `mouseup` handler for `dragState.mode === 'marquee'` extended
+  (`demo/floor.html` around line 4937).  In addition to picking up
+  fixtures whose anchor lies inside the swiped AABB, it now walks
+  `state.currentFloor.windows` and adds any window whose CENTRE
+  falls inside the rectangle to `state.windowSel` (additive).
+- Post-swipe: `renderWindowsPanel()` is called if any window was
+  added; the status toast reports both counts, e.g.
+  `+3 fixture(s), +2 window(s)  (4 fx, 5 win)`.
+
+**2. Toolbar `Align H` / `Align V` now cover windows too**
+
+- `#align-wrap` visibility condition broadened: surfaces on
+  `selectedDeviceIds.size >= 2` **OR** `windowSel.size >= 2`.
+- New `_toolbarAlign(axis)` dispatch: runs `alignSelected(axis)`
+  for the fixture group (if ≥2) and `alignSelectedWindows(axis)`
+  for the window group (if ≥2), in parallel.  Each type has its
+  own anchor (its respective first-selected item).
+- `_onWindowSelToggle`, `_onWindowSelAllToggle`, and
+  `_toggleWindowSelection` now call `syncShapeSubcontrols()` so
+  the toolbar Align H/V buttons appear/disappear as the operator
+  changes their window selection from anywhere (panel checkbox,
+  select-all, or canvas click).
+- Button tooltips updated to state both fixtures and windows.
+
+### Tests
+
+- **462/462 pytest green.**
+- Embedded `<script>` parses.
+
+
 ## 2026-02-12w — Windows panel: visible cardinal badge + debug helper
 
 ### Why

@@ -849,10 +849,10 @@
          operator ask). -->
     <span id="align-wrap" style="display:none;gap:4px;align-items:center">
       <button id="align-h" class="ghost" data-testid="align-h"
-              title="Align selected fixtures to the FIRST-selected fixture's Y (same horizontal line)"
+              title="Align selected fixtures AND/OR selected windows to the FIRST-selected item's Y (same horizontal line)"
               style="padding:4px 8px;font-size:11px">Align H</button>
       <button id="align-v" class="ghost" data-testid="align-v"
-              title="Align selected fixtures to the FIRST-selected fixture's X (same vertical line)"
+              title="Align selected fixtures AND/OR selected windows to the FIRST-selected item's X (same vertical line)"
               style="padding:4px 8px;font-size:11px">Align V</button>
     </span>
     <!-- Delete-from-canvas button: visible when 1+ fixtures are selected
@@ -4540,11 +4540,16 @@ function syncShapeSubcontrols() {
       || selHasCirc || selHasPoly) ? 'inline-flex' : 'none';
   wWrap.style.display     =
     ((isPoly && kind === 'rectangle') || selHasRect) ? 'inline-flex' : 'none';
-  // Align controls surface once the operator has ≥2 fixtures in the
-  // selection -- they only make sense on a group.
+  // Align controls surface once the operator has ≥2 fixtures OR
+  // ≥2 windows in the selection -- they only make sense on a group.
+  // 2026-02-12x: extended to cover windows as well (the same buttons
+  // align whichever type has 2+ items; can align both simultaneously
+  // when both types have 2+ selected).
   const alignWrap = document.getElementById('align-wrap');
   if (alignWrap) {
-    alignWrap.style.display = (state.selectedDeviceIds?.size >= 2) ? 'inline-flex' : 'none';
+    const nFx  = state.selectedDeviceIds?.size || 0;
+    const nWin = state.windowSel?.size         || 0;
+    alignWrap.style.display = (nFx >= 2 || nWin >= 2) ? 'inline-flex' : 'none';
   }
   // Delete-from-canvas button: any non-empty selection can be deleted
   // off the plan.  Only makes sense in layout mode -- operator mode
@@ -4603,8 +4608,21 @@ async function alignSelected(axis) {
   await savePlacements(state.currentFloor.fixtures);
   toast(`Aligned ${moved} fixture(s) to ${axis === 'y' ? 'horizontal' : 'vertical'} anchor (${anchor.device_id})`);
 }
-document.getElementById('align-h').onclick = () => alignSelected('y');
-document.getElementById('align-v').onclick = () => alignSelected('x');
+// 2026-02-12x — Toolbar Align H/V now covers BOTH types.  If 2+
+// fixtures are selected we align them; if 2+ windows are selected
+// we align them; if both, both.  Each type has its own anchor (its
+// respective first-selected item).
+async function _toolbarAlign(axis) {
+  const nFx  = state.selectedDeviceIds?.size || 0;
+  const nWin = state.windowSel?.size         || 0;
+  const jobs = [];
+  if (nFx  >= 2) jobs.push(alignSelected(axis));
+  if (nWin >= 2) jobs.push(alignSelectedWindows(axis));
+  if (!jobs.length) return;
+  await Promise.all(jobs);
+}
+document.getElementById('align-h').onclick = () => _toolbarAlign('y');
+document.getElementById('align-v').onclick = () => _toolbarAlign('x');
 
 // Populate the numeric inputs with the geometry of the currently
 // selected fixture(s).  When ONE fixture is selected we show its
@@ -4933,7 +4951,11 @@ canvas.addEventListener('mouseup', async () => {
     return;
   }
   // Rubber-band marquee release -> AABB intersection test against
-  // every fixture anchor, additive to the existing SRM selection.
+  // every fixture anchor AND every window centre.  Both selection
+  // stores (state.selectedDeviceIds for fixtures, state.windowSel
+  // for windows) are grown additively (2026-02-12x operator ask:
+  // "select multiple windows using mouse swipe just like lighting
+  // elements").
   if (dragState.mode === 'marquee') {
     const m = dragState;
     dragState = null;
@@ -4962,6 +4984,18 @@ canvas.addEventListener('mouseup', async () => {
         added++;
       }
     }
+    // Marquee-select windows too: any window whose CENTRE lies inside
+    // the swiped AABB joins state.windowSel (additive).
+    let winAdded = 0;
+    for (const w of (state.currentFloor.windows || [])) {
+      const cx = t.xOffset + (w.x_m || 0) * t.m2px;
+      const cy = t.yOffset + (w.y_m || 0) * t.m2px;
+      if (cx < x0 || cx > x1 || cy < y0 || cy > y1) continue;
+      if (!state.windowSel.has(w.id)) {
+        state.windowSel.add(w.id);
+        winAdded++;
+      }
+    }
     // Sync right rail + toolbar + assign bar (mirrors toggleSrmSelection).
     renderSrmGrid();
     updateAssignBar();
@@ -4975,8 +5009,16 @@ canvas.addEventListener('mouseup', async () => {
     } else {
       closeElementEditor();
     }
+    if (winAdded) renderWindowsPanel();
     paintCanvas();
-    if (added) toast(`+${added} selected (${state.selectedDeviceIds.size} total)`);
+    // Combined status toast: report both types when either grew.
+    const parts = [];
+    if (added)    parts.push(`+${added} fixture(s)`);
+    if (winAdded) parts.push(`+${winAdded} window(s)`);
+    if (parts.length) {
+      toast(parts.join(', ') +
+            ` (${state.selectedDeviceIds.size} fx, ${state.windowSel.size} win)`);
+    }
     return;
   }
   const moved = dragState.moved;
@@ -6709,6 +6751,9 @@ function _onWindowSelToggle(ev) {
   if (ev.target.checked) state.windowSel.add(wid);
   else state.windowSel.delete(wid);
   renderWindowsPanel();
+  // Refresh toolbar Align H/V visibility (2026-02-12x: it now
+  // surfaces on ≥2 selected windows too).
+  if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
   paintCanvas();
 }
 
@@ -6720,6 +6765,7 @@ function _onWindowSelAllToggle(ev) {
     state.windowSel.clear();
   }
   renderWindowsPanel();
+  if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
   paintCanvas();
 }
 
@@ -6730,6 +6776,7 @@ function _toggleWindowSelection(id) {
   if (state.windowSel.has(id)) state.windowSel.delete(id);
   else state.windowSel.add(id);
   toggleWindowsPanel(true);   // opens + re-renders (idempotent when already open)
+  if (typeof syncShapeSubcontrols === 'function') syncShapeSubcontrols();
 }
 
 function _onBatchBlindInput(ev) {

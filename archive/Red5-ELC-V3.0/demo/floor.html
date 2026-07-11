@@ -981,37 +981,22 @@
               <span style="font-size:9px;color:var(--muted)">— live query</span>
             </label>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-            <button class="ghost ee-rpt-btn" data-rpt="0x06"
-                    data-testid="ee-rpt-0x06"
-                    style="padding:2px 8px;font-size:10px"
-                    title="Data type 0x06: Relay Total Count + On Time counters">
-              Total &amp; On-Time
-            </button>
-            <button class="ghost ee-rpt-btn" data-rpt="0x07"
-                    data-testid="ee-rpt-0x07"
-                    style="padding:2px 8px;font-size:10px"
-                    title="Data type 0x07: Relay Daily On Time (raw only)">
-              Daily On-Time
-            </button>
-            <button class="ghost ee-rpt-btn" data-rpt="0x08"
-                    data-testid="ee-rpt-0x08"
-                    style="padding:2px 8px;font-size:10px"
-                    title="Data type 0x08: Relay Monthly On Time (raw only)">
-              Monthly On-Time
-            </button>
-            <button class="ghost ee-rpt-btn" data-rpt="0x0A"
-                    data-testid="ee-rpt-0x0A"
-                    style="padding:2px 8px;font-size:10px"
-                    title="Data type 0x0A: Power Daily Value (raw only)">
-              Daily Power
-            </button>
-            <button class="ghost ee-rpt-btn" data-rpt="0x0B"
-                    data-testid="ee-rpt-0x0B"
-                    style="padding:2px 8px;font-size:10px"
-                    title="Data type 0x0B: Power Monthly Value (raw only)">
-              Monthly Power
-            </button>
+          <div style="display:flex;align-items:center;gap:6px;
+                      margin-bottom:6px;flex-wrap:wrap">
+            <select id="ee-rpt-select" data-testid="ee-rpt-select"
+                    style="flex:1;min-width:180px;padding:3px 6px;
+                           font-size:11px;background:#0c1218;color:var(--text);
+                           border:1px solid var(--line);border-radius:3px"
+                    title="Choose which data-type report to query the SCU for">
+              <option value="" disabled selected>— choose report —</option>
+              <option value="0x06" title="Data type 0x06: Relay Total Count + On Time counters">Total &amp; On-Time (0x06)</option>
+              <option value="0x07" title="Data type 0x07: Relay Daily On Time (raw only)">Daily On-Time (0x07)</option>
+              <option value="0x08" title="Data type 0x08: Relay Monthly On Time (raw only)">Monthly On-Time (0x08)</option>
+              <option value="0x0A" title="Data type 0x0A: Power Daily Value (raw only)">Daily Power (0x0A)</option>
+              <option value="0x0B" title="Data type 0x0B: Power Monthly Value (raw only)">Monthly Power (0x0B)</option>
+            </select>
+            <button class="ghost" id="ee-rpt-run" data-testid="ee-rpt-run"
+                    style="padding:2px 10px;font-size:10px">Run</button>
           </div>
           <div id="ee-rpt-out" data-testid="ee-rpt-out"
                style="font-family:var(--mono);font-size:10px;
@@ -2597,7 +2582,7 @@ document.getElementById('mm-copy-from').addEventListener('change', (ev) => {
   document.getElementById('mm-shape').value = el.shape || 'point';
   document.getElementById('mm-tube').value  = el.tube_type || 'none';
   _mmSyncTubeVisibility();
-  toast(`Copied properties from ${did}`);
+  toast(`Copied properties from ${displayDeviceId(did)}`);
   // Reset the picker so the same choice can be re-applied later.
   ev.target.value = '';
 });
@@ -2927,22 +2912,32 @@ function _fmtReport(dataTypeHex, r) {
   if (r.df_hex) lines.push(`df:  ${r.df_hex}`);
   return lines.join('\n');
 }
-document.querySelectorAll('.ee-rpt-btn').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const editingId = state.editingDeviceId;
-    if (!editingId) return;
-    const did = _normaliseToInventory(editingId);
-    const dtHex = btn.dataset.rpt;
-    const dtInt = parseInt(dtHex, 16);
-    const out = document.getElementById('ee-rpt-out');
-    out.textContent = `Querying ${REPORT_LABEL[dtHex] || dtHex} …`;
-    try {
-      const r = await api('GET', `/relay-data?device=${encodeURIComponent(did)}&data_type=${dtInt}`);
-      out.textContent = _fmtReport(dtHex, r);
-    } catch (e) {
-      out.textContent = `# ERROR fetching ${dtHex}\n${e.message || e}`;
-    }
-  });
+document.getElementById('ee-rpt-run')?.addEventListener('click', async () => {
+  const editingId = state.editingDeviceId;
+  if (!editingId) return;
+  const sel = document.getElementById('ee-rpt-select');
+  const dtHex = sel && sel.value;
+  if (!dtHex) {
+    toast('Choose a report from the dropdown first', true);
+    return;
+  }
+  const did = _normaliseToInventory(editingId);
+  const dtInt = parseInt(dtHex, 16);
+  const out = document.getElementById('ee-rpt-out');
+  out.textContent = `Querying ${REPORT_LABEL[dtHex] || dtHex} …`;
+  try {
+    const r = await api('GET', `/relay-data?device=${encodeURIComponent(did)}&data_type=${dtInt}`);
+    out.textContent = _fmtReport(dtHex, r);
+  } catch (e) {
+    out.textContent = `# ERROR fetching ${dtHex}\n${e.message || e}`;
+  }
+});
+// Also allow the operator to trigger the query by changing the
+// dropdown (skips one click while iterating through reports).
+document.getElementById('ee-rpt-select')?.addEventListener('change', () => {
+  if (document.getElementById('ee-rpt-select').value) {
+    document.getElementById('ee-rpt-run').click();
+  }
 });
 document.getElementById('ee-save').onclick = async () => {
   const did = state.editingDeviceId;
@@ -3905,7 +3900,7 @@ canvas.addEventListener('drop', async (ev) => {
         cct_k: 4000, shape: 'point', tube_type: 'none',
       });
       state.lightingElements.set(did, upserted);
-      toast(`Auto-assigned ${did} as On/Off — refine in the module modal`);
+      toast(`Auto-assigned ${displayDeviceId(did)} as On/Off — refine in the module modal`);
     } catch (e) {
       toast(`Auto-assign failed: ${e.message}`, true);
       return;
@@ -4228,6 +4223,14 @@ async function maybeBulkApplyShape(triggeredBy) {
   const dids = Array.from(state.selectedDeviceIds || []);
   if (!dids.length) return;
 
+  // 2026-02-11c — Fixture records may carry the operator's legacy
+  // pre-aliasing device_id (SRM_6E/...) while selection IDs are
+  // inventory-normalised (SRM_6S/...).  Normalise BOTH sides so the
+  // geometry-reset loop below actually finds the placed fixtures.
+  const norm = (typeof _normaliseToInventory === 'function')
+    ? _normaliseToInventory : (x => x);
+  const wanted = new Set(dids.map(norm));
+
   const shape = state.shape;
   const kind  = state.polygonKind;
   const sides = state.polygonSides;
@@ -4256,8 +4259,9 @@ async function maybeBulkApplyShape(triggeredBy) {
   const preset = _presetDimensions(shape, kind);
   let changedAny = false;
   for (const fx of state.currentFloor.fixtures) {
-    if (!dids.includes(fx.device_id)) continue;
-    const el = state.lightingElements.get(fx.device_id);
+    if (!wanted.has(norm(fx.device_id))) continue;
+    const el = state.lightingElements.get(fx.device_id)
+      || state.lightingElements.get(norm(fx.device_id));
     const beam = el?.beam_radius_m || 4;
     // Reset all shape-specific fields; new ones filled below.
     fx.angle_deg = null; fx.length_m = null; fx.radius_m = null;
@@ -4454,9 +4458,19 @@ function populateDimInputsFromSelection() {
 // whose shape doesn't match the current input are silently skipped so
 // heterogeneous selections behave "do what I mean".
 async function onDimensionEdit() {
-  const sel = Array.from(state.selectedDeviceIds || []).map(
-    did => state.currentFloor?.fixtures.find(f => f.device_id === did)
-  ).filter(Boolean);
+  // 2026-02-11c — Selection IDs come from ``_normaliseToInventory``
+  // (canonical replica form, e.g. ``SRM_6S/0/2/1``) but fixture
+  // records may still carry the operator's legacy pre-aliasing form
+  // (``SRM_6E/0/2/1``).  Compare via the normaliser on BOTH sides so
+  // multi-select bulk edits actually reach the fixture rows.
+  const norm = (typeof _normaliseToInventory === 'function')
+    ? _normaliseToInventory : (x => x);
+  const wanted = new Set(
+    Array.from(state.selectedDeviceIds || []).map(norm)
+  );
+  const sel = (state.currentFloor?.fixtures || []).filter(
+    f => wanted.has(norm(f.device_id))
+  );
   if (!sel.length) return;
   const readNum = (id) => {
     const raw = document.getElementById(id).value;
@@ -5244,7 +5258,7 @@ function _renderTreePhysical() {
         html.push(`<li data-kind="relay" data-id="${_treeEscape(relay.device_id)}" data-device-id="${_treeEscape(relay.device_id)}">`);
         html.push(`<span class="caret empty"></span>`);
         html.push(`<span class="tree-node k-relay" data-kind="relay" data-id="${_treeEscape(relay.device_id)}">`);
-        html.push(`<span class="icon">·</span><span class="name">${_treeEscape(relay.device_id)}</span>`);
+        html.push(`<span class="icon">·</span><span class="name">${_treeEscape(displayDeviceId(relay.device_id))}</span>`);
         html.push(_treeBadgesForRelay(relay));
         html.push(`</span></li>`);
       }
@@ -5309,7 +5323,7 @@ function _renderTreeLogical() {
       html.push(`<li data-kind="relay" data-id="${_treeEscape(did)}" data-device-id="${_treeEscape(did)}">`);
       html.push(`<span class="caret empty"></span>`);
       html.push(`<span class="tree-node k-relay" data-kind="relay" data-id="${_treeEscape(did)}">`);
-      html.push(`<span class="icon">→</span><span class="name">${_treeEscape(did)}</span>`);
+      html.push(`<span class="icon">→</span><span class="name">${_treeEscape(displayDeviceId(did))}</span>`);
       html.push(_treeStateBadge(r));
       html.push(`</span></li>`);
     }
@@ -5535,10 +5549,10 @@ async function _treeCtxAction(act) {
       const [key] = _findLightingElement(did);
       if (key) openElementEditor(key);
       paintCanvas();
-      toast(`Focused ${did}`);
+      toast(`Focused ${displayDeviceId(did)}`);
     } else if (act === 'edit-element') {
       const [key] = _findLightingElement(did);
-      if (key) openElementEditor(key); else toast(`No element for ${did}`, true);
+      if (key) openElementEditor(key); else toast(`No element for ${displayDeviceId(did)}`, true);
     } else if (act === 'toggle') {
       // Read current state and flip
       const relay = (function() {
@@ -5553,7 +5567,7 @@ async function _treeCtxAction(act) {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({state: next}),
         });
-        toast(`${did} → ${next ? 'ON' : 'OFF'}`);
+        toast(`${displayDeviceId(did)} → ${next ? 'ON' : 'OFF'}`);
       } catch (e) { toast(`Toggle failed: ${e}`, true); }
     } else if (act === 'set-dim') {
       const v = prompt(`Dim level for ${did} (0–100 %):`, '50');
@@ -5564,7 +5578,7 @@ async function _treeCtxAction(act) {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({level: pct / 100}),
         });
-        toast(`${did} dim → ${pct}%`);
+        toast(`${displayDeviceId(did)} dim → ${pct}%`);
       } catch (e) { toast(`Dim failed: ${e}`, true); }
     } else if (act === 'assign-group') {
       // Best-effort: open Schedule editor iframe (existing modal)
@@ -5577,7 +5591,7 @@ async function _treeCtxAction(act) {
       if (!floor) { toast('No active floor', true); return; }
       floor.fixtures = (floor.fixtures || []).filter(fx => fx.device_id !== did);
       await savePlacements(floor.fixtures);
-      toast(`Removed ${did} from floor`);
+      toast(`Removed ${displayDeviceId(did)} from floor`);
       _fetchTree();
     }
   } else if (tgt.kind === 'group' || tgt.kind === 'schedule') {

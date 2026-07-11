@@ -4,6 +4,67 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11d — Multi-select persistence, SCU-reports dropdown, displayDeviceId sweep
+
+### Bug fix: multi-select shape / tube / length changes now persist
+
+**Symptom** (operator ask): swipe-select many fixtures, change shape /
+tube / length -- the selected fixtures visually update, but the
+changes revert as soon as focus moves to an unselected element.
+
+**Root cause**: `state.selectedDeviceIds` contains inventory-normalised
+IDs (canonical replica form, e.g. `SRM_6S/0/2/1`), but fixture rows
+placed before the 2026-02-11b aliasing fix still carry the operator's
+legacy form (`SRM_6E/0/2/1`).  The persistence loops in
+`maybeBulkApplyShape` and `onDimensionEdit` compared raw
+`fx.device_id` against the selection set -- when the strings didn't
+match, the loops silently skipped every fixture and never called
+`savePlacements`.  Element metadata (which is keyed by device_id
+directly via the API) DID persist, so the visual reflected changes
+until the next re-render pulled the un-persisted fixture geometry
+back from the floors store.
+
+**Fix**: normalise BOTH sides of the comparison through
+`_normaliseToInventory` (which maps SRM_6E -> SRM_6S canonical via
+the replica inventory).  Any selection now resolves to the correct
+fixture rows regardless of the string form each side stores.
+
+### SCU Reports dropdown
+
+Collapsed the 5-button SCU reports strip in the element editor
+into a single `<select>` + Run button (2026-02-11 operator ask).
+The dropdown also auto-runs on change so iterating through reports
+takes one click instead of two.  Data-type hex codes remain in the
+option labels (`Total & On-Time (0x06)`) for operator debugging.
+
+### displayDeviceId sweep
+
+Added last session, wired to `#ee-device` element-editor header.
+This pass extends coverage so the operator's typed name (`SRM_6E`)
+shows up everywhere the raw device_id was surfaced:
+
+- Tree view relay leaves (both Physical + Logical / group members).
+- Toasts: `Focused ...`, `No element for ...`, `... -> ON/OFF`,
+  `... dim -> N%`, `Removed ... from floor`,
+  `Copied properties from ...`, `Auto-assigned ... as On/Off`.
+
+Canvas fixture labels already went through `moduleLabelFor()` --
+no change needed.
+
+### Verification
+
+Playwright end-to-end: placed one fixture as `SRM_6E/0/2/1`
+(legacy) + one as `SRM_6S/0/1/1` (canonical), both as line shape
+with T5 tube, selected both, changed dim-length to 5 m, then
+cleared the selection to trigger a full refresh.  Confirmed:
+
+    savedLengths:       [SRM_6S/0/2/1 -> 5, SRM_6S/0/1/1 -> 5]
+    AFTER SWITCH FOCUS: [SRM_6S/0/2/1 -> 5, SRM_6S/0/1/1 -> 5]
+
+...and screenshot showed `Editing SRM_6E/0/2/1` header, the new
+SCU Reports dropdown open in the element editor.  Pytest still
+458 / 458.
+
 ## 2026-02-11c — Element-editor header respects Settings-typed name
 
 The "Editing X" header in the right-rail element editor was

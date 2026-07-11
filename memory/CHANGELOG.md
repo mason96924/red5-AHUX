@@ -4,6 +4,42 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12d — Windows panel: batch Length + Angle
+
+### What shipped
+
+- Batch bar now has **three** sliders instead of one: `Blinds →`,
+  `Length →`, `Angle →`.  All disabled when 0 selected, enabled
+  when 1+ ticked.  Each drives the corresponding property on
+  every ticked window in one pass.
+- Sensible defaults on selection change:
+    - Blinds → arithmetic mean of selected blind levels.
+    - Length → arithmetic mean of selected lengths.
+    - Angle  → **circular mean** (atan2 of Σcos, Σsin) so a mix
+      of e.g. 170° and -170° averages to 180° instead of 0°.
+- Per-row Blinds / Length / Angle sliders + labels update
+  in-place while the batch slider is dragged (no re-render, so
+  focus and mouse-capture stay).
+
+### Why
+
+Operator: "Widows group operation should be available for length
+as well as angle, not just blinds."  Ships all three.
+
+### Tests
+
+- 458/458 pytest still green.
+- Manual Playwright smoke, 3-window floor (1.5/2.5/3.0 m at
+  0°/0°/90°, blinds 10/50/90%):
+    - Select-all → batch length reads 2.33 m, angle reads 27°
+      (circular-mean sanity).
+    - Batch length → 4.0 m + angle → 45°: all three windows =
+      4.0 m / 45° (persisted).
+    - Untick W2, batch angle → 90°: W1 & W3 = 90°, W2 stayed at
+      45° (persisted).
+
+--------------------------------------------------------------------
+
 ## 2026-02-12c — Windows panel: multi-select + batch blinds
 
 ### What shipped

@@ -5676,6 +5676,19 @@ function renderWindowsPanel() {
         (selWins.reduce((s, w) => s + (w.blind_level || 0), 0) / selWins.length)
         * 100)
     : 0;
+  const avgLenM = selWins.length
+    ? (selWins.reduce((s, w) => s + (w.length_m || 0), 0) / selWins.length)
+    : 1.0;
+  // Circular mean for angle (handles -180/+180 wrap correctly).
+  let avgAngDeg = 0;
+  if (selWins.length) {
+    let sx = 0, sy = 0;
+    for (const w of selWins) {
+      const r = ((w.angle_deg || 0) * Math.PI) / 180;
+      sx += Math.cos(r); sy += Math.sin(r);
+    }
+    avgAngDeg = Math.round(Math.atan2(sy, sx) * 180 / Math.PI);
+  }
   const batchDisabled = selCount === 0;
 
   // ----- Batch bar (sticky top): Select-all + N-selected + batch slider
@@ -5716,6 +5729,25 @@ function renderWindowsPanel() {
                ` style="${sliderStyle}" />` +
         `<span id="wp-batch-blind-val" data-testid="wp-batch-blind-val"` +
               ` style="${valStyle}">${avgBlindPct}%</span>` +
+      `</div>` +
+      `<div style="${rowSliderStyle};opacity:${batchDisabled ? '0.35' : '1'}">` +
+        `<span style="${capStyle}" title="Set length on every ticked window">Length →</span>` +
+        `<input type="range" min="0.2" max="${maxLen.toFixed(2)}" step="0.05"` +
+               ` value="${avgLenM.toFixed(2)}"` +
+               ` id="wp-batch-length" data-testid="wp-batch-length"` +
+               ` ${batchDisabled ? 'disabled' : ''}` +
+               ` style="${sliderStyle}" />` +
+        `<span id="wp-batch-length-val" data-testid="wp-batch-length-val"` +
+              ` style="${valStyle}">${avgLenM.toFixed(2)} m</span>` +
+      `</div>` +
+      `<div style="${rowSliderStyle};opacity:${batchDisabled ? '0.35' : '1'}">` +
+        `<span style="${capStyle}" title="Set angle on every ticked window">Angle →</span>` +
+        `<input type="range" min="-180" max="180" step="1" value="${avgAngDeg}"` +
+               ` id="wp-batch-angle" data-testid="wp-batch-angle"` +
+               ` ${batchDisabled ? 'disabled' : ''}` +
+               ` style="${sliderStyle}" />` +
+        `<span id="wp-batch-angle-val" data-testid="wp-batch-angle-val"` +
+              ` style="${valStyle}">${avgAngDeg}°</span>` +
       `</div>` +
     `</div>`;
 
@@ -5811,6 +5843,16 @@ function renderWindowsPanel() {
     batchBlind.addEventListener('input', _onBatchBlindInput);
     batchBlind.addEventListener('change', _saveWindows);
   }
+  const batchLength = body.querySelector('#wp-batch-length');
+  if (batchLength) {
+    batchLength.addEventListener('input', _onBatchLengthInput);
+    batchLength.addEventListener('change', _saveWindows);
+  }
+  const batchAngle = body.querySelector('#wp-batch-angle');
+  if (batchAngle) {
+    batchAngle.addEventListener('input', _onBatchAngleInput);
+    batchAngle.addEventListener('change', _saveWindows);
+  }
 }
 
 function _onWindowSelToggle(ev) {
@@ -5848,6 +5890,46 @@ function _onBatchBlindInput(ev) {
   }
   const batchVal = document.getElementById('wp-batch-blind-val');
   if (batchVal) batchVal.textContent = `${Math.round(val * 100)}%`;
+  if (n > 0) paintCanvas();
+}
+
+function _onBatchLengthInput(ev) {
+  const val = parseFloat(ev.target.value) || 0.2;
+  const f = state.currentFloor; if (!f) return;
+  const wins = f.windows || [];
+  let n = 0;
+  for (const w of wins) {
+    if (!_isWinSelected(w.id)) continue;
+    w.length_m = val;
+    const rowSlider = document.querySelector(`.wp-length[data-wid="${w.id}"]`);
+    if (rowSlider) rowSlider.value = val.toFixed(2);
+    const rowVal = document.querySelector(`.wp-length-val[data-wid="${w.id}"]`);
+    if (rowVal) rowVal.textContent = `${val.toFixed(2)} m`;
+    _syncWindowLabel(w);
+    n++;
+  }
+  const batchVal = document.getElementById('wp-batch-length-val');
+  if (batchVal) batchVal.textContent = `${val.toFixed(2)} m`;
+  if (n > 0) paintCanvas();
+}
+
+function _onBatchAngleInput(ev) {
+  const val = parseFloat(ev.target.value) || 0;
+  const f = state.currentFloor; if (!f) return;
+  const wins = f.windows || [];
+  let n = 0;
+  for (const w of wins) {
+    if (!_isWinSelected(w.id)) continue;
+    w.angle_deg = val;
+    const rowSlider = document.querySelector(`.wp-angle[data-wid="${w.id}"]`);
+    if (rowSlider) rowSlider.value = Math.round(val);
+    const rowVal = document.querySelector(`.wp-angle-val[data-wid="${w.id}"]`);
+    if (rowVal) rowVal.textContent = `${Math.round(val)}°`;
+    _syncWindowLabel(w);
+    n++;
+  }
+  const batchVal = document.getElementById('wp-batch-angle-val');
+  if (batchVal) batchVal.textContent = `${Math.round(val)}°`;
   if (n > 0) paintCanvas();
 }
 

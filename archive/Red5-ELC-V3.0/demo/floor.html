@@ -131,6 +131,23 @@
     display: block;
     filter: drop-shadow(0 0 4px rgba(0,0,0,0.4));
   }
+  /* 2026-02-12s — sun ray sits BEHIND the building; building itself
+     is translucent so the sun wash shows through the block.  The
+     sun-ray overlay is created dynamically by _renderBuildingSunRay
+     with id="building-sun-ray"; give it a low z-index and lift the
+     building svg/img above it so the flex-centred canvas child
+     still paints on top. */
+  .building-2d5 .b25-canvas > svg#building-sun-ray {
+    position: absolute; inset: 0;
+    z-index: 0;
+    filter: none;               /* keep the wash flat, no drop shadow */
+  }
+  .building-2d5 .b25-canvas > svg:not(#building-sun-ray),
+  .building-2d5 .b25-canvas > img {
+    position: relative;
+    z-index: 2;
+    opacity: 0.62;              /* translucent so sun wash reads through */
+  }
   /* SVG interactive slabs (dynamic, one per floor) */
   .building-2d5 .slab {
     cursor: pointer;
@@ -5621,8 +5638,7 @@ function _renderBuildingSunRay() {
     overlay.setAttribute('viewBox', '-100 -100 200 200');
     overlay.setAttribute('preserveAspectRatio', 'none');
     overlay.style.cssText =
-      'position:absolute;inset:0;pointer-events:none;z-index:4;' +
-      'mix-blend-mode:screen';
+      'position:absolute;inset:0;pointer-events:none;z-index:0;';
     overlay.innerHTML =
       '<defs>' +
         '<linearGradient id="sunLitGrad" x1="0%" y1="0%" x2="100%" y2="0%"' +
@@ -5652,14 +5668,18 @@ function _renderBuildingSunRay() {
   if (isDay) {
     // Whole area is ALWAYS filled: even the shadow side is amber,
     // just at a lower opacity.  Both stops rise with altitude so
-    // noon is objectively brighter than sunrise.
-    hiOp = (0.20 + 0.55 * altNorm).toFixed(2);   // ~0.20 → 0.75
-    loOp = (0.05 + 0.20 * altNorm).toFixed(2);   // ~0.05 → 0.25
+    // noon is objectively brighter than sunrise.  Opacities are
+    // pushed higher (0.35 → 0.95 / 0.12 → 0.40) because the
+    // building svg above is now translucent (opacity:0.62) and
+    // eats some of the wash.
+    hiOp = (0.35 + 0.60 * altNorm).toFixed(2);   // ~0.35 → 0.95
+    loOp = (0.12 + 0.28 * altNorm).toFixed(2);   // ~0.12 → 0.40
     colour = '#ffb020';
   } else {
-    // Night wash — cool blue-grey, uniform low opacity.
-    hiOp = '0.10';
-    loOp = '0.05';
+    // Night wash — cool blue-grey, uniform low-mid opacity so the
+    // translucent building still reads against it.
+    hiOp = '0.22';
+    loOp = '0.10';
     colour = '#5a7ab0';
   }
   stopHi.setAttribute('stop-color', colour);
@@ -6266,6 +6286,33 @@ function _windowCardinal(deg) {
   return best.name;
 }
 
+// 2026-02-12s — Compact one-letter compass code (N/E/S/W) for use
+// in the auto-generated window identifier.
+function _windowCardinalLetter(deg) {
+  return _windowCardinal(deg).charAt(0).toUpperCase();
+}
+
+// 2026-02-12s — Auto-generated identifier for a window, using its
+// cardinal direction + a 1-based per-direction sequence number:
+// N_W1, N_W2, E_W1, S_W1, W_W1, …  Falls back to a bare "W{n}"
+// if the passed-in list is empty (defensive).  The operator can
+// override this by typing into the row's name input (persisted
+// via w.name).
+function _defaultWindowName(w, wins) {
+  const dir = _windowCardinalLetter(w.angle_deg);
+  const sameDir = (wins || []).filter(
+    x => _windowCardinalLetter(x.angle_deg) === dir);
+  const idx = sameDir.indexOf(w);
+  const n = idx >= 0 ? idx + 1 : (sameDir.length + 1);
+  return `${dir}_W${n}`;
+}
+
+// Returns the display name for a window: operator-set w.name if
+// present, otherwise the auto-generated default.
+function _windowDisplayName(w, wins) {
+  return (w.name && w.name.trim()) || _defaultWindowName(w, wins);
+}
+
 // Multi-select state: window IDs currently ticked in the Windows panel.
 // Cleared on floor-switch (see selectFloor), preserved across panel
 // open/close so the operator can toggle the panel without losing their
@@ -6415,8 +6462,8 @@ function renderWindowsPanel() {
     `</div>`;
 
   const rowsHtml = wins.map((w, i) => {
-    const dir = _windowCardinal(w.angle_deg);
-    const label = `W${i + 1} · ${dir} · ${(w.length_m || 0).toFixed(2)} m`;
+    const displayName = _windowDisplayName(w, wins);
+    const lenSuffix = `${(w.length_m || 0).toFixed(2)} m`;
     const selected = _isWinSelected(w.id);
     const rowBg = selected
       ? 'background:rgba(150,210,255,0.10);border-left:2px solid #96d2ff;'
@@ -6426,16 +6473,28 @@ function renderWindowsPanel() {
       ` data-testid="wp-row-${i + 1}"` +
       ` style="padding:6px 4px;border-bottom:1px solid var(--line);` +
              `font-size:11px;${rowBg}` +
-             `display:flex;justify-content:space-between;align-items:center">` +
+             `display:flex;justify-content:space-between;align-items:center;gap:6px">` +
         `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0;flex:1;min-width:0">` +
           `<input type="checkbox" class="wp-sel" data-wid="${w.id}"` +
                  ` data-testid="wp-sel-${i + 1}"` +
                  ` ${selected ? 'checked' : ''}` +
                  ` style="accent-color:#96d2ff;cursor:pointer;flex-shrink:0" />` +
+          // Editable name input (2026-02-12s operator ask).  Persists
+          // to w.name; empty value falls back to the auto default.
+          `<input type="text" class="wp-name" data-wid="${w.id}"` +
+                ` data-testid="wp-name-${i + 1}"` +
+                ` value="${displayName.replace(/"/g, '&quot;')}"` +
+                ` maxlength="24" spellcheck="false"` +
+                ` title="Window identifier — edit to rename (default {DIR}_W{n})"` +
+                ` style="font-family:var(--mono);color:var(--text);background:transparent;` +
+                       `border:1px solid transparent;border-radius:3px;padding:1px 4px;` +
+                       `min-width:0;width:82px;font-size:11px;outline:none" />` +
           `<span class="wp-label" data-wid="${w.id}"` +
                 ` data-testid="wp-label-${i + 1}"` +
-                ` style="font-family:var(--mono);color:var(--text);` +
-                       `overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>` +
+                ` style="font-family:var(--mono);color:var(--muted);font-size:10px;` +
+                       `overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">` +
+            `· ${lenSuffix}` +
+          `</span>` +
         `</label>` +
         `<button class="wp-del" data-wid="${w.id}"` +
                ` data-testid="wp-del-${i + 1}" title="Delete window"` +
@@ -6475,6 +6534,32 @@ function renderWindowsPanel() {
   }
   for (const el of body.querySelectorAll('.wp-del')) {
     el.addEventListener('click', _onDeleteWindow);
+  }
+  for (const el of body.querySelectorAll('.wp-name')) {
+    // Live focus-highlight so the input reads as editable on hover/focus.
+    el.addEventListener('focus', (ev) => {
+      ev.target.style.borderColor = 'var(--line)';
+      ev.target.style.background  = '#0e1218';
+    });
+    el.addEventListener('blur', (ev) => {
+      ev.target.style.borderColor = 'transparent';
+      ev.target.style.background  = 'transparent';
+      _onWindowNameCommit(ev);
+    });
+    // Enter commits + blurs; Escape reverts to prior name.
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter')  { ev.target.blur(); }
+      if (ev.key === 'Escape') {
+        const wid = ev.target.dataset.wid;
+        const wins2 = (state.currentFloor && state.currentFloor.windows) || [];
+        const w = wins2.find(x => x.id === wid);
+        if (w) ev.target.value = _windowDisplayName(w, wins2);
+        ev.target.blur();
+      }
+    });
+    // Stop the checkbox <label> from toggling selection when the
+    // operator clicks into the input to edit.
+    el.addEventListener('click', (ev) => ev.stopPropagation());
   }
   const selAll = body.querySelector('#wp-select-all');
   if (selAll) selAll.addEventListener('change', _onWindowSelAllToggle);
@@ -6707,9 +6792,43 @@ function _syncWindowLabel(w) {
   const i = wins.indexOf(w);
   if (i < 0) return;
   const lbl = document.querySelector(`.wp-label[data-wid="${w.id}"]`);
-  if (!lbl) return;
-  const dir = _windowCardinal(w.angle_deg);
-  lbl.textContent = `W${i + 1} · ${dir} · ${(w.length_m || 0).toFixed(2)} m`;
+  if (lbl) lbl.textContent = `· ${(w.length_m || 0).toFixed(2)} m`;
+  // If the operator hasn't overridden the name, keep the auto default
+  // fresh with the current cardinal direction (angle_deg may have
+  // changed via the batch angle slider).
+  const nameInp = document.querySelector(`.wp-name[data-wid="${w.id}"]`);
+  if (nameInp && !(w.name && w.name.trim())) {
+    nameInp.value = _defaultWindowName(w, wins);
+  }
+}
+
+// Commit a rename typed into a row's name input.  Empty string
+// clears w.name so the display falls back to the auto default.
+// Otherwise trim + persist via _saveWindows().  No-op if the
+// value hasn't actually changed.
+async function _onWindowNameCommit(ev) {
+  const wid = ev.target.dataset.wid;
+  const f = state.currentFloor; if (!f) return;
+  const w = (f.windows || []).find(x => x.id === wid);
+  if (!w) return;
+  const raw = (ev.target.value || '').trim();
+  const wins = f.windows || [];
+  if (raw === '') {
+    if (w.name) {
+      delete w.name;
+      ev.target.value = _defaultWindowName(w, wins);
+      await _saveWindows();
+    } else {
+      ev.target.value = _defaultWindowName(w, wins);
+    }
+    return;
+  }
+  if (raw === w.name) return;   // no-op
+  // Guard: if the operator typed exactly the auto default, don't
+  // persist it — leave w.name unset so the name stays live.
+  if (raw === _defaultWindowName(w, wins) && !w.name) return;
+  w.name = raw;
+  await _saveWindows();
 }
 
 async function _onDeleteWindow(ev) {

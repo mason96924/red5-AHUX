@@ -512,7 +512,7 @@ def update_floor(
             if not isinstance(w, dict):
                 raise BadInput("each window must be an object")
             try:
-                wins_norm.append({
+                entry = {
                     "id":            str(w.get("id") or _new_id()),
                     "x_m":           float(w["x_m"]),
                     "y_m":           float(w["y_m"]),
@@ -521,7 +521,17 @@ def update_floor(
                     "blind_level":   min(max(float(w.get("blind_level", 0.0)), 0.0), 1.0),
                     "sill_height_m": float(w.get("sill_height_m", 1.0)),
                     "head_height_m": float(w.get("head_height_m", 2.2)),
-                })
+                }
+                # Optional operator-set identifier (e.g. "N_W1" default,
+                # renamed by hand in the Windows panel).  Trim + cap
+                # length; drop empty strings so the UI falls back to
+                # the auto default.
+                nm = w.get("name")
+                if nm is not None:
+                    nm_s = str(nm).strip()[:64]
+                    if nm_s:
+                        entry["name"] = nm_s
+                wins_norm.append(entry)
             except (KeyError, TypeError, ValueError) as e:
                 raise BadInput(f"invalid window: {e}") from e
         sets.append("windows_json = ?")

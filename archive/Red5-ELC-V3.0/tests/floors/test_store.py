@@ -462,3 +462,48 @@ class TestSchemaMigration:
         cs.init(p)
         f = floors.get_floor("x", db_path=p)
         assert f["rooms"] == []
+
+
+
+class TestWindowName:
+    """2026-02-12s — Optional operator-set window identifier."""
+
+    def test_name_persists_round_trip(self, db_path):
+        f = floors.create_floor("F1", db_path=db_path)
+        floors.update_floor(f["id"], windows=[{
+            "x_m": 1.0, "y_m": 2.0, "length_m": 1.2,
+            "angle_deg": 0.0, "name": "N_W1",
+        }], db_path=db_path)
+        got = floors.get_floor(f["id"], db_path=db_path)
+        assert got["windows"][0]["name"] == "N_W1"
+
+    def test_empty_name_is_dropped(self, db_path):
+        f = floors.create_floor("F1", db_path=db_path)
+        floors.update_floor(f["id"], windows=[{
+            "x_m": 1.0, "y_m": 2.0, "length_m": 1.2,
+            "angle_deg": 0.0, "name": "   ",
+        }], db_path=db_path)
+        got = floors.get_floor(f["id"], db_path=db_path)
+        assert "name" not in got["windows"][0]
+
+    def test_omitted_name_is_dropped(self, db_path):
+        f = floors.create_floor("F1", db_path=db_path)
+        floors.update_floor(f["id"], windows=[{
+            "x_m": 1.0, "y_m": 2.0, "length_m": 1.2,
+            "angle_deg": 0.0,
+        }], db_path=db_path)
+        got = floors.get_floor(f["id"], db_path=db_path)
+        assert "name" not in got["windows"][0]
+
+    def test_name_trimmed_and_capped(self, db_path):
+        f = floors.create_floor("F1", db_path=db_path)
+        floors.update_floor(f["id"], windows=[{
+            "x_m": 1.0, "y_m": 2.0, "length_m": 1.2,
+            "angle_deg": 0.0, "name": "  My Very Long Custom Window Name That Goes On And On And On  ",
+        }], db_path=db_path)
+        got = floors.get_floor(f["id"], db_path=db_path)
+        assert got["windows"][0]["name"].startswith("My Very")
+        assert len(got["windows"][0]["name"]) <= 64
+        # Whitespace trimmed on both sides.
+        assert not got["windows"][0]["name"].startswith(" ")
+        assert not got["windows"][0]["name"].endswith(" ")

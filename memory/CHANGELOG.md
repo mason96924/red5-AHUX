@@ -4,6 +4,54 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12s — Window naming + sun ray as building background
+
+### What shipped
+
+**1. Editable window identifiers (`{DIR}_W{n}`)**
+
+- New helpers `_windowCardinalLetter(deg)` + `_defaultWindowName(w, wins)`
+  in `demo/floor.html`.  Default name = cardinal letter of the
+  window's outward-facing wall (`N`/`E`/`S`/`W`) + `_W` + 1-based
+  index among same-direction siblings.  Examples: `N_W1`,
+  `N_W2`, `E_W1`, `S_W1`, `W_W1`.
+- Windows-panel rows now show an inline **editable `<input>`**
+  (`class="wp-name"`) instead of a static label.  Focus lights up
+  the input; **Enter** commits + blurs; **Escape** reverts.  The
+  length suffix (`· 1.20 m`) stays as a muted static span next to
+  it.
+- `_onWindowNameCommit` persists `w.name` via the existing
+  `PATCH /floors/{id}` route.  Empty value clears the override
+  and falls back to the auto default (never persists an empty
+  string).  Typing exactly the auto default also stays live
+  rather than pinning it.
+- Backend (`elc/floors/store.py::update_floor`) now accepts an
+  optional `name` field on each window: trimmed, capped at 64
+  chars, empty strings dropped.  Backwards compatible — older
+  windows without `name` simply keep using the client-side auto
+  default.
+- 4 new pytest cases in `tests/floors/test_store.py::TestWindowName`
+  cover round-trip, empty-string drop, omitted-field drop, and
+  trim + cap.
+
+**2. Sun ray as building background + translucent building**
+
+- CSS: sun-ray overlay (`svg#building-sun-ray`) is now positioned
+  at `z-index:0` inside `.b25-canvas`; the flex-centred building
+  svg/img is lifted to `z-index:2` with `opacity:0.62`.  The wash
+  now paints *behind* the building instead of overlaying it.
+- `_renderBuildingSunRay` drops `mix-blend-mode: screen` (no
+  longer needed — it's a background wash, not a light-adder) and
+  bumps opacity stops to compensate for the translucent building
+  above: day hi `0.35→0.95`, lo `0.12→0.40`; night hi `0.22`,
+  lo `0.10`.
+
+### Tests
+
+- **462/462 pytest green** (was 458 → +4 new).
+- Embedded `<script>` block parses cleanly.
+
+
 ## 2026-02-12r — Windows panel: Align H / Align V
 
 ### What shipped

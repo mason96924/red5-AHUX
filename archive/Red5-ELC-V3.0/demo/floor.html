@@ -2021,6 +2021,9 @@ function renderSrmGrid() {
   const count = document.getElementById('dev-count');
   count.textContent = state.devices.length ? `(${state.devices.length})` : '';
   updateBroadcastBar();
+  // 2026-02-12aa — refresh the multi-SCU header strip on every grid
+  // render so it tracks floor switches + project snapshot updates.
+  if (typeof _updateSrmScuInfo === 'function') _updateSrmScuInfo();
   if (state.devices.length === 0) {
     host.innerHTML = `<div class="empty">No SRM devices yet.
       Open <a href="/editor">Editor</a> → click the <code>Seed</code> button,
@@ -5429,21 +5432,120 @@ document.getElementById('btn-discover').onclick = () => discoverSrms();
   }
 })();
 
-// 2026-02-12z — Right-rail SCU header updater.
-// Reads the currently-selected SCU picker + IP host input and
-// paints them into the SRM sidebar's info strip.  Called on every
-// SCU change, IP blur, and initial hydration.
+// 2026-02-12z/aa — Right-rail SCU header updater.
+//
+// A floor CAN legitimately be served by more than one SCU (rare,
+// but a real logical case — see 2026-02-11d changelog + the
+// existing per-SCU headers in renderSrmGrid).  So this strip has
+// to reflect all SCUs that contribute modules to the current
+// floor, not just the toolbar picker.
+//
+// Logic:
+//   • If the project snapshot is ready AND a floor is loaded,
+//     derive the set of contributing SCUs from _projSnap
+//     (moduleFloor + scusById), same source of truth
+//     renderSrmGrid uses for its own per-SCU grouping.
+//   • Zero contributors → show the toolbar picker's SCU/IP as
+//     a fallback (matches the pre-multi-SCU behaviour).
+//   • One contributor → single-line "SCU N · host:port".
+//   • Two+ contributors → header line + one mini row per SCU,
+//     grouped under a "N SCUs on this floor" summary.
 function _updateSrmScuInfo() {
+  const strip = document.getElementById('srm-scu-info');
+  if (!strip) return;
   const sel   = document.getElementById('scu-picker');
   const inp   = document.getElementById('scu-host');
-  const idEl  = document.getElementById('srm-scu-info-id');
-  const ipEl  = document.getElementById('srm-scu-info-ip');
-  if (!idEl || !ipEl) return;
-  const scu = sel ? sel.value : '–';
-  const ip  = ((inp && inp.value) || '').trim();
-  idEl.textContent = String(scu);
-  ipEl.textContent = ip || 'unset';
-  ipEl.style.color = ip ? 'var(--text)' : 'var(--muted)';
+
+  // Contributing SCUs for the currently-selected floor.
+  const strand = (state.currentFloor && state.currentFloor.strand_label)
+    ? String(state.currentFloor.strand_label).toUpperCase()
+    : null;
+  const contributing = new Map();  // scuId -> { id, name, host, port }
+  if (typeof _projSnap !== 'undefined'
+      && _projSnap.ready && strand
+      && _projSnap.moduleFloor && _projSnap.scusById) {
+    for (const [key, floor] of _projSnap.moduleFloor.entries()) {
+      if ((floor || 'F0').toUpperCase() !== strand) continue;
+      // key = "<canonicalType>/<scuId>/<addr>"
+      const parts = key.split('/');
+      const scuId = parts[1];
+      if (contributing.has(scuId)) continue;
+      const info = _projSnap.scusById.get(String(scuId)) || {};
+      contributing.set(scuId, {
+        id: scuId,
+        name: info.name || '',
+        host: info.host || '',
+        port: info.port || 4001,
+      });
+    }
+  }
+
+  const fmtHost = (host, port) =>
+    host ? `${host}:${port || 4001}` : 'unset';
+
+  if (contributing.size === 0) {
+    // Fallback: toolbar picker + its stored IP.
+    const scu = sel ? sel.value : '–';
+    const ip  = ((inp && inp.value) || '').trim();
+    strip.innerHTML =
+      `<span style="color:var(--muted);letter-spacing:.06em;` +
+             `text-transform:uppercase;font-size:10px">SCU</span>` +
+      `<span data-testid="srm-scu-info-id"` +
+            ` style="color:var(--accent);font-weight:700">${escapeHtml(String(scu))}</span>` +
+      `<span style="color:var(--line)">·</span>` +
+      `<span data-testid="srm-scu-info-ip"` +
+            ` style="color:${ip ? 'var(--text)' : 'var(--muted)'};flex:1;` +
+                   `text-align:right;overflow:hidden;text-overflow:ellipsis;` +
+                   `white-space:nowrap">${escapeHtml(ip || 'unset')}</span>`;
+    strip.style.flexDirection = 'row';
+    return;
+  }
+
+  if (contributing.size === 1) {
+    const [only] = contributing.values();
+    strip.innerHTML =
+      `<span style="color:var(--muted);letter-spacing:.06em;` +
+             `text-transform:uppercase;font-size:10px">SCU</span>` +
+      `<span data-testid="srm-scu-info-id"` +
+            ` style="color:var(--accent);font-weight:700">${escapeHtml(only.id)}</span>` +
+      `<span style="color:var(--line)">·</span>` +
+      `<span data-testid="srm-scu-info-ip"` +
+            ` style="color:${only.host ? 'var(--text)' : 'var(--muted)'};flex:1;` +
+                   `text-align:right;overflow:hidden;text-overflow:ellipsis;` +
+                   `white-space:nowrap"` +
+            ` title="${escapeHtml(only.name || '')}">${escapeHtml(fmtHost(only.host, only.port))}</span>`;
+    strip.style.flexDirection = 'row';
+    return;
+  }
+
+  // Multi-SCU: stacked mini rows under a header.
+  const rows = [...contributing.values()]
+    .sort((a, b) => Number(a.id) - Number(b.id))
+    .map(s =>
+      `<div data-testid="srm-scu-info-row-${s.id}"` +
+      ` style="display:flex;justify-content:space-between;gap:8px;` +
+             `padding:2px 0;font-size:11px">` +
+        `<span style="color:#60a5fa;font-weight:700">■ SCU ${escapeHtml(s.id)}` +
+          (s.name ? ` <span style="color:var(--muted);font-weight:400">· ${escapeHtml(s.name)}</span>` : '') +
+        `</span>` +
+        `<span style="color:${s.host ? 'var(--text)' : 'var(--muted)'};` +
+                    `overflow:hidden;text-overflow:ellipsis;white-space:nowrap">` +
+          `${escapeHtml(fmtHost(s.host, s.port))}` +
+        `</span>` +
+      `</div>`
+    ).join('');
+  strip.innerHTML =
+    `<div style="display:flex;justify-content:space-between;align-items:center;` +
+                `width:100%;padding-bottom:4px;` +
+                `border-bottom:1px solid var(--line);margin-bottom:4px">` +
+      `<span style="color:var(--muted);letter-spacing:.06em;` +
+                  `text-transform:uppercase;font-size:10px">SCUs</span>` +
+      `<span data-testid="srm-scu-info-count"` +
+            ` style="color:var(--accent);font-weight:700">${contributing.size} on this floor</span>` +
+    `</div>` +
+    rows;
+  strip.style.flexDirection = 'column';
+  strip.style.alignItems    = 'stretch';
 }
 
 // Escape closes whichever floor/schedule modal is open (the module

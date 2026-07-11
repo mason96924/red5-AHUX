@@ -4,6 +4,44 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12aa — SRM sidebar SCU strip: multi-SCU aware
+
+### Context
+
+Yesterday's `#srm-scu-info` strip only reflected the toolbar SCU
+picker.  Operator reminded me that **a single floor can be served
+by more than one SCU** (rare but a real logical case — see
+2026-02-11d changelog: `renderSrmGrid` already emits per-SCU
+headers when multiple SCUs contribute to the same floor).  The
+top-of-sidebar strip has to reflect the same truth.
+
+### What shipped
+
+- `_updateSrmScuInfo()` rewritten to derive the *set of
+  contributing SCUs* for the current floor directly from
+  `_projSnap.moduleFloor` + `_projSnap.scusById` (same source
+  `renderSrmGrid` uses for its per-SCU headers).
+- Three render modes:
+  * **No contributors / snapshot not ready** → single-row
+    fallback showing the toolbar picker's SCU + IP (previous
+    behaviour, preserved for cold-start).
+  * **1 contributor** → single-row `SCU N · host:port`
+    (host tooltip carries the SCU display name).
+  * **2+ contributors** → header `SCUs · N on this floor` and
+    one mini row per SCU with its name + `host:port`, sorted
+    numerically by SCU id.
+- The strip auto-refreshes on every `renderSrmGrid()` call, so
+  it stays in sync with floor switches, SCU picker changes, IP
+  edits, and project-snapshot reloads.
+- Testids: `srm-scu-info`, `srm-scu-info-id`, `srm-scu-info-ip`,
+  `srm-scu-info-count`, `srm-scu-info-row-<scuId>`.
+
+### Tests
+
+- **462/462 pytest green.**
+- Embedded `<script>` parses.
+
+
 ## 2026-02-12z — SRM sidebar: SCU ID + IP header strip
 
 ### What shipped

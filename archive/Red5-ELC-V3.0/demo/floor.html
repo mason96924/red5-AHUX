@@ -6523,22 +6523,21 @@ function _windowCardinal(deg) {
   return best.name;
 }
 
-// 2026-02-12v/af — Angle-first, position-second cardinal classifier
-// for the Windows-panel badge + auto-name.
+// 2026-02-12v/af/ag — Angle-first, position-second cardinal
+// classifier for the Windows-panel badge + auto-name.
 //
-// Rule (operator ask, 2026-02-12af):
-//   1. Read the window's own axis (`angle_deg`).  A window bar is a
-//      line segment, so 30° and 210° describe the same orientation
-//      — normalise to `[0, 180)`.
-//   2. If the bar is closer to HORIZONTAL (angle near 0° or 180°),
-//      it must sit on the NORTH or SOUTH wall → use the window's
-//      `y_m` relative to the floor centre to pick which one
-//      (smaller y_m = north on screen; DXF convention).
-//   3. If the bar is closer to VERTICAL (angle near 90°), it sits
-//      on the EAST or WEST wall → use `x_m` to disambiguate.
-//   4. This is far more resilient than the pure-position rule: even
-//      an off-centre window near a corner is classified by which
-//      wall it's ON, not just where it happens to sit.
+// Rule:
+//   1. Normalise `angle_deg` to `[0, 180)` (a bar at 30° and 210°
+//      is the same orientation).
+//   2. If within a small tolerance (`_WIN_ANGLE_TOL_DEG`, default
+//      5°) of horizontal → the window is on the N or S wall;
+//      `y_m` decides which one.
+//   3. If within the same tolerance of vertical → E or W wall;
+//      `x_m` decides.
+//   4. Anything more diagonal than that (>5° from both axes) is
+//      genuinely tilted — fall back to the pure position rule
+//      (whichever of `|dx|` / `|dy|` is larger).
+const _WIN_ANGLE_TOL_DEG = 5;
 function _windowPositionalCardinalLetter(w, f) {
   f = f || state.currentFloor;
   if (!f) return 'N';   // safe default before a floor is loaded
@@ -6546,18 +6545,21 @@ function _windowPositionalCardinalLetter(w, f) {
   const cy = (f.height_m || 0) / 2;
   const dx = (w.x_m || 0) - cx;
   const dy = (w.y_m || 0) - cy;
-  // Normalise angle to [0, 180).  A bar at 210° is the same
-  // orientation as one at 30°.
   const ang = (((w.angle_deg || 0) % 180) + 180) % 180;
-  // How close is the bar to horizontal (0° or 180°) vs vertical (90°)?
   const distFromHoriz = Math.min(ang, 180 - ang);   // 0 = perfectly horizontal
   const distFromVert  = Math.abs(ang - 90);          // 0 = perfectly vertical
-  if (distFromHoriz <= distFromVert) {
-    // Horizontal bar → N or S wall.
+  if (distFromHoriz <= _WIN_ANGLE_TOL_DEG) {
     return dy >= 0 ? 'S' : 'N';
   }
-  // Vertical bar → E or W wall.
-  return dx >= 0 ? 'E' : 'W';
+  if (distFromVert <= _WIN_ANGLE_TOL_DEG) {
+    return dx >= 0 ? 'E' : 'W';
+  }
+  // Diagonal window (>5° off both axes) — no reliable wall
+  // orientation; classify by absolute displacement from centre.
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx >= 0 ? 'E' : 'W';
+  }
+  return dy >= 0 ? 'S' : 'N';
 }
 
 // 2026-02-12s — Auto-generated identifier for a window, using its

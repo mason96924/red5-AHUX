@@ -4,6 +4,46 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12p — Revert stage-hint + LAYOUT badge; sun-ray → directional gradient light
+
+### What shipped
+
+- **LAYOUT badge** reverted from `right:14px` back to `left:14px`
+  (misinterpreted operator request in 2026-02-12o).
+- **`.stage-hint`** reverted from `top:14px` back to
+  `bottom:14px; left:14px` — operator wants it kept where it was.
+- **Sun-ray on Building panel**: replaced the single-line arrow
+  with a **directional linear-gradient overlay** shining across
+  the 2.5D building block.  The bright end sits on the sun-facing
+  face; the shadow end fades to transparent.  Gradient rotates by
+  `az - 270°` so 0°=N sun lights the top of the block, 90°=E
+  lights the right side, etc.  `mix-blend-mode: screen` so the
+  glow adds to the block's own colour instead of over-painting it.
+  Below-horizon → hidden.  Fades in over alt 0…25° so
+  sunrise/sunset don't blast the widget.
+
+### Not done in this iteration
+
+- Moving the **"OFFICE PLAN 40 × 25"** DXF text header is a
+  DXF-content change, not a UI-overlay change: that string is a
+  `TEXT` entity baked into the operator's DXF file and is
+  rendered by `ezdxf` → PNG during import (`elc/floors/dxf.py`).
+  Options offered to the operator: (a) edit the DXF in AutoCAD /
+  LibreCAD to relocate the TEXT entity; (b) add a
+  post-import step that scans TEXT entities and repositions ones
+  that look like a title block — needs discussion of which
+  entities to move.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright: `.mode-badge` `left=14px`; `.stage-hint`
+  `bottom=14px`; sun-ray overlay parent = `b25-canvas`; rect fill
+  = `url(#sunLitGrad)`; rotation transform tracks `az - 270°`
+  (tested az=250° → `rotate(-20.0)`).
+
+--------------------------------------------------------------------
+
 ## 2026-02-12o — LAYOUT badge → right; stage-hint → top; sun-ray centred on building
 
 ### What shipped

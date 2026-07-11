@@ -199,7 +199,7 @@
     pointer-events: none; text-align: center; padding: 24px;
   }
   .mode-badge {
-    position: absolute; top: 14px; right: 14px; z-index: 3;
+    position: absolute; top: 14px; left: 14px; z-index: 3;
     padding: 4px 10px; border-radius: 999px; font-family: var(--mono);
     font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
     background: rgba(19,24,31,0.85); border: 1px solid var(--line);
@@ -208,13 +208,9 @@
   .mode-badge.layout { color: var(--accent-2); border-color: rgba(217,122,48,0.4); }
   .mode-badge.operator { color: var(--ok); border-color: rgba(78,203,113,0.4); }
   .stage-hint {
-    /* Moved from bottom-left to top-left 2026-02-12o so the SOUTH
-       side of the DXF (which is the more important elevation in
-       NH buildings — bigger windows) is no longer obscured. */
-    position: absolute; top: 14px; left: 14px; z-index: 3;
+    position: absolute; bottom: 14px; left: 14px; z-index: 3;
     color: var(--muted); font-size: 11px; font-family: var(--mono);
     background: rgba(19,24,31,0.7); padding: 4px 10px; border-radius: 4px;
-    max-width: 60%;
   }
   /* Shape-placement banner + heatmap legend (canvas overlays) */
   .place-banner {
@@ -5603,18 +5599,15 @@ function _syncSunCompassButtons() {
   }
 }
 
-// Sun-ray overlay on the 2.5D Building diagram.  Draws an orange
-// ray from a point on the perimeter of the building panel toward
-// the panel centre, so operators can see at a glance which face
-// of the building the sun is hitting.  Hidden when sun is below
-// horizon.  Overlay is a single absolutely-positioned SVG that we
-// lazily append the first time the compass renders.
+// Sun-ray overlay on the 2.5D Building image.  Instead of drawing
+// an arrow *pointing at* the building, we shine a directional
+// linear gradient *across* the building block: bright amber on the
+// side the sun is on, transparent on the shadow side.  This is the
+// V1.9 / V2.0 idiom — "light shines onto the building" rather than
+// "an arrow indicates a direction".  Hidden when sun is below
+// horizon.
 function _renderBuildingSunRay() {
   const a = state.ambient;
-  // Attach the overlay to #b25-canvas (the 2.5D building image
-  // container) rather than #building-2d5 (the whole panel) so the
-  // ray's centre point coincides with the building itself, not with
-  // the compass widget above it.
   const host = document.getElementById('b25-canvas');
   if (!a || !host) return;
   let overlay = document.getElementById('building-sun-ray');
@@ -5626,47 +5619,41 @@ function _renderBuildingSunRay() {
     overlay.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     overlay.style.cssText =
       'position:absolute;inset:0;pointer-events:none;z-index:4;' +
-      'opacity:0.9';
+      'mix-blend-mode:screen';
     overlay.innerHTML =
       '<defs>' +
-        '<marker id="sunArrow" viewBox="0 0 10 10" refX="10" refY="5"' +
-                ' markerWidth="5" markerHeight="5" orient="auto">' +
-          '<path d="M 0 0 L 10 5 L 0 10 Z" fill="#ffb020"/>' +
-        '</marker>' +
+        '<linearGradient id="sunLitGrad" x1="0%" y1="0%" x2="100%" y2="0%"' +
+                       ' gradientUnits="objectBoundingBox">' +
+          '<stop offset="0%"  stop-color="#ffb020" stop-opacity="0.60"/>' +
+          '<stop offset="55%" stop-color="#ffb020" stop-opacity="0.12"/>' +
+          '<stop offset="100%" stop-color="#ffb020" stop-opacity="0"/>' +
+        '</linearGradient>' +
       '</defs>' +
-      '<line id="building-sun-ray-line" x1="0" y1="0" x2="0" y2="0"' +
-            ' stroke="#ffb020" stroke-width="2.5" stroke-linecap="round"' +
-            ' opacity="0.9" marker-end="url(#sunArrow)"/>';
+      '<rect id="building-sun-lit" x="-100" y="-100" width="200"' +
+           ' height="200" fill="url(#sunLitGrad)"' +
+           ' transform="rotate(0)"/>';
     host.appendChild(overlay);
   }
-  const line = overlay.querySelector('#building-sun-ray-line');
+  const litRect = overlay.querySelector('#building-sun-lit');
   const alt = a.sun.altitude_deg || 0;
   const az  = a.sun.azimuth_deg  || 0;
   if (alt <= 0) {
-    if (line) { line.setAttribute('x2', '0'); line.setAttribute('y2', '0'); }
     overlay.style.display = 'none';
     return;
   }
   overlay.style.display = '';
-  // Convert azimuth to a vector: 0°=N=up (screen -Y).  Distance from
-  // building centre to the source of the ray = 80 (viewBox is 200-wide).
-  const azRad = (az * Math.PI) / 180;
-  const dirX = Math.sin(azRad);
-  const dirY = -Math.cos(azRad);
-  const R = 80;
-  // Start at the perimeter along direction TOWARD the sun.
-  const sx = dirX * R, sy = dirY * R;
-  // End near centre but stop short of it so the arrowhead is visible.
-  const inset = 22;
-  const ex = -dirX * inset, ey = -dirY * inset;
-  line.setAttribute('x1', sx.toFixed(1));
-  line.setAttribute('y1', sy.toFixed(1));
-  line.setAttribute('x2', ex.toFixed(1));
-  line.setAttribute('y2', ey.toFixed(1));
-  // Fade the ray at very low altitudes so the near-sunset look is
-  // more subtle.
-  const opacity = Math.min(1, alt / 30);
-  line.setAttribute('opacity', opacity.toFixed(2));
+  // Gradient axis is left→right by default.  We want the "bright"
+  // stop to sit on the compass-azimuth side of the block.  Compass
+  // convention: 0°=N=screen -Y, clockwise.  Left→right (rotate 0
+  // in SVG) points toward compass 90° (east).  So rotate by
+  // (az - 90) - 180 = az - 270 to point the "sun" edge in the
+  // actual sun direction (the sun-lit face of the building).
+  const rot = az - 270;
+  litRect.setAttribute('transform', `rotate(${rot.toFixed(1)})`);
+  // Fade at very low altitudes so sunrise/sunset don't blast the
+  // building; opacity peaks by alt ~25°.
+  const opacity = Math.min(1, Math.max(0, alt / 25));
+  overlay.style.opacity = opacity.toFixed(2);
 }
 
 function _startAmbientPoll() {

@@ -4,6 +4,50 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12h — Bidirectional window highlight (canvas ↔ panel)
+
+### What shipped
+
+- **Canvas click on a window bar toggles selection.** Left-click
+  (mousedown + mouseup with < 3 px total displacement) on any
+  window bar toggles that window's entry in `state.windowSel`.
+  Drags (>= 3 px) still reposition as before; the 3 px threshold
+  eliminates spurious "drag" state from an unsteady click.
+- **Auto-opens the Windows panel** so the newly-checked ✓ is
+  visible without an extra click on the `▤ Windows` toolbar
+  button.
+- **Selected windows render in accent orange on the canvas**
+  (`rgb(255, 165, 60)`, 6 px stroke) with a soft
+  `rgba(255, 165, 60, 0.45)` halo behind them, so they read
+  clearly on top of even a bright sunbeam.  Unselected windows
+  keep the existing blue → grey (blind) colour ramp.
+- **Panel checkbox handlers now repaint the canvas** so ticking a
+  row or `Select all` immediately updates the bar colour.
+
+### Why
+
+Operator: "When a window is highlighted, show it is highlighted
+and the floating windows modal should show the window selected
+checked. Highlighted window should be in different color of
+course in the canvas."  Selection is now bidirectional — canvas
+and panel stay in sync no matter which side drives.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright pixel probe on a 2-window night-lit floor:
+    - Initial: both bars `[149, 209, 255]` (blue).
+    - Canvas click on W1 → panel opens, W1 checked, counter
+      `1 of 2 selected`; W1 bar = `[255, 165, 59]` (orange),
+      W2 unchanged.
+    - Uncheck W1 in the panel → bar reverts to blue.
+    - 2 px "wiggle" click → still counts as toggle (position
+      unchanged at 3.000 m).
+    - 100 px drag → repositions (3.000 → 4.143 m) AND preserves
+      the ✓ state.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12g — Extended-slit sunbeam + room clip
 
 ### What shipped

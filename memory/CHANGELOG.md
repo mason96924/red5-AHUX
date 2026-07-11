@@ -4,6 +4,40 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12q — Building panel: whole-area sun intensity fill
+
+### What shipped
+
+- **`_renderBuildingSunRay()`** (`demo/floor.html:5612`) reworked
+  per operator request: instead of a directional arrow/ray, the
+  **entire 2.5D Building panel area** is now filled with a
+  sun-driven gradient.  Both gradient stops are always visible
+  (no fully-transparent side), and both rise together with the
+  sun's altitude — so noon is objectively brighter than sunrise.
+  * Day (`alt > 0`): amber `#ffb020`, hiOp `0.20 → 0.75`,
+    loOp `0.05 → 0.25` linearly with `altNorm = alt/90`.
+  * Night: uniform cool blue-grey `#5a7ab0` wash
+    (`hi=0.10, lo=0.05`) — moonlight tint, never fully dark.
+  * Gradient rotates by `az - 270°` so the bright edge always
+    sits on the sun-facing side of the panel; night wash is
+    isotropic.
+- `mix-blend-mode: screen` retained so the fill *adds* to the
+  slab colours rather than over-painting them.  Overlay is
+  always visible (`display:''; opacity:1`).
+
+### Tests
+
+- **458/458 pytest green** (`python -m pytest` in `.venv`).
+- No test changes needed — behaviour is purely visual and lives
+  in the frontend gradient stops / transform.
+
+### Not done in this iteration
+
+- DXF "OFFICE PLAN 40 × 25" title text obstruction — deferred
+  per operator ("Forget about P1").  Still awaits an AutoCAD
+  edit or a Python DXF TEXT-relocate hook if raised again.
+
+
 ## 2026-02-12p — Revert stage-hint + LAYOUT badge; sun-ray → directional gradient light
 
 ### What shipped

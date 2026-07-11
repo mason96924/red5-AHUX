@@ -146,7 +146,7 @@
   .building-2d5 .b25-canvas > img {
     position: relative;
     z-index: 2;
-    opacity: 0.62;              /* translucent so sun wash reads through */
+    opacity: 0.40;              /* 40% per operator ask — slabs still selectable */
   }
   /* SVG interactive slabs (dynamic, one per floor) */
   .building-2d5 .slab {
@@ -5616,16 +5616,15 @@ function _syncSunCompassButtons() {
   }
 }
 
-// Sun-ray overlay on the 2.5D Building image.  The whole panel area
-// is *always* filled with an amber daylight tint; only the gradient's
-// direction (which face is brightest) and the tint's intensity (how
-// much light is landing on the building overall) vary with the sun's
-// path.  This is the V1.9/V2.0 "sun-drenched building" idiom:
-//   • Sun at zenith  → whole area bright amber.
-//   • Sun at horizon → whole area dim amber.
-//   • Sun above horizon → bright stop on the sun-facing edge, dim
-//     stop on the shadow-facing edge.  No fully-transparent region.
-//   • Sun below horizon → cool blue-grey wash (moonlight tint).
+// Sun-ray overlay on the 2.5D Building panel.
+// 2026-02-12t — Whole-canvas uniform sun-driven wash.  No rotating
+// rectangle, no directional gradient — the ENTIRE building panel
+// canvas fills with a single flat colour whose intensity + hue
+// tracks the sun's altitude and time-of-day.  Colour temperature
+// warms toward zenith and cools toward horizon / night.
+//   Sun at zenith   → strong warm amber wash.
+//   Sun at horizon  → dim warm amber (sunrise/sunset tint).
+//   Sun below horizon → cool blue-grey (moonlight tint).
 function _renderBuildingSunRay() {
   const a = state.ambient;
   const host = document.getElementById('b25-canvas');
@@ -5635,66 +5634,38 @@ function _renderBuildingSunRay() {
     overlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     overlay.setAttribute('id', 'building-sun-ray');
     overlay.setAttribute('data-testid', 'building-sun-ray');
-    overlay.setAttribute('viewBox', '-100 -100 200 200');
+    overlay.setAttribute('viewBox', '0 0 100 100');
     overlay.setAttribute('preserveAspectRatio', 'none');
     overlay.style.cssText =
       'position:absolute;inset:0;pointer-events:none;z-index:0;';
     overlay.innerHTML =
-      '<defs>' +
-        '<linearGradient id="sunLitGrad" x1="0%" y1="0%" x2="100%" y2="0%"' +
-                       ' gradientUnits="objectBoundingBox">' +
-          '<stop id="sun-lit-hi" offset="0%"' +
-                ' stop-color="#ffb020" stop-opacity="0.55"/>' +
-          '<stop id="sun-lit-lo" offset="100%"' +
-                ' stop-color="#ffb020" stop-opacity="0.15"/>' +
-        '</linearGradient>' +
-      '</defs>' +
-      '<rect id="building-sun-lit" x="-100" y="-100" width="200"' +
-           ' height="200" fill="url(#sunLitGrad)"' +
-           ' transform="rotate(0)"/>';
+      '<rect id="building-sun-lit" x="0" y="0" width="100" height="100"' +
+      ' fill="#ffb020" fill-opacity="0"/>';
     host.appendChild(overlay);
   }
   const litRect = overlay.querySelector('#building-sun-lit');
-  const stopHi  = overlay.querySelector('#sun-lit-hi');
-  const stopLo  = overlay.querySelector('#sun-lit-lo');
   const alt = a.sun.altitude_deg || 0;
-  const az  = a.sun.azimuth_deg  || 0;
   const isDay = alt > 0;
 
-  // Altitude-driven brightness envelope.  altNorm = 0 at horizon,
-  // 1 at zenith.  Below horizon we drop to a small "night" wash.
+  // altNorm: 0 at horizon, 1 at zenith.
   const altNorm = Math.max(0, Math.min(1, alt / 90));
-  let hiOp, loOp, colour;
+
+  let colour, opacity;
   if (isDay) {
-    // Whole area is ALWAYS filled: even the shadow side is amber,
-    // just at a lower opacity.  Both stops rise with altitude so
-    // noon is objectively brighter than sunrise.  Opacities are
-    // pushed higher (0.35 → 0.95 / 0.12 → 0.40) because the
-    // building svg above is now translucent (opacity:0.62) and
-    // eats some of the wash.
-    hiOp = (0.35 + 0.60 * altNorm).toFixed(2);   // ~0.35 → 0.95
-    loOp = (0.12 + 0.28 * altNorm).toFixed(2);   // ~0.12 → 0.40
-    colour = '#ffb020';
+    // Warm amber; opacity ramps 0.28 → 0.85 across altitude 0..90°.
+    // The building above is now 40% opaque so we can safely push a
+    // strong wash without hiding the slabs.
+    opacity = (0.28 + 0.57 * altNorm).toFixed(2);
+    colour  = '#ffb020';
   } else {
-    // Night wash — cool blue-grey, uniform low-mid opacity so the
-    // translucent building still reads against it.
-    hiOp = '0.22';
-    loOp = '0.10';
-    colour = '#5a7ab0';
+    // Night — cool blue-grey moonlight wash.
+    opacity = '0.28';
+    colour  = '#5a7ab0';
   }
-  stopHi.setAttribute('stop-color', colour);
-  stopHi.setAttribute('stop-opacity', hiOp);
-  stopLo.setAttribute('stop-color', colour);
-  stopLo.setAttribute('stop-opacity', loOp);
-
-  // Gradient orientation: default left→right stops = "sun on left".
-  // Compass 0°=N=screen -Y, clockwise.  Rotate by (az - 270°) so the
-  // bright stop sits on the sun-facing side of the block.
-  litRect.setAttribute('transform',
-    isDay ? `rotate(${(az - 270).toFixed(1)})` : 'rotate(0)');
-
-  // Overlay itself is always visible (whole area filled per operator
-  // request); intensity variation lives entirely in the stops.
+  litRect.setAttribute('fill', colour);
+  litRect.setAttribute('fill-opacity', opacity);
+  // No transform — the wash is uniform across the entire canvas so
+  // there is no "rectangle" for the operator to see moving around.
   overlay.style.display = '';
   overlay.style.opacity = '1';
 }
@@ -6468,34 +6439,38 @@ function renderWindowsPanel() {
     const rowBg = selected
       ? 'background:rgba(150,210,255,0.10);border-left:2px solid #96d2ff;'
       : 'border-left:2px solid transparent;';
+    // 2026-02-12t — name <input> is a SIBLING of the checkbox <label>,
+    // not a child.  Labels redirect any inner click to their first
+    // labelable control (the checkbox), which was hijacking edits.
     return (
       `<div class="wp-row${selected ? ' wp-row-selected' : ''}" data-wid="${w.id}"` +
       ` data-testid="wp-row-${i + 1}"` +
       ` style="padding:6px 4px;border-bottom:1px solid var(--line);` +
              `font-size:11px;${rowBg}` +
-             `display:flex;justify-content:space-between;align-items:center;gap:6px">` +
-        `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0;flex:1;min-width:0">` +
+             `display:flex;align-items:center;gap:6px">` +
+        `<label style="display:inline-flex;align-items:center;cursor:pointer;margin:0;flex-shrink:0"` +
+              ` title="Select this window">` +
           `<input type="checkbox" class="wp-sel" data-wid="${w.id}"` +
                  ` data-testid="wp-sel-${i + 1}"` +
                  ` ${selected ? 'checked' : ''}` +
-                 ` style="accent-color:#96d2ff;cursor:pointer;flex-shrink:0" />` +
-          // Editable name input (2026-02-12s operator ask).  Persists
-          // to w.name; empty value falls back to the auto default.
-          `<input type="text" class="wp-name" data-wid="${w.id}"` +
-                ` data-testid="wp-name-${i + 1}"` +
-                ` value="${displayName.replace(/"/g, '&quot;')}"` +
-                ` maxlength="24" spellcheck="false"` +
-                ` title="Window identifier — edit to rename (default {DIR}_W{n})"` +
-                ` style="font-family:var(--mono);color:var(--text);background:transparent;` +
-                       `border:1px solid transparent;border-radius:3px;padding:1px 4px;` +
-                       `min-width:0;width:82px;font-size:11px;outline:none" />` +
-          `<span class="wp-label" data-wid="${w.id}"` +
-                ` data-testid="wp-label-${i + 1}"` +
-                ` style="font-family:var(--mono);color:var(--muted);font-size:10px;` +
-                       `overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">` +
-            `· ${lenSuffix}` +
-          `</span>` +
+                 ` style="accent-color:#96d2ff;cursor:pointer" />` +
         `</label>` +
+        // Editable name input — SIBLING of the label so clicks actually
+        // land here and don't bubble to the checkbox.
+        `<input type="text" class="wp-name" data-wid="${w.id}"` +
+              ` data-testid="wp-name-${i + 1}"` +
+              ` value="${displayName.replace(/"/g, '&quot;')}"` +
+              ` maxlength="24" spellcheck="false"` +
+              ` title="Window identifier — edit to rename (default {DIR}_W{n})"` +
+              ` style="font-family:var(--mono);color:var(--text);background:transparent;` +
+                     `border:1px solid transparent;border-radius:3px;padding:2px 6px;` +
+                     `min-width:0;flex:1;font-size:11px;outline:none;cursor:text" />` +
+        `<span class="wp-label" data-wid="${w.id}"` +
+              ` data-testid="wp-label-${i + 1}"` +
+              ` style="font-family:var(--mono);color:var(--muted);font-size:10px;` +
+                     `white-space:nowrap;flex-shrink:0">` +
+          `${lenSuffix}` +
+        `</span>` +
         `<button class="wp-del" data-wid="${w.id}"` +
                ` data-testid="wp-del-${i + 1}" title="Delete window"` +
                ` style="background:none;border:0;color:var(--bad);` +
@@ -6557,9 +6532,6 @@ function renderWindowsPanel() {
         ev.target.blur();
       }
     });
-    // Stop the checkbox <label> from toggling selection when the
-    // operator clicks into the input to edit.
-    el.addEventListener('click', (ev) => ev.stopPropagation());
   }
   const selAll = body.querySelector('#wp-select-all');
   if (selAll) selAll.addEventListener('change', _onWindowSelAllToggle);
@@ -6792,7 +6764,7 @@ function _syncWindowLabel(w) {
   const i = wins.indexOf(w);
   if (i < 0) return;
   const lbl = document.querySelector(`.wp-label[data-wid="${w.id}"]`);
-  if (lbl) lbl.textContent = `· ${(w.length_m || 0).toFixed(2)} m`;
+  if (lbl) lbl.textContent = `${(w.length_m || 0).toFixed(2)} m`;
   // If the operator hasn't overridden the name, keep the auto default
   // fresh with the current cardinal direction (angle_deg may have
   // changed via the batch angle slider).

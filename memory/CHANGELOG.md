@@ -4,6 +4,42 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12t — Window name input fix + uniform sun wash
+
+### What shipped
+
+**1. Window name input is now actually editable**
+
+- Prior structure wrapped the `<input class="wp-name">` inside a
+  `<label>` whose first labelable descendant was the selection
+  checkbox.  Browsers redirect any click within a label to that
+  first labelable control — hijacking every attempted edit and
+  toggling the checkbox instead.
+- New DOM: `.wp-row` is the flex container; `<label>` wraps ONLY
+  the checkbox; the name `<input>` is a **sibling** of the label,
+  so clicks land where the operator clicks.  Length suffix span
+  is likewise a sibling.  The now-unnecessary
+  `input click → stopPropagation` handler was removed.
+
+**2. Uniform whole-canvas sun wash (no rotating rectangle)**
+
+- `_renderBuildingSunRay` rewritten: no gradient, no rotation.
+  The `<rect>` covers the full `0 0 100 100` viewBox with a
+  **single flat fill colour** whose `fill-opacity` is driven by
+  sun altitude only:
+  * Day: `#ffb020`, opacity `0.28 → 0.85` linear on
+    `altNorm = alt/90`.
+  * Night: `#5a7ab0`, opacity `0.28`.
+- Building slab SVG opacity dropped from 0.62 → **0.40** per
+  operator ask.  Slab clicks still land (overlay has
+  `pointer-events:none`, slabs sit at `z-index:2`).
+
+### Tests
+
+- **462/462 pytest green** (no test churn — visual + DOM change).
+- Embedded `<script>` parses.
+
+
 ## 2026-02-12s — Window naming + sun ray as building background
 
 ### What shipped

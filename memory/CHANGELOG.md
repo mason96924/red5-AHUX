@@ -4,6 +4,54 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12 — Windows/Blinds floating panel
+
+### What shipped
+
+- **New floating "Windows · Blinds" mini-panel** on `/floor`
+  (`demo/floor.html`).  Draggable by its header (mirrors the
+  time-scrub widget pattern), anchored to bottom-right by default,
+  toggled by the new `▤ Windows` toolbar button.  Lists every window
+  on the current floor as `W# · L.LL m · <cardinal>` with:
+    - **Smooth 1%** range slider (0-100) bound to `blind_level`.
+    - Live percentage read-out.
+    - Delete (✕) button per row.
+    - Empty-state message when the floor has no windows.
+  All changes call `_saveWindows()` (PATCH `/api/elc/floors/{id}`)
+  and re-run `paintCanvas()` so the sunbeam simulation updates
+  instantly.
+
+- **Right-click on a canvas window bar now = quick 0 ↔ last-value
+  toggle** (previously opened a popover which was hard to hit).
+  The last non-zero level is remembered on `w._lastBlind` so
+  restoring is idempotent.  Old `_openBlindPopover` popover code
+  removed.
+
+- **Cardinal direction derived from `angle_deg`**: window normal
+  is compared against N/E/S/W in world space; screen-Y inversion
+  handled so `angle_deg=0` (horizontal window) → normal faces
+  south (down on canvas) which matches the paint code.
+
+- Placement toast updated: "Adjust blinds in the Windows panel
+  (▤ Windows)" — no more "right-click to set blinds" wording.
+
+### Why
+
+Operators complained the right-click popover was unusable: the
+browser's default context menu kept winning, and hit-detection on
+the thin window bar required pixel-perfect clicks.  The always-on
+Windows panel gives a stable, visible target list with sliders.
+
+### Tests
+
+- 458/458 pytest still green (`python -m pytest`).
+- Manual Playwright smoke: seeded 2 windows, opened the panel,
+  slider #1 → 80% persisted server-side (verified via GET), and
+  right-click on canvas at W2 centroid toggled 0% → 100% with
+  the panel updating live.
+
+--------------------------------------------------------------------
+
 ## 2026-02-11f — Daylight sim Phase 2A: windows + beams + blinds
 
 ### What shipped

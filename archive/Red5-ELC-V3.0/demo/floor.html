@@ -673,6 +673,11 @@
             title="Expand the site tree — SCUs, floors, groups, schedules">
       ▼ Tree
     </button>
+    <button id="btn-windows-panel" class="ghost"
+            data-testid="floor-windows-btn"
+            title="Open the Windows panel — adjust blinds per window with a slider">
+      ▤ Windows
+    </button>
     <span id="ambient-widget" data-testid="ambient-widget"
           style="display:inline-flex;align-items:center;gap:6px;
                  padding:2px 8px;margin-left:6px;
@@ -1095,6 +1100,35 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- ============ WINDOWS · BLINDS FLOATING PANEL ============ -->
+<!-- Draggable mini-panel (like the time-scrub widget) that lists every
+     window on the current floor with an inline range slider so the
+     operator can adjust blind_level without hunting the tiny window bar
+     on the canvas.  Replaces the old right-click-on-canvas popover for
+     day-to-day blind operation; a right-click on a canvas window bar
+     now toggles 0 ↔ last non-zero as a quick shortcut. -->
+<div id="windows-panel" data-testid="windows-panel"
+     style="display:none;position:fixed;right:24px;bottom:24px;
+            width:290px;max-height:60vh;z-index:400;
+            background:#10141a;border:1px solid var(--line);
+            border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,0.5);
+            font-family:ui-sans-serif,system-ui;color:var(--text)">
+  <div class="wp-hdr"
+       style="display:flex;align-items:center;justify-content:space-between;
+              padding:8px 10px;border-bottom:1px solid var(--line);
+              cursor:move;font-size:11px;letter-spacing:.08em;
+              text-transform:uppercase;color:var(--muted);
+              user-select:none">
+    <span data-testid="wp-title">Windows · Blinds</span>
+    <button id="wp-close" data-testid="wp-close"
+            style="background:none;border:0;color:var(--muted);
+                   font-size:16px;cursor:pointer;padding:0 4px"
+            title="Hide panel">×</button>
+  </div>
+  <div id="wp-body" data-testid="wp-body"
+       style="overflow-y:auto;max-height:calc(60vh - 40px);padding:4px 8px"></div>
 </div>
 
 <!-- ============ SCHEDULES MODAL (iframe of /editor) ============ -->
@@ -1661,6 +1695,7 @@ async function selectFloor(id) {
   if (picker) picker.value = id;
   await refreshDevicesAndElements();
   localStorage.setItem('elc.floor.selected', id);
+  renderWindowsPanel();
 }
 
 async function renderFloorDetails() {
@@ -5448,7 +5483,8 @@ canvas.addEventListener('click', async (ev) => {
   state.windowMode = null;
   document.body.style.cursor = '';
   await _saveWindows();
-  toast(`Window placed (${length.toFixed(2)} m). Right-click to set blinds.`);
+  toast(`Window placed (${length.toFixed(2)} m). Adjust blinds in the Windows panel (▤ Windows).`);
+  renderWindowsPanel();
   paintCanvas();
 }, true);
 
@@ -5463,7 +5499,10 @@ async function _saveWindows() {
   } catch (e) { toast(`Save failed: ${e}`, true); }
 }
 
-// Right-click on a window → blind slider popover.
+// Right-click on a window bar → quick toggle: 0 ↔ last non-zero.
+// (Detailed blind adjustment lives in the floating Windows panel; the
+// old canvas popover was replaced 2026-02-12 because right-click
+// hit-detection on the thin window bar was too fiddly.)
 canvas.addEventListener('contextmenu', (ev) => {
   if (!state.currentFloor) return;
   const f = state.currentFloor;
@@ -5481,62 +5520,177 @@ canvas.addEventListener('contextmenu', (ev) => {
   }
   if (!hit) return;
   ev.preventDefault();
-  _openBlindPopover(hit, ev.clientX, ev.clientY);
+  const cur = hit.blind_level || 0;
+  if (cur > 0.01) {
+    hit._lastBlind = cur;
+    hit.blind_level = 0;
+  } else {
+    hit.blind_level = hit._lastBlind || 1.0;
+  }
+  paintCanvas();
+  renderWindowsPanel();
+  _saveWindows();
+  toast(`Blinds ${Math.round(hit.blind_level*100)}% — open the Windows panel for finer control.`);
 });
 
-function _openBlindPopover(win, x, y) {
-  const existing = document.getElementById('blind-popover');
-  if (existing) existing.remove();
-  const div = document.createElement('div');
-  div.id = 'blind-popover';
-  div.style.cssText =
-    `position:fixed;left:${x}px;top:${y}px;z-index:500;`
-    + 'background:#10141a;border:1px solid var(--line);border-radius:5px;'
-    + 'padding:10px 12px;box-shadow:0 8px 20px rgba(0,0,0,0.5);'
-    + 'font-family:ui-sans-serif,system-ui;font-size:12px;color:var(--text);'
-    + 'min-width:220px';
-  div.innerHTML = `
-    <div style="margin-bottom:8px;font-size:11px;color:var(--muted)">
-      Blind level · ${(win.length_m||0).toFixed(2)} m window
-    </div>
-    <input type="range" min="0" max="100" value="${Math.round((win.blind_level||0)*100)}"
-           style="width:100%;accent-color:var(--accent)"
-           data-testid="blind-slider" />
-    <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--muted)">
-      <span>open</span>
-      <span data-testid="blind-value">${Math.round((win.blind_level||0)*100)}%</span>
-      <span>closed</span>
-    </div>
-    <div style="margin-top:10px;display:flex;gap:6px;justify-content:flex-end">
-      <button class="ghost" data-act="delete" style="color:var(--bad)">Delete</button>
-      <button class="ghost" data-act="close">Close</button>
-    </div>
-  `;
-  document.body.appendChild(div);
-  const slider = div.querySelector('input');
-  const value  = div.querySelector('[data-testid="blind-value"]');
-  slider.addEventListener('input', () => {
-    win.blind_level = (parseInt(slider.value, 10) || 0) / 100;
-    value.textContent = `${slider.value}%`;
-    paintCanvas();
-  });
-  slider.addEventListener('change', _saveWindows);
-  div.querySelector('[data-act="close"]').addEventListener('click', () => div.remove());
-  div.querySelector('[data-act="delete"]').addEventListener('click', async () => {
-    state.currentFloor.windows = (state.currentFloor.windows || [])
-      .filter(w => w.id !== win.id);
-    div.remove();
-    await _saveWindows();
-    paintCanvas();
-    toast('Window deleted.');
-  });
-  setTimeout(() => {
-    const off = (e) => {
-      if (!div.contains(e.target)) { div.remove(); document.removeEventListener('click', off); }
-    };
-    document.addEventListener('click', off);
-  }, 100);
+// ------------------------------------------------------------------
+// Windows · Blinds floating panel (2026-02-12)
+// ------------------------------------------------------------------
+// Cardinal direction of the wall the window sits on.  A window is drawn
+// along its own axis; the *wall normal* (perpendicular to the axis) is
+// what points outdoors, so we rotate angle_deg by -90° and snap to the
+// nearest cardinal.  angle_deg = 0 → window runs east-west → normal
+// faces north.  Screen Y is inverted, so we flip the sign convention
+// to match the canvas painting code (`nx = cos(angle+90°)`).
+function _windowCardinal(deg) {
+  // Wall normal in world coordinates.  Screen Y is inverted, so
+  // apparent up on the canvas is -Y in world space → "north".
+  const rad = ((deg || 0) + 90) * Math.PI / 180;
+  const nx = Math.cos(rad), ny = Math.sin(rad);
+  // Compare against the four cardinals in world space.
+  const cardinals = [
+    { name: 'north', x: 0,  y: -1 },
+    { name: 'east',  x: 1,  y:  0 },
+    { name: 'south', x: 0,  y:  1 },
+    { name: 'west',  x: -1, y:  0 },
+  ];
+  let best = cardinals[0], bestDot = -Infinity;
+  for (const c of cardinals) {
+    const dot = nx * c.x + ny * c.y;
+    if (dot > bestDot) { bestDot = dot; best = c; }
+  }
+  return best.name;
 }
+
+function renderWindowsPanel() {
+  const body = document.getElementById('wp-body');
+  if (!body) return;
+  const f = state.currentFloor;
+  const wins = (f && Array.isArray(f.windows)) ? f.windows : [];
+  if (!wins.length) {
+    body.innerHTML =
+      '<div data-testid="wp-empty"' +
+      ' style="padding:16px 6px;font-size:11px;color:var(--muted);text-align:center">' +
+      'No windows on this floor.<br>' +
+      'Press <b>W</b> then click two wall points on the canvas to place one.' +
+      '</div>';
+    return;
+  }
+  body.innerHTML = wins.map((w, i) => {
+    const pct = Math.round((w.blind_level || 0) * 100);
+    const dir = _windowCardinal(w.angle_deg);
+    const label = `W${i + 1}`;
+    return (
+      `<div class="wp-row" data-wid="${w.id}"` +
+      ` data-testid="wp-row-${i + 1}"` +
+      ` style="padding:8px 2px;border-bottom:1px solid var(--line);font-size:11px">` +
+        `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">` +
+          `<span style="font-family:var(--mono);color:var(--text)">` +
+            `${label} · ${(w.length_m || 0).toFixed(2)} m · ${dir}` +
+          `</span>` +
+          `<button class="wp-del" data-wid="${w.id}"` +
+                 ` data-testid="wp-del-${i + 1}" title="Delete window"` +
+                 ` style="background:none;border:0;color:var(--bad);` +
+                        `cursor:pointer;padding:0 4px;font-size:12px">✕</button>` +
+        `</div>` +
+        `<div style="display:flex;align-items:center;gap:8px">` +
+          `<span style="font-size:9px;color:var(--muted);width:26px" title="Blinds fully open">open</span>` +
+          `<input type="range" min="0" max="100" step="1" value="${pct}"` +
+                 ` class="wp-slider" data-wid="${w.id}"` +
+                 ` data-testid="wp-slider-${i + 1}"` +
+                 ` style="flex:1;accent-color:var(--accent)" />` +
+          `<span class="wp-value" data-wid="${w.id}"` +
+                ` data-testid="wp-value-${i + 1}"` +
+                ` style="min-width:34px;text-align:right;` +
+                       `font-family:var(--mono);color:var(--muted)">${pct}%</span>` +
+        `</div>` +
+      `</div>`
+    );
+  }).join('');
+  for (const el of body.querySelectorAll('.wp-slider')) {
+    el.addEventListener('input', _onBlindSliderInput);
+    el.addEventListener('change', _saveWindows);
+  }
+  for (const el of body.querySelectorAll('.wp-del')) {
+    el.addEventListener('click', _onDeleteWindow);
+  }
+}
+
+function _onBlindSliderInput(ev) {
+  const wid = ev.target.dataset.wid;
+  const f = state.currentFloor; if (!f) return;
+  const w = (f.windows || []).find(x => x.id === wid);
+  if (!w) return;
+  const val = (parseInt(ev.target.value, 10) || 0) / 100;
+  if (val > 0.01) w._lastBlind = val;
+  w.blind_level = val;
+  const valEl = document.querySelector(`.wp-value[data-wid="${wid}"]`);
+  if (valEl) valEl.textContent = `${Math.round(val * 100)}%`;
+  paintCanvas();
+}
+
+async function _onDeleteWindow(ev) {
+  const wid = ev.currentTarget.dataset.wid;
+  const f = state.currentFloor; if (!f) return;
+  f.windows = (f.windows || []).filter(w => w.id !== wid);
+  renderWindowsPanel();
+  paintCanvas();
+  await _saveWindows();
+  toast('Window deleted.');
+}
+
+function toggleWindowsPanel(force) {
+  const p = document.getElementById('windows-panel');
+  if (!p) return;
+  const shown = p.style.display !== 'none';
+  const next = typeof force === 'boolean' ? force : !shown;
+  p.style.display = next ? 'block' : 'none';
+  if (next) renderWindowsPanel();
+}
+
+document.getElementById('btn-windows-panel')?.addEventListener(
+  'click', () => toggleWindowsPanel());
+document.getElementById('wp-close')?.addEventListener(
+  'click', () => toggleWindowsPanel(false));
+
+// Make the Windows panel draggable by its header (mirrors the pattern
+// used by _makePanelDraggable for the .mm-panel modals but tailored to
+// this floating widget's `right/bottom` initial anchor).
+(function _wireWindowsPanelDrag() {
+  const p = document.getElementById('windows-panel');
+  if (!p) return;
+  const hdr = p.querySelector('.wp-hdr');
+  if (!hdr) return;
+  let startX = 0, startY = 0, panelX = 0, panelY = 0, dragging = false;
+  hdr.addEventListener('mousedown', (ev) => {
+    if (ev.target.closest('#wp-close')) return;
+    ev.preventDefault();
+    const r = p.getBoundingClientRect();
+    // Swap right/bottom → left/top so we can freely translate.
+    p.style.right = 'auto';
+    p.style.bottom = 'auto';
+    p.style.left = r.left + 'px';
+    p.style.top  = r.top + 'px';
+    startX = ev.clientX; startY = ev.clientY;
+    panelX = r.left; panelY = r.top;
+    dragging = true;
+    document.body.style.userSelect = 'none';
+  });
+  window.addEventListener('mousemove', (ev) => {
+    if (!dragging) return;
+    const w = p.offsetWidth, h = p.offsetHeight;
+    const margin = 40;
+    let nx = panelX + (ev.clientX - startX);
+    let ny = panelY + (ev.clientY - startY);
+    nx = Math.min(Math.max(nx, margin - w), window.innerWidth - margin);
+    ny = Math.min(Math.max(ny, 0), window.innerHeight - margin);
+    p.style.left = nx + 'px';
+    p.style.top  = ny + 'px';
+  });
+  window.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; document.body.style.userSelect = ''; }
+  });
+})();
 
 // ==================================================================
 // Tree strip (SCUs · Modules · Relays · Floors · Groups · Schedules)

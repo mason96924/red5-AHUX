@@ -199,7 +199,7 @@
     pointer-events: none; text-align: center; padding: 24px;
   }
   .mode-badge {
-    position: absolute; top: 14px; left: 14px; z-index: 3;
+    position: absolute; top: 14px; right: 14px; z-index: 3;
     padding: 4px 10px; border-radius: 999px; font-family: var(--mono);
     font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
     background: rgba(19,24,31,0.85); border: 1px solid var(--line);
@@ -208,9 +208,13 @@
   .mode-badge.layout { color: var(--accent-2); border-color: rgba(217,122,48,0.4); }
   .mode-badge.operator { color: var(--ok); border-color: rgba(78,203,113,0.4); }
   .stage-hint {
-    position: absolute; bottom: 14px; left: 14px; z-index: 3;
+    /* Moved from bottom-left to top-left 2026-02-12o so the SOUTH
+       side of the DXF (which is the more important elevation in
+       NH buildings — bigger windows) is no longer obscured. */
+    position: absolute; top: 14px; left: 14px; z-index: 3;
     color: var(--muted); font-size: 11px; font-family: var(--mono);
     background: rgba(19,24,31,0.7); padding: 4px 10px; border-radius: 4px;
+    max-width: 60%;
   }
   /* Shape-placement banner + heatmap legend (canvas overlays) */
   .place-banner {
@@ -5607,7 +5611,11 @@ function _syncSunCompassButtons() {
 // lazily append the first time the compass renders.
 function _renderBuildingSunRay() {
   const a = state.ambient;
-  const host = document.getElementById('building-2d5');
+  // Attach the overlay to #b25-canvas (the 2.5D building image
+  // container) rather than #building-2d5 (the whole panel) so the
+  // ray's centre point coincides with the building itself, not with
+  // the compass widget above it.
+  const host = document.getElementById('b25-canvas');
   if (!a || !host) return;
   let overlay = document.getElementById('building-sun-ray');
   if (!overlay) {

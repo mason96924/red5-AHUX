@@ -4,6 +4,44 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12o — LAYOUT badge → right; stage-hint → top; sun-ray centred on building
+
+### What shipped
+
+1. **`.mode-badge`** (`LAYOUT` chip) moved from `top:14px; left:14px`
+   to `top:14px; right:14px`.
+2. **`.stage-hint`** ("Click a module box on the right → …") moved
+   from `bottom:14px; left:14px` to `top:14px; left:14px`, with a
+   `max-width:60%` cap so it wraps politely and never gets close to
+   the LAYOUT badge now on the right.  Frees up the SOUTH edge of
+   the canvas — DXF standard is North-up, so the south side
+   (bottom) is where NH buildings usually have their bigger
+   windows and was previously being obscured by the hint text.
+3. **`_renderBuildingSunRay`** now appends the SVG overlay to
+   `#b25-canvas` instead of `#building-2d5`, so the ray's centre
+   coincides with the 2.5D building image itself, not with the
+   compass widget above it.
+
+### Why
+
+Operator: "1. put DFX drawing header on the right hand side.
+2. Make DFX drawing so that the South side is visible.  Currently,
+it's obscured by the guide line […]  For most NH buildings, have
+small windows facing North and large windows facing South.
+3. SUn ray in the sun path section, the center of the ray is the
+building.  Make the building as the center point and the run ray
+should be on the building image."
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright: `#mode-badge` computed `right=14px`,
+  `left=1304.94px`; `#stage-hint` computed `top=14px`,
+  `bottom=686.125px`; sun-ray overlay `parentElement.id =
+  b25-canvas`.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12n — Sun-compass 50 % translucent
 
 ### What shipped

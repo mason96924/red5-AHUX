@@ -137,13 +137,19 @@
      _renderBuildingSunRay with id="building-sun-ray"; give it a
      low z-index and lift the building svg/img above it so the
      flex-centred canvas child still paints on top.  The sun-path
-     compass widget sits above both at z-index:5 (see #sun-compass). */
-  .building-2d5 .b25-canvas > #building-sun-ray {
+     compass widget sits above both at z-index:5 (see #sun-compass).
+     2026-02-12ad — the standalone MOVING GLOW is a separate
+     sibling (`#building-sun-glow`) whose z-index flips between
+     0 (behind slabs) and 3 (in front of slabs) depending on
+     whether the sun is on the viewer-facing side of the building. */
+  .building-2d5 .b25-canvas > #building-sun-ray,
+  .building-2d5 .b25-canvas > #building-sun-glow {
     position: absolute; inset: 0;
-    z-index: 0;
     pointer-events: none;
     overflow: hidden;
   }
+  .building-2d5 .b25-canvas > #building-sun-ray  { z-index: 0; }
+  .building-2d5 .b25-canvas > #building-sun-glow { z-index: 0; }
   .building-2d5 .b25-canvas > svg:not(#building-sun-ray),
   .building-2d5 .b25-canvas > img {
     position: relative;
@@ -5820,18 +5826,33 @@ function _renderBuildingSunRay() {
   const a = state.ambient;
   const host = document.getElementById('b25-canvas');
   if (!a || !host) return;
-  let overlay = document.getElementById('building-sun-ray');
-  if (!overlay || overlay.tagName !== 'DIV') {
-    // Recreate as a <div> if a previous SVG overlay exists (from
-    // an older build).  Clean up + rebuild.
-    if (overlay) overlay.remove();
-    overlay = document.createElement('div');
-    overlay.id = 'building-sun-ray';
-    overlay.setAttribute('data-testid', 'building-sun-ray');
-    overlay.innerHTML =
+
+  // Base-wash overlay — always sits behind the slabs (z-index:0).
+  let base = document.getElementById('building-sun-ray');
+  if (!base || base.tagName !== 'DIV') {
+    if (base) base.remove();
+    base = document.createElement('div');
+    base.id = 'building-sun-ray';
+    base.setAttribute('data-testid', 'building-sun-ray');
+    base.innerHTML =
       '<div id="sun-base" data-testid="sun-base"' +
       ' style="position:absolute;inset:0;background:#ffb020;opacity:0.15;' +
-             'transition:background-color .3s, opacity .3s"></div>' +
+             'transition:background-color .3s, opacity .3s"></div>';
+    host.appendChild(base);
+  }
+
+  // Moving-glow overlay — a SIBLING of the base so its z-index can
+  // flip independently between "behind slabs" (z-index:0, sun in
+  // northern hemisphere = backlight) and "in front of slabs"
+  // (z-index:3, sun in southern hemisphere = projecting light
+  // onto the viewer-facing face of the building).  2026-02-12ad
+  // operator ask.
+  let glowWrap = document.getElementById('building-sun-glow');
+  if (!glowWrap) {
+    glowWrap = document.createElement('div');
+    glowWrap.id = 'building-sun-glow';
+    glowWrap.setAttribute('data-testid', 'building-sun-glow');
+    glowWrap.innerHTML =
       '<div id="sun-glow" data-testid="sun-glow"' +
       ' style="position:absolute;width:70%;aspect-ratio:1;' +
              'border-radius:50%;left:50%;top:50%;' +
@@ -5844,11 +5865,11 @@ function _renderBuildingSunRay() {
              'filter:blur(6px);opacity:1;' +
              'transition:left .35s, top .35s, opacity .3s,' +
                         'background .3s"></div>';
-    host.appendChild(overlay);
+    host.appendChild(glowWrap);
   }
-  const base = overlay.querySelector('#sun-base');
-  const glow = overlay.querySelector('#sun-glow');
-  if (!base || !glow) return;
+  const baseInner = base.querySelector('#sun-base');
+  const glow      = glowWrap.querySelector('#sun-glow');
+  if (!baseInner || !glow) return;
 
   const alt = a.sun.altitude_deg || 0;
   const az  = a.sun.azimuth_deg  || 0;
@@ -5857,11 +5878,10 @@ function _renderBuildingSunRay() {
 
   if (isDay) {
     // Base amber wash — subtle floor of light on the whole canvas.
-    base.style.background = '#ffb020';
-    base.style.opacity    = (0.10 + 0.20 * altNorm).toFixed(2);  // 0.10 → 0.30
+    baseInner.style.background = '#ffb020';
+    baseInner.style.opacity    = (0.10 + 0.20 * altNorm).toFixed(2);
     // Moving light source: bright warm core; size grows a touch as
-    // the sun climbs (real optics: nearer to zenith → less
-    // atmospheric spread, but perceptually stronger).
+    // the sun climbs.
     glow.style.background =
       'radial-gradient(circle,' +
         'rgba(255,240,180,' + (0.70 + 0.25 * altNorm).toFixed(2) + ') 0%,' +
@@ -5869,31 +5889,40 @@ function _renderBuildingSunRay() {
         'rgba(255,140,20,'  + (0.22 + 0.18 * altNorm).toFixed(2) + ') 52%,' +
         'rgba(255,140,20,0) 82%)';
     glow.style.opacity = '1';
-    // Compass math: azimuth 0°=N=up, clockwise.  Radius shrinks as
-    // the sun climbs (r=0 at zenith).  Use % of the overlay so the
-    // glow always lands correctly regardless of panel size.
-    // 2026-02-12ac — maxR pushed 68% → 95% AND glow itself widened
-    // to 110–130% of the overlay.  Effect: at horizon the glow's
-    // CENTRE lands 45% beyond the canvas edge, but the glow is now
-    // so large that ~50–70% of it (its outer diffuse shoulder)
-    // remains visible as a bright band well BELOW the slabs
-    // (operator ask: "clear distance from the bottom of the building
-    // slabs, larger glow so even its flow is not visible the larger
-    // part can be visible").
+    // Compass math: azimuth 0°=N=up (behind), clockwise.  Radius
+    // shrinks as the sun climbs (r=0 at zenith).  MaxR=95% pushes
+    // the centre well beyond the canvas edge at horizon; glow width
+    // 110–130% keeps the outer shoulder visible.
     const r = 95 * (1 - altNorm);
     const azRad = az * Math.PI / 180;
     const sx = 50 + r * Math.sin(azRad);
     const sy = 50 - r * Math.cos(azRad);
     glow.style.left = sx.toFixed(1) + '%';
     glow.style.top  = sy.toFixed(1) + '%';
-    // Bigger glow at all altitudes; small extra bloom at zenith.
-    const sz = 110 + 20 * altNorm;   // 110% → 130% of overlay width
+    const sz = 110 + 20 * altNorm;
     glow.style.width  = sz.toFixed(0) + '%';
+
+    // 2026-02-12ad — Direction-aware z-order.  Viewer is looking at
+    // the building from the SOUTH (front face).  When the sun's
+    // azimuth is in [90°, 270°] (E → S → W hemisphere), the sun is
+    // in FRONT of the building and should PROJECT light onto the
+    // façade → lift the glow above the slabs (z-index:3) and use
+    // `screen` blending so it adds light rather than covering the
+    // slab detail.  When the sun is in the north hemisphere
+    // (270°..360°..90°), it's behind the building → glow drops
+    // back to z-index:0 (behind slabs).  cos(az) is positive when
+    // the sun is northerly; negative when southerly.
+    const isFront = Math.cos(azRad) < 0;
+    glowWrap.style.zIndex        = isFront ? '3' : '0';
+    glow.style.mixBlendMode      = isFront ? 'screen' : 'normal';
   } else {
-    // Night — moonlight base wash, glow faded out entirely.
-    base.style.background = '#5a7ab0';
-    base.style.opacity    = '0.28';
-    glow.style.opacity    = '0';
+    // Night — moonlight base wash, glow faded out entirely and
+    // parked behind the slabs so it never overlays them.
+    baseInner.style.background = '#5a7ab0';
+    baseInner.style.opacity    = '0.28';
+    glow.style.opacity         = '0';
+    glowWrap.style.zIndex      = '0';
+    glow.style.mixBlendMode    = 'normal';
   }
 }
 

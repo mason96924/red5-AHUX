@@ -148,6 +148,16 @@
     pointer-events: none;
     overflow: hidden;
   }
+  /* 2026-02-12ae — enforce click-through on every descendant of
+     the sun overlays too.  When the glow is z-index:3 (in front of
+     the slabs), pointer-events:none on the wrapper is inherited by
+     default, but mix-blend-mode + some browser stacking-context
+     quirks can occasionally re-enable hits — this belt-and-braces
+     rule guarantees a slab click always reaches the slab SVG below. */
+  .building-2d5 .b25-canvas > #building-sun-ray *,
+  .building-2d5 .b25-canvas > #building-sun-glow * {
+    pointer-events: none;
+  }
   .building-2d5 .b25-canvas > #building-sun-ray  { z-index: 0; }
   .building-2d5 .b25-canvas > #building-sun-glow { z-index: 0; }
   .building-2d5 .b25-canvas > svg:not(#building-sun-ray),
@@ -5856,7 +5866,7 @@ function _renderBuildingSunRay() {
       '<div id="sun-glow" data-testid="sun-glow"' +
       ' style="position:absolute;width:70%;aspect-ratio:1;' +
              'border-radius:50%;left:50%;top:50%;' +
-             'transform:translate(-50%,-50%);' +
+             'transform:translate(-50%,-50%);pointer-events:none;' +
              'background:radial-gradient(circle,' +
                 'rgba(255,220,140,0.85) 0%,' +
                 'rgba(255,176,32,0.55) 25%,' +

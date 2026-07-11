@@ -4,6 +4,52 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12g — Extended-slit sunbeam + room clip
+
+### What shipped
+
+Replaces the Phase 2A radial-gradient wedge (a point-source cheat
+anchored at the window centroid) with a **rectangular projected
+sunbeam** that treats the window as an extended slit.
+
+- Beam quadrilateral: the two "back" corners are the window's
+  endpoints `p1`, `p2`; the two "front" corners are those same
+  endpoints translated `throwM` metres along the beam direction
+  (`throwM = 4 + 8×dot`).
+- **Linear** gradient perpendicular to the window bar (bright at
+  the wall, transparent at the projected far edge), so the beam
+  falls off with depth like a real sunbeam on a floor.
+- Beam is **clipped to the containing room polygon** so it never
+  spills through interior walls into adjacent rooms.  Room
+  attribution (Phase 2B bleed) reuses the same containment lookup
+  — no extra polygon test.
+- Bleed still radiates softly into adjacent rooms via the Phase
+  2B `_paintReflectiveBleed` path (shared-wall midpoint anchor,
+  clipped to neighbour polygon).
+
+### Why
+
+Operator: "Treat the windows as an extended slit as it is. Clip
+it to the room polygon."  The old wedge looked like a spotlight
+mounted on the window; this looks like sunlight falling through
+the opening.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright pixel-sweep on 2-room floor sharing a vertical wall,
+  head-on sun (az=0°, alt=55°), 3 m window on Room A's north wall
+  spanning x∈[1, 4]:
+    - Beam brightness at y=2 inside room A:
+        x=0.3 = 55 (baseline, outside slit)
+        x=1.5 = 372, x=2.5 = 372, x=3.5 = 372  (inside slit)
+        x=4.7 = 55 (baseline, past slit east edge)
+      → beam width equals window width ✓
+    - Room B pixels (5.5, 7.5, 9.5) = 164, 99, 55
+      → direct beam does NOT spill; bleed decays with distance ✓
+
+--------------------------------------------------------------------
+
 ## 2026-02-12f — Daylight sim Phase 2B: reflective bleed to adjacent rooms
 
 ### What shipped

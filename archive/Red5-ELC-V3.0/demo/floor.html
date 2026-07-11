@@ -5420,45 +5420,85 @@ function _paintWindowsAndBeams(t) {
       // actually hits this window face.
       const dot = -sx * nx + -sy * ny;
       if (dot > 0.05) {
-        const centerPx = _worldToPx({x_m: w.x_m, y_m: w.y_m}, t);
         const throwM = 4 + 8 * dot;   // deeper penetration when sun is head-on
-        const throwPx = throwM * t.m2px;
-        const beamHalfAngle = Math.PI / 3.5;
         // Base intensity = dot × (1-blind) × normalised lux (0..1)
         const luxNorm = Math.min(lux / 60000, 1);
         const intensity = dot * (1 - blind) * luxNorm * 0.6;
         // Beam colour follows the ambient colour, slightly warmer.
         const rgb = A ? A.ambient.color_rgb : [220, 200, 160];
         const beamDirX = -sx, beamDirY = -sy;
-        const startAngle = Math.atan2(beamDirY, beamDirX) - beamHalfAngle;
-        const endAngle   = Math.atan2(beamDirY, beamDirX) + beamHalfAngle;
-        // Radial gradient wedge.
-        const grad = ctx.createRadialGradient(
-          centerPx[0], centerPx[1], 0,
-          centerPx[0], centerPx[1], throwPx,
-        );
-        grad.addColorStop(0.0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${intensity.toFixed(3)})`);
-        grad.addColorStop(1.0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+
+        // 2026-02-12g — Extended-slit sunbeam.  Instead of a
+        // radial-gradient wedge anchored at the window centroid (the
+        // old Phase 2A point-source shortcut), project the window's
+        // two endpoints along the beam direction by ``throwM`` metres.
+        // The result is a proper rectangular sunbeam on the floor,
+        // whose width matches the window and whose length matches the
+        // sun's depth of penetration.
+        const [p1px, p1py] = _worldToPx({ x_m: x1, y_m: y1 }, t);
+        const [p2px, p2py] = _worldToPx({ x_m: x2, y_m: y2 }, t);
+        const dxPx = beamDirX * throwM * t.m2px;
+        const dyPx = beamDirY * throwM * t.m2px;
+        const q3x = p2px + dxPx, q3y = p2py + dyPx;
+        const q4x = p1px + dxPx, q4y = p1py + dyPx;
+        // Linear gradient perpendicular to the window bar: bright at
+        // the window edge (0.0), transparent at the projected far
+        // edge (1.0).  Anchored at the midpoints of the two long
+        // edges so the gradient axis follows the beam direction even
+        // for oblique sun angles.
+        const midBackX  = (p1px + p2px) / 2;
+        const midBackY  = (p1py + p2py) / 2;
+        const midFrontX = midBackX + dxPx;
+        const midFrontY = midBackY + dyPx;
+        const grad = ctx.createLinearGradient(
+          midBackX, midBackY, midFrontX, midFrontY);
+        grad.addColorStop(0.0,
+          `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity.toFixed(3)})`);
+        grad.addColorStop(1.0,
+          `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+
+        // Clip the sunbeam to the room containing the window's
+        // interior side, so it can't spill into adjacent rooms.
+        // Bleed into those adjacent rooms is handled separately by
+        // _paintReflectiveBleed below.
+        const sample = { x_m: w.x_m + nx * 0.5, y_m: w.y_m + ny * 0.5 };
+        const rooms = Array.isArray(f.rooms) ? f.rooms : [];
+        let containingIdx = -1;
+        for (let i = 0; i < rooms.length; i++) {
+          if (_pointInRoom(sample, rooms[i])) { containingIdx = i; break; }
+        }
         ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        if (containingIdx >= 0) {
+          const V = rooms[containingIdx].vertices
+                 || rooms[containingIdx].points || [];
+          if (V.length >= 3) {
+            ctx.beginPath();
+            const [v0x, v0y] = _worldToPx({ x_m: V[0][0], y_m: V[0][1] }, t);
+            ctx.moveTo(v0x, v0y);
+            for (let k = 1; k < V.length; k++) {
+              const [vx, vy] = _worldToPx({ x_m: V[k][0], y_m: V[k][1] }, t);
+              ctx.lineTo(vx, vy);
+            }
+            ctx.closePath();
+            ctx.clip();
+          }
+        }
         ctx.beginPath();
-        ctx.moveTo(centerPx[0], centerPx[1]);
-        ctx.arc(centerPx[0], centerPx[1], throwPx, startAngle, endAngle);
+        ctx.moveTo(p1px, p1py);
+        ctx.lineTo(p2px, p2py);
+        ctx.lineTo(q3x, q3y);
+        ctx.lineTo(q4x, q4y);
         ctx.closePath();
         ctx.fillStyle = grad;
-        ctx.globalCompositeOperation = 'lighter';
         ctx.fill();
         ctx.restore();
 
-        // Phase 2B: attribute this beam to whichever room its beam
-        // centroid falls in.  Sample 0.5 m INTO the interior (along
-        // the wall normal) so the point is not on the wall itself.
-        const sample = { x_m: w.x_m + nx * 0.5, y_m: w.y_m + ny * 0.5 };
-        const rooms = Array.isArray(f.rooms) ? f.rooms : [];
-        for (let i = 0; i < rooms.length; i++) {
-          if (_pointInRoom(sample, rooms[i])) {
-            roomBoost.set(i, (roomBoost.get(i) || 0) + intensity);
-            break;
-          }
+        // Phase 2B: room-boost bookkeeping for reflective bleed.  We
+        // already found `containingIdx` above so no extra polygon test.
+        if (containingIdx >= 0) {
+          roomBoost.set(containingIdx,
+            (roomBoost.get(containingIdx) || 0) + intensity);
         }
       }
     }

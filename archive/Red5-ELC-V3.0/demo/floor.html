@@ -1237,7 +1237,25 @@ const state = {
 // back to the canonical DeviceType name otherwise.
 function moduleLabelFor(devTypeName, scu, addr) {
   const key = `${scu}/${addr}`;
-  return state.moduleLabels[key] || devTypeName;
+  // 2026-02-11b — Settings-typed name wins over the legacy devices.json
+  // ``state.moduleLabels`` override.  Prior to the Settings-driven
+  // floor refactor, devices.json was the ONLY way to differentiate an
+  // SRM_6E from an SRM_6S (they share wire code 0x15).  Now Settings
+  // declares the type explicitly, so any stale devices.json override
+  // must not shadow what the operator just typed.
+  //
+  // ``_projSnap`` / ``_canonicalDevType`` are declared later in this
+  // script (hoisting doesn't cover ``const``); guard so this helper
+  // stays safe if called during very-early boot before the snapshot
+  // module has been evaluated.
+  if (typeof _projSnap !== 'undefined'
+      && typeof _canonicalDevType === 'function') {
+    const canon = _canonicalDevType(devTypeName);
+    const typed = _projSnap.moduleTypedName.get(`${canon}/${scu}/${addr}`);
+    if (typed) return typed;
+  }
+  if (state.moduleLabels[key]) return state.moduleLabels[key];
+  return devTypeName;
 }
 
 // -------- Utilities --------
@@ -1744,9 +1762,31 @@ async function refreshDevicesAndElements() {
 // renderSrmGrid can filter to just the modules that belong to the
 // currently-selected floor.  Refreshed on floor change + when the
 // operator returns from /settings (window focus refetches).
+//
+// 2026-02-11b — SRM_6S / SRM_6E / SRM_ERM / SRM_4E all share the
+// same ETLC wire code (0x15).  The Python IntEnum makes them
+// aliases, so the replica ALWAYS stringifies as ``SRM_6S/...``
+// regardless of which sibling name the operator typed in Settings.
+// We therefore key the floor lookup by the CANONICAL type so the
+// filter matches the replica, and separately remember the operator's
+// typed name so the UI can display it back verbatim (2026-02-11
+// operator ask).
+const _CANONICAL_DEV_TYPE = {
+  // 0x15 family — everything projects onto the canonical SRM_6S
+  SRM_6S: 'SRM_6S', SRM_6E: 'SRM_6S', SRM_ERM: 'SRM_6S', SRM_4E: 'SRM_6S',
+  // 0x14 — 4-channel switching, no aliases
+  SRM_4S: 'SRM_4S',
+  // 0x18 — 48-channel, no aliases
+  SRM_48S: 'SRM_48S',
+};
+function _canonicalDevType(t) {
+  return _CANONICAL_DEV_TYPE[t] || t;
+}
+
 const _projSnap = {
-  scusById: new Map(),     // scu.id -> {name, host, port}
-  moduleFloor: new Map(),  // "type/scuId/addr" -> "F0" / "B1" / ...
+  scusById: new Map(),       // scu.id -> {name, host, port}
+  moduleFloor: new Map(),    // "canonicalType/scuId/addr" -> "F0" / "B1" / ...
+  moduleTypedName: new Map(),// "canonicalType/scuId/addr" -> operator-typed dev_type (e.g. "SRM_6E")
   ready: false,
 };
 
@@ -1758,14 +1798,23 @@ async function _refreshProjectSnapshot() {
     const cfg = j && j.project;
     _projSnap.scusById.clear();
     _projSnap.moduleFloor.clear();
+    _projSnap.moduleTypedName.clear();
     if (cfg && Array.isArray(cfg.scus)) {
       for (const scu of cfg.scus) {
         _projSnap.scusById.set(String(scu.id), {
           id: scu.id, name: scu.name, host: scu.host, port: scu.port,
         });
         for (const m of scu.modules || []) {
-          const key = `${m.dev_type}/${scu.id}/${m.address}`;
+          const canon = _canonicalDevType(m.dev_type);
+          const key = `${canon}/${scu.id}/${m.address}`;
           _projSnap.moduleFloor.set(key, (m.floor || 'F0').toUpperCase());
+          // Always record the Settings-typed name (even when it
+          // matches canonical) so `moduleLabelFor` can distinguish
+          // "Settings says SRM_6S" (record present, use verbatim)
+          // from "Settings has no entry for this module" (fall through
+          // to the legacy state.moduleLabels override).  Without this,
+          // a stale devices.json override wins over Settings.
+          _projSnap.moduleTypedName.set(key, m.dev_type);
         }
       }
     }
@@ -1816,9 +1865,24 @@ function renderSrmGrid() {
   // populated the snapshot yet (first-boot race), fall back to
   // showing every module so the operator isn't staring at a blank
   // panel.
+  //
+  // 2026-02-11b — Replica ALWAYS reports the canonical dev_type
+  // (SRM_6S for anything on wire code 0x15); the Settings snapshot
+  // keys are also canonical, so lookup works whether the operator
+  // typed SRM_6S, SRM_6E, SRM_ERM, or SRM_4E.  The operator's typed
+  // name is remembered separately in ``_projSnap.moduleTypedName``
+  // and used for the display label below.
   const currentStrand = (state.currentFloor
     && (state.currentFloor.strand_label || '').toUpperCase()) || '';
   const totalModules = modules.size;
+  // Tag each module with its Settings-typed display name (may differ
+  // from the canonical wire type) so both the filter and the render
+  // path can use it.
+  for (const m of modules.values()) {
+    const canonKey = `${m.type}/${m.scu}/${m.addr}`;
+    const typed = _projSnap.moduleTypedName.get(canonKey);
+    m.display_type = typed || m.type;
+  }
   const scope = _projSnap.ready && currentStrand
     ? [...modules.values()].filter(m => {
         const label = _projSnap.moduleFloor.get(`${m.type}/${m.scu}/${m.addr}`);
@@ -1906,7 +1970,7 @@ function renderSrmGrid() {
 
     box.innerHTML = `
       <div class="mod-hdr">
-        <span>${escapeHtml(moduleLabelFor(m.type, m.scu, m.addr))}</span>
+        <span>${escapeHtml(moduleLabelFor(m.display_type || m.type, m.scu, m.addr))}</span>
         <span>SCU ${escapeHtml(m.scu)} · Addr ${escapeHtml(m.addr)}</span>
       </div>
       <div class="mod-dots">${dotsHtml}</div>

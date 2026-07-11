@@ -4,6 +4,62 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-11b — SRM_6E / SRM_6S aliasing fix (per-floor filter + label)
+
+### Symptoms
+
+Operator assigned Floor `F1` to all three modules on SCU 0 in
+Settings (one each of `SRM_6S`, `SRM_6E`, `SRM_4S`), but the
+Building page's RHS panel on F1 showed only 2 modules (`SRM_6S`
+addr 1 + `SRM_4S` addr 3 -- the `SRM_6E` at addr 2 was missing).
+Additionally, a fixture placed on the canvas from an earlier
+session labeled its device as `SRM_6S/0/1/1` when the operator
+expected `SRM_6E/0/1/1`.
+
+### Root cause
+
+`SRM_6S`, `SRM_6E`, `SRM_ERM`, and `SRM_4E` all share ETLC wire
+code `0x15`.  Python's `IntEnum` treats identical values as
+aliases of the first canonical member (`SRM_6S`), so **every
+device coming from the replica or discovery is stringified as
+`SRM_6S/...`, regardless of what the operator typed in Settings.**
+
+The per-floor filter was keyed by the operator-typed name
+(`SRM_6E/0/2`), but the replica reports the canonical form
+(`SRM_6S/0/2`).  The lookup missed → the module was treated as
+default `F0` → hidden on `F1`.  Same issue caused the canvas
+fixture label to fall back to `SRM_6S`.
+
+### Fix
+
+`demo/floor.html`:
+
+- New `_CANONICAL_DEV_TYPE` map + `_canonicalDevType(t)` helper
+  that projects the 0x15-family aliases onto `SRM_6S`.
+- `_projSnap.moduleFloor` is now keyed by the CANONICAL type, so
+  the filter matches the replica.
+- `_projSnap.moduleTypedName` stores the operator's typed name
+  for every module in Settings (present or absent from Settings
+  is now distinguishable, so the legacy `state.moduleLabels`
+  override no longer wrongly shadows an explicit Settings entry).
+- `moduleLabelFor(devTypeName, scu, addr)` reordered:
+  1. Settings-typed name (`_projSnap.moduleTypedName`) wins.
+  2. Legacy `state.moduleLabels` (devices.json override) only fires
+     when Settings has no entry for that `(scu, addr)`.
+  3. Canonical wire type as final fallback.
+- `renderSrmGrid` tags every module with `m.display_type` so the
+  module box header prints the Settings-typed name.
+
+### Verification
+
+Playwright test: posted a project.json with modules of type
+`SRM_6S`/`SRM_6E`/`SRM_4S` on addresses 1/2/3, all mapped to
+`F1`; ran `/discover-srms`; selected F1 in the Building page;
+confirmed module box headers read exactly
+`SRM_6S SCU 0 · Addr 1`, `SRM_6E SCU 0 · Addr 2`,
+`SRM_4S SCU 0 · Addr 3`, and the "3 of 3 SRMs on this floor
+(F1)" summary matched.  Pytest 458/458 green (unchanged).
+
 ## 2026-02-11 — Settings-driven floor identity (strand labels)
 
 ### What shipped

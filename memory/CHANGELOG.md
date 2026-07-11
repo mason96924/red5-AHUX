@@ -4,6 +4,51 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12u — Sun light source + windows compass-order sort
+
+### What shipped
+
+**1. Moving radial "light source" on the whole left-hand panel**
+
+- `_renderBuildingSunRay` rewritten again as a plain `<div>`
+  overlay (not SVG) with two child divs:
+  * `#sun-base` — full-panel uniform wash, colour + opacity
+    driven by sun altitude (`0.10 + 0.20 * altNorm` amber by day,
+    `0.28` cool blue-grey at night).
+  * `#sun-glow` — a soft radial-gradient "light source" (blur 6px,
+    warm-white core → warm amber → clear) whose **centre position**
+    tracks the sun.  Compass math mirrors `_renderSunCompass`:
+    `r = 42% * (1 - alt/90)`, `x = 50% + r·sin(az)`,
+    `y = 50% − r·cos(az)`.  The circle stays a circle, only its
+    centre translates.  Size scales gently with altitude
+    (`55%→80%`).  Below horizon → glow fades to opacity 0 and
+    only the moonlight base remains.
+- Smooth CSS transitions on `left/top/opacity/background` so the
+  hourly scrubber shows the light source *gliding* across the
+  canvas rather than snapping.
+- Building svg opacity lowered to **0.25** (was 0.40) so both the
+  base wash and the moving glow read cleanly through the slabs.
+  Sun-compass widget (z-index:5) still floats above the whole
+  scene as a translucent HUD; slabs (z-index:2) still catch
+  clicks because the overlay has `pointer-events:none`.
+
+**2. Windows-list sorted by compass direction**
+
+- New helpers `_WINDOW_DIR_RANK` (N→0, E→1, S→2, W→3) and
+  `_sortedWindowsForDisplay(wins)` in `demo/floor.html`.
+- `renderWindowsPanel` now renders rows through this sort while
+  passing the RAW `wins` list into `_defaultWindowName` so
+  per-direction sequence numbers stay contiguous (N_W1, N_W2, …).
+  Insertion order is the tiebreaker inside each direction group,
+  keeping auto-name suffixes stable across renders.
+- No backend / schema change — pure display sort.
+
+### Tests
+
+- **462/462 pytest green.**
+- Embedded `<script>` parses cleanly.
+
+
 ## 2026-02-12t — Window name input fix + uniform sun wash
 
 ### What shipped

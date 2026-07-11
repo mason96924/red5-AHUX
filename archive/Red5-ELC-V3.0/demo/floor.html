@@ -131,22 +131,24 @@
     display: block;
     filter: drop-shadow(0 0 4px rgba(0,0,0,0.4));
   }
-  /* 2026-02-12s — sun ray sits BEHIND the building; building itself
-     is translucent so the sun wash shows through the block.  The
-     sun-ray overlay is created dynamically by _renderBuildingSunRay
-     with id="building-sun-ray"; give it a low z-index and lift the
-     building svg/img above it so the flex-centred canvas child
-     still paints on top. */
-  .building-2d5 .b25-canvas > svg#building-sun-ray {
+  /* 2026-02-12u — sun ray sits BEHIND the building; building itself
+     is translucent so the sun wash + moving glow show through the
+     block.  The sun-ray overlay is created dynamically by
+     _renderBuildingSunRay with id="building-sun-ray"; give it a
+     low z-index and lift the building svg/img above it so the
+     flex-centred canvas child still paints on top.  The sun-path
+     compass widget sits above both at z-index:5 (see #sun-compass). */
+  .building-2d5 .b25-canvas > #building-sun-ray {
     position: absolute; inset: 0;
     z-index: 0;
-    filter: none;               /* keep the wash flat, no drop shadow */
+    pointer-events: none;
+    overflow: hidden;
   }
   .building-2d5 .b25-canvas > svg:not(#building-sun-ray),
   .building-2d5 .b25-canvas > img {
     position: relative;
     z-index: 2;
-    opacity: 0.40;              /* 40% per operator ask — slabs still selectable */
+    opacity: 0.25;              /* 25% — slabs still selectable, sun wash reads through */
   }
   /* SVG interactive slabs (dynamic, one per floor) */
   .building-2d5 .slab {
@@ -5617,57 +5619,92 @@ function _syncSunCompassButtons() {
 }
 
 // Sun-ray overlay on the 2.5D Building panel.
-// 2026-02-12t — Whole-canvas uniform sun-driven wash.  No rotating
-// rectangle, no directional gradient — the ENTIRE building panel
-// canvas fills with a single flat colour whose intensity + hue
-// tracks the sun's altitude and time-of-day.  Colour temperature
-// warms toward zenith and cools toward horizon / night.
-//   Sun at zenith   → strong warm amber wash.
-//   Sun at horizon  → dim warm amber (sunrise/sunset tint).
-//   Sun below horizon → cool blue-grey (moonlight tint).
+// 2026-02-12u — Whole-canvas sun wash + a MOVING radiating light
+// source.  The overlay div covers the entire left-hand-side canvas
+// (behind the translucent building slabs, behind the sun-path
+// compass widget).  Two layers inside:
+//   • base wash — uniform amber (day) / cool blue-grey (night)
+//     whose opacity tracks the sun's altitude.
+//   • moving glow — a soft radial gradient "light source" whose
+//     position translates across the canvas using the same compass
+//     math as _renderSunCompass (r = maxR * (1 - alt/90), then
+//     rotate by azimuth around the canvas centre so N=up).  Below
+//     the horizon the glow fades out; only the moonlight base wash
+//     remains.  No geometry rotates — only the glow's CENTRE moves,
+//     matching the operator's "the only thing that appears to be
+//     moving is the light source" requirement.
 function _renderBuildingSunRay() {
   const a = state.ambient;
   const host = document.getElementById('b25-canvas');
   if (!a || !host) return;
   let overlay = document.getElementById('building-sun-ray');
-  if (!overlay) {
-    overlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    overlay.setAttribute('id', 'building-sun-ray');
+  if (!overlay || overlay.tagName !== 'DIV') {
+    // Recreate as a <div> if a previous SVG overlay exists (from
+    // an older build).  Clean up + rebuild.
+    if (overlay) overlay.remove();
+    overlay = document.createElement('div');
+    overlay.id = 'building-sun-ray';
     overlay.setAttribute('data-testid', 'building-sun-ray');
-    overlay.setAttribute('viewBox', '0 0 100 100');
-    overlay.setAttribute('preserveAspectRatio', 'none');
-    overlay.style.cssText =
-      'position:absolute;inset:0;pointer-events:none;z-index:0;';
     overlay.innerHTML =
-      '<rect id="building-sun-lit" x="0" y="0" width="100" height="100"' +
-      ' fill="#ffb020" fill-opacity="0"/>';
+      '<div id="sun-base" data-testid="sun-base"' +
+      ' style="position:absolute;inset:0;background:#ffb020;opacity:0.15;' +
+             'transition:background-color .3s, opacity .3s"></div>' +
+      '<div id="sun-glow" data-testid="sun-glow"' +
+      ' style="position:absolute;width:70%;aspect-ratio:1;' +
+             'border-radius:50%;left:50%;top:50%;' +
+             'transform:translate(-50%,-50%);' +
+             'background:radial-gradient(circle,' +
+                'rgba(255,220,140,0.85) 0%,' +
+                'rgba(255,176,32,0.55) 25%,' +
+                'rgba(255,140,20,0.20) 55%,' +
+                'rgba(255,140,20,0) 80%);' +
+             'filter:blur(6px);opacity:1;' +
+             'transition:left .35s, top .35s, opacity .3s,' +
+                        'background .3s"></div>';
     host.appendChild(overlay);
   }
-  const litRect = overlay.querySelector('#building-sun-lit');
-  const alt = a.sun.altitude_deg || 0;
-  const isDay = alt > 0;
+  const base = overlay.querySelector('#sun-base');
+  const glow = overlay.querySelector('#sun-glow');
+  if (!base || !glow) return;
 
-  // altNorm: 0 at horizon, 1 at zenith.
+  const alt = a.sun.altitude_deg || 0;
+  const az  = a.sun.azimuth_deg  || 0;
+  const isDay = alt > 0;
   const altNorm = Math.max(0, Math.min(1, alt / 90));
 
-  let colour, opacity;
   if (isDay) {
-    // Warm amber; opacity ramps 0.28 → 0.85 across altitude 0..90°.
-    // The building above is now 40% opaque so we can safely push a
-    // strong wash without hiding the slabs.
-    opacity = (0.28 + 0.57 * altNorm).toFixed(2);
-    colour  = '#ffb020';
+    // Base amber wash — subtle floor of light on the whole canvas.
+    base.style.background = '#ffb020';
+    base.style.opacity    = (0.10 + 0.20 * altNorm).toFixed(2);  // 0.10 → 0.30
+    // Moving light source: bright warm core; size grows a touch as
+    // the sun climbs (real optics: nearer to zenith → less
+    // atmospheric spread, but perceptually stronger).
+    glow.style.background =
+      'radial-gradient(circle,' +
+        'rgba(255,240,180,' + (0.70 + 0.25 * altNorm).toFixed(2) + ') 0%,' +
+        'rgba(255,176,32,'  + (0.50 + 0.30 * altNorm).toFixed(2) + ') 22%,' +
+        'rgba(255,140,20,'  + (0.22 + 0.18 * altNorm).toFixed(2) + ') 52%,' +
+        'rgba(255,140,20,0) 82%)';
+    glow.style.opacity = '1';
+    // Compass math: azimuth 0°=N=up, clockwise.  Radius shrinks as
+    // the sun climbs (r=0 at zenith).  Use % of the overlay so the
+    // glow always lands correctly regardless of panel size.
+    // maxR = 42% keeps the hotspot inside frame even at horizon.
+    const r = 42 * (1 - altNorm);
+    const azRad = az * Math.PI / 180;
+    const sx = 50 + r * Math.sin(azRad);
+    const sy = 50 - r * Math.cos(azRad);
+    glow.style.left = sx.toFixed(1) + '%';
+    glow.style.top  = sy.toFixed(1) + '%';
+    // Slightly larger glow when high, smaller when low on horizon.
+    const sz = 55 + 25 * altNorm;
+    glow.style.width  = sz.toFixed(0) + '%';
   } else {
-    // Night — cool blue-grey moonlight wash.
-    opacity = '0.28';
-    colour  = '#5a7ab0';
+    // Night — moonlight base wash, glow faded out entirely.
+    base.style.background = '#5a7ab0';
+    base.style.opacity    = '0.28';
+    glow.style.opacity    = '0';
   }
-  litRect.setAttribute('fill', colour);
-  litRect.setAttribute('fill-opacity', opacity);
-  // No transform — the wash is uniform across the entire canvas so
-  // there is no "rectangle" for the operator to see moving around.
-  overlay.style.display = '';
-  overlay.style.opacity = '1';
 }
 
 function _startAmbientPoll() {
@@ -6284,6 +6321,26 @@ function _windowDisplayName(w, wins) {
   return (w.name && w.name.trim()) || _defaultWindowName(w, wins);
 }
 
+// 2026-02-12u — Compass-order sort key for the windows list.
+// Operator asked for the list to be grouped by cardinal direction:
+// N first, then E, then S, then W (clockwise from north).  Within
+// a group we preserve insertion order so auto-name suffixes (_W1,
+// _W2, …) stay contiguous.
+const _WINDOW_DIR_RANK = { N: 0, E: 1, S: 2, W: 3 };
+function _sortedWindowsForDisplay(wins) {
+  const arr = (wins || []).slice();
+  // Stable-decorated sort: index is the original insertion index,
+  // preserved as the tiebreaker inside a direction group.
+  arr.forEach((w, i) => { w.__ord = i; });
+  arr.sort((a, b) => {
+    const ra = _WINDOW_DIR_RANK[_windowCardinalLetter(a.angle_deg)] ?? 99;
+    const rb = _WINDOW_DIR_RANK[_windowCardinalLetter(b.angle_deg)] ?? 99;
+    return (ra - rb) || (a.__ord - b.__ord);
+  });
+  arr.forEach(w => { delete w.__ord; });
+  return arr;
+}
+
 // Multi-select state: window IDs currently ticked in the Windows panel.
 // Cleared on floor-switch (see selectFloor), preserved across panel
 // open/close so the operator can toggle the panel without losing their
@@ -6432,7 +6489,11 @@ function renderWindowsPanel() {
       `</div>` +
     `</div>`;
 
-  const rowsHtml = wins.map((w, i) => {
+  // 2026-02-12u — display order = compass order (N, E, S, W) with
+  // insertion order preserved inside each group.  We pass the RAW
+  // wins list into _defaultWindowName so per-direction sequence
+  // numbers stay stable regardless of display order.
+  const rowsHtml = _sortedWindowsForDisplay(wins).map((w, i) => {
     const displayName = _windowDisplayName(w, wins);
     const lenSuffix = `${(w.length_m || 0).toFixed(2)} m`;
     const selected = _isWinSelected(w.id);

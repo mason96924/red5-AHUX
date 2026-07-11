@@ -4,6 +4,53 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12j — Fix beam direction for opposite-side windows
+
+### What shipped
+
+Two related bugs that made a window on the "wrong" side of a room
+(e.g. a wall whose interior sits on -Y) project everything away
+from the room:
+
+1. **Interior normal is now data-driven**, not convention-based.
+   Was: `nx, ny` derived purely from `angle_deg` (assumes
+   horizontal window → interior is +Y).  Now: we sample both
+   ±0.5 m along the candidate normal against `f.rooms` and flip
+   the sign when the room turns out to be on the −n side.
+   Falls back to `f.width_m × f.height_m` bounds if no rooms are
+   defined.
+2. **Halo bias + normal-tick sign flipped.**  Two lines applied
+   `- ny` under the belief that canvas Y was inverted — but
+   `_worldToPx` uses `yOffset + y_m * m2px` with no flip, so the
+   sign should be `+ ny`.  This caused the bloom halo and the
+   window's tiny orientation-tick indicator to render on the
+   *exterior* side of the wall.
+
+The `dot > 0.05` gate now runs *after* the flip, so a
+south-facing window on the south wall of a room correctly lights
+up under a south sun (it used to be silently gated out).
+
+### Why
+
+Operator: "Strange, the light projects up away from the window
+rather than into the room. For the N window, it is pointing
+towards north rather than south."  → both root causes fixed.
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright pixel probe on a 2-room floor (A north half, B
+  south half) with wA on A's north wall (y=0.05) and wB on B's
+  south wall (y=7.95):
+    - Sun from north (az=0):  A(2, 1.5)=394 lit, B(5, 7.0)=55 dark ✓
+    - Sun from south (az=180): A(2, 1.5)=55 dark, B(5, 7.0)=414 lit ✓
+    - Sun from south with 50 % blinds: bloom at (5, 7.3) INSIDE B
+      = 351 brightness; outside-floor probe at (5, 8.5) = 0.
+      Bloom is now on the interior side of the wall, not the
+      exterior side.
+
+--------------------------------------------------------------------
+
 ## 2026-02-12i — Bloom + edge-leak: light through blinds
 
 ### What shipped

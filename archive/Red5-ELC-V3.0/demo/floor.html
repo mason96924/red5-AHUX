@@ -5416,8 +5416,12 @@ function _paintWindowsAndBeams(t) {
     const dx = Math.cos(rad) * half, dy = Math.sin(rad) * half;
     const x1 = w.x_m - dx, y1 = w.y_m - dy;
     const x2 = w.x_m + dx, y2 = w.y_m + dy;
-    // Interior normal = 90° CCW from segment direction.
-    const nx = -Math.sin(rad), ny = Math.cos(rad);
+    // Interior normal = 90° CCW from segment direction.  This is
+    // just a *candidate* direction; the sign is corrected below by
+    // testing which side of the wall actually contains a room, so
+    // operators can place a window on any wall without worrying
+    // about angle sign conventions.
+    let nx = -Math.sin(rad), ny = Math.cos(rad);
 
     // 1) Interior daylight beam (only when sun is up).
     // Even fully-closed blinds show a faint edge-leak halo, so this
@@ -5433,6 +5437,39 @@ function _paintWindowsAndBeams(t) {
     if (sunAlt > 0 && lux > 50) {
       const azRad = sunAz * Math.PI / 180;
       const sx = Math.sin(azRad), sy = -Math.cos(azRad);
+
+      // Determine the correct interior normal by testing which side
+      // of the wall contains a room.  Must happen BEFORE the dot
+      // check because a wrong-sided candidate normal inverts the
+      // dot sign and gates the beam for the wrong sun position
+      // (e.g. a "N window" whose room sits on -Y from the wall).
+      const rooms = Array.isArray(f.rooms) ? f.rooms : [];
+      let containingIdx = -1;
+      const samplePlus  = { x_m: w.x_m + nx * 0.5, y_m: w.y_m + ny * 0.5 };
+      const sampleMinus = { x_m: w.x_m - nx * 0.5, y_m: w.y_m - ny * 0.5 };
+      for (let i = 0; i < rooms.length; i++) {
+        if (_pointInRoom(samplePlus, rooms[i])) { containingIdx = i; break; }
+      }
+      if (containingIdx < 0) {
+        for (let i = 0; i < rooms.length; i++) {
+          if (_pointInRoom(sampleMinus, rooms[i])) {
+            containingIdx = i;
+            nx = -nx; ny = -ny;
+            break;
+          }
+        }
+      }
+      if (containingIdx < 0
+          && typeof f.width_m === 'number'
+          && typeof f.height_m === 'number') {
+        // No rooms defined — fall back to the floor bounding box.
+        const inFloor = (p) => p.x_m > 0 && p.x_m < f.width_m
+                            && p.y_m > 0 && p.y_m < f.height_m;
+        if (!inFloor(samplePlus) && inFloor(sampleMinus)) {
+          nx = -nx; ny = -ny;
+        }
+      }
+
       const dot = -sx * nx + -sy * ny;
       if (dot > 0.05) {
         const throwM = 4 + 8 * dot;
@@ -5464,15 +5501,6 @@ function _paintWindowsAndBeams(t) {
         const midBackY  = (p1py + p2py) / 2;
         const midFrontX = midBackX + dxPx;
         const midFrontY = midBackY + dyPx;
-
-        // Room containment lookup (used by both the clip below and
-        // the Phase 2B roomBoost accumulator further down).
-        const sample = { x_m: w.x_m + nx * 0.5, y_m: w.y_m + ny * 0.5 };
-        const rooms = Array.isArray(f.rooms) ? f.rooms : [];
-        let containingIdx = -1;
-        for (let i = 0; i < rooms.length; i++) {
-          if (_pointInRoom(sample, rooms[i])) { containingIdx = i; break; }
-        }
 
         // Helper: apply the containing-room clip inside a save/restore.
         const withRoomClip = (paintFn) => {
@@ -5517,7 +5545,7 @@ function _paintWindowsAndBeams(t) {
           });
         }
 
-        // -- Diffuse bloom + always-on edge-leak.
+        // Diffuse bloom + always-on edge-leak.
         // Both are painted as a radial gradient centred on the window
         // midpoint, biased slightly INTO the room along the interior
         // normal (so the bloom sits under the slats, not out on the
@@ -5528,8 +5556,10 @@ function _paintWindowsAndBeams(t) {
         if (haloTotal > 0.005) {
           const winLenPx = Math.hypot(p2px - p1px, p2py - p1py);
           const haloBiasPx = 0.6 * t.m2px;   // 0.6 m into the room
+          // Canvas is NOT Y-inverted (screen_y = yOffset + y_m*m2px),
+          // so pushing along +ny in world = same sign on screen.
           const haloCx = midBackX + nx * haloBiasPx;
-          const haloCy = midBackY - ny * haloBiasPx;   // canvas Y inverted
+          const haloCy = midBackY + ny * haloBiasPx;
           const haloR = Math.max(40, winLenPx * 0.9 + 24);
           const grad2 = ctx.createRadialGradient(
             haloCx, haloCy, 0, haloCx, haloCy, haloR);
@@ -5597,7 +5627,7 @@ function _paintWindowsAndBeams(t) {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(midX, midY);
-    ctx.lineTo(midX + nx * 12, midY - ny * 12);   // canvas Y inverted
+    ctx.lineTo(midX + nx * 12, midY + ny * 12);
     ctx.stroke();
     ctx.restore();
   }

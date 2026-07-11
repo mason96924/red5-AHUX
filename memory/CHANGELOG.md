@@ -4,6 +4,49 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+## 2026-02-12l — Sun-compass time-of-day + hourly scrubber
+
+### What shipped
+
+Three additions to the `#sun-compass` widget:
+
+- **Time-of-day (HH:MM)** label in the header, live from
+  `state.ambient.at`.  Turns amber (`#ffb020`) while scrubbing;
+  reverts to muted grey when back on live wall-clock.
+- **Hourly scrubber slider** (0…1439 minutes-of-day) below the
+  AZ/EL readout.  Drives the same `state.ambientScrub` global as
+  the toolbar's ambient-pill scrubber, so the direct-beam sim,
+  bloom, bleed, and compass are all driven by one clock.
+- **`NOW` button** — clears `state.ambientScrub` and refetches
+  wall-clock ambient.  Widget defaults to live on page load.
+
+The compass widget's `pointer-events: none` was removed so the
+slider and button are interactive.  The SVG dial itself keeps
+`pointer-events: none` on the inner shapes so operators can still
+click through to the 2.5D building slabs behind the dial.
+
+### Why
+
+Operator: "Show the TOD next to the sun path tracker.  Also, just
+like V1.9/V2.0, put the hourly simulation sun path as well.  By
+default, it is live."
+
+### Tests
+
+- 458/458 pytest still green.
+- Playwright:
+    - Initial page load: `time` label = `09:42`, `ambientScrub`
+      is `null` (live) ✓
+    - Slider → 360 (06:00): `time` label = `06:00`, colour flips
+      to amber, `ambientScrub` = ISO for that moment, dial
+      recomputes to sunrise (az=68°, el=-1°) ✓
+    - Slider → 900 (15:00): `time` label = `15:00`, dial shows
+      afternoon WNW sun (az=300°, el=42°) ✓
+    - `NOW` click: `ambientScrub` cleared, label colour back to
+      muted, live time restored ✓
+
+--------------------------------------------------------------------
+
 ## 2026-02-12k — Sun-path compass in Building panel (V1.9 parity)
 
 ### What shipped

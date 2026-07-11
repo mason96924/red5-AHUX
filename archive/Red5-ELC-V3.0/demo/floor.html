@@ -903,27 +903,40 @@
       <!-- Sun-path compass (V1.9 parity, NE corner of the Building
            panel).  DXF convention: North is UP.  Reads live from
            state.ambient (sun.altitude_deg + sun.azimuth_deg) so the
-           marker moves with the time-scrub slider or the wall clock.
+           marker moves with the wall-clock (default) or the hour
+           scrubber below the dial.
       -->
       <div id="sun-compass" data-testid="sun-compass"
-           style="position:absolute;top:8px;right:8px;width:100px;
+           style="position:absolute;top:8px;right:8px;width:118px;
                   padding:6px 6px 4px;
                   background:rgba(16,20,26,0.85);
                   border:1px solid var(--line);border-radius:5px;
-                  backdrop-filter:blur(4px);pointer-events:none;
+                  backdrop-filter:blur(4px);
                   font-family:ui-sans-serif,system-ui;font-size:9px;
                   color:var(--muted);letter-spacing:.08em;
                   text-transform:uppercase;z-index:5">
         <div style="display:flex;justify-content:space-between;
                     align-items:center;margin-bottom:2px">
           <span style="color:var(--text);font-weight:600">☀ Sun Path</span>
+          <span id="sun-compass-time" data-testid="sun-compass-time"
+                style="color:var(--muted);font-family:var(--mono);
+                       font-size:9px;letter-spacing:0;text-transform:none">
+            —
+          </span>
           <span id="sun-compass-live" data-testid="sun-compass-live"
                 style="width:6px;height:6px;border-radius:50%;
-                       background:var(--muted)"></span>
+                       background:var(--muted)"
+                title="Live indicator"></span>
         </div>
         <svg viewBox="-60 -60 120 120" width="88" height="88"
-             style="display:block;margin:0 auto"
+             style="display:block;margin:0 auto;pointer-events:none"
              data-testid="sun-compass-dial">
+          <!-- Day-arc trace: faint ellipse showing the sun's path
+               across the current day.  Rendered by _renderSunCompass. -->
+          <path id="sun-compass-arc" d=""
+                fill="none" stroke="rgba(255,176,32,0.28)"
+                stroke-width="1" stroke-dasharray="2 2"
+                pointer-events="none"/>
           <!-- Outer ring -->
           <circle cx="0" cy="0" r="54" fill="none"
                   stroke="rgba(150,210,255,0.35)" stroke-width="1.5"/>
@@ -939,10 +952,8 @@
                 fill="#96d2ff" font-weight="900">S</text>
           <text x="-46" y="3"  text-anchor="middle" font-size="9"
                 fill="#96d2ff" font-weight="900">W</text>
-          <!-- Sun marker rotated by azimuth.  We rotate the whole
-               group by azimuth_deg (0=N clockwise), then place the
-               marker along the -Y axis at radius scaled by elevation.
-               Below-horizon → moon glyph. -->
+          <!-- Sun marker rotated by azimuth.  Radius from centre
+               scaled by elevation. -->
           <g id="sun-compass-marker" transform="rotate(0)">
             <line x1="0" y1="0" x2="0" y2="-30"
                   stroke="#ffb020" stroke-width="1.5"
@@ -952,7 +963,8 @@
                     stroke="#ffe08a" stroke-width="1"
                     id="sun-compass-disc"/>
           </g>
-          <circle cx="0" cy="0" r="1.8" fill="#96d2ff"/>
+          <circle cx="0" cy="0" r="1.8" fill="#96d2ff"
+                  pointer-events="none"/>
         </svg>
         <div style="display:flex;justify-content:space-between;
                     margin-top:2px;font-family:var(--mono);font-size:9px">
@@ -960,6 +972,27 @@
                        style="color:var(--text)">—</b></span>
           <span>EL <b id="sun-compass-el" data-testid="sun-compass-el"
                        style="color:var(--text)">—</b></span>
+        </div>
+        <!-- Hourly scrubber: 0..1439 minutes-of-day.  Idle = wall
+             clock (state.ambientScrub is null).  Any drag activates
+             the same scrub state the toolbar pill uses, so the
+             direct-beam sim and the compass stay in sync. -->
+        <input id="sun-compass-hour" data-testid="sun-compass-hour"
+               type="range" min="0" max="1439" step="1" value="0"
+               style="width:100%;accent-color:#ffb020;margin-top:4px;
+                      display:block" />
+        <div style="display:flex;justify-content:space-between;
+                    align-items:center;margin-top:2px">
+          <span style="font-size:8px;color:var(--muted)">Hour</span>
+          <button id="sun-compass-now" data-testid="sun-compass-now"
+                  style="background:#1a1f28;border:1px solid var(--line);
+                         color:var(--muted);cursor:pointer;
+                         padding:1px 7px;font-family:var(--mono);
+                         font-size:8px;line-height:1;border-radius:3px;
+                         letter-spacing:.08em"
+                  title="Return the compass to live wall-clock time">
+            NOW
+          </button>
         </div>
       </div>
     </div>
@@ -5416,7 +5449,8 @@ function _syncAmbientWidget() {
 // Rotates the sun marker group by azimuth (0° = N up per DXF).
 // The marker sits along -Y (compass up = north) at radius scaled
 // by altitude (0° = horizon at r=54, 90° = zenith at centre).
-// Below horizon → swap the sun disc for a dim moon glyph.
+// Below horizon → grey moon glyph.  Also draws a faint day-arc
+// trace showing the sun's projected path across the current day.
 function _renderSunCompass() {
   const a = state.ambient;
   if (!a) return;
@@ -5428,11 +5462,12 @@ function _renderSunCompass() {
   const azEl   = document.getElementById('sun-compass-az');
   const elEl   = document.getElementById('sun-compass-el');
   const live   = document.getElementById('sun-compass-live');
+  const timeEl = document.getElementById('sun-compass-time');
+  const hourSl = document.getElementById('sun-compass-hour');
   if (marker) marker.setAttribute('transform', `rotate(${az.toFixed(1)})`);
   const isDay = alt > 0;
   if (disc && ray) {
     if (isDay) {
-      // Radius: 54 at horizon (alt=0), 0 at zenith (alt=90).
       const r = 54 * (1 - Math.max(0, Math.min(alt, 90)) / 90);
       disc.setAttribute('cy', (-r).toFixed(1));
       disc.setAttribute('fill', '#ffb020');
@@ -5441,7 +5476,6 @@ function _renderSunCompass() {
       ray.setAttribute('stroke', '#ffb020');
       ray.style.display = '';
     } else {
-      // Night: park the marker at the horizon on the -Y axis, dim it.
       disc.setAttribute('cy', '-54');
       disc.setAttribute('fill', '#4a5468');
       disc.setAttribute('r', '3');
@@ -5451,7 +5485,54 @@ function _renderSunCompass() {
   if (azEl) azEl.textContent = `${Math.round(az)}°`;
   if (elEl) elEl.textContent = `${Math.round(alt)}°`;
   if (live) live.style.background = isDay ? '#ffb020' : '#4a5468';
+
+  // Time-of-day label + hour scrubber position.
+  // Prefer scrub time when active; otherwise use the ambient
+  // response's `at` (which is UTC ISO).  We show local wall-clock
+  // time so it matches what the operator expects on their box.
+  const iso = state.ambientScrub || a.at;
+  if (iso) {
+    const d = new Date(iso);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    if (timeEl) {
+      timeEl.textContent = `${hh}:${mm}`;
+      timeEl.style.color = state.ambientScrub
+        ? '#ffb020'    // amber tint while scrubbing
+        : 'var(--muted)';
+    }
+    if (hourSl && document.activeElement !== hourSl) {
+      hourSl.value = String(d.getHours() * 60 + d.getMinutes());
+    }
+  }
 }
+
+// Wire the scrubber + NOW button once, on script load.  Uses the
+// same `state.ambientScrub` global as the toolbar pill so the
+// direct-beam sim and the compass are always driven by a single
+// clock.  Default = live (ambientScrub === null).
+(function _wireSunCompassScrubber() {
+  const slider = document.getElementById('sun-compass-hour');
+  const nowBtn = document.getElementById('sun-compass-now');
+  if (slider) {
+    slider.addEventListener('input', (ev) => {
+      const mins = parseInt(ev.target.value, 10) || 0;
+      const now = new Date();
+      const scrubbed = new Date(
+        now.getFullYear(), now.getMonth(), now.getDate(),
+        Math.floor(mins / 60), mins % 60, 0,
+      );
+      state.ambientScrub = scrubbed.toISOString();
+      _fetchAmbient(state.ambientScrub);
+    });
+  }
+  if (nowBtn) {
+    nowBtn.addEventListener('click', () => {
+      state.ambientScrub = null;
+      _fetchAmbient(null);
+    });
+  }
+})();
 
 function _startAmbientPoll() {
   _fetchAmbient(null);

@@ -5872,15 +5872,23 @@ function _renderBuildingSunRay() {
     // Compass math: azimuth 0°=N=up, clockwise.  Radius shrinks as
     // the sun climbs (r=0 at zenith).  Use % of the overlay so the
     // glow always lands correctly regardless of panel size.
-    // maxR = 42% keeps the hotspot inside frame even at horizon.
-    const r = 42 * (1 - altNorm);
+    // 2026-02-12ab — maxR bumped 42% → 68% so the glow at horizon
+    // sits clearly OUTSIDE the slab silhouette (operator ask:
+    // "further down from the lowest part of the building slabs" when
+    // the sun is due south).  Overlay has overflow:hidden, so the
+    // half of the glow that falls off-canvas is simply clipped and
+    // reads as an underglow.
+    const r = 68 * (1 - altNorm);
     const azRad = az * Math.PI / 180;
     const sx = 50 + r * Math.sin(azRad);
     const sy = 50 - r * Math.cos(azRad);
     glow.style.left = sx.toFixed(1) + '%';
     glow.style.top  = sy.toFixed(1) + '%';
     // Slightly larger glow when high, smaller when low on horizon.
-    const sz = 55 + 25 * altNorm;
+    // 2026-02-12ab — trimmed size range (was 55–80% → now 42–60%)
+    // so the glow doesn't spread back over the slabs from its
+    // off-centre position.
+    const sz = 42 + 18 * altNorm;
     glow.style.width  = sz.toFixed(0) + '%';
   } else {
     // Night — moonlight base wash, glow faded out entirely.

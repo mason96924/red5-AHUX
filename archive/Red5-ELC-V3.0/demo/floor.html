@@ -5872,23 +5872,22 @@ function _renderBuildingSunRay() {
     // Compass math: azimuth 0°=N=up, clockwise.  Radius shrinks as
     // the sun climbs (r=0 at zenith).  Use % of the overlay so the
     // glow always lands correctly regardless of panel size.
-    // 2026-02-12ab — maxR bumped 42% → 68% so the glow at horizon
-    // sits clearly OUTSIDE the slab silhouette (operator ask:
-    // "further down from the lowest part of the building slabs" when
-    // the sun is due south).  Overlay has overflow:hidden, so the
-    // half of the glow that falls off-canvas is simply clipped and
-    // reads as an underglow.
-    const r = 68 * (1 - altNorm);
+    // 2026-02-12ac — maxR pushed 68% → 95% AND glow itself widened
+    // to 110–130% of the overlay.  Effect: at horizon the glow's
+    // CENTRE lands 45% beyond the canvas edge, but the glow is now
+    // so large that ~50–70% of it (its outer diffuse shoulder)
+    // remains visible as a bright band well BELOW the slabs
+    // (operator ask: "clear distance from the bottom of the building
+    // slabs, larger glow so even its flow is not visible the larger
+    // part can be visible").
+    const r = 95 * (1 - altNorm);
     const azRad = az * Math.PI / 180;
     const sx = 50 + r * Math.sin(azRad);
     const sy = 50 - r * Math.cos(azRad);
     glow.style.left = sx.toFixed(1) + '%';
     glow.style.top  = sy.toFixed(1) + '%';
-    // Slightly larger glow when high, smaller when low on horizon.
-    // 2026-02-12ab — trimmed size range (was 55–80% → now 42–60%)
-    // so the glow doesn't spread back over the slabs from its
-    // off-centre position.
-    const sz = 42 + 18 * altNorm;
+    // Bigger glow at all altitudes; small extra bloom at zenith.
+    const sz = 110 + 20 * altNorm;   // 110% → 130% of overlay width
     glow.style.width  = sz.toFixed(0) + '%';
   } else {
     // Night — moonlight base wash, glow faded out entirely.

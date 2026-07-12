@@ -709,86 +709,6 @@
 
   #btn-tree.on { border-color: var(--accent); color: var(--accent-2); }
 
-  /* ---- Slab shape inline editor (Logical tree, Floors branch) ---- */
-  .slab-edit-row {
-    padding: 6px 10px 8px 32px;
-    display: none;                  /* toggled by tree-slab-toggle btn */
-    flex-wrap: wrap; gap: 6px 8px; align-items: center;
-    background: rgba(56,189,248,0.05);
-    border-left: 2px solid rgba(56,189,248,0.35);
-    font-size: 11px;
-  }
-  li[data-slab-open="1"] > .slab-edit-row { display: flex; }
-  .slab-edit-row label {
-    color: var(--muted); font-size: 10.5px;
-    display: inline-flex; align-items: center; gap: 4px;
-  }
-  .slab-edit-row select, .slab-edit-row input[type="number"] {
-    background: #0c1015; border: 1px solid var(--line);
-    color: var(--text); padding: 2px 4px; border-radius: 3px;
-    font-family: var(--mono); font-size: 11px;
-    width: 68px;
-  }
-  .slab-edit-row select { width: auto; }
-  .slab-edit-row .slab-inline-vertices {
-    background: rgba(56,189,248,0.10); border: 1px solid rgba(56,189,248,0.4);
-    color: #7dd3fc; padding: 2px 8px; border-radius: 3px;
-    cursor: pointer; font-family: var(--mono); font-size: 10.5px;
-  }
-  .slab-edit-row .slab-inline-save {
-    background: rgba(78,203,113,0.15); border: 1px solid rgba(78,203,113,0.4);
-    color: var(--ok); padding: 2px 10px; border-radius: 3px;
-    cursor: pointer; font-family: var(--mono); font-size: 10.5px;
-    margin-left: auto;
-  }
-  .slab-edit-row .slab-inline-save:disabled {
-    opacity: 0.4; cursor: not-allowed;
-  }
-  .tree-slab-toggle {
-    background: none; border: 1px solid var(--line);
-    color: var(--muted); padding: 0 4px; margin-left: 4px;
-    border-radius: 3px; cursor: pointer; font-size: 10px; line-height: 1.3;
-    font-family: var(--mono);
-  }
-  .tree-slab-toggle:hover { color: #7dd3fc; border-color: rgba(56,189,248,0.5); }
-  li[data-slab-open="1"] > .tree-node .tree-slab-toggle {
-    color: #7dd3fc; border-color: rgba(56,189,248,0.5);
-    background: rgba(56,189,248,0.10);
-  }
-
-  /* ---- Slab modal contents (polyline vertex table) ---- */
-  #slab-mm-body h4 {
-    margin: 8px 0 6px; font-size: 10.5px;
-    color: var(--muted); text-transform: uppercase; letter-spacing: .1em;
-  }
-  #slab-mm-body table.vtx-table {
-    width: 100%; border-collapse: collapse; margin: 4px 0 8px;
-    font-family: var(--mono); font-size: 11px;
-  }
-  #slab-mm-body table.vtx-table th,
-  #slab-mm-body table.vtx-table td {
-    padding: 3px 5px; border-bottom: 1px solid var(--line);
-    text-align: left;
-  }
-  #slab-mm-body table.vtx-table th { color: var(--muted); font-weight: 500; }
-  #slab-mm-body table.vtx-table input {
-    width: 84px; background: #0c1015; border: 1px solid var(--line);
-    color: var(--text); padding: 2px 4px; border-radius: 3px;
-    font-family: var(--mono); font-size: 11px;
-  }
-  #slab-mm-body .vtx-del {
-    background: none; border: 0; color: var(--bad);
-    cursor: pointer; font-size: 12px;
-  }
-  #slab-mm-body .slab-modal-actions {
-    display: flex; justify-content: space-between; gap: 8px;
-    margin-top: 10px; padding-top: 10px;
-    border-top: 1px dashed var(--line);
-  }
-  #slab-mm-body .slab-preview {
-    width: 100%; height: 160px; background: #0a0d12;
-    border: 1px solid var(--line); border-radius: 4px; margin: 6px 0;
-  }
 </style>
 </head>
 <body>
@@ -1348,28 +1268,49 @@
                  data-testid="floor-dxf-input">
         </label>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- ============ SLAB SHAPE MODAL (per-floor footprint) ============ -->
-<!-- Opens when the operator clicks "✎ Edit vertices" on a Polyline
-     slab row in the tree, or "Edit slab…" from the floor kebab menu.
-     Lightweight: pick shape type, edit vertex table for polyline, save
-     back via PATCH /floors/{id}. -->
-<div class="mm-backdrop" id="slab-modal" data-testid="slab-modal">
-  <div class="mm-panel" role="dialog" aria-modal="true"
-       aria-labelledby="slab-title" style="width: min(560px, 94vw)">
-    <div class="mm-hdr">
-      <div class="mm-title" id="slab-title" data-testid="slab-title">
-        Slab shape
-      </div>
-      <button class="mm-close" id="slab-close"
-              data-testid="slab-close" title="Close">×</button>
-    </div>
-    <div class="mm-body" style="padding: 14px 16px">
-      <div id="slab-mm-body" data-testid="slab-mm-body">
-        <div class="empty">Select a floor first.</div>
+      <!-- 2026-02-13 · Trace floor slab from a raster floor plan.
+           Runs an OpenCV contour trace server-side and either creates
+           a new floor or attaches the traced polygon to the currently
+           selected one. -->
+      <div style="margin-top: 12px; padding-top: 12px;
+                  border-top: 1px dashed var(--line)">
+        <div style="font-family: var(--mono); font-size: 10.5px;
+                    color: var(--muted); margin-bottom: 6px;
+                    text-transform: uppercase; letter-spacing: .1em">
+          Trace slab from image
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+                    font-size:11px;margin-bottom:6px">
+          <label style="color:var(--muted)">Real width (m)
+            <input id="slab-img-width-m" type="number" min="0.5" step="0.1"
+                   value="20"
+                   data-testid="slab-img-width-m"
+                   style="width:64px;margin-left:4px;
+                          background:#0c1015;border:1px solid var(--line);
+                          color:var(--text);padding:2px 4px;border-radius:3px;
+                          font-family:var(--mono);font-size:11px">
+          </label>
+          <label style="color:var(--muted)">Real height (m)
+            <input id="slab-img-height-m" type="number" min="0.5" step="0.1"
+                   value="15"
+                   data-testid="slab-img-height-m"
+                   style="width:64px;margin-left:4px;
+                          background:#0c1015;border:1px solid var(--line);
+                          color:var(--text);padding:2px 4px;border-radius:3px;
+                          font-family:var(--mono);font-size:11px">
+          </label>
+        </div>
+        <label for="slab-img-input" class="btn" style="cursor:pointer;display:inline-block"
+               data-testid="floor-slab-img-label"
+               title="Attach the traced polygon to the CURRENTLY SELECTED floor. Select a floor first.">
+          Choose image (PNG / JPG)…
+          <input id="slab-img-input" type="file" accept="image/png,image/jpeg"
+                 style="display:none" data-testid="floor-slab-img-input">
+        </label>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:6px">
+          Attaches the traced outline to the currently-selected floor.
+          Use a clean dark-outline drawing for best results.
+        </div>
       </div>
     </div>
   </div>
@@ -5982,9 +5923,11 @@ document.getElementById('dxf-input').onchange = async (ev) => {
     await selectFloor(data.id);
     const nWin  = Array.isArray(data.windows) ? data.windows.length : 0;
     const nRoom = Array.isArray(data.rooms)   ? data.rooms.length   : 0;
+    const nSlab = data.slab && Array.isArray(data.slab.vertices) ? data.slab.vertices.length : 0;
     toast(
       `Imported "${name}" (${data.width_m.toFixed(1)}×${data.height_m.toFixed(1)} m)` +
-      ` · rooms: ${nRoom} · windows: ${nWin}`
+      ` · rooms: ${nRoom} · windows: ${nWin}` +
+      (nSlab ? ` · slab: ${nSlab}-vertex outline` : '')
     );
     if (nWin === 0) {
       // Give the operator a concrete next step if we found no windows.
@@ -6003,6 +5946,41 @@ document.getElementById('dxf-input').onchange = async (ev) => {
       }
     }
     closeFloorModal();
+  } catch (e) { toast(e.message, true); }
+};
+
+// 2026-02-13 — Trace slab from raster image handler.  Attaches the
+// traced polygon to the currently-selected floor via
+// POST /floors/import-image?floor_id=<current>.
+document.getElementById('slab-img-input').onchange = async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  ev.target.value = '';
+  if (!state.currentFloor) {
+    toast('Select a floor first', true);
+    return;
+  }
+  const wIn = document.getElementById('slab-img-width-m');
+  const hIn = document.getElementById('slab-img-height-m');
+  const width_m  = parseFloat(wIn.value)  || 20;
+  const height_m = parseFloat(hIn.value) || 15;
+  const fd = new FormData();
+  fd.append('image', file);
+  fd.append('floor_id', state.currentFloor.id);
+  fd.append('width_m',  String(width_m));
+  fd.append('height_m', String(height_m));
+  toast('Tracing outline…');
+  try {
+    const r = await fetch(`${API}/floors/import-image`, { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) { toast(data.detail || 'Image trace failed', true); return; }
+    await refreshFloors();
+    await selectFloor(data.id);
+    const nV = data.slab && Array.isArray(data.slab.vertices) ? data.slab.vertices.length : 0;
+    toast(`Slab traced: ${nV} vertices`);
+    closeFloorModal();
+    // Repaint 2.5D building panel immediately.
+    if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
   } catch (e) { toast(e.message, true); }
 };
 
@@ -7819,17 +7797,13 @@ function _renderTreeLogical() {
       html.push(`<span class="meta">${f.width_m}×${f.height_m} m</span>`);
     }
     html.push(`<span class="tree-badge tb-count">${f.fixture_count} fixtures</span>`);
-    // 2026-02-13 — inline slab-shape toggle.  Reveals the .slab-edit-row
-    // below (populated once, on first expand) so the operator can pick
-    // between rect / regular polygon / polyline directly in the tree.
+    // 2026-02-13 — read-only badge showing the auto-extracted slab
+    // shape (from DXF outline or traced image).  Manual editing was
+    // removed in favour of auto-tracing on import.
     const slabType = (f.slab && f.slab.type) || 'rect';
-    const slabBadge = slabType === 'rect' ? '' : `<span class="tree-badge tb-floor">${_treeEscape(slabType)}</span>`;
-    html.push(slabBadge);
-    html.push(
-      `<button class="tree-slab-toggle" data-floor-id="${_treeEscape(f.id)}"` +
-      ` data-testid="tree-slab-toggle-${_treeEscape(f.id)}"` +
-      ` title="Edit slab footprint shape">◇ shape</button>`,
-    );
+    if (slabType !== 'rect') {
+      html.push(`<span class="tree-badge tb-floor" title="Auto-traced slab shape">${_treeEscape(slabType)}</span>`);
+    }
     // 2026-02-12as — inline delete button per floor.
     html.push(
       `<button class="tree-del-floor" data-floor-id="${_treeEscape(f.id)}"` +
@@ -7838,10 +7812,7 @@ function _renderTreeLogical() {
       ` style="margin-left:6px;background:none;border:0;color:var(--bad);` +
              `cursor:pointer;padding:0 4px;font-size:12px;line-height:1">✕</button>`,
     );
-    html.push(`</span>`);
-    // Inline slab editor row (hidden by default; li[data-slab-open="1"] shows).
-    html.push(window._renderSlabInlineRow ? window._renderSlabInlineRow(f) : '');
-    html.push(`</li>`);
+    html.push(`</span></li>`);
   }
   html.push('</ul></li>');
 
@@ -8246,17 +8217,6 @@ async function _treeCtxAction(act) {
   // Delegate: click on caret toggles collapse; click on node selects.
   const strip = document.getElementById('tree-strip');
   strip.addEventListener('click', (ev) => {
-    // 2026-02-13 — inline slab-shape toggle: expand/collapse the row.
-    const slabBtn = ev.target.closest('button.tree-slab-toggle');
-    if (slabBtn) {
-      ev.stopPropagation();
-      const li = slabBtn.closest('li');
-      if (li) {
-        const open = li.getAttribute('data-slab-open') === '1';
-        li.setAttribute('data-slab-open', open ? '0' : '1');
-      }
-      return;
-    }
     // 2026-02-12as — inline delete-floor button.  Stop propagation so
     // the click doesn't also select/expand the row.
     const delBtn = ev.target.closest('button.tree-del-floor');
@@ -8330,313 +8290,6 @@ async function _treeCtxAction(act) {
     }
   }
   window._deleteFloorFromTree = _deleteFloorFromTree;
-
-  // ---- 2026-02-13 · Per-floor slab shape editor -----------------------
-  // Inline (Tree View) mini-editor for slab.type = rect | polygon.
-  // For polyline, a "✎ Edit vertices" button opens the modal below.
-  function _renderSlabInlineRow(f) {
-    const s = f.slab || { type: 'rect' };
-    const t = s.type || 'rect';
-    const fid = _treeEscape(f.id);
-    const opt = (v, lbl) => `<option value="${v}"${v===t?' selected':''}>${lbl}</option>`;
-    const parts = [
-      `<div class="slab-edit-row" data-slab-edit-for="${fid}"`,
-      `     data-testid="slab-edit-row-${fid}">`,
-      `  <label>Shape`,
-      `    <select data-slab-field="type" data-testid="slab-type-${fid}">`,
-      `      ${opt('rect','Rectangle (default)')}`,
-      `      ${opt('polygon','Regular polygon')}`,
-      `      ${opt('polyline','Polyline (custom)')}`,
-      `    </select>`,
-      `  </label>`,
-    ];
-    if (t === 'polygon') {
-      const cx = Number.isFinite(s.cx_m) ? s.cx_m : (f.width_m / 2 || 10);
-      const cy = Number.isFinite(s.cy_m) ? s.cy_m : (f.height_m / 2 || 7.5);
-      const r  = Number.isFinite(s.radius_m) ? s.radius_m : 5;
-      const n  = Number.isFinite(s.sides) ? s.sides : 6;
-      const rot = Number.isFinite(s.rotation_deg) ? s.rotation_deg : 0;
-      parts.push(
-        `<label>Sides <input type="number" min="3" max="24" step="1"`,
-        ` value="${n}" data-slab-field="sides" data-testid="slab-sides-${fid}"></label>`,
-        `<label>R (m) <input type="number" min="0.1" step="0.1"`,
-        ` value="${r}" data-slab-field="radius_m" data-testid="slab-radius-${fid}"></label>`,
-        `<label>Cx (m) <input type="number" step="0.1"`,
-        ` value="${cx}" data-slab-field="cx_m"></label>`,
-        `<label>Cy (m) <input type="number" step="0.1"`,
-        ` value="${cy}" data-slab-field="cy_m"></label>`,
-        `<label>Rot° <input type="number" step="1"`,
-        ` value="${rot}" data-slab-field="rotation_deg"></label>`,
-      );
-    } else if (t === 'polyline') {
-      const nVerts = (s.vertices && s.vertices.length) || 0;
-      const rot = Number.isFinite(s.rotation_deg) ? s.rotation_deg : 0;
-      parts.push(
-        `<span class="meta">${nVerts} vertex points</span>`,
-        `<label>Rot° <input type="number" step="1"`,
-        ` value="${rot}" data-slab-field="rotation_deg"></label>`,
-        `<button class="slab-inline-vertices" data-slab-open-modal="${fid}"`,
-        ` data-testid="slab-edit-vertices-${fid}">✎ Edit vertices…</button>`,
-      );
-    } else {
-      parts.push(
-        `<span class="meta">Axis-aligned rectangle from floor size.</span>`,
-      );
-    }
-    parts.push(
-      `  <button class="slab-inline-save" data-slab-save="${fid}"`,
-      `          data-testid="slab-save-${fid}">Save</button>`,
-      `</div>`,
-    );
-    return parts.join('\n');
-  }
-  window._renderSlabInlineRow = _renderSlabInlineRow;
-
-  // Read current inline form state → payload for PATCH /floors/{id}.
-  function _collectInlineSlab(row) {
-    const type = row.querySelector('[data-slab-field="type"]').value;
-    if (type === 'rect') return { type: 'rect' };
-    if (type === 'polygon') {
-      return {
-        type: 'polygon',
-        sides:        parseInt(row.querySelector('[data-slab-field="sides"]').value, 10),
-        radius_m:     parseFloat(row.querySelector('[data-slab-field="radius_m"]').value),
-        cx_m:         parseFloat(row.querySelector('[data-slab-field="cx_m"]').value),
-        cy_m:         parseFloat(row.querySelector('[data-slab-field="cy_m"]').value),
-        rotation_deg: parseFloat(row.querySelector('[data-slab-field="rotation_deg"]').value),
-      };
-    }
-    // polyline: keep existing vertices (edited via modal); update rotation only.
-    const treeF = (_tree.data?.floors || []).find(x => x.id === row.dataset.slabEditFor);
-    const prev = (treeF && treeF.slab && treeF.slab.type === 'polyline') ? treeF.slab : null;
-    return {
-      type: 'polyline',
-      vertices: prev?.vertices || [[0,0],[10,0],[10,8],[0,8]],
-      rotation_deg: parseFloat(row.querySelector('[data-slab-field="rotation_deg"]').value) || 0,
-    };
-  }
-
-  async function _saveSlabFromInline(fid, row) {
-    const slab = _collectInlineSlab(row);
-    try {
-      await api('PATCH', `/floors/${fid}`, { slab });
-      // Local tree cache stays fresh so the badge / row show new state.
-      const tf = (_tree.data?.floors || []).find(x => x.id === fid);
-      if (tf) tf.slab = slab;
-      _rerenderTree();
-      // Re-expand this floor's slab editor after re-render.
-      const li = document.querySelector(`#tree-strip li[data-kind="floor"][data-id="${fid}"]`);
-      if (li) li.setAttribute('data-slab-open', '1');
-      // 2.5D building — repaint immediately with new shape.
-      if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
-      toast('Slab shape saved');
-    } catch (e) {
-      toast(e.message || String(e), true);
-    }
-  }
-
-  // React to type-select change so the inline row re-renders with the
-  // correct field set (sides/radius vs vertex-count).
-  document.addEventListener('change', (ev) => {
-    const sel = ev.target.closest('[data-slab-field="type"]');
-    if (!sel) return;
-    const row = sel.closest('.slab-edit-row');
-    if (!row) return;
-    const fid = row.dataset.slabEditFor;
-    const treeF = (_tree.data?.floors || []).find(x => x.id === fid);
-    if (!treeF) return;
-    // Preserve any user edits in the current row when switching type
-    // by staging a synthetic slab object of the newly picked type.
-    const nextType = sel.value;
-    const staged = { type: nextType };
-    if (nextType === 'polygon') {
-      Object.assign(staged, {
-        cx_m: treeF.slab?.cx_m ?? (treeF.width_m/2 || 10),
-        cy_m: treeF.slab?.cy_m ?? (treeF.height_m/2 || 7.5),
-        radius_m: treeF.slab?.radius_m ?? 5,
-        sides: treeF.slab?.sides ?? 6,
-        rotation_deg: treeF.slab?.rotation_deg ?? 0,
-      });
-    } else if (nextType === 'polyline') {
-      staged.vertices = treeF.slab?.vertices || [[0,0],[10,0],[10,8],[0,8]];
-      staged.rotation_deg = treeF.slab?.rotation_deg ?? 0;
-    }
-    row.outerHTML = _renderSlabInlineRow({ ...treeF, slab: staged });
-    // Restore expanded state (outerHTML replaces the node).
-    const li = document.querySelector(`#tree-strip li[data-kind="floor"][data-id="${fid}"]`);
-    if (li) li.setAttribute('data-slab-open', '1');
-  });
-
-  // Save + open-vertices-modal click delegation (inline row).
-  document.addEventListener('click', (ev) => {
-    const saveBtn = ev.target.closest('[data-slab-save]');
-    if (saveBtn) {
-      ev.stopPropagation();
-      const fid = saveBtn.dataset.slabSave;
-      const row = saveBtn.closest('.slab-edit-row');
-      if (fid && row) _saveSlabFromInline(fid, row);
-      return;
-    }
-    const modalBtn = ev.target.closest('[data-slab-open-modal]');
-    if (modalBtn) {
-      ev.stopPropagation();
-      openSlabModal(modalBtn.dataset.slabOpenModal);
-    }
-  });
-
-  // ---- Slab modal (polyline vertex editor + preview) -----------------
-  let _slabModalState = { fid: null, slab: null };
-
-  function openSlabModal(fid) {
-    const treeF = (_tree.data?.floors || []).find(x => x.id === fid);
-    if (!treeF) return;
-    _slabModalState.fid = fid;
-    // Deep clone so cancel discards uncommitted vertex edits.
-    _slabModalState.slab = JSON.parse(JSON.stringify(
-      (treeF.slab && treeF.slab.type === 'polyline')
-        ? treeF.slab
-        : { type: 'polyline',
-            vertices: (treeF.slab?.vertices) || [[0,0],[10,0],[10,8],[0,8]],
-            rotation_deg: treeF.slab?.rotation_deg || 0 },
-    ));
-    _renderSlabModal(treeF);
-    document.getElementById('slab-modal').classList.add('open');
-  }
-
-  function closeSlabModal() {
-    document.getElementById('slab-modal').classList.remove('open');
-    _slabModalState = { fid: null, slab: null };
-  }
-
-  function _renderSlabModal(treeF) {
-    const body = document.getElementById('slab-mm-body');
-    const s = _slabModalState.slab;
-    const rows = s.vertices.map((v, i) =>
-      `<tr>
-         <td>${i + 1}</td>
-         <td><input type="number" step="0.01" value="${v[0]}"
-                    data-vtx-idx="${i}" data-vtx-axis="x"
-                    data-testid="slab-vtx-${i}-x"></td>
-         <td><input type="number" step="0.01" value="${v[1]}"
-                    data-vtx-idx="${i}" data-vtx-axis="y"
-                    data-testid="slab-vtx-${i}-y"></td>
-         <td><button class="vtx-del" data-vtx-del="${i}"
-                     data-testid="slab-vtx-del-${i}"
-                     title="Remove vertex">✕</button></td>
-       </tr>`,
-    ).join('');
-    const title = `${treeF.strand_label || ''} ${treeF.name || ''}`.trim() || treeF.id;
-    body.innerHTML = `
-      <div style="color:var(--muted);font-size:11px;margin-bottom:8px">
-        Editing slab footprint for <b style="color:var(--text)">${_treeEscape(title)}</b>.
-        All coordinates in metres, floor origin (0, 0) = top-left.
-      </div>
-      <svg class="slab-preview" id="slab-preview" viewBox="0 0 400 160"
-           preserveAspectRatio="xMidYMid meet"></svg>
-      <h4>Vertices</h4>
-      <table class="vtx-table" data-testid="slab-vtx-table">
-        <thead><tr><th>#</th><th>x_m</th><th>y_m</th><th></th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <button class="btn" data-slab-add-vtx data-testid="slab-add-vtx"
-              style="font-size:11px;padding:3px 10px">＋ Add vertex</button>
-      <div class="slab-modal-actions">
-        <button class="btn" data-slab-cancel data-testid="slab-cancel">Cancel</button>
-        <button class="btn" data-slab-save-modal data-testid="slab-save-modal"
-                style="background:rgba(78,203,113,0.15);color:var(--ok);
-                       border:1px solid rgba(78,203,113,0.4)">Save slab</button>
-      </div>`;
-    _drawSlabPreview();
-  }
-
-  function _drawSlabPreview() {
-    const svg = document.getElementById('slab-preview');
-    if (!svg) return;
-    const s = _slabModalState.slab;
-    if (!s.vertices || s.vertices.length < 2) { svg.innerHTML = ''; return; }
-    const xs = s.vertices.map(v => v[0]);
-    const ys = s.vertices.map(v => v[1]);
-    const xmin = Math.min(...xs), xmax = Math.max(...xs);
-    const ymin = Math.min(...ys), ymax = Math.max(...ys);
-    const pad = 10;
-    const w = 400, h = 160;
-    const dx = xmax - xmin || 1, dy = ymax - ymin || 1;
-    const scale = Math.min((w - 2*pad) / dx, (h - 2*pad) / dy);
-    const cx = pad + ((w - 2*pad) - dx*scale) / 2;
-    const cy = pad + ((h - 2*pad) - dy*scale) / 2;
-    const px = (v) => cx + (v[0] - xmin) * scale;
-    const py = (v) => cy + (v[1] - ymin) * scale;
-    const d = s.vertices.map((v, i) =>
-      (i === 0 ? 'M' : 'L') + px(v) + ',' + py(v),
-    ).join(' ') + ' Z';
-    const dots = s.vertices.map((v, i) =>
-      `<circle cx="${px(v)}" cy="${py(v)}" r="3"
-               fill="#c084fc" stroke="#fff" stroke-width="0.6"/>
-       <text x="${px(v)+5}" y="${py(v)-4}" fill="#c084fc"
-             font-size="9" font-family="ui-monospace,monospace">${i+1}</text>`,
-    ).join('');
-    svg.innerHTML = `
-      <path d="${d}" fill="rgba(192,132,252,0.20)"
-            stroke="#c084fc" stroke-width="1.4"/>
-      ${dots}`;
-  }
-
-  // Slab modal delegation.
-  document.getElementById('slab-close').addEventListener('click', closeSlabModal);
-  document.getElementById('slab-modal').addEventListener('click', (ev) => {
-    if (ev.target.id === 'slab-modal') closeSlabModal();
-  });
-  document.getElementById('slab-mm-body').addEventListener('input', (ev) => {
-    const t = ev.target;
-    if (t.matches('input[data-vtx-idx]')) {
-      const i = parseInt(t.dataset.vtxIdx, 10);
-      const axis = t.dataset.vtxAxis === 'x' ? 0 : 1;
-      _slabModalState.slab.vertices[i][axis] = parseFloat(t.value) || 0;
-      _drawSlabPreview();
-    }
-  });
-  document.getElementById('slab-mm-body').addEventListener('click', async (ev) => {
-    const delBtn = ev.target.closest('[data-vtx-del]');
-    if (delBtn) {
-      const i = parseInt(delBtn.dataset.vtxDel, 10);
-      if (_slabModalState.slab.vertices.length <= 3) {
-        toast('Polyline needs at least 3 vertices', true); return;
-      }
-      _slabModalState.slab.vertices.splice(i, 1);
-      const treeF = (_tree.data?.floors || []).find(x => x.id === _slabModalState.fid);
-      if (treeF) _renderSlabModal(treeF);
-      return;
-    }
-    if (ev.target.closest('[data-slab-add-vtx]')) {
-      // Duplicate last vertex offset by (1, 0) so a new visible point appears.
-      const last = _slabModalState.slab.vertices.at(-1) || [0, 0];
-      _slabModalState.slab.vertices.push([last[0] + 1, last[1]]);
-      const treeF = (_tree.data?.floors || []).find(x => x.id === _slabModalState.fid);
-      if (treeF) _renderSlabModal(treeF);
-      return;
-    }
-    if (ev.target.closest('[data-slab-cancel]')) { closeSlabModal(); return; }
-    if (ev.target.closest('[data-slab-save-modal]')) {
-      const fid = _slabModalState.fid;
-      const slab = _slabModalState.slab;
-      try {
-        await api('PATCH', `/floors/${fid}`, { slab });
-        const tf = (_tree.data?.floors || []).find(x => x.id === fid);
-        if (tf) tf.slab = slab;
-        _rerenderTree();
-        const li = document.querySelector(`#tree-strip li[data-kind="floor"][data-id="${fid}"]`);
-        if (li) li.setAttribute('data-slab-open', '1');
-        if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
-        toast('Slab shape saved');
-        closeSlabModal();
-      } catch (e) {
-        toast(e.message || String(e), true);
-      }
-    }
-  });
-
-  window.openSlabModal = openSlabModal;
-  window.closeSlabModal = closeSlabModal;
 
   document.addEventListener('click', (ev) => {
     if (!ev.target.closest('#tree-ctx-menu')) _closeTreeCtx();

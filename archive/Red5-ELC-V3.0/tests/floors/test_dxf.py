@@ -233,3 +233,144 @@ class TestWindowExtraction:
         r = dxf_to_svg(_dxf_bytes(_b))
         assert len(r.windows) == 1
         assert r.windows[0]["length_m"] == pytest.approx(0.8, rel=1e-3)
+
+
+
+class TestSlabExtraction:
+    """2026-02-13 — auto-trace slab footprint from DXF."""
+
+    def test_no_polylines_returns_none(self):
+        r = dxf_to_svg(_dxf_bytes(_rect(5000, 3000)))
+        assert r.slab is None
+
+    def test_slab_layer_wins(self):
+        """A polyline on SLAB / OUTLINE layer takes precedence."""
+        def _b(doc):
+            msp = doc.modelspace()
+            doc.layers.add(name="SLAB", color=1)
+            # Large L-shape on SLAB
+            msp.add_lwpolyline(
+                [(0, 0), (5000, 0), (5000, 3000), (2000, 3000),
+                 (2000, 5000), (0, 5000)],
+                close=True,
+                dxfattribs={"layer": "SLAB"},
+            )
+            # Larger dummy polygon on a random layer — should be ignored.
+            msp.add_lwpolyline(
+                [(0, 0), (9000, 0), (9000, 6000), (0, 6000)],
+                close=True,
+                dxfattribs={"layer": "0"},
+            )
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert r.slab is not None
+        assert r.slab["type"] == "polyline"
+        assert len(r.slab["vertices"]) == 6      # L-shape has 6 corners
+
+    def test_outline_layer_keyword(self):
+        def _b(doc):
+            msp = doc.modelspace()
+            doc.layers.add(name="A-OUTLINE-BUILDING", color=1)
+            msp.add_lwpolyline(
+                [(0, 0), (4000, 0), (4000, 3000), (0, 3000)],
+                close=True,
+                dxfattribs={"layer": "A-OUTLINE-BUILDING"},
+            )
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert r.slab is not None
+        assert len(r.slab["vertices"]) == 4
+
+    def test_largest_polyline_fallback(self):
+        """No SLAB layer -> largest closed LWPOLYLINE wins."""
+        def _b(doc):
+            msp = doc.modelspace()
+            # Small square (300k mm^2)
+            msp.add_lwpolyline(
+                [(0, 0), (300, 0), (300, 1000), (0, 1000)],
+                close=True,
+            )
+            # Big rectangle (~10M mm^2) — should win.
+            msp.add_lwpolyline(
+                [(0, 0), (5000, 0), (5000, 2000), (0, 2000)],
+                close=True,
+            )
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert r.slab is not None
+        # 5m x 2m rectangle
+        xs = [v[0] for v in r.slab["vertices"]]
+        ys = [v[1] for v in r.slab["vertices"]]
+        assert max(xs) - min(xs) == pytest.approx(5.0, rel=1e-3)
+        assert max(ys) - min(ys) == pytest.approx(2.0, rel=1e-3)
+
+    def test_rooms_layer_skipped_from_fallback(self):
+        """ROOMS-layer polylines must never be used as slab outline."""
+        def _b(doc):
+            msp = doc.modelspace()
+            doc.layers.add(name="ROOMS", color=2)
+            # HUGE room polygon on ROOMS layer.
+            msp.add_lwpolyline(
+                [(0, 0), (9000, 0), (9000, 8000), (0, 8000)],
+                close=True,
+                dxfattribs={"layer": "ROOMS"},
+            )
+            # Tiny generic polyline.
+            msp.add_lwpolyline(
+                [(0, 0), (100, 0), (100, 100), (0, 100)],
+                close=True,
+            )
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        # The ROOMS polygon is excluded → the tiny one wins.
+        assert r.slab is not None
+        xs = [v[0] for v in r.slab["vertices"]]
+        assert max(xs) - min(xs) == pytest.approx(0.1, rel=1e-3)
+
+
+class TestImageSlabTracer:
+    """2026-02-13 — image_to_slab() OpenCV contour tracer."""
+
+    def _rect_png(self, w=200, h=100, margin=20) -> bytes:
+        """Return a PNG with a filled dark rectangle on a white bg."""
+        import io as _io
+        import numpy as np
+        from PIL import Image
+        arr = np.full((h, w), 255, dtype=np.uint8)
+        arr[margin:h - margin, margin:w - margin] = 0
+        img = Image.fromarray(arr, mode="L")
+        buf = _io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_traces_rectangle(self):
+        from elc.floors.dxf import image_to_slab
+        png = self._rect_png(w=200, h=100, margin=20)
+        slab = image_to_slab(png, physical_width_m=10.0, physical_height_m=5.0)
+        assert slab["type"] == "polyline"
+        # A clean rectangle should approximate to 4 vertices.
+        assert len(slab["vertices"]) == 4
+        xs = [v[0] for v in slab["vertices"]]
+        ys = [v[1] for v in slab["vertices"]]
+        # Interior dark rect covers pixels 20..180 wide -> 8 m in real world.
+        assert max(xs) - min(xs) == pytest.approx(8.0, abs=0.3)
+        # 20..80 tall -> 3 m real.
+        assert max(ys) - min(ys) == pytest.approx(3.0, abs=0.3)
+
+    def test_empty_image_rejected(self):
+        from elc.floors.dxf import image_to_slab
+        with pytest.raises(DxfImportError):
+            image_to_slab(b"")
+
+    def test_garbage_rejected(self):
+        from elc.floors.dxf import image_to_slab
+        with pytest.raises(DxfImportError):
+            image_to_slab(b"not-an-image-at-all")
+
+    def test_pixel_coords_when_no_scale(self):
+        from elc.floors.dxf import image_to_slab
+        png = self._rect_png(w=200, h=100, margin=20)
+        slab = image_to_slab(png)   # no physical dims -> pixel space
+        xs = [v[0] for v in slab["vertices"]]
+        # Should be around 160 px wide (200 - 40 margins).
+        assert max(xs) - min(xs) == pytest.approx(160, abs=6)

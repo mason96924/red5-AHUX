@@ -31,7 +31,7 @@ from fastapi.responses import Response
 from elc.codec.device_id import DeviceId
 from elc.config import store as config_store
 from elc.floors import lighting, store
-from elc.floors.dxf import DxfImportError, dxf_to_svg
+from elc.floors.dxf import DxfImportError, dxf_to_svg, image_to_slab
 
 _ERR_MAP: dict[type, int] = {
     config_store.BadInput: 400,
@@ -182,6 +182,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 height_m=conv.height_m,
                 rooms=conv.rooms,
                 windows=conv.windows,
+                slab=conv.slab,
                 db_path=db_path,
             )
         except Exception as e:
@@ -203,6 +204,76 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
             )
         except Exception:  # noqa: BLE001
             pass
+        return floor
+
+    # ---- 2026-02-13 · POST /floors/import-image ---------------------
+    # Trace the outer contour of a PNG / JPG floor plan and either
+    # create a new floor or attach the traced polygon to an existing
+    # one as its ``slab`` footprint.
+    @router.post("/import-image", status_code=201)
+    async def import_image(
+        image: UploadFile = File(...),
+        name: str | None = Form(None),
+        floor_id: str | None = Form(None),
+        width_m: float | None = Form(None),
+        height_m: float | None = Form(None),
+    ) -> dict[str, Any]:
+        """Multipart upload — one PNG / JPG floor plan → OpenCV contour
+        → slab polyline.
+
+        Two modes:
+          * ``floor_id`` given: attach the traced slab to that floor
+            via PATCH (keeps existing fixtures / rooms / windows).
+          * ``floor_id`` absent + ``name`` given: create a fresh floor
+            with just the traced outline (no SVG background).
+
+        ``width_m`` / ``height_m`` scale the pixel-space contour into
+        metres.  If ``width_m`` alone is provided, the image aspect
+        ratio is honoured.  If neither is provided we default to
+        20 m × 15 m (typical office footprint) so the operator can
+        tune afterwards.
+        """
+        blob = await image.read()
+        w_m = float(width_m) if width_m else 20.0
+        h_m = float(height_m) if height_m else None
+        try:
+            slab = image_to_slab(
+                blob,
+                physical_width_m=w_m,
+                physical_height_m=h_m,
+            )
+        except DxfImportError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        # Derive floor size from the traced polygon extents so the
+        # created floor's width_m / height_m match the drawing.
+        xs = [v[0] for v in slab["vertices"]]
+        ys = [v[1] for v in slab["vertices"]]
+        eff_w = max(xs) - min(xs)
+        eff_h = max(ys) - min(ys)
+        if floor_id:
+            try:
+                floor = store.update_floor(floor_id, slab=slab, db_path=db_path)
+            except Exception as e:
+                _raise_http(e)
+            return floor
+        # Create fresh floor
+        if not name:
+            raise HTTPException(
+                status_code=400,
+                detail="either 'floor_id' (to attach) or 'name' "
+                "(to create a new floor) must be provided",
+            )
+        try:
+            floor = store.create_floor(
+                name=name,
+                svg="",
+                width_m=max(eff_w, 0.5),
+                height_m=max(eff_h, 0.5) if h_m is None else h_m,
+                slab=slab,
+                db_path=db_path,
+            )
+        except Exception as e:
+            _raise_http(e)
         return floor
 
     return router

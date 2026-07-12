@@ -5,40 +5,46 @@ original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
 
-## 2026-02-13 — Per-floor slab shape settings (hybrid UI)
+## 2026-02-13 — Trace floor from drawing (auto slab extraction)
 
 ### Context
 
-Operator asked to define per-floor slab footprints so the 2.5D
-Building view renders exact architectural shapes (L-plans, hex
-towers) instead of flat identical rectangles.  Requirements
-gathered: metres for units, hybrid UI (inline tree row + modal
-for vertex editor).
+Operator scrapped yesterday's inline slab editor (`◇ shape` per row + polyline modal) — too much manual work.  New requirement: given the floor plan drawing that's already uploaded, derive the slab automatically.
 
 ### What shipped
 
-- **Schema** — new `floors.slab_json` column via additive
-  migration.  Accepts `null` (legacy rect), `{type:"rect"}`,
-  `{type:"polygon", cx_m, cy_m, radius_m, sides, rotation_deg}`,
-  or `{type:"polyline", vertices, rotation_deg}`.
-- **Backend** — `elc/floors/store.py` gains `_validate_slab`,
-  wired through `create_floor` / `update_floor`; `scripts/demo.py`
-  now surfaces `slab` in the tree payload.
-- **API** — `POST /floors` + `PATCH /floors/{id}` accept `slab`.
-- **Frontend inline editor** — Logical tree view shows a
-  `◇ shape` toggle per floor row that expands a mini-editor
-  (shape type, sides, radius, cx/cy, rotation).  Save calls
-  PATCH and repaints the 2.5D view.
-- **Frontend modal** — polyline vertex table with SVG preview,
-  `＋ Add vertex` / `✕` per row.  Reachable via inline
-  `✎ Edit vertices…` button.
-- **2.5D building renderer** — new isometric extrusion path
-  (`_buildIsoBuildingSvg`) kicks in when any floor has a
-  non-rect slab, painter-sorted faces + back-face culling.
-  Legacy rect-only installations keep the pixel-identical old
-  rendering.
-- **Tests** — 11 new store tests (`TestSlabShape`).  Suite now
-  477 passing (was 466).
+- **DXF slab extractor** (`elc/floors/dxf.py :: _extract_slab`):
+  Priority-1 uses any closed polyline on layers matching
+  `SLAB / OUTLINE / PERIMETER / EXTERIOR / ENVELOPE / BOUNDARY`;
+  priority-2 falls back to the largest closed LWPOLYLINE in
+  modelspace (`ROOMS` layer excluded).  Result wired through
+  `DxfConversion.slab` and stored on the floor at import time.
+- **Image slab tracer** (`image_to_slab` in the same module):
+  OpenCV headless Otsu-threshold + `findContours` + Douglas–
+  Peucker simplification → polyline in metres.  Auto-detects
+  drawing polarity from border average.
+- **New route**  `POST /floors/import-image`  (multipart PNG /
+  JPG).  Two modes: attach traced polygon to an existing floor,
+  or create a fresh floor named from the caller.
+- **Frontend Floor-details modal**: brand-new "Trace slab from
+  image" section next to the DXF importer.  Width / height (m)
+  fields let the operator scale.
+- **DXF import toast** now reports the traced-vertex count.
+- **Frontend cleanup**: dropped the inline tree slab editor +
+  polyline vertex-editor modal (~300 lines HTML/JS/CSS) and
+  their event handlers.  Tree row now only shows a small
+  read-only `polyline` / `polygon` badge when a slab is set.
+- **Deps**: `opencv-python-headless` added to `requirements.txt`.
+- **Tests**: +13 (`TestSlabExtraction` × 5, `TestImageSlabTracer`
+  × 4, plus the retained 11 store-layer slab tests).  Suite
+  now **486 passing** (was 466 at fork start).
+
+### Files touched
+
+`elc/floors/dxf.py`, `elc/floors/routes.py`,
+`elc/floors/store.py`, `elc/config/store.py`, `scripts/demo.py`,
+`demo/floor.html`, `tests/floors/test_dxf.py`,
+`tests/floors/test_store.py`, `requirements.txt`.
 
 
 ## 2026-02-12aa — SRM sidebar SCU strip: multi-SCU aware

@@ -48,6 +48,20 @@ class DxfConversion:
         {"id": "OFF-1", "name": "Office 1",
          "vertices": [[x_m, y_m], [x_m, y_m], ...]}
 
+    ``slab`` (2026-02-13) is the building footprint auto-traced from
+    the DXF.  Detection order:
+
+    1. Any closed polyline on a layer whose name matches one of
+       ``SLAB``, ``OUTLINE``, ``PERIMETER``, ``EXTERIOR``,
+       ``ENVELOPE``, ``BOUNDARY`` (case-insensitive substring).
+    2. Fallback — the largest-area closed LWPOLYLINE anywhere in
+       modelspace (typical building outline heuristic).
+
+    Returned as ``None`` when neither is available so the floor
+    keeps its default axis-aligned rectangle.  Non-None value is a
+    ``{"type": "polyline", "vertices": [[x_m, y_m], ...]}`` dict —
+    format identical to what the /floors PATCH endpoint accepts.
+
     ``windows`` are LINE / 2-vertex LWPOLYLINE entities on any layer
     whose name contains "WIN" (case-insensitive) — the AutoCAD
     convention for glazing.  2026-02-12aj: auto-extraction on
@@ -72,6 +86,7 @@ class DxfConversion:
     height_m: float
     rooms: list[dict] = None  # type: ignore[assignment]
     windows: list[dict] = None  # type: ignore[assignment]
+    slab: dict | None = None
 
     def __post_init__(self):
         if self.rooms is None:
@@ -175,8 +190,17 @@ def dxf_to_svg(dxf_bytes: bytes) -> DxfConversion:
         drawing_height_m=height_m,
     )
 
+    # ---- Extract slab footprint polygon (2026-02-13) ----------------
+    # See ``DxfConversion.slab`` docstring for detection order.
+    slab = _extract_slab(
+        msp, unit_m=unit_m,
+        origin_x=float(bbox.extmin.x),
+        origin_y=float(bbox.extmin.y),
+        drawing_height_m=height_m,
+    )
+
     return DxfConversion(svg=svg, width_m=width_m, height_m=height_m,
-                         rooms=rooms, windows=windows)
+                         rooms=rooms, windows=windows, slab=slab)
 
 
 def _extract_windows(msp, *, unit_m: float, origin_x: float, origin_y: float,
@@ -356,7 +380,181 @@ def _extract_rooms(msp, *, unit_m: float, origin_x: float, origin_y: float,
     return out
 
 
-# ezdxf 1.4's SVGBackend hard-codes a dark background rect and a
+# -----------------------------------------------------------------------------
+# 2026-02-13 · Slab footprint auto-extraction
+# -----------------------------------------------------------------------------
+_SLAB_LAYER_KEYWORDS = (
+    "SLAB", "OUTLINE", "PERIMETER", "EXTERIOR", "ENVELOPE", "BOUNDARY",
+)
+
+
+def _polygon_area_m2(verts: list[list[float]]) -> float:
+    """Signed shoelace area (absolute) of a metric polygon."""
+    n = len(verts)
+    if n < 3:
+        return 0.0
+    a = 0.0
+    for i in range(n):
+        x1, y1 = verts[i]
+        x2, y2 = verts[(i + 1) % n]
+        a += x1 * y2 - x2 * y1
+    return abs(a) * 0.5
+
+
+def _pl_to_metres(pl, *, unit_m: float, origin_x: float, origin_y: float,
+                  drawing_height_m: float) -> list[list[float]]:
+    """LWPOLYLINE → list of [x_m, y_m] in the top-left origin frame."""
+    verts: list[list[float]] = []
+    for (x, y) in pl.get_points("xy"):
+        vx = (float(x) - origin_x) * unit_m
+        vy = drawing_height_m - (float(y) - origin_y) * unit_m
+        verts.append([vx, vy])
+    return verts
+
+
+def _extract_slab(msp, *, unit_m: float, origin_x: float, origin_y: float,
+                  drawing_height_m: float) -> dict | None:
+    """Auto-detect the building slab footprint.
+
+    Returns a ``{"type": "polyline", "vertices": [[x_m, y_m], ...]}``
+    dict, or ``None`` if no plausible outline can be found.  Detection
+    order matches the ``DxfConversion.slab`` docstring — layered
+    naming first, then largest-polygon fallback.
+    """
+    # ---- Priority 1: layer-name match -------------------------------
+    for pl in msp.query("LWPOLYLINE"):
+        if not getattr(pl, "closed", False):
+            continue
+        lyr = str(getattr(pl.dxf, "layer", "") or "").upper()
+        if any(kw in lyr for kw in _SLAB_LAYER_KEYWORDS):
+            verts = _pl_to_metres(
+                pl, unit_m=unit_m, origin_x=origin_x, origin_y=origin_y,
+                drawing_height_m=drawing_height_m,
+            )
+            if len(verts) >= 3:
+                return {"type": "polyline", "vertices": verts,
+                        "rotation_deg": 0.0}
+
+    # ---- Priority 2: largest closed polyline anywhere ---------------
+    # We *skip* the ROOMS layer here — those are individual rooms not
+    # the building perimeter.  Anything else is fair game.
+    best: tuple[float, list[list[float]]] | None = None
+    for pl in msp.query("LWPOLYLINE"):
+        if not getattr(pl, "closed", False):
+            continue
+        lyr = str(getattr(pl.dxf, "layer", "") or "")
+        if lyr == "ROOMS":
+            continue
+        verts = _pl_to_metres(
+            pl, unit_m=unit_m, origin_x=origin_x, origin_y=origin_y,
+            drawing_height_m=drawing_height_m,
+        )
+        if len(verts) < 3:
+            continue
+        area = _polygon_area_m2(verts)
+        if best is None or area > best[0]:
+            best = (area, verts)
+    if best is not None:
+        return {"type": "polyline", "vertices": best[1],
+                "rotation_deg": 0.0}
+    return None
+
+
+# -----------------------------------------------------------------------------
+# 2026-02-13 · Image → slab footprint tracer  (PNG / JPG uploads)
+# -----------------------------------------------------------------------------
+def image_to_slab(
+    img_bytes: bytes,
+    *,
+    physical_width_m: float | None = None,
+    physical_height_m: float | None = None,
+    epsilon_ratio: float = 0.005,
+    invert: bool | None = None,
+) -> dict:
+    """Trace the outer contour of a floor-plan raster image.
+
+    * ``img_bytes`` — PNG / JPG bytes.
+    * ``physical_width_m`` / ``physical_height_m`` — real-world size
+      of the drawing.  If both provided the polygon is scaled to
+      metres.  If only ``physical_width_m`` is given the aspect ratio
+      of the image is used to derive height.  If neither, coordinates
+      are returned in pixels (rare but supported for callers that
+      know how to scale later).
+    * ``epsilon_ratio`` — Douglas–Peucker simplification factor (as
+      a fraction of the contour perimeter).  ``0.005`` collapses
+      ~99 % of noise while preserving corners.
+    * ``invert`` — force dark-on-light (``False``) or light-on-dark
+      (``True``).  ``None`` = auto-detect based on the border average.
+
+    Returns a slab dict compatible with the ``/floors`` schema::
+
+        {"type": "polyline", "vertices": [[x_m, y_m], ...],
+         "rotation_deg": 0.0}
+
+    Raises ``DxfImportError`` (reused for a single upload error class)
+    on unparseable images or if no plausible contour can be found.
+    """
+    import numpy as np
+    try:
+        import cv2  # opencv-python-headless
+    except ImportError as e:
+        raise DxfImportError(
+            "OpenCV not installed on the server (pip install "
+            "opencv-python-headless) — cannot trace floor from image.",
+        ) from e
+    if not img_bytes:
+        raise DxfImportError("empty image upload")
+    arr = np.frombuffer(img_bytes, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise DxfImportError("could not decode image (not a PNG / JPG?)")
+    h_px, w_px = img.shape[:2]
+    # Threshold — Otsu picks the split point automatically.
+    # Auto-detect polarity: borders should be background.
+    border = np.concatenate([img[0, :], img[-1, :], img[:, 0], img[:, -1]])
+    border_mean = float(border.mean())
+    _thresh, binm = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if invert is True or (invert is None and border_mean < 128):
+        # Dark border → outline is the light region.
+        pass
+    else:
+        binm = 255 - binm
+    # Morphological close to bridge single-pixel gaps in drawn walls.
+    k = max(3, min(9, int(min(h_px, w_px) * 0.005)))
+    if k % 2 == 0:
+        k += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
+    binm = cv2.morphologyEx(binm, cv2.MORPH_CLOSE, kernel)
+    contours, _ = cv2.findContours(
+        binm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE,
+    )
+    if not contours:
+        raise DxfImportError("no outline found in image")
+    # Pick the largest contour by area (the building envelope).
+    contour = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(contour) < (w_px * h_px * 0.02):
+        raise DxfImportError(
+            "largest outline is < 2 % of the image — is this actually "
+            "a floor plan?  Try a cleaner black-on-white drawing.")
+    peri = cv2.arcLength(contour, closed=True)
+    approx = cv2.approxPolyDP(contour, epsilon_ratio * peri, closed=True)
+    pts_px = [[float(pt[0][0]), float(pt[0][1])] for pt in approx]
+    if len(pts_px) < 3:
+        raise DxfImportError("simplified contour has < 3 vertices")
+    # Scale to metres if the caller supplied a physical dimension.
+    if physical_width_m and physical_height_m:
+        sx = physical_width_m / w_px
+        sy = physical_height_m / h_px
+    elif physical_width_m:
+        sx = physical_width_m / w_px
+        sy = sx
+    else:
+        sx = sy = 1.0
+    verts = [[x * sx, y * sy] for (x, y) in pts_px]
+    return {"type": "polyline", "vertices": verts, "rotation_deg": 0.0}
+
+
+
 # ``stroke-width: 6`` (relative to a ~1e6-unit viewBox) which, when
 # drawn on our operator canvas at typical zoom levels, is sub-pixel
 # thin and thus effectively invisible.  We post-process the SVG:
@@ -377,4 +575,4 @@ def _theme_svg_for_dark_canvas(svg: str) -> str:
     return svg
 
 
-__all__ = ["DxfConversion", "DxfImportError", "dxf_to_svg"]
+__all__ = ["DxfConversion", "DxfImportError", "dxf_to_svg", "image_to_slab"]

@@ -675,6 +675,7 @@ async def main() -> None:
                 "width_m": f.get("width_m"),
                 "height_m": f.get("height_m"),
                 "fixture_count": len(fixtures),
+                "slab": f.get("slab"),
             }
             floors_out.append(summary)
             for fx in fixtures:

@@ -507,3 +507,120 @@ class TestWindowName:
         # Whitespace trimmed on both sides.
         assert not got["windows"][0]["name"].startswith(" ")
         assert not got["windows"][0]["name"].endswith(" ")
+
+
+
+class TestSlabShape:
+    """Phase 2026-02-13 — per-floor slab shape config."""
+
+    def test_default_is_none(self, db_path):
+        f = floors.create_floor("F1", db_path=db_path)
+        assert f["slab"] is None
+
+    def test_rect_slab_roundtrip(self, db_path):
+        f = floors.create_floor(
+            "F1", slab={"type": "rect"}, db_path=db_path,
+        )
+        assert f["slab"] == {"type": "rect"}
+
+    def test_polygon_slab_roundtrip(self, db_path):
+        slab = {
+            "type": "polygon",
+            "cx_m": 10.0,
+            "cy_m": 7.5,
+            "radius_m": 5.0,
+            "sides": 6,
+            "rotation_deg": 30.0,
+        }
+        f = floors.create_floor("F1", slab=slab, db_path=db_path)
+        got = f["slab"]
+        assert got["type"] == "polygon"
+        assert got["cx_m"] == 10.0
+        assert got["cy_m"] == 7.5
+        assert got["radius_m"] == 5.0
+        assert got["sides"] == 6
+        assert got["rotation_deg"] == 30.0
+
+    def test_polygon_bad_sides_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "F1",
+                slab={"type": "polygon", "radius_m": 5, "sides": 2},
+                db_path=db_path,
+            )
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "F2",
+                slab={"type": "polygon", "radius_m": 5, "sides": 30},
+                db_path=db_path,
+            )
+
+    def test_polygon_negative_radius_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "F1",
+                slab={"type": "polygon", "radius_m": -1, "sides": 6},
+                db_path=db_path,
+            )
+
+    def test_polyline_slab_roundtrip(self, db_path):
+        slab = {
+            "type": "polyline",
+            "vertices": [[0, 0], [10, 0], [10, 8], [5, 8], [5, 4], [0, 4]],
+            "rotation_deg": 0.0,
+        }
+        f = floors.create_floor("F1", slab=slab, db_path=db_path)
+        got = f["slab"]
+        assert got["type"] == "polyline"
+        assert got["vertices"] == [
+            [0.0, 0.0], [10.0, 0.0], [10.0, 8.0],
+            [5.0, 8.0], [5.0, 4.0], [0.0, 4.0],
+        ]
+
+    def test_polyline_too_few_vertices_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "F1",
+                slab={"type": "polyline", "vertices": [[0, 0], [1, 1]]},
+                db_path=db_path,
+            )
+
+    def test_bad_type_rejected(self, db_path):
+        with pytest.raises(BadInput):
+            floors.create_floor(
+                "F1", slab={"type": "hexagon"}, db_path=db_path,
+            )
+
+    def test_update_slab(self, db_path):
+        f = floors.create_floor("F1", db_path=db_path)
+        assert f["slab"] is None
+        floors.update_floor(
+            f["id"],
+            slab={"type": "polygon", "radius_m": 4.0, "sides": 8},
+            db_path=db_path,
+        )
+        got = floors.get_floor(f["id"], db_path=db_path)
+        assert got["slab"]["type"] == "polygon"
+        assert got["slab"]["sides"] == 8
+
+    def test_reset_slab_to_rect(self, db_path):
+        f = floors.create_floor(
+            "F1",
+            slab={"type": "polygon", "radius_m": 4.0, "sides": 6},
+            db_path=db_path,
+        )
+        floors.update_floor(f["id"], slab={"type": "rect"}, db_path=db_path)
+        got = floors.get_floor(f["id"], db_path=db_path)
+        assert got["slab"] == {"type": "rect"}
+
+    def test_slab_omitted_leaves_previous(self, db_path):
+        f = floors.create_floor(
+            "F1",
+            slab={"type": "polygon", "radius_m": 4.0, "sides": 6},
+            db_path=db_path,
+        )
+        # Update something unrelated -- slab must survive.
+        floors.update_floor(f["id"], width_m=25.0, db_path=db_path)
+        got = floors.get_floor(f["id"], db_path=db_path)
+        assert got["width_m"] == 25.0
+        assert got["slab"]["type"] == "polygon"

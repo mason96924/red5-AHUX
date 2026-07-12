@@ -708,6 +708,87 @@
   #tree-ctx-menu .divider { height: 1px; margin: 4px 0; background: var(--line); }
 
   #btn-tree.on { border-color: var(--accent); color: var(--accent-2); }
+
+  /* ---- Slab shape inline editor (Logical tree, Floors branch) ---- */
+  .slab-edit-row {
+    padding: 6px 10px 8px 32px;
+    display: none;                  /* toggled by tree-slab-toggle btn */
+    flex-wrap: wrap; gap: 6px 8px; align-items: center;
+    background: rgba(56,189,248,0.05);
+    border-left: 2px solid rgba(56,189,248,0.35);
+    font-size: 11px;
+  }
+  li[data-slab-open="1"] > .slab-edit-row { display: flex; }
+  .slab-edit-row label {
+    color: var(--muted); font-size: 10.5px;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .slab-edit-row select, .slab-edit-row input[type="number"] {
+    background: #0c1015; border: 1px solid var(--line);
+    color: var(--text); padding: 2px 4px; border-radius: 3px;
+    font-family: var(--mono); font-size: 11px;
+    width: 68px;
+  }
+  .slab-edit-row select { width: auto; }
+  .slab-edit-row .slab-inline-vertices {
+    background: rgba(56,189,248,0.10); border: 1px solid rgba(56,189,248,0.4);
+    color: #7dd3fc; padding: 2px 8px; border-radius: 3px;
+    cursor: pointer; font-family: var(--mono); font-size: 10.5px;
+  }
+  .slab-edit-row .slab-inline-save {
+    background: rgba(78,203,113,0.15); border: 1px solid rgba(78,203,113,0.4);
+    color: var(--ok); padding: 2px 10px; border-radius: 3px;
+    cursor: pointer; font-family: var(--mono); font-size: 10.5px;
+    margin-left: auto;
+  }
+  .slab-edit-row .slab-inline-save:disabled {
+    opacity: 0.4; cursor: not-allowed;
+  }
+  .tree-slab-toggle {
+    background: none; border: 1px solid var(--line);
+    color: var(--muted); padding: 0 4px; margin-left: 4px;
+    border-radius: 3px; cursor: pointer; font-size: 10px; line-height: 1.3;
+    font-family: var(--mono);
+  }
+  .tree-slab-toggle:hover { color: #7dd3fc; border-color: rgba(56,189,248,0.5); }
+  li[data-slab-open="1"] > .tree-node .tree-slab-toggle {
+    color: #7dd3fc; border-color: rgba(56,189,248,0.5);
+    background: rgba(56,189,248,0.10);
+  }
+
+  /* ---- Slab modal contents (polyline vertex table) ---- */
+  #slab-mm-body h4 {
+    margin: 8px 0 6px; font-size: 10.5px;
+    color: var(--muted); text-transform: uppercase; letter-spacing: .1em;
+  }
+  #slab-mm-body table.vtx-table {
+    width: 100%; border-collapse: collapse; margin: 4px 0 8px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  #slab-mm-body table.vtx-table th,
+  #slab-mm-body table.vtx-table td {
+    padding: 3px 5px; border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+  #slab-mm-body table.vtx-table th { color: var(--muted); font-weight: 500; }
+  #slab-mm-body table.vtx-table input {
+    width: 84px; background: #0c1015; border: 1px solid var(--line);
+    color: var(--text); padding: 2px 4px; border-radius: 3px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  #slab-mm-body .vtx-del {
+    background: none; border: 0; color: var(--bad);
+    cursor: pointer; font-size: 12px;
+  }
+  #slab-mm-body .slab-modal-actions {
+    display: flex; justify-content: space-between; gap: 8px;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  #slab-mm-body .slab-preview {
+    width: 100%; height: 160px; background: #0a0d12;
+    border: 1px solid var(--line); border-radius: 4px; margin: 6px 0;
+  }
 </style>
 </head>
 <body>
@@ -1271,7 +1352,30 @@
   </div>
 </div>
 
-<!-- ============ WINDOWS · BLINDS FLOATING PANEL ============ -->
+<!-- ============ SLAB SHAPE MODAL (per-floor footprint) ============ -->
+<!-- Opens when the operator clicks "✎ Edit vertices" on a Polyline
+     slab row in the tree, or "Edit slab…" from the floor kebab menu.
+     Lightweight: pick shape type, edit vertex table for polyline, save
+     back via PATCH /floors/{id}. -->
+<div class="mm-backdrop" id="slab-modal" data-testid="slab-modal">
+  <div class="mm-panel" role="dialog" aria-modal="true"
+       aria-labelledby="slab-title" style="width: min(560px, 94vw)">
+    <div class="mm-hdr">
+      <div class="mm-title" id="slab-title" data-testid="slab-title">
+        Slab shape
+      </div>
+      <button class="mm-close" id="slab-close"
+              data-testid="slab-close" title="Close">×</button>
+    </div>
+    <div class="mm-body" style="padding: 14px 16px">
+      <div id="slab-mm-body" data-testid="slab-mm-body">
+        <div class="empty">Select a floor first.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- Draggable mini-panel (like the time-scrub widget) that lists every
      window on the current floor with an inline range slider so the
      operator can adjust blind_level without hunting the tiny window bar
@@ -1588,7 +1692,188 @@ function _floorSortKey(f) {
   return m ? parseInt(m[0], 10) : 0;
 }
 
-// Dynamic isometric building SVG.  One <g class="slab"> per floor,
+// ---- 2026-02-13 · Isometric extrusion renderer for custom slab shapes -----
+// Used when at least one floor has slab.type !== 'rect'.  Each floor
+// becomes a prism: bottom face + N quad side faces + top face.  The
+// polygon is derived per-floor from f.slab; rect fallbacks use the
+// axis-aligned (width_m × height_m) rectangle.  Iso projection uses
+// 30° axonometric axes (X → right-down, Y → left-down, Z → up).
+function _slabPolygonMeters(f) {
+  const s = f && f.slab ? f.slab : { type: 'rect' };
+  const w = Number(f.width_m) || 20, h = Number(f.height_m) || 15;
+  if (s.type === 'polygon') {
+    const cx = Number.isFinite(s.cx_m) ? s.cx_m : w / 2;
+    const cy = Number.isFinite(s.cy_m) ? s.cy_m : h / 2;
+    const r  = Number.isFinite(s.radius_m) ? s.radius_m : Math.min(w, h) / 2;
+    const n  = Math.max(3, Math.min(24, Number.isFinite(s.sides) ? s.sides : 6));
+    const rot = ((Number(s.rotation_deg) || 0) * Math.PI) / 180;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = rot + (i * 2 * Math.PI) / n - Math.PI / 2;   // start north
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return pts;
+  }
+  if (s.type === 'polyline' && Array.isArray(s.vertices) && s.vertices.length >= 3) {
+    const rot = ((Number(s.rotation_deg) || 0) * Math.PI) / 180;
+    if (!rot) return s.vertices.map(v => [v[0], v[1]]);
+    // Rotate about polygon centroid.
+    const cx = s.vertices.reduce((a, v) => a + v[0], 0) / s.vertices.length;
+    const cy = s.vertices.reduce((a, v) => a + v[1], 0) / s.vertices.length;
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    return s.vertices.map(v => [
+      cx + (v[0] - cx) * c - (v[1] - cy) * sn,
+      cy + (v[0] - cx) * sn + (v[1] - cy) * c,
+    ]);
+  }
+  return [[0, 0], [w, 0], [w, h], [0, h]];        // rect
+}
+
+function _buildIsoBuildingSvg(sorted, selId) {
+  const N = sorted.length;
+  const polys = sorted.map(_slabPolygonMeters);
+  // Uniform slab thickness in "meters" (arbitrary — only aspect matters).
+  const slabH_m = 3.0;   // matches default ceiling height
+  const cos30 = Math.cos(Math.PI / 6), sin30 = Math.sin(Math.PI / 6);
+  // Fit everything to a 220 × 320 viewBox with generous padding.
+  // 1) Determine iso extents over ALL floors + ALL Z levels.
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < N; i++) {
+    const zBot = i * slabH_m, zTop = (i + 1) * slabH_m;
+    for (const v of polys[i]) {
+      for (const z of [zBot, zTop]) {
+        const ix = (v[0] - v[1]) * cos30;
+        const iy = (v[0] + v[1]) * sin30 - z;
+        if (ix < minX) minX = ix;
+        if (ix > maxX) maxX = ix;
+        if (iy < minY) minY = iy;
+        if (iy > maxY) maxY = iy;
+      }
+    }
+  }
+  const vw = 220, vh = 320, pad = 24;
+  const spanX = maxX - minX || 1, spanY = maxY - minY || 1;
+  const scale = Math.min((vw - 2*pad) / spanX, (vh - 2*pad) / spanY);
+  const ox = pad - minX * scale + ((vw - 2*pad) - spanX * scale) / 2;
+  const oy = pad - minY * scale + ((vh - 2*pad) - spanY * scale) / 2;
+  const project = (x, y, z) => ({
+    sx: ox + (x - y) * cos30 * scale,
+    sy: oy + ((x + y) * sin30 - z) * scale,
+  });
+  // Depth key: for correct z-order, sort each face by centroid depth
+  // (nearer to viewer = drawn later).  For an axonometric camera along
+  // (1, 1, 1), depth ≈ -(x + y + z) (larger x+y+z → farther back).
+  const defs = `
+    <defs>
+      <linearGradient id="isoTop" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0" stop-color="#3a4658"/>
+        <stop offset="1" stop-color="#243040"/>
+      </linearGradient>
+      <linearGradient id="isoSideR" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#2b3644"/>
+        <stop offset="1" stop-color="#1a2129"/>
+      </linearGradient>
+      <linearGradient id="isoSideL" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#1a2129"/>
+        <stop offset="1" stop-color="#0e131a"/>
+      </linearGradient>
+      <linearGradient id="isoSelTop" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0" stop-color="#c084fc" stop-opacity="0.9"/>
+        <stop offset="1" stop-color="#7c3aed" stop-opacity="0.9"/>
+      </linearGradient>
+      <linearGradient id="isoSelSide" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#7c3aed" stop-opacity="0.9"/>
+        <stop offset="1" stop-color="#4c1d95" stop-opacity="0.9"/>
+      </linearGradient>
+    </defs>`;
+  // Build the faces list: {depth, svg} then sort by depth descending
+  // (deepest first, drawn first = painters).
+  const faces = [];
+  for (let i = 0; i < N; i++) {
+    const f = sorted[i];
+    const isSel = f && f.id === selId;
+    const zBot = i * slabH_m, zTop = (i + 1) * slabH_m;
+    const poly = polys[i];
+    const topFill  = isSel ? 'url(#isoSelTop)'  : 'url(#isoTop)';
+    const sideFillR = isSel ? 'url(#isoSelSide)' : 'url(#isoSideR)';
+    const sideFillL = isSel ? 'url(#isoSelSide)' : 'url(#isoSideL)';
+    const stroke  = isSel ? '#c084fc' : '#3a4658';
+    const strokeW = isSel ? 1.4 : 0.6;
+    // Side quads — one per polygon edge.  Cull back-faces (edges whose
+    // outward normal points away from viewer).  Camera direction in XY
+    // plane for iso is roughly (+1, +1); a face is visible iff its
+    // outward normal has (nx + ny) > 0.
+    // Compute polygon signed area to normalise vertex order (CCW).
+    let area2 = 0;
+    for (let j = 0; j < poly.length; j++) {
+      const [x1, y1] = poly[j];
+      const [x2, y2] = poly[(j + 1) % poly.length];
+      area2 += (x1 * y2 - x2 * y1);
+    }
+    const ccw = area2 > 0;
+    const ring = ccw ? poly : poly.slice().reverse();
+    for (let j = 0; j < ring.length; j++) {
+      const [x1, y1] = ring[j];
+      const [x2, y2] = ring[(j + 1) % ring.length];
+      // Outward normal for CCW ring: (dy, -dx) points to the left of edge.
+      // In screen space "toward viewer" ≈ (+x + +y), so face is visible
+      // when (nx + ny) < 0 (normal points AWAY from origin/backwards).
+      // Actually: for CCW polygon, outward normal is (dy, -dx).
+      const nx = (y2 - y1), ny = -(x2 - x1);
+      const visible = (nx + ny) > 0;
+      if (!visible) continue;
+      const p1 = project(x1, y1, zBot);
+      const p2 = project(x2, y2, zBot);
+      const p3 = project(x2, y2, zTop);
+      const p4 = project(x1, y1, zTop);
+      // Pick side gradient based on edge orientation (rightward vs leftward).
+      const useR = (x2 - x1) >= 0;
+      const fill = useR ? sideFillR : sideFillL;
+      const depth = -((x1 + x2) / 2 + (y1 + y2) / 2 + zBot);
+      faces.push({
+        depth,
+        svg: `<path class="slab-side" d="M${p1.sx},${p1.sy} L${p2.sx},${p2.sy}
+                          L${p3.sx},${p3.sy} L${p4.sx},${p4.sy} Z"
+                          fill="${fill}" stroke="${stroke}"
+                          stroke-width="${strokeW}"/>`,
+      });
+    }
+    // Top face — always visible (camera looks down).
+    const topPts = ring.map(v => {
+      const p = project(v[0], v[1], zTop);
+      return `${p.sx},${p.sy}`;
+    }).join(' ');
+    // Label position: centroid of top polygon.
+    const cx = ring.reduce((a, v) => a + v[0], 0) / ring.length;
+    const cy = ring.reduce((a, v) => a + v[1], 0) / ring.length;
+    const lbl = project(cx, cy, zTop);
+    const strand = (f.strand_label || '').toUpperCase();
+    const disp = strand && strand !== (f.name || '').toUpperCase()
+      ? `${strand} · ${f.name || ''}` : (strand || f.name || '');
+    const topDepth = -((cx + cy) + zTop);
+    faces.push({
+      depth: topDepth - 0.001,   // top face draws just above its centroid depth
+      svg: `<g class="slab${isSel ? ' selected' : ''}"
+              data-floor-id="${f ? f.id : ''}"
+              data-testid="floor-slab-${f ? escapeHtml(f.name || f.id) : 'placeholder'}">
+              <polygon class="slab-front" points="${topPts}"
+                       fill="${topFill}" stroke="${stroke}"
+                       stroke-width="${strokeW}"/>
+              <text class="slab-label" x="${lbl.sx}" y="${lbl.sy + 3}"
+                    text-anchor="middle">${escapeHtml(disp)}</text>
+            </g>`,
+    });
+  }
+  faces.sort((a, b) => b.depth - a.depth);
+  return `
+    <svg viewBox="0 0 ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg"
+         preserveAspectRatio="xMidYMid meet">
+      ${defs}
+      ${faces.map(f => f.svg).join('')}
+    </svg>`;
+}
+
+
 // stacked bottom-up (ground floor sits at physical bottom).  Layout
 // coordinates are chosen so the total viewBox height (320 units)
 // maps roughly 1:1 to whatever container height we're given -- the
@@ -1599,6 +1884,13 @@ function _buildDynamicBuildingSvg(floors) {
   const sorted = [...floors].sort(
     (a, b) => _floorSortKey(a) - _floorSortKey(b)
   );
+  // 2026-02-13 — if any floor has a non-rect slab, switch to the
+  // isometric-extrusion renderer so architectural shapes render
+  // properly.  Otherwise fall through to the legacy rect renderer
+  // so the visual for existing installs stays pixel-identical.
+  const hasCustomSlab = sorted.some(f =>
+    f && f.slab && f.slab.type && f.slab.type !== 'rect');
+  if (hasCustomSlab) return _buildIsoBuildingSvg(sorted, selId);
   const N = Math.max(sorted.length, 1);
   // Geometry constants (viewBox units).
   const wallLeft = 40, wallRight = 180;
@@ -7527,6 +7819,17 @@ function _renderTreeLogical() {
       html.push(`<span class="meta">${f.width_m}×${f.height_m} m</span>`);
     }
     html.push(`<span class="tree-badge tb-count">${f.fixture_count} fixtures</span>`);
+    // 2026-02-13 — inline slab-shape toggle.  Reveals the .slab-edit-row
+    // below (populated once, on first expand) so the operator can pick
+    // between rect / regular polygon / polyline directly in the tree.
+    const slabType = (f.slab && f.slab.type) || 'rect';
+    const slabBadge = slabType === 'rect' ? '' : `<span class="tree-badge tb-floor">${_treeEscape(slabType)}</span>`;
+    html.push(slabBadge);
+    html.push(
+      `<button class="tree-slab-toggle" data-floor-id="${_treeEscape(f.id)}"` +
+      ` data-testid="tree-slab-toggle-${_treeEscape(f.id)}"` +
+      ` title="Edit slab footprint shape">◇ shape</button>`,
+    );
     // 2026-02-12as — inline delete button per floor.
     html.push(
       `<button class="tree-del-floor" data-floor-id="${_treeEscape(f.id)}"` +
@@ -7535,7 +7838,10 @@ function _renderTreeLogical() {
       ` style="margin-left:6px;background:none;border:0;color:var(--bad);` +
              `cursor:pointer;padding:0 4px;font-size:12px;line-height:1">✕</button>`,
     );
-    html.push(`</span></li>`);
+    html.push(`</span>`);
+    // Inline slab editor row (hidden by default; li[data-slab-open="1"] shows).
+    html.push(window._renderSlabInlineRow ? window._renderSlabInlineRow(f) : '');
+    html.push(`</li>`);
   }
   html.push('</ul></li>');
 
@@ -7940,6 +8246,17 @@ async function _treeCtxAction(act) {
   // Delegate: click on caret toggles collapse; click on node selects.
   const strip = document.getElementById('tree-strip');
   strip.addEventListener('click', (ev) => {
+    // 2026-02-13 — inline slab-shape toggle: expand/collapse the row.
+    const slabBtn = ev.target.closest('button.tree-slab-toggle');
+    if (slabBtn) {
+      ev.stopPropagation();
+      const li = slabBtn.closest('li');
+      if (li) {
+        const open = li.getAttribute('data-slab-open') === '1';
+        li.setAttribute('data-slab-open', open ? '0' : '1');
+      }
+      return;
+    }
     // 2026-02-12as — inline delete-floor button.  Stop propagation so
     // the click doesn't also select/expand the row.
     const delBtn = ev.target.closest('button.tree-del-floor');
@@ -8013,6 +8330,314 @@ async function _treeCtxAction(act) {
     }
   }
   window._deleteFloorFromTree = _deleteFloorFromTree;
+
+  // ---- 2026-02-13 · Per-floor slab shape editor -----------------------
+  // Inline (Tree View) mini-editor for slab.type = rect | polygon.
+  // For polyline, a "✎ Edit vertices" button opens the modal below.
+  function _renderSlabInlineRow(f) {
+    const s = f.slab || { type: 'rect' };
+    const t = s.type || 'rect';
+    const fid = _treeEscape(f.id);
+    const opt = (v, lbl) => `<option value="${v}"${v===t?' selected':''}>${lbl}</option>`;
+    const parts = [
+      `<div class="slab-edit-row" data-slab-edit-for="${fid}"`,
+      `     data-testid="slab-edit-row-${fid}">`,
+      `  <label>Shape`,
+      `    <select data-slab-field="type" data-testid="slab-type-${fid}">`,
+      `      ${opt('rect','Rectangle (default)')}`,
+      `      ${opt('polygon','Regular polygon')}`,
+      `      ${opt('polyline','Polyline (custom)')}`,
+      `    </select>`,
+      `  </label>`,
+    ];
+    if (t === 'polygon') {
+      const cx = Number.isFinite(s.cx_m) ? s.cx_m : (f.width_m / 2 || 10);
+      const cy = Number.isFinite(s.cy_m) ? s.cy_m : (f.height_m / 2 || 7.5);
+      const r  = Number.isFinite(s.radius_m) ? s.radius_m : 5;
+      const n  = Number.isFinite(s.sides) ? s.sides : 6;
+      const rot = Number.isFinite(s.rotation_deg) ? s.rotation_deg : 0;
+      parts.push(
+        `<label>Sides <input type="number" min="3" max="24" step="1"`,
+        ` value="${n}" data-slab-field="sides" data-testid="slab-sides-${fid}"></label>`,
+        `<label>R (m) <input type="number" min="0.1" step="0.1"`,
+        ` value="${r}" data-slab-field="radius_m" data-testid="slab-radius-${fid}"></label>`,
+        `<label>Cx (m) <input type="number" step="0.1"`,
+        ` value="${cx}" data-slab-field="cx_m"></label>`,
+        `<label>Cy (m) <input type="number" step="0.1"`,
+        ` value="${cy}" data-slab-field="cy_m"></label>`,
+        `<label>Rot° <input type="number" step="1"`,
+        ` value="${rot}" data-slab-field="rotation_deg"></label>`,
+      );
+    } else if (t === 'polyline') {
+      const nVerts = (s.vertices && s.vertices.length) || 0;
+      const rot = Number.isFinite(s.rotation_deg) ? s.rotation_deg : 0;
+      parts.push(
+        `<span class="meta">${nVerts} vertex points</span>`,
+        `<label>Rot° <input type="number" step="1"`,
+        ` value="${rot}" data-slab-field="rotation_deg"></label>`,
+        `<button class="slab-inline-vertices" data-slab-open-modal="${fid}"`,
+        ` data-testid="slab-edit-vertices-${fid}">✎ Edit vertices…</button>`,
+      );
+    } else {
+      parts.push(
+        `<span class="meta">Axis-aligned rectangle from floor size.</span>`,
+      );
+    }
+    parts.push(
+      `  <button class="slab-inline-save" data-slab-save="${fid}"`,
+      `          data-testid="slab-save-${fid}">Save</button>`,
+      `</div>`,
+    );
+    return parts.join('\n');
+  }
+  window._renderSlabInlineRow = _renderSlabInlineRow;
+
+  // Read current inline form state → payload for PATCH /floors/{id}.
+  function _collectInlineSlab(row) {
+    const type = row.querySelector('[data-slab-field="type"]').value;
+    if (type === 'rect') return { type: 'rect' };
+    if (type === 'polygon') {
+      return {
+        type: 'polygon',
+        sides:        parseInt(row.querySelector('[data-slab-field="sides"]').value, 10),
+        radius_m:     parseFloat(row.querySelector('[data-slab-field="radius_m"]').value),
+        cx_m:         parseFloat(row.querySelector('[data-slab-field="cx_m"]').value),
+        cy_m:         parseFloat(row.querySelector('[data-slab-field="cy_m"]').value),
+        rotation_deg: parseFloat(row.querySelector('[data-slab-field="rotation_deg"]').value),
+      };
+    }
+    // polyline: keep existing vertices (edited via modal); update rotation only.
+    const treeF = (_tree.data?.floors || []).find(x => x.id === row.dataset.slabEditFor);
+    const prev = (treeF && treeF.slab && treeF.slab.type === 'polyline') ? treeF.slab : null;
+    return {
+      type: 'polyline',
+      vertices: prev?.vertices || [[0,0],[10,0],[10,8],[0,8]],
+      rotation_deg: parseFloat(row.querySelector('[data-slab-field="rotation_deg"]').value) || 0,
+    };
+  }
+
+  async function _saveSlabFromInline(fid, row) {
+    const slab = _collectInlineSlab(row);
+    try {
+      await api('PATCH', `/floors/${fid}`, { slab });
+      // Local tree cache stays fresh so the badge / row show new state.
+      const tf = (_tree.data?.floors || []).find(x => x.id === fid);
+      if (tf) tf.slab = slab;
+      _rerenderTree();
+      // Re-expand this floor's slab editor after re-render.
+      const li = document.querySelector(`#tree-strip li[data-kind="floor"][data-id="${fid}"]`);
+      if (li) li.setAttribute('data-slab-open', '1');
+      // 2.5D building — repaint immediately with new shape.
+      if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
+      toast('Slab shape saved');
+    } catch (e) {
+      toast(e.message || String(e), true);
+    }
+  }
+
+  // React to type-select change so the inline row re-renders with the
+  // correct field set (sides/radius vs vertex-count).
+  document.addEventListener('change', (ev) => {
+    const sel = ev.target.closest('[data-slab-field="type"]');
+    if (!sel) return;
+    const row = sel.closest('.slab-edit-row');
+    if (!row) return;
+    const fid = row.dataset.slabEditFor;
+    const treeF = (_tree.data?.floors || []).find(x => x.id === fid);
+    if (!treeF) return;
+    // Preserve any user edits in the current row when switching type
+    // by staging a synthetic slab object of the newly picked type.
+    const nextType = sel.value;
+    const staged = { type: nextType };
+    if (nextType === 'polygon') {
+      Object.assign(staged, {
+        cx_m: treeF.slab?.cx_m ?? (treeF.width_m/2 || 10),
+        cy_m: treeF.slab?.cy_m ?? (treeF.height_m/2 || 7.5),
+        radius_m: treeF.slab?.radius_m ?? 5,
+        sides: treeF.slab?.sides ?? 6,
+        rotation_deg: treeF.slab?.rotation_deg ?? 0,
+      });
+    } else if (nextType === 'polyline') {
+      staged.vertices = treeF.slab?.vertices || [[0,0],[10,0],[10,8],[0,8]];
+      staged.rotation_deg = treeF.slab?.rotation_deg ?? 0;
+    }
+    row.outerHTML = _renderSlabInlineRow({ ...treeF, slab: staged });
+    // Restore expanded state (outerHTML replaces the node).
+    const li = document.querySelector(`#tree-strip li[data-kind="floor"][data-id="${fid}"]`);
+    if (li) li.setAttribute('data-slab-open', '1');
+  });
+
+  // Save + open-vertices-modal click delegation (inline row).
+  document.addEventListener('click', (ev) => {
+    const saveBtn = ev.target.closest('[data-slab-save]');
+    if (saveBtn) {
+      ev.stopPropagation();
+      const fid = saveBtn.dataset.slabSave;
+      const row = saveBtn.closest('.slab-edit-row');
+      if (fid && row) _saveSlabFromInline(fid, row);
+      return;
+    }
+    const modalBtn = ev.target.closest('[data-slab-open-modal]');
+    if (modalBtn) {
+      ev.stopPropagation();
+      openSlabModal(modalBtn.dataset.slabOpenModal);
+    }
+  });
+
+  // ---- Slab modal (polyline vertex editor + preview) -----------------
+  let _slabModalState = { fid: null, slab: null };
+
+  function openSlabModal(fid) {
+    const treeF = (_tree.data?.floors || []).find(x => x.id === fid);
+    if (!treeF) return;
+    _slabModalState.fid = fid;
+    // Deep clone so cancel discards uncommitted vertex edits.
+    _slabModalState.slab = JSON.parse(JSON.stringify(
+      (treeF.slab && treeF.slab.type === 'polyline')
+        ? treeF.slab
+        : { type: 'polyline',
+            vertices: (treeF.slab?.vertices) || [[0,0],[10,0],[10,8],[0,8]],
+            rotation_deg: treeF.slab?.rotation_deg || 0 },
+    ));
+    _renderSlabModal(treeF);
+    document.getElementById('slab-modal').classList.add('open');
+  }
+
+  function closeSlabModal() {
+    document.getElementById('slab-modal').classList.remove('open');
+    _slabModalState = { fid: null, slab: null };
+  }
+
+  function _renderSlabModal(treeF) {
+    const body = document.getElementById('slab-mm-body');
+    const s = _slabModalState.slab;
+    const rows = s.vertices.map((v, i) =>
+      `<tr>
+         <td>${i + 1}</td>
+         <td><input type="number" step="0.01" value="${v[0]}"
+                    data-vtx-idx="${i}" data-vtx-axis="x"
+                    data-testid="slab-vtx-${i}-x"></td>
+         <td><input type="number" step="0.01" value="${v[1]}"
+                    data-vtx-idx="${i}" data-vtx-axis="y"
+                    data-testid="slab-vtx-${i}-y"></td>
+         <td><button class="vtx-del" data-vtx-del="${i}"
+                     data-testid="slab-vtx-del-${i}"
+                     title="Remove vertex">✕</button></td>
+       </tr>`,
+    ).join('');
+    const title = `${treeF.strand_label || ''} ${treeF.name || ''}`.trim() || treeF.id;
+    body.innerHTML = `
+      <div style="color:var(--muted);font-size:11px;margin-bottom:8px">
+        Editing slab footprint for <b style="color:var(--text)">${_treeEscape(title)}</b>.
+        All coordinates in metres, floor origin (0, 0) = top-left.
+      </div>
+      <svg class="slab-preview" id="slab-preview" viewBox="0 0 400 160"
+           preserveAspectRatio="xMidYMid meet"></svg>
+      <h4>Vertices</h4>
+      <table class="vtx-table" data-testid="slab-vtx-table">
+        <thead><tr><th>#</th><th>x_m</th><th>y_m</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <button class="btn" data-slab-add-vtx data-testid="slab-add-vtx"
+              style="font-size:11px;padding:3px 10px">＋ Add vertex</button>
+      <div class="slab-modal-actions">
+        <button class="btn" data-slab-cancel data-testid="slab-cancel">Cancel</button>
+        <button class="btn" data-slab-save-modal data-testid="slab-save-modal"
+                style="background:rgba(78,203,113,0.15);color:var(--ok);
+                       border:1px solid rgba(78,203,113,0.4)">Save slab</button>
+      </div>`;
+    _drawSlabPreview();
+  }
+
+  function _drawSlabPreview() {
+    const svg = document.getElementById('slab-preview');
+    if (!svg) return;
+    const s = _slabModalState.slab;
+    if (!s.vertices || s.vertices.length < 2) { svg.innerHTML = ''; return; }
+    const xs = s.vertices.map(v => v[0]);
+    const ys = s.vertices.map(v => v[1]);
+    const xmin = Math.min(...xs), xmax = Math.max(...xs);
+    const ymin = Math.min(...ys), ymax = Math.max(...ys);
+    const pad = 10;
+    const w = 400, h = 160;
+    const dx = xmax - xmin || 1, dy = ymax - ymin || 1;
+    const scale = Math.min((w - 2*pad) / dx, (h - 2*pad) / dy);
+    const cx = pad + ((w - 2*pad) - dx*scale) / 2;
+    const cy = pad + ((h - 2*pad) - dy*scale) / 2;
+    const px = (v) => cx + (v[0] - xmin) * scale;
+    const py = (v) => cy + (v[1] - ymin) * scale;
+    const d = s.vertices.map((v, i) =>
+      (i === 0 ? 'M' : 'L') + px(v) + ',' + py(v),
+    ).join(' ') + ' Z';
+    const dots = s.vertices.map((v, i) =>
+      `<circle cx="${px(v)}" cy="${py(v)}" r="3"
+               fill="#c084fc" stroke="#fff" stroke-width="0.6"/>
+       <text x="${px(v)+5}" y="${py(v)-4}" fill="#c084fc"
+             font-size="9" font-family="ui-monospace,monospace">${i+1}</text>`,
+    ).join('');
+    svg.innerHTML = `
+      <path d="${d}" fill="rgba(192,132,252,0.20)"
+            stroke="#c084fc" stroke-width="1.4"/>
+      ${dots}`;
+  }
+
+  // Slab modal delegation.
+  document.getElementById('slab-close').addEventListener('click', closeSlabModal);
+  document.getElementById('slab-modal').addEventListener('click', (ev) => {
+    if (ev.target.id === 'slab-modal') closeSlabModal();
+  });
+  document.getElementById('slab-mm-body').addEventListener('input', (ev) => {
+    const t = ev.target;
+    if (t.matches('input[data-vtx-idx]')) {
+      const i = parseInt(t.dataset.vtxIdx, 10);
+      const axis = t.dataset.vtxAxis === 'x' ? 0 : 1;
+      _slabModalState.slab.vertices[i][axis] = parseFloat(t.value) || 0;
+      _drawSlabPreview();
+    }
+  });
+  document.getElementById('slab-mm-body').addEventListener('click', async (ev) => {
+    const delBtn = ev.target.closest('[data-vtx-del]');
+    if (delBtn) {
+      const i = parseInt(delBtn.dataset.vtxDel, 10);
+      if (_slabModalState.slab.vertices.length <= 3) {
+        toast('Polyline needs at least 3 vertices', true); return;
+      }
+      _slabModalState.slab.vertices.splice(i, 1);
+      const treeF = (_tree.data?.floors || []).find(x => x.id === _slabModalState.fid);
+      if (treeF) _renderSlabModal(treeF);
+      return;
+    }
+    if (ev.target.closest('[data-slab-add-vtx]')) {
+      // Duplicate last vertex offset by (1, 0) so a new visible point appears.
+      const last = _slabModalState.slab.vertices.at(-1) || [0, 0];
+      _slabModalState.slab.vertices.push([last[0] + 1, last[1]]);
+      const treeF = (_tree.data?.floors || []).find(x => x.id === _slabModalState.fid);
+      if (treeF) _renderSlabModal(treeF);
+      return;
+    }
+    if (ev.target.closest('[data-slab-cancel]')) { closeSlabModal(); return; }
+    if (ev.target.closest('[data-slab-save-modal]')) {
+      const fid = _slabModalState.fid;
+      const slab = _slabModalState.slab;
+      try {
+        await api('PATCH', `/floors/${fid}`, { slab });
+        const tf = (_tree.data?.floors || []).find(x => x.id === fid);
+        if (tf) tf.slab = slab;
+        _rerenderTree();
+        const li = document.querySelector(`#tree-strip li[data-kind="floor"][data-id="${fid}"]`);
+        if (li) li.setAttribute('data-slab-open', '1');
+        if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
+        toast('Slab shape saved');
+        closeSlabModal();
+      } catch (e) {
+        toast(e.message || String(e), true);
+      }
+    }
+  });
+
+  window.openSlabModal = openSlabModal;
+  window.closeSlabModal = closeSlabModal;
+
   document.addEventListener('click', (ev) => {
     if (!ev.target.closest('#tree-ctx-menu')) _closeTreeCtx();
   });

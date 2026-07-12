@@ -263,6 +263,16 @@ def _ensure_schema(db_path: str | None = None) -> None:
             # so we introduce a new field rather than overloading it.)
             ("floors", "ALTER TABLE floors ADD COLUMN windows_json TEXT NOT NULL DEFAULT '[]'"),
             ("floors", "ALTER TABLE floors ADD COLUMN ceiling_height_m REAL NOT NULL DEFAULT 3.0"),
+            # 2026-02-13 — Per-floor slab shape.  Configures how the
+            # 2.5D building view renders this floor's footprint:
+            # {"type": "rect"|"polygon"|"polyline",
+            #  "cx_m", "cy_m",       -- polygon centre in metres
+            #  "radius_m", "sides",  -- regular polygon geometry
+            #  "rotation_deg",       -- polygon/polyline rotation
+            #  "vertices": [[x,y]…]} -- polyline vertices in metres
+            # 'null' (default) means "use axis-aligned rectangle
+            # from width_m x height_m" (legacy behaviour).
+            ("floors", "ALTER TABLE floors ADD COLUMN slab_json TEXT NOT NULL DEFAULT 'null'"),
         ]
         for _tbl, stmt in _MIGRATIONS:
             try:

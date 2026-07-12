@@ -4,6 +4,43 @@ Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.
 
+
+## 2026-02-13 — Per-floor slab shape settings (hybrid UI)
+
+### Context
+
+Operator asked to define per-floor slab footprints so the 2.5D
+Building view renders exact architectural shapes (L-plans, hex
+towers) instead of flat identical rectangles.  Requirements
+gathered: metres for units, hybrid UI (inline tree row + modal
+for vertex editor).
+
+### What shipped
+
+- **Schema** — new `floors.slab_json` column via additive
+  migration.  Accepts `null` (legacy rect), `{type:"rect"}`,
+  `{type:"polygon", cx_m, cy_m, radius_m, sides, rotation_deg}`,
+  or `{type:"polyline", vertices, rotation_deg}`.
+- **Backend** — `elc/floors/store.py` gains `_validate_slab`,
+  wired through `create_floor` / `update_floor`; `scripts/demo.py`
+  now surfaces `slab` in the tree payload.
+- **API** — `POST /floors` + `PATCH /floors/{id}` accept `slab`.
+- **Frontend inline editor** — Logical tree view shows a
+  `◇ shape` toggle per floor row that expands a mini-editor
+  (shape type, sides, radius, cx/cy, rotation).  Save calls
+  PATCH and repaints the 2.5D view.
+- **Frontend modal** — polyline vertex table with SVG preview,
+  `＋ Add vertex` / `✕` per row.  Reachable via inline
+  `✎ Edit vertices…` button.
+- **2.5D building renderer** — new isometric extrusion path
+  (`_buildIsoBuildingSvg`) kicks in when any floor has a
+  non-rect slab, painter-sorted faces + back-face culling.
+  Legacy rect-only installations keep the pixel-identical old
+  rendering.
+- **Tests** — 11 new store tests (`TestSlabShape`).  Suite now
+  477 passing (was 466).
+
+
 ## 2026-02-12aa — SRM sidebar SCU strip: multi-SCU aware
 
 ### Context

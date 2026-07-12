@@ -57,9 +57,76 @@ def _row_to_floor(row: Any) -> dict[str, Any]:
         "fixtures": json.loads(row["fixtures_json"]),
         "rooms": json.loads(row["rooms_json"] or "[]"),
         "windows": json.loads(row["windows_json"] or "[]") if "windows_json" in keys else [],
+        "slab": json.loads(row["slab_json"] or "null") if "slab_json" in keys else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def _validate_slab(slab: Any) -> dict[str, Any] | None:
+    """Coerce/validate a per-floor slab shape configuration.
+
+    Accepted shapes (all fields in metres / degrees):
+
+    * ``{"type": "rect"}``  — axis-aligned rectangle from width_m x
+      height_m (default; also returned when the input is ``None``).
+    * ``{"type": "polygon", "cx_m", "cy_m", "radius_m", "sides",
+      "rotation_deg"}`` — regular N-sided polygon inscribed in a
+      circle of ``radius_m`` centred at ``(cx_m, cy_m)``.  ``sides``
+      in ``[3, 24]``.
+    * ``{"type": "polyline", "vertices": [[x_m, y_m], ...],
+      "rotation_deg"}`` — arbitrary closed polygon; ``>= 3`` vertices.
+
+    Returns ``None`` for an ``None`` input so the legacy rectangle
+    default is preserved.  Extra fields are stored verbatim so a
+    later renderer can pick them up; unknown ``type`` is rejected.
+    """
+    if slab is None:
+        return None
+    if not isinstance(slab, dict):
+        raise BadInput("slab must be an object")
+    t = str(slab.get("type") or "rect").strip().lower()
+    if t not in {"rect", "polygon", "polyline"}:
+        raise BadInput("slab.type must be one of ['rect', 'polygon', 'polyline']")
+    out: dict[str, Any] = {"type": t}
+    if t == "rect":
+        return out
+    # Common: rotation_deg (optional, default 0)
+    try:
+        rot = float(slab.get("rotation_deg", 0.0))
+    except (TypeError, ValueError) as e:
+        raise BadInput("slab.rotation_deg must be a number") from e
+    out["rotation_deg"] = rot % 360.0
+    if t == "polygon":
+        for k in ("cx_m", "cy_m", "radius_m"):
+            try:
+                out[k] = float(slab.get(k, 0.0))
+            except (TypeError, ValueError) as e:
+                raise BadInput(f"slab.{k} must be a number") from e
+        if out["radius_m"] <= 0:
+            raise BadInput("slab.radius_m must be > 0")
+        try:
+            sides = int(slab.get("sides", 6))
+        except (TypeError, ValueError) as e:
+            raise BadInput("slab.sides must be an integer") from e
+        if sides < 3 or sides > 24:
+            raise BadInput("slab.sides must be in [3, 24]")
+        out["sides"] = sides
+        return out
+    # polyline
+    verts_raw = slab.get("vertices")
+    if not isinstance(verts_raw, list) or len(verts_raw) < 3:
+        raise BadInput("slab.vertices must be a list of >= 3 [x_m, y_m] pairs")
+    verts: list[list[float]] = []
+    for v in verts_raw:
+        if not isinstance(v, (list, tuple)) or len(v) != 2:
+            raise BadInput("each slab vertex must be [x_m, y_m]")
+        try:
+            verts.append([float(v[0]), float(v[1])])
+        except (TypeError, ValueError) as e:
+            raise BadInput("slab vertex coords must be numbers") from e
+    out["vertices"] = verts
+    return out
 
 
 def _validate_fixture(f: dict[str, Any]) -> dict[str, Any]:
@@ -373,7 +440,8 @@ def list_floors(db_path: str | None = None) -> list[dict[str, Any]]:
     with get_conn(db_path) as conn:
         rows = conn.execute(
             "SELECT id, name, strand_label, '' AS svg, width_m, height_m, "
-            "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at "
+            "fixtures_json, rooms_json, windows_json, ceiling_height_m, slab_json, "
+            "created_at, updated_at "
             "FROM floors ORDER BY name"
         ).fetchall()
     return [_row_to_floor(r) for r in rows]
@@ -384,10 +452,12 @@ def get_floor(
 ) -> dict[str, Any]:
     with get_conn(db_path) as conn:
         cols = ("id, name, strand_label, svg, width_m, height_m, "
-                "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at")
+                "fixtures_json, rooms_json, windows_json, ceiling_height_m, slab_json, "
+                "created_at, updated_at")
         if not include_svg:
             cols = ("id, name, strand_label, '' AS svg, width_m, height_m, "
-                    "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at")
+                    "fixtures_json, rooms_json, windows_json, ceiling_height_m, slab_json, "
+                    "created_at, updated_at")
         row = conn.execute(
             f"SELECT {cols} FROM floors WHERE id = ?", (floor_id,),
         ).fetchone()
@@ -419,7 +489,8 @@ def get_or_create_floor_by_strand(
     with get_conn(db_path) as conn:
         row = conn.execute(
             "SELECT id, name, strand_label, svg, width_m, height_m, "
-            "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at "
+            "fixtures_json, rooms_json, windows_json, ceiling_height_m, slab_json, "
+            "created_at, updated_at "
             "FROM floors WHERE strand_label = ?", (label,),
         ).fetchone()
         if row is not None:
@@ -440,8 +511,9 @@ def get_or_create_floor_by_strand(
         conn.execute(
             "INSERT INTO floors "
             "(id, name, strand_label, svg, width_m, height_m, "
-            "fixtures_json, rooms_json, windows_json, ceiling_height_m, created_at, updated_at) "
-            "VALUES (?, ?, ?, '', 20.0, 15.0, '[]', '[]', '[]', 3.0, ?, ?)",
+            "fixtures_json, rooms_json, windows_json, ceiling_height_m, slab_json, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, '', 20.0, 15.0, '[]', '[]', '[]', 3.0, 'null', ?, ?)",
             (fid, name, label, now, now),
         )
     return get_floor(fid, include_svg=False, db_path=db_path)
@@ -456,6 +528,7 @@ def create_floor(
     fixtures: list[dict[str, Any]] | None = None,
     rooms: list[dict[str, Any]] | None = None,
     windows: list[dict[str, Any]] | None = None,
+    slab: dict[str, Any] | None = None,
     strand_label: str | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
@@ -469,6 +542,7 @@ def create_floor(
     fixtures_norm = _validate_fixtures(fixtures)
     rooms_norm = _validate_rooms(rooms)
     windows_norm = _validate_windows(windows)
+    slab_norm = _validate_slab(slab)
     _check_device_uniqueness(fixtures_norm, db_path=db_path)
     label = str(strand_label or "").strip().upper() or None
     fid = _new_id()
@@ -478,11 +552,11 @@ def create_floor(
             conn.execute(
                 "INSERT INTO floors "
                 "(id, name, strand_label, svg, width_m, height_m, fixtures_json, "
-                "rooms_json, windows_json, ceiling_height_m, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 3.0, ?, ?)",
+                "rooms_json, windows_json, ceiling_height_m, slab_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 3.0, ?, ?, ?)",
                 (fid, name, label, svg, width_m, height_m,
                  json.dumps(fixtures_norm), json.dumps(rooms_norm),
-                 json.dumps(windows_norm), now, now),
+                 json.dumps(windows_norm), json.dumps(slab_norm), now, now),
             )
     except Exception as e:  # noqa: BLE001
         if "UNIQUE" in str(e).upper():
@@ -502,6 +576,7 @@ def update_floor(
     rooms: list[dict[str, Any]] | None = None,
     windows: list[dict[str, Any]] | None = None,
     ceiling_height_m: float | None = None,
+    slab: dict[str, Any] | None = None,
     strand_label: str | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
@@ -555,6 +630,14 @@ def update_floor(
             raise BadInput("ceiling_height_m must be 0..30 m")
         sets.append("ceiling_height_m = ?")
         args.append(float(ceiling_height_m))
+    if slab is not None:
+        # Sentinel: an explicit ``{"type": "rect"}`` or ``null`` payload
+        # clears back to the default rectangle; anything else is
+        # validated + stored.  Callers that want to leave the slab
+        # untouched simply omit the ``slab`` kwarg.
+        slab_norm = _validate_slab(slab)
+        sets.append("slab_json = ?")
+        args.append(json.dumps(slab_norm))
     if not sets:
         return get_floor(floor_id, db_path=db_path)
     sets.append("updated_at = ?")

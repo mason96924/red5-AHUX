@@ -6612,13 +6612,10 @@ function _windowDisplayName(w, wins) {
   return (w.name && w.name.trim()) || _defaultWindowName(w, wins);
 }
 
-// 2026-02-12y — Windows-panel display sort: alphabetical by
-// display name, natural collation (so `_W2` comes before `_W10`).
-// Operator ask: "Whenever Windows-Blinds modal is opened, make it
-// sort by the name first."  Renamed windows sort by their custom
-// name; unrenamed windows sort by their auto default (e.g. `N_W1`,
-// `N_W2`, `E_W1`, `S_W1`, `W_W1`).  Insertion order is the final
-// tiebreaker for absolute stability across renders.
+// 2026-02-12ai — Windows-panel sort: BADGE first (N/E/S/W compass
+// order), then alphabetical by display name with natural (numeric-
+// aware) collation.  Insertion order is the final tiebreaker.
+const _WINDOW_DIR_RANK = { N: 0, E: 1, S: 2, W: 3 };
 const _NAME_COLLATOR = new Intl.Collator(undefined, {
   numeric: true, sensitivity: 'base',
 });
@@ -6626,6 +6623,9 @@ function _sortedWindowsForDisplay(wins) {
   const arr = (wins || []).slice();
   arr.forEach((w, i) => { w.__ord = i; });
   arr.sort((a, b) => {
+    const ra = _WINDOW_DIR_RANK[_windowPositionalCardinalLetter(a)] ?? 99;
+    const rb = _WINDOW_DIR_RANK[_windowPositionalCardinalLetter(b)] ?? 99;
+    if (ra !== rb) return ra - rb;
     const na = _windowDisplayName(a, wins);
     const nb = _windowDisplayName(b, wins);
     return _NAME_COLLATOR.compare(na, nb) || (a.__ord - b.__ord);

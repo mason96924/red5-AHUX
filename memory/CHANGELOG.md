@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-02-13j — Polygon slab rendering removed (operator request)
+
+The polygon-slab visual has been shelved.  Frontend changes:
+
+- `_buildDynamicBuildingSvg` no longer branches into
+  `_buildIsoBuildingSvg`; every floor renders as a plain rect
+  prism using the legacy stack.  (The iso helper is still in
+  the file but never called — kept for reference / future
+  re-enable rather than deleted, since the DB schema still
+  carries `slab_json` and the backend tests still validate it.)
+- `＋ New floor` button no longer opens a file picker.  It
+  prompts for name + level (above top / basement) via
+  `confirm` + `prompt`, then POSTs a plain rect to `/floors`.
+  Modal opens on the new floor.
+- Floor Details modal: the SLAB SHAPE + Rotate slider + preset
+  buttons section is gone.  Modal is back to name / width /
+  height / Save / Delete plus the DXF background importer.
+
+Backend + DB + tests untouched — polygon slab schema, DXF slab
+auto-extract, image tracer, and 486 pytests all still live and
+pass.  Re-enabling the polygon renderer later is a one-line
+change (restore the early return in `_buildDynamicBuildingSvg`).
+
+
 ## 2026-02-13i — Cabinet projection tower aspect matches legacy
 
 Follow-up to 13h: the projection swap fixed the ORIENTATION

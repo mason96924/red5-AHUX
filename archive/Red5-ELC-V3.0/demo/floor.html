@@ -1650,29 +1650,51 @@ function _slabPolygonMeters(f) {
 function _buildIsoBuildingSvg(sorted, selId) {
   const N = sorted.length;
   const rawPolys = sorted.map(_slabPolygonMeters);
-  // 2026-02-13d — CENTRE each polygon on its own centroid so all
-  // floors stack coaxially (like a real building whose slabs share
-  // a common vertical axis).  We ALSO normalise each floor's max
-  // half-dimension to a common target — that way a 40 m pentagon
-  // and a 20 m rect both read as similarly-sized slabs in the
-  // panel (the panel is for footprint SHAPE inspection, not
-  // metric scale; metric scale is on the main canvas).
-  const targetHalf_m = 10.0;
+  // 2026-02-13f — Reference frame FROM the first rect floor (or the
+  // last floor's own width/height if there isn't one).  Polygon slabs
+  // are then scaled to fit INSIDE that same reference rectangle — so
+  // adding a 40 m pentagon on top of two 20 m rects doesn't blow up
+  // the tower's scale; the pentagon simply reads as "the same-sized
+  // slab, but pentagon-shaped" (which is what the panel is for).
+  let refW = 20, refH = 15;
+  const firstRect = sorted.find(f => !f.slab || f.slab.type === 'rect');
+  if (firstRect && firstRect.width_m && firstRect.height_m) {
+    refW = firstRect.width_m;
+    refH = firstRect.height_m;
+  } else if (sorted[0] && sorted[0].width_m && sorted[0].height_m) {
+    refW = sorted[0].width_m;
+    refH = sorted[0].height_m;
+  }
+  const refHalfW = refW / 2;
+  const refHalfH = refH / 2;
+  // Each floor's polygon: centre on its own centroid, then uniformly
+  // scale so its own bounding box fits INSIDE the reference half-w /
+  // half-h.  Preserves aspect ratio (a wide L-shape stays wide,
+  // narrow octagon stays narrow) but caps the visual footprint at
+  // the reference frame.
   const polys = rawPolys.map(poly => {
     if (!poly || poly.length === 0) return poly;
     let cx = 0, cy = 0;
     for (const v of poly) { cx += v[0]; cy += v[1]; }
     cx /= poly.length; cy /= poly.length;
-    let maxR = 0;
+    let maxHalfW = 0, maxHalfH = 0;
     for (const v of poly) {
-      const r = Math.max(Math.abs(v[0] - cx), Math.abs(v[1] - cy));
-      if (r > maxR) maxR = r;
+      const hx = Math.abs(v[0] - cx);
+      const hy = Math.abs(v[1] - cy);
+      if (hx > maxHalfW) maxHalfW = hx;
+      if (hy > maxHalfH) maxHalfH = hy;
     }
-    const s = maxR > 0 ? targetHalf_m / maxR : 1;
+    const sx = maxHalfW > 0 ? refHalfW / maxHalfW : 1;
+    const sy = maxHalfH > 0 ? refHalfH / maxHalfH : 1;
+    const s = Math.min(sx, sy);   // uniform scale ⇒ preserved aspect
     return poly.map(v => [(v[0] - cx) * s, (v[1] - cy) * s]);
   });
-  // Slab thickness is 20 % of the (uniform) target half-dim.
-  const slabH_m = targetHalf_m * 0.20;
+  // Slab thickness: keep the total tower "conceptual height" roughly
+  // constant so 2 floors read as tall prisms, 10 floors as thin
+  // wafers — matching what the operator sees when the tower is
+  // rect-only.  Target ≈ 0.6 × reference half-dim total.
+  const towerTargetTotal_m = Math.max(refHalfW, refHalfH) * 0.60;
+  const slabH_m = towerTargetTotal_m / Math.max(N, 1);
   const cos30 = Math.cos(Math.PI / 6), sin30 = Math.sin(Math.PI / 6);
   // Fit everything to a 220 × 320 viewBox with generous padding.
   // 1) Determine iso extents over ALL floors + ALL Z levels.

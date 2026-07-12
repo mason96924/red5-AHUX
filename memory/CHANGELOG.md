@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-02-13f — Polygon slab fits inside rect reference frame
+
+### Context
+
+Operator (correct) pushback: when polygon floors were added,
+their real-world dimensions blew up the panel scale, wrecking
+the "conceptual tower" visual.  The intent of the panel is
+SHAPE inspection, not metric fidelity — polygons should fit
+INSIDE the rect frame the tower already established, not the
+other way round.
+
+### What shipped in `_buildIsoBuildingSvg`
+
+- **Reference frame** now derived from the first rect floor
+  (`firstRect.width_m / height_m`), falling back to the topmost
+  floor's own dims if none exist.  Independent of the polygon
+  floor's true drawing extents.
+- **Polygon fitting**: each polygon is centred on its centroid
+  then uniformly scaled so its bounding box fits within
+  `refHalfW × refHalfH`.  Aspect ratio preserved (L-plans stay
+  wide, hex-towers stay symmetric).  Real-world 40 m pentagons
+  now sit inside the 20 m rect frame instead of dwarfing it.
+- **Slab thickness scales with count** so total tower conceptual
+  height stays constant (`max(refHalfW, refHalfH) × 0.60` total,
+  divided by N).  2 floors → 3 m each (tall prisms); 3 floors
+  → 2 m each; 10 floors → 0.6 m wafers.  Matches how the
+  rect-only tower already read.
+
+Verified in isolation:
+* 2 rect floors → tall clean tower (baseline)
+* +1 pentagon on top → pentagon sits inside the rect frame,
+  rects underneath keep their proportions
+
+Tests unchanged (486/486 passing).
+
+
 ## 2026-02-13e — Level picker on "＋ New floor" (above / basement)
 
 ### Context

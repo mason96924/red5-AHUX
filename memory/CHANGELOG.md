@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-02-13c — "+ New floor from drawing" + rotation persistence fixes
+
+### Context
+
+Operator workflow refined:
+* New floors are now created from a drawing directly on the
+  BUILDING panel (not attached to existing floors via the modal).
+* Rotation slider "wasn't working" — turned out to be a race
+  between the debounced slab-PATCH and the synchronous d-save
+  PATCH (which was omitting `slab` and clobbering it with the
+  pre-rotation server state).
+
+### What shipped
+
+- **`＋ New floor` button** on the Building panel (`.fs-actions`).
+  File-picker accepts `.dxf`, `.png`, `.jpg`. DXF → `/floors/
+  import-dxf`, image → `/floors/import-image` (name-only form,
+  no floor_id). Fresh floor is created with the traced slab +
+  dimensions inherited from the drawing extents.  Modal pops
+  open on success so the operator can dial rotation immediately.
+- **Removed** the "Trace slab from image" section from the
+  Floor Details modal (replaced by the new-floor workflow).
+- **Rotation UX**:
+  * Slider drag stays debounced (250 ms) to avoid API spam;
+    `change` event (slider release) fires **immediately** so
+    the settled value ALWAYS reaches the server before the
+    modal can be closed.
+  * Preset buttons (`−90 / −45 / −15 / 0 / +15 / +45 / +90`)
+    PATCH immediately, no debounce.
+  * `d-save` handler now includes `slab` in the payload so the
+    current in-memory rotation can't be race-clobbered.
+  * `_renderBuildingCanvas()` fires after save too, keeping the
+    2.5D view in sync with the persisted state.
+- **Tests**: no schema change, 486/486 still passing.
+- **E2E verified**: rotate to 90° → close modal → reopen → 180°
+  after two `+45` presets → close/reopen → **180° persists**.
+
+
 ## 2026-02-13b — Slab rotation UI + tree refresh + iso stacked-floor fix
 
 ### Context

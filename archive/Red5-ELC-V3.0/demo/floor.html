@@ -940,6 +940,17 @@
     <div class="fs-head">
       <span>Building</span>
       <span class="fs-actions">
+        <!-- 2026-02-13c — Add a new floor by uploading a DXF or PNG/JPG
+             floor plan.  Server auto-traces the slab outline and creates
+             a fresh floor with that footprint (see /floors/import-dxf
+             and /floors/import-image). -->
+        <button id="bi-new-floor"
+                title="Add a new floor from a DXF / PNG / JPG drawing (slab shape auto-traced)"
+                data-testid="bi-new-floor"
+                style="margin-right:4px">＋ New floor</button>
+        <input id="bi-new-floor-input" type="file"
+               accept=".dxf,image/png,image/jpeg"
+               style="display:none" data-testid="bi-new-floor-input">
         <button id="bi-import" title="Import a 2.5D isometric image of the building"
                 data-testid="bi-import">⤴ Image</button>
       </span>
@@ -1268,50 +1279,9 @@
                  data-testid="floor-dxf-input">
         </label>
       </div>
-      <!-- 2026-02-13 · Trace floor slab from a raster floor plan.
-           Runs an OpenCV contour trace server-side and either creates
-           a new floor or attaches the traced polygon to the currently
-           selected one. -->
-      <div style="margin-top: 12px; padding-top: 12px;
-                  border-top: 1px dashed var(--line)">
-        <div style="font-family: var(--mono); font-size: 10.5px;
-                    color: var(--muted); margin-bottom: 6px;
-                    text-transform: uppercase; letter-spacing: .1em">
-          Trace slab from image
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;
-                    font-size:11px;margin-bottom:6px">
-          <label style="color:var(--muted)">Real width (m)
-            <input id="slab-img-width-m" type="number" min="0.5" step="0.1"
-                   value="20"
-                   data-testid="slab-img-width-m"
-                   style="width:64px;margin-left:4px;
-                          background:#0c1015;border:1px solid var(--line);
-                          color:var(--text);padding:2px 4px;border-radius:3px;
-                          font-family:var(--mono);font-size:11px">
-          </label>
-          <label style="color:var(--muted)">Real height (m)
-            <input id="slab-img-height-m" type="number" min="0.5" step="0.1"
-                   value="15"
-                   data-testid="slab-img-height-m"
-                   style="width:64px;margin-left:4px;
-                          background:#0c1015;border:1px solid var(--line);
-                          color:var(--text);padding:2px 4px;border-radius:3px;
-                          font-family:var(--mono);font-size:11px">
-          </label>
-        </div>
-        <label for="slab-img-input" class="btn" style="cursor:pointer;display:inline-block"
-               data-testid="floor-slab-img-label"
-               title="Attach the traced polygon to the CURRENTLY SELECTED floor. Select a floor first.">
-          Choose image (PNG / JPG)…
-          <input id="slab-img-input" type="file" accept="image/png,image/jpeg"
-                 style="display:none" data-testid="floor-slab-img-input">
-        </label>
-        <div style="font-size:10.5px;color:var(--muted);margin-top:6px">
-          Attaches the traced outline to the currently-selected floor.
-          Use a clean dark-outline drawing for best results.
-        </div>
-      </div>
+      <!-- 2026-02-13c — "Trace slab from image" removed here; the new
+           workflow is `＋ New floor` on the Building panel, which auto-
+           creates a floor from a DXF / PNG / JPG upload. -->
     </div>
   </div>
 </div>
@@ -2225,10 +2195,17 @@ async function renderFloorDetails() {
         width_m: parseFloat(document.getElementById('d-width').value),
         height_m: parseFloat(document.getElementById('d-height').value),
       };
+      // 2026-02-13c — carry the current slab (including any in-progress
+      // rotation edit) through Save so a pending debounced PATCH can't
+      // be race-clobbered by the /save PATCH response.
+      if (state.currentFloor && state.currentFloor.slab) {
+        patch.slab = state.currentFloor.slab;
+      }
       state.currentFloor = await api('PATCH', `/floors/${f.id}`, patch);
       await refreshFloors();
       renderFloorList();
       paintCanvas();
+      if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
       toast('Floor saved');
     } catch (e) { toast(e.message, true); }
   };
@@ -2252,44 +2229,47 @@ async function renderFloorDetails() {
   if (hasSlab) {
     const range = document.getElementById('d-slab-rot-range');
     const num   = document.getElementById('d-slab-rot-num');
-    // Debounce the PATCH so a slider drag doesn't spam the API.
+    // Debounce ONLY the slider drag stream so a slow WAN doesn't spam
+    // the API.  Buttons + numeric-input `change` fire immediate PATCHes
+    // so the operator gets synchronous feedback + no race with the
+    // modal Save.
     let saveTimer = null;
-    const applyRotation = (deg) => {
+    const savePatch = async () => {
+      try {
+        const updated = await api('PATCH', `/floors/${f.id}`,
+                                  { slab: state.currentFloor.slab });
+        state.currentFloor = updated;
+        const idx = state.floors.findIndex(x => x.id === f.id);
+        if (idx >= 0) state.floors[idx] = updated;
+        if (typeof _fetchTree === 'function'
+            && document.getElementById('tree-strip')?.classList.contains('open')) {
+          try { await _fetchTree(); } catch (_e) { /* non-fatal */ }
+        }
+      } catch (e) { toast(e.message || String(e), true); }
+    };
+    const applyRotation = (deg, {immediate = false} = {}) => {
       const v = Math.max(-180, Math.min(180, Math.round(Number(deg) || 0)));
       range.value = String(v);
       num.value   = String(v);
-      // Preview the rotation client-side by updating the local copy
-      // then re-rendering the 2.5D panel; final PATCH is debounced.
       state.currentFloor.slab = { ...(state.currentFloor.slab || {}), rotation_deg: v };
       const fInList = state.floors.find(x => x.id === f.id);
       if (fInList) fInList.slab = { ...state.currentFloor.slab };
       if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(async () => {
-        try {
-          const updated = await api('PATCH', `/floors/${f.id}`,
-                                    { slab: state.currentFloor.slab });
-          state.currentFloor = updated;
-          const idx = state.floors.findIndex(x => x.id === f.id);
-          if (idx >= 0) state.floors[idx] = updated;
-          if (typeof _fetchTree === 'function'
-              && document.getElementById('tree-strip')?.classList.contains('open')) {
-            try { await _fetchTree(); } catch (_e) { /* non-fatal */ }
-          }
-        } catch (e) { toast(e.message || String(e), true); }
-      }, 250);
+      if (immediate) { savePatch(); }
+      else { saveTimer = setTimeout(savePatch, 250); }
     };
-    range.addEventListener('input', () => applyRotation(range.value));
-    num.addEventListener('input',   () => applyRotation(num.value));
+    range.addEventListener('input',  () => applyRotation(range.value));
+    range.addEventListener('change', () => applyRotation(range.value, {immediate: true}));
+    num.addEventListener('change',   () => applyRotation(num.value, {immediate: true}));
     document.querySelectorAll('[data-slab-rot]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const delta = parseFloat(btn.dataset.slabRot);
-        // Special-case the "0°" button — absolute reset.  All other
-        // buttons are relative deltas (±15/45/90) applied to current.
-        if (delta === 0 && btn.dataset.slabRot === '0') {
-          applyRotation(0);
+        const raw = btn.dataset.slabRot;
+        const delta = parseFloat(raw);
+        if (raw === '0') {
+          applyRotation(0, {immediate: true});
         } else {
-          applyRotation(Number(range.value) + delta);
+          applyRotation(Number(range.value) + delta, {immediate: true});
         }
       });
     });
@@ -6113,41 +6093,48 @@ document.getElementById('dxf-input').onchange = async (ev) => {
   } catch (e) { toast(e.message, true); }
 };
 
-// 2026-02-13 — Trace slab from raster image handler.  Attaches the
-// traced polygon to the currently-selected floor via
-// POST /floors/import-image?floor_id=<current>.
-document.getElementById('slab-img-input').onchange = async (ev) => {
+// 2026-02-13c — "＋ New floor" button on the Building panel.
+// Accepts DXF, PNG, or JPG.  DXF goes through /floors/import-dxf
+// (auto-extracts rooms, windows, slab); images go through
+// /floors/import-image (auto-traces slab outline).  A fresh floor
+// is always created — this replaces the older "attach traced
+// image to existing floor" flow.
+document.getElementById('bi-new-floor').onclick = () => {
+  document.getElementById('bi-new-floor-input').click();
+};
+document.getElementById('bi-new-floor-input').onchange = async (ev) => {
   const file = ev.target.files[0];
   if (!file) return;
   ev.target.value = '';
-  if (!state.currentFloor) {
-    toast('Select a floor first', true);
-    return;
-  }
-  const wIn = document.getElementById('slab-img-width-m');
-  const hIn = document.getElementById('slab-img-height-m');
-  const width_m  = parseFloat(wIn.value)  || 20;
-  const height_m = parseFloat(hIn.value) || 15;
+  const nm = file.name.replace(/\.(dxf|png|jpe?g)$/i, '');
+  const name = prompt('Name for the new floor?', nm) || nm;
+  if (!name) return;
+  const isDxf = /\.dxf$/i.test(file.name);
+  const url = isDxf ? `${API}/floors/import-dxf` : `${API}/floors/import-image`;
   const fd = new FormData();
-  fd.append('image', file);
-  fd.append('floor_id', state.currentFloor.id);
-  fd.append('width_m',  String(width_m));
-  fd.append('height_m', String(height_m));
-  toast('Tracing outline…');
+  fd.append('name', name);
+  fd.append(isDxf ? 'dxf' : 'image', file);
+  if (!isDxf) {
+    // Sensible defaults for the image trace; the operator can
+    // fine-tune width/height in the Floor details modal afterwards.
+    fd.append('width_m',  '20');
+    fd.append('height_m', '15');
+  }
+  toast(isDxf ? 'Importing DXF…' : 'Tracing outline…');
   try {
-    const r = await fetch(`${API}/floors/import-image`, { method: 'POST', body: fd });
+    const r = await fetch(url, { method: 'POST', body: fd });
     const data = await r.json();
-    if (!r.ok) { toast(data.detail || 'Image trace failed', true); return; }
+    if (!r.ok) { toast(data.detail || 'Import failed', true); return; }
     await refreshFloors();
     await selectFloor(data.id);
-    const nV = data.slab && Array.isArray(data.slab.vertices) ? data.slab.vertices.length : 0;
-    toast(`Slab traced: ${nV} vertices — dial rotation below`);
-    // Re-render the modal so the "Rotate" slider appears without needing
-    // to close/reopen; keep the modal OPEN so the operator can immediately
-    // dial in the correct orientation.
-    if (typeof renderFloorDetails === 'function') await renderFloorDetails();
+    const nV = data.slab && Array.isArray(data.slab.vertices)
+      ? data.slab.vertices.length : 0;
+    toast(
+      `New floor "${data.name}" created` +
+      (nV ? ` · slab: ${nV}-vertex outline` : ' · rect footprint')
+    );
+    if (typeof openFloorModal === 'function') openFloorModal();
     if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
-    // Tree strip refresh (issue #2 from operator).
     if (typeof _fetchTree === 'function'
         && document.getElementById('tree-strip')?.classList.contains('open')) {
       try { await _fetchTree(); } catch (_e) { /* non-fatal */ }

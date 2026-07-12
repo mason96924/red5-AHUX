@@ -294,6 +294,46 @@
   .fixture-row .remove { color: var(--bad); font-size: 14px; padding: 0 6px; }
 
   /* ---- SRM device grid ------------------------------------------------- */
+  /* 2026-02-12ap — every SCU that contributes modules to the current
+     floor gets wrapped in a bordered .scu-box.  The box's header
+     hosts the interactive per-SCU controls (radio to set active,
+     editable IP:port); the box's body holds this SCU's .module-box
+     grid.  Nested structure makes the SCU→SRMs relationship
+     visually explicit. */
+  .scu-box {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 8px 8px 8px;
+    margin: 8px 0;
+    background: rgba(96, 165, 250, 0.03);
+  }
+  .scu-box.scu-active {
+    border-color: var(--accent);
+    background: rgba(217, 122, 48, 0.06);
+  }
+  .scu-box-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 4px 6px 4px;
+    border-bottom: 1px dashed var(--line);
+    margin-bottom: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .scu-box-header input.scu-box-ip {
+    flex: 1; min-width: 0;
+    padding: 2px 6px; font-size: 11px;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    text-transform: none;
+    font-family: var(--mono);
+  }
+  .scu-box-body {
+    display: flex; flex-direction: column; gap: 4px;
+  }
   .assign-bar {
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px; margin-bottom: 10px; padding: 8px 6px;
@@ -1043,43 +1083,21 @@
   <!-- ============ RIGHT RAIL: FIXTURE INSPECTOR ============ -->
   <aside class="right">
     <h2>SRM Devices <span id="dev-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
-    <!-- 2026-02-12ao — SCU picker + editable IP MOVED from the top
-         toolbar into the SRM Devices sidebar per operator ask.
-         Element IDs preserved (#scu-picker, #scu-host) so every
-         existing reader (discoverSrms, broadcastRelay, load-time
-         hydrator, project-snapshot code) keeps working with no
-         code changes elsewhere.  In the multi-SCU case,
-         _updateSrmScuInfo() renders additional per-SCU rows below
-         showing the modules-per-SCU grouping. -->
-    <div id="srm-scu-info" data-testid="srm-scu-info"
-         style="padding:8px 10px;margin-bottom:8px;
-                background:var(--panel-2);border:1px solid var(--line);
-                border-radius:6px;font-family:var(--mono);font-size:11px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="color:var(--muted);letter-spacing:.06em;
-                     text-transform:uppercase;font-size:10px">Active SCU</span>
-        <select id="scu-picker" data-testid="floor-scu-picker"
-                title="Active SCU bus address.  Change to switch discovery + broadcast target."
-                style="width:auto;padding:3px 6px;font-size:11px;
-                       background:var(--panel);color:var(--text);
-                       border:1px solid var(--line);border-radius:4px">
-          <option value="0">0</option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-        </select>
-        <input id="scu-host" data-testid="floor-scu-host" type="text"
-               placeholder="ip / host"
-               title="IP address or hostname of the active SCU bus.  Press Enter or blur to save."
-               style="flex:1;min-width:0;padding:3px 6px;font-size:11px;
-                      background:var(--panel);color:var(--text);
-                      border:1px solid var(--line);border-radius:4px;
-                      text-transform:none" />
-      </div>
-      <!-- Extra rows for multi-SCU floors are injected here by
-           _updateSrmScuInfo(). -->
-      <div id="srm-scu-multi" data-testid="srm-scu-multi"
-           style="margin-top:6px"></div>
+    <!-- 2026-02-12ap — SCU controls now live INSIDE each per-SCU box
+         emitted by renderSrmGrid.  The #scu-picker / #scu-host
+         elements here are kept as HIDDEN proxies so every downstream
+         reader (discoverSrms, broadcastRelay, project-snapshot
+         hydrator) still works unchanged.  Their live values are
+         mirrored to/from the visible per-SCU-box UI. -->
+    <div id="srm-scu-info" data-testid="srm-scu-info" style="display:none">
+      <select id="scu-picker" data-testid="floor-scu-picker">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>
+      <input id="scu-host" data-testid="floor-scu-host" type="text" />
+      <div id="srm-scu-multi"></div>
     </div>
     <div class="assign-bar" data-testid="assign-bar" hidden>
       <div class="assign-count" id="assign-count">0 selected</div>
@@ -2109,36 +2127,69 @@ function renderSrmGrid() {
     host.appendChild(sum);
   }
 
-  // Group the filtered modules by SCU so the operator sees one
-  // header per SCU-bus that contributes to this floor.  If only a
-  // single SCU is involved, we skip the header (2026-02-11 rule 5c).
+  // 2026-02-12ap — Each SCU gets its own bordered .scu-box wrapping
+  // its module-box children.  The box header hosts the interactive
+  // per-SCU controls (active radio + editable IP:port); the hidden
+  // #scu-picker + #scu-host at the top of the sidebar remain the
+  // source of truth for downstream code.
+  //
+  // When only ONE SCU serves the floor, we still emit a .scu-box —
+  // but no radio (there's nothing to switch between); just the label
+  // + editable IP so single-SCU floors get the same visual grouping.
   const bySc = new Map();  // scuId -> [module...]
   for (const m of scope) {
     if (!bySc.has(m.scu)) bySc.set(m.scu, []);
     bySc.get(m.scu).push(m);
   }
-  const showScuHeaders = bySc.size > 1;
+  const scuIds = [...bySc.keys()].sort((a, b) => Number(a) - Number(b));
+  const activeScu = document.getElementById('scu-picker')?.value ?? '0';
 
-  for (const [scuId, mods] of bySc.entries()) {
-    if (showScuHeaders) {
-      const scuInfo = _projSnap.scusById.get(String(scuId)) || {};
-      const label = scuInfo.name || `SCU ${scuId}`;
-      const hostStr = scuInfo.host
-        ? `${scuInfo.host}:${scuInfo.port || 4001}`
-        : `id ${scuId}`;
-      const scuHdr = document.createElement('div');
-      scuHdr.className = 'srm-scu-header';
-      scuHdr.dataset.testid = `srm-scu-header-${scuId}`;
-      scuHdr.style.cssText =
-        'display:flex;justify-content:space-between;align-items:center;'
-        + 'padding:5px 8px;margin:8px 0 4px 0;font-size:11px;'
-        + 'background:var(--panel-2);border:1px solid var(--line);'
-        + 'border-radius:4px;color:var(--text);font-family:var(--mono)';
-      scuHdr.innerHTML =
-        `<span><span style="color:#60a5fa">■</span> ${escapeHtml(label)}</span>`
-        + `<span style="color:var(--muted)">${escapeHtml(hostStr)}</span>`;
-      host.appendChild(scuHdr);
-    }
+  for (const scuId of scuIds) {
+    const mods = bySc.get(scuId);
+    const scuInfo = _projSnap.scusById.get(String(scuId)) || {};
+    const isActive = String(scuId) === String(activeScu);
+    const perScuKey = `elc.floor.scu.${scuId}.host`;
+    const localHost = localStorage.getItem(perScuKey);
+    const shownHost = (localHost !== null && localHost !== '')
+      ? localHost
+      : (scuInfo.host ? `${scuInfo.host}:${scuInfo.port || 4001}` : '');
+
+    const scuBox = document.createElement('div');
+    scuBox.className = 'scu-box' + (isActive ? ' scu-active' : '');
+    scuBox.dataset.scuId  = scuId;
+    scuBox.dataset.testid = `scu-box-${scuId}`;
+
+    const hdr = document.createElement('div');
+    hdr.className = 'scu-box-header';
+    // Radio only when 2+ SCUs are on this floor (single-SCU has no
+    // "switch" concept, but we still show the label + IP).
+    const radioHtml = (bySc.size > 1)
+      ? `<input type="radio" name="scu-box-active"` +
+        ` data-testid="scu-box-radio-${scuId}"` +
+        ` value="${scuId}" ${isActive ? 'checked' : ''}` +
+        ` title="Set SCU ${escapeHtml(scuId)} as the active bus"` +
+        ` style="accent-color:var(--accent);cursor:pointer;flex-shrink:0" />`
+      : '';
+    hdr.innerHTML =
+      radioHtml +
+      `<span style="color:${isActive ? 'var(--accent)' : '#60a5fa'};` +
+                  `font-weight:700;flex-shrink:0">■ SCU ${escapeHtml(String(scuId))}` +
+        (scuInfo.name ? ` <span style="color:var(--muted);font-weight:400">· ${escapeHtml(scuInfo.name)}</span>` : '') +
+      `</span>` +
+      `<input type="text" class="scu-box-ip"` +
+            ` data-scu-id="${scuId}"` +
+            ` data-testid="scu-box-ip-${scuId}"` +
+            ` value="${escapeHtml(shownHost)}" placeholder="ip:port"` +
+            ` title="IP:port for SCU ${escapeHtml(String(scuId))} — Enter/blur to save" />` +
+      `<span style="color:var(--muted);flex-shrink:0" data-testid="scu-box-count-${scuId}">` +
+        `${mods.length} SRM${mods.length === 1 ? '' : 's'}` +
+      `</span>`;
+    scuBox.appendChild(hdr);
+
+    const body = document.createElement('div');
+    body.className = 'scu-box-body';
+    scuBox.appendChild(body);
+
     for (const m of mods) {
     const box = document.createElement('div');
     box.className = 'module-box';
@@ -2196,9 +2247,43 @@ function renderSrmGrid() {
       }
       openModuleModal(`${m.type}/${m.scu}/${m.addr}`);
     });
-    host.appendChild(box);
+    body.appendChild(box);
     }  // end for (const m of mods)
-  }    // end for (const [scuId, mods] of bySc.entries())
+    host.appendChild(scuBox);
+
+    // Wire the header controls now that scuBox is in the DOM.
+    const rad = hdr.querySelector('input[type=radio]');
+    if (rad) {
+      rad.addEventListener('change', (ev) => {
+        const pk = document.getElementById('scu-picker');
+        const ph = document.getElementById('scu-host');
+        if (pk) pk.value = ev.target.value;
+        if (ph) ph.value = localStorage.getItem(`elc.floor.scu.${ev.target.value}.host`) || '';
+        renderSrmGrid();
+        if (typeof discoverSrms === 'function') discoverSrms();
+      });
+    }
+    const ipInp = hdr.querySelector('input.scu-box-ip');
+    if (ipInp) {
+      const commit = () => {
+        const sid = ipInp.dataset.scuId;
+        const key = `elc.floor.scu.${sid}.host`;
+        const v = (ipInp.value || '').trim();
+        if (v) localStorage.setItem(key, v);
+        else localStorage.removeItem(key);
+        // If this SCU is currently active, mirror into the hidden #scu-host.
+        const activeNow = document.getElementById('scu-picker')?.value ?? '0';
+        if (String(sid) === String(activeNow)) {
+          const ph = document.getElementById('scu-host');
+          if (ph) ph.value = v;
+        }
+      };
+      ipInp.addEventListener('blur', commit);
+      ipInp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); ipInp.blur(); }
+      });
+    }
+  }    // end for (const scuId of scuIds)
 
   // If the filter narrowed us to zero, tell the operator plainly.
   if (_projSnap.ready && currentStrand && scope.length === 0) {
@@ -5562,129 +5647,10 @@ document.getElementById('btn-discover').onclick = () => discoverSrms();
   }
 })();
 
-// 2026-02-12z/aa/ao — Right-rail multi-SCU section.
-//
-// The primary `#scu-picker` + `#scu-host` sit at the top of the
-// SRM sidebar (moved out of the page-level toolbar 2026-02-12ao).
-// This function populates a companion `#srm-scu-multi` block
-// underneath: one mini row per SCU that contributes modules to the
-// current floor, each with:
-//   • a radio to set the "active" SCU (drives `#scu-picker.value`)
-//   • an editable inline IP:port for that specific SCU
-// So on a multi-SCU floor the operator can see + tweak every
-// contributing SCU's link target without leaving the sidebar.
-function _updateSrmScuInfo() {
-  const multi = document.getElementById('srm-scu-multi');
-  if (!multi) return;
-
-  // Contributing SCUs for the currently-selected floor.
-  const strand = (state.currentFloor && state.currentFloor.strand_label)
-    ? String(state.currentFloor.strand_label).toUpperCase()
-    : null;
-  const contributing = new Map();  // scuId -> { id, name, host, port }
-  if (typeof _projSnap !== 'undefined'
-      && _projSnap.ready && strand
-      && _projSnap.moduleFloor && _projSnap.scusById) {
-    for (const [key, floor] of _projSnap.moduleFloor.entries()) {
-      if ((floor || 'F0').toUpperCase() !== strand) continue;
-      const parts = key.split('/');
-      const scuId = parts[1];
-      if (contributing.has(scuId)) continue;
-      const info = _projSnap.scusById.get(String(scuId)) || {};
-      contributing.set(scuId, {
-        id: scuId,
-        name: info.name || '',
-        host: info.host || '',
-        port: info.port || 4001,
-      });
-    }
-  }
-
-  if (contributing.size < 2) {
-    multi.innerHTML = '';
-    return;
-  }
-
-  const activeScu = document.getElementById('scu-picker')?.value ?? '0';
-  const rows = [...contributing.values()]
-    .sort((a, b) => Number(a.id) - Number(b.id))
-    .map(s => {
-      const isActive = String(s.id) === String(activeScu);
-      const perScuKey = `elc.floor.scu.${s.id}.host`;
-      const localHost = localStorage.getItem(perScuKey);
-      // Prefer live per-SCU localStorage; fall back to project.json host.
-      const shownHost = localHost !== null && localHost !== ''
-        ? localHost
-        : (s.host ? `${s.host}:${s.port || 4001}` : '');
-      return (
-        `<div class="srm-scu-row" data-testid="srm-scu-row-${s.id}"` +
-             ` data-scu-id="${s.id}"` +
-             ` style="display:flex;align-items:center;gap:6px;` +
-                    `padding:3px 0;border-top:1px solid var(--line)">` +
-          `<input type="radio" name="srm-scu-active"` +
-                ` data-testid="srm-scu-radio-${s.id}"` +
-                ` value="${s.id}"` +
-                ` ${isActive ? 'checked' : ''}` +
-                ` style="accent-color:var(--accent);cursor:pointer;flex-shrink:0" />` +
-          `<span style="color:${isActive ? 'var(--accent)' : 'var(--text)'};` +
-                     `font-weight:${isActive ? '700' : '400'};` +
-                     `min-width:44px;flex-shrink:0">SCU ${escapeHtml(s.id)}` +
-            (s.name ? ` <span style="color:var(--muted);font-weight:400">· ${escapeHtml(s.name)}</span>` : '') +
-          `</span>` +
-          `<input type="text" class="srm-scu-host" data-scu-id="${s.id}"` +
-                ` data-testid="srm-scu-host-${s.id}"` +
-                ` value="${escapeHtml(shownHost)}" placeholder="ip:port"` +
-                ` title="IP:port for SCU ${escapeHtml(s.id)} — Enter/blur to save"` +
-                ` style="flex:1;min-width:0;padding:2px 5px;font-size:11px;` +
-                       `background:var(--panel);color:var(--text);` +
-                       `border:1px solid var(--line);border-radius:3px;` +
-                       `text-transform:none;font-family:var(--mono)" />` +
-        `</div>`
-      );
-    }).join('');
-  multi.innerHTML =
-    `<div style="color:var(--muted);letter-spacing:.06em;text-transform:uppercase;` +
-                `font-size:9px;padding-bottom:2px">` +
-      `${contributing.size} SCUs on this floor` +
-    `</div>` +
-    rows;
-
-  // Wire radio + per-SCU IP inputs.
-  for (const rad of multi.querySelectorAll('input[type=radio]')) {
-    rad.addEventListener('change', (ev) => {
-      const scuSel = document.getElementById('scu-picker');
-      const scuInp = document.getElementById('scu-host');
-      if (!scuSel) return;
-      scuSel.value = ev.target.value;
-      // Sync the primary IP input to whatever's saved for this SCU.
-      if (scuInp) {
-        scuInp.value = localStorage.getItem(`elc.floor.scu.${ev.target.value}.host`) || '';
-      }
-      _updateSrmScuInfo();
-      // Trigger discovery for the newly-active SCU.
-      if (typeof discoverSrms === 'function') discoverSrms();
-    });
-  }
-  for (const inp of multi.querySelectorAll('input.srm-scu-host')) {
-    const commit = () => {
-      const sid = inp.dataset.scuId;
-      const key = `elc.floor.scu.${sid}.host`;
-      const v = (inp.value || '').trim();
-      if (v) localStorage.setItem(key, v);
-      else localStorage.removeItem(key);
-      // If this SCU is the ACTIVE one, sync the primary #scu-host.
-      const activeNow = document.getElementById('scu-picker')?.value ?? '0';
-      if (String(sid) === String(activeNow)) {
-        const scuInp = document.getElementById('scu-host');
-        if (scuInp) scuInp.value = v;
-      }
-    };
-    inp.addEventListener('blur', commit);
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-    });
-  }
-}
+// 2026-02-12ap — Legacy hook.  The per-SCU boxes are now rendered
+// directly by renderSrmGrid inside .scu-box containers.  Kept as a
+// no-op so any existing callers don't error out.
+function _updateSrmScuInfo() { /* no-op */ }
 
 // Escape closes whichever floor/schedule modal is open (the module
 // modal already has its own Escape handler earlier in this script).

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-02-13k — Basements = plain rect slab (no windows / door)
+
+Two small fixes in `_buildDynamicBuildingSvg`:
+
+- Basement floors (`strand_label` starts with `B`, or
+  `_floorSortKey < 0`) now render as PLAIN rect slabs — no
+  window rects, no ground-floor door.
+- Ground-floor detection tightened: was `i === 0` (index of the
+  BOTTOM slab, which is a basement when one exists — so the
+  basement was getting the F0 door).  Now checks
+  `strand_label === "F0"` or `_floorSortKey === 0`, so the door
+  lands on the actual ground floor no matter how deep the
+  basement stack goes.
+- `_floorSortKey` gains a `!f` guard so a stray undefined slot
+  doesn't blank the panel.
+
+Verified with B1 Parking + F0 Ground + F1 MRBAS: B1 is plain,
+F0 has door + windows, F1 has windows only.  Tests unchanged
+at **486 passing**.
+
+
 ## 2026-02-13j — Polygon slab rendering removed (operator request)
 
 The polygon-slab visual has been shelved.  Frontend changes:

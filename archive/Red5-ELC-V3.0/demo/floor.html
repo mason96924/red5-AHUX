@@ -1599,6 +1599,7 @@ function _floorSortKey(f) {
   // back to legacy name-based parsing so pre-refactor floors still
   // sort sensibly on first boot.  Basements → negative, ground → 0,
   // above-ground → positive.
+  if (!f) return 0;
   const s = String(f.strand_label || '').toUpperCase();
   if (s.startsWith('B')) return -parseInt(s.slice(1), 10);
   if (s.startsWith('F')) return  parseInt(s.slice(1), 10);
@@ -1964,8 +1965,12 @@ function _buildDynamicBuildingSvg(floors) {
     const sideFill = isSel ? 'url(#gradSelSide)' : 'url(#gradSide)';
     const stroke   = isSel ? '#c084fc' : '#3a4658';
     const strokeW  = isSel ? '1.4' : '0.6';
-    // Ground floor: taller-looking windows / door.  Others: 2-3 windows.
-    const isGround = i === 0;
+    // 2026-02-13k — basements have NO windows / doors; ground = F0
+    // gets a door + windows; upper rects get windows only.
+    // Identify by strand_label first, fall back to sort key.
+    const strandU = ((f && f.strand_label) || '').toUpperCase();
+    const isBasement = !!f && (strandU.startsWith('B') || _floorSortKey(f) < 0);
+    const isGround   = !!f && !isBasement && (strandU === 'F0' || _floorSortKey(f) === 0);
     // Window count depends on slabH (skinnier slabs = fewer visible windows).
     const winRows = 1;
     const winCount = 4;
@@ -1976,6 +1981,9 @@ function _buildDynamicBuildingSvg(floors) {
     const winH = Math.max(6, slabH * 0.55);
     const winY = yTop + (slabH - winH) / 2;
     const windows = [];
+    if (isBasement) {
+      // Plain rect slab — no windows, no door.
+    } else {
     for (let w = 0; w < winCount; w++) {
       if (isGround && w === Math.floor(winCount / 2) - 1) {
         // Door in the ground floor (replace 2nd window with a door).
@@ -1994,6 +2002,7 @@ function _buildDynamicBuildingSvg(floors) {
                            fill="url(#gradWindow)"
                            stroke="#4a637d" stroke-width="0.4"/>`);
     }
+    }   // end !isBasement
 
     // Front wall face for this slab.
     const front = `<rect class="slab-front"

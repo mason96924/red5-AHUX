@@ -5219,6 +5219,72 @@ document.addEventListener('keydown', async (ev) => {
   await deleteSelectedPlacements();
 });
 
+// 2026-02-12al — Arrow-key nudge for the current selection.
+// Applies to both selected fixtures AND selected windows so a
+// marquee sweep can be finessed without going back to the mouse.
+//   ArrowKey            → step = 0.10 m  (10 cm, the default fine step)
+//   Shift + ArrowKey    → step = 1.00 m  (coarse, whole-metre bumps)
+//   Alt   + ArrowKey    → step = 0.01 m  (extra-fine, 1 cm)
+// Ignored when typing in any INPUT/TEXTAREA/SELECT; ignored when
+// nothing is selected.  Multiple keystrokes are batched via a
+// trailing 300 ms debounce so autorepeat doesn't flood the API.
+let _arrowSaveTimer = null;
+let _arrowFxDirty   = false;
+let _arrowWinDirty  = false;
+document.addEventListener('keydown', (ev) => {
+  const k = ev.key;
+  if (k !== 'ArrowUp' && k !== 'ArrowDown'
+      && k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (['INPUT','TEXTAREA','SELECT'].includes(tag)) return;
+  if (!state.currentFloor) return;
+  const nFx  = state.selectedDeviceIds ? state.selectedDeviceIds.size : 0;
+  const nWin = state.windowSel         ? state.windowSel.size         : 0;
+  if (nFx + nWin === 0) return;   // nothing selected
+  ev.preventDefault();            // stop page scroll
+  const step = ev.altKey ? 0.01 : (ev.shiftKey ? 1.00 : 0.10);
+  const dx = (k === 'ArrowRight') ? step : (k === 'ArrowLeft') ? -step : 0;
+  const dy = (k === 'ArrowDown')  ? step : (k === 'ArrowUp')   ? -step : 0;
+
+  // Fixture nudge — walk the placed fixtures list and shift any
+  // whose device_id matches a selected id.
+  if (nFx) {
+    const sel = state.selectedDeviceIds;
+    for (const fx of (state.currentFloor.fixtures || [])) {
+      const did = _normaliseToInventory(fx.device_id);
+      if (!sel.has(did)) continue;
+      fx.x_m = (fx.x_m || 0) + dx;
+      fx.y_m = (fx.y_m || 0) + dy;
+      _arrowFxDirty = true;
+    }
+  }
+  // Window nudge — walk the windows list.
+  if (nWin) {
+    const sel = state.windowSel;
+    for (const w of (state.currentFloor.windows || [])) {
+      if (!sel.has(w.id)) continue;
+      w.x_m = (w.x_m || 0) + dx;
+      w.y_m = (w.y_m || 0) + dy;
+      _arrowWinDirty = true;
+    }
+  }
+  paintCanvas();
+  // Debounced trailing save (300 ms after the LAST keystroke).
+  clearTimeout(_arrowSaveTimer);
+  _arrowSaveTimer = setTimeout(async () => {
+    if (_arrowFxDirty && state.currentFloor) {
+      _arrowFxDirty = false;
+      try { await savePlacements(state.currentFloor.fixtures); }
+      catch (e) { console.error('fixture nudge save failed', e); }
+    }
+    if (_arrowWinDirty && state.currentFloor) {
+      _arrowWinDirty = false;
+      try { await _saveWindows(); }
+      catch (e) { console.error('window nudge save failed', e); }
+    }
+  }, 300);
+});
+
 document.getElementById('canvas-delete').addEventListener('click',
   () => deleteSelectedPlacements());
 

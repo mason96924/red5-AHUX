@@ -3762,8 +3762,9 @@ function paintCanvas() {
   const rooms = f.rooms || [];
   for (const fx of f.fixtures) {
     if (!fixtureIsOn(fx)) continue;
-    const el = state.lightingElements.get(fx.device_id)
-            || state.lightingElements.get(_normaliseToInventory(fx.device_id));
+    // 2026-02-12ar — fuzzy lookup so light-spill sampling picks up
+    // the correct shape even under off-by-one channel-id drift.
+    const [, el] = _findLightingElement(fx.device_id);
     if (!el) continue;   // placement exists but element got un-assigned
 
     const [rr, gg, bb] = cctColor(el.cct_k || 4000);
@@ -3854,15 +3855,15 @@ function paintCanvas() {
   };
   if (state.mode === 'layout') {
     for (const fx of f.fixtures) {
-      // 2026-02-12ar — lighting-element lookup: try raw device_id
-      // first, then the normalised inventory id.  Without the
-      // fallback, fixtures whose stored id doesn't exactly match a
-      // lightingElements map key silently rendered as a point (the
-      // default in the switch) — which is why line fixtures showed
-      // up as a dot when not selected.  This matches the pattern
-      // already used at line 4578 for shape-preset apply.
-      const el = state.lightingElements.get(fx.device_id)
-              || state.lightingElements.get(_normaliseToInventory(fx.device_id));
+      // 2026-02-12ar — Use the same fuzzy lookup that selection uses
+      // (_findLightingElement) so the paint resolves the lighting
+      // element even when the fixture's stored device_id is
+      // off-by-one on the sub-address (0-based ↔ 1-based channel
+      // migration from earlier revs).  Without this, line/stick/ring
+      // fixtures whose ids drifted rendered as a tiny point until
+      // selected, because the selection code path uses this same
+      // fuzzy lookup and thereby "fixes" the shape at focus time.
+      const [, el] = _findLightingElement(fx.device_id);
       const type = el?.type || 'onoff';
       const shape = el?.shape || 'point';
       const selected = state.selectedDeviceIds.has(fx.device_id)

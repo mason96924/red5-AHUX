@@ -1696,32 +1696,38 @@ function _buildIsoBuildingSvg(sorted, selId) {
   // polygon footprint in iso view (≈ 1.14× iso-footprint span).
   const towerTargetTotal_m = Math.max(refHalfW, refHalfH) * 1.5;
   const slabH_m = towerTargetTotal_m / Math.max(N, 1);
-  const cos30 = Math.cos(Math.PI / 6), sin30 = Math.sin(Math.PI / 6);
-  // 2026-02-13g — Standard 30° isometric.  The camera sits south-of-
-  // east + above, so the SOUTH face (the Y=max edge of a polygon
-  // that came out of a Y-down drawing) always projects to the front
-  // of the screen — matching what an operator in the northern
-  // hemisphere expects to see when they look at a rect.  Because
-  // this convention lives in the projection itself, ANY polygon
-  // slab traced from a drawing follows the same rule without extra
-  // rotation: whichever polygon edge has the highest Y in the
-  // drawing sits at the bottom of the panel.  For SH buildings the
-  // operator can just rotate the slab 180° via the slider.
-  const AX_COS =  cos30, AX_SIN = sin30;
-  const AY_COS = -cos30, AY_SIN = sin30;   // Y contributes NEGATIVELY to iso_x
-  // Fit everything to a 220 × 320 viewBox with generous padding.
-  // 1) Determine iso extents over ALL floors + ALL Z levels.
+  // 2026-02-13h — CABINET OBLIQUE projection to match the legacy
+  // rect renderer.  Viewer stands DUE SOUTH of the building, slightly
+  // above.  The south face (Y = max in polygon coords, where Y grew
+  // south during DXF import) is drawn UN-ROTATED as the flat "front"
+  // of every slab — same visual language as the plain rect tower.
+  // The remaining north-depth is offset up-and-right at 45° with a
+  // 40 % depth ratio.  Any polygon slab therefore looks like a
+  // "cabinet-box with a polygon-shaped top face" instead of an
+  // isometric diamond that spins the whole tower.
+  //
+  //   screen_x = X + (Y_max − Y) · cos45 · ratio
+  //   screen_y = -Z − (Y_max − Y) · sin45 · ratio
+  const DEPTH_RATIO = 0.40;
+  const DEPTH_COS = Math.cos(Math.PI / 4) * DEPTH_RATIO;
+  const DEPTH_SIN = Math.sin(Math.PI / 4) * DEPTH_RATIO;
+  // Y_max used for "distance from front" — same across all floors so
+  // slabs align on a common front plane (the south wall).
+  let yMaxAll = -Infinity;
+  for (const poly of polys) for (const v of poly) if (v[1] > yMaxAll) yMaxAll = v[1];
+  // Extents of the projected geometry.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (let i = 0; i < N; i++) {
     const zBot = i * slabH_m, zTop = (i + 1) * slabH_m;
     for (const v of polys[i]) {
+      const depth = yMaxAll - v[1];
       for (const z of [zBot, zTop]) {
-        const ix = v[0] * AX_COS + v[1] * AY_COS;
-        const iy = v[0] * AX_SIN + v[1] * AY_SIN - z;
-        if (ix < minX) minX = ix;
-        if (ix > maxX) maxX = ix;
-        if (iy < minY) minY = iy;
-        if (iy > maxY) maxY = iy;
+        const sx = v[0] + depth * DEPTH_COS;
+        const sy = -z    - depth * DEPTH_SIN;
+        if (sx < minX) minX = sx;
+        if (sx > maxX) maxX = sx;
+        if (sy < minY) minY = sy;
+        if (sy > maxY) maxY = sy;
       }
     }
   }
@@ -1730,10 +1736,13 @@ function _buildIsoBuildingSvg(sorted, selId) {
   const scale = Math.min((vw - 2*pad) / spanX, (vh - 2*pad) / spanY);
   const ox = pad - minX * scale + ((vw - 2*pad) - spanX * scale) / 2;
   const oy = pad - minY * scale + ((vh - 2*pad) - spanY * scale) / 2;
-  const project = (x, y, z) => ({
-    sx: ox + (x * AX_COS + y * AY_COS) * scale,
-    sy: oy + (x * AX_SIN + y * AY_SIN - z) * scale,
-  });
+  const project = (x, y, z) => {
+    const depth = yMaxAll - y;
+    return {
+      sx: ox + (x + depth * DEPTH_COS) * scale,
+      sy: oy + (-z - depth * DEPTH_SIN) * scale,
+    };
+  };
   // Depth key: for correct z-order, sort each face by centroid depth
   // (nearer to viewer = drawn later).  For an axonometric camera along
   // (1, 1, 1), depth ≈ -(x + y + z) (larger x+y+z → farther back).
@@ -1789,12 +1798,14 @@ function _buildIsoBuildingSvg(sorted, selId) {
     for (let j = 0; j < ring.length; j++) {
       const [x1, y1] = ring[j];
       const [x2, y2] = ring[(j + 1) % ring.length];
-      // 2026-02-13g — visibility under the south-dominant axonometric:
-      // viewer sits along (AX_SIN, AY_SIN) in the XY plane, so a side
-      // face is visible when its outward normal has a positive dot
-      // product with that viewer direction.
+      // 2026-02-13h — visibility under cabinet oblique: viewer
+      // stands due south + slight east + above.  Outward-normal
+      // components (nx, ny) determine visibility — a face with
+      // ny > 0 (points south, toward viewer) is always visible;
+      // faces with ny ≤ 0 are visible only if the small east-tilt
+      // (DEPTH_COS ≈ 0.28) picks them up via +nx.
       const nx = (y2 - y1), ny = -(x2 - x1);
-      const visible = (nx * AX_SIN + ny * AY_SIN) > 0;
+      const visible = (nx * DEPTH_COS + ny) > 0;
       if (!visible) continue;
       const p1 = project(x1, y1, zBot);
       const p2 = project(x2, y2, zBot);
@@ -1803,7 +1814,12 @@ function _buildIsoBuildingSvg(sorted, selId) {
       // Pick side gradient based on edge orientation (rightward vs leftward).
       const useR = (x2 - x1) >= 0;
       const fill = useR ? sideFillR : sideFillL;
-      const depth = -((x1 + x2) / 2 * AX_SIN + (y1 + y2) / 2 * AY_SIN - zBot);
+      // Painter-algorithm depth key = -screen_y of centroid.
+      // Faces higher up on screen (small screen_y = large depth)
+      // are drawn first so nearer faces paint over them.
+      const midZ = (zBot + zTop) / 2;
+      const midY = (y1 + y2) / 2;
+      const depth = midZ + (yMaxAll - midY) * DEPTH_SIN;
       // 2026-02-13 — floor-boundary separator on the front side face
       // so stacked identical-footprint rects don't look like one prism.
       const separator = (i > 0)
@@ -1829,9 +1845,11 @@ function _buildIsoBuildingSvg(sorted, selId) {
       const [x1, y1] = ring[j];
       const [x2, y2] = ring[(j + 1) % ring.length];
       const nx = (y2 - y1), ny = -(x2 - x1);
-      if ((nx * AX_SIN + ny * AY_SIN) <= 0) continue;
+      if ((nx * DEPTH_COS + ny) <= 0) continue;
       const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-      const iy = mx * AX_SIN + my * AY_SIN;   // south-dominant iso y
+      // Front-most edge in cabinet oblique = the one closest to viewer
+      // (largest polygon Y, i.e., southernmost edge midpoint).
+      const iy = my;    // larger Y (south) = closer / front
       if (iy > bestIsoY) { bestIsoY = iy; bestEdge = [x1, y1, x2, y2]; }
     }
     // Top face — always visible (camera looks down).
@@ -1846,7 +1864,8 @@ function _buildIsoBuildingSvg(sorted, selId) {
     const strand = (f.strand_label || '').toUpperCase();
     const disp = strand && strand !== (f.name || '').toUpperCase()
       ? `${strand} · ${f.name || ''}` : (strand || f.name || '');
-    const topDepth = -(cx * AX_SIN + cy * AY_SIN - zTop);
+    // Top face — same depth logic.
+    const topDepth = zTop + (yMaxAll - cy) * DEPTH_SIN;
     // Side label — printed on the visible front-side face midpoint at
     // z = (zBot+zTop)/2.  Uses a slightly-different depth so it draws
     // above the side quad but before the top face.
@@ -1856,7 +1875,7 @@ function _buildIsoBuildingSvg(sorted, selId) {
       const zMid = (zBot + zTop) / 2;
       const mp = project((ex1 + ex2) / 2, (ey1 + ey2) / 2, zMid);
       const shortLabel = strand || (f.name || '').split(/[\s·]/)[0] || `L${i}`;
-      const sideDepth = -((ex1 + ex2) / 2 * AX_SIN + (ey1 + ey2) / 2 * AY_SIN - zMid) - 0.002;
+      const sideDepth = (zBot + zTop) / 2 + (yMaxAll - (ey1 + ey2) / 2) * DEPTH_SIN - 0.002;
       faces.push({
         depth: sideDepth,
         svg: `<text class="slab-label" x="${mp.sx}" y="${mp.sy + 3}"

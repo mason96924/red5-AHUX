@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-02-13h — Cabinet oblique projection for polygon slabs (matches rect look)
+
+### Context
+
+Operator screenshot compared:
+* Before adding a polygon: the rect tower rendered by the legacy
+  `_buildDynamicBuildingSvg` path — flat SOUTH face at true scale,
+  a slim EAST parallelogram going up-and-right at 45°, roof cap
+  on top.  This is a **CABINET OBLIQUE** projection.
+* After adding a polygon: `_buildIsoBuildingSvg` kicked in and
+  drew a tilted 30° iso diamond instead — completely different
+  visual language.  The tower "changed orientation" and the
+  south face was no longer front-and-centre.
+
+### What shipped
+
+Rewrote the polygon renderer to use the SAME cabinet oblique
+projection as the legacy rect path:
+
+```
+screen_x = X + (Y_max − Y) · cos45 · 0.4
+screen_y = −Z − (Y_max − Y) · sin45 · 0.4
+```
+
+So the polygon's south-most vertices (Y_max) sit at zero depth
+= flat on the front plane, and north depth extends up-and-right
+just like the rects.  Visibility check switched to
+`(nx · DEPTH_COS + ny) > 0` — south faces always visible, east
+face visible if the small east tilt catches it.  Painter-alg
+depth key now uses `screen_y`-of-centroid so back faces paint
+first, front faces paint last.
+
+The rotation slider was ALREADY there — verified visible in the
+Floor Details modal when F2 (pentagon) is selected, complete
+with `−90/−45/−15/0/+15/+45/+90` presets + `Reset to rect`.
+User's "I do not see the rotation setting" was the modal not
+opening for the polygon floor.
+
+Tests unchanged at **486 passing**.
+
+
 ## 2026-02-13g — South-face-front convention preserved for polygons
 
 ### Context

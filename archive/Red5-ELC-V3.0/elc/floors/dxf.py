@@ -48,6 +48,21 @@ class DxfConversion:
         {"id": "OFF-1", "name": "Office 1",
          "vertices": [[x_m, y_m], [x_m, y_m], ...]}
 
+    ``windows`` are LINE / 2-vertex LWPOLYLINE entities on any layer
+    whose name contains "WIN" (case-insensitive) — the AutoCAD
+    convention for glazing.  2026-02-12aj: auto-extraction on
+    DXF import.  Each is::
+
+        {"id": "<uuid>", "x_m": …, "y_m": …,
+         "length_m": …, "angle_deg": …,
+         "blind_level": 0.0,
+         "sill_height_m": 1.0, "head_height_m": 2.2,
+         "name": "N_W1" | "E_W1" | …}
+
+    Windows are sorted top-to-bottom, then left-to-right, and named
+    accordingly.  Names honour the same cardinal convention used by
+    the frontend badge (angle-first, position-second, 5° tolerance).
+
     Coordinates are in metres, relative to the drawing's bounding-box
     origin (top-left after Y flip) so they line up 1:1 with the SVG
     the frontend renders and with the ``x_m`` / ``y_m`` fixture axes.
@@ -56,10 +71,13 @@ class DxfConversion:
     width_m: float
     height_m: float
     rooms: list[dict] = None  # type: ignore[assignment]
+    windows: list[dict] = None  # type: ignore[assignment]
 
     def __post_init__(self):
         if self.rooms is None:
             object.__setattr__(self, "rooms", [])
+        if self.windows is None:
+            object.__setattr__(self, "windows", [])
 
 
 # DXF $INSUNITS → metres conversion factor.  Values from the DXF spec.
@@ -144,7 +162,117 @@ def dxf_to_svg(dxf_bytes: bytes) -> DxfConversion:
         drawing_height_m=height_m,
     )
 
-    return DxfConversion(svg=svg, width_m=width_m, height_m=height_m, rooms=rooms)
+    # ---- Extract windows (2026-02-12aj auto-import) ------------------
+    # Any LINE / LWPOLYLINE on a layer named like "WINDOWS", "WIN",
+    # "A-GLAZ", etc. is imported as a window.  Named top→bottom,
+    # left→right with the same 4-way cardinal rule used by the
+    # frontend Windows-panel badge.
+    windows = _extract_windows(
+        msp, unit_m=unit_m,
+        origin_x=float(bbox.extmin.x),
+        origin_y=float(bbox.extmin.y),
+        drawing_width_m=width_m,
+        drawing_height_m=height_m,
+    )
+
+    return DxfConversion(svg=svg, width_m=width_m, height_m=height_m,
+                         rooms=rooms, windows=windows)
+
+
+def _extract_windows(msp, *, unit_m: float, origin_x: float, origin_y: float,
+                     drawing_width_m: float, drawing_height_m: float) -> list[dict]:
+    """Auto-extract windows from a DXF's modelspace (2026-02-12aj).
+
+    Convention: any LINE or 2-vertex LWPOLYLINE on a layer whose name
+    contains "WIN" (case-insensitive, catches WINDOW, WINDOWS, WIN,
+    A-GLAZ-WIN, and similar AIA / bespoke naming schemes).
+
+    Returned dicts match the window schema (see :class:`DxfConversion`).
+    Sorted top-to-bottom, then left-to-right, and named accordingly
+    using the same 4-way cardinal convention the frontend badge uses.
+    """
+    import uuid
+    raw: list[dict] = []
+
+    def _add(x0: float, y0: float, x1: float, y1: float) -> None:
+        # Convert both endpoints to metres in the top-left origin
+        # frame (Y flipped, same convention as _extract_rooms).
+        px0 = (float(x0) - origin_x) * unit_m
+        py0 = drawing_height_m - (float(y0) - origin_y) * unit_m
+        px1 = (float(x1) - origin_x) * unit_m
+        py1 = drawing_height_m - (float(y1) - origin_y) * unit_m
+        length = ((px1 - px0) ** 2 + (py1 - py0) ** 2) ** 0.5
+        if length < 0.2:
+            return  # skip degenerate / sub-20 cm segments
+        cx = (px0 + px1) / 2.0
+        cy = (py0 + py1) / 2.0
+        import math as _m
+        angle = _m.degrees(_m.atan2(py1 - py0, px1 - px0)) % 360.0
+        raw.append({
+            "id": str(uuid.uuid4()),
+            "x_m": cx, "y_m": cy,
+            "length_m": length, "angle_deg": angle,
+            "blind_level": 0.0,
+            "sill_height_m": 1.0, "head_height_m": 2.2,
+        })
+
+    def _layer_is_window(layer_name: str) -> bool:
+        return "WIN" in (layer_name or "").upper()
+
+    for line in msp.query("LINE"):
+        if not _layer_is_window(line.dxf.layer):
+            continue
+        _add(line.dxf.start.x, line.dxf.start.y,
+             line.dxf.end.x,   line.dxf.end.y)
+
+    for pl in msp.query("LWPOLYLINE"):
+        if not _layer_is_window(pl.dxf.layer):
+            continue
+        pts = list(pl.get_points("xy"))
+        if len(pts) < 2:
+            continue
+        # Multi-segment polylines: treat every consecutive pair as a
+        # separate window bar.  Single-bar architects will only draw
+        # two vertices; multi-bar façades give one entry per pane.
+        for i in range(len(pts) - 1):
+            _add(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1])
+
+    # Sort top-to-bottom, then left-to-right (operator ask).
+    # DXF-to-metres flipped Y so smaller y_m = up on screen = north
+    # end of the drawing.  Sort key: (y_m rounded to 5 cm bucket,
+    # then x_m) so windows in the "same visual row" group by y and
+    # then order left→right.
+    raw.sort(key=lambda w: (round(w["y_m"] / 0.05), w["x_m"]))
+
+    # Auto-name using the 4-way cardinal rule (angle-first, position-
+    # second, 5° tolerance) so the names align with the frontend's
+    # badge assignment.  Replicated here to keep the DXF layer free
+    # of frontend-specific imports.
+    cx = drawing_width_m / 2.0
+    cy = drawing_height_m / 2.0
+    TOL = 5.0
+
+    def _cardinal(w: dict) -> str:
+        dx = w["x_m"] - cx
+        dy = w["y_m"] - cy
+        ang = ((w["angle_deg"] % 180) + 180) % 180
+        dH = min(ang, 180 - ang)
+        dV = abs(ang - 90)
+        if dH <= TOL:
+            return "S" if dy >= 0 else "N"
+        if dV <= TOL:
+            return "E" if dx >= 0 else "W"
+        if abs(dx) > abs(dy):
+            return "E" if dx >= 0 else "W"
+        return "S" if dy >= 0 else "N"
+
+    # 1-based counter per cardinal, assigned in sorted order.
+    counters: dict[str, int] = {"N": 0, "E": 0, "S": 0, "W": 0}
+    for w in raw:
+        c = _cardinal(w)
+        counters[c] += 1
+        w["name"] = f"{c}_W{counters[c]}"
+    return raw
 
 
 def _extract_rooms(msp, *, unit_m: float, origin_x: float, origin_y: float,

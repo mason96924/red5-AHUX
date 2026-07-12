@@ -178,6 +178,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 width_m=conv.width_m,
                 height_m=conv.height_m,
                 rooms=conv.rooms,
+                windows=conv.windows,
                 db_path=db_path,
             )
         except Exception as e:

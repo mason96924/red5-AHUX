@@ -133,3 +133,103 @@ class TestRoomExtraction:
             doc.header["$INSUNITS"] = 4
         r = dxf_to_svg(_dxf_bytes(_b))
         assert r.rooms == []
+
+
+
+class TestWindowExtraction:
+    """2026-02-12aj — auto-extract windows from DXF LINEs on any
+    layer whose name contains 'WIN' (case-insensitive)."""
+
+    def test_lines_on_windows_layer_become_windows(self):
+        def _b(doc):
+            msp = doc.modelspace()
+            # 10 m × 6 m floor rectangle drawn as 4 walls on layer 0.
+            msp.add_line((0, 0), (10000, 0))
+            msp.add_line((10000, 0), (10000, 6000))
+            msp.add_line((10000, 6000), (0, 6000))
+            msp.add_line((0, 6000), (0, 0))
+            doc.layers.add(name="WINDOWS", color=5)
+            # One N-wall window (horizontal), one E-wall (vertical),
+            # one S-wall (horizontal), one W-wall (vertical).
+            # Coordinates in mm.
+            msp.add_line((2000, 6000), (3200, 6000),  # N wall, top of drawing
+                         dxfattribs={"layer": "WINDOWS"})
+            msp.add_line((10000, 4000), (10000, 5000),  # E wall
+                         dxfattribs={"layer": "WINDOWS"})
+            msp.add_line((5000, 0),    (6500, 0),  # S wall
+                         dxfattribs={"layer": "WINDOWS"})
+            msp.add_line((0, 2000),    (0, 3000),  # W wall
+                         dxfattribs={"layer": "WINDOWS"})
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert len(r.windows) == 4
+        # Every window has the full schema populated.
+        for w in r.windows:
+            for k in ("id", "x_m", "y_m", "length_m", "angle_deg",
+                      "blind_level", "sill_height_m", "head_height_m", "name"):
+                assert k in w, f"missing {k}"
+        # Sorted top-to-bottom, then left-to-right.  DXF y flipped so
+        # the (2000..3200, 6000) window ends up near y_m ≈ 0 (top).
+        assert r.windows[0]["y_m"] < r.windows[-1]["y_m"]
+        # Every name matches the {DIR}_W{n} pattern.
+        names = [w["name"] for w in r.windows]
+        for n in names:
+            assert n[:2] in ("N_", "E_", "S_", "W_"), n
+        # Exactly one N, one E, one S, one W in this fixture.
+        dirs = sorted(n[:1] for n in names)
+        assert dirs == ["E", "N", "S", "W"]
+
+    def test_case_insensitive_layer_and_alternate_names(self):
+        def _b(doc):
+            msp = doc.modelspace()
+            msp.add_line((0, 0), (5000, 0))
+            msp.add_line((5000, 0), (5000, 3000))
+            msp.add_line((5000, 3000), (0, 3000))
+            msp.add_line((0, 3000), (0, 0))
+            for lname in ("Windows", "win", "A-GLAZ-WIN"):
+                doc.layers.add(name=lname, color=5)
+            msp.add_line((1000, 3000), (2000, 3000),
+                         dxfattribs={"layer": "Windows"})
+            msp.add_line((3000, 3000), (4000, 3000),
+                         dxfattribs={"layer": "win"})
+            msp.add_line((4500, 3000), (4900, 3000),
+                         dxfattribs={"layer": "A-GLAZ-WIN"})
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert len(r.windows) == 3
+
+    def test_non_window_layers_ignored(self):
+        def _b(doc):
+            msp = doc.modelspace()
+            msp.add_line((0, 0), (5000, 0))
+            msp.add_line((5000, 0), (5000, 3000))
+            msp.add_line((5000, 3000), (0, 3000))
+            msp.add_line((0, 3000), (0, 0))
+            doc.layers.add(name="DOORS", color=6)
+            doc.layers.add(name="FURNITURE", color=7)
+            msp.add_line((1000, 0), (2000, 0),
+                         dxfattribs={"layer": "DOORS"})
+            msp.add_line((3000, 1000), (4000, 1000),
+                         dxfattribs={"layer": "FURNITURE"})
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert r.windows == []
+
+    def test_degenerate_sub_20cm_segments_dropped(self):
+        def _b(doc):
+            msp = doc.modelspace()
+            msp.add_line((0, 0), (5000, 0))
+            msp.add_line((5000, 0), (5000, 3000))
+            msp.add_line((5000, 3000), (0, 3000))
+            msp.add_line((0, 3000), (0, 0))
+            doc.layers.add(name="WINDOWS", color=5)
+            # 100 mm = 0.1 m — under the 0.2 m guard.
+            msp.add_line((1000, 3000), (1100, 3000),
+                         dxfattribs={"layer": "WINDOWS"})
+            # 800 mm = 0.8 m — kept.
+            msp.add_line((2000, 3000), (2800, 3000),
+                         dxfattribs={"layer": "WINDOWS"})
+            doc.header["$INSUNITS"] = 4
+        r = dxf_to_svg(_dxf_bytes(_b))
+        assert len(r.windows) == 1
+        assert r.windows[0]["length_m"] == pytest.approx(0.8, rel=1e-3)

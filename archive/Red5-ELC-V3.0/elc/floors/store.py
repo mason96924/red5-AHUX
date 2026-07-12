@@ -325,6 +325,47 @@ def _validate_rooms(rooms: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _validate_windows(windows: Any) -> list[dict[str, Any]]:
+    """Minimal-shape validation for windows.  Each entry must carry
+    ``x_m`` / ``y_m``; ``length_m`` / ``angle_deg`` fall back to
+    sensible defaults; blind_level clamps to [0, 1]; sill/head
+    heights default to 1.0 / 2.2 m.  Optional operator-set ``name``
+    is trimmed + capped at 64 chars (empty strings dropped so the
+    UI falls back to the auto default).  Extracted 2026-02-12aj so
+    the DXF-import path can reuse the same normaliser.
+    """
+    if windows is None:
+        return []
+    if not isinstance(windows, list):
+        raise BadInput("windows must be a list")
+    out: list[dict[str, Any]] = []
+    for w in windows:
+        if not isinstance(w, dict):
+            raise BadInput("each window must be an object")
+        try:
+            entry = {
+                "id":            str(w.get("id") or _new_id()),
+                "x_m":           float(w["x_m"]),
+                "y_m":           float(w["y_m"]),
+                "length_m":      float(w.get("length_m", 1.2)),
+                "angle_deg":     float(w.get("angle_deg", 0.0)) % 360.0,
+                "blind_level":   min(max(float(w.get("blind_level", 0.0)), 0.0), 1.0),
+                "sill_height_m": float(w.get("sill_height_m", 1.0)),
+                "head_height_m": float(w.get("head_height_m", 2.2)),
+            }
+            nm = w.get("name")
+            if nm is not None:
+                nm_s = str(nm).strip()[:64]
+                if nm_s:
+                    entry["name"] = nm_s
+            out.append(entry)
+        except (KeyError, TypeError, ValueError) as e:
+            raise BadInput(f"invalid window: {e}") from e
+    return out
+
+
+
+
 def list_floors(db_path: str | None = None) -> list[dict[str, Any]]:
     """Return every floor (with fixtures, without the SVG blob -- that
     is served from a dedicated ``/floors/{id}/background.svg`` route
@@ -414,6 +455,7 @@ def create_floor(
     height_m: float = 15.0,
     fixtures: list[dict[str, Any]] | None = None,
     rooms: list[dict[str, Any]] | None = None,
+    windows: list[dict[str, Any]] | None = None,
     strand_label: str | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
@@ -426,6 +468,7 @@ def create_floor(
         raise BadInput(f"svg exceeds {_MAX_SVG_BYTES // 1024} KB cap")
     fixtures_norm = _validate_fixtures(fixtures)
     rooms_norm = _validate_rooms(rooms)
+    windows_norm = _validate_windows(windows)
     _check_device_uniqueness(fixtures_norm, db_path=db_path)
     label = str(strand_label or "").strip().upper() or None
     fid = _new_id()
@@ -436,10 +479,10 @@ def create_floor(
                 "INSERT INTO floors "
                 "(id, name, strand_label, svg, width_m, height_m, fixtures_json, "
                 "rooms_json, windows_json, ceiling_height_m, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 3.0, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 3.0, ?, ?)",
                 (fid, name, label, svg, width_m, height_m,
                  json.dumps(fixtures_norm), json.dumps(rooms_norm),
-                 now, now),
+                 json.dumps(windows_norm), now, now),
             )
     except Exception as e:  # noqa: BLE001
         if "UNIQUE" in str(e).upper():
@@ -504,36 +547,7 @@ def update_floor(
         sets.append("rooms_json = ?")
         args.append(json.dumps(rooms_norm))
     if windows is not None:
-        # Minimal-shape validation for windows -- each entry must have
-        # x_m/y_m/length_m/angle_deg; blind_level defaults to 0, and
-        # sill/head heights fall back to 1.0/2.2 m if omitted.
-        wins_norm = []
-        for w in (windows or []):
-            if not isinstance(w, dict):
-                raise BadInput("each window must be an object")
-            try:
-                entry = {
-                    "id":            str(w.get("id") or _new_id()),
-                    "x_m":           float(w["x_m"]),
-                    "y_m":           float(w["y_m"]),
-                    "length_m":      float(w.get("length_m", 1.2)),
-                    "angle_deg":     float(w.get("angle_deg", 0.0)) % 360.0,
-                    "blind_level":   min(max(float(w.get("blind_level", 0.0)), 0.0), 1.0),
-                    "sill_height_m": float(w.get("sill_height_m", 1.0)),
-                    "head_height_m": float(w.get("head_height_m", 2.2)),
-                }
-                # Optional operator-set identifier (e.g. "N_W1" default,
-                # renamed by hand in the Windows panel).  Trim + cap
-                # length; drop empty strings so the UI falls back to
-                # the auto default.
-                nm = w.get("name")
-                if nm is not None:
-                    nm_s = str(nm).strip()[:64]
-                    if nm_s:
-                        entry["name"] = nm_s
-                wins_norm.append(entry)
-            except (KeyError, TypeError, ValueError) as e:
-                raise BadInput(f"invalid window: {e}") from e
+        wins_norm = _validate_windows(windows)
         sets.append("windows_json = ?")
         args.append(json.dumps(wins_norm))
     if ceiling_height_m is not None:

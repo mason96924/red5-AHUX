@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-02-13e — Level picker on "＋ New floor" (above / basement)
+
+### Context
+
+Operator reported that new floors always landed at F0 in the
+building panel, even when the existing tower already had F0/F1.
+Root cause: `+ New floor` never asked for a level and the
+create endpoints ignored `strand_label`.
+
+### What shipped
+
+- **Frontend (`bi-new-floor-input.onchange`)**: after the file
+  chooser, computes the next-above (`F{max+1}`) and next-basement
+  (`B{|min|+1}`) strand labels from `state.floors` via
+  `_floorSortKey`, then shows a native OK/Cancel picker:
+  ```
+  OK   → above top  (F2)
+  Cancel → new basement (B1)
+  ```
+  Very first floor auto-defaults to `F0` (no picker).  Chosen
+  label is sent as `strand_label` in the multipart body.
+- **Backend**: `POST /floors`, `POST /floors/import-dxf`, and
+  `POST /floors/import-image` all now accept `strand_label`
+  (Form for the multipart routes, JSON field for the plain
+  create route).  Passed straight through to
+  `store.create_floor` which already handled it.
+- **Verified** end-to-end via curl + iso screenshot:
+  `B1 Parking (circle) ▸ F0 Ground ▸ F1 MRBAS ▸ F2 Test (pentagon)`
+  stacks in the correct vertical order in the panel.
+- Tests unchanged (486/486 passing).
+
+
 ## 2026-02-13d — Iso renderer: coaxial + normalised slabs (fixes leaning-tower bug)
 
 ### Context

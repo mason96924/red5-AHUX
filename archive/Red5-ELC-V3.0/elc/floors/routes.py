@@ -121,6 +121,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 fixtures=payload.get("fixtures"),
                 rooms=payload.get("rooms"),
                 slab=payload.get("slab"),
+                strand_label=payload.get("strand_label"),
                 db_path=db_path,
             )
         except Exception as e:
@@ -163,6 +164,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
     async def import_dxf(
         name: str = Form(...),
         dxf: UploadFile = File(...),
+        strand_label: str | None = Form(None),
     ) -> dict[str, Any]:
         """Multipart upload — one DXF, converted to SVG, saved as a
         new floor.  The SVG is stored inline (see PRD § Phase 6.1).
@@ -183,6 +185,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 rooms=conv.rooms,
                 windows=conv.windows,
                 slab=conv.slab,
+                strand_label=strand_label,
                 db_path=db_path,
             )
         except Exception as e:
@@ -217,6 +220,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
         floor_id: str | None = Form(None),
         width_m: float | None = Form(None),
         height_m: float | None = Form(None),
+        strand_label: str | None = Form(None),
     ) -> dict[str, Any]:
         """Multipart upload — one PNG / JPG floor plan → OpenCV contour
         → slab polyline.
@@ -270,6 +274,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
                 width_m=max(eff_w, 0.5),
                 height_m=max(eff_h, 0.5) if h_m is None else h_m,
                 slab=slab,
+                strand_label=strand_label,
                 db_path=db_path,
             )
         except Exception as e:

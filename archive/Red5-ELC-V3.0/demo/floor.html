@@ -6127,21 +6127,45 @@ document.getElementById('bi-new-floor-input').onchange = async (ev) => {
   const file = ev.target.files[0];
   if (!file) return;
   ev.target.value = '';
+  // 2026-02-13e — pick strand label based on existing floors so
+  // newly-added slabs stack above the current top (default) or
+  // below the current bottom (basement).  Uses _floorSortKey so
+  // pre-existing floors sort the same way as the tree / iso view.
+  const existingKeys = (state.floors || [])
+    .map(_floorSortKey)
+    .filter(k => Number.isFinite(k));
+  const maxAbove   = existingKeys.length ? Math.max(0, ...existingKeys) : -1;
+  const minBelow   = existingKeys.length ? Math.min(0, ...existingKeys) :  0;
+  const nextAbove  = `F${maxAbove + 1}`;                  // e.g. F2 if F0,F1 exist
+  const nextBasement = `B${Math.abs(minBelow - 1)}`;      // B1 first basement
+  let strandLabel;
+  if (existingKeys.length === 0) {
+    strandLabel = 'F0';                                   // very first floor → ground
+  } else {
+    // Simple OK / Cancel picker.  OK = above top, Cancel = new basement.
+    // Confirm dialog wording spells out both destinations so the
+    // operator never has to guess.
+    const ok = confirm(
+      `Add "${file.name}" as a new floor.\n\n` +
+      `  OK   → above top  (${nextAbove})\n` +
+      `  Cancel → new basement (${nextBasement})`,
+    );
+    strandLabel = ok ? nextAbove : nextBasement;
+  }
   const nm = file.name.replace(/\.(dxf|png|jpe?g)$/i, '');
-  const name = prompt('Name for the new floor?', nm) || nm;
+  const name = prompt(`Name for ${strandLabel}?`, nm) || nm;
   if (!name) return;
   const isDxf = /\.dxf$/i.test(file.name);
   const url = isDxf ? `${API}/floors/import-dxf` : `${API}/floors/import-image`;
   const fd = new FormData();
   fd.append('name', name);
+  fd.append('strand_label', strandLabel);
   fd.append(isDxf ? 'dxf' : 'image', file);
   if (!isDxf) {
-    // Sensible defaults for the image trace; the operator can
-    // fine-tune width/height in the Floor details modal afterwards.
     fd.append('width_m',  '20');
     fd.append('height_m', '15');
   }
-  toast(isDxf ? 'Importing DXF…' : 'Tracing outline…');
+  toast(isDxf ? `Importing DXF as ${strandLabel}…` : `Tracing outline for ${strandLabel}…`);
   try {
     const r = await fetch(url, { method: 'POST', body: fd });
     const data = await r.json();
@@ -6151,7 +6175,7 @@ document.getElementById('bi-new-floor-input').onchange = async (ev) => {
     const nV = data.slab && Array.isArray(data.slab.vertices)
       ? data.slab.vertices.length : 0;
     toast(
-      `New floor "${data.name}" created` +
+      `${strandLabel} · "${data.name}" created` +
       (nV ? ` · slab: ${nV}-vertex outline` : ' · rect footprint')
     );
     if (typeof openFloorModal === 'function') openFloorModal();

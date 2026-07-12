@@ -5886,18 +5886,47 @@ function _renderBuildingSunRay() {
   const isDay = alt > 0;
   const altNorm = Math.max(0, Math.min(1, alt / 90));
 
-  if (isDay) {
-    // Base amber wash — subtle floor of light on the whole canvas.
-    baseInner.style.background = '#ffb020';
-    baseInner.style.opacity    = (0.10 + 0.20 * altNorm).toFixed(2);
-    // Moving light source: bright warm core; size grows a touch as
-    // the sun climbs.
+  // 2026-02-12ah — colour of the wash + moving glow now comes from
+  // the ambient endpoint (elc.weather.ambient_rgb), same source the
+  // sunbeam-through-window paint uses.  This guarantees the outside
+  // sun glow and the interior beam colour always MATCH.  Cloud +
+  // twilight desaturation is already baked into that RGB.
+  const amb = a.ambient || {};
+  const rgb = Array.isArray(amb.color_rgb) && amb.color_rgb.length === 3
+    ? amb.color_rgb
+    : [255, 176, 32];   // safe amber fallback
+  const [R, G, B] = rgb;
+  // A brighter "hot core" tint that sits a bit whiter than the
+  // ambient (light source is always a touch brighter than the
+  // atmosphere it lights up).
+  const HR = Math.min(255, Math.round(R * 0.4 + 255 * 0.6));
+  const HG = Math.min(255, Math.round(G * 0.4 + 240 * 0.6));
+  const HB = Math.min(255, Math.round(B * 0.4 + 200 * 0.6));
+
+  // Twilight window: -6° to +90° gets the full ambient-driven glow.
+  // Below -6° falls to the moonlight branch.
+  const isTwilightOrDay = alt > -6;
+
+  if (isTwilightOrDay) {
+    // In civil twilight (alt in [-6, 0]) the ambient RGB already
+    // encodes dusky pink-orange and the lux is naturally low, so the
+    // opacity fades gracefully as the sun sinks.
+    const twilightBoost = alt >= 0 ? 1.0 : Math.max(0, (alt + 6) / 6);
+    // Base wash — ambient RGB.  Opacity blends the daytime bell
+    // curve with the twilight ramp so pre-sunrise is dim but tinted.
+    baseInner.style.background = `rgb(${R},${G},${B})`;
+    baseInner.style.opacity    = ((0.10 + 0.20 * altNorm) * twilightBoost).toFixed(2);
+    // Moving light source: hot core, warm shoulder, then transparent.
+    // In twilight the whole gradient dims via twilightBoost.
+    const coreA = ((0.70 + 0.25 * altNorm) * twilightBoost).toFixed(2);
+    const midA  = ((0.50 + 0.30 * altNorm) * twilightBoost).toFixed(2);
+    const outA  = ((0.22 + 0.18 * altNorm) * twilightBoost).toFixed(2);
     glow.style.background =
-      'radial-gradient(circle,' +
-        'rgba(255,240,180,' + (0.70 + 0.25 * altNorm).toFixed(2) + ') 0%,' +
-        'rgba(255,176,32,'  + (0.50 + 0.30 * altNorm).toFixed(2) + ') 22%,' +
-        'rgba(255,140,20,'  + (0.22 + 0.18 * altNorm).toFixed(2) + ') 52%,' +
-        'rgba(255,140,20,0) 82%)';
+      `radial-gradient(circle,` +
+        `rgba(${HR},${HG},${HB},${coreA}) 0%,` +
+        `rgba(${R},${G},${B},${midA}) 22%,` +
+        `rgba(${R},${G},${B},${outA}) 52%,` +
+        `rgba(${R},${G},${B},0) 82%)`;
     glow.style.opacity = '1';
     // Compass math: azimuth 0°=N=up (behind), clockwise.  Radius
     // shrinks as the sun climbs (r=0 at zenith).  MaxR=95% pushes

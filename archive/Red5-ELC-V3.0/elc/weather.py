@@ -293,34 +293,73 @@ def horizontal_illuminance_lux(sun_altitude_deg: float,
 def ambient_rgb(illum_lux: float, sun_altitude_deg: float,
                 cloud_cover: float) -> tuple[int, int, int]:
     """Map an outdoor illuminance + solar geometry to an RGB colour
-    for the "outside area" paint.  Warm beige on a sunny day, cool
-    grey when overcast, deep blue-black at night, warm orange at
-    sunrise/sunset.
+    for the "outside area" paint.  2026-02-12ah rewrite implements
+    the operator's TOD colour-temperature curve:
+        * Deep night (alt < -6°)          → cool blue moonlight
+        * Civil twilight (-6..0°)         → dusky mauve, dim
+        * Sunrise/sunset (0..+3°)         → deep warm red-orange
+        * Golden hour peak (~+3°)         → richest warm amber-orange
+        * Rising (3..30°)                 → amber → warm gold
+        * Mid-day (30..90°)               → warm white → near daylight
+    Cloud cover lerps the RGB toward a neutral overcast grey and
+    slightly cools it.  Symmetric across the horizon (below-horizon
+    branch mirrors the above-horizon twilight).
     """
-    # Normalise brightness 0..1 on a perceptual (log) scale between
-    # 1 lux and 100 000 lux.  Below 1 lux is essentially "dark".
-    v = _clamp(math.log10(max(illum_lux, 0.5) + 1.0) / math.log10(100_001.0),
-               0.0, 1.0)
-    # Base "hue anchor": sun altitude drives warm/cool.  Low sun near
-    # the horizon → warm orange (2500K-ish).  High sun → white-ish.
-    warmness = _clamp(1.0 - abs(sun_altitude_deg) / 60.0, 0.0, 1.0)
-    if sun_altitude_deg < 0:      # nighttime -- deep cool blue
+    # Below deep twilight -- moonlight regime.
+    if sun_altitude_deg < -6:
+        v = _clamp(math.log10(max(illum_lux, 0.5) + 1.0) / math.log10(100_001.0),
+                   0.0, 1.0)
         r = int(_clamp(6 + 20 * v, 0, 40))
         g = int(_clamp(9 + 25 * v, 0, 50))
         b = int(_clamp(18 + 40 * v, 0, 90))
         return r, g, b
-    # Daylight: interpolate between overcast grey (cc=1) and warm beige
-    # (cc=0, sunny).  Warmness pulls red slightly higher near the
-    # horizon (sunrise/sunset glow).
+
+    # Anchor palette (clear sky, cc=0) at key altitudes.
+    # Interpolated linearly on |alt| so the below-horizon side
+    # (civil twilight) mirrors the just-after-sunrise curve.
+    #   alt   ( R,   G,   B )
+    anchors = [
+        (-6.0, ( 40,  30,  70)),  # deep civil twilight   (dusky mauve)
+        (-3.0, (110,  60,  75)),  # nautical→civil edge   (pre-dawn pink)
+        ( 0.0, (200,  95,  55)),  # horizon crossing      (warm red-orange)
+        ( 3.0, (255, 140,  60)),  # GOLDEN HOUR PEAK      (deepest warm)
+        (10.0, (255, 180,  80)),  # warm amber            (#ffb050)
+        (30.0, (255, 220, 150)),  # golden-white
+        (60.0, (255, 245, 210)),  # warm white
+        (90.0, (255, 252, 235)),  # near daylight
+    ]
+    a = _clamp(sun_altitude_deg, -6.0, 90.0)
+    # Find bracketing anchors.
+    lo = anchors[0]
+    hi = anchors[-1]
+    for i in range(1, len(anchors)):
+        if anchors[i][0] >= a:
+            lo = anchors[i - 1]
+            hi = anchors[i]
+            break
+    span = hi[0] - lo[0]
+    t = 0.0 if span <= 0 else (a - lo[0]) / span
+    r_sun = lo[1][0] + t * (hi[1][0] - lo[1][0])
+    g_sun = lo[1][1] + t * (hi[1][1] - lo[1][1])
+    b_sun = lo[1][2] + t * (hi[1][2] - lo[1][2])
+
+    # Cloud attenuation: lerp toward cool overcast grey by cc.
+    # Also darkens the overall value by up to 40% at full overcast.
     cc = _clamp(cloud_cover, 0.0, 1.0)
-    r_sun = 245 - 25 * cc + 10 * warmness
-    g_sun = 232 - 20 * cc
-    b_sun = 200 - 15 * cc - 30 * warmness
-    # Scale by brightness (dim at low sun angles).
-    r = int(_clamp(r_sun * (0.15 + 0.85 * v), 0, 255))
-    g = int(_clamp(g_sun * (0.15 + 0.85 * v), 0, 255))
-    b = int(_clamp(b_sun * (0.15 + 0.85 * v), 0, 255))
-    return r, g, b
+    grey = (200, 200, 210)
+    r_sun = r_sun + (grey[0] - r_sun) * (0.55 * cc)
+    g_sun = g_sun + (grey[1] - g_sun) * (0.55 * cc)
+    b_sun = b_sun + (grey[2] - b_sun) * (0.55 * cc)
+    cloud_dim = 1.0 - 0.40 * cc
+    r_sun *= cloud_dim
+    g_sun *= cloud_dim
+    b_sun *= cloud_dim
+
+    return (
+        int(_clamp(r_sun, 0, 255)),
+        int(_clamp(g_sun, 0, 255)),
+        int(_clamp(b_sun, 0, 255)),
+    )
 
 
 def rgb_to_hex(rgb: tuple[int, int, int]) -> str:

@@ -22,6 +22,7 @@ Errors map identically to the config router:
 """
 from __future__ import annotations
 
+import io
 from typing import Any
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
@@ -172,7 +173,7 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
         except DxfImportError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         try:
-            return store.create_floor(
+            floor = store.create_floor(
                 name=name,
                 svg=conv.svg,
                 width_m=conv.width_m,
@@ -183,6 +184,24 @@ def build_floors_router(*, db_path: str | None = None) -> APIRouter:
             )
         except Exception as e:
             _raise_http(e)
+        # 2026-02-12ak — expose per-layer entity counts so an operator
+        # who sees "windows: 0" can immediately tell what layers their
+        # DXF actually uses.  Non-invasive: adds an informational
+        # field to the response without altering the floor record.
+        try:
+            import ezdxf as _ezdxf
+            _doc = _ezdxf.read(io.StringIO(blob.decode("utf-8", errors="ignore")))
+            _msp = _doc.modelspace()
+            _layer_counts: dict[str, int] = {}
+            for _e in _msp:
+                _lyr = getattr(_e.dxf, "layer", "") or "0"
+                _layer_counts[_lyr] = _layer_counts.get(_lyr, 0) + 1
+            floor["_dxf_layers"] = sorted(
+                _layer_counts.items(), key=lambda kv: kv[1], reverse=True,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return floor
 
     return router
 

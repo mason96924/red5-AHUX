@@ -217,7 +217,15 @@ def _extract_windows(msp, *, unit_m: float, origin_x: float, origin_y: float,
         })
 
     def _layer_is_window(layer_name: str) -> bool:
-        return "WIN" in (layer_name or "").upper()
+        # Match any layer whose name contains a window-ish keyword.
+        # Covers WINDOWS, WIN, A-GLAZ-WIN, GLZ, GLASS, etc.
+        # (Operators sometimes use bespoke names — extend here.)
+        up = (layer_name or "").upper()
+        return "WIN" in up or "GLAZ" in up or "GLASS" in up or "GLZ" in up
+
+    def _block_is_window(block_name: str) -> bool:
+        up = (block_name or "").upper()
+        return "WIN" in up or "GLAZ" in up
 
     for line in msp.query("LINE"):
         if not _layer_is_window(line.dxf.layer):
@@ -236,6 +244,33 @@ def _extract_windows(msp, *, unit_m: float, origin_x: float, origin_y: float,
         # two vertices; multi-bar façades give one entry per pane.
         for i in range(len(pts) - 1):
             _add(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1])
+
+    # INSERT (block reference) — common for architects who symbolise
+    # every window with a block called "WIN30", "WINDOW_1000",
+    # "GLAZING_A", …  We treat the insert as a horizontal window bar
+    # centred on the insertion point, with length inferred from the
+    # X-scale (default 1.2 m) and orientation from the INSERT rotation.
+    for ins in msp.query("INSERT"):
+        blk = str(getattr(ins.dxf, "name", "") or "")
+        lyr = str(getattr(ins.dxf, "layer", "") or "")
+        if not (_layer_is_window(lyr) or _block_is_window(blk)):
+            continue
+        ipt = ins.dxf.insert
+        x0 = float(ipt.x); y0 = float(ipt.y)
+        # Try to size the bar from the DXF unit-space scale factor.
+        # 1.0 is the default when no explicit scale is set → we fall
+        # back to a 1.2 m default length.
+        xscale = float(getattr(ins.dxf, "xscale", 1.0) or 1.0)
+        # If the block has a bounding box, use its X-extent as the
+        # nominal length.  Otherwise a 1200 mm sane default.
+        default_len_units = 1200.0 / unit_m if unit_m > 0 else 1200.0
+        length_units = abs(xscale) * default_len_units
+        rot_deg = float(getattr(ins.dxf, "rotation", 0.0) or 0.0)
+        import math as _m
+        rr = _m.radians(rot_deg)
+        dx_units = _m.cos(rr) * length_units / 2.0
+        dy_units = _m.sin(rr) * length_units / 2.0
+        _add(x0 - dx_units, y0 - dy_units, x0 + dx_units, y0 + dy_units)
 
     # Sort top-to-bottom, then left-to-right (operator ask).
     # DXF-to-metres flipped Y so smaller y_m = up on screen = north

@@ -5591,7 +5591,28 @@ document.getElementById('dxf-input').onchange = async (ev) => {
     if (!r.ok) { toast(data.detail || 'DXF import failed', true); return; }
     await refreshFloors();
     await selectFloor(data.id);
-    toast(`Imported "${name}" (${data.width_m.toFixed(1)}×${data.height_m.toFixed(1)}m)`);
+    const nWin  = Array.isArray(data.windows) ? data.windows.length : 0;
+    const nRoom = Array.isArray(data.rooms)   ? data.rooms.length   : 0;
+    toast(
+      `Imported "${name}" (${data.width_m.toFixed(1)}×${data.height_m.toFixed(1)} m)` +
+      ` · rooms: ${nRoom} · windows: ${nWin}`
+    );
+    if (nWin === 0) {
+      // Give the operator a concrete next step if we found no windows.
+      const layers = Array.isArray(data._dxf_layers)
+        ? data._dxf_layers.slice(0, 12).map(([n, c]) => `${n}(${c})`).join('  ')
+        : '';
+      setTimeout(() => toast(
+        'No windows auto-extracted.  Your DXF layers: ' +
+        (layers || '(unknown)') +
+        '.  Rename your window layer to include "WIN"/"GLAZ"/"GLASS", ' +
+        'or draw windows manually with the W tool.',
+      ), 1800);
+      // Also dump full layer list to the console for reference.
+      if (Array.isArray(data._dxf_layers)) {
+        console.log('DXF layer entity counts:', data._dxf_layers);
+      }
+    }
     closeFloorModal();
   } catch (e) { toast(e.message, true); }
 };

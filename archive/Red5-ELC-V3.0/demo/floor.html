@@ -736,30 +736,6 @@
             title="Ask the SCU to enumerate its connected SRM modules and register them in the replica.  Safe — no relays are switched.">
       Discover SRMs
     </button>
-    <label style="display:inline-flex;align-items:center;gap:6px;margin:0;padding:0;
-                  color:var(--muted);font-size:11px;letter-spacing:.06em;
-                  text-transform:uppercase;width:auto">
-      SCU
-      <select id="scu-picker" data-testid="floor-scu-picker"
-              title="SCU bus address to auto-discover on load.  Change to rescan another SCU."
-              style="width:auto;padding:4px 8px;font-size:11px">
-        <option value="0">0</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-      </select>
-      <!-- IP hostname for the selected SCU bus.  Purely UI-side
-           metadata for now (persisted per-SCU# in localStorage under
-           'elc.floor.scu.<n>.host').  Blur = save + re-scan.  When
-           we wire multi-SCU-link backend support this same field
-           becomes the source of truth for that link's dial target. -->
-      <input id="scu-host" data-testid="floor-scu-host" type="text"
-             placeholder="ip / host"
-             title="IP address or hostname of the currently-selected SCU bus.  Press Enter or blur to save."
-             style="width:130px;padding:4px 8px;font-size:11px;text-transform:none;
-                    background:var(--panel-2);color:var(--text);
-                    border:1px solid var(--line);border-radius:4px" />
-    </label>
     <button id="btn-mode" class="ghost" data-testid="floor-mode-toggle">Mode: Layout</button>
     <button id="btn-heatmap" class="ghost" data-testid="floor-heatmap-toggle"
             title="Colour-code each room by average lux vs. code-compliance minimum">Heatmap: Off</button>
@@ -1067,24 +1043,43 @@
   <!-- ============ RIGHT RAIL: FIXTURE INSPECTOR ============ -->
   <aside class="right">
     <h2>SRM Devices <span id="dev-count" style="color:var(--muted);font-family:var(--mono)"></span></h2>
-    <!-- 2026-02-12z — SCU ID + IP summary strip.  Live-updated by
-         _updateSrmScuInfo(): reflects whatever SCU is currently
-         picked in the top toolbar (#scu-picker) plus its stored
-         IP/hostname (#scu-host).  Purely informational — click the
-         values to jump-scroll the toolbar controls into view. -->
+    <!-- 2026-02-12ao — SCU picker + editable IP MOVED from the top
+         toolbar into the SRM Devices sidebar per operator ask.
+         Element IDs preserved (#scu-picker, #scu-host) so every
+         existing reader (discoverSrms, broadcastRelay, load-time
+         hydrator, project-snapshot code) keeps working with no
+         code changes elsewhere.  In the multi-SCU case,
+         _updateSrmScuInfo() renders additional per-SCU rows below
+         showing the modules-per-SCU grouping. -->
     <div id="srm-scu-info" data-testid="srm-scu-info"
-         style="display:flex;justify-content:space-between;align-items:center;
-                gap:8px;padding:6px 10px;margin-bottom:8px;
+         style="padding:8px 10px;margin-bottom:8px;
                 background:var(--panel-2);border:1px solid var(--line);
                 border-radius:6px;font-family:var(--mono);font-size:11px">
-      <span style="color:var(--muted);letter-spacing:.06em;text-transform:uppercase;font-size:10px">SCU</span>
-      <span id="srm-scu-info-id"   data-testid="srm-scu-info-id"
-            style="color:var(--accent);font-weight:700">–</span>
-      <span style="color:var(--line)">·</span>
-      <span id="srm-scu-info-ip"   data-testid="srm-scu-info-ip"
-            style="color:var(--text);flex:1;text-align:right;
-                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="Current IP / hostname for this SCU bus (edit in the top toolbar)">unset</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="color:var(--muted);letter-spacing:.06em;
+                     text-transform:uppercase;font-size:10px">Active SCU</span>
+        <select id="scu-picker" data-testid="floor-scu-picker"
+                title="Active SCU bus address.  Change to switch discovery + broadcast target."
+                style="width:auto;padding:3px 6px;font-size:11px;
+                       background:var(--panel);color:var(--text);
+                       border:1px solid var(--line);border-radius:4px">
+          <option value="0">0</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+        <input id="scu-host" data-testid="floor-scu-host" type="text"
+               placeholder="ip / host"
+               title="IP address or hostname of the active SCU bus.  Press Enter or blur to save."
+               style="flex:1;min-width:0;padding:3px 6px;font-size:11px;
+                      background:var(--panel);color:var(--text);
+                      border:1px solid var(--line);border-radius:4px;
+                      text-transform:none" />
+      </div>
+      <!-- Extra rows for multi-SCU floors are injected here by
+           _updateSrmScuInfo(). -->
+      <div id="srm-scu-multi" data-testid="srm-scu-multi"
+           style="margin-top:6px"></div>
     </div>
     <div class="assign-bar" data-testid="assign-bar" hidden>
       <div class="assign-count" id="assign-count">0 selected</div>
@@ -5567,29 +5562,20 @@ document.getElementById('btn-discover').onclick = () => discoverSrms();
   }
 })();
 
-// 2026-02-12z/aa — Right-rail SCU header updater.
+// 2026-02-12z/aa/ao — Right-rail multi-SCU section.
 //
-// A floor CAN legitimately be served by more than one SCU (rare,
-// but a real logical case — see 2026-02-11d changelog + the
-// existing per-SCU headers in renderSrmGrid).  So this strip has
-// to reflect all SCUs that contribute modules to the current
-// floor, not just the toolbar picker.
-//
-// Logic:
-//   • If the project snapshot is ready AND a floor is loaded,
-//     derive the set of contributing SCUs from _projSnap
-//     (moduleFloor + scusById), same source of truth
-//     renderSrmGrid uses for its own per-SCU grouping.
-//   • Zero contributors → show the toolbar picker's SCU/IP as
-//     a fallback (matches the pre-multi-SCU behaviour).
-//   • One contributor → single-line "SCU N · host:port".
-//   • Two+ contributors → header line + one mini row per SCU,
-//     grouped under a "N SCUs on this floor" summary.
+// The primary `#scu-picker` + `#scu-host` sit at the top of the
+// SRM sidebar (moved out of the page-level toolbar 2026-02-12ao).
+// This function populates a companion `#srm-scu-multi` block
+// underneath: one mini row per SCU that contributes modules to the
+// current floor, each with:
+//   • a radio to set the "active" SCU (drives `#scu-picker.value`)
+//   • an editable inline IP:port for that specific SCU
+// So on a multi-SCU floor the operator can see + tweak every
+// contributing SCU's link target without leaving the sidebar.
 function _updateSrmScuInfo() {
-  const strip = document.getElementById('srm-scu-info');
-  if (!strip) return;
-  const sel   = document.getElementById('scu-picker');
-  const inp   = document.getElementById('scu-host');
+  const multi = document.getElementById('srm-scu-multi');
+  if (!multi) return;
 
   // Contributing SCUs for the currently-selected floor.
   const strand = (state.currentFloor && state.currentFloor.strand_label)
@@ -5601,7 +5587,6 @@ function _updateSrmScuInfo() {
       && _projSnap.moduleFloor && _projSnap.scusById) {
     for (const [key, floor] of _projSnap.moduleFloor.entries()) {
       if ((floor || 'F0').toUpperCase() !== strand) continue;
-      // key = "<canonicalType>/<scuId>/<addr>"
       const parts = key.split('/');
       const scuId = parts[1];
       if (contributing.has(scuId)) continue;
@@ -5615,72 +5600,90 @@ function _updateSrmScuInfo() {
     }
   }
 
-  const fmtHost = (host, port) =>
-    host ? `${host}:${port || 4001}` : 'unset';
-
-  if (contributing.size === 0) {
-    // Fallback: toolbar picker + its stored IP.
-    const scu = sel ? sel.value : '–';
-    const ip  = ((inp && inp.value) || '').trim();
-    strip.innerHTML =
-      `<span style="color:var(--muted);letter-spacing:.06em;` +
-             `text-transform:uppercase;font-size:10px">SCU</span>` +
-      `<span data-testid="srm-scu-info-id"` +
-            ` style="color:var(--accent);font-weight:700">${escapeHtml(String(scu))}</span>` +
-      `<span style="color:var(--line)">·</span>` +
-      `<span data-testid="srm-scu-info-ip"` +
-            ` style="color:${ip ? 'var(--text)' : 'var(--muted)'};flex:1;` +
-                   `text-align:right;overflow:hidden;text-overflow:ellipsis;` +
-                   `white-space:nowrap">${escapeHtml(ip || 'unset')}</span>`;
-    strip.style.flexDirection = 'row';
+  if (contributing.size < 2) {
+    multi.innerHTML = '';
     return;
   }
 
-  if (contributing.size === 1) {
-    const [only] = contributing.values();
-    strip.innerHTML =
-      `<span style="color:var(--muted);letter-spacing:.06em;` +
-             `text-transform:uppercase;font-size:10px">SCU</span>` +
-      `<span data-testid="srm-scu-info-id"` +
-            ` style="color:var(--accent);font-weight:700">${escapeHtml(only.id)}</span>` +
-      `<span style="color:var(--line)">·</span>` +
-      `<span data-testid="srm-scu-info-ip"` +
-            ` style="color:${only.host ? 'var(--text)' : 'var(--muted)'};flex:1;` +
-                   `text-align:right;overflow:hidden;text-overflow:ellipsis;` +
-                   `white-space:nowrap"` +
-            ` title="${escapeHtml(only.name || '')}">${escapeHtml(fmtHost(only.host, only.port))}</span>`;
-    strip.style.flexDirection = 'row';
-    return;
-  }
-
-  // Multi-SCU: stacked mini rows under a header.
+  const activeScu = document.getElementById('scu-picker')?.value ?? '0';
   const rows = [...contributing.values()]
     .sort((a, b) => Number(a.id) - Number(b.id))
-    .map(s =>
-      `<div data-testid="srm-scu-info-row-${s.id}"` +
-      ` style="display:flex;justify-content:space-between;gap:8px;` +
-             `padding:2px 0;font-size:11px">` +
-        `<span style="color:#60a5fa;font-weight:700">■ SCU ${escapeHtml(s.id)}` +
-          (s.name ? ` <span style="color:var(--muted);font-weight:400">· ${escapeHtml(s.name)}</span>` : '') +
-        `</span>` +
-        `<span style="color:${s.host ? 'var(--text)' : 'var(--muted)'};` +
-                    `overflow:hidden;text-overflow:ellipsis;white-space:nowrap">` +
-          `${escapeHtml(fmtHost(s.host, s.port))}` +
-        `</span>` +
-      `</div>`
-    ).join('');
-  strip.innerHTML =
-    `<div style="display:flex;justify-content:space-between;align-items:center;` +
-                `width:100%;padding-bottom:4px;` +
-                `border-bottom:1px solid var(--line);margin-bottom:4px">` +
-      `<span style="color:var(--muted);letter-spacing:.06em;` +
-                  `text-transform:uppercase;font-size:10px">SCUs</span>` +
-      `<span data-testid="srm-scu-info-count"` +
-            ` style="color:var(--accent);font-weight:700">${contributing.size} on this floor</span>` +
+    .map(s => {
+      const isActive = String(s.id) === String(activeScu);
+      const perScuKey = `elc.floor.scu.${s.id}.host`;
+      const localHost = localStorage.getItem(perScuKey);
+      // Prefer live per-SCU localStorage; fall back to project.json host.
+      const shownHost = localHost !== null && localHost !== ''
+        ? localHost
+        : (s.host ? `${s.host}:${s.port || 4001}` : '');
+      return (
+        `<div class="srm-scu-row" data-testid="srm-scu-row-${s.id}"` +
+             ` data-scu-id="${s.id}"` +
+             ` style="display:flex;align-items:center;gap:6px;` +
+                    `padding:3px 0;border-top:1px solid var(--line)">` +
+          `<input type="radio" name="srm-scu-active"` +
+                ` data-testid="srm-scu-radio-${s.id}"` +
+                ` value="${s.id}"` +
+                ` ${isActive ? 'checked' : ''}` +
+                ` style="accent-color:var(--accent);cursor:pointer;flex-shrink:0" />` +
+          `<span style="color:${isActive ? 'var(--accent)' : 'var(--text)'};` +
+                     `font-weight:${isActive ? '700' : '400'};` +
+                     `min-width:44px;flex-shrink:0">SCU ${escapeHtml(s.id)}` +
+            (s.name ? ` <span style="color:var(--muted);font-weight:400">· ${escapeHtml(s.name)}</span>` : '') +
+          `</span>` +
+          `<input type="text" class="srm-scu-host" data-scu-id="${s.id}"` +
+                ` data-testid="srm-scu-host-${s.id}"` +
+                ` value="${escapeHtml(shownHost)}" placeholder="ip:port"` +
+                ` title="IP:port for SCU ${escapeHtml(s.id)} — Enter/blur to save"` +
+                ` style="flex:1;min-width:0;padding:2px 5px;font-size:11px;` +
+                       `background:var(--panel);color:var(--text);` +
+                       `border:1px solid var(--line);border-radius:3px;` +
+                       `text-transform:none;font-family:var(--mono)" />` +
+        `</div>`
+      );
+    }).join('');
+  multi.innerHTML =
+    `<div style="color:var(--muted);letter-spacing:.06em;text-transform:uppercase;` +
+                `font-size:9px;padding-bottom:2px">` +
+      `${contributing.size} SCUs on this floor` +
     `</div>` +
     rows;
-  strip.style.flexDirection = 'column';
-  strip.style.alignItems    = 'stretch';
+
+  // Wire radio + per-SCU IP inputs.
+  for (const rad of multi.querySelectorAll('input[type=radio]')) {
+    rad.addEventListener('change', (ev) => {
+      const scuSel = document.getElementById('scu-picker');
+      const scuInp = document.getElementById('scu-host');
+      if (!scuSel) return;
+      scuSel.value = ev.target.value;
+      // Sync the primary IP input to whatever's saved for this SCU.
+      if (scuInp) {
+        scuInp.value = localStorage.getItem(`elc.floor.scu.${ev.target.value}.host`) || '';
+      }
+      _updateSrmScuInfo();
+      // Trigger discovery for the newly-active SCU.
+      if (typeof discoverSrms === 'function') discoverSrms();
+    });
+  }
+  for (const inp of multi.querySelectorAll('input.srm-scu-host')) {
+    const commit = () => {
+      const sid = inp.dataset.scuId;
+      const key = `elc.floor.scu.${sid}.host`;
+      const v = (inp.value || '').trim();
+      if (v) localStorage.setItem(key, v);
+      else localStorage.removeItem(key);
+      // If this SCU is the ACTIVE one, sync the primary #scu-host.
+      const activeNow = document.getElementById('scu-picker')?.value ?? '0';
+      if (String(sid) === String(activeNow)) {
+        const scuInp = document.getElementById('scu-host');
+        if (scuInp) scuInp.value = v;
+      }
+    };
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    });
+  }
 }
 
 // Escape closes whichever floor/schedule modal is open (the module

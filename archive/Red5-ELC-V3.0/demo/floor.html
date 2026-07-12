@@ -1566,6 +1566,13 @@ async function refreshFloors() {
   const r = await api('GET', '/floors');
   state.floors = r.floors || [];
   renderFloorList();
+  // 2026-02-13 — keep the tree strip in sync with the picker/canvas.
+  // Fires only if the tree has been opened at least once; otherwise
+  // its first _fetchTree() runs when the operator opens it.
+  if (typeof _fetchTree === 'function' && document
+      .getElementById('tree-strip')?.classList.contains('open')) {
+    try { await _fetchTree(); } catch (_e) { /* non-fatal */ }
+  }
 }
 function renderFloorList() {
   // Post-Phase-B: floor list is now the header dropdown.  We keep the
@@ -1771,13 +1778,35 @@ function _buildIsoBuildingSvg(sorted, selId) {
       const useR = (x2 - x1) >= 0;
       const fill = useR ? sideFillR : sideFillL;
       const depth = -((x1 + x2) / 2 + (y1 + y2) / 2 + zBot);
+      // 2026-02-13 — floor-boundary separator on the front side face
+      // so stacked identical-footprint rects don't look like one prism.
+      const separator = (i > 0)
+        ? `<line x1="${p1.sx}" y1="${p1.sy}" x2="${p2.sx}" y2="${p2.sy}"
+                stroke="rgba(255,255,255,0.14)" stroke-width="0.5"/>`
+        : '';
       faces.push({
         depth,
         svg: `<path class="slab-side" d="M${p1.sx},${p1.sy} L${p2.sx},${p2.sy}
                           L${p3.sx},${p3.sy} L${p4.sx},${p4.sy} Z"
                           fill="${fill}" stroke="${stroke}"
-                          stroke-width="${strokeW}"/>`,
+                          stroke-width="${strokeW}"/>${separator}`,
       });
+    }
+    // Front-side floor label — pick the visible edge whose midpoint
+    // has the largest iso-Y (closest to viewer / bottom of screen)
+    // and print the label centred on that side.  This is what the
+    // operator ends up seeing for stacked rect floors that share a
+    // footprint, so every floor gets a legible name.
+    let bestEdge = null;
+    let bestIsoY = -Infinity;
+    for (let j = 0; j < ring.length; j++) {
+      const [x1, y1] = ring[j];
+      const [x2, y2] = ring[(j + 1) % ring.length];
+      const nx = (y2 - y1), ny = -(x2 - x1);
+      if ((nx + ny) <= 0) continue;
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      const iy = (mx + my) * sin30;      // iso y at zBot=zTop=0
+      if (iy > bestIsoY) { bestIsoY = iy; bestEdge = [x1, y1, x2, y2]; }
     }
     // Top face — always visible (camera looks down).
     const topPts = ring.map(v => {
@@ -1792,6 +1821,27 @@ function _buildIsoBuildingSvg(sorted, selId) {
     const disp = strand && strand !== (f.name || '').toUpperCase()
       ? `${strand} · ${f.name || ''}` : (strand || f.name || '');
     const topDepth = -((cx + cy) + zTop);
+    // Side label — printed on the visible front-side face midpoint at
+    // z = (zBot+zTop)/2.  Uses a slightly-different depth so it draws
+    // above the side quad but before the top face.
+    let sideLabelSvg = '';
+    if (bestEdge) {
+      const [ex1, ey1, ex2, ey2] = bestEdge;
+      const zMid = (zBot + zTop) / 2;
+      const mp = project((ex1 + ex2) / 2, (ey1 + ey2) / 2, zMid);
+      const shortLabel = strand || (f.name || '').split(/[\s·]/)[0] || `L${i}`;
+      const sideDepth = -((ex1 + ex2) / 2 + (ey1 + ey2) / 2 + zMid) - 0.002;
+      faces.push({
+        depth: sideDepth,
+        svg: `<text class="slab-label" x="${mp.sx}" y="${mp.sy + 3}"
+                    text-anchor="middle"
+                    style="font-size:6px;fill:rgba(255,255,255,0.75);
+                           font-family:ui-monospace,monospace;
+                           paint-order:stroke;stroke:#0a0d12;stroke-width:1.5"
+                    data-testid="floor-side-label-${escapeHtml(f.name || f.id)}"
+              >${escapeHtml(shortLabel)}</text>`,
+      });
+    }
     faces.push({
       depth: topDepth - 0.001,   // top face draws just above its centroid depth
       svg: `<g class="slab${isSel ? ' selected' : ''}"
@@ -1800,8 +1850,8 @@ function _buildIsoBuildingSvg(sorted, selId) {
               <polygon class="slab-front" points="${topPts}"
                        fill="${topFill}" stroke="${stroke}"
                        stroke-width="${strokeW}"/>
-              <text class="slab-label" x="${lbl.sx}" y="${lbl.sy + 3}"
-                    text-anchor="middle">${escapeHtml(disp)}</text>
+              ${(i === N - 1) ? `<text class="slab-label" x="${lbl.sx}" y="${lbl.sy + 3}"
+                    text-anchor="middle">${escapeHtml(disp)}</text>` : ''}
             </g>`,
     });
   }
@@ -2107,6 +2157,54 @@ async function renderFloorDetails() {
   const host = document.getElementById('fm-details');
   if (!host) return;
   if (!f) { host.innerHTML = '<div class="empty">Select a floor first.</div>'; return; }
+  // 2026-02-13 — rotation control for the auto-traced slab (only
+  // shown when the current floor has a non-rect footprint).  Live
+  // updates via PATCH so the operator can dial-in orientation while
+  // watching the 2.5D Building panel repaint.
+  const hasSlab = f.slab && f.slab.type && f.slab.type !== 'rect';
+  const rotDeg  = hasSlab && Number.isFinite(f.slab.rotation_deg)
+                  ? Number(f.slab.rotation_deg) : 0;
+  const slabHtml = hasSlab ? `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)">
+      <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted);
+                  margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">
+        Slab shape · ${escapeHtml(f.slab.type)}
+        (${(f.slab.vertices || []).length || (f.slab.sides || 0)} pts)
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:11px">
+        Rotate
+        <input id="d-slab-rot-range" type="range" min="-180" max="180" step="1"
+               value="${rotDeg}" data-testid="d-slab-rot-range"
+               style="flex:1">
+        <input id="d-slab-rot-num" type="number" min="-180" max="180" step="1"
+               value="${rotDeg}" data-testid="d-slab-rot-num"
+               style="width:60px;background:#0c1015;border:1px solid var(--line);
+                      color:var(--text);padding:2px 4px;border-radius:3px;
+                      font-family:var(--mono);font-size:11px">°
+      </label>
+      <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+        <button class="btn" data-slab-rot="-90"  data-testid="d-slab-rot--90"
+                style="font-size:10.5px;padding:2px 8px">−90°</button>
+        <button class="btn" data-slab-rot="-45"  data-testid="d-slab-rot--45"
+                style="font-size:10.5px;padding:2px 8px">−45°</button>
+        <button class="btn" data-slab-rot="-15"  data-testid="d-slab-rot--15"
+                style="font-size:10.5px;padding:2px 8px">−15°</button>
+        <button class="btn" data-slab-rot="0"    data-testid="d-slab-rot-0"
+                style="font-size:10.5px;padding:2px 8px">0°</button>
+        <button class="btn" data-slab-rot="+15"  data-testid="d-slab-rot-15"
+                style="font-size:10.5px;padding:2px 8px">+15°</button>
+        <button class="btn" data-slab-rot="+45"  data-testid="d-slab-rot-45"
+                style="font-size:10.5px;padding:2px 8px">+45°</button>
+        <button class="btn" data-slab-rot="+90"  data-testid="d-slab-rot-90"
+                style="font-size:10.5px;padding:2px 8px">+90°</button>
+        <button class="btn" data-slab-clear     data-testid="d-slab-clear"
+                style="font-size:10.5px;padding:2px 8px;margin-left:auto;
+                       color:var(--bad);border-color:var(--bad)">
+          Reset to rect
+        </button>
+      </div>
+    </div>
+  ` : '';
   host.innerHTML = `
     <label>Name</label>
     <input id="d-name" value="${escapeHtml(f.name)}" data-testid="d-name"/>
@@ -2118,7 +2216,8 @@ async function renderFloorDetails() {
       <button class="primary" id="d-save" data-testid="d-save">Save</button>
       <button class="ghost" id="d-delete" data-testid="d-delete"
               style="color:var(--bad); border-color:var(--bad)">Delete</button>
-    </div>`;
+    </div>
+    ${slabHtml}`;
   document.getElementById('d-save').onclick = async () => {
     try {
       const patch = {
@@ -2148,6 +2247,71 @@ async function renderFloorDetails() {
       toast('Floor deleted');
     } catch (e) { toast(e.message, true); }
   };
+
+  // ---- 2026-02-13 · Slab rotation live-editor -----------------------
+  if (hasSlab) {
+    const range = document.getElementById('d-slab-rot-range');
+    const num   = document.getElementById('d-slab-rot-num');
+    // Debounce the PATCH so a slider drag doesn't spam the API.
+    let saveTimer = null;
+    const applyRotation = (deg) => {
+      const v = Math.max(-180, Math.min(180, Math.round(Number(deg) || 0)));
+      range.value = String(v);
+      num.value   = String(v);
+      // Preview the rotation client-side by updating the local copy
+      // then re-rendering the 2.5D panel; final PATCH is debounced.
+      state.currentFloor.slab = { ...(state.currentFloor.slab || {}), rotation_deg: v };
+      const fInList = state.floors.find(x => x.id === f.id);
+      if (fInList) fInList.slab = { ...state.currentFloor.slab };
+      if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async () => {
+        try {
+          const updated = await api('PATCH', `/floors/${f.id}`,
+                                    { slab: state.currentFloor.slab });
+          state.currentFloor = updated;
+          const idx = state.floors.findIndex(x => x.id === f.id);
+          if (idx >= 0) state.floors[idx] = updated;
+          if (typeof _fetchTree === 'function'
+              && document.getElementById('tree-strip')?.classList.contains('open')) {
+            try { await _fetchTree(); } catch (_e) { /* non-fatal */ }
+          }
+        } catch (e) { toast(e.message || String(e), true); }
+      }, 250);
+    };
+    range.addEventListener('input', () => applyRotation(range.value));
+    num.addEventListener('input',   () => applyRotation(num.value));
+    document.querySelectorAll('[data-slab-rot]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const delta = parseFloat(btn.dataset.slabRot);
+        // Special-case the "0°" button — absolute reset.  All other
+        // buttons are relative deltas (±15/45/90) applied to current.
+        if (delta === 0 && btn.dataset.slabRot === '0') {
+          applyRotation(0);
+        } else {
+          applyRotation(Number(range.value) + delta);
+        }
+      });
+    });
+    document.querySelector('[data-slab-clear]')?.addEventListener('click', async () => {
+      if (!confirm('Reset slab back to the default rectangle?  '
+                 + 'The traced polygon will be discarded.')) return;
+      try {
+        const updated = await api('PATCH', `/floors/${f.id}`,
+                                  { slab: { type: 'rect' } });
+        state.currentFloor = updated;
+        const idx = state.floors.findIndex(x => x.id === f.id);
+        if (idx >= 0) state.floors[idx] = updated;
+        renderFloorDetails();
+        if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
+        if (typeof _fetchTree === 'function'
+            && document.getElementById('tree-strip')?.classList.contains('open')) {
+          try { await _fetchTree(); } catch (_e) { /* non-fatal */ }
+        }
+        toast('Slab reset to rectangle');
+      } catch (e) { toast(e.message || String(e), true); }
+    });
+  }
 }
 
 // -------- SRM Devices grid + type assignment --------
@@ -5977,10 +6141,17 @@ document.getElementById('slab-img-input').onchange = async (ev) => {
     await refreshFloors();
     await selectFloor(data.id);
     const nV = data.slab && Array.isArray(data.slab.vertices) ? data.slab.vertices.length : 0;
-    toast(`Slab traced: ${nV} vertices`);
-    closeFloorModal();
-    // Repaint 2.5D building panel immediately.
+    toast(`Slab traced: ${nV} vertices — dial rotation below`);
+    // Re-render the modal so the "Rotate" slider appears without needing
+    // to close/reopen; keep the modal OPEN so the operator can immediately
+    // dial in the correct orientation.
+    if (typeof renderFloorDetails === 'function') await renderFloorDetails();
     if (typeof _renderBuildingCanvas === 'function') _renderBuildingCanvas();
+    // Tree strip refresh (issue #2 from operator).
+    if (typeof _fetchTree === 'function'
+        && document.getElementById('tree-strip')?.classList.contains('open')) {
+      try { await _fetchTree(); } catch (_e) { /* non-fatal */ }
+    }
   } catch (e) { toast(e.message, true); }
 };
 

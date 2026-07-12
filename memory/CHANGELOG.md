@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-02-13b — Slab rotation UI + tree refresh + iso stacked-floor fix
+
+### Context
+
+Operator feedback on the auto-tracer:
+1. Trace outcome not obvious — needed a way to rotate the polygon
+   post-import.
+2. Tree Logical view didn't refresh when the slab changed.
+3. Multiple rect floors stacked vertically all looked like ONE
+   prism (only the topmost label visible) because they had
+   identical footprints and no separator between levels.
+
+### What shipped
+
+- **Rotation control** (`renderFloorDetails`): a dedicated
+  `SLAB SHAPE · <type>` section appears in the Floor details
+  modal whenever the current floor has a non-rect slab.  Slider
+  (−180 → +180) + numeric input + seven preset buttons
+  (`−90 / −45 / −15 / 0 / +15 / +45 / +90`) + `Reset to rect`.
+  Debounced PATCH keeps the 2.5D building panel + tree in sync
+  on every drag.
+- **Tree strip auto-refresh**: `refreshFloors()` now fires
+  `_fetchTree()` too (only when the strip is open, so idle
+  operators pay no fetch cost).  Same call sprinkled after
+  image trace / DXF import / rotation PATCH.
+- **`import-image` UX**: modal stays OPEN after the trace so the
+  rotation control renders immediately; the toast prompts the
+  operator to dial in the orientation.
+- **Iso-renderer clarity** (`_buildIsoBuildingSvg`):
+  * horizontal separator line at every floor boundary on the
+    visible side faces — stacked identical rects now read as
+    distinct levels;
+  * per-floor short label (`F0`, `F1`, `MRBAS`, `F7`…) drawn on
+    the front-most visible side face midpoint, so the label of
+    every floor is legible even when the top face is occluded
+    by the floor above it;
+  * top-face centered label only for the highest floor (avoids
+    label pile-up).
+- **Deps / tests**: no new dependencies; test suite unchanged at
+  **486 passing**.
+
+
 Reverse-chronological log of shipped changes.  PRD.md holds the
 original problem statement + long-form architecture; this file just
 captures what has been implemented and when.

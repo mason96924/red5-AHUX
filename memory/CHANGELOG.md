@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-02-13l — Belowground tint for basement slabs
+
+Two new SVG gradients — `gradWallBG` (`#1a2028 → #0d1218`) and
+`gradSideBG` (`#0d1218 → #05080b`) — are used for the front /
+side faces of any floor with `strand_label` starting with `B`
+(or `_floorSortKey < 0`).  Stroke also darkened slightly
+(`#2a323d`).  Result: basement stack reads as buried at a
+glance, no label reading required.  Non-basement floors and
+selection state are untouched.
+
+Verified with B2 + B1 + F0 + F1: F0/F1 keep the standard slate
+tone (windows + door), B1/B2 get the darker charcoal tone
+(plain rects).  Tests unchanged at **486 passing**.
+
+
 ## 2026-02-13k — Basements = plain rect slab (no windows / door)
 
 Two small fixes in `_buildDynamicBuildingSvg`:

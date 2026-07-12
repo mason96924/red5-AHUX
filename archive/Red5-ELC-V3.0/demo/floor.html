@@ -1949,6 +1949,16 @@ function _buildDynamicBuildingSvg(floors) {
         <stop offset="0" stop-color="#5a7a9c" stop-opacity="0.55"/>
         <stop offset="1" stop-color="#3a5570" stop-opacity="0.35"/>
       </linearGradient>
+      <!-- 2026-02-13l — belowground tint: subtly darker fill so the
+           basement stack reads as buried at a glance without labels. -->
+      <linearGradient id="gradWallBG" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#1a2028"/>
+        <stop offset="1" stop-color="#0d1218"/>
+      </linearGradient>
+      <linearGradient id="gradSideBG" x1="0" x2="1" y1="0" y2="0">
+        <stop offset="0" stop-color="#0d1218"/>
+        <stop offset="1" stop-color="#05080b"/>
+      </linearGradient>
     </defs>`;
 
   // Ground shadow (below the building).
@@ -1961,16 +1971,20 @@ function _buildDynamicBuildingSvg(floors) {
     const isSel = f && f.id === selId;
     const yTop = wallBot - (i + 1) * slabH;
     const yBot = wallBot - i * slabH;
-    const wallFill = isSel ? 'url(#gradSel)' : 'url(#gradWall)';
-    const sideFill = isSel ? 'url(#gradSelSide)' : 'url(#gradSide)';
-    const stroke   = isSel ? '#c084fc' : '#3a4658';
-    const strokeW  = isSel ? '1.4' : '0.6';
-    // 2026-02-13k — basements have NO windows / doors; ground = F0
-    // gets a door + windows; upper rects get windows only.
-    // Identify by strand_label first, fall back to sort key.
+    // 2026-02-13k — basement / ground detection first so the fills
+    // below can pick the belowground tint.  Identify basements by
+    // strand_label starting with 'B' (or negative _floorSortKey).
     const strandU = ((f && f.strand_label) || '').toUpperCase();
     const isBasement = !!f && (strandU.startsWith('B') || _floorSortKey(f) < 0);
     const isGround   = !!f && !isBasement && (strandU === 'F0' || _floorSortKey(f) === 0);
+    const wallFill = isSel
+      ? 'url(#gradSel)'
+      : (isBasement ? 'url(#gradWallBG)' : 'url(#gradWall)');
+    const sideFill = isSel
+      ? 'url(#gradSelSide)'
+      : (isBasement ? 'url(#gradSideBG)' : 'url(#gradSide)');
+    const stroke   = isSel ? '#c084fc' : (isBasement ? '#2a323d' : '#3a4658');
+    const strokeW  = isSel ? '1.4' : '0.6';
     // Window count depends on slabH (skinnier slabs = fewer visible windows).
     const winRows = 1;
     const winCount = 4;

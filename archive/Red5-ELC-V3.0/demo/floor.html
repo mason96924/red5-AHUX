@@ -323,13 +323,14 @@
   }
   .scu-box-header input.scu-box-ip {
     flex: 1; min-width: 0;
-    padding: 2px 6px; font-size: 11px;
+    padding: 1px 5px; font-size: 10px;
     background: var(--panel);
     color: var(--text);
     border: 1px solid var(--line);
     border-radius: 3px;
     text-transform: none;
     font-family: var(--mono);
+    letter-spacing: -0.02em;
   }
   .scu-box-body {
     display: flex; flex-direction: column; gap: 4px;
@@ -2173,15 +2174,13 @@ function renderSrmGrid() {
     hdr.innerHTML =
       radioHtml +
       `<span style="color:${isActive ? 'var(--accent)' : '#60a5fa'};` +
-                  `font-weight:700;flex-shrink:0">■ SCU ${escapeHtml(String(scuId))}` +
-        (scuInfo.name ? ` <span style="color:var(--muted);font-weight:400">· ${escapeHtml(scuInfo.name)}</span>` : '') +
-      `</span>` +
+                  `font-weight:700;flex-shrink:0">■ SCU ${escapeHtml(String(scuId))}</span>` +
       `<input type="text" class="scu-box-ip"` +
             ` data-scu-id="${scuId}"` +
             ` data-testid="scu-box-ip-${scuId}"` +
             ` value="${escapeHtml(shownHost)}" placeholder="ip:port"` +
             ` title="IP:port for SCU ${escapeHtml(String(scuId))} — Enter/blur to save" />` +
-      `<span style="color:var(--muted);flex-shrink:0" data-testid="scu-box-count-${scuId}">` +
+      `<span style="color:var(--muted);flex-shrink:0;font-size:10px" data-testid="scu-box-count-${scuId}">` +
         `${mods.length} SRM${mods.length === 1 ? '' : 's'}` +
       `</span>`;
     scuBox.appendChild(hdr);

@@ -4857,7 +4857,18 @@ canvas.addEventListener('mousedown', (ev) => {
       // placements whose SCU number changed (e.g. 1 -> 0 after the
       // 2026-02-11 hardware-capture rev) still highlight the correct
       // tile.  If no inventory match, fall back to the raw string.
-      toggleSrmSelection(_normaliseToInventory(fx.device_id), additive);
+      const did = _normaliseToInventory(fx.device_id);
+      // 2026-02-12an — Preserve group on click.  If the clicked
+      // fixture is ALREADY part of a multi-selection AND no additive
+      // modifier is held, do NOT collapse the selection — the
+      // operator's intent is to grab the group and drag it.  Only
+      // toggle when the click adds/creates the selection.
+      const inGroup = state.selectedDeviceIds
+                   && state.selectedDeviceIds.has(did)
+                   && state.selectedDeviceIds.size > 1;
+      if (!(inGroup && !additive)) {
+        toggleSrmSelection(did, additive);
+      }
       paintCanvas();
       return;
     }
@@ -5017,7 +5028,15 @@ canvas.addEventListener('mouseup', async () => {
       await _saveWindows();
       renderWindowsPanel();
     } else {
-      _toggleWindowSelection(winId);
+      // 2026-02-12an — Preserve group on click: a plain click on a
+      // window that is ALREADY part of a multi-selection should NOT
+      // collapse the selection down to just this window.
+      const isInGroup = state.windowSel
+                     && state.windowSel.has(winId)
+                     && state.windowSel.size > 1;
+      if (!isInGroup) {
+        _toggleWindowSelection(winId);
+      }
       paintCanvas();
     }
     return;

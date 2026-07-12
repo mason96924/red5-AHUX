@@ -1691,11 +1691,24 @@ function _buildIsoBuildingSvg(sorted, selId) {
   });
   // Slab thickness: keep the total tower "conceptual height" roughly
   // constant so 2 floors read as tall prisms, 10 floors as thin
-  // wafers — matching what the operator sees when the tower is
-  // rect-only.  Target ≈ 0.6 × reference half-dim total.
-  const towerTargetTotal_m = Math.max(refHalfW, refHalfH) * 0.60;
+  // wafers — matching the tall look of the rect-only tower.  Target
+  // ≈ 1.5 × reference half-dim so total tower reads TALLER than the
+  // polygon footprint in iso view (≈ 1.14× iso-footprint span).
+  const towerTargetTotal_m = Math.max(refHalfW, refHalfH) * 1.5;
   const slabH_m = towerTargetTotal_m / Math.max(N, 1);
   const cos30 = Math.cos(Math.PI / 6), sin30 = Math.sin(Math.PI / 6);
+  // 2026-02-13g — Standard 30° isometric.  The camera sits south-of-
+  // east + above, so the SOUTH face (the Y=max edge of a polygon
+  // that came out of a Y-down drawing) always projects to the front
+  // of the screen — matching what an operator in the northern
+  // hemisphere expects to see when they look at a rect.  Because
+  // this convention lives in the projection itself, ANY polygon
+  // slab traced from a drawing follows the same rule without extra
+  // rotation: whichever polygon edge has the highest Y in the
+  // drawing sits at the bottom of the panel.  For SH buildings the
+  // operator can just rotate the slab 180° via the slider.
+  const AX_COS =  cos30, AX_SIN = sin30;
+  const AY_COS = -cos30, AY_SIN = sin30;   // Y contributes NEGATIVELY to iso_x
   // Fit everything to a 220 × 320 viewBox with generous padding.
   // 1) Determine iso extents over ALL floors + ALL Z levels.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -1703,8 +1716,8 @@ function _buildIsoBuildingSvg(sorted, selId) {
     const zBot = i * slabH_m, zTop = (i + 1) * slabH_m;
     for (const v of polys[i]) {
       for (const z of [zBot, zTop]) {
-        const ix = (v[0] - v[1]) * cos30;
-        const iy = (v[0] + v[1]) * sin30 - z;
+        const ix = v[0] * AX_COS + v[1] * AY_COS;
+        const iy = v[0] * AX_SIN + v[1] * AY_SIN - z;
         if (ix < minX) minX = ix;
         if (ix > maxX) maxX = ix;
         if (iy < minY) minY = iy;
@@ -1718,8 +1731,8 @@ function _buildIsoBuildingSvg(sorted, selId) {
   const ox = pad - minX * scale + ((vw - 2*pad) - spanX * scale) / 2;
   const oy = pad - minY * scale + ((vh - 2*pad) - spanY * scale) / 2;
   const project = (x, y, z) => ({
-    sx: ox + (x - y) * cos30 * scale,
-    sy: oy + ((x + y) * sin30 - z) * scale,
+    sx: ox + (x * AX_COS + y * AY_COS) * scale,
+    sy: oy + (x * AX_SIN + y * AY_SIN - z) * scale,
   });
   // Depth key: for correct z-order, sort each face by centroid depth
   // (nearer to viewer = drawn later).  For an axonometric camera along
@@ -1776,12 +1789,12 @@ function _buildIsoBuildingSvg(sorted, selId) {
     for (let j = 0; j < ring.length; j++) {
       const [x1, y1] = ring[j];
       const [x2, y2] = ring[(j + 1) % ring.length];
-      // Outward normal for CCW ring: (dy, -dx) points to the left of edge.
-      // In screen space "toward viewer" ≈ (+x + +y), so face is visible
-      // when (nx + ny) < 0 (normal points AWAY from origin/backwards).
-      // Actually: for CCW polygon, outward normal is (dy, -dx).
+      // 2026-02-13g — visibility under the south-dominant axonometric:
+      // viewer sits along (AX_SIN, AY_SIN) in the XY plane, so a side
+      // face is visible when its outward normal has a positive dot
+      // product with that viewer direction.
       const nx = (y2 - y1), ny = -(x2 - x1);
-      const visible = (nx + ny) > 0;
+      const visible = (nx * AX_SIN + ny * AY_SIN) > 0;
       if (!visible) continue;
       const p1 = project(x1, y1, zBot);
       const p2 = project(x2, y2, zBot);
@@ -1790,7 +1803,7 @@ function _buildIsoBuildingSvg(sorted, selId) {
       // Pick side gradient based on edge orientation (rightward vs leftward).
       const useR = (x2 - x1) >= 0;
       const fill = useR ? sideFillR : sideFillL;
-      const depth = -((x1 + x2) / 2 + (y1 + y2) / 2 + zBot);
+      const depth = -((x1 + x2) / 2 * AX_SIN + (y1 + y2) / 2 * AY_SIN - zBot);
       // 2026-02-13 — floor-boundary separator on the front side face
       // so stacked identical-footprint rects don't look like one prism.
       const separator = (i > 0)
@@ -1816,9 +1829,9 @@ function _buildIsoBuildingSvg(sorted, selId) {
       const [x1, y1] = ring[j];
       const [x2, y2] = ring[(j + 1) % ring.length];
       const nx = (y2 - y1), ny = -(x2 - x1);
-      if ((nx + ny) <= 0) continue;
+      if ((nx * AX_SIN + ny * AY_SIN) <= 0) continue;
       const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-      const iy = (mx + my) * sin30;      // iso y at zBot=zTop=0
+      const iy = mx * AX_SIN + my * AY_SIN;   // south-dominant iso y
       if (iy > bestIsoY) { bestIsoY = iy; bestEdge = [x1, y1, x2, y2]; }
     }
     // Top face — always visible (camera looks down).
@@ -1833,7 +1846,7 @@ function _buildIsoBuildingSvg(sorted, selId) {
     const strand = (f.strand_label || '').toUpperCase();
     const disp = strand && strand !== (f.name || '').toUpperCase()
       ? `${strand} · ${f.name || ''}` : (strand || f.name || '');
-    const topDepth = -((cx + cy) + zTop);
+    const topDepth = -(cx * AX_SIN + cy * AY_SIN - zTop);
     // Side label — printed on the visible front-side face midpoint at
     // z = (zBot+zTop)/2.  Uses a slightly-different depth so it draws
     // above the side quad but before the top face.
@@ -1843,7 +1856,7 @@ function _buildIsoBuildingSvg(sorted, selId) {
       const zMid = (zBot + zTop) / 2;
       const mp = project((ex1 + ex2) / 2, (ey1 + ey2) / 2, zMid);
       const shortLabel = strand || (f.name || '').split(/[\s·]/)[0] || `L${i}`;
-      const sideDepth = -((ex1 + ex2) / 2 + (ey1 + ey2) / 2 + zMid) - 0.002;
+      const sideDepth = -((ex1 + ex2) / 2 * AX_SIN + (ey1 + ey2) / 2 * AY_SIN - zMid) - 0.002;
       faces.push({
         depth: sideDepth,
         svg: `<text class="slab-label" x="${mp.sx}" y="${mp.sy + 3}"

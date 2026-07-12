@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-02-13g — South-face-front convention preserved for polygons
+
+### Context
+
+Operator: the rect slabs already had the south face at the front
+of the iso panel (northern-hemisphere expectation).  When the
+new polygon workflow started producing tilted / flat-looking
+towers, they wanted the same "south = front" rule preserved for
+any traced slab.
+
+### Root causes
+
+1. Total tower height had been detuned to 0.6 × ref-half-dim,
+   which for 3 floors made each slab only 2 m thick — the whole
+   tower read as a thin wedge next to the polygon footprint.
+2. My earlier detour into an asymmetric axonometric collapsed
+   Z-depth to nearly nothing, making the tower look 2-D.
+
+### What shipped in `_buildIsoBuildingSvg`
+
+- Reverted to the standard 30° isometric camera (`AX_COS=cos30,
+  AX_SIN=sin30, AY_COS=-cos30, AY_SIN=sin30`).  Named constants
+  so the projection is documented + easy to swap for a SH view
+  later if needed.
+- Total tower height target bumped to `refHalf × 1.5` (from 0.6)
+  so the tower reads TALLER than the polygon footprint in iso
+  view — matching the rect-only baseline the operator liked.
+- Per-slab thickness = `target / N` (unchanged): tall prisms for
+  small N, thin wafers for tall towers.
+- South-face-front convention is now guaranteed BY the
+  projection, not by rotation.  Any polygon traced from a DXF
+  drawn north-up (standard architectural convention) has its
+  Y_max edge — the drawing's south face — projected to the
+  bottom of the panel automatically.  Rotation slider still
+  lets the operator spin the slab about its own centroid.
+
+Tests unchanged at **486 passing**.  Visual: rect-only tower
++ pentagon on top = tall building with pentagon capping the
+rect floors, all coaxial, south face down.
+
+
 ## 2026-02-13f — Polygon slab fits inside rect reference frame
 
 ### Context

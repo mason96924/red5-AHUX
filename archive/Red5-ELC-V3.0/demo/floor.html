@@ -4884,8 +4884,24 @@ canvas.addEventListener('mousemove', (ev) => {
     if (!dragState.moved && Math.hypot(dxPx, dyPx) < 3) return;
     dragState.moved = true;
     const w = dragState.win;
-    w.x_m = (sx + dragState.offX - t.xOffset) / t.m2px;
-    w.y_m = (sy + dragState.offY - t.yOffset) / t.m2px;
+    const newX = (sx + dragState.offX - t.xOffset) / t.m2px;
+    const newY = (sy + dragState.offY - t.yOffset) / t.m2px;
+    const dX = newX - w.x_m;
+    const dY = newY - w.y_m;
+    w.x_m = newX;
+    w.y_m = newY;
+    // 2026-02-12am — Group-drag: if the dragged window is part of a
+    // multi-selection, translate every OTHER selected window by the
+    // same delta so the whole group moves as one unit (matches the
+    // arrow-key nudge behaviour + operator expectation).
+    if (state.windowSel && state.windowSel.has(w.id) && state.windowSel.size > 1) {
+      for (const other of (state.currentFloor.windows || [])) {
+        if (other === w) continue;
+        if (!state.windowSel.has(other.id)) continue;
+        other.x_m = (other.x_m || 0) + dX;
+        other.y_m = (other.y_m || 0) + dY;
+      }
+    }
     paintCanvas();
     return;
   }
@@ -4912,12 +4928,30 @@ canvas.addEventListener('mousemove', (ev) => {
     // anchor delta so the shape follows the drag.
     const newX = (sx + dragState.offX - t.xOffset) / t.m2px;
     const newY = (sy + dragState.offY - t.yOffset) / t.m2px;
+    const dX = newX - fx.x_m;
+    const dY = newY - fx.y_m;
     if (fx.vertices && fx.vertices.length) {
-      const dx = newX - fx.x_m, dy = newY - fx.y_m;
-      fx.vertices = fx.vertices.map(([vx, vy]) => [vx + dx, vy + dy]);
+      fx.vertices = fx.vertices.map(([vx, vy]) => [vx + dX, vy + dY]);
     }
     fx.x_m = newX;
     fx.y_m = newY;
+    // 2026-02-12am — Group-drag: if the dragged fixture is part of a
+    // multi-selection, translate every OTHER selected fixture by the
+    // same delta so the whole group moves as one unit.
+    const draggedDid = _normaliseToInventory(fx.device_id);
+    const sel = state.selectedDeviceIds;
+    if (sel && sel.has(draggedDid) && sel.size > 1) {
+      for (const other of (state.currentFloor.fixtures || [])) {
+        if (other === fx) continue;
+        const did = _normaliseToInventory(other.device_id);
+        if (!sel.has(did)) continue;
+        if (other.vertices && other.vertices.length) {
+          other.vertices = other.vertices.map(([vx, vy]) => [vx + dX, vy + dY]);
+        }
+        other.x_m = (other.x_m || 0) + dX;
+        other.y_m = (other.y_m || 0) + dY;
+      }
+    }
   } else if (mode === 'endA' || mode === 'endB') {
     // Sticks & strips: dragging an endpoint changes both length &
     // angle; the OPPOSITE endpoint stays fixed (natural feel).

@@ -7527,6 +7527,14 @@ function _renderTreeLogical() {
       html.push(`<span class="meta">${f.width_m}×${f.height_m} m</span>`);
     }
     html.push(`<span class="tree-badge tb-count">${f.fixture_count} fixtures</span>`);
+    // 2026-02-12as — inline delete button per floor.
+    html.push(
+      `<button class="tree-del-floor" data-floor-id="${_treeEscape(f.id)}"` +
+      ` data-testid="tree-del-floor-${_treeEscape(f.id)}"` +
+      ` title="Delete this floor (fixtures on it are lost too)"` +
+      ` style="margin-left:6px;background:none;border:0;color:var(--bad);` +
+             `cursor:pointer;padding:0 4px;font-size:12px;line-height:1">✕</button>`,
+    );
     html.push(`</span></li>`);
   }
   html.push('</ul></li>');
@@ -7932,6 +7940,15 @@ async function _treeCtxAction(act) {
   // Delegate: click on caret toggles collapse; click on node selects.
   const strip = document.getElementById('tree-strip');
   strip.addEventListener('click', (ev) => {
+    // 2026-02-12as — inline delete-floor button.  Stop propagation so
+    // the click doesn't also select/expand the row.
+    const delBtn = ev.target.closest('button.tree-del-floor');
+    if (delBtn) {
+      ev.stopPropagation();
+      const fid = delBtn.dataset.floorId;
+      _deleteFloorFromTree(fid);
+      return;
+    }
     if (ev.target.classList.contains('caret') && !ev.target.classList.contains('empty')) {
       const li = ev.target.closest('li');
       if (li) li.classList.toggle('collapsed');
@@ -7964,6 +7981,38 @@ async function _treeCtxAction(act) {
     if (!b) return;
     _treeCtxAction(b.dataset.act);
   });
+
+  // 2026-02-12as — delete a floor from the tree row.  Confirms
+  // first, then hits DELETE /floors/{id} and refreshes the tree +
+  // canvas.  If the deleted floor was the currently-loaded one,
+  // clears the canvas back to the empty-stage state.
+  async function _deleteFloorFromTree(fid) {
+    if (!fid) return;
+    // Find the floor's display name so the confirm reads nicely.
+    const treeF = (_tree.data?.floors || []).find(x => x.id === fid);
+    const label = treeF
+      ? `${treeF.strand_label || ''} ${treeF.name || ''}`.trim() || fid
+      : fid;
+    if (!confirm(`Delete floor "${label}"?  Fixtures on it are lost too.`)) return;
+    try {
+      await api('DELETE', `/floors/${fid}`);
+      if (state.currentFloor && state.currentFloor.id === fid) {
+        state.currentFloor = null;
+        const empty = document.getElementById('stage-empty');
+        if (empty) empty.style.display = 'flex';
+        backgroundImg = null;
+      }
+      await refreshFloors();
+      renderFloorDetails();
+      await refreshDevicesAndElements();
+      paintCanvas();
+      if (typeof _fetchTree === 'function') _fetchTree();
+      toast(`Floor "${label}" deleted`);
+    } catch (e) {
+      toast(e.message || String(e), true);
+    }
+  }
+  window._deleteFloorFromTree = _deleteFloorFromTree;
   document.addEventListener('click', (ev) => {
     if (!ev.target.closest('#tree-ctx-menu')) _closeTreeCtx();
   });

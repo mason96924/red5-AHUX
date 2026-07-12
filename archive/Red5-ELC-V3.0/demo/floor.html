@@ -7478,6 +7478,26 @@ function _renderTreeLogical() {
   if (!data) return '';
   const html = ['<ul>'];
 
+  // 2026-02-12aq — Floors tree: sort by strand_label so the tree
+  // reads physical top → bottom.  F floors descending (Fn..F1, F0),
+  // then B floors ascending (B1..Bn).  Label prefix = strand_label
+  // ("F3", "B1", …); the floor's user-provided name follows (may be
+  // blank).  strand_label is required at Settings level so we can
+  // safely assume it's non-empty.
+  const _floorSortKey = (f) => {
+    const s = String(f.strand_label || '').toUpperCase();
+    const m = s.match(/^([FB])(\d+)$/);
+    if (!m) return [2, 0];              // unknown → after B floors
+    const n = parseInt(m[2], 10);
+    // Sort field 1 by group (0 = F, 1 = B, 2 = other);
+    // Sort field 2: F → -n (descending), B → +n (ascending).
+    return m[1] === 'F' ? [0, -n] : [1, n];
+  };
+  const floorsSorted = [...data.floors].sort((a, b) => {
+    const ka = _floorSortKey(a), kb = _floorSortKey(b);
+    return ka[0] - kb[0] || ka[1] - kb[1];
+  });
+
   // Floors
   html.push(`<li data-kind="floors-root">`);
   html.push(`<span class="caret"></span>`);
@@ -7485,11 +7505,15 @@ function _renderTreeLogical() {
   html.push(`<span class="icon">▤</span><span class="name">Floors</span>`);
   html.push(`<span class="tree-badge tb-count">${data.floors.length}</span></span>`);
   html.push('<ul>');
-  for (const f of data.floors) {
+  for (const f of floorsSorted) {
     html.push(`<li data-kind="floor" data-id="${_treeEscape(f.id)}">`);
     html.push(`<span class="caret empty"></span>`);
     html.push(`<span class="tree-node k-floor" data-kind="floor" data-id="${_treeEscape(f.id)}">`);
-    html.push(`<span class="icon">·</span><span class="name">${_treeEscape(f.name)}</span>`);
+    // Label = strand_label prefix + user-provided name (name may be blank).
+    const prefix = _treeEscape(String(f.strand_label || '').toUpperCase());
+    const nm     = _treeEscape(f.name || '');
+    const label  = nm ? `${prefix}  ${nm}` : prefix;
+    html.push(`<span class="icon">·</span><span class="name">${label}</span>`);
     if (f.width_m && f.height_m) {
       html.push(`<span class="meta">${f.width_m}×${f.height_m} m</span>`);
     }

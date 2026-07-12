@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-02-13d — Iso renderer: coaxial + normalised slabs (fixes leaning-tower bug)
+
+### Context
+
+Operator reported the tower "collapsed" into a leaning stack of
+flat tiles when a large pentagon floor was added on top of two
+20 × 15 m rects.  Two root causes:
+
+1. Each floor's polygon lived in its own top-left origin frame
+   from the drawing, so a 20 m rect at `(0,0)–(20,15)` and a
+   38 m pentagon at `(0,0)–(38,36)` didn't share a vertical
+   axis — the isometric projection turned that into a
+   leaning-Jenga look.
+2. Slab thickness stayed fixed at 3 m regardless of footprint
+   size, so a 38 m pentagon looked paper-thin.
+
+### What shipped in `_buildIsoBuildingSvg`
+
+- Every floor's polygon is centred on its centroid, then
+  normalised so `max_half_dim = 10 m`.  Result: real-world size
+  differences are hidden in the small "shape inspection"
+  panel, but the exact shape is preserved.  All floors stack
+  cleanly on a common vertical axis.
+- Slab thickness derived from the same target
+  (`10 m × 0.20 = 2 m`) so proportions always look right.
+- Rotation still honoured (rotation is applied before the
+  centre-and-normalise step in `_slabPolygonMeters`).
+
+Manual verification (F0 + F1 rect + F2 pentagon):
+* Before: leaning tilted stack, only F1-MRBAS legible.
+* After: coaxial tower — pentagon top, rect mid, rect bottom,
+  all readable, all rotatable via Floor Details.
+
+Test suite unchanged (486/486 passing).
+
+
 ## 2026-02-13c — "+ New floor from drawing" + rotation persistence fixes
 
 ### Context

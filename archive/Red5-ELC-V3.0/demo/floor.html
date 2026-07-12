@@ -1649,9 +1649,30 @@ function _slabPolygonMeters(f) {
 
 function _buildIsoBuildingSvg(sorted, selId) {
   const N = sorted.length;
-  const polys = sorted.map(_slabPolygonMeters);
-  // Uniform slab thickness in "meters" (arbitrary — only aspect matters).
-  const slabH_m = 3.0;   // matches default ceiling height
+  const rawPolys = sorted.map(_slabPolygonMeters);
+  // 2026-02-13d — CENTRE each polygon on its own centroid so all
+  // floors stack coaxially (like a real building whose slabs share
+  // a common vertical axis).  We ALSO normalise each floor's max
+  // half-dimension to a common target — that way a 40 m pentagon
+  // and a 20 m rect both read as similarly-sized slabs in the
+  // panel (the panel is for footprint SHAPE inspection, not
+  // metric scale; metric scale is on the main canvas).
+  const targetHalf_m = 10.0;
+  const polys = rawPolys.map(poly => {
+    if (!poly || poly.length === 0) return poly;
+    let cx = 0, cy = 0;
+    for (const v of poly) { cx += v[0]; cy += v[1]; }
+    cx /= poly.length; cy /= poly.length;
+    let maxR = 0;
+    for (const v of poly) {
+      const r = Math.max(Math.abs(v[0] - cx), Math.abs(v[1] - cy));
+      if (r > maxR) maxR = r;
+    }
+    const s = maxR > 0 ? targetHalf_m / maxR : 1;
+    return poly.map(v => [(v[0] - cx) * s, (v[1] - cy) * s]);
+  });
+  // Slab thickness is 20 % of the (uniform) target half-dim.
+  const slabH_m = targetHalf_m * 0.20;
   const cos30 = Math.cos(Math.PI / 6), sin30 = Math.sin(Math.PI / 6);
   // Fit everything to a 220 × 320 viewBox with generous padding.
   // 1) Determine iso extents over ALL floors + ALL Z levels.

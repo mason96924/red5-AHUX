@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-02-13i — Cabinet projection tower aspect matches legacy
+
+Follow-up to 13h: the projection swap fixed the ORIENTATION
+(south face front, up-and-right depth) but the tower was still
+squashed flat because `towerTargetTotal_m` used
+`max(refHalfW, refHalfH) × 1.5` — only ≈ 10 m Z for a 20 m
+building, giving per-slab thickness of ~3 m against a 20 m wide
+front face.  Legacy renderer's tower_pixels / front_pixels
+ratio was 260 / 140 ≈ 1.85, so I now set
+`towerTargetTotal_m = refW × 1.85` (with `refW = 2·refHalfW`).
+
+Result (verified visually with F0/F1 rects + F2 pentagon):
+* F0 and F1 render as roughly-square prisms — same aspect as the
+  legacy rect-only tower.
+* F2 pentagon caps them, smaller footprint because the pentagon
+  is inscribed in the reference frame (architecturally correct).
+* South face is a plain rect at the front, east face is the
+  slim parallelogram going up-and-right — identical visual
+  language to the pre-polygon tower.
+
+Also caught + fixed a `refW` const/let collision that briefly
+blanked the panel; `refW` now inline as `2 * refHalfW`.
+
+Tests unchanged at **486 passing**.
+
+
 ## 2026-02-13h — Cabinet oblique projection for polygon slabs (matches rect look)
 
 ### Context

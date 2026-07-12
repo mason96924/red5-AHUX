@@ -1689,12 +1689,11 @@ function _buildIsoBuildingSvg(sorted, selId) {
     const s = Math.min(sx, sy);   // uniform scale ⇒ preserved aspect
     return poly.map(v => [(v[0] - cx) * s, (v[1] - cy) * s]);
   });
-  // Slab thickness: keep the total tower "conceptual height" roughly
-  // constant so 2 floors read as tall prisms, 10 floors as thin
-  // wafers — matching the tall look of the rect-only tower.  Target
-  // ≈ 1.5 × reference half-dim so total tower reads TALLER than the
-  // polygon footprint in iso view (≈ 1.14× iso-footprint span).
-  const towerTargetTotal_m = Math.max(refHalfW, refHalfH) * 1.5;
+  // Slab thickness: match the legacy rect renderer's aspect ratio
+  // (tower_height : front_width ≈ 1.85 : 1 for N=2).  Each slab is
+  // then Total/N thick, so 2-floor tower reads as tall as it is
+  // wide, and 3+ floors keep the tower TALLER than wide.
+  const towerTargetTotal_m = (2 * refHalfW) * 1.85;
   const slabH_m = towerTargetTotal_m / Math.max(N, 1);
   // 2026-02-13h — CABINET OBLIQUE projection to match the legacy
   // rect renderer.  Viewer stands DUE SOUTH of the building, slightly

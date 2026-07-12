@@ -3762,7 +3762,8 @@ function paintCanvas() {
   const rooms = f.rooms || [];
   for (const fx of f.fixtures) {
     if (!fixtureIsOn(fx)) continue;
-    const el = state.lightingElements.get(fx.device_id);
+    const el = state.lightingElements.get(fx.device_id)
+            || state.lightingElements.get(_normaliseToInventory(fx.device_id));
     if (!el) continue;   // placement exists but element got un-assigned
 
     const [rr, gg, bb] = cctColor(el.cct_k || 4000);
@@ -3853,7 +3854,15 @@ function paintCanvas() {
   };
   if (state.mode === 'layout') {
     for (const fx of f.fixtures) {
-      const el = state.lightingElements.get(fx.device_id);
+      // 2026-02-12ar — lighting-element lookup: try raw device_id
+      // first, then the normalised inventory id.  Without the
+      // fallback, fixtures whose stored id doesn't exactly match a
+      // lightingElements map key silently rendered as a point (the
+      // default in the switch) — which is why line fixtures showed
+      // up as a dot when not selected.  This matches the pattern
+      // already used at line 4578 for shape-preset apply.
+      const el = state.lightingElements.get(fx.device_id)
+              || state.lightingElements.get(_normaliseToInventory(fx.device_id));
       const type = el?.type || 'onoff';
       const shape = el?.shape || 'point';
       const selected = state.selectedDeviceIds.has(fx.device_id)

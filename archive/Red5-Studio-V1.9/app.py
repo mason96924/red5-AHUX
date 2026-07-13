@@ -293,6 +293,16 @@ def health_probe():
     return jsonify({"ok": True, "version": "1.9.0", "mode": "legacy"})
 
 
+@app.route('/api/config/unlock', methods=['POST'])
+def config_unlock():
+    """Return {"ok": True} only when password matches server-side master key."""
+    body = request.get_json(silent=True) or {}
+    supplied = body.get('password') or ''
+    master = MASTER_KEY_CONST or ''
+    ok = bool(master) and hmac_mod.compare_digest(supplied, master)
+    return jsonify({'ok': ok})
+
+
 @app.route('/api/download-bundle/<path:filename>')
 def download_bundle_file(filename):
     """Utility endpoint: lets operators download the latest server-side copy of

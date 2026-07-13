@@ -104,7 +104,7 @@
       <button class="secondary" id="logoutBtn">Sign out</button>
     </div>
     <div class="btnrow">
-      <button onclick="location.href='/api/assets/setup.html?force=1'">Go to Settings</button>
+      <button onclick="location.href='/setup.html?force=1'">Go to Settings</button>
     </div>
   </div>
 
@@ -205,7 +205,7 @@ $('loginBtn').onclick = async () => {
   if (d.ok) {
     $('p').value='';
     if (d.role === 'editor') {
-      window.location.href = '/api/assets/setup.html?force=1';
+      window.location.href = '/setup.html?force=1';
       return;
     }
     msg(d.password_was_set ? 'Password set — you are signed in.' : 'Signed in.', 'ok');

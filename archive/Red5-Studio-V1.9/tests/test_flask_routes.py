@@ -22,6 +22,8 @@ REQUIRED_HTML_ROUTES = [
     '/dashboard.html',
     '/equipment_mapper.html',
     '/landing.html',
+    '/access.html',
+    '/setup.html',
     '/ahu.html',
 ]
 

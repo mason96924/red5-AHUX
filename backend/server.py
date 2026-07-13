@@ -95,6 +95,8 @@ app.include_router(assets_router)
 # Server-side master-key gate (replaces the old browser-side hardcoded key).
 from routes.config_gate import router as config_gate_router  # noqa: E402
 app.include_router(config_gate_router)
+from routes.pages import router as pages_router  # noqa: E402
+app.include_router(pages_router)
 # Stage B — V1.9-style username/password access control (editor/admin roles).
 from studio_auth import register_studio_auth  # noqa: E402
 register_studio_auth(app)
@@ -532,29 +534,6 @@ def _restamp_year(payload: dict, target_year: int) -> dict:
 
 # [Phase L.29] handler moved to routes/*.py
 
-
-
-@app.get("/")
-async def root() -> dict:
-    return {
-        "name": "Red5 Studio V2.0 Demo Backend",
-        "phase": 1,
-        "ui_routes": [
-            "/  (React landing -- served by frontend)",
-            "/dashboard.html  (V1.9 dashboard SPA)",
-            "/equipment_mapper.html  (V1.9 mapper)",
-        ],
-        "api_endpoints": [
-            "/api/health", "/api/version", "/api/data", "/api/data-mode",
-            "/api/equipment-types", "/api/collector-config", "/api/services",
-            "/api/weather-location", "/api/weather-history",
-            "/api/tomorrow-forecast", "/api/telemetry-status",
-            "/api/band-overrides/sa-rh-clamp", "/api/band-overrides/preview",
-            "/api/write-history", "/api/collector-log", "/api/trend-history",
-            "/api/map-config", "/api/disk-status",
-            "/api/save-equipment-schema", "/api/assets/{path}",
-        ],
-    }
 
 
 # ---------------------------------------------------------------------------

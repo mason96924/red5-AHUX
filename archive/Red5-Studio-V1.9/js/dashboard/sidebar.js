@@ -322,7 +322,7 @@ function renderSidebar(ctx) {
                 button that jumps to the Psy Chart Setting page where
                 the operator manages defaults + axis + theme. */}
             <button
-                onClick={() => { window.location.href = '/api/assets/setup.html?force=1'; }}
+                onClick={() => { window.location.href = '/setup.html?force=1'; }}
                 data-testid="open-setup-btn"
                 title="Open Setup Walk (Psy Chart, Location, Language, Plug-ins)"
                 aria-label="Open Setup Walk"

@@ -878,6 +878,14 @@ def serve_landing_html():
     even though `/` already serves the same file."""
     return _no_cache(send_from_directory('/root/data', 'landing.html'))
 
+@app.route('/access.html')
+def serve_access_html():
+    return _no_cache(send_from_directory('/root/data', 'access.html'))
+
+@app.route('/setup.html')
+def serve_setup_html():
+    return _no_cache(send_from_directory('/root/data', 'setup.html'))
+
 @app.route('/ahu.html')
 def serve_ahu_html():
     """Per-AHU performance detail page (added 2026-05-27)."""

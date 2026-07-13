@@ -12,14 +12,11 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
-    <script src="js/i18n.js"></script>
-    <link rel="stylesheet" href="landing.css" id="app-css">
+    <script src="/api/assets/js/i18n.js"></script>
+    <link rel="stylesheet" href="/api/assets/landing.css" id="app-css">
     <script>
-        if (window.location.pathname.indexOf('.html') === -1) {
-            document.getElementById('app-css').href = '/assets/landing.css';
-        }
         if(!window.t){
-            var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
+            var _p=['/api/assets/js/i18n.js','/assets/js/i18n.js','/js/i18n.js'];
             (function tryNext(i){if(i>=_p.length||window.t)return;var s=document.createElement('script');s.src=_p[i];s.onerror=function(){tryNext(i+1);};document.head.appendChild(s);})(0);
         }
     </script>
@@ -27,6 +24,7 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
+        const t = window.t || (k => k);
         const { useState, useEffect } = React;
 
         // Production settings hub (pentagon setup walk).  ?force=1 always

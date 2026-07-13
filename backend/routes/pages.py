@@ -1,8 +1,7 @@
 """routes/pages.py — top-level HTML page routes (V1.9 parity).
 
-Serves user-facing pages at ``/`` and ``/<page>.html`` without the
-``/api/assets/`` prefix so operators can open ``http://host:8001/`` and
-``http://host:8001/access.html`` directly on the backend port.
+Serves user-facing pages at ``/`` (Access Control) and ``/<page>.html`` without the
+``/api/assets/`` prefix so operators can open ``http://host:8001/`` directly.
 """
 from __future__ import annotations
 
@@ -80,20 +79,21 @@ def _serve(filename: str) -> Response:
     return _html_response(path, build_stamp=filename in _BUILD_STAMP_PAGES)
 
 
-def _serve_landing() -> Response:
-    if not _resolve_html("landing.html"):
+def _serve_root() -> Response:
+    """``/`` is the Access Control sign-in (same as access.html)."""
+    if not _resolve_html("access.html"):
         html = (
             '<!doctype html><meta http-equiv="refresh" content="0; url=/update.html">'
             "<p>Controller not yet provisioned. Redirecting to "
             '<a href="/update.html">/update.html</a>...</p>'
         )
         return HTMLResponse(content=html, headers=_NO_CACHE)
-    return _serve("landing.html")
+    return _serve("access.html")
 
 
 @router.get("/", include_in_schema=False)
-async def root_landing() -> Response:
-    return _serve_landing()
+async def root_access() -> Response:
+    return _serve_root()
 
 
 @router.get("/landing.html", include_in_schema=False)

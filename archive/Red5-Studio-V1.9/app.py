@@ -849,18 +849,17 @@ def _serve_html_with_build_stamp(path):
 
 
 @app.route('/')
-def serve_landing():
-    # Self-bootstrap: on a fresh controller landing.html may not exist yet.
-    # Redirect to /update so the operator can deploy red5_bundle.zip via
-    # the inline bootstrap form (see serve_update_page below).
-    if not os.path.isfile('/root/data/landing.html'):
+def serve_root_access():
+    # ``/`` is Access Control (same page as /access.html).
+    # Self-bootstrap: on a fresh controller access.html may not exist yet.
+    if not os.path.isfile('/root/data/access.html'):
         return Response(
             '<!doctype html><meta http-equiv="refresh" content="0; url=/update">'
             '<p>Controller not yet provisioned. Redirecting to '
             '<a href="/update">/update</a>...</p>',
             status=200, mimetype='text/html'
         )
-    return _no_cache(send_from_directory('/root/data', 'landing.html'))
+    return _no_cache(send_from_directory('/root/data', 'access.html'))
 
 @app.route('/dashboard')
 @app.route('/dashboard.html')

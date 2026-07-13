@@ -45,6 +45,7 @@ ENTRIES = [
     ('ws_bridge_service.py',        'plugin', 'WebSocket Bridge',         'Push telemetry to live clients (needs websockets)'),
     ('bacnet_diag_service.py',      'plugin', 'BACnet Diagnose Service',  '/api/bacnet/diagnose-config -- detect name-based BACnet targets'),
     ('audit_log_service.py',        'plugin', 'Audit Log Service',        '/api/audit-log -- band-apply / write-point / repair-mode log (100 KB rotating)'),
+    ('auth_service.py',             'plugin', 'Auth Service',             'Stage B login, tokens, user management, config-gate enforcement'),
     # The manifest itself -- listed so the operator can always replace
     # it from the UI.  sha256 is intentionally None (set at the bottom)
     # because a hash that referenced itself would be a fixed-point
@@ -59,6 +60,7 @@ ENTRIES = [
     ('img/psy_silhouette.jpg',      'ui',     'img/psy_silhouette.jpg',   '3D psy-chart snapshot used as Setup Walk centre piece'),
     ('equipment_mapper.html',       'ui',     'equipment_mapper.html',    'Config Tool'),
     ('landing.html',                'ui',     'landing.html',             'Landing page (password / login screen)'),
+    ('access.html',                 'ui',     'access.html',              'Admin user-management page (master-key gate)'),
     ('setup.html',                  'ui',     'setup.html',               'Setup Walk entry HTML (post-login landing on V1.9)'),
     ('setup_walk.compiled.js',      'ui',     'setup_walk.compiled.js',   'Setup Walk compiled React bundle (loaded by setup.html)'),
     ('data_bridges_guide.md',       'ui',     'data_bridges_guide.md',    'Plain-language Data Bridges setup guide'),
@@ -116,7 +118,7 @@ HOT_RELOADABLE = {
     'webhook_bridge_service.py', 'mqtt_bridge_service.py',
     'modbus_bridge_service.py',  'ws_bridge_service.py',
     'bridges_admin_service.py',  'bacnet_diag_service.py',
-    'audit_log_service.py',
+    'audit_log_service.py',      'auth_service.py',
 }
 
 

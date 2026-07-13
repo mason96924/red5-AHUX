@@ -95,6 +95,9 @@ app.include_router(assets_router)
 # Server-side master-key gate (replaces the old browser-side hardcoded key).
 from routes.config_gate import router as config_gate_router  # noqa: E402
 app.include_router(config_gate_router)
+# Stage B — V1.9-style username/password access control (editor/admin roles).
+from studio_auth import register_studio_auth  # noqa: E402
+register_studio_auth(app)
 # Phase L.29 routers are wired at the BOTTOM of this file (after all helpers
 # and module-level constants like ACTIVE_LOCATION / _DEMO_AHUS / _CACHE are
 # defined, so each router's `_pull_from_server()` shim resolves cleanly).

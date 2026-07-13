@@ -1529,18 +1529,21 @@ if '/update' not in _existing_rules and '/api/upload-bundle' not in _existing_ru
 
 @app.route('/api/download-bundle', methods=['POST'])
 def download_bundle():
-    """Generate a zip of files in /root/data/ and /root/scripts/, encrypt with password,
-    return as .red5 file.
+    """Generate a zip of files in /root/data/, /root/scripts/, and /root/.red5/,
+    encrypt with password, return as .red5 file.
 
     Request JSON:
       password: required (encrypts the bundle)
-      mode: 'full' (default) — everything in /root/data + /root/scripts
-            'replicate'      — code, html, js, configs, graphics. EXCLUDES per-
-                              controller runtime state (telemetry snapshots,
-                              weather caches, current weather location,
-                              CSV.Description band-state files) so a destination
-                              controller keeps its own runtime state but adopts
-                              the source's setup.
+      mode: 'full' (default) — everything in /root/data + /root/scripts +
+              auth state under red5_auth/ (users, enforcement flag, cookie secret)
+      mode: 'replicate'      — code, html, js, configs, graphics, master_key.txt,
+              and auth users. EXCLUDES per-controller runtime state (telemetry
+              snapshots, weather caches, band_guide.csv, g36_state.json, etc.)
+              so a destination controller keeps its own live telemetry but adopts
+              the source's setup.
+
+    Sensitive files intentionally INCLUDED (full + replicate):
+      master_key.txt, weatherapi_key.txt, red5_auth/* (editor accounts).
     """
     try:
         data = request.json or {}
@@ -1636,6 +1639,23 @@ def download_bundle():
                             manifest['included'] += 1
                         except (FileNotFoundError, OSError):
                             pass
+            # Auth state lives outside /root/data (not web-served).  Pack as
+            # red5_auth/<file> so upload_service can restore to /root/.red5/.
+            AUTH_STATE_FILES = ('users.json', 'auth_settings.json', 'auth_secret')
+            for auth_root in ('/root/.red5',
+                              os.path.join(DATA_ROOT, '.red5')):
+                if not os.path.isdir(auth_root):
+                    continue
+                for fname in AUTH_STATE_FILES:
+                    full_path = os.path.join(auth_root, fname)
+                    if not os.path.isfile(full_path):
+                        continue
+                    arc_name = 'red5_auth/' + fname
+                    try:
+                        zf.write(full_path, arc_name)
+                        manifest['included'] += 1
+                    except (FileNotFoundError, OSError):
+                        pass
             # Embed a small manifest so the receiving controller knows what mode
             # this bundle was built in. Visible to the operator after upload.
             try:

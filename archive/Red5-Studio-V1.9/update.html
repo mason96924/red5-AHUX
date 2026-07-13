@@ -205,8 +205,8 @@ h1 span{color:#ef4444;font-style:italic}
 </div>
 <button class="btn btn-outline" id="downloadBtn" onclick="downloadBundle('full')">Download FULL Bundle (clone everything)</button>
 <button class="btn btn-outline" id="downloadReplicateBtn" onclick="downloadBundle('replicate')">Download REPLICATION Bundle (configs + code, skip runtime state)</button>
-<p class="note"><b>Full</b>: complete clone including telemetry, weather caches, band states, and collector logs.<br>
-<b>Replication</b>: app code + equipment configs + graphics + saved weather locations. Excludes per-controller runtime state (telemetry.json, weather caches, band_guide.csv, collector logs) so the destination controller keeps its own runtime state but adopts the source's setup. Use this when copying a configured controller's setup onto a fresh controller.</p>
+<p class="note"><b>Full</b>: complete clone including <code>master_key.txt</code>, editor accounts (<code>red5_auth/</code>), telemetry, weather caches, band states, and collector logs.<br>
+<b>Replication</b>: app code + equipment configs + graphics + saved weather locations + <code>master_key.txt</code> + editor accounts. Excludes per-controller runtime state (telemetry.json, weather caches, band_guide.csv, g36_state.json, collector logs) so the destination controller keeps its own live telemetry but adopts the source's setup. Use this when copying a configured controller's setup onto a fresh controller.</p>
 <div id="dlStatus" style="margin-top:12px;font-size:13px"></div>
 </div>
 

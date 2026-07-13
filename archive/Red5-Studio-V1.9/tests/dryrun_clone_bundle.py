@@ -56,6 +56,7 @@ REPLICATE_EXCLUDE_BASENAMES = {
     'write_history.json',
     'sim_overrides.json',
     'band_guide.csv',
+    'g36_state.json',
 }
 
 # Directory-level skips applied to BOTH modes.  These trees are dev-only
@@ -82,6 +83,24 @@ def _replicate_should_skip(arc_name: str):
             and base != 'weather_location.json'):
         return True, 'replicate-exclude weather cache'
     return False, ''
+
+
+AUTH_STATE_FILES = ('users.json', 'auth_settings.json', 'auth_secret')
+AUTH_STATE_ARC_PREFIX = 'red5_auth/'
+
+
+def _walk_auth_state(mode: str, auth_roots):
+    """Yield (arc_name, full_path, included, reason) for /root/.red5 files."""
+    for auth_root in auth_roots:
+        if not os.path.isdir(auth_root):
+            continue
+        for fname in AUTH_STATE_FILES:
+            full_path = os.path.join(auth_root, fname)
+            if not os.path.isfile(full_path):
+                continue
+            arc_name = AUTH_STATE_ARC_PREFIX + fname
+            yield arc_name, full_path, True, ''
+        break  # only pack from the first existing root (matches app.py)
 
 
 def _walk_root(root_dir: str, prefix: str, mode: str):
@@ -116,13 +135,17 @@ def _walk_root(root_dir: str, prefix: str, mode: str):
             yield arc_name, full_path, True, ''
 
 
-def plan(mode: str, data_root: str, scripts_root: str):
+def plan(mode: str, data_root: str, scripts_root: str, auth_roots=None):
     """Return (included, excluded, totals) -- pure function, no side effects."""
+    if auth_roots is None:
+        auth_roots = ['/root/.red5', os.path.join(data_root, '.red5')]
     included = []
     excluded = []
     for arc_name, full_path, ok, reason in _walk_root(data_root, '', mode):
         (included if ok else excluded).append((arc_name, full_path, reason))
     for arc_name, full_path, ok, reason in _walk_root(scripts_root, 'scripts/', mode):
+        (included if ok else excluded).append((arc_name, full_path, reason))
+    for arc_name, full_path, ok, reason in _walk_auth_state(mode, auth_roots):
         (included if ok else excluded).append((arc_name, full_path, reason))
     # Sort for deterministic output (matches the order operators expect)
     included.sort(key=lambda r: r[0])
@@ -224,11 +247,18 @@ def _self_test():
         w(os.path.join(data, 'write_history.json'))
         w(os.path.join(data, 'sim_overrides.json'))
         w(os.path.join(data, 'configs', 'band_guide.csv'))
+        w(os.path.join(data, 'configs', 'g36_state.json'))
         w(os.path.join(data, 'configs', 'weather_47.60_-122.30_2020.json'))   # cache
         w(os.path.join(data, 'configs', 'weather_30.00_120.00_2024.json'))    # cache
+        w(os.path.join(data, 'master_key.txt'), 'secret-admin-key')
+
+        auth_root = os.path.join(tmp, '.red5')
+        os.makedirs(auth_root, mode=0o700, exist_ok=True)
+        w(os.path.join(auth_root, 'users.json'), '{"users":[]}')
+        w(os.path.join(auth_root, 'auth_settings.json'), '{"enforce":false}')
 
         # ---- FULL mode ----
-        inc_full, exc_full, totals_full = plan('full', data, scripts)
+        inc_full, exc_full, totals_full = plan('full', data, scripts, [auth_root])
         inc_full_names = {r[0] for r in inc_full}
         exc_full_names = {r[0] for r in exc_full}
 
@@ -247,6 +277,12 @@ def _self_test():
               'telemetry.json' in inc_full_names)
         check('full: weather cache INCLUDED in full mode',
               'configs/weather_47.60_-122.30_2020.json' in inc_full_names)
+        check('full: master_key.txt INCLUDED',
+              'master_key.txt' in inc_full_names)
+        check('full: red5_auth/users.json INCLUDED',
+              'red5_auth/users.json' in inc_full_names)
+        check('full: red5_auth/auth_settings.json INCLUDED',
+              'red5_auth/auth_settings.json' in inc_full_names)
         check('full: exclude list contains ONLY the 4 dev-only trees in full mode',
               len(exc_full) == 4,
               'got: %s' % sorted(exc_full_names))
@@ -260,7 +296,7 @@ def _self_test():
               '_diagnostic/scratch.txt' in exc_full_names)
 
         # ---- REPLICATE mode ----
-        inc_rep, exc_rep, totals_rep = plan('replicate', data, scripts)
+        inc_rep, exc_rep, totals_rep = plan('replicate', data, scripts, [auth_root])
         inc_rep_names = {r[0] for r in inc_rep}
         exc_rep_names = {r[0] for r in exc_rep}
 
@@ -270,6 +306,10 @@ def _self_test():
               'pgpy/band_overrides_service.py' in inc_rep_names)
         check('replicate: weather_location.json KEPT (not a cache)',
               'configs/weather_location.json' in inc_rep_names)
+        check('replicate: master_key.txt still included',
+              'master_key.txt' in inc_rep_names)
+        check('replicate: red5_auth/users.json still included',
+              'red5_auth/users.json' in inc_rep_names)
 
         check('replicate: telemetry.json EXCLUDED',
               'telemetry.json' in exc_rep_names)
@@ -281,6 +321,8 @@ def _self_test():
               'sim_overrides.json' in exc_rep_names)
         check('replicate: band_guide.csv EXCLUDED',
               'configs/band_guide.csv' in exc_rep_names)
+        check('replicate: g36_state.json EXCLUDED',
+              'configs/g36_state.json' in exc_rep_names)
         check('replicate: weather cache (Seattle) EXCLUDED',
               'configs/weather_47.60_-122.30_2020.json' in exc_rep_names)
         check('replicate: weather cache (Shanghai) EXCLUDED',
@@ -290,8 +332,8 @@ def _self_test():
               '.hidden' not in exc_rep_names and
               'configs/something.tmp' not in inc_rep_names)
         check('replicate: replicate-mode included matches full-included',
-              totals_rep['included'] == totals_full['included'] - 7,
-              'full=%d  replicate=%d  expected_delta=7 runtime files' % (totals_full['included'], totals_rep['included']))
+              totals_rep['included'] == totals_full['included'] - 8,
+              'full=%d  replicate=%d  expected_delta=8 runtime files' % (totals_full['included'], totals_rep['included']))
         check('replicate: dev-only trees also excluded (inherited from full mode)',
               'tests/test_foo.py' in exc_rep_names
               and 'mockups/sketch.html' in exc_rep_names
@@ -330,6 +372,8 @@ def _self_test():
               "os.walk(DATA_ROOT)" in src)
         check('app-py-sync: os.walk(SCRIPTS_ROOT)',
               "os.walk(SCRIPTS_ROOT)" in src)
+        check('app-py-sync: AUTH_STATE_FILES + red5_auth/ prefix',
+              "AUTH_STATE_FILES" in src and "'red5_auth/'" in src)
         # scripts/ arc-name prefix
         check('app-py-sync: scripts/ arc-name prefix used',
               "'scripts/'" in src)

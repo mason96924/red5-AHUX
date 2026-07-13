@@ -110,11 +110,12 @@ _FALLBACK_PLUGIN_FILES = {
     'bridges_admin_service.py', '_bridges_lib.py',
     'bacnet_diag_service.py',
     'audit_log_service.py',
+    'auth_service.py',
 }
 _FALLBACK_UI_FILES = {
     'update.html', 'dashboard.html', 'dashboard.compiled.js',
     'dashboard.tailwind.css',
-    'equipment_mapper.html', 'landing.html', 'psy_3d.html',
+    'equipment_mapper.html', 'landing.html', 'access.html', 'psy_3d.html',
     'setup.html', 'setup_walk.compiled.js',
     'data_bridges_guide.md', 'opt_sa_insight.md',
     'configs/bridges.json',
@@ -556,6 +557,33 @@ def _extract_zip_streaming(zip_path):
                 continue
 
             clean_name = entry.lstrip('/')
+            # Auth state packed by /api/download-bundle as red5_auth/<file>.
+            if clean_name.startswith('red5_auth/'):
+                auth_leaf = clean_name[len('red5_auth/'):]
+                if auth_leaf not in ('users.json', 'auth_settings.json', 'auth_secret'):
+                    skipped.append({'file': clean_name, 'reason': 'Unknown auth state file'})
+                    continue
+                auth_root = '/root/.red5'
+                try:
+                    os.makedirs(auth_root, mode=0o700, exist_ok=True)
+                except OSError as ex:
+                    errors.append({'file': clean_name, 'error': str(ex)})
+                    continue
+                dest_path = os.path.join(auth_root, auth_leaf)
+                try:
+                    size_written = 0
+                    with zf.open(entry, 'r') as src, open(dest_path, 'wb') as dst:
+                        while True:
+                            chunk = src.read(65536)
+                            if not chunk:
+                                break
+                            dst.write(chunk)
+                            size_written += len(chunk)
+                    extracted.append({'file': 'red5_auth/' + auth_leaf,
+                                        'size': size_written, 'root': 'red5_auth'})
+                except OSError as ex:
+                    errors.append({'file': clean_name, 'error': str(ex)})
+                continue
             if clean_name.startswith('scripts/'):
                 target_root = SCRIPTS_ROOT
                 clean_name = clean_name[len('scripts/'):]

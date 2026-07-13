@@ -8,8 +8,8 @@
       "kind": "plugin",
       "label": "Upload Service",
       "desc": "Bundle upload + chunked endpoints + disk-status + Repair Mode",
-      "size": 90410,
-      "sha256": "ce8f4416c06d3ee2a640fa9c940474fba1028d294df29b27afa5b4ec0b4c981c",
+      "size": 91887,
+      "sha256": "e081fbd09e790602972d0a930b21137d6672144af2606ab94b27859f91167e89",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -134,6 +134,16 @@
       "hot_reload": true
     },
     {
+      "name": "auth_service.py",
+      "kind": "plugin",
+      "label": "Auth Service",
+      "desc": "Stage B login, tokens, user management, config-gate enforcement",
+      "size": 23044,
+      "sha256": "70cb48c32e9ef612cab4a7d8e95947a522baabe411f8d56c2663c4d02da055f6",
+      "show_in_ui": true,
+      "hot_reload": true
+    },
+    {
       "name": "repair_manifest.json",
       "kind": "ui",
       "label": "repair_manifest.json",
@@ -148,8 +158,8 @@
       "kind": "ui",
       "label": "update.html",
       "desc": "This page (Repair Mode + Data Bridges UI)",
-      "size": 78733,
-      "sha256": "2e52c7e8c84104d7b0f4b62b8808ba13acf05144a46a1bc419798e5d52787e37",
+      "size": 78870,
+      "sha256": "db1dd16f3d01c64b6328d2793587d46c4b31fdf63be05fdc4aee3eb03ea032ff",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -158,8 +168,8 @@
       "kind": "ui",
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
-      "size": 31555,
-      "sha256": "40175c16b50c0b604caa5eeb32184cb7b1a51700e1729bc855506b6135b84ad8",
+      "size": 35570,
+      "sha256": "17a47b15ef5bef299544bffc62d3db036777ad8564c9c9846b320ed88df9a8fa",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -168,8 +178,8 @@
       "kind": "ui",
       "label": "dashboard.compiled.js",
       "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
-      "size": 395182,
-      "sha256": "1e19c0f47bf6f857dd5b34bfc10363e7c0316eacf297562231a584f554200ed8",
+      "size": 391731,
+      "sha256": "869d29aa3aa2e7fd44ad4ad5e56e1a6f18273585af015be5c4d43288a2336069",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -198,8 +208,8 @@
       "kind": "ui",
       "label": "equipment_mapper.html",
       "desc": "Config Tool",
-      "size": 445159,
-      "sha256": "028e12ed2a6ab9e3039902480f76348ad48fce8ee369bad5668fd68af28a8bef",
+      "size": 444842,
+      "sha256": "3064400be286575e329b64e5adcbc805b69fe18634978e74f33059126766e932",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -208,8 +218,18 @@
       "kind": "ui",
       "label": "landing.html",
       "desc": "Landing page (password / login screen)",
-      "size": 13193,
-      "sha256": "dfe9d7bd766766f51b2a070aa14c5222155399842bba508cd481b87c4ac3640c",
+      "size": 9734,
+      "sha256": "758a1ce115a2b9feac877bbcecb6497d2625c061a21cea28a6bae508faad82b8",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
+      "name": "access.html",
+      "kind": "ui",
+      "label": "access.html",
+      "desc": "Admin user-management page (master-key gate)",
+      "size": 11978,
+      "sha256": "9c725d5e0774a95a083598b796348616b77d2619770e8530ce7a937d1b585964",
       "show_in_ui": true,
       "hot_reload": false
     },

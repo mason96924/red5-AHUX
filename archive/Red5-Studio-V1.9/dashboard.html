@@ -17,11 +17,11 @@
         window.API_BASE_URL = window.location.origin;
     </script>
     <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=efa85a8330">
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- React + dashboard.compiled.js are loaded at the bottom of <body>
+         after #root exists, with CDN/path fallbacks and on-screen errors. -->
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
          js/dashboard/* are now pre-compiled offline into the single bundle
-         /api/assets/dashboard.compiled.js?v=92ca709fb0 (built via /app/frontend/src/dashboard/build.sh).
+         /api/assets/dashboard.compiled.js?v=5c6dcad834 (built via /app/frontend/src/dashboard/build.sh).
          Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
@@ -81,6 +81,13 @@
         })();
     </script>
     <style>
+        /* Fallback layout if dashboard.tailwind.css fails to load */
+        html, body { margin: 0; min-height: 100%; background: #0f172a; color: #e2e8f0; }
+        #root { min-height: 100vh; }
+        #boot-fallback {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px; line-height: 1.5; padding: 24px; color: #fca5a5;
+        }
         .preserve-3d { transform-style: preserve-3d; }
         @keyframes fan-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .anim-spin { transform-origin: center; transform-box: fill-box; animation-name: fan-rotate; animation-timing-function: linear; animation-iteration-count: infinite; }
@@ -474,7 +481,9 @@
             setInterval(refresh, 30000);
         })();
     </script>
-    <div id="root"></div>
+    <div id="root" style="min-height:100vh;background:#0f172a;color:#94a3b8;font-family:ui-monospace,monospace;font-size:13px;padding:24px;">
+        <p id="boot-fallback">Loading dashboard&hellip;</p>
+    </div>
     <!-- Pre-compiled offline by /app/frontend/src/dashboard/build.sh —
          contains the verbatim concatenation of (in order):
             psychrometric.js, dashboard-components.js, schema-config.js,
@@ -483,6 +492,80 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=92ca709fb0"></script>
+    <script>
+    (function () {
+        var HASH = '5c6dcad834';
+        var root = document.getElementById('root');
+        function showBootError(msg) {
+            if (!root) return;
+            root.innerHTML = '<div id="boot-fallback" style="color:#fca5a5;line-height:1.6">'
+                + '<strong style="color:#f87171">Dashboard failed to start</strong><br><br>'
+                + msg
+                + '<br><br>Re-upload <b>both</b> <code>dashboard.html</code> and <code>dashboard.compiled.js</code> '
+                + '(~392&nbsp;KB). Then hard-refresh: <kbd>Cmd+Shift+R</kbd>.</div>';
+        }
+        window.__red5BootOk = function () {
+            var fb = document.getElementById('boot-fallback');
+            if (fb && fb.parentNode) fb.parentNode.removeChild(fb);
+        };
+        window.addEventListener('error', function (e) {
+            if (e.filename && e.filename.indexOf('dashboard.compiled.js') !== -1) {
+                showBootError('Bundle script error: ' + (e.message || 'unknown'));
+            }
+        });
+        var paths = [
+            '/api/assets/dashboard.compiled.js?v=' + HASH,
+            '/api/assets/js/dashboard.compiled.js?v=' + HASH,
+            '/assets/dashboard.compiled.js?v=' + HASH,
+            '/assets/js/dashboard.compiled.js?v=' + HASH,
+            '/js/dashboard.compiled.js?v=' + HASH,
+            'dashboard.compiled.js?v=' + HASH,
+            'js/dashboard.compiled.js?v=' + HASH
+        ];
+        var pi = 0;
+        function loadBundle() {
+            if (pi >= paths.length) {
+                showBootError('Could not load dashboard.compiled.js from any path. '
+                    + 'Open <code>/api/assets/dashboard.compiled.js</code> directly — '
+                    + 'it must start with <code>"use strict";function</code> and be ~392&nbsp;KB.');
+                return;
+            }
+            var s = document.createElement('script');
+            s.src = paths[pi++];
+            s.onerror = loadBundle;
+            document.body.appendChild(s);
+        }
+        var PAIRS = [
+            ['https://unpkg.com/react@18/umd/react.production.min.js',
+             'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'],
+            ['https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js',
+             'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js']
+        ];
+        function loadPair(idx) {
+            if (idx >= PAIRS.length) {
+                showBootError('React failed to load from CDN. Check controller internet access.');
+                return;
+            }
+            var react = document.createElement('script');
+            react.src = PAIRS[idx][0];
+            react.onload = function () {
+                var dom = document.createElement('script');
+                dom.src = PAIRS[idx][1];
+                dom.onload = loadBundle;
+                dom.onerror = function () { loadPair(idx + 1); };
+                document.head.appendChild(dom);
+            };
+            react.onerror = function () { loadPair(idx + 1); };
+            document.head.appendChild(react);
+        }
+        setTimeout(function () {
+            if (!window.__red5DashboardMounted && document.getElementById('boot-fallback')) {
+                showBootError('Timed out waiting for dashboard.compiled.js to mount. '
+                    + 'The uploaded bundle may be truncated or the wrong version.');
+            }
+        }, 12000);
+        loadPair(0);
+    })();
+    </script>
 </body>
 </html>

@@ -238,4 +238,10 @@ async def logout(response: Response,
     if session_token:
         await sessions_col.delete_one({"session_token": session_token})
     response.delete_cookie(COOKIE_NAME, path="/")
+    # Also clear V1.9-style studio auth cookie when present.
+    try:
+        from studio_auth import clear_studio_cookie  # noqa: WPS433
+        clear_studio_cookie(response)
+    except Exception:  # noqa: BLE001
+        response.delete_cookie("red5_auth", path="/")
     return {"ok": True}

@@ -39,18 +39,28 @@ ROOT_FILES = [
     'bacnet_diag_service.py',
     'band_csv_generator.py',
 
+    # Stage B — auth + audit (2026-07).  *.py land in pgpy/ on bundle upload.
+    'auth_service.py',
+    'audit_log_service.py',
+    'band_overrides_service.py',
+
     # UI / static.
     'dashboard.html',
     'update.html',
     'equipment_mapper.html',
     'landing.html',
+    'access.html',               # 2026-07: admin user-management page
     'setup.html',                # 2026-06-25: pre-compiled setup walk (one-time onboarding gate)
     'setup_walk.compiled.js',    # 2026-06-25: compiled JSX bundle for setup.html (built offline)
     'dashboard.compiled.js',     # 2026-06-25: compiled JSX bundle for dashboard.html (built offline)
+    'dashboard.tailwind.css',    # 2026-06-27: pre-extracted Tailwind (replaces CDN runtime)
     'psy_3d.html',
     'sun_preview.html',
     'deepdive.html',
     'ahu.html',                 # 2026-05-27: per-AHU performance detail page
+    'learn.html',
+    'mobile_mockup.html',
+    'repair_manifest.json',      # Repair Mode allow-list (sha256 source of truth)
     # NOTE: command-center.html (4-controller fleet view via iframes to
     # cN.geniusmason.com) is V2.0-only -- it embeds external subdomains
     # that the controllers themselves don't need to host.  Excluded.
@@ -78,6 +88,7 @@ ROOT_FILES = [
 # Subdir trees to include verbatim.
 SUBDIR_TREES = [
     'js',
+    'img',                       # floor plans, equipment photos (site-specific but ship with clone)
     'configs',
     'docs',                     # 2026-05-27: docs/ now mirrored from V2.0 (inline-help md, runbooks)
 ]

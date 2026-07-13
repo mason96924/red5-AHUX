@@ -33,6 +33,8 @@ USER_HTML = [
     'dashboard.html',
     'equipment_mapper.html',
     'landing.html',
+    'access.html',
+    'setup.html',
     'ahu.html',
     'sun_preview.html',
 ]

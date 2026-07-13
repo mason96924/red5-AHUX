@@ -157,10 +157,7 @@
     </script>
 </head>
 <body class="flex h-screen">
-    <!-- V2.0 Phase 2a/c: lightweight auth banner.  Sits outside the React tree
-         so we never risk breaking the legacy V1.9 main-source.  Detects sign-in
-         via /api/auth/me; offers Google sign-in when anonymous so save-image
-         and save-equipment-schema can actually persist. -->
+    <!-- Auth banner: Stage B studio auth via /api/auth/whoami -->
     <div id="v2-auth-banner" style="position:fixed;top:0;right:0;z-index:99999;
         font-family: 'Inter', system-ui, sans-serif; font-size: 11px;
         padding: 6px 10px; display: none; align-items: center; gap: 8px;
@@ -174,16 +171,15 @@
             style="display: none; background:#fbbf24; color:#0f172a;
             border: none; border-radius: 4px; padding: 5px 10px;
             font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
-            font-size: 10px; cursor: pointer;">Sign in with Google</button>
+            font-size: 10px; cursor: pointer;">Sign in</button>
         <button id="v2-auth-logout" data-testid="mapper-logout-btn"
             style="display: none; background: transparent; color: #94a3b8;
             border: 1px solid #334155; border-radius: 4px; padding: 4px 8px;
             font-size: 9px; cursor: pointer; text-transform: uppercase;
-            letter-spacing: 0.08em;">Logout</button>
+            letter-spacing: 0.08em;">Sign out</button>
     </div>
     <script>
         (function () {
-            var apiUrl = window.API_BASE_URL || window.location.origin;
             var banner = document.getElementById('v2-auth-banner');
             var state  = document.getElementById('v2-auth-state');
             var btnIn  = document.getElementById('v2-auth-signin');
@@ -191,29 +187,29 @@
             banner.style.display = 'flex';
 
             btnIn.addEventListener('click', function () {
-                // Remember where to return after the OAuth round-trip.
-                try { localStorage.setItem('r5_post_login_redirect', '/equipment_mapper.html'); } catch (e) {}
-                var redirectUrl = window.location.origin + '/dashboard.html';
-                window.location.href = 'https://auth.emergentagent.com/?redirect=' + encodeURIComponent(redirectUrl);
+                window.location.href = '/';
             });
             btnOut.addEventListener('click', function () {
-                fetch(apiUrl + '/api/auth/logout', { method: 'POST', credentials: 'include' })
-                    .finally(function () { window.location.reload(); });
+                fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+                    .finally(function () { window.location.href = '/'; });
             });
 
-            fetch(apiUrl + '/api/auth/me', { credentials: 'include' })
+            fetch('/api/auth/whoami', { credentials: 'same-origin' })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (me) {
-                    if (me && me.email) {
-                        state.textContent = 'Signed in: ' + me.email;
+                    var role = (me && me.role) || 'viewer';
+                    var user = (me && me.username) || '';
+                    if (role === 'editor' || role === 'admin') {
+                        var label = user ? user + ' (' + role + ')' : role;
+                        state.textContent = 'Signed in: ' + label;
                         state.style.color = '#a3e635';
                         btnOut.style.display = 'inline-block';
-                        window.__v2_signed_in = true;
+                        window.__red5_signed_in = true;
                     } else {
-                        state.textContent = 'Anonymous (preview only)';
+                        state.textContent = 'View only — sign in to save';
                         state.style.color = '#fbbf24';
                         btnIn.style.display = 'inline-block';
-                        window.__v2_signed_in = false;
+                        window.__red5_signed_in = false;
                     }
                 })
                 .catch(function () {
@@ -295,51 +291,25 @@
                 const iv = setInterval(() => { if (window.LangSelector) { setI18nReady(true); clearInterval(iv); } }, 200);
                 return () => clearInterval(iv);
             }, []);
-            // ============= PASSWORD AUTHENTICATION (v12.5) =============
-            // ============= PASSWORD SECURITY (v12.10) =============
-            // Recovery/master key is verified on the server (never in the
-            // browser) via POST /api/config/unlock.  Returns true/false.
-            const verifyMasterKey = async (password) => {
-                try {
-                    const resp = await fetch((window.API_BASE_URL || '') + '/api/config/unlock', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ password })
-                    });
-                    if (!resp.ok) return false;
-                    const j = await resp.json();
-                    return !!(j && j.ok);
-                } catch (e) {
-                    return false;
-                }
-            };
-            
-            // Simple hash function that works over HTTP (no crypto.subtle needed)
-            const hashPassword = async (password) => {
-                let hash = 0;
-                for (let i = 0; i < password.length; i++) {
-                    const char = password.charCodeAt(i);
-                    hash = ((hash << 5) - hash) + char;
-                    hash = hash & hash;
-                }
-                const hex = Math.abs(hash).toString(16).padStart(8, '0');
-                // Double-hash for better distribution
-                let hash2 = 0;
-                const salted = password + hex;
-                for (let i = 0; i < salted.length; i++) {
-                    const char = salted.charCodeAt(i);
-                    hash2 = ((hash2 << 5) - hash2) + char;
-                    hash2 = hash2 & hash2;
-                }
-                return hex + Math.abs(hash2).toString(16).padStart(8, '0');
-            };
-            
-            // Authentication - check sessionStorage set by landing page
-            const engineerAuth = sessionStorage.getItem('engineerAuthenticated') === 'true';
-            const [isAuthenticated, setIsAuthenticated] = useState(engineerAuth || true);
-            const [configPassword, setConfigPassword] = useState(localStorage.getItem('configPasswordHash') || '');
+            // ============= STAGE B AUTH (server session via /api/auth/whoami) =============
+            const [authChecked, setAuthChecked] = useState(false);
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [loginUsername, setLoginUsername] = useState('');
             const [passwordInput, setPasswordInput] = useState('');
-            const [showPasswordDialog, setShowPasswordDialog] = useState(true);  // Always show dialog for verification
+            const [authError, setAuthError] = useState('');
+
+            useEffect(() => {
+                fetch('/api/auth/whoami', { credentials: 'same-origin' })
+                    .then(r => r.json())
+                    .then(d => {
+                        const role = d.role || 'viewer';
+                        const ok = role === 'editor' || role === 'admin';
+                        setIsAuthenticated(ok);
+                        if (ok) sessionStorage.setItem('engineerAuthenticated', 'true');
+                        setAuthChecked(true);
+                    })
+                    .catch(() => { setAuthChecked(true); });
+            }, []);
             
             const [bgImage, setBgImage] = useState(null);
             const [schema, setSchema] = useState(FALLBACK_SCHEMA);
@@ -559,11 +529,7 @@
 
             // Load saved password hash from localStorage on mount (for verification, not auto-auth)
             useEffect(() => {
-                const savedPasswordHash = localStorage.getItem('configPasswordHash');
-                if (savedPasswordHash) {
-                    setConfigPassword(savedPasswordHash);
-                    // Don't auto-authenticate - user must enter password each time
-                }
+                /* Stage B: auth is server-side via red5_auth cookie — no localStorage gate. */
             }, []);
 
             useEffect(() => {
@@ -2244,92 +2210,33 @@
                 toast(`Exported to Downloads:\n1. map_config.json\n2. image_files_manifest.json\n3. collector_config.json (${ahuCount} AHUs, ${vavCount} VAVs)\n\nCopy to /root/data/configs/ on your controller.`);
             };
             
-            // ============= AUTHENTICATION FUNCTIONS (v12.5) =============
-            
-            const verifyPassword = async () => {
-                if (!configPassword) {
-                    // First time - set password
-                    if (passwordInput && passwordInput.trim()) {
-                        const newPassword = passwordInput.trim();
-                        const hashedPassword = await hashPassword(newPassword);
-                        
-                        setConfigPassword(hashedPassword);
-                        localStorage.setItem('configPasswordHash', hashedPassword);  // Store hash, not plain text
+            // ============= STAGE B LOGIN =============
+            const studioLogin = async () => {
+                const u = loginUsername.trim();
+                const p = passwordInput;
+                if (!u || !p) {
+                    setAuthError('Enter username and password.');
+                    return;
+                }
+                setAuthError('');
+                try {
+                    const r = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: u, password: p }),
+                    });
+                    const d = await r.json();
+                    if (r.ok && d.ok) {
+                        sessionStorage.setItem('engineerAuthenticated', 'true');
                         setIsAuthenticated(true);
-                        setShowPasswordDialog(false);
                         setPasswordInput('');
-                        toast('Password set! You now have full access to the configuration tool.');
+                        setLoginUsername('');
                     } else {
-                        toast('Please enter a valid password');
+                        setAuthError('Invalid username or password.');
                     }
-                } else {
-                    // Verify existing password
-                    const inputHash = await hashPassword(passwordInput);
-                    
-                    // Check: hashed password OR master key (verified server-side)
-                    const localOk = (inputHash === configPassword);
-                    const masterOk = localOk ? false : await verifyMasterKey(passwordInput);
-                    if (localOk || masterOk) {
-                        setIsAuthenticated(true);
-                        setShowPasswordDialog(false);
-                        setPasswordInput('');
-                        
-                        if (masterOk) {
-                            console.log('🔓 Master key used for access');
-                        }
-                    } else {
-                        toast('Incorrect password!');
-                        setPasswordInput('');
-                    }
-                }
-            };
-            
-            const changePassword = async () => {
-                const currentPwd = prompt('Enter current password or master key:');
-                if (!currentPwd) return;
-                
-                const currentHash = await hashPassword(currentPwd);
-                
-                // Verify current password OR master key (verified server-side)
-                const localOk = (currentHash === configPassword);
-                const masterOk = localOk ? false : await verifyMasterKey(currentPwd);
-                if (!localOk && !masterOk) {
-                    toast('Incorrect current password!');
-                    return;
-                }
-                
-                const newPwd = prompt('Enter new password:');
-                if (!newPwd || !newPwd.trim()) {
-                    toast('Password cannot be empty');
-                    return;
-                }
-                
-                const confirmPwd = prompt('Confirm new password:');
-                if (newPwd !== confirmPwd) {
-                    toast('Passwords do not match!');
-                    return;
-                }
-                
-                const newHash = await hashPassword(newPwd);
-                setConfigPassword(newHash);
-                localStorage.setItem('configPasswordHash', newHash);
-                toast('Password changed successfully!');
-            };
-            
-            const resetPassword = async () => {
-                const masterKeyInput = prompt('Enter master key to reset password:');
-                
-                if (!masterKeyInput || !(await verifyMasterKey(masterKeyInput))) {
-                    toast('Invalid master key!');
-                    return;
-                }
-                
-                if (confirm('Reset password? You will need to set a new password on next load.')) {
-                    setConfigPassword('');
-                    localStorage.removeItem('configPasswordHash');
-                    setIsAuthenticated(false);
-                    setShowPasswordDialog(true);
-                    toast('Password has been reset. Please set a new password.');
+                } catch (e) {
+                    setAuthError('Sign-in failed.');
                 }
             };
             
@@ -3222,56 +3129,62 @@
             const animations = currentType.visual_assets?.animations || [];
             const isTargetActive = (type, idx) => activeTarget.type === type && activeTarget.idx === idx;
 
-            // Show password dialog if not authenticated
+            if (!authChecked) {
+                return (
+                    <div className="flex w-full h-full bg-slate-950 items-center justify-center">
+                        <p className="text-slate-500 text-sm font-mono">Checking access&hellip;</p>
+                    </div>
+                );
+            }
+
+            // Show sign-in gate if not authenticated
             if (!isAuthenticated) {
                 return (
                     <>
-                        <div className="flex w-full h-full bg-slate-950">
-                            {/* Main app hidden until authenticated */}
-                        </div>
-                        
-                        {/* PASSWORD DIALOG MODAL (v12.5 - Authentication Required) */}
-                        {showPasswordDialog && (
-                            <div 
-                                className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/95 backdrop-blur-sm"
-                            >
-                                <div 
-                                    onClick={e => e.stopPropagation()}
-                                    className="bg-slate-900 border-2 border-amber-500/50 rounded-2xl shadow-[0_0_80px_rgba(251,191,36,0.4)] p-8 max-w-md w-full mx-4"
-                                >
-                                    <div className="text-center mb-6">
-                                        <div className="text-6xl mb-4">🔒</div>
-                                        <h2 className="text-2xl font-black text-amber-400 mb-2 uppercase tracking-tight">
-                                            {t('equipment_config_tool')}
-                                        </h2>
-                                        <p className="text-slate-400 text-sm">
-                                            {!configPassword ? t('set_pw_prompt') : t('enter_pw_prompt')}
-                                        </p>
-                                    </div>
-                                    
-                                    <input 
-                                        type="password" 
-                                        value={passwordInput}
-                                        onChange={e => setPasswordInput(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && verifyPassword()}
-                                        placeholder={!configPassword ? t('set_your_password') : t('enter_password')}
-                                        autoFocus
-                                        className="w-full bg-slate-950 border-2 border-slate-700 focus:border-amber-500 rounded-lg p-3 text-white text-lg font-mono outline-none transition-all mb-4"
-                                    />
-                                    
-                                    <button 
-                                        onClick={verifyPassword}
-                                        className="w-full px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-black uppercase tracking-widest transition-all"
-                                    >
-                                        {!configPassword ? '🔐 ' + t('set_password_enter') : '🔓 ' + t('unlock')}
-                                    </button>
-                                    
-                                    <p className="text-[10px] text-slate-500 text-center mt-4">
-                                        This tool creates equipment_types.json and map_config.json
+                        <div className="flex w-full h-full bg-slate-950" />
+                        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/95 backdrop-blur-sm">
+                            <div className="bg-slate-900 border-2 border-amber-500/50 rounded-2xl shadow-[0_0_80px_rgba(251,191,36,0.4)] p-8 max-w-md w-full mx-4">
+                                <div className="text-center mb-6">
+                                    <div className="text-6xl mb-4">🔒</div>
+                                    <h2 className="text-2xl font-black text-amber-400 mb-2 uppercase tracking-tight">
+                                        {t('equipment_config_tool')}
+                                    </h2>
+                                    <p className="text-slate-400 text-sm">
+                                        Sign in with your registered username and password.
                                     </p>
                                 </div>
+                                <input
+                                    type="text"
+                                    value={loginUsername}
+                                    onChange={e => { setLoginUsername(e.target.value); setAuthError(''); }}
+                                    placeholder="Username"
+                                    autoComplete="username"
+                                    className="w-full bg-slate-950 border-2 border-slate-700 focus:border-amber-500 rounded-lg p-3 text-white text-sm font-mono outline-none transition-all mb-3"
+                                />
+                                <input
+                                    type="password"
+                                    value={passwordInput}
+                                    onChange={e => { setPasswordInput(e.target.value); setAuthError(''); }}
+                                    onKeyDown={e => e.key === 'Enter' && studioLogin()}
+                                    placeholder={t('enter_password')}
+                                    autoComplete="current-password"
+                                    autoFocus
+                                    className="w-full bg-slate-950 border-2 border-slate-700 focus:border-amber-500 rounded-lg p-3 text-white text-lg font-mono outline-none transition-all mb-2"
+                                />
+                                {authError && <p className="text-red-400 text-xs text-center mb-2">{authError}</p>}
+                                <button
+                                    onClick={studioLogin}
+                                    className="w-full px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-black uppercase tracking-widest transition-all"
+                                >
+                                    Sign in
+                                </button>
+                                <p className="text-[10px] text-slate-500 text-center mt-4">
+                                    Admin: username <code className="text-amber-300">admin</code> + master key.
+                                    {' '}<a href="/" className="text-indigo-400 hover:underline">Landing</a>
+                                    {' · '}<a href="/access.html" className="text-indigo-400 hover:underline">Manage users</a>
+                                </p>
                             </div>
-                        )}
+                        </div>
                     </>
                 );
             }
@@ -3310,13 +3223,13 @@
                                 >
                                     Assets
                                 </button>
-                                <button 
-                                    onClick={changePassword}
+                                <a 
+                                    href="/access.html"
                                     className="px-1.5 py-0.5 bg-slate-800 border border-slate-600 text-slate-300 rounded text-[7px] font-black uppercase tracking-wider transition-all hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400"
-                                    title="Change password"
+                                    title="User management (admin)"
                                 >
-                                    PWD
-                                </button>
+                                    ACCESS
+                                </a>
                                 {/* Pop-out / re-attach toggle. */}
                                 <button
                                     onClick={() => {

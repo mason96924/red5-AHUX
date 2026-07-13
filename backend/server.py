@@ -92,6 +92,9 @@ from routes.files import router as files_router  # noqa: E402
 app.include_router(files_router)
 from routes.assets import router as assets_router  # noqa: E402
 app.include_router(assets_router)
+# Server-side master-key gate (replaces the old browser-side hardcoded key).
+from routes.config_gate import router as config_gate_router  # noqa: E402
+app.include_router(config_gate_router)
 # Phase L.29 routers are wired at the BOTTOM of this file (after all helpers
 # and module-level constants like ACTIVE_LOCATION / _DEMO_AHUS / _CACHE are
 # defined, so each router's `_pull_from_server()` shim resolves cleanly).

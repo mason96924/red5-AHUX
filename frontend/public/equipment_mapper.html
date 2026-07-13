@@ -297,7 +297,22 @@
             }, []);
             // ============= PASSWORD AUTHENTICATION (v12.5) =============
             // ============= PASSWORD SECURITY (v12.10) =============
-            const MASTER_KEY = "b%9P$MdeQP][";  // Recovery key - only you know this
+            // Recovery/master key is verified on the server (never in the
+            // browser) via POST /api/config/unlock.  Returns true/false.
+            const verifyMasterKey = async (password) => {
+                try {
+                    const resp = await fetch((window.API_BASE_URL || '') + '/api/config/unlock', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password })
+                    });
+                    if (!resp.ok) return false;
+                    const j = await resp.json();
+                    return !!(j && j.ok);
+                } catch (e) {
+                    return false;
+                }
+            };
             
             // Simple hash function that works over HTTP (no crypto.subtle needed)
             const hashPassword = async (password) => {
@@ -2251,13 +2266,15 @@
                     // Verify existing password
                     const inputHash = await hashPassword(passwordInput);
                     
-                    // Check: hashed password OR master key
-                    if (inputHash === configPassword || passwordInput === MASTER_KEY) {
+                    // Check: hashed password OR master key (verified server-side)
+                    const localOk = (inputHash === configPassword);
+                    const masterOk = localOk ? false : await verifyMasterKey(passwordInput);
+                    if (localOk || masterOk) {
                         setIsAuthenticated(true);
                         setShowPasswordDialog(false);
                         setPasswordInput('');
                         
-                        if (passwordInput === MASTER_KEY) {
+                        if (masterOk) {
                             console.log('🔓 Master key used for access');
                         }
                     } else {
@@ -2273,8 +2290,10 @@
                 
                 const currentHash = await hashPassword(currentPwd);
                 
-                // Verify current password OR master key
-                if (currentHash !== configPassword && currentPwd !== MASTER_KEY) {
+                // Verify current password OR master key (verified server-side)
+                const localOk = (currentHash === configPassword);
+                const masterOk = localOk ? false : await verifyMasterKey(currentPwd);
+                if (!localOk && !masterOk) {
                     toast('Incorrect current password!');
                     return;
                 }
@@ -2297,10 +2316,10 @@
                 toast('Password changed successfully!');
             };
             
-            const resetPassword = () => {
+            const resetPassword = async () => {
                 const masterKeyInput = prompt('Enter master key to reset password:');
                 
-                if (masterKeyInput !== MASTER_KEY) {
+                if (!masterKeyInput || !(await verifyMasterKey(masterKeyInput))) {
                     toast('Invalid master key!');
                     return;
                 }

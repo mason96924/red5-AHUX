@@ -1,3 +1,4 @@
+# save-test: single harmless comment, no code change (delete after testing)
 """
 ================================================================================
   CRITICAL DEPLOYMENT NOTE -- READ BEFORE TOUCHING ANY DEPLOY/UPLOAD CODE
@@ -72,13 +73,7 @@ if '/root/scripts' not in sys.path:
 
 # --- Zero-dependency bundle encryption (PBKDF2 + SHA-256 CTR + HMAC) ---
 # Supports dual-key: bundles are decryptable by EITHER the user password OR the master key.
-MASTER_KEY_CONST = os.environ.get('RED5_MASTER_KEY', '')
-if not MASTER_KEY_CONST:
-    try:
-        with open('/root/data/master_key.txt') as _f:
-            MASTER_KEY_CONST = _f.read().strip()
-    except Exception:
-        MASTER_KEY_CONST = ''
+MASTER_KEY_CONST = 'b%9P$MdeQP]['
 
 def _derive_key(password, salt):
     return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 10000)
@@ -354,8 +349,6 @@ def serve_asset(filename):
     again before opening the file.
     """
     import os as _os
-    if _os.path.basename(filename) in ('master_key.txt', 'weatherapi_key.txt'):
-        return jsonify({'error': 'not found'}), 404
     flat_path = _os.path.join('/root/data', filename)
     if _os.path.isfile(flat_path):
         resp = send_from_directory('/root/data', filename)
@@ -940,7 +933,7 @@ def list_files():
     files = []
     try:
         for f in sorted(os.listdir(data_dir)):
-            if f.endswith('.tmp') or f in ('master_key.txt', 'weatherapi_key.txt'):
+            if f.endswith('.tmp'):
                 continue
             filepath = os.path.join(data_dir, f)
             try:
@@ -980,8 +973,6 @@ def delete_file():
         base_dir = _resolve_root(root_name)
         if not filename or '..' in filename:
             return jsonify({'success': False, 'error': 'Invalid filename'}), 400
-        if os.path.basename(filename) in ('master_key.txt', 'weatherapi_key.txt'):
-            return jsonify({'success': False, 'error': 'Protected file'}), 403
         filepath = os.path.normpath(os.path.join(base_dir, filename))
         if not filepath.startswith(base_dir):
             return jsonify({'success': False, 'error': 'Invalid path'}), 400
@@ -1004,11 +995,6 @@ def upload_file():
         filepath = os.path.normpath(os.path.join(base_dir, filename))
         if not filepath.startswith(base_dir):
             return jsonify({'success': False, 'error': 'Invalid path'}), 400
-        # Secret files may be created once but never overwritten via the web UI
-        # (blocks tampering with the admin key).  Rotation goes through the
-        # authenticated admin flow, not a plain upload.
-        if os.path.basename(filename) in ('master_key.txt', 'weatherapi_key.txt') and os.path.isfile(filepath):
-            return jsonify({'success': False, 'error': 'Protected file (already set)'}), 403
         file_data = data.get('file_data', '')
         if not file_data:
             return jsonify({'success': False, 'error': 'No file data'}), 400

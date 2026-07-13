@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Red5 &middot; Access Control</title>
+<style>
+  :root {
+    --bg: #0f172a; --card: #1e293b; --line: #334155; --muted: #94a3b8;
+    --text: #e2e8f0; --accent: #38bdf8; --ok: #34d399; --warn: #fbbf24;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 12px; color: var(--accent);
+       text-transform: uppercase; letter-spacing: .04em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px; margin-top: 16px;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: #0b1220; color: var(--text); font-size: 14px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    border: 0; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600;
+    cursor: pointer; background: var(--accent); color: #04263a;
+  }
+  button.secondary { background: #334155; color: var(--text); }
+  button.danger { background: var(--danger); color: #3b0a0a; }
+  button.warn { background: var(--warn); color: #3a2c05; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btnrow { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+  .pill.set { background: rgba(52,211,153,.15); color: var(--ok); }
+  .pill.unset { background: rgba(251,191,36,.15); color: var(--warn); }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 999px;
+           background: #0b1220; border: 1px solid var(--line); color: var(--muted); }
+  .badge.admin { color: var(--warn); border-color: var(--warn); }
+  .badge.editor { color: var(--ok); border-color: var(--ok); }
+  #msg { margin-top: 12px; font-size: 13px; min-height: 18px; }
+  #msg.err { color: var(--danger); }
+  #msg.ok { color: var(--ok); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .hidden { display: none; }
+  .enforce-state { font-weight: 700; }
+  .enforce-state.on { color: var(--danger); }
+  .enforce-state.off { color: var(--warn); }
+  td.actions { display: flex; gap: 6px; }
+  td.actions button { padding: 6px 10px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="row">
+    <div>
+      <h1>Red5 &middot; Access Control</h1>
+      <p class="sub">Controller user management</p>
+    </div>
+    <div id="whoami"><span class="badge">checking&hellip;</span></div>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="card" id="loginCard">
+    <h2>Sign in</h2>
+    <label for="u">Username</label>
+    <input id="u" autocomplete="username" placeholder="your username (or 'admin')">
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password" placeholder="password">
+    <div class="btnrow">
+      <button id="loginBtn">Sign in</button>
+    </div>
+    <p class="hint">
+      <b>Admin:</b> username <code>admin</code>, password = your master key.<br>
+      <b>Users:</b> use the username your admin created. On your <i>first</i>
+      sign-in, the password you type becomes your password.
+    </p>
+  </div>
+
+  <!-- LOGGED-IN ACTIONS -->
+  <div class="card hidden" id="sessionCard">
+    <div class="row">
+      <div>
+        <h2 style="margin:0">Signed in</h2>
+        <p class="sub" id="sessionWho"></p>
+      </div>
+      <button class="secondary" id="logoutBtn">Sign out</button>
+    </div>
+    <div class="btnrow">
+      <button onclick="location.href='/api/assets/setup.html?force=1'">Go to Settings</button>
+    </div>
+  </div>
+
+  <!-- CHANGE OWN PASSWORD (editors) -->
+  <div class="card hidden" id="pwCard">
+    <h2>Change my password</h2>
+    <label for="oldpw">Current password</label>
+    <input id="oldpw" type="password" autocomplete="current-password">
+    <label for="newpw">New password (min 6 characters)</label>
+    <input id="newpw" type="password" autocomplete="new-password">
+    <div class="btnrow"><button id="pwBtn">Update password</button></div>
+  </div>
+
+  <!-- ADMIN: USERS -->
+  <div class="card hidden" id="usersCard">
+    <div class="row">
+      <h2 style="margin:0">Users <span class="sub" id="userCount"></span></h2>
+    </div>
+    <table>
+      <thead><tr><th>Username</th><th>Password</th><th>Created</th><th></th></tr></thead>
+      <tbody id="userRows"></tbody>
+    </table>
+    <label for="newuser" style="margin-top:16px">Add a user</label>
+    <div style="display:flex; gap:8px">
+      <input id="newuser" placeholder="new username" style="flex:1">
+      <button id="addBtn">Add</button>
+    </div>
+    <p class="hint">Up to 10 users. New users set their own password on first sign-in.</p>
+  </div>
+
+  <!-- ADMIN: ENFORCEMENT -->
+  <div class="card hidden" id="enforceCard">
+    <h2>Enforcement</h2>
+    <div class="row">
+      <div>
+        Mode is currently
+        <span class="enforce-state" id="enforceState">&hellip;</span>
+        <p class="sub" id="enforceHint"></p>
+      </div>
+      <button id="enforceBtn"></button>
+    </div>
+    <p class="hint">
+      <b>Report-only</b> logs what it would block but blocks nothing (safe for testing).
+      <b>Enforce</b> actually blocks config changes for anyone not signed in.
+      You can switch back anytime here.
+    </p>
+  </div>
+
+  <div id="msg"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (path, opts={}) => fetch(path, {
+  credentials: 'same-origin',
+  headers: { 'Content-Type': 'application/json' },
+  ...opts,
+});
+function msg(text, kind='') { const m=$('msg'); m.textContent=text||''; m.className=kind; }
+
+let ROLE = 'viewer', USER = '';
+
+async function refreshWhoami() {
+  try {
+    const r = await api('/api/auth/whoami');
+    const d = await r.json();
+    ROLE = d.role || 'viewer'; USER = d.username || '';
+  } catch (e) { ROLE='viewer'; USER=''; }
+  render();
+}
+
+function render() {
+  const badge = $('whoami');
+  if (ROLE === 'viewer') {
+    badge.innerHTML = '<span class="badge">not signed in</span>';
+  } else {
+    badge.innerHTML = `<span class="badge ${ROLE}">${ROLE}${USER?': '+USER:''}</span>`;
+  }
+  const signedIn = ROLE !== 'viewer';
+  $('loginCard').classList.toggle('hidden', signedIn);
+  $('sessionCard').classList.toggle('hidden', !signedIn);
+  $('sessionWho').textContent = signedIn ? `Role: ${ROLE}${USER?' · '+USER:''}` : '';
+  // Editors change their own password; admin uses the master key (no pw change here).
+  $('pwCard').classList.toggle('hidden', ROLE !== 'editor');
+  const isAdmin = ROLE === 'admin';
+  $('usersCard').classList.toggle('hidden', !isAdmin);
+  $('enforceCard').classList.toggle('hidden', !isAdmin);
+  if (isAdmin) { loadUsers(); loadEnforce(); }
+}
+
+$('loginBtn').onclick = async () => {
+  msg('');
+  const username = $('u').value.trim(), password = $('p').value;
+  if (!username || !password) { msg('Enter username and password.', 'err'); return; }
+  const r = await api('/api/auth/login', { method:'POST',
+    body: JSON.stringify({ username, password }) });
+  const d = await r.json();
+  if (d.ok) {
+    $('p').value='';
+    if (d.role === 'editor') {
+      window.location.href = '/api/assets/setup.html?force=1';
+      return;
+    }
+    msg(d.password_was_set ? 'Password set — you are signed in.' : 'Signed in.', 'ok');
+    await refreshWhoami();
+  } else {
+    msg(d.error === 'invalid credentials'
+      ? 'Invalid username or password. Contact your administrator if you need an account.'
+      : (d.error || 'Sign in failed.'), 'err');
+  }
+};
+
+$('logoutBtn').onclick = async () => {
+  await api('/api/auth/logout', { method:'POST' });
+  msg('Signed out.', 'ok'); await refreshWhoami();
+};
+
+$('pwBtn').onclick = async () => {
+  const old = $('oldpw').value, nw = $('newpw').value;
+  const r = await api('/api/auth/change-password', { method:'POST',
+    body: JSON.stringify({ old, new: nw }) });
+  const d = await r.json();
+  if (d.ok) { $('oldpw').value=''; $('newpw').value=''; msg('Password updated.', 'ok'); }
+  else { msg(d.error || 'Could not update password.', 'err'); }
+};
+
+async function loadUsers() {
+  const r = await api('/api/auth/users');
+  if (!r.ok) return;
+  const d = await r.json();
+  $('userCount').textContent = `(${d.count}/${d.max})`;
+  const tb = $('userRows'); tb.innerHTML = '';
+  d.users.forEach(u => {
+    const tr = document.createElement('tr');
+    const pill = u.password_set
+      ? '<span class="pill set">set</span>'
+      : '<span class="pill unset">not set</span>';
+    tr.innerHTML = `<td>${u.username}</td><td>${pill}</td>
+      <td class="sub">${(u.created||'').slice(0,10)}</td>`;
+    const act = document.createElement('td'); act.className='actions';
+    const reset = document.createElement('button'); reset.className='warn'; reset.textContent='Reset pw';
+    reset.onclick = () => resetUser(u.username);
+    const del = document.createElement('button'); del.className='danger'; del.textContent='Delete';
+    del.onclick = () => delUser(u.username);
+    act.append(reset, del); tr.append(act); tb.append(tr);
+  });
+  $('addBtn').disabled = d.count >= d.max;
+}
+
+$('addBtn').onclick = async () => {
+  const username = $('newuser').value.trim();
+  if (!username) return;
+  const r = await api('/api/auth/users', { method:'POST',
+    body: JSON.stringify({ username }) });
+  const d = await r.json();
+  if (d.ok) { $('newuser').value=''; msg(`Added ${username}.`, 'ok'); loadUsers(); }
+  else { msg(d.error || 'Could not add user.', 'err'); }
+};
+
+async function resetUser(name) {
+  if (!confirm(`Reset password for ${name}? They will set a new one on next sign-in.`)) return;
+  const r = await api(`/api/auth/users/${encodeURIComponent(name)}/reset`, { method:'POST' });
+  const d = await r.json();
+  if (d.ok) { msg(`Reset ${name}.`, 'ok'); loadUsers(); } else { msg(d.error||'Reset failed','err'); }
+}
+
+async function delUser(name) {
+  if (!confirm(`Delete user ${name}? This cannot be undone.`)) return;
+  const r = await api(`/api/auth/users/${encodeURIComponent(name)}`, { method:'DELETE' });
+  const d = await r.json();
+  if (d.ok) { msg(`Deleted ${name}.`, 'ok'); loadUsers(); } else { msg(d.error||'Delete failed','err'); }
+}
+
+async function loadEnforce() {
+  const r = await api('/api/auth/enforce');
+  const d = await r.json();
+  const on = !!d.enforce;
+  const s = $('enforceState');
+  s.textContent = on ? 'ENFORCING' : 'report-only';
+  s.className = 'enforce-state ' + (on ? 'on' : 'off');
+  $('enforceHint').textContent = on
+    ? 'Config changes are blocked for anyone not signed in.'
+    : 'Nothing is blocked yet — safe for testing.';
+  const b = $('enforceBtn');
+  b.textContent = on ? 'Switch to report-only' : 'Turn on enforcement';
+  b.className = on ? 'secondary' : 'warn';
+  b.onclick = async () => {
+    if (!on && !confirm('Turn on enforcement? Config changes will require sign-in.')) return;
+    const rr = await api('/api/auth/enforce', { method:'POST',
+      body: JSON.stringify({ enable: !on }) });
+    const dd = await rr.json();
+    if (dd.ok) { msg('Enforcement updated.', 'ok'); loadEnforce(); }
+    else { msg(dd.error||'Could not update','err'); }
+  };
+}
+
+refreshWhoami();
+</script>
+</body>
+</html>

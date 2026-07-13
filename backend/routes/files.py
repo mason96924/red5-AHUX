@@ -50,11 +50,19 @@ from models.fs import (
 router = APIRouter()
 
 
+# The `scripts` root holds proprietary controller code (app.py, collector.py)
+# that is deployed to controllers out-of-band (via enteliweb), never through
+# this web app.  It must not be browsable or downloadable from the browser.
+_HIDDEN_ROOTS = {"scripts"}
+
+
 @router.get("/api/files")
 async def list_files(path: str = Query(""),
                      root: str = Query("data"),
                      tenant: Optional[dict] = Depends(current_tenant_optional)) -> dict:
     """V1.9-compatible file browser."""
+    if root in _HIDDEN_ROOTS:
+        return {"success": False, "error": "This location is not available."}
     if _fs_available(root):
         base = _fs_root(root)
         data_dir = _safe_join(base, path)

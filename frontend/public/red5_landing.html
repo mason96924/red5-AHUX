@@ -29,7 +29,23 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        const MASTER_KEY = "b%9P$MdeQP][";
+        // The master/recovery key is verified on the server (never in the
+        // browser).  We POST the typed password to /api/config/unlock and
+        // trust the {ok:true/false} verdict.
+        const verifyMasterKey = async (password) => {
+            try {
+                const resp = await fetch((window.API_BASE_URL || '') + '/api/config/unlock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                if (!resp.ok) return false;
+                const j = await resp.json();
+                return !!(j && j.ok);
+            } catch (e) {
+                return false;
+            }
+        };
 
         const hashPassword = async (password) => {
             let hash = 0;
@@ -66,7 +82,7 @@
             const handleAuth = async () => {
                 if (!passwordInput.trim()) return;
 
-                if (passwordInput === MASTER_KEY) {
+                if (await verifyMasterKey(passwordInput)) {
                     sessionStorage.setItem('engineerAuthenticated', 'true');
                     setView('menu');
                     setPasswordInput('');

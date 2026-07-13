@@ -60,7 +60,7 @@ const FileBrowserModal = ({
                 </div>
                 
                 {isAtRootView ? (
-                    /* ROOT VIEW: show data/ and scripts/ as folders */
+                    /* ROOT VIEW: show data/ as a folder (scripts/ is hidden for security) */
                     <div className="flex-1 overflow-y-auto">
                         <div 
                             onClick={() => onSwitchRoot('data')}
@@ -70,16 +70,6 @@ const FileBrowserModal = ({
                             <div>
                                 <div className="text-[13px] font-black text-sky-400 uppercase tracking-wider">data</div>
                                 <div className="text-[9px] text-slate-500">/root/data — HTML, CSS, JS, configs, graphics</div>
-                            </div>
-                        </div>
-                        <div 
-                            onClick={() => onSwitchRoot('scripts')}
-                            className="flex items-center gap-3 px-4 py-3 rounded-lg bg-slate-800/60 border border-slate-700 hover:border-amber-500 hover:bg-amber-900/20 cursor-pointer transition-all"
-                        >
-                            <span className="text-amber-400 text-lg">&#128193;</span>
-                            <div>
-                                <div className="text-[13px] font-black text-amber-400 uppercase tracking-wider">scripts</div>
-                                <div className="text-[9px] text-slate-500">/root/scripts — app.py, collector.py, backend scripts</div>
                             </div>
                         </div>
                     </div>

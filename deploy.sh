@@ -267,6 +267,33 @@ else
     PASS=0
 fi
 
+# 7c — dashboard auth uses Stage B whoami (not legacy /api/auth/me)
+if [[ -f "$NGINX_ROOT/dashboard.html" ]]; then
+    if grep -q "/api/auth/whoami" "$NGINX_ROOT/dashboard.html" \
+       && ! grep -q "/api/auth/me" "$NGINX_ROOT/dashboard.html"; then
+        echo "       dashboard.html: auth pill uses /api/auth/whoami ✓"
+    else
+        red "       ⚠  dashboard.html still calls /api/auth/me — top-right will show GUEST"
+        PASS=0
+    fi
+else
+    red "       dashboard.html missing in $NGINX_ROOT"
+    PASS=0
+fi
+
+# 7d — access.html present (GET / rewrite target)
+if [[ -f "$NGINX_ROOT/access.html" ]]; then
+    if grep -q "Access Control" "$NGINX_ROOT/access.html"; then
+        echo "       access.html   : present ✓"
+    else
+        red "       ⚠  access.html missing Access Control heading"
+        PASS=0
+    fi
+else
+    red "       access.html missing in $NGINX_ROOT"
+    PASS=0
+fi
+
 echo
 if [[ "$PASS" == "1" ]]; then
     green "✓ deploy.sh complete — deploy looks healthy"

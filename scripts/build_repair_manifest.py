@@ -46,6 +46,7 @@ ENTRIES = [
     ('bacnet_diag_service.py',      'plugin', 'BACnet Diagnose Service',  '/api/bacnet/diagnose-config -- detect name-based BACnet targets'),
     ('audit_log_service.py',        'plugin', 'Audit Log Service',        '/api/audit-log -- band-apply / write-point / repair-mode log (100 KB rotating)'),
     ('auth_service.py',             'plugin', 'Auth Service',             'Stage B login, tokens, user management, config-gate enforcement'),
+    ('pages_service.py',            'plugin', 'Pages Service',            'GET / → access.html, /access.html, /setup.html, POST /api/config/unlock'),
     # The manifest itself -- listed so the operator can always replace
     # it from the UI.  sha256 is intentionally None (set at the bottom)
     # because a hash that referenced itself would be a fixed-point

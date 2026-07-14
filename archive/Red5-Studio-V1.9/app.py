@@ -293,16 +293,6 @@ def health_probe():
     return jsonify({"ok": True, "version": "1.9.0", "mode": "legacy"})
 
 
-@app.route('/api/config/unlock', methods=['POST'])
-def config_unlock():
-    """Return {"ok": True} only when password matches server-side master key."""
-    body = request.get_json(silent=True) or {}
-    supplied = body.get('password') or ''
-    master = MASTER_KEY_CONST or ''
-    ok = bool(master) and hmac_mod.compare_digest(supplied, master)
-    return jsonify({'ok': ok})
-
-
 @app.route('/api/download-bundle/<path:filename>')
 def download_bundle_file(filename):
     """Utility endpoint: lets operators download the latest server-side copy of
@@ -849,17 +839,8 @@ def _serve_html_with_build_stamp(path):
 
 
 @app.route('/')
-def serve_root_access():
-    # ``/`` is Access Control (same page as /access.html).
-    # Self-bootstrap: on a fresh controller access.html may not exist yet.
-    if not os.path.isfile('/root/data/access.html'):
-        return Response(
-            '<!doctype html><meta http-equiv="refresh" content="0; url=/update">'
-            '<p>Controller not yet provisioned. Redirecting to '
-            '<a href="/update">/update</a>...</p>',
-            status=200, mimetype='text/html'
-        )
-    return _no_cache(send_from_directory('/root/data', 'access.html'))
+def serve_landing():
+    return _no_cache(send_from_directory('/root/data', 'landing.html'))
 
 @app.route('/dashboard')
 @app.route('/dashboard.html')
@@ -873,17 +854,7 @@ def serve_mapper():
 
 @app.route('/landing.html')
 def serve_landing_html():
-    """Explicit alias so /landing.html (linked from various pages) works
-    even though `/` already serves the same file."""
     return _no_cache(send_from_directory('/root/data', 'landing.html'))
-
-@app.route('/access.html')
-def serve_access_html():
-    return _no_cache(send_from_directory('/root/data', 'access.html'))
-
-@app.route('/setup.html')
-def serve_setup_html():
-    return _no_cache(send_from_directory('/root/data', 'setup.html'))
 
 @app.route('/ahu.html')
 def serve_ahu_html():

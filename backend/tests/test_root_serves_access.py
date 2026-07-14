@@ -1,5 +1,8 @@
 """Verify GET / serves Access Control (access.html), not the old landing page.
 
+V2.0: FastAPI routes/pages.py serves / when requests hit uvicorn (port 8001).
+Production nginx must rewrite GET / → /access.html (see config/nginx-red5-site.conf).
+
 Run on Mac or server venv:
     cd backend && python3 tests/test_root_serves_access.py
 """
@@ -20,18 +23,27 @@ def _static_checks() -> None:
     assert 'return _serve("access.html")' in root_block
     assert 'return _serve("landing.html")' not in root_block
 
+    # V1.9: root → access lives in pages_service.py (not app.py).
+    pages_svc = os.path.join(REPO, "archive", "Red5-Studio-V1.9", "pages_service.py")
+    assert os.path.isfile(pages_svc), "pages_service.py missing"
+    svc = open(pages_svc, encoding="utf-8").read()
+    assert "_root_is_access" in svc
+    assert "access.html" in svc
     app = open(os.path.join(REPO, "archive", "Red5-Studio-V1.9", "app.py"), encoding="utf-8").read()
-    m = re.search(
-        r"@app\.route\('/'\)\ndef serve_root_access\(\):.*?send_from_directory\('/root/data', '(\w+\.html)'\)",
-        app,
-        re.S,
+    assert not re.search(r"@app\.route\(['\"]/access\.html['\"]\)", app), (
+        "/access.html should not be in app.py (enteliWEB size budget)"
     )
-    assert m and m.group(1) == "access.html"
+
+    nginx = open(os.path.join(REPO, "config", "nginx-red5-site.conf"), encoding="utf-8").read()
+    assert "location = /" in nginx and "access.html" in nginx
 
     access = open(os.path.join(REPO, "frontend", "public", "access.html"), encoding="utf-8").read()
     landing = open(os.path.join(REPO, "frontend", "public", "landing.html"), encoding="utf-8").read()
+    dash = open(os.path.join(REPO, "frontend", "public", "dashboard.html"), encoding="utf-8").read()
     assert "Access Control" in access
     assert "Access Control" not in landing
+    assert "/api/auth/whoami" in dash
+    assert "/api/auth/me" not in dash
     print("  static checks OK")
 
 

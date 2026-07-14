@@ -111,6 +111,7 @@ _FALLBACK_PLUGIN_FILES = {
     'bacnet_diag_service.py',
     'audit_log_service.py',
     'auth_service.py',
+    'pages_service.py',
 }
 _FALLBACK_UI_FILES = {
     'update.html', 'dashboard.html', 'dashboard.compiled.js',

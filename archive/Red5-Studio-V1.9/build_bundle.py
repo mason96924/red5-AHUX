@@ -43,6 +43,7 @@ ROOT_FILES = [
     'auth_service.py',
     'audit_log_service.py',
     'band_overrides_service.py',
+    'pages_service.py',          # /, /access.html, /setup.html, /api/config/unlock
 
     # UI / static.
     'dashboard.html',

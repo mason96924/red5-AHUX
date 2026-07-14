@@ -8,8 +8,8 @@
       "kind": "plugin",
       "label": "Upload Service",
       "desc": "Bundle upload + chunked endpoints + disk-status + Repair Mode",
-      "size": 91887,
-      "sha256": "e081fbd09e790602972d0a930b21137d6672144af2606ab94b27859f91167e89",
+      "size": 91911,
+      "sha256": "7c30587dbc34d84ee7ed63e2118ebfd10d7cedd4d5aa3b4889e7e82384c1dcae",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -144,6 +144,16 @@
       "hot_reload": true
     },
     {
+      "name": "pages_service.py",
+      "kind": "plugin",
+      "label": "Pages Service",
+      "desc": "GET / \u2192 access.html, /access.html, /setup.html, POST /api/config/unlock",
+      "size": 2174,
+      "sha256": "b62c2a821bf3ceb2cf080ceea9004216ecc515d8881f71eab3308db775ea42a0",
+      "show_in_ui": true,
+      "hot_reload": false
+    },
+    {
       "name": "repair_manifest.json",
       "kind": "ui",
       "label": "repair_manifest.json",
@@ -158,8 +168,8 @@
       "kind": "ui",
       "label": "update.html",
       "desc": "This page (Repair Mode + Data Bridges UI)",
-      "size": 78870,
-      "sha256": "db1dd16f3d01c64b6328d2793587d46c4b31fdf63be05fdc4aee3eb03ea032ff",
+      "size": 78859,
+      "sha256": "8b915d573fa74bc5a940aacade591d2582098d7cb320303adba1f2f3e0d6b2c3",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -168,8 +178,8 @@
       "kind": "ui",
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
-      "size": 35570,
-      "sha256": "17a47b15ef5bef299544bffc62d3db036777ad8564c9c9846b320ed88df9a8fa",
+      "size": 35432,
+      "sha256": "01e61aeaddeb66917b6e08a2d2a8eb8c9f78a8b9e7cfe5cae0190c3afbc2ccd8",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -218,8 +228,8 @@
       "kind": "ui",
       "label": "landing.html",
       "desc": "Landing page (password / login screen)",
-      "size": 9734,
-      "sha256": "758a1ce115a2b9feac877bbcecb6497d2625c061a21cea28a6bae508faad82b8",
+      "size": 9648,
+      "sha256": "2955ec77e2fd6f24628ecaf0bda44c50ab75f57426bbb14720f1c74e1dedf0ea",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -228,8 +238,8 @@
       "kind": "ui",
       "label": "access.html",
       "desc": "Admin user-management page (master-key gate)",
-      "size": 11978,
-      "sha256": "9c725d5e0774a95a083598b796348616b77d2619770e8530ce7a937d1b585964",
+      "size": 11956,
+      "sha256": "2b7d83dc15e14cf74da08d52598dbef6e1c8aa6d802416d7a12c9db58877f78e",
       "show_in_ui": true,
       "hot_reload": false
     },

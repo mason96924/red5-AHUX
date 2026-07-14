@@ -342,11 +342,17 @@ server {
     # certbot will inject ssl_certificate / ssl_certificate_key lines here.
 
     # Static frontend (dashboard.html, js/, css/, assets/, docs/)
-    root /home/red5-studio/frontend;
-    index dashboard.html index.html;
+    root /home/red5-studio/frontend/build;
+    index index.html;
 
     # Larger uploads (mapper config posts, plugin uploads, etc.)
     client_max_body_size 32m;
+
+    # GET / → Access Control (V1.9 parity).  Without this, try_files falls
+    # through to /dashboard.html and operators land on the dashboard unsigned.
+    location = / {
+        rewrite ^ /access.html last;
+    }
 
     # All /api/* goes to uvicorn
     location /api/ {
@@ -370,9 +376,10 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Everything else: try the file on disk, fall back to dashboard.html
+    # Everything else: try the file on disk, fall back to the CRA shell.
+    # (Do NOT fall back to /dashboard.html — that bypasses Access Control.)
     location / {
-        try_files $uri $uri/ /dashboard.html;
+        try_files $uri $uri/ /index.html;
     }
 
     # Avoid serving the bcrypt hash by accident

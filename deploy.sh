@@ -283,10 +283,10 @@ fi
 
 # 7d — access.html present (GET / rewrite target)
 if [[ -f "$NGINX_ROOT/access.html" ]]; then
-    if grep -q "Access Control" "$NGINX_ROOT/access.html"; then
+    if grep -q "RED5 STUDIO" "$NGINX_ROOT/access.html"; then
         echo "       access.html   : present ✓"
     else
-        red "       ⚠  access.html missing Access Control heading"
+        red "       ⚠  access.html missing RED5 STUDIO heading"
         PASS=0
     fi
 else

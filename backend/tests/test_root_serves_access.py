@@ -40,7 +40,7 @@ def _static_checks() -> None:
     access = open(os.path.join(REPO, "frontend", "public", "access.html"), encoding="utf-8").read()
     landing = open(os.path.join(REPO, "frontend", "public", "landing.html"), encoding="utf-8").read()
     dash = open(os.path.join(REPO, "frontend", "public", "dashboard.html"), encoding="utf-8").read()
-    assert "Access Control" in access
+    assert "RED5 STUDIO" in access and "brand-psy" in access
     assert "Access Control" not in landing
     assert "/api/auth/whoami" in dash
     assert "/api/auth/me" not in dash
@@ -63,7 +63,7 @@ def _http_checks() -> None:
 
     assert r_root.status_code == 200, r_root.text[:200]
     assert r_access.status_code == 200, r_access.text[:200]
-    assert "Access Control" in r_root.text, "GET / must serve access.html"
+    assert "RED5 STUDIO" in r_root.text, "GET / must serve access.html"
     assert r_root.text == r_access.text, "GET / and GET /access.html must match"
     assert "Red5 Studio" in r_landing.text or "Building Diagnostic" in r_landing.text
     print("  HTTP checks OK")

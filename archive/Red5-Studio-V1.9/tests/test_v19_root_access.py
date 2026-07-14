@@ -40,7 +40,7 @@ def test_flask_client() -> None:
     import app as app_mod  # noqa: E402
 
     access_src = open(os.path.join(V19, "access.html"), encoding="utf-8").read()
-    assert "Access Control" in access_src
+    assert "RED5 STUDIO" in access_src and "brand-psy" in access_src
 
     real_isfile = os.path.isfile
     real_send = app_mod.send_from_directory
@@ -64,7 +64,7 @@ def test_flask_client() -> None:
     r_access = client.get("/access.html")
     assert r_root.status_code == 200
     assert r_access.status_code == 200
-    assert b"Access Control" in r_root.data
+    assert b"RED5 STUDIO" in r_root.data
     assert r_root.data == r_access.data
     print("  Flask client OK")
 

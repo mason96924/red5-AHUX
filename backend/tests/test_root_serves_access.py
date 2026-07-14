@@ -40,7 +40,7 @@ def _static_checks() -> None:
     access = open(os.path.join(REPO, "frontend", "public", "access.html"), encoding="utf-8").read()
     landing = open(os.path.join(REPO, "frontend", "public", "landing.html"), encoding="utf-8").read()
     dash = open(os.path.join(REPO, "frontend", "public", "dashboard.html"), encoding="utf-8").read()
-    assert "RED5 STUDIO" in access and "brand-psy" in access
+    assert "RED5 STUDIO" in access and "brand-ahu" in access
     assert "Access Control" not in landing
     assert "/api/auth/whoami" in dash
     assert "/api/auth/me" not in dash

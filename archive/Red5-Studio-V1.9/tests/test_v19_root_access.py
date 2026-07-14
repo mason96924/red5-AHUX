@@ -40,7 +40,7 @@ def test_flask_client() -> None:
     import app as app_mod  # noqa: E402
 
     access_src = open(os.path.join(V19, "access.html"), encoding="utf-8").read()
-    assert "RED5 STUDIO" in access_src and "brand-psy" in access_src
+    assert "RED5 STUDIO" in access_src and "brand-ahu" in access_src
 
     real_isfile = os.path.isfile
     real_send = app_mod.send_from_directory

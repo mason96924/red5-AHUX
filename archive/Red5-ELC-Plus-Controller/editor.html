@@ -1,0 +1,2529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Red5-ELC · Editor</title>
+<style>
+  :root {
+    --bg: #0c0f13;
+    --panel: #13181f;
+    --panel-2: #1a2029;
+    --line: #232b36;
+    --text: #d8dde4;
+    --muted: #6b7684;
+    --accent: #d97a30;
+    --accent-2: #f5a25b;
+    --ok: #4ecb71;
+    --warn: #e3b341;
+    --bad: #ec5b56;
+    --mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+               font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto; }
+  ::selection { background: var(--accent); color: var(--bg); }
+  a { color: var(--accent-2); }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 24px 14px; border-bottom: 1px solid var(--line); gap: 14px;
+  }
+  header h1 { margin: 0; font-size: 17px; letter-spacing: .04em; font-weight: 600; }
+  header h1 .sub { color: var(--muted); font-weight: 400; margin-left: 10px;
+                    font-size: 11px; letter-spacing: .18em; text-transform: uppercase; }
+  .toolbar { display: flex; gap: 8px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px;
+          border: 1px solid var(--line); border-radius: 999px; font-family: var(--mono);
+          font-size: 12px; color: var(--muted); }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .2s; }
+  .pill.ok .dot { background: var(--ok); }
+  .pill.bad .dot { background: var(--bad); }
+
+  button, .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 12.5px;
+    cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  button:hover, .btn:hover { background: #202832; border-color: #313b48; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #17110b; font-weight: 600; }
+  button.primary:hover { background: var(--accent-2); }
+  button.ghost { background: transparent; }
+  button.icon { padding: 2px 7px; font-size: 12px; line-height: 1; }
+  button.danger:hover { background: #3a1e1e; border-color: var(--bad); color: var(--bad); }
+
+  main {
+    display: grid;
+    grid-template-columns: 260px 1fr 1fr;
+    gap: 16px; padding: 16px 24px; height: calc(100vh - 62px);
+  }
+  section.panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  section.panel > h2 {
+    margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line);
+    font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  section.panel > h2 .count { color: var(--text); font-family: var(--mono); font-size: 12px; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+
+  /* Inline "new item" form */
+  .new-form { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px;
+              border-bottom: 1px solid var(--line); background: #10151b; }
+  .new-form input[type="text"] {
+    background: #0a0d11; color: var(--text); border: 1px solid var(--line);
+    border-radius: 5px; padding: 5px 8px; font: inherit; font-size: 12.5px; flex: 1 1 130px;
+  }
+  .new-form input[type="color"] {
+    width: 32px; height: 30px; border: 1px solid var(--line); border-radius: 5px;
+    background: transparent; padding: 0; cursor: pointer;
+  }
+  .new-form button { flex: 0 0 auto; }
+
+  /* Schedule chip (draggable) */
+  .chip {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+    margin-bottom: 8px; cursor: grab; user-select: none;
+    transition: transform .06s, border-color .1s;
+  }
+  .chip:active { cursor: grabbing; }
+  .chip:hover { border-color: #3a4552; }
+  .chip.dragging { opacity: 0.4; }
+  .chip .swatch { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+  .chip .name { flex: 1; font-size: 13px; font-family: var(--mono); }
+  .chip .actions { display: flex; gap: 4px; opacity: 0; transition: opacity .1s; }
+  .chip:hover .actions { opacity: 1; }
+
+  /* Group card */
+  .group-card {
+    background: var(--panel-2); border: 1px solid var(--line); border-left: 4px solid var(--muted);
+    border-radius: 6px; margin-bottom: 12px; overflow: hidden;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .group-card.drop-target {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: #1c2028;
+  }
+  .group-card .card-head {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--line); background: #171d25;
+  }
+  .group-card .card-head .name { flex: 1; font-weight: 600; font-size: 13px; }
+  .group-card .card-body { padding: 10px 12px; font-size: 12px; }
+  .group-card .subhead { color: var(--muted); font-size: 10px;
+                         letter-spacing: .15em; text-transform: uppercase; margin: 4px 0 6px; }
+  .group-card .members, .group-card .schedules {
+    display: flex; flex-wrap: wrap; gap: 4px; min-height: 22px;
+  }
+  .group-card .empty { color: #4a5361; font-style: italic; font-size: 11px; }
+  .member-tag, .schedule-tag {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px;
+    background: #0e131a; border: 1px solid var(--line); border-radius: 3px;
+    font-family: var(--mono); font-size: 11px;
+  }
+
+  /* --- Grouped module chip in group card members list ------------------
+     Members were previously one chip per channel -- gets noisy fast on
+     4+6+6 installs.  Operator asked (2026-02-11) to collapse members
+     to one compact chip per MODULE with numbered dots for the
+     relays that are members.  Non-member relays are dimmed so
+     operators can spot at a glance which channels of the module
+     are in the group. */
+  .member-mod-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 7px; margin: 2px 4px 2px 0;
+    background: #0e131a; border: 1px solid var(--line); border-radius: 4px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--text);
+  }
+  .member-mod-tag .mm-title { color: var(--muted); font-size: 10px; }
+  .member-mod-tag .mm-dots  { display: inline-flex; gap: 3px; }
+  .member-mod-tag .mm-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 1px solid var(--muted); background: transparent;
+    font-size: 7.5px; line-height: 10px; text-align: center;
+    color: var(--muted); cursor: default;
+    transition: opacity .1s;
+  }
+  /* MEMBER of this group -> solid orange (matches Floor OFF colour;
+     schedule state is what drives on/off, not simple relay state, so
+     we use a neutral "assigned" tint here). */
+  .member-mod-tag .mm-dot.member {
+    background: #d97a30; border-color: #d97a30; color: #0a1418;
+    cursor: pointer;
+  }
+  .member-mod-tag .mm-dot.member:hover {
+    background: var(--bad); border-color: var(--bad); color: #fff;
+  }
+  /* Non-member dot -- clickable to ADD the relay to the group
+     (2026-02-11 refinement).  Solid on hover shows the "add"
+     affordance in the group's accent colour. */
+  .member-mod-tag .mm-dot.addable {
+    cursor: pointer;
+  }
+  .member-mod-tag .mm-dot.addable:hover {
+    background: var(--ok); border-color: var(--ok);
+    color: #052e10; opacity: 1;
+  }
+  /* Non-member relay -> transparent + dim so operator sees the module
+     still has spare channels available to add. */
+  .member-mod-tag .mm-dot:not(.member) { opacity: 0.35; }
+  .member-mod-tag .mm-x {
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
+    margin-left: 2px;
+  }
+  .member-mod-tag .mm-x:hover { color: var(--bad); }
+  .schedule-tag .swatch { width: 8px; height: 8px; border-radius: 2px; }
+  .tag-x { background: none; border: none; color: var(--muted);
+           cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; }
+  .tag-x:hover { color: var(--bad); }
+
+  /* Device grid */
+  .device-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 8px;
+  }
+  .device-cell {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px;
+    padding: 10px 8px; text-align: center; cursor: grab; user-select: none;
+    transition: transform .06s, border-color .1s;
+    position: relative;
+    border-left: 4px solid var(--muted);
+  }
+  .device-cell:active { cursor: grabbing; }
+  .device-cell:hover { border-color: #3a4552; }
+  .device-cell.dragging { opacity: 0.4; }
+  .device-cell .id { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .device-cell .groups { display: flex; gap: 2px; justify-content: center; margin-top: 4px; }
+  .device-cell .g-swatch { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* -------------- Phase 3: Aligner visual states -----------------------
+     Applied when operator mode is on and a live event stream is
+     attached.  Four exclusive states + a transient "event" overlay:
+
+       .aligner-on      → steady green fill  (relay_state === true)
+       .aligner-off     → dim gray fill      (relay_state === false)
+       .aligner-unknown → transparent        (relay_state === null; no
+                                              snapshot yet)
+       .aligner-alarm   → sticky red border + pulsing ring
+                          (last_fail_code !== null)
+
+     `.aligner-event` is a short-lived overlay class that fires the
+     yellow-ring pulse on any state change — layered on top of the
+     base state so an ON→ON re-fire still visually confirms.
+  --------------------------------------------------------------------- */
+  .device-cell.aligner-on {
+    background: linear-gradient(180deg, rgba(78,203,113,0.16), rgba(78,203,113,0.06));
+    border-color: rgba(78,203,113,0.45);
+  }
+  .device-cell.aligner-on .id { color: #a7e6bc; }
+  .device-cell.aligner-off {
+    background: #0d1116;
+    border-color: #1e2530;
+  }
+  .device-cell.aligner-off .id { color: #6b7684; }
+  .device-cell.aligner-unknown {
+    background: repeating-linear-gradient(
+      45deg, #12171e, #12171e 4px, #161c24 4px, #161c24 8px
+    );
+    border-color: #2a3340;
+  }
+  .device-cell.aligner-unknown .id { color: var(--muted); font-style: italic; }
+  .device-cell.aligner-alarm {
+    border-color: var(--bad) !important;
+    background: linear-gradient(180deg, rgba(236,91,86,0.22), rgba(236,91,86,0.08));
+    animation: alarm-pulse 1.2s ease-in-out infinite;
+    cursor: pointer;
+  }
+  .device-cell.aligner-alarm .id { color: #f6a8a4; font-weight: 600; }
+  .device-cell.aligner-alarm::after {
+    content: "!";
+    position: absolute; top: 3px; right: 5px;
+    color: var(--bad); font-weight: 700; font-size: 12px;
+    text-shadow: 0 0 6px rgba(236,91,86,0.55);
+  }
+  @keyframes alarm-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(236,91,86,0.35); }
+    50%      { box-shadow: 0 0 0 4px rgba(236,91,86,0.06); }
+  }
+  .device-cell.aligner-event::before {
+    content: "";
+    position: absolute; inset: -2px;
+    border-radius: 6px;
+    border: 2px solid var(--warn);
+    pointer-events: none;
+    animation: event-flash 0.45s ease-out;
+    opacity: 0;
+  }
+  @keyframes event-flash {
+    0%   { opacity: 0.9; transform: scale(1.02); }
+    100% { opacity: 0;   transform: scale(1.00); }
+  }
+
+  /* ---- Module tiles (Floor-page parity) ---------------------------------
+     The Devices panel groups per-channel entries into module tiles so
+     the LHS matches the Floor page's vocabulary: one tile per module,
+     one dot per relay, live status via SSE.  Clicking a tile expands
+     an inline detail panel BELOW it with per-relay rows that are
+     individually draggable + carry a "include on module drop" mask
+     checkbox.  See renderDevices() / renderModuleDetail() for the
+     implementation.  (2026-02-11 operator redesign.)
+  ------------------------------------------------------------------------ */
+  .module-grid { display: flex; flex-direction: column; gap: 8px; }
+  .module-box {
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 8px; background: var(--panel-2);
+    cursor: grab; user-select: none;
+    transition: border-color 120ms;
+  }
+  .module-box[draggable="true"]:active { cursor: grabbing; }
+  .module-box:hover { border-color: #3a4552; }
+  .module-box.opened {
+    border-color: #c084fc;
+    background: rgba(192,132,252,0.08);
+  }
+  /* Multi-selected (Ctrl-click) but not currently expanded -- shown
+     with a lighter purple outline so operators can see the entire
+     selection at once before dragging.  Used for floor tiles in the
+     LHS AND module tiles in the Floor Modal. */
+  .module-box.multi-sel {
+    outline: 2px solid rgba(192,132,252,0.55);
+    outline-offset: -2px;
+  }
+  /* Floor tile is the same base module-box style but with a small
+     visual cue via the 🏢 emoji in the header (see renderDevices).
+     Keep the class as a hook for future floor-only styling. */
+  .module-box.floor-tile { }
+
+  /* ---- Floor Popout -----------------------------------------------------
+     Non-modal floating panel that opens when a floor tile is
+     clicked.  Deliberately no backdrop -- the operator needs to be
+     able to drag modules out of the popout onto group cards behind.
+     Positioned in the top-right of the viewport by default; the
+     header acts as a drag handle so it can be moved out of the way. */
+  .floor-popout {
+    position: fixed;
+    top: 78px;      /* just below the header bar */
+    right: 340px;   /* clear of the Devices column on the right */
+    width: 380px;
+    max-height: calc(100vh - 100px);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6),
+                0 0 0 1px rgba(192,132,252,0.35);
+    z-index: 200;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .floor-popout[hidden] { display: none; }
+  .floor-popout header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    background: #0e131a; border-bottom: 1px solid var(--line);
+    cursor: move; user-select: none;
+  }
+  .floor-popout header h3 {
+    margin: 0; font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .floor-popout header .close-x {
+    background: transparent; border: none; color: var(--muted);
+    font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .floor-popout header .close-x:hover { color: var(--bad); }
+  .floor-popout .body {
+    padding: 10px; overflow: auto; flex: 1;
+  }
+  .floor-popout footer {
+    padding: 6px 10px; border-top: 1px solid var(--line);
+    background: #0e131a;
+  }
+  .module-box.dragging { opacity: 0.5; }
+  .module-box .mod-hdr {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    margin-bottom: 4px; display: flex; justify-content: space-between;
+    align-items: center;
+  }
+  .module-box .mod-hdr .mod-title { color: var(--text); font-size: 11px; }
+  .module-box.opened .mod-hdr .mod-title { color: #c084fc; }
+  .module-box .mod-hdr .mod-mask-count {
+    color: var(--muted); font-size: 9.5px; letter-spacing: .05em;
+  }
+  .module-box .mod-dots { display: flex; gap: 4px; flex-wrap: wrap; }
+  .mod-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid var(--muted); background: transparent;
+    font-size: 8px; line-height: 12px; text-align: center;
+    color: var(--muted);
+  }
+  .mod-dot.on  { background: #78c878; border-color: #78c878; color: #0a2410; }
+  .mod-dot.off { background: #4a2d1a; border-color: #d97a30; color: #e8b088; }
+  .mod-dot.alarm {
+    background: rgba(236,91,86,0.35); border-color: var(--bad);
+    color: #f6a8a4; animation: alarm-pulse 1.2s ease-in-out infinite;
+  }
+
+  /* Inline per-relay detail — sits BELOW the module tile in the same
+     column, does NOT overlay other UI (operator asked explicitly for
+     "not as a pop up"). */
+  .module-detail {
+    border: 1px solid #3a4552; border-top: none; border-radius: 0 0 6px 6px;
+    background: #0e131a; padding: 6px 8px 8px; margin-top: -2px;
+  }
+  .module-detail .relay-row {
+    display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel-2); font-family: var(--mono); font-size: 11px;
+    cursor: grab; user-select: none; margin-top: 4px;
+    transition: border-color .08s;
+  }
+  .module-detail .relay-row:hover { border-color: #3a4552; }
+  .module-detail .relay-row.dragging { opacity: 0.4; }
+  .module-detail .relay-row:active { cursor: grabbing; }
+  .module-detail .relay-row.masked { opacity: 0.55; }
+  .module-detail .relay-row input[type="checkbox"] {
+    accent-color: #c084fc; margin: 0; cursor: pointer;
+  }
+  .module-detail .relay-row .relay-id { flex: 1; color: var(--text); }
+  .module-detail .relay-row .relay-state {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--muted);
+  }
+  .module-detail .relay-row .relay-state.on  { background: #78c878; }
+  .module-detail .relay-row .relay-state.off { background: #d97a30; }
+  .module-detail .mask-hint {
+    color: var(--muted); font-size: 10px; margin: 4px 0 2px;
+    letter-spacing: .04em;
+  }
+
+  /* Operator-mode toggle pill in the header */
+  .op-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    background: transparent; cursor: pointer;
+    letter-spacing: .08em; text-transform: uppercase;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .op-toggle:hover { border-color: #3a4552; color: var(--text); }
+  .op-toggle .op-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
+    transition: background .12s, box-shadow .12s;
+  }
+  .op-toggle.on {
+    color: var(--ok); border-color: rgba(78,203,113,0.45);
+    background: rgba(78,203,113,0.06);
+  }
+  .op-toggle.on .op-dot { background: var(--ok); box-shadow: 0 0 6px rgba(78,203,113,0.6); }
+  .op-toggle.connecting .op-dot { background: var(--warn); }
+  .op-toggle.error { color: var(--bad); border-color: rgba(236,91,86,0.45); }
+  .op-toggle.error .op-dot { background: var(--bad); }
+
+  .empty-state { color: var(--muted); text-align: center; padding: 30px 20px; font-size: 12.5px; }
+  .empty-state code { background: #0a0d11; padding: 2px 6px; border-radius: 3px;
+                      font-family: var(--mono); font-size: 11.5px; color: var(--accent-2); }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    color: var(--text); padding: 10px 14px; border-radius: 6px;
+    font-size: 12.5px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    transform: translateY(6px); z-index: 100;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.err { border-left-color: var(--bad); }
+
+  /* -------------- Modals -------------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; width: 560px; max-width: 92vw; max-height: 90vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal header {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal header h3 { margin: 0; font-size: 13px; letter-spacing: .12em;
+                      text-transform: uppercase; color: var(--text); font-weight: 600; }
+  .modal .body { padding: 18px; overflow-y: auto; }
+  .modal footer {
+    padding: 12px 18px; border-top: 1px solid var(--line);
+    display: flex; justify-content: flex-end; gap: 8px; background: #10151b;
+  }
+  .modal .close-x {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 20px; line-height: 1; padding: 0 4px;
+  }
+  .modal .close-x:hover { color: var(--text); }
+
+  /* form rows */
+  .row { margin-bottom: 14px; }
+  .row label { display: block; font-size: 11px; color: var(--muted);
+                letter-spacing: .1em; text-transform: uppercase; margin-bottom: 5px; }
+  .row input[type=text], .row input[type=number], .row select, .row input[type=time], .row input[type=date] {
+    width: 100%; background: #0a0d11; color: var(--text);
+    border: 1px solid var(--line); border-radius: 5px;
+    padding: 7px 9px; font: inherit; font-size: 13px;
+  }
+  .row .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .row .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .row .dow-picker { display: flex; gap: 4px; flex-wrap: wrap; }
+  .row .dow-picker label {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 9px; border-radius: 4px;
+    cursor: pointer; margin: 0; text-transform: none; letter-spacing: 0;
+    font-size: 12px; font-family: var(--mono);
+    /* Excluded (default) state — clearly signalled as OFF */
+    background: transparent;
+    border: 1px solid rgba(236,91,86,0.35);
+    color: #7a5250;
+    text-decoration: line-through;
+    text-decoration-color: rgba(236,91,86,0.55);
+    text-decoration-thickness: 1.5px;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .row .dow-picker input { display: none; }
+  .row .dow-picker label:hover { border-color: #4a5361; color: var(--text); }
+  .row .dow-picker label.checked {
+    background: var(--accent); border-color: var(--accent); color: #17110b;
+    font-weight: 600; text-decoration: none;
+  }
+
+  /* Rule summary below each schedule chip */
+  .chip .rule-summary {
+    display: block; font-size: 10.5px; color: var(--muted);
+    font-family: var(--mono); margin-top: 2px; letter-spacing: .02em;
+  }
+  .chip .rule-summary.unset { color: #6b4c2e; font-style: italic; }
+  .chip .name-block { flex: 1; min-width: 0; }
+  .chip .name-block .name { font-family: var(--mono); font-size: 13px;
+                              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Preview panel */
+  .preview-panel {
+    background: #0a0d11; border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; margin-top: 4px; font-family: var(--mono); font-size: 12px;
+    max-height: 180px; overflow-y: auto;
+  }
+  .preview-panel .fire-line {
+    display: flex; justify-content: space-between; padding: 3px 0;
+    border-bottom: 1px dashed #1a2029;
+  }
+  .preview-panel .fire-line:last-child { border-bottom: none; }
+  .preview-panel .fire-line .action.on { color: var(--ok); }
+  .preview-panel .fire-line .action.off { color: var(--warn); }
+  .preview-panel .fire-line .reason { color: var(--muted); font-size: 11px; margin-left: 8px; }
+  .preview-panel .empty { color: var(--muted); font-style: italic; text-align: center; padding: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RED5-ELC · EDITOR <span class="sub">Phase 2 — offline</span></h1>
+  <div class="toolbar">
+    <span class="pill" id="conn-pill" data-testid="editor-conn-pill">
+      <span class="dot"></span><span id="conn-text">checking…</span>
+    </span>
+    <button class="op-toggle" id="op-toggle" data-testid="op-toggle"
+            title="Operator mode: subscribe to live device events">
+      <span class="op-dot"></span><span id="op-label">Operator</span>
+    </button>
+    <button class="ghost" id="btn-settings" data-testid="editor-settings-btn" title="Location + weather + engine mode">⚙ Settings</button>
+    <button class="ghost" id="btn-calendar" data-testid="editor-calendar-btn" title="Holidays + event days">📅 Calendar</button>
+  </div>
+</header>
+
+<main>
+  <!-- ============= SCHEDULES ============= -->
+  <section class="panel" data-testid="panel-schedules">
+    <h2>Schedules <span class="count" id="sch-count">0</span></h2>
+    <form class="new-form" id="new-sch-form" autocomplete="off">
+      <input type="text" name="name" placeholder="Schedule name" required
+             data-testid="new-sch-name" />
+      <input type="color" name="color" value="#38bdf8" data-testid="new-sch-color" />
+      <button type="submit" class="primary" data-testid="new-sch-submit">+ Add</button>
+    </form>
+    <div class="panel-body" id="sch-list"></div>
+  </section>
+
+  <!-- ============= GROUPS ============= -->
+  <section class="panel" data-testid="panel-groups">
+    <h2>Groups <span class="count" id="grp-count">0</span></h2>
+    <form class="new-form" id="new-grp-form" autocomplete="off">
+      <input type="text" name="name" placeholder="Group name" required
+             data-testid="new-grp-name" />
+      <input type="color" name="color" value="#22c55e" data-testid="new-grp-color" />
+      <button type="submit" class="primary" data-testid="new-grp-submit">+ Add</button>
+    </form>
+    <div class="panel-body" id="grp-list"></div>
+  </section>
+
+  <!-- ============= DEVICES ============= -->
+  <section class="panel" data-testid="panel-devices">
+    <h2>Devices <span class="count" id="dev-count">0</span></h2>
+    <div class="panel-body" id="dev-grid"></div>
+  </section>
+</main>
+
+<div id="toast" data-testid="toast"></div>
+
+<!-- =========================== SETTINGS MODAL =========================== -->
+<div class="modal-backdrop" id="settings-modal" data-testid="settings-modal">
+  <div class="modal">
+    <header>
+      <h3>Controller Settings</h3>
+      <button class="close-x" data-modal-close>×</button>
+    </header>
+    <div class="body">
+      <div class="row">
+        <label>Latitude / Longitude</label>
+        <div class="grid-2">
+          <input type="number" step="0.0001" id="set-lat" data-testid="set-lat"
+                 placeholder="e.g. 34.05" />
+          <input type="number" step="0.0001" id="set-lon" data-testid="set-lon"
+                 placeholder="e.g. -118.24" />
+        </div>
+        <div class="hint">
+          <a href="#" id="locate-me" data-testid="locate-me">📍 Locate me</a>
+          (uses your browser's location — one-time)
+        </div>
+      </div>
+      <div class="row">
+        <label>Timezone (IANA)</label>
+        <input type="text" id="set-tz" data-testid="set-tz"
+               placeholder="e.g. America/Los_Angeles" list="tz-list" />
+        <datalist id="tz-list">
+          <option>UTC</option>
+          <option>America/Los_Angeles</option>
+          <option>America/Denver</option>
+          <option>America/Chicago</option>
+          <option>America/New_York</option>
+          <option>Europe/London</option>
+          <option>Europe/Paris</option>
+          <option>Europe/Berlin</option>
+          <option>Asia/Tokyo</option>
+          <option>Asia/Kolkata</option>
+          <option>Australia/Sydney</option>
+        </datalist>
+      </div>
+      <div class="row">
+        <label>Weather</label>
+        <div class="grid-2">
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;color:var(--text);margin:0;font-size:13px">
+            <input type="checkbox" id="set-weather" data-testid="set-weather" />
+            Enabled (Open-Meteo)
+          </label>
+          <span class="hint" style="margin:0">Adds cloud-cover to lux estimates</span>
+        </div>
+      </div>
+      <div class="row">
+        <label>Country (ISO 2-letter, for holiday suggestions)</label>
+        <input type="text" id="set-country" data-testid="set-country"
+               placeholder="e.g. US, IN, GB" maxlength="2"
+               style="text-transform:uppercase" />
+        <div class="hint">Blank = no auto-suggest.  Used only by the Calendar → "Suggest holidays" button.</div>
+      </div>
+      <div class="row">
+        <label>Engine mode</label>
+        <select id="set-mode" data-testid="set-mode">
+          <option value="dry_run">Dry-run (log intended actions, no hardware)</option>
+          <option value="live">Live (dispatch to relays)</option>
+        </select>
+      </div>
+    </div>
+    <footer>
+      <button class="ghost" data-modal-close>Cancel</button>
+      <button class="primary" id="settings-save" data-testid="settings-save">Save</button>
+    </footer>
+  </div>
+</div>
+
+<!-- =========================== CALENDAR MODAL =========================== -->
+<div class="modal-backdrop" id="calendar-modal" data-testid="calendar-modal">
+  <div class="modal" style="width:640px">
+    <header>
+      <h3>Calendar — Holidays & Event Days</h3>
+      <button class="close-x" data-modal-close>×</button>
+    </header>
+    <div class="body">
+      <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);">
+        <button class="ghost cal-tab active" data-tab="holiday" data-testid="cal-tab-holiday"
+                style="border-radius:4px 4px 0 0;border-bottom:2px solid var(--accent)">
+          🚫 Holidays / off-days
+        </button>
+        <button class="ghost cal-tab" data-tab="event" data-testid="cal-tab-event"
+                style="border-radius:4px 4px 0 0;border-bottom:2px solid transparent">
+          🎉 Event days
+        </button>
+      </div>
+
+      <div id="cal-holiday" class="cal-pane">
+        <div class="row">
+          <label>Add a holiday / off-day</label>
+          <div class="grid-3">
+            <input type="date" id="new-hol-date" data-testid="new-hol-date" />
+            <input type="text" id="new-hol-label" data-testid="new-hol-label"
+                   placeholder="Label (e.g. Christmas)" />
+            <button class="primary" id="new-hol-add" data-testid="new-hol-add">+ Add</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Auto-suggest from country</label>
+          <div class="grid-3">
+            <input type="text" id="hol-country" data-testid="hol-country"
+                   placeholder="US" maxlength="2" style="text-transform:uppercase" />
+            <input type="number" id="hol-year" data-testid="hol-year"
+                   value="2026" min="1970" max="2100" />
+            <button class="ghost" id="hol-suggest" data-testid="hol-suggest">Suggest…</button>
+          </div>
+          <div id="hol-suggest-results" class="preview-panel" style="display:none;margin-top:8px"></div>
+        </div>
+        <div class="row">
+          <label>Current holidays</label>
+          <div id="hol-list" class="preview-panel"
+               style="max-height:260px" data-testid="hol-list"></div>
+        </div>
+      </div>
+
+      <div id="cal-event" class="cal-pane" style="display:none">
+        <div class="row">
+          <label>Add an event day (overrides day-of-week gate)</label>
+          <div class="grid-3">
+            <input type="date" id="new-evt-date" data-testid="new-evt-date" />
+            <input type="text" id="new-evt-label" data-testid="new-evt-label"
+                   placeholder="Label (e.g. Grand Opening)" />
+            <button class="primary" id="new-evt-add" data-testid="new-evt-add">+ Add</button>
+          </div>
+          <div class="hint">Event days fire rules with <code>Also fire on event days</code>
+            enabled, even on weekends and holidays.</div>
+        </div>
+        <div class="row">
+          <label>Current event days</label>
+          <div id="evt-list" class="preview-panel"
+               style="max-height:260px" data-testid="evt-list"></div>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button class="ghost" data-modal-close>Close</button>
+    </footer>
+  </div>
+</div>
+
+<!-- =========================== RULE EDITOR MODAL =========================== -->
+<div class="modal-backdrop" id="rule-modal" data-testid="rule-modal">
+  <div class="modal">
+    <header>
+      <h3>Edit Schedule Rule <span id="rule-modal-name" style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400;margin-left:8px;font-family:var(--mono);"></span></h3>
+      <button class="close-x" data-modal-close>×</button>
+    </header>
+    <div class="body">
+      <div class="row">
+        <label>Trigger</label>
+        <select id="rule-trigger-type" data-testid="rule-trigger-type">
+          <option value="tod">Time of day (fixed clock time)</option>
+          <option value="sunrise">Sunrise</option>
+          <option value="sunset">Sunset</option>
+          <option value="civil_dawn">Civil dawn (twilight begin)</option>
+          <option value="civil_dusk">Civil dusk (twilight end)</option>
+          <option value="noon">Solar noon</option>
+          <option value="lux">Outdoor lux threshold</option>
+        </select>
+      </div>
+
+      <div class="row" id="tod-row">
+        <label>At (local time)</label>
+        <input type="time" id="rule-tod-at" data-testid="rule-tod-at" value="08:00" />
+      </div>
+
+      <div class="row" id="offset-row">
+        <label>Offset (minutes; negative = before)</label>
+        <input type="number" id="rule-offset" data-testid="rule-offset" value="0"
+               step="1" min="-720" max="720" />
+        <div class="hint">e.g. −30 = 30 min before sunset</div>
+      </div>
+
+      <div class="row" id="lux-row">
+        <label>Fire when outdoor lux drops below</label>
+        <input type="number" id="rule-lux" data-testid="rule-lux" value="400"
+               step="10" min="1" />
+        <div class="hint">Typical values: 400 lx = deep dusk, 1000 lx = cloudy afternoon, 10 lx = full dark</div>
+      </div>
+
+      <div class="row">
+        <label>Action</label>
+        <select id="rule-action" data-testid="rule-action">
+          <option value="on">Turn ON</option>
+          <option value="off">Turn OFF</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>Days of week</label>
+        <div class="dow-picker" id="rule-dow" data-testid="rule-dow"></div>
+      </div>
+
+      <div class="row">
+        <label>Date range (optional)</label>
+        <div class="grid-2">
+          <input type="date" id="rule-date-from" data-testid="rule-date-from" placeholder="from" />
+          <input type="date" id="rule-date-to" data-testid="rule-date-to" placeholder="to" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Calendar overrides</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;color:var(--text);margin:0;font-size:13px">
+            <input type="checkbox" id="rule-skip-hol" data-testid="rule-skip-hol" checked />
+            <span>🚫 Skip on holidays</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;color:var(--text);margin:0;font-size:13px">
+            <input type="checkbox" id="rule-inc-evt" data-testid="rule-inc-evt" />
+            <span>🎉 Also fire on event days (overrides weekend / holiday gates)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Preview — next 5 firings</label>
+        <div class="preview-panel" id="rule-preview" data-testid="rule-preview">
+          <div class="empty">Save or click Preview to compute…</div>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          <button class="ghost" id="preview-btn" data-testid="preview-btn">Preview now</button>
+          <span id="preview-note" style="margin-left:8px"></span>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button class="ghost" data-modal-close>Cancel</button>
+      <button class="primary" id="rule-save" data-testid="rule-save">Save rule</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ Floor Popout (2026-02-11 refined) =====================
+     Non-modal floating panel that pops out when a floor tile in the
+     LHS Devices column is clicked.  Sits over the Devices column
+     (not center-of-screen) with NO backdrop, so operators can drag
+     modules directly from the popout onto group cards behind
+     without dismissing.  Draggable by the header.  Close via × or
+     the small "Done" button. --> 
+<div id="floor-popout" class="floor-popout" data-testid="floor-popout" hidden>
+  <header data-role="floor-popout-drag-handle">
+    <h3 id="floor-modal-title" data-testid="floor-modal-title">Floor</h3>
+    <button class="close-x" data-testid="floor-modal-close"
+            id="floor-modal-close" title="Close">×</button>
+  </header>
+  <div class="body" id="floor-modal-body">
+    <!-- filled by renderFloorModal() -->
+  </div>
+  <footer>
+    <span style="color:var(--muted);font-size:11px">
+      Ctrl-click to multi-select · Drag onto a group
+    </span>
+  </footer>
+</div>
+
+<script>
+// ---------- state -----------------------------------------------------------
+const state = {
+  groups: [],
+  schedules: [],
+  devices: [],       // [{device, relay_state, ...}]  (device_id lives in .device)
+  deviceGroups: {},  // device_id → [{gid, priority, color, name}]  (derived)
+  settings: null,    // {latitude, longitude, timezone, weather_enabled, engine_mode}
+  editingSid: null,  // schedule id currently open in the rule modal
+  // ---- Floor-first Devices panel (2026-02-11) ----
+  floors: [],                     // [{id, name, ...}]
+  floorPlacements: {},            // floor_id -> [device_id, …] (from /floor-devices)
+  selectedFloorIds: new Set(),    // multi-select in the LHS floor list
+  openedFloorId: null,            // which floor's modal is open (null = none)
+  selectedModuleKeys: new Set(),  // multi-select modules INSIDE the floor modal
+  // ---- Popout ↔ Group sync (2026-02-11) ----
+  // groupMembers: gid -> Set<device_id> (refetched in refreshAll)
+  // contextGroupId: which group the popout mirrors.  Updated on any
+  // group interaction (drop, dot click, floor × click).  On popout
+  // open, mask is overwritten to match contextGroup's current
+  // membership -- so what you see in the group card is what you
+  // see in the popout.  On drop, SET-semantics apply to that same
+  // group (or the drop-target group) so marks override membership.
+  groupMembers: {},
+  contextGroupId: null,
+};
+
+const DOW = ["mon","tue","wed","thu","fri","sat","sun"];
+
+// ---------- HTTP helper -----------------------------------------------------
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch('/api/elc' + path, opts);
+  const text = await r.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch (_) {}
+  if (!r.ok) {
+    const msg = (json && (json.detail || json.error)) || text || r.statusText;
+    throw new Error(`${r.status} ${msg}`);
+  }
+  return json;
+}
+
+// ---------- toast -----------------------------------------------------------
+let toastTimer = null;
+function toast(msg, isErr) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.toggle('err', !!isErr);
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ---------- connection pill -------------------------------------------------
+async function refreshConn() {
+  const pill = document.getElementById('conn-pill');
+  const text = document.getElementById('conn-text');
+  try {
+    const link = await api('GET', '/link');
+    const connected = link.state === 'connected';
+    pill.classList.toggle('ok', connected);
+    pill.classList.toggle('bad', !connected);
+    text.textContent = `link ${link.state}`;
+  } catch (e) {
+    pill.classList.remove('ok'); pill.classList.add('bad');
+    text.textContent = 'api down';
+  }
+}
+
+// ---------- derived: device → [groups] --------------------------------------
+async function rebuildDeviceGroupsIndex() {
+  // For each group we already have `.members` after get_group; combine into
+  // a device→groups map so we can colour tiles by highest-priority group.
+  const map = {};
+  // We need each group's assigned schedules too — but for the tile colour
+  // we colour by group membership (each group has one colour of its own).
+  // If a device is in N groups, pick the group with the max # of assigned
+  // schedules (proxy for "primary"); tie-break by first-added.
+  for (const g of state.groups) {
+    const full = await api('GET', `/groups/${g.id}`).catch(() => null);
+    if (!full) continue;
+    for (const did of (full.members || [])) {
+      (map[did] = map[did] || []).push({
+        gid: g.id, name: g.name, color: g.color,
+        schedule_count: (full.schedules || []).length,
+      });
+    }
+  }
+  state.deviceGroups = map;
+}
+
+// ---------- rendering: schedule palette -------------------------------------
+function renderSchedules() {
+  const host = document.getElementById('sch-list');
+  document.getElementById('sch-count').textContent = state.schedules.length;
+  if (state.schedules.length === 0) {
+    host.innerHTML = `<div class="empty-state">No schedules yet.<br>
+      Add one above, then drag it onto a group.</div>`;
+    return;
+  }
+  host.innerHTML = '';
+  for (const s of state.schedules) {
+    const el = document.createElement('div');
+    el.className = 'chip';
+    el.draggable = true;
+    el.dataset.testid = `sch-chip-${s.id}`;
+    el.dataset.type = 'schedule';
+    el.dataset.id = s.id;
+    const summary = ruleSummary(s.rules);
+    const summaryClass = s.rules ? 'rule-summary' : 'rule-summary unset';
+    el.innerHTML = `
+      <span class="swatch" style="background:${s.color}"></span>
+      <span class="name-block">
+        <span class="name">${escapeHtml(s.name)}</span>
+        <span class="${summaryClass}">${escapeHtml(summary)}</span>
+      </span>
+      <span class="actions">
+        <button class="icon" title="Edit rule" data-testid="sch-edit-${s.id}">✎</button>
+        <button class="icon danger" title="Delete schedule"
+                data-testid="sch-del-${s.id}">×</button>
+      </span>`;
+    el.addEventListener('dragstart', (ev) => {
+      el.classList.add('dragging');
+      ev.dataTransfer.setData('text/plain',
+        JSON.stringify({ type: 'schedule', id: s.id }));
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    // Edit rule
+    el.querySelector('button[title="Edit rule"]').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openRuleModal(s);
+    });
+    // Delete
+    el.querySelector('button.danger').addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (!confirm(`Delete schedule "${s.name}"? Assignments will be dropped.`)) return;
+      try { await api('DELETE', `/schedules/${s.id}`); await refreshAll(); toast('Schedule deleted'); }
+      catch (e) { toast(e.message, true); }
+    });
+    host.appendChild(el);
+  }
+}
+
+// Compact one-liner describing a rule for the chip subtitle.
+function ruleSummary(rules) {
+  if (!rules || !rules.trigger) return 'no rule — click ✎ to configure';
+  const t = rules.trigger;
+  let head;
+  if (t.type === 'tod') head = `at ${t.at || '??:??'}`;
+  else if (t.type === 'lux') head = `lux < ${t.lux_below}`;
+  else {
+    const off = t.offset_minutes || 0;
+    const label = t.type.replace('_', ' ');
+    head = off === 0 ? label : `${label} ${off > 0 ? '+' : '−'}${Math.abs(off)}min`;
+  }
+  const action = rules.action === 'on' ? '→ ON' : '→ OFF';
+  let days = '';
+  if (Array.isArray(rules.days) && rules.days.length && rules.days.length < 7) {
+    days = ` · ${rules.days.join(',')}`;
+  }
+  return `${head} ${action}${days}`;
+}
+
+// ---------- rendering: group cards ------------------------------------------
+function renderGroups() {
+  const host = document.getElementById('grp-list');
+  document.getElementById('grp-count').textContent = state.groups.length;
+  if (state.groups.length === 0) {
+    host.innerHTML = `<div class="empty-state">No groups yet.<br>
+      Add one above, then drag <b>schedules</b> or <b>devices</b> onto it.</div>`;
+    return;
+  }
+  host.innerHTML = '';
+  for (const g of state.groups) {
+    const card = document.createElement('div');
+    card.className = 'group-card';
+    card.style.borderLeftColor = g.color;
+    card.dataset.testid = `group-card-${g.id}`;
+    card.dataset.gid = g.id;
+    card.innerHTML = `
+      <div class="card-head">
+        <span class="swatch" style="width:14px;height:14px;border-radius:3px;background:${g.color}"></span>
+        <span class="name">${escapeHtml(g.name)}</span>
+        <button class="icon danger" title="Delete group"
+                data-testid="grp-del-${g.id}">×</button>
+      </div>
+      <div class="card-body">
+        <div class="subhead">Schedules</div>
+        <div class="schedules" data-role="schedules"></div>
+        <div class="subhead" style="margin-top:10px">Members</div>
+        <div class="members" data-role="members"></div>
+      </div>`;
+    // populate schedules + members (async — fetches the join view)
+    fillGroupDetail(card, g.id);
+    // drop target: schedules + devices both land here
+    card.addEventListener('dragover', (ev) => {
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'copy';
+      card.classList.add('drop-target');
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('drop-target'));
+    card.addEventListener('drop', async (ev) => {
+      ev.preventDefault();
+      card.classList.remove('drop-target');
+      let payload;
+      try { payload = JSON.parse(ev.dataTransfer.getData('text/plain')); }
+      catch (_) { return; }
+      // Any drop-onto-group makes THIS group the popout's linked
+      // group -- the source of truth for checkbox state.
+      state.contextGroupId = g.id;
+      try {
+        if (payload.type === 'schedule') {
+          // priority = current_max_in_this_group + 1
+          const detail = await api('GET', `/groups/${g.id}`);
+          const maxP = (detail.schedules || [])
+            .reduce((m, s) => Math.max(m, s.priority || 0), 0);
+          await api('POST', `/groups/${g.id}/schedules`,
+                    { schedule_id: payload.id, priority: maxP + 1 });
+          toast(`Schedule assigned to ${g.name}`);
+        } else if (payload.type === 'device') {
+          await api('POST', `/groups/${g.id}/members`, { device_id: payload.id });
+          toast(`Device added to ${g.name}`);
+        } else if (payload.type === 'module' || payload.type === 'modules') {
+          // Bundle-drop: add every UNMASKED channel of every module in
+          // the payload.  Payload shape:
+          //   { type: 'module',  module: 'SRM_6S/0/1', channels: [...] }
+          //   { type: 'modules', modules: [{module, channels}, ...] }
+          // Backend model is unchanged -- each channel lands as its
+          // own row in `group_members`, matching the per-relay drop
+          // path.  The mask is a UI-only "include on drop" filter
+          // persisted in localStorage (see _maskSetForModule).
+          const modules = payload.type === 'module'
+            ? [{ module: payload.module, channels: payload.channels || [] }]
+            : (payload.modules || []);
+          const summary = await _bulkAddToGroup(g, modules);
+          toast(summary);
+        } else if (payload.type === 'floor' || payload.type === 'floors') {
+          // Floor drop uses SET semantics: after the drop, the
+          // group's membership for THIS floor is EXACTLY the
+          // payload's mask-included channels.  So the popout marks
+          // ARE the new schedule; drop = commit.
+          const floors = payload.type === 'floor'
+            ? [{ id: payload.floor, modules: payload.modules || [] }]
+            : (payload.floors || []);
+          const summary = await _syncFloorsToGroup(g, floors);
+          toast(`${floors.length} floor(s) → ${g.name}: ${summary}`);
+        }
+        await refreshAll();
+      } catch (e) { toast(e.message, true); }
+    });
+    // delete-group button
+    card.querySelector('button.danger').addEventListener('click', async () => {
+      if (!confirm(`Delete group "${g.name}"? Members + assignments will be dropped.`)) return;
+      try { await api('DELETE', `/groups/${g.id}`); await refreshAll(); toast('Group deleted'); }
+      catch (e) { toast(e.message, true); }
+    });
+    host.appendChild(card);
+  }
+}
+
+async function fillGroupDetail(card, gid) {
+  let detail;
+  try { detail = await api('GET', `/groups/${gid}`); }
+  catch (_) { return; }
+  const schHost = card.querySelector('[data-role=schedules]');
+  const memHost = card.querySelector('[data-role=members]');
+  // schedules
+  if (!detail.schedules || detail.schedules.length === 0) {
+    schHost.innerHTML = `<span class="empty">drop schedules here…</span>`;
+  } else {
+    schHost.innerHTML = '';
+    for (const s of detail.schedules) {
+      const t = document.createElement('span');
+      t.className = 'schedule-tag';
+      t.dataset.testid = `grp-${gid}-sch-${s.id}`;
+      t.innerHTML = `
+        <span class="swatch" style="background:${s.color}"></span>
+        ${escapeHtml(s.name)}
+        <span style="color:var(--muted);font-size:10px">p${s.priority}</span>
+        <button class="tag-x" title="Unassign">×</button>`;
+      t.querySelector('.tag-x').addEventListener('click', async () => {
+        try { await api('DELETE', `/groups/${gid}/schedules/${s.id}`); await refreshAll(); }
+        catch (e) { toast(e.message, true); }
+      });
+      schHost.appendChild(t);
+    }
+  }
+  // members — hierarchical tree grouped by floor > module (2026-02-11
+  // operator ask, revised).  Once ANY relay from a floor is a group
+  // member, the group card shows the full floor structure -- every
+  // module on that floor with every relay drawn as a dot.  Solid
+  // dots = current members; hollow dots = not-yet-members but the
+  // operator can click to add.  Clicking a member dot removes it.
+  // This lets the operator include/exclude relay-by-relay directly
+  // from the group card without going back to the Devices panel.
+  const groupColor = (state.groups.find(x => x.id === gid) || {}).color
+                     || '#d97a30';
+  if (!detail.members || detail.members.length === 0) {
+    memHost.innerHTML = `<span class="empty">drop floors, modules, or devices here…</span>`;
+  } else {
+    memHost.innerHTML = '';
+    // Reverse map: device_id -> floor_id (from state.floorPlacements)
+    const devToFloor = {};
+    for (const fid of Object.keys(state.floorPlacements || {})) {
+      for (const d of (state.floorPlacements[fid] || [])) devToFloor[d] = fid;
+    }
+    // Which floors have at least one member?  Members without a
+    // floor mapping are skipped ("Unplaced" bucket removed per
+    // operator feedback -- it had no meaning).
+    const memberSet = new Set(detail.members);
+    const floorsInGroup = new Set();
+    for (const did of detail.members) {
+      const fid = devToFloor[did];
+      if (fid) floorsInGroup.add(fid);
+    }
+    // Deterministic order: floors sorted by name.
+    const floorNameFor = fid => {
+      const f = state.floors.find(x => x.id === fid);
+      return f ? f.name : fid;
+    };
+    const orderedFloors = [...floorsInGroup].sort(
+      (a, b) => floorNameFor(a).localeCompare(floorNameFor(b))
+    );
+    for (const fid of orderedFloors) {
+      // Enumerate ALL modules on this floor (not just modules with
+      // an existing member) so hollow dots for non-member relays
+      // are clickable-addable in-place.
+      const floorDevIds = state.floorPlacements[fid] || [];
+      const modulesOnFloor = new Map();  // mk -> Set<sub>
+      for (const did of floorDevIds) {
+        const mk = moduleKeyForDevice(did);
+        const sub = parseInt(did.split('/')[3] || '0', 10);
+        if (!modulesOnFloor.has(mk)) modulesOnFloor.set(mk, new Set());
+        modulesOnFloor.get(mk).add(sub);
+      }
+      // Member counts for this floor's header (only actual members
+      // -- not the total relays of the floor).
+      const flMemberCount = floorDevIds
+        .filter(d => memberSet.has(d)).length;
+      const flTotalCount = floorDevIds.length;
+      const flHdr = document.createElement('div');
+      flHdr.style.cssText = 'display:flex;align-items:center;gap:6px;'
+        + 'margin:6px 0 3px;padding:2px 4px;background:#0e131a;'
+        + 'border-left:3px solid ' + groupColor + ';border-radius:2px;';
+      flHdr.dataset.testid = `grp-${gid}-mem-floor-${fid}`;
+      flHdr.innerHTML = `
+        <span style="font-size:10.5px;color:var(--text)">
+          🏢 ${escapeHtml(floorNameFor(fid))}
+        </span>
+        <span style="font-size:9.5px;color:var(--muted)">
+          ${modulesOnFloor.size} mod · ${flMemberCount}/${flTotalCount} ch
+        </span>
+        <button class="mm-x" title="Remove all ${flMemberCount} relay(s) of this floor from group"
+                data-testid="grp-${gid}-mem-floor-${fid}-remove-all"
+                style="margin-left:auto;background:none;border:none;
+                       color:var(--muted);cursor:pointer;font-size:12px;
+                       line-height:1;padding:0 4px">×</button>`;
+      flHdr.querySelector('.mm-x').addEventListener('click', async () => {
+        // Reset ALL relay memberships of every module on this floor
+        // from the group -- not just the ones already members
+        // (2026-02-11 operator ask).
+        state.contextGroupId = gid;
+        try {
+          const modKeys = new Set(floorDevIds.map(did => moduleKeyForDevice(did)));
+          const allChannels = state.devices
+            .filter(d => modKeys.has(moduleKeyForDevice(d.device)))
+            .map(d => d.device);
+          for (const did of allChannels) {
+            try { await api('DELETE', `/groups/${gid}/members/${did}`); }
+            catch (_) { /* best-effort */ }
+          }
+          await refreshAll();
+        } catch (e) { toast(e.message, true); }
+      });
+      memHost.appendChild(flHdr);
+      const modWrap = document.createElement('div');
+      modWrap.style.cssText = 'margin-left:12px;';
+      const orderedKeys = [...modulesOnFloor.keys()].sort();
+      for (const mk of orderedKeys) {
+        // Show ALL relays of this module from state.devices (the
+        // physical hardware channel list) -- NOT just the subs that
+        // happen to be placed on this floor.  A 6-channel module
+        // renders 6 dots even if only some are placed / members.
+        // (2026-02-11 operator: "SHOW each module with full relays
+        // whether filled or not").
+        let allSubs = state.devices
+          .filter(d => moduleKeyForDevice(d.device) === mk)
+          .map(d => parseInt(d.device.split('/')[3] || '0', 10))
+          .sort((a, b) => a - b);
+        if (!allSubs.length) {
+          // Fallback: state.devices doesn't know this module (e.g.
+          // stale placement).  Use placed subs as best-effort.
+          allSubs = [...modulesOnFloor.get(mk)].sort((a, b) => a - b);
+        }
+        const memberSubs = allSubs.filter(s => memberSet.has(`${mk}/${s}`));
+        const tag = document.createElement('span');
+        tag.className = 'member-mod-tag';
+        tag.dataset.testid = `grp-${gid}-mem-mod-${mk}`;
+        tag.innerHTML = `
+          <span class="mm-title">${escapeHtml(moduleLabelForKey(mk))}</span>
+          <span class="mm-dots">${allSubs.map(s => {
+            const did = `${mk}/${s}`;
+            const isMember = memberSet.has(did);
+            const style = isMember
+              ? `style="background:${groupColor};border-color:${groupColor};color:#0a1418"`
+              : '';
+            // Non-member dot is also clickable: adds that relay to
+            // the group.  Member dot click removes it.  Hover text
+            // tells the operator which way the click will go.
+            const hint = isMember ? '— click to remove' : '— click to add';
+            return `<span class="mm-dot${isMember ? ' member' : ' addable'}"
+                          data-device-id="${escapeHtml(did)}" ${style}
+                          title="${escapeHtml(did)} ${hint}"
+                          >${s}</span>`;
+          }).join('')}</span>`;
+        for (const dot of tag.querySelectorAll('.mm-dot.member')) {
+          dot.addEventListener('click', async () => {
+            const did = dot.dataset.deviceId;
+            state.contextGroupId = gid;
+            try {
+              await api('DELETE', `/groups/${gid}/members/${did}`);
+              await refreshAll();
+            } catch (e) { toast(e.message, true); }
+          });
+        }
+        for (const dot of tag.querySelectorAll('.mm-dot.addable')) {
+          dot.addEventListener('click', async () => {
+            const did = dot.dataset.deviceId;
+            state.contextGroupId = gid;
+            try {
+              await api('POST', `/groups/${gid}/members`, { device_id: did });
+              await refreshAll();
+            } catch (e) { toast(e.message, true); }
+          });
+        }
+        modWrap.appendChild(tag);
+      }
+      memHost.appendChild(modWrap);
+    }
+  }
+}
+
+// ---------- rendering: device grid ------------------------------------------
+// ---------- Module-tile view (Floor-page parity) ---------------------------
+// The Devices panel used to render a flat grid of per-channel cells.
+// Operator asked (2026-02-11) for the LHS to mirror the Floor page:
+// one module tile per (dev_type, scu, addr) with live status dots per
+// relay, clicking a tile expands an inline detail panel below it with
+// per-relay draggable rows + "include on module-drop" mask checkboxes.
+//
+// Data model:
+//   * state.devices is still the flat list of per-channel snapshots.
+//   * We derive modules on the fly by grouping on `${type}/${scu}/${addr}`
+//     (i.e. the device-id with the sub_address stripped).
+//   * Mask persistence lives in localStorage under
+//     'elc.editor.mask.<moduleKey>'.  Value is a comma-separated list
+//     of EXCLUDED sub_addresses ("1,3").  Absence = all included.
+//
+// Drag payloads emitted from this panel:
+//   * Module tile     → { type: 'module', module: '<key>',
+//                         channels: [<unmasked device ids...>] }
+//   * Relay-row      → { type: 'device', id: '<channel id>' }
+// See the group card drop handler for how the two are consumed.
+// ---------------------------------------------------------------------------
+
+// Which module is currently expanded (only one at a time).
+let _openedModuleKey = null;
+
+function moduleKeyForDevice(did) {
+  // 'SRM_6S/0/1/1' -> 'SRM_6S/0/1'
+  const bits = did.split('/');
+  return bits.length >= 3 ? bits.slice(0, 3).join('/') : did;
+}
+
+function _maskSetForModule(moduleKey) {
+  // Returns a Set<int> of EXCLUDED sub_addresses.
+  const raw = localStorage.getItem(`elc.editor.mask.${moduleKey}`);
+  if (!raw) return new Set();
+  return new Set(raw.split(',').map(x => parseInt(x, 10)).filter(x => !isNaN(x)));
+}
+function _saveMaskForModule(moduleKey, excludedSet) {
+  const key = `elc.editor.mask.${moduleKey}`;
+  if (excludedSet.size === 0) localStorage.removeItem(key);
+  else localStorage.setItem(key, [...excludedSet].sort((a,b)=>a-b).join(','));
+}
+
+function _channelsForModule(moduleKey) {
+  // Return { channels: [snap...], includedIds: [device_id...] } for one
+  // module.  `channels` is sorted by sub_address ascending; includedIds
+  // respects the local mask.
+  const excluded = _maskSetForModule(moduleKey);
+  const chans = state.devices
+    .filter(d => moduleKeyForDevice(d.device) === moduleKey)
+    .slice()
+    .sort((a, b) => {
+      const sa = parseInt(a.device.split('/')[3] || '0', 10);
+      const sb = parseInt(b.device.split('/')[3] || '0', 10);
+      return sa - sb;
+    });
+  const includedIds = chans
+    .filter(c => !excluded.has(parseInt(c.device.split('/')[3] || '0', 10)))
+    .map(c => c.device);
+  return { channels: chans, includedIds, excluded };
+}
+
+function _dotStateFor(snap) {
+  if (snap.last_fail_code !== null && snap.last_fail_code !== undefined) return 'alarm';
+  if (snap.relay_state === true)  return 'on';
+  if (snap.relay_state === false) return 'off';
+  return '';
+}
+
+// --- Bulk-add helper (module drop, modules drop) ---------------------
+// Given a list of {module, channels} entries, POST every channel to
+// /groups/{gid}/members.  Returns a human-readable summary suitable
+// for a toast.  Skipped rows (usually already-member 409s) are
+// silently counted.
+async function _bulkAddToGroup(g, modules) {
+  let added = 0, skipped = 0, mods = 0;
+  for (const m of modules) {
+    const ids = m.channels || [];
+    if (!ids.length) continue;
+    mods++;
+    for (const did of ids) {
+      try {
+        await api('POST', `/groups/${g.id}/members`, { device_id: did });
+        added++;
+      } catch (_) { skipped++; }
+    }
+  }
+  const note = skipped ? ` (${skipped} skipped — already members?)` : '';
+  return `${added} relay(s) from ${mods} module(s) added to ${g.name}${note}`;
+}
+
+// --- Floor-drop SET semantics ---------------------------------------
+// Sync `g`'s membership for the modules of the payload's floors to
+// EXACTLY match the payload's channels.  Any current member on the
+// floor that isn't in the payload is DELETEd; any payload channel
+// not yet a member is POSTed.  Channels of modules NOT on the
+// payload's floor are untouched (other floors' slices are safe).
+async function _syncFloorsToGroup(g, floors) {
+  // Fetch fresh current members (state.groupMembers may be stale
+  // between refreshAll cycles).
+  let detail;
+  try { detail = await api('GET', `/groups/${g.id}`); }
+  catch (_) { detail = { members: [] }; }
+  const currentMembers = new Set(detail.members || []);
+  let added = 0, removed = 0, totalTargets = 0;
+  for (const fl of floors) {
+    // Every channel of every module in the payload = the module's
+    // FULL relay set (mk).  Modules on this floor are those in the
+    // payload; we scope removal to their channels only.
+    const moduleKeys = new Set((fl.modules || []).map(m => m.module));
+    const target = new Set();
+    for (const m of (fl.modules || [])) {
+      for (const did of (m.channels || [])) target.add(did);
+    }
+    totalTargets += target.size;
+    // Scope of channels we care about = every channel of every
+    // module in the payload (from state.devices).  We remove any
+    // that are members but not in target; add any in target that
+    // aren't yet members.
+    const scopedChannels = state.devices
+      .filter(d => moduleKeys.has(moduleKeyForDevice(d.device)))
+      .map(d => d.device);
+    for (const did of scopedChannels) {
+      const isMember = currentMembers.has(did);
+      const shouldBe = target.has(did);
+      if (isMember && !shouldBe) {
+        try { await api('DELETE', `/groups/${g.id}/members/${did}`); removed++; }
+        catch (_) { /* best-effort */ }
+      } else if (!isMember && shouldBe) {
+        try { await api('POST', `/groups/${g.id}/members`, { device_id: did }); added++; }
+        catch (_) { /* best-effort */ }
+      }
+    }
+  }
+  const parts = [];
+  if (added)   parts.push(`+${added}`);
+  if (removed) parts.push(`-${removed}`);
+  const delta = parts.length ? parts.join(' / ') : 'no change';
+  return `synced (${delta}, target ${totalTargets} ch)`;
+}
+
+
+// --- Floor-first Devices panel --------------------------------------
+// LHS shows floors; each floor is drag-and-droppable; click opens a
+// Floor Modal with module tiles + relay detail expansion.  Multi-
+// select floors with Ctrl/Cmd-click.
+
+function _floorsWithPlacements() {
+  // Return floors that have at least one placed device_id.  Empty
+  // floors are shown too but visually dimmed so operators know to
+  // place fixtures on the Floor page first.
+  const out = [];
+  for (const f of state.floors) {
+    const devs = state.floorPlacements[f.id] || [];
+    out.push({ ...f, deviceIds: devs });
+  }
+  return out;
+}
+
+function _floorModulesForFloor(floor) {
+  // Given a floor (with .deviceIds), group its devices into modules.
+  // If a module has ANY channel placed on the floor, we treat ALL
+  // of its channels as being on this floor (a physical module lives
+  // on one floor; placement data may not enumerate every relay).
+  // This is critical for the drag payload -- checking a relay in
+  // the popout that isn't literally in state.floorPlacements must
+  // still result in it landing in the group on drop.
+  const modKeys = new Set();
+  for (const did of floor.deviceIds) modKeys.add(moduleKeyForDevice(did));
+  const modules = [];
+  for (const mk of [...modKeys].sort()) {
+    const { channels, includedIds, excluded } = _channelsForModule(mk);
+    modules.push({
+      key: mk, channels, includedIds, excluded,
+    });
+  }
+  return modules;
+}
+
+function _payloadForFloor(floor) {
+  // Build a { type: 'floor', floor, modules: [{module, channels}] }
+  // payload suitable for dragging.
+  const mods = _floorModulesForFloor(floor).map(m => ({
+    module: m.key, channels: m.includedIds,
+  }));
+  return { type: 'floor', floor: floor.id, modules: mods };
+}
+
+function renderDevices() {
+  const host = document.getElementById('dev-grid');
+  document.getElementById('dev-count').textContent = state.devices.length;
+  if (!state.floors.length) {
+    host.innerHTML = `<div class="empty-state">
+      No floors defined yet.<br>
+      Open <a href="/floor">Building</a> to create floors and place fixtures.
+    </div>`;
+    return;
+  }
+  const floors = _floorsWithPlacements();
+  const grid = document.createElement('div');
+  grid.className = 'module-grid';   // reuse existing column styling
+  for (const f of floors) {
+    const mods = _floorModulesForFloor(f);
+    const totalCh = mods.reduce((s, m) => s + m.channels.length, 0);
+    const includedCh = mods.reduce((s, m) => s + m.includedIds.length, 0);
+    const empty = mods.length === 0;
+    const isSel = state.selectedFloorIds.has(f.id);
+    const box = document.createElement('div');
+    box.className = 'module-box floor-tile' + (isSel ? ' opened' : '');
+    box.style.opacity = empty ? '0.55' : '';
+    box.dataset.floorId = f.id;
+    box.dataset.testid = `floor-tile-${f.name}`;
+    box.draggable = !empty;
+    box.innerHTML = `
+      <div class="mod-hdr">
+        <span class="mod-title">🏢 ${escapeHtml(f.name)}</span>
+        <span class="mod-mask-count">${mods.length} mod · ${includedCh}/${totalCh} ch</span>
+      </div>
+      <div class="mod-dots">
+        ${mods.length === 0
+          ? '<span style="color:var(--muted);font-size:10px">no fixtures placed — use /floor</span>'
+          : mods.map(m => {
+              const st = m.channels.every(c => c.relay_state === true)
+                ? 'on' : (m.channels.every(c => c.relay_state === false) ? 'off' : '');
+              return `<span class="mod-dot ${st}"
+                            title="${escapeHtml(m.key)} · ${m.includedIds.length}/${m.channels.length} ch">${
+                        escapeHtml(m.key.split('/')[2])   /* addr */
+                      }</span>`;
+            }).join('')}
+      </div>`;
+    // Ctrl/Cmd-click: toggle multi-select.  Shift-click: range.
+    // Plain click: open the floor modal.
+    box.addEventListener('click', (ev) => {
+      if (ev.metaKey || ev.ctrlKey) {
+        if (state.selectedFloorIds.has(f.id)) state.selectedFloorIds.delete(f.id);
+        else state.selectedFloorIds.add(f.id);
+        renderDevices();
+        return;
+      }
+      if (empty) {
+        toast('No fixtures placed on this floor yet — use /floor', true);
+        return;
+      }
+      state.openedFloorId = f.id;
+      state.selectedModuleKeys.clear();
+      renderFloorModal();
+    });
+    // Drag: if this floor is part of a selection, emit a multi-floor
+    // payload; otherwise a single floor.
+    box.addEventListener('dragstart', (ev) => {
+      if (empty) { ev.preventDefault(); return; }
+      box.classList.add('dragging');
+      const inSel = state.selectedFloorIds.has(f.id);
+      let payload;
+      if (inSel && state.selectedFloorIds.size > 1) {
+        const bundle = floors
+          .filter(x => state.selectedFloorIds.has(x.id))
+          .map(x => _payloadForFloor(x));
+        payload = { type: 'floors', floors: bundle.map(p => ({ id: p.floor, modules: p.modules })) };
+      } else {
+        payload = _payloadForFloor(f);
+      }
+      ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    box.addEventListener('dragend', () => box.classList.remove('dragging'));
+    grid.appendChild(box);
+  }
+  host.innerHTML = '';
+  host.appendChild(grid);
+}
+
+// --- Floor Modal ------------------------------------------------------
+// Overlay dialog showing all modules of the currently-opened floor.
+// Modules are tiles; click a tile toggles its inline relay detail;
+// Ctrl-click multi-selects modules for a bulk drag.  Dragging the
+// modal by its header lets the operator move it out of the way to
+// drop onto group cards behind.
+
+// Resolve which group the popout mirrors.  Preference:
+//   1. state.contextGroupId (if still has any relay of this floor)
+//   2. otherwise, first group by name containing any relay of the floor
+//   3. null if the floor is in no group
+function _resolveContextGroupForFloor(floorId) {
+  const floorDevs = state.floorPlacements[floorId] || [];
+  const inGroup = gid => {
+    const m = state.groupMembers[gid] || new Set();
+    return floorDevs.some(did => m.has(did));
+  };
+  if (state.contextGroupId != null && inGroup(state.contextGroupId))
+    return state.contextGroupId;
+  const sorted = [...(state.groups || [])].sort(
+    (a, b) => (a.name || '').localeCompare(b.name || '')
+  );
+  for (const g of sorted) if (inGroup(g.id)) return g.id;
+  return null;
+}
+
+// Overwrite localStorage mask for every module of `floorId` so
+// checkbox state = "is this relay a member of the linked group?".
+// Called when the popout opens or when group membership changes.
+function _syncMaskFromGroup(floorId, gid) {
+  const memberSet = gid != null
+    ? (state.groupMembers[gid] || new Set())
+    : null;
+  const floorDevs = state.floorPlacements[floorId] || [];
+  const modKeys = new Set(floorDevs.map(did => moduleKeyForDevice(did)));
+  for (const mk of modKeys) {
+    const chans = state.devices
+      .filter(d => moduleKeyForDevice(d.device) === mk);
+    const excluded = new Set();
+    if (memberSet) {
+      // Mask a relay if it is NOT a member of the linked group.
+      for (const c of chans) {
+        const sub = parseInt(c.device.split('/')[3] || '0', 10);
+        if (!memberSet.has(c.device)) excluded.add(sub);
+      }
+    }
+    // If floor is in no group, memberSet=null -> clear mask (all
+    // checkboxes checked, meaning "all included on drop").
+    _saveMaskForModule(mk, excluded);
+  }
+}
+
+// Sync key so we only re-sync on (floor, group) changes -- not on
+// every checkbox click.
+let _lastPopoutSyncKey = null;
+
+function renderFloorModal() {
+  const pop = document.getElementById('floor-popout');
+  if (state.openedFloorId === null) { pop.hidden = true; return; }
+  const floor = state.floors.find(f => f.id === state.openedFloorId);
+  if (!floor) { state.openedFloorId = null; pop.hidden = true; return; }
+  // Sync popout mask from context group on FIRST render for this
+  // (floor, contextGroup) pair.  Later checkbox clicks won't re-sync
+  // (syncKey unchanged) -- they persist edits.  A refreshAll after
+  // any group op invalidates the key so the popout re-reflects the
+  // fresh group state.
+  const contextGid = _resolveContextGroupForFloor(floor.id);
+  const syncKey = `${floor.id}::${contextGid}`;
+  if (_lastPopoutSyncKey !== syncKey) {
+    _syncMaskFromGroup(floor.id, contextGid);
+    _lastPopoutSyncKey = syncKey;
+  }
+  const enriched = { ...floor, deviceIds: state.floorPlacements[floor.id] || [] };
+  const mods = _floorModulesForFloor(enriched);
+  // Compute the "changes staged" count: for each channel of each
+  // module on this floor, compare popout intent (unchecked = would
+  // exclude; checked = would include) to the linked group's actual
+  // membership.  A diff means dropping now WILL change the group.
+  let stagedChanges = 0;
+  if (contextGid != null) {
+    const memberSet = state.groupMembers[contextGid] || new Set();
+    for (const m of mods) {
+      for (const c of m.channels) {
+        const sub = parseInt(c.device.split('/')[3] || '0', 10);
+        const stagedIncluded = !m.excluded.has(sub);
+        const isMember = memberSet.has(c.device);
+        if (stagedIncluded !== isMember) stagedChanges++;
+      }
+    }
+  }
+  pop.hidden = false;
+  const body = document.getElementById('floor-modal-body');
+  const linkedName = contextGid
+    ? (state.groups.find(g => g.id === contextGid) || {}).name || '?'
+    : null;
+  const linkedHtml = linkedName
+    ? ` <span style="font-size:10px;color:var(--muted);font-weight:normal">
+          — linked to group: <b style="color:var(--text)">${escapeHtml(linkedName)}</b>
+        </span>`
+    : ` <span style="font-size:10px;color:var(--muted);font-weight:normal">
+          — not linked to any group
+        </span>`;
+  // Staged-changes badge.  Amber when >0 so the operator knows a
+  // drop right now will actually change something; hidden when
+  // popout marks match the linked group's state exactly.
+  const stagedHtml = (contextGid != null && stagedChanges > 0)
+    ? ` <span data-testid="popout-staged-changes"
+             style="font-size:10px;color:#0a1418;background:#e0a94a;
+                    padding:1px 6px;border-radius:8px;font-weight:600;
+                    margin-left:4px" title="Drop the floor to commit">
+        ${stagedChanges} change${stagedChanges > 1 ? 's' : ''} staged
+      </span>`
+    : (contextGid != null
+        ? ` <span data-testid="popout-staged-changes"
+                 style="font-size:10px;color:var(--muted);margin-left:4px"
+                 title="Popout matches group state">
+            · in sync
+          </span>`
+        : '');
+  document.getElementById('floor-modal-title').innerHTML =
+    `Floor: ${escapeHtml(floor.name)} — ${mods.length} module(s)${linkedHtml}${stagedHtml}`;
+  body.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.className = 'module-grid';
+  for (const m of mods) {
+    const isSel = state.selectedModuleKeys.has(m.key);
+    const isOpen = m.key === _openedModuleKey;
+    const box = document.createElement('div');
+    box.className = 'module-box'
+                    + (isOpen ? ' opened' : '')
+                    + (isSel  ? ' multi-sel' : '');
+    box.dataset.moduleKey = m.key;
+    box.draggable = true;
+    box.dataset.testid = `fm-module-${m.key}`;
+    const maskNote = m.excluded.size
+      ? `<span class="mod-mask-count">${m.includedIds.length}/${m.channels.length} on drop</span>`
+      : '';
+    box.innerHTML = `
+      <div class="mod-hdr">
+        <span class="mod-title">${escapeHtml(moduleLabelForKey(m.key))}</span>
+        ${maskNote}
+      </div>
+      <div class="mod-dots">
+        ${m.channels.map(c => {
+          const sub = parseInt(c.device.split('/')[3] || '0', 10);
+          const st = _dotStateFor(c);
+          const isMasked = m.excluded.has(sub);
+          // Solid dot -> relay is INCLUDED (not masked) when this
+          // module is dropped into a group.  Hollow dot -> relay is
+          // MASKED (excluded on drop).  Live-state colour (on/off/
+          // alarm) still shown on solid dots.  Toggle via the
+          // checkboxes in the expanded relay-detail panel below the
+          // tile (2026-02-11 clarified).
+          const cls = isMasked ? 'mod-dot' : `mod-dot ${st}`;
+          const style = isMasked
+            ? 'style="opacity:.30;background:transparent;color:var(--muted)"'
+            : '';
+          const title = isMasked
+            ? `${escapeHtml(c.device)} (masked — excluded on module-drop)`
+            : escapeHtml(c.device);
+          return `<span class="${cls}" data-device-id="${escapeHtml(c.device)}"
+                        ${style} title="${title}">${sub}</span>`;
+        }).join('')}
+      </div>`;
+    // Click: toggle expand; Ctrl-click: multi-select.
+    box.addEventListener('click', (ev) => {
+      if (ev.target.closest('.mod-dot')) return;
+      if (ev.metaKey || ev.ctrlKey) {
+        if (state.selectedModuleKeys.has(m.key))
+          state.selectedModuleKeys.delete(m.key);
+        else
+          state.selectedModuleKeys.add(m.key);
+        renderFloorModal();
+        return;
+      }
+      _openedModuleKey = (_openedModuleKey === m.key) ? null : m.key;
+      renderFloorModal();
+    });
+    box.addEventListener('dragstart', (ev) => {
+      box.classList.add('dragging');
+      const inSel = state.selectedModuleKeys.has(m.key);
+      // Read the CURRENT mask from localStorage at drag time.  Do
+      // NOT use the closed-over `m.includedIds` -- that snapshot was
+      // taken at popout render time and would ship a stale mask if
+      // the operator toggled checkboxes since (2026-02-11 bug).
+      const liveIncluded = mk => _channelsForModule(mk).includedIds;
+      let payload;
+      if (inSel && state.selectedModuleKeys.size > 1) {
+        const bundle = mods
+          .filter(x => state.selectedModuleKeys.has(x.key))
+          .map(x => ({ module: x.key, channels: liveIncluded(x.key) }));
+        payload = { type: 'modules', modules: bundle };
+      } else {
+        payload = { type: 'module', module: m.key, channels: liveIncluded(m.key) };
+      }
+      ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    box.addEventListener('dragend', () => box.classList.remove('dragging'));
+    grid.appendChild(box);
+    if (isOpen) grid.appendChild(_renderModuleDetail(m.key, m.channels, m.excluded));
+  }
+  body.appendChild(grid);
+}
+
+// Helper to look up module display label from state.moduleLabels
+// (populated by the Floor page's /module-labels fetch, if present in
+// the editor session; falls back to raw key).
+function moduleLabelForKey(mk) {
+  // mk = "SRM_6S/0/1" → maybe override says "SRM_6E/0/1"
+  const bits = mk.split('/');
+  if (bits.length < 3) return mk;
+  const override = (state.moduleLabels || {})[`${bits[1]}/${bits[2]}`];
+  return override ? `${override}/${bits[1]}/${bits[2]}` : mk;
+}
+
+function _renderModuleDetail(moduleKey, channels, excluded) {
+  const wrap = document.createElement('div');
+  wrap.className = 'module-detail';
+  wrap.dataset.testid = `module-detail-${moduleKey}`;
+  const hint = document.createElement('div');
+  hint.className = 'mask-hint';
+  hint.textContent = 'Uncheck a relay to exclude it when the module is dropped';
+  wrap.appendChild(hint);
+  for (const c of channels) {
+    const sub = parseInt(c.device.split('/')[3] || '0', 10);
+    const isMasked = excluded.has(sub);
+    const row = document.createElement('div');
+    row.className = 'relay-row' + (isMasked ? ' masked' : '');
+    row.draggable = true;
+    row.dataset.deviceId = c.device;
+    row.dataset.testid = `relay-row-${c.device}`;
+    const st = _dotStateFor(c);
+    row.innerHTML = `
+      <input type="checkbox" ${isMasked ? '' : 'checked'}
+             data-testid="mask-cb-${escapeHtml(c.device)}"
+             title="Include on module-drop" />
+      <span class="relay-id">${escapeHtml(c.device)}</span>
+      <span class="relay-state ${st}"></span>`;
+    // Mask toggle -- persist to localStorage.  This is a per-module
+    // operator filter; drop is additive (no override).  Group
+    // membership is controlled from the group card via dot clicks.
+    row.querySelector('input').addEventListener('change', (ev) => {
+      ev.stopPropagation();
+      const set = _maskSetForModule(moduleKey);
+      if (ev.target.checked) set.delete(sub);
+      else set.add(sub);
+      _saveMaskForModule(moduleKey, set);
+      renderDevices();
+      renderFloorModal();
+    });
+    // Individual relay drag = same payload the old flat grid produced,
+    // so the existing group drop handler for type:'device' still works.
+    row.addEventListener('dragstart', (ev) => {
+      ev.stopPropagation();
+      row.classList.add('dragging');
+      ev.dataTransfer.setData('text/plain', JSON.stringify({
+        type: 'device', id: c.device,
+      }));
+      ev.dataTransfer.effectAllowed = 'copy';
+    });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+// Live-event handler helpers -------------------------------------------------
+// Update the small dot on the tile AND (when the detail panel is open)
+// the coloured circle on the relay row.  Replaces the old findCell
+// aligner path — the new tiles use .mod-dot / .relay-state.
+function findModDot(did) {
+  return document.querySelector(`.mod-dot[data-device-id="${CSS.escape(did)}"]`);
+}
+function findRelayRow(did) {
+  return document.querySelector(`.relay-row[data-device-id="${CSS.escape(did)}"]`);
+}
+function applyLiveDot(did, snap) {
+  const dot = findModDot(did);
+  if (dot) {
+    dot.classList.remove('on', 'off', 'alarm');
+    const st = _dotStateFor(snap);
+    if (st) dot.classList.add(st);
+  }
+  const row = findRelayRow(did);
+  if (row) {
+    const st = row.querySelector('.relay-state');
+    st.classList.remove('on', 'off', 'alarm');
+    const s = _dotStateFor(snap);
+    if (s) st.classList.add(s);
+  }
+}
+
+// Backwards-compat shim -- the SSE handler below still calls
+// applyAlignerState(cell, snap) / findCell(did) / flashEvent(cell)
+// which targeted the old .device-cell DOM.  Redirect them onto the
+// new mod-dot pipeline so the SSE fan-out keeps updating the UI
+// without touching handleLiveEvent().
+function applyAlignerState(_cell, snap) { applyLiveDot(snap.device, snap); }
+function flashEvent(_cell) { /* no-op: dots don't ring-flash */ }
+function findCell(did)     { return findModDot(did); }
+
+async function clearDeviceAlarm(did) {
+  try {
+    const r = await api('POST', `/devices/${did}/clear-alarm`);
+    toast(r.cleared ? 'Alarm acknowledged' : 'No active alarm');
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- Phase 3: live event stream (WebSocket → SSE fallback) ----------
+// The V2.0 shim serves this at both /api/elc/events (WS) and
+// /api/elc/events-sse (SSE fallback).  We prefer WS; if it closes
+// before it opens (proxy stripped Upgrade header) we retry over SSE.
+class ElcEventStream {
+  constructor(onEvent, onStatus) {
+    this.onEvent = onEvent;
+    this.onStatus = onStatus;
+    this._ws = null;
+    this._sse = null;
+    this._closed = true;
+    this._reconnectTimer = null;
+    this._triedWs = false;
+  }
+  start() {
+    this._closed = false;
+    this._triedWs = false;
+    this._openWs();
+  }
+  stop() {
+    this._closed = true;
+    clearTimeout(this._reconnectTimer);
+    if (this._ws) { try { this._ws.close(); } catch (_) {} this._ws = null; }
+    if (this._sse) { try { this._sse.close(); } catch (_) {} this._sse = null; }
+    this.onStatus('off');
+  }
+  _openWs() {
+    if (this._closed) return;
+    this._triedWs = true;
+    this.onStatus('connecting');
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/api/elc/events`;
+    let ws;
+    try { ws = new WebSocket(url); }
+    catch (_) { this._openSse(); return; }
+    this._ws = ws;
+    let opened = false;
+    ws.addEventListener('open', () => {
+      opened = true;
+      this.onStatus('live');
+    });
+    ws.addEventListener('message', (ev) => {
+      try { this.onEvent(JSON.parse(ev.data)); }
+      catch (_) { /* ignore malformed frame */ }
+    });
+    ws.addEventListener('close', () => {
+      this._ws = null;
+      if (this._closed) return;
+      // If it closed before opening, the proxy probably stripped the
+      // Upgrade header.  Fall back to SSE and stay there.
+      if (!opened) { this._openSse(); return; }
+      this._scheduleReconnect(this._openWs.bind(this));
+    });
+    ws.addEventListener('error', () => { /* close handler will handle it */ });
+  }
+  _openSse() {
+    if (this._closed) return;
+    this.onStatus('connecting');
+    let es;
+    try { es = new EventSource('/api/elc/events-sse'); }
+    catch (_) { this._scheduleReconnect(this._openSse.bind(this)); return; }
+    this._sse = es;
+    es.addEventListener('open', () => this.onStatus('live'));
+    es.addEventListener('message', (ev) => {
+      try { this.onEvent(JSON.parse(ev.data)); }
+      catch (_) { /* ignore */ }
+    });
+    es.addEventListener('error', () => {
+      es.close();
+      this._sse = null;
+      if (this._closed) return;
+      this._scheduleReconnect(this._openSse.bind(this));
+    });
+  }
+  _scheduleReconnect(fn) {
+    this.onStatus('reconnecting');
+    clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = setTimeout(() => { if (!this._closed) fn(); }, 2000);
+  }
+}
+
+// ---------- Operator mode wiring -------------------------------------------
+const OP_MODE_KEY = 'elc.operatorMode';
+let opStream = null;
+
+function setOpToggleUi(status) {
+  const btn = document.getElementById('op-toggle');
+  const lbl = document.getElementById('op-label');
+  btn.classList.remove('on', 'connecting', 'error');
+  if (status === 'off')          { lbl.textContent = 'Operator'; }
+  else if (status === 'connecting'){ btn.classList.add('connecting'); lbl.textContent = 'Connecting…'; }
+  else if (status === 'live')     { btn.classList.add('on'); lbl.textContent = 'Live'; }
+  else if (status === 'reconnecting') { btn.classList.add('connecting'); lbl.textContent = 'Reconnecting…'; }
+}
+
+function handleLiveEvent(ev) {
+  // Push the delta into `state.devices` so full re-renders (e.g. after
+  // a group edit) don't drop the fresh state.
+  if (ev.type === 'relay_state') {
+    const snap = _upsertDevice(ev.device);
+    snap.relay_state = ev.state;
+    snap.last_seen = ev.ts;
+    const cell = findCell(ev.device);
+    if (cell) { applyAlignerState(cell, snap); flashEvent(cell); }
+  } else if (ev.type === 'broadcast_complete') {
+    // Fan out across every known device matching (dev_type, scu).
+    // We map dev_type int → prefix name via the router's convention.
+    const prefix = _prefixFor(ev.dev_type, ev.scu);
+    if (!prefix) return;
+    for (const s of state.devices) {
+      if (!s.device.startsWith(prefix)) continue;
+      s.relay_state = ev.state;
+      s.last_seen = ev.ts;
+      const cell = findCell(s.device);
+      if (cell) { applyAlignerState(cell, s); flashEvent(cell); }
+    }
+  } else if (ev.type === 'fail_report') {
+    const snap = _upsertDevice(ev.device);
+    snap.last_fail_code = ev.fail_code;
+    snap.last_seen = ev.ts;
+    const cell = findCell(ev.device);
+    if (cell) { applyAlignerState(cell, snap); flashEvent(cell); }
+  } else if (ev.type === 'alarm_cleared') {
+    const snap = _upsertDevice(ev.device);
+    snap.last_fail_code = null;
+    snap.last_seen = ev.ts;
+    const cell = findCell(ev.device);
+    if (cell) { applyAlignerState(cell, snap); flashEvent(cell); }
+  }
+}
+
+function _upsertDevice(did) {
+  let s = state.devices.find(d => d.device === did);
+  if (!s) {
+    s = { device: did, relay_state: null, last_fail_code: null,
+          last_seen: null, update_count: 0 };
+    state.devices.push(s);
+  }
+  return s;
+}
+
+// dev_type int → "SRM"/"HUM"/... — mirror of DeviceType enum in
+// elc/codec/device_id.py.  Keep in sync if new device types are added.
+const _DEV_TYPE_NAME = { 0: 'HUM', 1: 'FDPS', 2: 'SRM', 3: 'SAFP', 4: 'EAFP' };
+function _prefixFor(devType, scu) {
+  const name = _DEV_TYPE_NAME[devType];
+  if (!name) return null;
+  return `${name}/${scu}/`;
+}
+
+function startOperator() {
+  if (opStream) return;
+  opStream = new ElcEventStream(handleLiveEvent, setOpToggleUi);
+  opStream.start();
+  localStorage.setItem(OP_MODE_KEY, '1');
+}
+
+function stopOperator() {
+  if (opStream) { opStream.stop(); opStream = null; }
+  setOpToggleUi('off');
+  localStorage.setItem(OP_MODE_KEY, '0');
+}
+
+function toggleOperator() {
+  if (opStream) stopOperator();
+  else          startOperator();
+}
+
+// ---------- refreshAll ------------------------------------------------------
+async function refreshAll() {
+  const [groupsRes, schRes, devRes, setRes, floorsRes, placeRes, labelsRes] =
+    await Promise.all([
+      api('GET', '/groups'),
+      api('GET', '/schedules'),
+      api('GET', '/devices'),
+      api('GET', '/settings'),
+      api('GET', '/floors').catch(() => ({ floors: [] })),
+      // /floor-devices is only mounted by demo.py; fall back to
+      // an empty map when running against a slim backend.
+      fetch('/api/elc/floor-devices').then(r => r.ok ? r.json() : { placements: {} })
+        .catch(() => ({ placements: {} })),
+      fetch('/api/elc/module-labels').then(r => r.ok ? r.json() : { overrides: {} })
+        .catch(() => ({ overrides: {} })),
+    ]);
+  state.groups = groupsRes.groups || [];
+  state.schedules = schRes.schedules || [];
+  // Fetch every group's members so the popout can render checkboxes
+  // that mirror current group state.  Cheap parallel fetch.
+  state.groupMembers = {};
+  await Promise.all((state.groups || []).map(async (g) => {
+    try {
+      const detail = await api('GET', `/groups/${g.id}`);
+      state.groupMembers[g.id] = new Set(detail.members || []);
+    } catch (_) { state.groupMembers[g.id] = new Set(); }
+  }));
+  state.devices = (devRes || []).slice().sort((a, b) => {
+    const A = a.device.split('/'), B = b.device.split('/');
+    return (parseInt(A[1]) - parseInt(B[1]))
+        || (parseInt(A[2]) - parseInt(B[2]))
+        || A[0].localeCompare(B[0])
+        || (parseInt(A[3]) - parseInt(B[3]));
+  });
+  state.settings = setRes.settings || null;
+  state.floors = floorsRes.floors || [];
+  state.floorPlacements = placeRes.placements || {};
+  state.moduleLabels = labelsRes.overrides || {};
+  await rebuildDeviceGroupsIndex();
+  // Group membership just changed -- next popout render should
+  // re-sync its checkboxes from the fresh group state.
+  _lastPopoutSyncKey = null;
+  renderSchedules();
+  renderGroups();
+  renderDevices();
+  if (state.openedFloorId !== null) renderFloorModal();
+}
+
+// ---------- form wiring -----------------------------------------------------
+document.getElementById('new-sch-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const name = fd.get('name').trim();
+  const color = fd.get('color');
+  if (!name) return;
+  try {
+    await api('POST', '/schedules',
+              { name, color, rules: null, enabled: true });
+    ev.target.reset();
+    ev.target.querySelector('input[name=color]').value = randomColor();
+    await refreshAll();
+    toast('Schedule added');
+  } catch (e) { toast(e.message, true); }
+});
+
+document.getElementById('new-grp-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const name = fd.get('name').trim();
+  const color = fd.get('color');
+  if (!name) return;
+  try {
+    await api('POST', '/groups', { name, color });
+    ev.target.reset();
+    ev.target.querySelector('input[name=color]').value = randomColor();
+    await refreshAll();
+    toast('Group added');
+  } catch (e) { toast(e.message, true); }
+});
+
+// ---------- Modal helpers ---------------------------------------------------
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('[data-modal-close]').forEach(btn => {
+  btn.addEventListener('click', () => btn.closest('.modal-backdrop').classList.remove('show'));
+});
+// Click backdrop to close
+document.querySelectorAll('.modal-backdrop').forEach(bd => {
+  bd.addEventListener('click', (ev) => { if (ev.target === bd) bd.classList.remove('show'); });
+});
+
+// ---------- Settings modal --------------------------------------------------
+document.getElementById('btn-settings').addEventListener('click', () => {
+  const s = state.settings || {};
+  document.getElementById('set-lat').value = s.latitude ?? '';
+  document.getElementById('set-lon').value = s.longitude ?? '';
+  document.getElementById('set-tz').value = s.timezone ?? 'UTC';
+  document.getElementById('set-weather').checked = String(s.weather_enabled) === '1';
+  document.getElementById('set-mode').value = s.engine_mode ?? 'dry_run';
+  document.getElementById('set-country').value = (s.country ?? '').toUpperCase();
+  openModal('settings-modal');
+});
+
+document.getElementById('locate-me').addEventListener('click', (ev) => {
+  ev.preventDefault();
+  if (!navigator.geolocation) { toast('Geolocation not supported', true); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      document.getElementById('set-lat').value = pos.coords.latitude.toFixed(4);
+      document.getElementById('set-lon').value = pos.coords.longitude.toFixed(4);
+      // Best-effort tz from Intl API
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) document.getElementById('set-tz').value = tz;
+      } catch (_) {}
+      toast('Location filled from browser');
+    },
+    (err) => toast(`Location denied: ${err.message}`, true),
+    { timeout: 8000 }
+  );
+});
+
+document.getElementById('settings-save').addEventListener('click', async () => {
+  const patch = {
+    latitude: parseFloat(document.getElementById('set-lat').value || '0'),
+    longitude: parseFloat(document.getElementById('set-lon').value || '0'),
+    timezone: document.getElementById('set-tz').value.trim() || 'UTC',
+    weather_enabled: document.getElementById('set-weather').checked ? 1 : 0,
+    engine_mode: document.getElementById('set-mode').value,
+    country: document.getElementById('set-country').value.trim().toUpperCase(),
+  };
+  try {
+    await api('PATCH', '/settings', patch);
+    await refreshAll();
+    closeModal('settings-modal');
+    toast('Settings saved');
+  } catch (e) { toast(e.message, true); }
+});
+
+// ---------- Rule editor modal ----------------------------------------------
+function buildDowPicker() {
+  const host = document.getElementById('rule-dow');
+  host.innerHTML = '';
+  for (const d of DOW) {
+    const lbl = document.createElement('label');
+    lbl.dataset.dow = d;
+    lbl.className = 'checked';
+    lbl.innerHTML = `<input type="checkbox" value="${d}" checked />${d}`;
+    lbl.querySelector('input').addEventListener('change', (ev) => {
+      lbl.classList.toggle('checked', ev.target.checked);
+    });
+    host.appendChild(lbl);
+  }
+}
+buildDowPicker();
+
+function showTriggerRows(type) {
+  document.getElementById('tod-row').style.display   = (type === 'tod') ? '' : 'none';
+  document.getElementById('offset-row').style.display= (['sunrise','sunset','civil_dawn','civil_dusk','noon'].includes(type)) ? '' : 'none';
+  document.getElementById('lux-row').style.display   = (type === 'lux') ? '' : 'none';
+}
+document.getElementById('rule-trigger-type').addEventListener('change', (ev) => {
+  showTriggerRows(ev.target.value);
+});
+
+function openRuleModal(schedule) {
+  state.editingSid = schedule.id;
+  document.getElementById('rule-modal-name').textContent = schedule.name;
+  const r = schedule.rules || {};
+  const t = r.trigger || {};
+  document.getElementById('rule-trigger-type').value = t.type || 'tod';
+  document.getElementById('rule-tod-at').value = t.at || '08:00';
+  document.getElementById('rule-offset').value = t.offset_minutes ?? 0;
+  document.getElementById('rule-lux').value = t.lux_below ?? 400;
+  document.getElementById('rule-action').value = r.action || 'on';
+  // DOW
+  const selected = new Set(Array.isArray(r.days) && r.days.length ? r.days : DOW);
+  document.querySelectorAll('#rule-dow label').forEach(lbl => {
+    const isChecked = selected.has(lbl.dataset.dow);
+    lbl.querySelector('input').checked = isChecked;
+    lbl.classList.toggle('checked', isChecked);
+  });
+  const dr = r.date_range || {};
+  document.getElementById('rule-date-from').value = dr.from || '';
+  document.getElementById('rule-date-to').value = dr.to || '';
+  document.getElementById('rule-skip-hol').checked = r.skip_holidays !== false;
+  document.getElementById('rule-inc-evt').checked = r.include_events === true;
+  showTriggerRows(t.type || 'tod');
+  document.getElementById('rule-preview').innerHTML =
+    '<div class="empty">Save or click Preview to compute…</div>';
+  document.getElementById('preview-note').textContent = '';
+  openModal('rule-modal');
+}
+
+function readRuleFromModal() {
+  const type = document.getElementById('rule-trigger-type').value;
+  const trigger = { type };
+  if (type === 'tod') trigger.at = document.getElementById('rule-tod-at').value;
+  else if (type === 'lux') trigger.lux_below = parseInt(document.getElementById('rule-lux').value, 10);
+  else trigger.offset_minutes = parseInt(document.getElementById('rule-offset').value, 10);
+
+  const days = Array.from(document.querySelectorAll('#rule-dow input:checked')).map(x => x.value);
+  const rule = {
+    trigger,
+    action: document.getElementById('rule-action').value,
+  };
+  if (days.length && days.length < 7) rule.days = days;
+  const from = document.getElementById('rule-date-from').value;
+  const to = document.getElementById('rule-date-to').value;
+  if (from || to) {
+    rule.date_range = {};
+    if (from) rule.date_range.from = from;
+    if (to) rule.date_range.to = to;
+  }
+  // Calendar overrides -- send only when the user changed them from
+  // the backend defaults (skip_holidays=true, include_events=false)
+  // so payloads stay compact.  The evaluator's defaults match.
+  const skipHol = document.getElementById('rule-skip-hol').checked;
+  const incEvt = document.getElementById('rule-inc-evt').checked;
+  if (!skipHol) rule.skip_holidays = false;
+  if (incEvt) rule.include_events = true;
+  return rule;
+}
+
+document.getElementById('preview-btn').addEventListener('click', async () => {
+  const sid = state.editingSid;
+  if (!sid) return;
+  // Save-preview: temporarily PATCH then hit /preview, so the preview
+  // reflects what the user has *typed* not what's persisted.  To avoid
+  // saving-then-reverting we call /preview with the current rules
+  // patched in via a temp update — simpler UX than a dedicated
+  // "preview an unsaved rule" endpoint.
+  const rule = readRuleFromModal();
+  try {
+    // Validate + save first (single API round-trip); if it fails the
+    // error message is what the user needs to see anyway.
+    await api('PATCH', `/schedules/${sid}`, { rules: rule });
+    const preview = await api('POST', `/schedules/${sid}/preview`, { count: 5 });
+    renderPreview(preview);
+    document.getElementById('preview-note').textContent = 'saved · previewed';
+    await refreshAll();
+  } catch (e) { toast(e.message, true); }
+});
+
+document.getElementById('rule-save').addEventListener('click', async () => {
+  const sid = state.editingSid;
+  if (!sid) return;
+  const rule = readRuleFromModal();
+  try {
+    await api('PATCH', `/schedules/${sid}`, { rules: rule });
+    await refreshAll();
+    closeModal('rule-modal');
+    toast('Rule saved');
+  } catch (e) { toast(e.message, true); }
+});
+
+function renderPreview(preview) {
+  const host = document.getElementById('rule-preview');
+  const firings = preview.firings || [];
+  if (firings.length === 0) {
+    host.innerHTML = `<div class="empty">No firings in the next 90 days
+      ${preview.notice ? `<br>(${escapeHtml(preview.notice)})` : ''}
+    </div>`;
+    return;
+  }
+  // Format in the SCHEDULE's timezone (not the browser's).  Without
+  // this, a UTC-clocked test host displays "Sat 07/04" for what's
+  // actually Fri 07/03 in LA — technically correct wall-clock, but
+  // confusing because the day-of-week filter is applied at the
+  // location, not the viewer's browser.
+  const tz = (preview.location && preview.location.timezone) || 'UTC';
+  const fmtDay = new Intl.DateTimeFormat(undefined,
+    { weekday: 'short', timeZone: tz });
+  const fmtDate = new Intl.DateTimeFormat(undefined,
+    { month: '2-digit', day: '2-digit', timeZone: tz });
+  const fmtTime = new Intl.DateTimeFormat(undefined,
+    { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+
+  host.innerHTML = '';
+  for (const f of firings) {
+    const dt = new Date(f.at);
+    const line = document.createElement('div');
+    line.className = 'fire-line';
+    line.innerHTML = `
+      <span>${fmtDay.format(dt)} ${fmtDate.format(dt)} ${fmtTime.format(dt)}
+        <span class="reason">${escapeHtml(f.reason)}</span>
+      </span>
+      <span class="action ${f.action}">${f.action.toUpperCase()}</span>`;
+    host.appendChild(line);
+  }
+}
+
+// ---------- Calendar modal --------------------------------------------------
+document.getElementById('btn-calendar').addEventListener('click', () => {
+  // Prefill country from settings if present
+  const c = (state.settings && state.settings.country) || '';
+  document.getElementById('hol-country').value = c.toUpperCase();
+  refreshCalendar();
+  openModal('calendar-modal');
+});
+
+// tab switching
+document.querySelectorAll('.cal-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cal-tab').forEach(b => {
+      b.classList.remove('active');
+      b.style.borderBottom = '2px solid transparent';
+    });
+    btn.classList.add('active');
+    btn.style.borderBottom = '2px solid var(--accent)';
+    const tab = btn.dataset.tab;
+    document.getElementById('cal-holiday').style.display = tab === 'holiday' ? '' : 'none';
+    document.getElementById('cal-event').style.display = tab === 'event' ? '' : 'none';
+  });
+});
+
+async function refreshCalendar() {
+  try {
+    const [hols, evts] = await Promise.all([
+      api('GET', '/calendar?kind=holiday'),
+      api('GET', '/calendar?kind=event'),
+    ]);
+    renderCalList(document.getElementById('hol-list'), hols.days, '🚫');
+    renderCalList(document.getElementById('evt-list'), evts.days, '🎉');
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderCalList(host, days, icon) {
+  if (!days.length) {
+    host.innerHTML = `<div class="empty">Nothing here yet.</div>`;
+    return;
+  }
+  host.innerHTML = '';
+  for (const d of days) {
+    const line = document.createElement('div');
+    line.className = 'fire-line';
+    line.dataset.testid = `cal-item-${d.id}`;
+    line.innerHTML = `
+      <span>${icon} <b>${escapeHtml(d.date)}</b>
+        <span class="reason">${escapeHtml(d.label)}</span>
+      </span>
+      <button class="tag-x" title="Remove">×</button>`;
+    line.querySelector('.tag-x').addEventListener('click', async () => {
+      try { await api('DELETE', `/calendar/${d.id}`); await refreshCalendar(); }
+      catch (e) { toast(e.message, true); }
+    });
+    host.appendChild(line);
+  }
+}
+
+async function addCalendarDay(kind, dateEl, labelEl) {
+  const date = dateEl.value;
+  const label = labelEl.value.trim();
+  if (!date || !label) { toast('date and label required', true); return; }
+  try {
+    await api('POST', '/calendar', { date, label, kind });
+    dateEl.value = ''; labelEl.value = '';
+    await refreshCalendar();
+  } catch (e) { toast(e.message, true); }
+}
+
+document.getElementById('new-hol-add').addEventListener('click', () =>
+  addCalendarDay('holiday',
+    document.getElementById('new-hol-date'),
+    document.getElementById('new-hol-label')));
+document.getElementById('new-evt-add').addEventListener('click', () =>
+  addCalendarDay('event',
+    document.getElementById('new-evt-date'),
+    document.getElementById('new-evt-label')));
+
+document.getElementById('hol-suggest').addEventListener('click', async () => {
+  const country = document.getElementById('hol-country').value.trim().toUpperCase();
+  const year = parseInt(document.getElementById('hol-year').value, 10);
+  const host = document.getElementById('hol-suggest-results');
+  if (!country || !year) { toast('country and year required', true); return; }
+  try {
+    const res = await api('POST', '/calendar/suggest-holidays', { country, year });
+    if (!res.holidays.length) {
+      host.innerHTML = '<div class="empty">No holidays returned.</div>';
+      host.style.display = ''; return;
+    }
+    host.innerHTML = '';
+    host.style.display = '';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;margin-bottom:6px';
+    head.innerHTML = `
+      <span style="color:var(--muted)">${res.holidays.length} holidays for ${country} ${year}</span>
+      <span>
+        <button class="ghost" id="sug-all">Select all</button>
+        <button class="primary" id="sug-add" data-testid="sug-add">Add checked</button>
+      </span>`;
+    host.appendChild(head);
+    for (const h of res.holidays) {
+      const line = document.createElement('div');
+      line.className = 'fire-line';
+      line.innerHTML = `
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;">
+          <input type="checkbox" class="sug-cb" value="${escapeHtml(h.date)}" checked
+                 data-label="${escapeHtml(h.label)}" />
+          <b>${escapeHtml(h.date)}</b>
+          <span class="reason">${escapeHtml(h.label)}</span>
+        </label>`;
+      host.appendChild(line);
+    }
+    document.getElementById('sug-all').addEventListener('click', () => {
+      const cbs = host.querySelectorAll('.sug-cb');
+      const anyOff = Array.from(cbs).some(cb => !cb.checked);
+      cbs.forEach(cb => cb.checked = anyOff);
+    });
+    document.getElementById('sug-add').addEventListener('click', async () => {
+      const entries = Array.from(host.querySelectorAll('.sug-cb:checked')).map(cb => ({
+        date: cb.value, label: cb.dataset.label, kind: 'holiday',
+      }));
+      if (!entries.length) { toast('nothing selected', true); return; }
+      try {
+        const res = await api('POST', '/calendar/bulk', { entries });
+        await refreshCalendar();
+        toast(`Added ${res.inserted.length}, skipped ${res.skipped}`);
+        host.style.display = 'none';
+      } catch (e) { toast(e.message, true); }
+    });
+  } catch (e) { toast(e.message, true); }
+});
+
+
+
+// ---------- utils -----------------------------------------------------------
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]
+  ));
+}
+function randomColor() {
+  const palette = ['#22c55e','#38bdf8','#f59e0b','#ec4899','#a78bfa','#f43f5e','#84cc16','#14b8a6'];
+  return palette[Math.floor(Math.random() * palette.length)];
+}
+
+// ---------- boot ------------------------------------------------------------
+refreshConn(); setInterval(refreshConn, 4000);
+refreshAll().catch(e => toast(e.message, true));
+
+// ---- Floor Popout: close + draggable header ----
+(function initFloorPopout() {
+  const pop = document.getElementById('floor-popout');
+  const closeBtn = document.getElementById('floor-modal-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      state.openedFloorId = null;
+      pop.hidden = true;
+    });
+  }
+  // Click outside the header/body/footer does NOT close (this is a
+  // pop-out, not a modal).  Escape key closes for convenience.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !pop.hidden) {
+      state.openedFloorId = null;
+      pop.hidden = true;
+    }
+  });
+  // Header drag = move popout around the viewport.
+  const handle = pop.querySelector('[data-role="floor-popout-drag-handle"]');
+  if (!handle) return;
+  let dragOffset = null;
+  handle.addEventListener('mousedown', (ev) => {
+    if (ev.target.closest('.close-x')) return;
+    const r = pop.getBoundingClientRect();
+    dragOffset = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    ev.preventDefault();
+  });
+  window.addEventListener('mousemove', (ev) => {
+    if (!dragOffset) return;
+    // Constrain to viewport with a small margin.
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    let nx = ev.clientX - dragOffset.x;
+    let ny = ev.clientY - dragOffset.y;
+    nx = Math.max(4, Math.min(nx, window.innerWidth - w - 4));
+    ny = Math.max(4, Math.min(ny, window.innerHeight - h - 4));
+    pop.style.top = `${ny}px`;
+    pop.style.left = `${nx}px`;
+    pop.style.right = 'auto';
+  });
+  window.addEventListener('mouseup', () => { dragOffset = null; });
+})();
+
+// Phase 3: operator-mode toggle wiring + restore from localStorage.
+document.getElementById('op-toggle').addEventListener('click', toggleOperator);
+if (localStorage.getItem(OP_MODE_KEY) === '1') startOperator();
+else                                            setOpToggleUi('off');
+</script>
+</body>
+</html>

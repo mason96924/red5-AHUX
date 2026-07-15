@@ -1,0 +1,9 @@
+{
+  "interval_sec": 15,
+  "mock": false,
+  "note": "ELC BACnet bridge config — collector.py stub until point map is defined",
+  "bacnet": {
+    "enabled": false,
+    "objects": []
+  }
+}

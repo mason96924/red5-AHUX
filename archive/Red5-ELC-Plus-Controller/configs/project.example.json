@@ -1,0 +1,26 @@
+{
+  "project": {
+    "name": "My Site",
+    "timezone": "Asia/Kolkata",
+    "latitude": 12.9716,
+    "longitude": 77.5946,
+    "sunrise_offset_min": 0,
+    "sunset_offset_min": 0
+  },
+  "scus": [
+    {
+      "id": 0,
+      "name": "SCU-Bus0",
+      "host": "",
+      "port": 4001,
+      "modules": [
+        {
+          "dev_type": "SRM_6S",
+          "address": 1,
+          "note": "",
+          "discovered": false
+        }
+      ]
+    }
+  ]
+}

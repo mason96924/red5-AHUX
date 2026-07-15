@@ -4899,6 +4899,27 @@ async function commitPlacement() {
   const nextList = existing
     ? f.fixtures.map(x => (x.device_id === p.device_id ? placement : x))
     : [...f.fixtures, placement];
+  // 2026-02-14 — Bug #1 fix: persist `shape` (and polygon_kind / sides
+  // / tube_type for line-fixtures) to the lighting-element so a
+  // fresh page load / a paint of a NON-selected fixture uses the
+  // right geometry.  Without this the paint's `el.shape || 'point'`
+  // fallback rendered every line/stick/ring as a tiny dot until the
+  // toolbar shape control was toggled.
+  try {
+    const el = state.lightingElements.get(p.device_id)
+             || _findLightingElement(p.device_id)[1];
+    if (el && el.shape !== p.shape) {
+      const nextTube = (p.shape === 'line')
+        ? (el.tube_type && el.tube_type !== 'none' ? el.tube_type : 'led_strip')
+        : (el.tube_type || 'none');
+      const updated = await api('PUT', `/lighting-elements/${p.device_id}`, {
+        type: el.type, max_lux: el.max_lux,
+        beam_radius_m: el.beam_radius_m, cct_k: el.cct_k,
+        shape: p.shape, tube_type: nextTube,
+      });
+      state.lightingElements.set(p.device_id, updated);
+    }
+  } catch (e) { console.warn('persist shape failed', e); }
   state.placement = null;
   document.getElementById('place-banner').style.display = 'none';
   await savePlacements(nextList);

@@ -4,6 +4,9 @@ Mirrors the structure of the historical bundle: most files at the zip root
 (controller's upload_service.py routes .py to PLUGINS_ROOT regardless,
 .json under configs/ to /root/data/configs/, etc.).
 
+If ``master_key.txt`` exists next to this script it is packaged too (optional,
+gitignored) so a Mac-built bundle can sync the admin password to the controller.
+
 Usage:
     python build_bundle.py
 """
@@ -86,6 +89,13 @@ ROOT_FILES = [
     'g36_service.py',
 ]
 
+# Optional root files — included when present locally (e.g. master_key.txt is
+# gitignored and may be absent on CI).  On deploy, master_key.txt lands in
+# /root/data/ so the controller's admin/bundle password matches the Mac copy.
+OPTIONAL_ROOT_FILES = [
+    'master_key.txt',
+]
+
 # Subdir trees to include verbatim.
 SUBDIR_TREES = [
     'js',
@@ -119,12 +129,22 @@ def main():
     added = []
     skipped = []
     missing = []
+    optional_missing = []
     with zipfile.ZipFile(OUT, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         # 1. Root files
         for name in ROOT_FILES:
             src = os.path.join(HERE, name)
             if not os.path.isfile(src):
                 missing.append(name)
+                continue
+            zf.write(src, arcname=name)
+            added.append(name)
+
+        # 1b. Optional root files (skip quietly when absent)
+        for name in OPTIONAL_ROOT_FILES:
+            src = os.path.join(HERE, name)
+            if not os.path.isfile(src):
+                optional_missing.append(name)
                 continue
             zf.write(src, arcname=name)
             added.append(name)
@@ -155,6 +175,10 @@ def main():
     print('  size:    {:.1f} KB'.format(size / 1024.0))
     print('  files:   {}'.format(len(added)))
     print('  skipped: {}'.format(len(skipped)))
+    if optional_missing:
+        print('  OPTIONAL (skipped — not in source tree):')
+        for m in optional_missing:
+            print('    - ' + m)
     if missing:
         print('  MISSING (source-tree gaps):')
         for m in missing:

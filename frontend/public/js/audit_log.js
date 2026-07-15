@@ -82,41 +82,66 @@
     if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
   }
 
-  /* Auth-driven mount/unmount.  Wait for /api/auth/me to resolve so we
-   * don't flash the chip for non-admin users. */
-  window.addEventListener('red5-auth-resolved', function (ev) {
-    var d = (ev && ev.detail) || {};
-    if (d.isAdmin) {
-      /* defer one tick so React-rendered toolbar is in DOM */
-      setTimeout(_mountButton, 0);
-      setTimeout(_mountButton, 600);     /* React re-render safety net */
-      setTimeout(_mountButton, 1500);
-    } else {
+  var _showAuditBtn = false;
+  var _authEventSeen = false;
+
+  function _syncAuditButton() {
+    if (!_showAuditBtn) {
       _unmountButton();
+      return;
     }
+    _mountButton();
+  }
+
+  function _scheduleSync() {
+    var delays = [0, 200, 500, 1000, 2000, 4000, 8000];
+    for (var i = 0; i < delays.length; i++) {
+      setTimeout(_syncAuditButton, delays[i]);
+    }
+  }
+
+  function _setShowAudit(show) {
+    _showAuditBtn = !!show;
+    _scheduleSync();
+  }
+
+  /* Auth-driven visibility (dashboard.html dispatches after /api/auth/whoami). */
+  window.addEventListener('red5-auth-resolved', function (ev) {
+    _authEventSeen = true;
+    _setShowAudit(!!(ev && ev.detail && ev.detail.isAdmin));
   });
 
-  /* V1.9 fallback: V1.9 controllers have no /api/auth/me endpoint, so
-   * `red5-auth-resolved` never fires and the AUDIT chip would stay
-   * hidden.  Probe /api/audit-log/summary instead -- if it responds
-   * with 200 we know audit_log_service is loaded on this controller
-   * and the chip should be shown.  V1.9 has no per-user identity so
-   * the "admin only" guard does not apply (operators reach the
-   * dashboard only after the landing-page password gate). */
-  (function probeV19AuditLog() {
-    var probeBase = (window.RED5_API_BASE || '').replace(/\/$/, '') || '';
-    fetch(probeBase + '/api/audit-log/summary', { credentials: 'include' })
-      .then(function (r) {
-        if (r.status !== 200) return;
-        // Mount idempotently (the _mountButton implementation short-
-        // circuits if the button already exists, so this is safe even
-        // when /api/auth/me also resolves and fires the admin event).
-        setTimeout(_mountButton, 0);
-        setTimeout(_mountButton, 600);
-        setTimeout(_mountButton, 1500);
-      })
-      .catch(function () { /* swallow -- preview / V2.0 use the event */ });
-  })();
+  /* React mounts dashboard.compiled.js asynchronously; watch for the
+   * standards toolbar row to appear instead of giving up after 1.5 s. */
+  try {
+    var _toolbarObs = new MutationObserver(function () {
+      if (_showAuditBtn) _mountButton();
+    });
+    _toolbarObs.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (_) {}
+
+  /* Pre-Stage-B controllers: no /api/auth/whoami — show when audit API
+   * exists.  Stage-B controllers: admin-only via event or whoami probe. */
+  fetch(API_BASE + '/api/auth/whoami', { credentials: 'include' })
+    .then(function (r) {
+      if (r.status === 404) {
+        return fetch(API_BASE + '/api/audit-log/summary', { credentials: 'include' })
+          .then(function (s) { return s.status === 200 ? { legacy: true } : null; });
+      }
+      if (!r.ok) return null;
+      return r.json();
+    })
+    .then(function (me) {
+      if (!me) return;
+      if (me.legacy) {
+        if (!_authEventSeen) _setShowAudit(true);
+        return;
+      }
+      if (!_authEventSeen && me.role === 'admin') {
+        _setShowAudit(true);
+      }
+    })
+    .catch(function () {});
 
   /* ---------------- popup ----------------------------------------- */
   var _popup = null;

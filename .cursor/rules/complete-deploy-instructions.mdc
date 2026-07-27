@@ -1,0 +1,54 @@
+---
+description: Always give full git/deploy instruction blocks, not partial commands
+alwaysApply: true
+---
+
+# Complete instructions (no drip-feed)
+
+When the user needs git, deploy, or run steps, give the **full end-to-end block** in one reply. Do not hand out only `git add`, then wait to be asked for `commit`, then `push`.
+
+## Git (Mac → GitHub)
+
+Include in one code block, in order:
+
+1. `cd` to the correct repo (`red5-elc` unless stated otherwise)
+2. `git add` with **every** relevant changed file listed
+3. `git commit` with a HEREDOC message
+4. `git push`
+
+Example shape:
+
+```bash
+cd /Users/jinkim/CURSOR/red5-elc
+
+git add path/a path/b
+
+git commit -m "$(cat <<'EOF'
+Short why-focused message.
+
+EOF
+)"
+
+git push
+```
+
+## After push — say what to do on the target
+
+- **Linux V3.0 demo:** `cd ~/red5-elc` → `git pull` → hard-refresh. If Python/backend changed: `sudo systemctl restart elc-demo`.
+- **Controller:** upload the fresh zip on `/update` → hard-refresh.
+
+## Controller bundle — always build it
+
+Whenever controller files under `archive/Red5-ELC-Plus-Controller/` change (HTML, `elc_service.py`, `pgpy/`, etc.), **run the bundle build yourself** in the same turn — do not only tell the user to run it:
+
+```bash
+cd /Users/jinkim/CURSOR/red5-elc/archive/Red5-ELC-Plus-Controller
+python3 build_bundle.py
+```
+
+Confirm the new `red5_elc_plus_bundle.zip` mtime and that `pgpy/BUNDLE_BUILD.txt` / `_SERVICE_BUILD` match the intended stamp. Then tell the user the zip path to upload on `/update`.
+
+## Exceptions
+
+- If they explicitly ask for **only** one step (e.g. “just the commit command”), give that step only.
+- Do not commit or push unless they ask you to run it.

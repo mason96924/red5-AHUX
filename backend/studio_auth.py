@@ -260,6 +260,14 @@ def _master_key() -> str:
         return ""
 
 
+def master_key() -> str:
+    """Public accessor for the config/engineer master key, resolved from
+    RED5_MASTER_KEY (env) OR data/master_key.txt — the SAME source admin login
+    uses, so any consumer (e.g. the /api/config/unlock gate) stays in lock-step
+    with login instead of only reading the env var."""
+    return _master_key()
+
+
 def init_studio_auth() -> None:
     global _STATE_DIR, _MASTER_KEY, _SECRET, _initialized
     if _initialized:

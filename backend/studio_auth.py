@@ -241,9 +241,18 @@ def clear_studio_cookie(response: Response) -> None:
 
 def identity_from_request(request: Request) -> dict:
     """Return {'u': username, 'r': role} for the current request."""
-    tok = request.cookies.get(COOKIE_NAME, "")
-    if tok:
-        ident = _parse_token(tok)
+    return identity_from_token(request.cookies.get(COOKIE_NAME, ""))
+
+
+def identity_from_token(token: str) -> dict:
+    """Return {'u': username, 'r': role} for a raw red5_auth token string.
+
+    Exposed so other subsystems (e.g. the tenant resolver) can recognise a
+    signed-in engineer/admin without needing the FastAPI Request object.
+    Ensures auth state is initialised so token signatures verify."""
+    init_studio_auth()
+    if token:
+        ident = _parse_token(token)
         if ident:
             return ident
     return {"u": "", "r": "viewer"}

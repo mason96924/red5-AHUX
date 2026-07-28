@@ -44,9 +44,33 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 
 from auth import _resolve_session_token  # reuse session lookup
+import studio_auth  # on-prem engineer/admin session -> local tenant bridge
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
+
+# On self-hosted (V3.0 Linux) builds there is no Google OAuth in the UI; the
+# operator signs in with the engineer master key / a registered editor via
+# studio_auth (red5_auth cookie).  That session is bridged to a single stable
+# "local controller" tenant so Save-to-controller actually persists instead of
+# falling back to anonymous demo mode.
+LOCAL_TENANT_ID = "local"
+
+
+def _studio_local_tenant(red5_auth: Optional[str]) -> Optional[dict]:
+    """Map a signed-in engineer/admin (red5_auth token) to the local tenant."""
+    if not red5_auth:
+        return None
+    ident = studio_auth.identity_from_token(red5_auth)
+    if ident.get("r") in ("admin", "editor"):
+        return {
+            "tenant_id": LOCAL_TENANT_ID,
+            "name": "Local controller",
+            "owner_user_id": "studio:" + (ident.get("u") or "admin"),
+            "source": "studio_auth",
+            "role": ident.get("r"),
+        }
+    return None
 
 _client = AsyncIOMotorClient(MONGO_URL)
 _db = _client[DB_NAME]
@@ -123,23 +147,25 @@ async def get_or_create_tenant_for_user(user_doc: dict) -> dict:
 # ---------------------------------------------------------------------------
 async def current_tenant_optional(
     session_token: Optional[str] = Cookie(default=None),
+    red5_auth: Optional[str] = Cookie(default=None),
     authorization: Optional[str] = Header(default=None),
 ) -> Optional[dict]:
     """Return the tenant doc for a signed-in user, or None for anonymous.
 
-    Anonymous callers must STILL get demo data on the read endpoints --
-    callers handle the `tenant is None` case by falling back to the
-    canned demo configs.
+    Resolution order:
+      1. Google-OAuth session (session_token cookie / Bearer) -> per-user tenant.
+      2. On-prem engineer/admin session (red5_auth cookie) -> local tenant.
+      3. Anonymous -> None (read endpoints fall back to canned demo configs).
     """
     token = session_token
     if not token and authorization and authorization.startswith("Bearer "):
         token = authorization[7:].strip()
-    if not token:
-        return None
-    user = await _resolve_session_token(token)
-    if not user:
-        return None
-    return await get_or_create_tenant_for_user(user)
+    if token:
+        user = await _resolve_session_token(token)
+        if user:
+            return await get_or_create_tenant_for_user(user)
+    # No Google session -> bridge a signed-in engineer/admin to the local tenant.
+    return _studio_local_tenant(red5_auth)
 
 
 # ---------------------------------------------------------------------------

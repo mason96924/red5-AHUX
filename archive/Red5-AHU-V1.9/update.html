@@ -197,6 +197,28 @@ h1 span{color:#ef4444;font-style:italic}
 <div class="report" id="report" style="display:none"></div>
 </div>
 
+<div class="card" id="masterKeyCard">
+<h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>Master Key</span>
+  <span id="mkStatePill" style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#1e293b;color:#94a3b8;border:1px solid #334155">checking&hellip;</span>
+</h2>
+<p class="note" style="margin-bottom:12px">Authorizes the <code style="background:#1e293b;padding:1px 4px;border-radius:3px">admin</code> sign-in and decrypts encrypted bundles. It is <b>upload-only</b>: set or replace it here &mdash; the value is never displayed, downloaded, or editable in place. Replacing an existing key requires the current key (or an admin session).</p>
+<div class="pwd-row">
+  <label>New key:</label>
+  <input type="password" class="pwd-input" id="mkNew" placeholder="Enter new master key (min 8 characters)" autocomplete="new-password">
+</div>
+<div class="pwd-row" id="mkCurrentRow" style="display:none">
+  <label>Current key:</label>
+  <input type="password" class="pwd-input" id="mkCurrent" placeholder="Required to replace the existing key" autocomplete="off">
+</div>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+  <label class="btn btn-outline" style="cursor:pointer;margin:0;width:auto" title="Upload a master_key.txt file instead of typing the key">Upload key file<input type="file" id="mkFile" accept=".txt,text/plain" style="display:none"></label>
+  <span id="mkFileName" style="font-size:11px;color:#a5b4fc"></span>
+  <button class="btn btn-primary" id="mkSetBtn" style="margin-left:auto;width:auto" onclick="setMasterKey()">Set master key</button>
+</div>
+<p class="note" style="margin-top:10px;font-style:normal">After setting, sign in on the <a href="/" style="color:#a5b4fc">Access</a> page with username <code style="background:#1e293b;padding:1px 4px;border-radius:3px">admin</code> and this key. Restart <code style="background:#1e293b;padding:1px 4px;border-radius:3px">app.py</code> so encrypted-bundle decryption also picks up a rotated key.</p>
+<div id="mkStatus" style="margin-top:10px;font-size:12px"></div>
+</div>
+
 <div class="card">
 <h2>Download Bundle</h2>
 <div class="pwd-row">
@@ -1230,12 +1252,94 @@ function _runBacnetDiag(){
 }
 document.getElementById('bacnetDiagRunBtn').onclick = _runBacnetDiag;
 
+// ---------- Master Key (upload-only; never displays the value) ----------
+function _mkBase() {
+    return (document.getElementById('serverUrl').value || '').trim().replace(/\/+$/, '');
+}
+function refreshMasterKeyStatus() {
+    var base = _mkBase();
+    var pill = document.getElementById('mkStatePill');
+    var curRow = document.getElementById('mkCurrentRow');
+    var setBtn = document.getElementById('mkSetBtn');
+    if (!base) { pill.textContent = 'unknown'; return; }
+    fetch(base + '/api/auth/master-key', { mode: 'cors' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (d && d.configured) {
+                pill.textContent = 'configured';
+                pill.style.background = '#064e3b'; pill.style.color = '#34d399';
+                pill.style.borderColor = '#047857';
+                curRow.style.display = 'flex';
+                setBtn.textContent = 'Replace master key';
+            } else {
+                pill.textContent = 'not set';
+                pill.style.background = '#451a03'; pill.style.color = '#fbbf24';
+                pill.style.borderColor = '#b45309';
+                curRow.style.display = 'none';
+                setBtn.textContent = 'Set master key';
+            }
+        })
+        .catch(function(){ pill.textContent = 'unavailable'; });
+}
+(function(){
+    var fi = document.getElementById('mkFile');
+    if (fi) fi.addEventListener('change', function(){
+        var f = fi.files && fi.files[0];
+        document.getElementById('mkFileName').textContent = f ? f.name : '';
+    });
+})();
+function setMasterKey() {
+    var base = _mkBase();
+    if (!base) { alert('Enter the controller URL first.'); return; }
+    var st = document.getElementById('mkStatus');
+    var fileEl = document.getElementById('mkFile');
+    var file = fileEl && fileEl.files && fileEl.files[0];
+    var newKey = document.getElementById('mkNew').value;
+    var curKey = document.getElementById('mkCurrent').value;
+    var opts;
+    if (file) {
+        var fd = new FormData();
+        fd.append('file', file);
+        if (curKey) fd.append('current_key', curKey);
+        opts = { method: 'POST', body: fd, mode: 'cors' };
+    } else {
+        if (!newKey || newKey.length < 8) {
+            st.textContent = 'Enter a new key of at least 8 characters (or choose a key file).';
+            st.style.color = '#f87171'; return;
+        }
+        opts = {
+            method: 'POST', mode: 'cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_key: newKey, current_key: curKey }),
+        };
+    }
+    st.textContent = 'Saving master key\u2026'; st.style.color = '#f59e0b';
+    fetch(base + '/api/auth/master-key', opts)
+        .then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); })
+        .then(function(res){
+            if (res.body && res.body.ok) {
+                st.textContent = 'OK \u00b7 ' + (res.body.rotated ? 'Master key replaced. ' : 'Master key set. ') + (res.body.note || '');
+                st.style.color = '#22c55e';
+                document.getElementById('mkNew').value = '';
+                document.getElementById('mkCurrent').value = '';
+                if (fileEl) fileEl.value = '';
+                document.getElementById('mkFileName').textContent = '';
+                refreshMasterKeyStatus();
+            } else {
+                st.textContent = 'FAILED: ' + (res.body && res.body.error ? res.body.error : ('HTTP ' + res.status));
+                st.style.color = '#f87171';
+            }
+        })
+        .catch(function(e){ st.textContent = 'Network error: ' + (e && e.message ? e.message : e); st.style.color = '#f87171'; });
+}
+
 // Auto-detect server from current page origin (works when served by controller)
 (function() {
     var input = document.getElementById('serverUrl');
     if (window.location.protocol !== 'file:') {
         input.value = window.location.origin;
         checkServer();
+        refreshMasterKeyStatus();
     }
 })();
 </script>

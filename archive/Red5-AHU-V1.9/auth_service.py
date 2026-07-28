@@ -107,10 +107,13 @@ ADMIN_PREFIXES = (
 )
 
 # Auth endpoints that must always be reachable (no token required to reach them).
+# /api/auth/master-key self-guards rotation (needs current key or admin), and
+# must stay open so the first key can be bootstrapped on a fresh controller.
 OPEN_AUTH_PREFIXES = (
     '/api/auth/login',
     '/api/auth/logout',
     '/api/auth/whoami',
+    '/api/auth/master-key',
 )
 
 _MUTATING = {'POST', 'PUT', 'PATCH', 'DELETE'}
@@ -119,7 +122,9 @@ _MUTATING = {'POST', 'PUT', 'PATCH', 'DELETE'}
 # Module state (populated in register())
 # --------------------------------------------------------------------------
 _STATE_DIR   = None      # type: ignore   e.g. /root/.red5
+_DATA_ROOT   = None      # type: ignore   e.g. /root/data (where master_key.txt lives)
 _MASTER_KEY  = ''        # type: ignore   from SERVICE_CTX at registration
+_MASTER_KEY_SOURCE = 'none'  # 'file' | 'env' | 'none'
 _SECRET      = b''       # signing secret (bytes)
 _LOCK        = threading.Lock()
 
@@ -369,7 +374,96 @@ def logout():
 
 def whoami():
     ident = _identity()
-    return jsonify({'role': ident['r'], 'username': ident['u']})
+    return jsonify({'role': ident['r'], 'username': ident['u'],
+                    'master_key_configured': bool(_MASTER_KEY)})
+
+
+def _master_key_path():
+    """Canonical location app.py + auth_service both read from."""
+    root = _DATA_ROOT or '/root/data'
+    return os.path.join(root, 'master_key.txt')
+
+
+def master_key_status():
+    """Report ONLY whether a master key exists -- never the value.
+    Powers the upload-only Master Key card on /update."""
+    return jsonify({
+        'configured': bool(_MASTER_KEY),
+        'source': _MASTER_KEY_SOURCE,
+        'length': len(_MASTER_KEY) if _MASTER_KEY else 0,
+    })
+
+
+def set_master_key():
+    """Upload / rotate the controller master key (upload-only; never viewable).
+
+    Rules:
+      * Bootstrap (no key yet): anyone on the LAN may set the first key.
+      * Rotate (key already set): the caller MUST prove they hold the current
+        key -- signed in as admin (cookie) OR sending it in ``current_key`` --
+        otherwise 403.
+
+    Accepts multipart (``file`` = master_key.txt) OR JSON/form
+    ``{new_key, current_key}``.  Writes 0600 and updates the in-memory key so
+    admin login works immediately (bundle-decryption paths still read
+    MASTER_KEY_CONST captured at boot, so a restart is recommended for those)."""
+    global _MASTER_KEY, _MASTER_KEY_SOURCE
+
+    new_key = ''
+    current_key = ''
+    f = request.files.get('file') if request.files else None
+    if f is not None:
+        try:
+            new_key = f.read().decode('utf-8', 'replace')
+        except Exception:
+            new_key = ''
+        current_key = (request.form.get('current_key') or '').strip()
+    else:
+        body = request.get_json(silent=True) or {}
+        new_key = body.get('new_key') or body.get('key') or ''
+        current_key = (body.get('current_key') or '').strip()
+    new_key = (new_key or '').strip()
+
+    if len(new_key) < 8:
+        return jsonify({'ok': False,
+                        'error': 'master key too short (min 8 characters)'}), 400
+
+    if _MASTER_KEY:
+        ident = _identity()
+        is_admin = ident['r'] == 'admin'
+        proved = is_admin or (current_key
+                              and hmac.compare_digest(current_key, _MASTER_KEY))
+        if not proved:
+            return jsonify({'ok': False,
+                            'error': 'current master key or admin session required to rotate'}), 403
+
+    path = _master_key_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as fh:
+            fh.write(new_key)
+        os.replace(tmp, path)
+        try:
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': 'could not write key: ' + str(exc)}), 500
+
+    was_configured = bool(_MASTER_KEY)
+    _MASTER_KEY = new_key
+    _MASTER_KEY_SOURCE = 'file'
+    _audit('master_key_set', 'master_key.txt',
+           _identity()['u'] or 'bootstrap',
+           extra={'rotated': was_configured})
+    return jsonify({
+        'ok': True,
+        'configured': True,
+        'rotated': was_configured,
+        'note': ('Admin login works now. Restart app.py so bundle '
+                 'decryption also uses the new key.'),
+    })
 
 
 def change_password():
@@ -573,16 +667,20 @@ _service_dependencies = ['DATA_ROOT']
 
 
 def register(app, ctx=None):
-    global _STATE_DIR, _MASTER_KEY, _SECRET
+    global _STATE_DIR, _DATA_ROOT, _MASTER_KEY, _MASTER_KEY_SOURCE, _SECRET
     ctx = ctx or {}
     data_root = ctx.get('DATA_ROOT') or os.environ.get('RED5_DATA_ROOT') or '/root/data'
+    _DATA_ROOT = data_root
     _MASTER_KEY = ctx.get('MASTER_KEY_CONST') or ''
+    _MASTER_KEY_SOURCE = 'env' if _MASTER_KEY else 'none'
     # Fallback: if the master key wasn't passed in SERVICE_CTX (older app.py),
     # read it straight from the file so admin login still works.
     if not _MASTER_KEY:
         try:
             with open(os.path.join(data_root, 'master_key.txt')) as _mk:
                 _MASTER_KEY = _mk.read().strip()
+                if _MASTER_KEY:
+                    _MASTER_KEY_SOURCE = 'file'
         except Exception:
             _MASTER_KEY = ''
     _STATE_DIR = _pick_state_dir(data_root)
@@ -609,6 +707,11 @@ def register(app, ctx=None):
                      get_enforce,     methods=['GET'])
     app.add_url_rule('/api/auth/enforce',         'auth_enforce_set',
                      set_enforce,     methods=['POST'])
+    # Master key: status (never returns the value) + upload/rotate.
+    app.add_url_rule('/api/auth/master-key',      'auth_master_key_status',
+                     master_key_status, methods=['GET'])
+    app.add_url_rule('/api/auth/master-key',      'auth_master_key_set',
+                     set_master_key,  methods=['POST'])
 
     # Enforcement hook (report-only until an admin enables it).
     app.before_request(_enforce)

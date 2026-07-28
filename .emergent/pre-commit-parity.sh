@@ -24,7 +24,7 @@
 #   /app/deploy.sh already gates PROD deploys, but that fires only when you
 #   push.  This pre-commit hook closes the loop earlier -- the moment you
 #   add a route to /app/backend/routes/, the hook reminds you to also add
-#   it to /app/archive/Red5-Studio-V1.9/ in the SAME commit.
+#   it to /app/archive/Red5-AHU-V1.9/ in the SAME commit.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -72,7 +72,7 @@ case "$RC" in
         echo -e "${RED}[parity-hook] BLOCKED -- V1.9 is missing V2.0 route(s):${OFF}"
         echo "$JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); [print('    - '+r) for r in d.get('v20_only',[])]"
         echo
-        echo -e "${YEL}Port the missing endpoint(s) to /app/archive/Red5-Studio-V1.9/"
+        echo -e "${YEL}Port the missing endpoint(s) to /app/archive/Red5-AHU-V1.9/"
         echo -e "and 'git add' them, then re-commit.${OFF}"
         echo -e "${YEL}Bypass (NOT recommended): PARITY_SKIP=1 git commit ... ${OFF}"
         echo -e "${YEL}                          git commit --no-verify ...${OFF}"
@@ -86,7 +86,7 @@ esac
 
 # ---------------------------------------------------------------------------
 # 4. Repair-manifest consistency check.  Runs only when files inside
-#    archive/Red5-Studio-V1.9/ are staged (covers every file that could
+#    archive/Red5-AHU-V1.9/ are staged (covers every file that could
 #    appear in the manifest -- .py, .html, .js, .md, .json, configs/).
 #    The manifest is the single source of truth for the Repair Mode
 #    allow-list + sha256 hashes; a stale manifest = stale uploads
@@ -104,7 +104,7 @@ if git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
         set -e
         if [[ "$MRC" != "0" ]]; then
             echo -e "${RED}[manifest-hook] BLOCKED -- repair_manifest.json is stale.${OFF}"
-            echo -e "${YEL}Fix:  python3 scripts/build_repair_manifest.py && git add archive/Red5-Studio-V1.9/repair_manifest.json${OFF}"
+            echo -e "${YEL}Fix:  python3 scripts/build_repair_manifest.py && git add archive/Red5-AHU-V1.9/repair_manifest.json${OFF}"
             exit 1
         fi
         echo -e "${GRN}[manifest-hook] ok${OFF}"

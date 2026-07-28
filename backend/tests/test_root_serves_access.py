@@ -24,12 +24,12 @@ def _static_checks() -> None:
     assert 'return _serve("landing.html")' not in root_block
 
     # V1.9: root → access lives in pages_service.py (not app.py).
-    pages_svc = os.path.join(REPO, "archive", "Red5-Studio-V1.9", "pages_service.py")
+    pages_svc = os.path.join(REPO, "archive", "Red5-AHU-V1.9", "pages_service.py")
     assert os.path.isfile(pages_svc), "pages_service.py missing"
     svc = open(pages_svc, encoding="utf-8").read()
     assert "_root_is_access" in svc
     assert "access.html" in svc
-    app = open(os.path.join(REPO, "archive", "Red5-Studio-V1.9", "app.py"), encoding="utf-8").read()
+    app = open(os.path.join(REPO, "archive", "Red5-AHU-V1.9", "app.py"), encoding="utf-8").read()
     assert not re.search(r"@app\.route\(['\"]/access\.html['\"]\)", app), (
         "/access.html should not be in app.py (enteliWEB size budget)"
     )

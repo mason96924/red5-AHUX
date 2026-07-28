@@ -19,8 +19,8 @@ SOURCE = Path("/app/frontend/public/control_algorithms.md")
 # Output to all three locations (V1.9 archive, V2.0 archive, live frontend)
 TARGETS = [
     Path("/app/frontend/public"),
-    Path("/app/archive/Red5-Studio-V1.9"),
-    Path("/app/archive/Red5-Studio-V2.0"),
+    Path("/app/archive/Red5-AHU-V1.9"),
+    Path("/app/archive/Red5-AHU-V2.0"),
 ]
 
 LANGS = [

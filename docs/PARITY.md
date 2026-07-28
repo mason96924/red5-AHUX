@@ -1,6 +1,6 @@
 # Red5 V1.9 ↔ V2.0 Endpoint Parity
 
-> **TL;DR** — PROD runs **V1.9 Flask** (`/app/archive/Red5-Studio-V1.9/`). The dashboard frontend is shared with **V2.0 FastAPI** (`/app/backend/`). Every `/api/*` route added to V2.0 **must** be ported to V1.9 in the same commit, or PROD silently 404s and a feature disappears.
+> **TL;DR** — PROD runs **V1.9 Flask** (`/app/archive/Red5-AHU-V1.9/`). The dashboard frontend is shared with **V2.0 FastAPI** (`/app/backend/`). Every `/api/*` route added to V2.0 **must** be ported to V1.9 in the same commit, or PROD silently 404s and a feature disappears.
 
 ## Why this exists
 
@@ -26,7 +26,7 @@ ln -sf "$(pwd)/.emergent/pre-commit-parity.sh" .git/hooks/pre-commit
 ```
 
 **Behaviour**:
-- Fires only when staged diff touches `backend/routes/` or `archive/Red5-Studio-V1.9/*.py`.
+- Fires only when staged diff touches `backend/routes/` or `archive/Red5-AHU-V1.9/*.py`.
 - Runs `scripts/check_v19_v20_parity.py --json`.
 - Exit `1` (block) on drift, with the missing-route list printed.
 - Exit `0` (silent) on clean commits.
@@ -53,7 +53,7 @@ git commit --no-verify -m "..."           # skip ALL hooks
 
 ## Layer 3 — V1.9 boot warning (catches drift in production)
 
-**File**: `/archive/Red5-Studio-V1.9/app.py`, runs at every Flask startup just before `app.run`.
+**File**: `/archive/Red5-AHU-V1.9/app.py`, runs at every Flask startup just before `app.run`.
 
 **Behaviour**:
 - Best-effort, **never blocks boot**.
@@ -93,10 +93,10 @@ You added a `@router.get("/api/my-new-thing")` to V2.0. Now do this **in the sam
 
    ```bash
    cd /app/frontend/src/dashboard && bash build.sh
-   cp /app/frontend/public/dashboard.compiled.js /app/archive/Red5-Studio-V1.9/
-   cp /app/frontend/public/dashboard.compiled.js /app/archive/Red5-Studio-V2.0/
-   cp /app/frontend/public/dashboard.html        /app/archive/Red5-Studio-V1.9/
-   cp /app/frontend/public/dashboard.html        /app/archive/Red5-Studio-V2.0/
+   cp /app/frontend/public/dashboard.compiled.js /app/archive/Red5-AHU-V1.9/
+   cp /app/frontend/public/dashboard.compiled.js /app/archive/Red5-AHU-V2.0/
+   cp /app/frontend/public/dashboard.html        /app/archive/Red5-AHU-V1.9/
+   cp /app/frontend/public/dashboard.html        /app/archive/Red5-AHU-V2.0/
    ```
 
 5. **Verify locally**:
@@ -137,7 +137,7 @@ Path placeholders are canonicalized to `{*}` so `<int:foo>` ≡ `{foo}` ≡ `<pa
 | `scripts/port-route.py`                             | Scaffold the V1.9 side of a V2.0 route |
 | `.emergent/pre-commit-parity.sh`                    | Git pre-commit wrapper              |
 | `deploy.sh`                                         | PROD deploy with `[0/7]` parity gate|
-| `archive/Red5-Studio-V1.9/app.py`                   | Boot-time best-effort warning       |
+| `archive/Red5-AHU-V1.9/app.py`                   | Boot-time best-effort warning       |
 | `/var/log/red5/parity_warnings.log`                 | PROD-side audit trail               |
 
 ---

@@ -15,7 +15,7 @@
   },
   "test_report_links": [],
   "action_items": [
-    "Extend iframe-mode hide rule in /app/frontend/public/dashboard.html (line ~146) to also hide body-direct chrome. Suggested patch: add `body.iframe-modal-mode > #g36-timeline-strip, body.iframe-modal-mode > .r5-toast-host { display: none !important; }` (or broaden to `body.iframe-modal-mode > div:not(#root) { display: none !important; }` and then keep the existing z-[120]/z-[130] allowlist for modal portal). Mirror the change into /app/archive/Red5-Studio-V1.9/dashboard.html and /app/archive/Red5-Studio-V2.0/dashboard.html to preserve parity.",
+    "Extend iframe-mode hide rule in /app/frontend/public/dashboard.html (line ~146) to also hide body-direct chrome. Suggested patch: add `body.iframe-modal-mode > #g36-timeline-strip, body.iframe-modal-mode > .r5-toast-host { display: none !important; }` (or broaden to `body.iframe-modal-mode > div:not(#root) { display: none !important; }` and then keep the existing z-[120]/z-[130] allowlist for modal portal). Mirror the change into /app/archive/Red5-AHU-V1.9/dashboard.html and /app/archive/Red5-AHU-V2.0/dashboard.html to preserve parity.",
     "Optional UX: when no equipment image is seeded (naturalWidth=0), pills currently render at scale(1) regardless of modal size. Consider falling back imgScale to (modal.contentWidth / DESIGN_BASE_WIDTH) when natW===0, so pills still shrink proportionally with the modal when the placeholder is shown. Low priority — placeholder mode is dev-only.",
     "No action needed for mobile mockup or parity — both correct."
   ],
@@ -24,7 +24,7 @@
     "/app/frontend/public/dashboard.html line 5193 / 4320 / 4399: `scale(gScale * imgScale)` math is correct; imgScale = dispW/natW with `(dispW && natW) ? ... : 1` safe fallback when image fails to load. Looks robust.",
     "/app/frontend/public/mobile_mockup.html line 249-252: iframe-fallback wiring is clean; src URL construction with encodeURIComponent is correct; loading='lazy' is appropriate.",
     "Suggestion: in dashboard.html line 1882, the VAV auto-open `if (wantVav && ahuData && ahuData.length)` runs only after ahuData loads; if iframe loads before ahuData, the VAV setup is skipped because effect dep is [ahuData] — actually that re-fires, so OK. AHU path on line 1881 runs unconditionally (no ahuData gate). Both work.",
-    "Parity: md5 0e34b9b6b76280920c446e4750c44d13 identical across /app/frontend/public/dashboard.html, /app/archive/Red5-Studio-V1.9/dashboard.html, /app/archive/Red5-Studio-V2.0/dashboard.html — perfect.",
+    "Parity: md5 0e34b9b6b76280920c446e4750c44d13 identical across /app/frontend/public/dashboard.html, /app/archive/Red5-AHU-V1.9/dashboard.html, /app/archive/Red5-AHU-V2.0/dashboard.html — perfect.",
     "dashboard.html is now 5653 lines — far over the 700-line guideline. Should be split into modules at the main agent's discretion (not a regression from this change)."
   ],
   "updated_files": [],

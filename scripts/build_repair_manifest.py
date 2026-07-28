@@ -2,7 +2,7 @@
 """
 build_repair_manifest.py
 ========================
-Regenerate `archive/Red5-Studio-V1.9/repair_manifest.json` -- the SINGLE
+Regenerate `archive/Red5-AHU-V1.9/repair_manifest.json` -- the SINGLE
 source of truth for which files Repair Mode can flash onto a V1.9
 controller, and what their canonical sha256 / byte-count is.
 
@@ -27,7 +27,7 @@ import os
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ARCHIVE   = os.path.join(REPO_ROOT, 'archive', 'Red5-Studio-V1.9')
+ARCHIVE   = os.path.join(REPO_ROOT, 'archive', 'Red5-AHU-V1.9')
 
 # (name, kind, label, desc) -- display order is the order in this list.
 ENTRIES = [
@@ -199,7 +199,7 @@ def _audit_html_asset_refs(manifest_names: set) -> list:
 def main():
     manifest = {
         'version': 1,
-        'generated_from': 'archive/Red5-Studio-V1.9/',
+        'generated_from': 'archive/Red5-AHU-V1.9/',
         'note': 'Single source of truth for the Repair Mode allow-list. '
                 'Regenerate with scripts/build_repair_manifest.py.',
         'files': [],

@@ -23,7 +23,7 @@
     "sidebar.js L60-65: localStorage.getItem('red5_rh_preset') only honoured if the preset's lo/hi match the live sweetSpotRange, which is the correct design described in the agent-to-agent context note. Fallback to first-matching VENUE_PRESETS row works as documented (verified by 30-60 → OFFICE test).",
     "setup_walk_mockup.html L854-882 PLUGIN_CONFIG_FIELDS: only 4 plug-ins have ≥3 fields; 'sweet_spot' has just 2 fields. Per-plugin variation verified against DIBT spec.",
     "Minor non-blocking console noise: cdn.tailwindcss.com prod warning, 401 from /api/services and /Inline Babel 500KB transformer warning. Pre-existing — unrelated to this iteration's changes.",
-    "Both dashboard.html and setup_walk_mockup.html serve from /app/frontend/public via the preview URL successfully. Mirror copies in /app/archive/Red5-Studio-V1.9 and V2.0 noted in PRD but not retested (byte-identical per md5sum)."
+    "Both dashboard.html and setup_walk_mockup.html serve from /app/frontend/public via the preview URL successfully. Mirror copies in /app/archive/Red5-AHU-V1.9 and V2.0 noted in PRD but not retested (byte-identical per md5sum)."
   ],
   "updated_files": [],
   "success_rate": { "backend": "n/a (skipped per request)", "frontend": "100% (8/8 scenarios pass)" },

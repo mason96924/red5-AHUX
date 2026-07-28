@@ -122,7 +122,7 @@ echo
 
 # --- 0. parity preflight ----------------------------------------------------
 # Static scan of /app/backend/routes/*.py (V2.0 FastAPI) vs
-# /app/archive/Red5-Studio-V1.9/*.py (the Flask app PROD actually serves)
+# /app/archive/Red5-AHU-V1.9/*.py (the Flask app PROD actually serves)
 # to catch the class of bug where a route is added to V2.0 but never
 # ported back to V1.9 -- PROD then 404s on the new endpoint and a UI
 # feature silently disappears (e.g. the 2026-06-27 missing
@@ -154,7 +154,7 @@ else
                 | python3 -c "import json,sys; d=json.load(sys.stdin); [print('         - '+r) for r in d.get('v20_only',[])]" >&2
             red ""
             red "       Refusing to deploy.  Port the missing routes to"
-            red "       /app/archive/Red5-Studio-V1.9/ then re-run.  In an"
+            red "       /app/archive/Red5-AHU-V1.9/ then re-run.  In an"
             red "       absolute emergency you can override with"
             red "       \"deploy.sh --skip-parity-check\" (logged + dangerous)."
             trap - ERR

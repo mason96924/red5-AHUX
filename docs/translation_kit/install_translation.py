@@ -10,8 +10,8 @@ What it does:
   2. Validates the file passes the structural checks from README §4
      (heading count, code-fence parity, no leftover FROZEN markers).
   3. Copies it byte-identically to all three target trees:
-        /app/archive/Red5-Studio-V1.9/docs/
-        /app/archive/Red5-Studio-V2.0/docs/
+        /app/archive/Red5-AHU-V1.9/docs/
+        /app/archive/Red5-AHU-V2.0/docs/
         /app/frontend/public/docs/
   4. Reports md5 sums for each copy so the operator can confirm parity.
 
@@ -26,8 +26,8 @@ import shutil
 import sys
 from pathlib import Path
 
-DOCS_DIR_V19 = Path("/app/archive/Red5-Studio-V1.9/docs")
-DOCS_DIR_V20 = Path("/app/archive/Red5-Studio-V2.0/docs")
+DOCS_DIR_V19 = Path("/app/archive/Red5-AHU-V1.9/docs")
+DOCS_DIR_V20 = Path("/app/archive/Red5-AHU-V2.0/docs")
 DOCS_DIR_PUB = Path("/app/frontend/public/docs")
 TARGETS = (DOCS_DIR_V19, DOCS_DIR_V20, DOCS_DIR_PUB)
 

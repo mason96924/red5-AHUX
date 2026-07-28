@@ -26,8 +26,8 @@ Sources live in **all three** of these folders (identical content,
 keep all three in sync):
 
 ```
-/app/archive/Red5-Studio-V1.9/docs/
-/app/archive/Red5-Studio-V2.0/docs/
+/app/archive/Red5-AHU-V1.9/docs/
+/app/archive/Red5-AHU-V2.0/docs/
 /app/frontend/public/docs/          (flat, no docs/ subfolder)
 ```
 
@@ -219,8 +219,8 @@ A pass-all-checks file can be dropped into all three target folders.
 Three identical copies must end up in:
 
 ```
-/app/archive/Red5-Studio-V1.9/docs/<doc>.<lang>.md
-/app/archive/Red5-Studio-V2.0/docs/<doc>.<lang>.md
+/app/archive/Red5-AHU-V1.9/docs/<doc>.<lang>.md
+/app/archive/Red5-AHU-V2.0/docs/<doc>.<lang>.md
 /app/frontend/public/docs/<doc>.<lang>.md
 ```
 
@@ -235,7 +235,7 @@ python3 /app/docs/translation_kit/install_translation.py \
 Then:
 
 ```
-cd /app/archive/Red5-Studio-V1.9
+cd /app/archive/Red5-AHU-V1.9
 python3 -m pytest tests/  -q
 # Should remain at 97 passed (or however many we end with).
 # The bundle integrity test will fail if a translation accidentally

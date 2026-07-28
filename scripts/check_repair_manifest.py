@@ -2,7 +2,7 @@
 """
 check_repair_manifest.py
 ========================
-Pre-commit / CI guard: verify archive/Red5-Studio-V1.9/repair_manifest.json
+Pre-commit / CI guard: verify archive/Red5-AHU-V1.9/repair_manifest.json
 is in sync with the actual file contents.  Catches a commit that changes
 upload_service.py / sidebar.js / dashboard.compiled.js etc. but forgets
 to run scripts/build_repair_manifest.py first.
@@ -18,7 +18,7 @@ import os
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ARCHIVE   = os.path.join(REPO_ROOT, 'archive', 'Red5-Studio-V1.9')
+ARCHIVE   = os.path.join(REPO_ROOT, 'archive', 'Red5-AHU-V1.9')
 MANIFEST  = os.path.join(ARCHIVE, 'repair_manifest.json')
 
 

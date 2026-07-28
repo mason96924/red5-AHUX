@@ -24,7 +24,7 @@ locations — but rebuilding the bundle picks up any line-level fixes too.
 
 ## Phase 0 — Where you do this from
 
-`build_bundle.py` runs on whatever box owns `/app/archive/Red5-Studio-V1.9/`.
+`build_bundle.py` runs on whatever box owns `/app/archive/Red5-AHU-V1.9/`.
 That's the Emergent preview environment by default. The output
 `red5_bundle.zip` is then either:
 
@@ -43,14 +43,14 @@ you're on `/update` (e.g. `http://219.79.12.63:5001`).
 In the Emergent preview container (or wherever the V1.9 source tree lives):
 
 ```bash
-cd /app/archive/Red5-Studio-V1.9
+cd /app/archive/Red5-AHU-V1.9
 python3 build_bundle.py
 ```
 
 Expected output:
 ```
 ============================================================
-Built /app/archive/Red5-Studio-V1.9/red5_bundle.zip
+Built /app/archive/Red5-AHU-V1.9/red5_bundle.zip
   size:    ~2.2 MB
   files:   ~120
   skipped: <tests/ noise>
@@ -69,18 +69,18 @@ unzip -l red5_bundle.zip | wc -l
 ```
 
 If `js/dashboard/` count is 0, parity drifted — `js/dashboard/` is missing
-from `/app/archive/Red5-Studio-V1.9/`. Restore parity from
+from `/app/archive/Red5-AHU-V1.9/`. Restore parity from
 `/app/frontend/public/js/dashboard/`:
 
 ```bash
 rsync -avh --delete /app/frontend/public/js/dashboard/ \
-                    /app/archive/Red5-Studio-V1.9/js/dashboard/
+                    /app/archive/Red5-AHU-V1.9/js/dashboard/
 # also keep the master dashboard.html in sync
-cp /app/frontend/public/dashboard.html /app/archive/Red5-Studio-V1.9/dashboard.html
+cp /app/frontend/public/dashboard.html /app/archive/Red5-AHU-V1.9/dashboard.html
 
 # checksum-verify (must print 'OK' for every file)
 ( cd /app/frontend/public           && md5sum js/dashboard/*.js dashboard.html ) > /tmp/v2.md5
-( cd /app/archive/Red5-Studio-V1.9  && md5sum -c /tmp/v2.md5 )
+( cd /app/archive/Red5-AHU-V1.9  && md5sum -c /tmp/v2.md5 )
 ```
 
 Then re-run `python3 build_bundle.py` and re-check the unzip count.
@@ -188,7 +188,7 @@ curl -s "$SOURCE/deploy_all.sh" | CONTROLLER="$CONTROLLER" sh
 ### Option C — Direct scp (controllers with SSH)
 
 ```bash
-scp /app/archive/Red5-Studio-V1.9/red5_bundle.zip root@CTRL:/root/data/
+scp /app/archive/Red5-AHU-V1.9/red5_bundle.zip root@CTRL:/root/data/
 ssh root@CTRL 'cd /root/data && unzip -o red5_bundle.zip && mv -f *.py pgpy/ 2>/dev/null'
 ```
 
@@ -233,7 +233,7 @@ ssh root@CTRL 'pkill -f "python.*app.py"'    # bootloader respawns app.py
 
 # If you don't have a snapshot, re-build red5_bundle.zip from a git-checkout
 # of the prior commit and push it again:
-cd /app/archive/Red5-Studio-V1.9
+cd /app/archive/Red5-AHU-V1.9
 git log --oneline | head -10          # find the SHA before the refactor
 git checkout <SHA> -- .               # CAREFUL: scoped to this dir only
 python3 build_bundle.py
@@ -250,7 +250,7 @@ Once you've done the above end-to-end once and confirmed it works, a routine
 
 ```bash
 # 1. Rebuild bundle on the dev side
-( cd /app/archive/Red5-Studio-V1.9 && python3 build_bundle.py )
+( cd /app/archive/Red5-AHU-V1.9 && python3 build_bundle.py )
 
 # 2. Push every changed file (the existing deploy_all.sh handles the 15
 #    legacy paths; the loop below covers the new modular JS)

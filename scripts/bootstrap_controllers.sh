@@ -39,7 +39,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ARCHIVE="$REPO_ROOT/archive/Red5-Studio-V1.9"
+ARCHIVE="$REPO_ROOT/archive/Red5-AHU-V1.9"
 LIST_FILE="$REPO_ROOT/controllers.txt"
 
 # ---- parse flags ----------------------------------------------------------

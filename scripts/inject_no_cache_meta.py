@@ -5,8 +5,8 @@ Idempotently inject the no-cache <meta> block into every *.html file
 under the three mirrors:
 
     /app/frontend/public/
-    /app/archive/Red5-Studio-V2.0/
-    /app/archive/Red5-Studio-V1.9/
+    /app/archive/Red5-AHU-V2.0/
+    /app/archive/Red5-AHU-V1.9/
 
 Why: PROD users were seeing stale HTML after deploys because the
 existing ?v=<hash> cache-busting only buckets compiled JS/CSS, not
@@ -27,8 +27,8 @@ import sys
 
 ROOTS = [
     "/app/frontend/public",
-    "/app/archive/Red5-Studio-V2.0",
-    "/app/archive/Red5-Studio-V1.9",
+    "/app/archive/Red5-AHU-V2.0",
+    "/app/archive/Red5-AHU-V1.9",
 ]
 
 SENTINEL = 'data-cache-policy="no-cache"'

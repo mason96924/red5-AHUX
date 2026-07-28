@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from models.fs import DATA_ROOT
 
 # ---------------------------------------------------------------------------
-# Constants (kept in lock-step with archive/Red5-Studio-V1.9/auth_service.py)
+# Constants (kept in lock-step with archive/Red5-AHU-V1.9/auth_service.py)
 # ---------------------------------------------------------------------------
 COOKIE_NAME = "red5_auth"
 TOKEN_TTL = 24 * 60 * 60

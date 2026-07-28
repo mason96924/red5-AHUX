@@ -51,7 +51,7 @@ import sys
 
 REPO_ROOT      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 V20_ROUTES_DIR = os.path.join(REPO_ROOT, "backend", "routes")
-V19_ROOT       = os.path.join(REPO_ROOT, "archive", "Red5-Studio-V1.9")
+V19_ROOT       = os.path.join(REPO_ROOT, "archive", "Red5-AHU-V1.9")
 
 # Ordered list -- first prefix that matches wins.  Tested from longest
 # prefix to shortest so /api/band-overrides/ beats /api/band*.

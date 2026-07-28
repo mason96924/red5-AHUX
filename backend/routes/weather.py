@@ -431,7 +431,7 @@ async def weather_current(lat: float = Query(...), lon: float = Query(...)) -> d
     })
     url = "https://api.open-meteo.com/v1/forecast?" + params
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Red5-Studio-V2.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Red5-AHU-V2.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             raw = json.loads(resp.read().decode("utf-8"))
     except Exception as e:  # noqa: BLE001

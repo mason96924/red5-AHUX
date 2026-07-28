@@ -5,14 +5,14 @@ Usage:
     python3 make_skeleton.py --doc control_algorithms --lang ja
 
 For each --doc / --lang pair, this:
-  1. Reads /app/archive/Red5-Studio-V1.9/docs/<doc>.md   (source of truth)
+  1. Reads /app/archive/Red5-AHU-V1.9/docs/<doc>.md   (source of truth)
   2. Annotates every "frozen" span (code blocks, ALL-CAPS identifiers
      >=2 chars, inline code, file paths, math symbols, brand names)
      with HTML comment markers ``<!-- FROZEN -->...<!-- /FROZEN -->``
      so the translator can see at a glance what NOT to touch.
   3. Writes the annotated file to all three target trees:
-        /app/archive/Red5-Studio-V1.9/docs/<doc>.<lang>.md
-        /app/archive/Red5-Studio-V2.0/docs/<doc>.<lang>.md
+        /app/archive/Red5-AHU-V1.9/docs/<doc>.<lang>.md
+        /app/archive/Red5-AHU-V2.0/docs/<doc>.<lang>.md
         /app/frontend/public/docs/<doc>.<lang>.md
      (Refuses to overwrite an existing file unless --force is given.)
 
@@ -37,8 +37,8 @@ import re
 import sys
 from pathlib import Path
 
-DOCS_DIR_V19  = Path("/app/archive/Red5-Studio-V1.9/docs")
-DOCS_DIR_V20  = Path("/app/archive/Red5-Studio-V2.0/docs")
+DOCS_DIR_V19  = Path("/app/archive/Red5-AHU-V1.9/docs")
+DOCS_DIR_V20  = Path("/app/archive/Red5-AHU-V2.0/docs")
 DOCS_DIR_PUB  = Path("/app/frontend/public/docs")
 TARGETS = (DOCS_DIR_V19, DOCS_DIR_V20, DOCS_DIR_PUB)
 

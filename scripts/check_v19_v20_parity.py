@@ -5,7 +5,7 @@ Static V1.9 / V2.0 endpoint-parity audit.
 
 The dashboard's frontend bundle is shared by both backends.  V2.0 (FastAPI,
 ``/app/backend/``) is the canonical implementation; V1.9 (Flask,
-``/app/archive/Red5-Studio-V1.9/``) is the legacy PROD app that must mirror
+``/app/archive/Red5-AHU-V1.9/``) is the legacy PROD app that must mirror
 every public ``/api/*`` route V2.0 exposes -- otherwise PROD users see
 features silently disappear (the most recent example: ``/api/ahu-rolling-
 avgs`` was added to V2.0 but never ported to V1.9, so the pill Delta-arrows
@@ -39,10 +39,10 @@ from typing import Set
 
 
 # Anchored at the repo root so the script runs the same way from a cwd of
-# /app, /app/scripts, /app/archive/Red5-Studio-V1.9 (boot-time), etc.
+# /app, /app/scripts, /app/archive/Red5-AHU-V1.9 (boot-time), etc.
 REPO_ROOT      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 V20_ROUTES_DIR = os.path.join(REPO_ROOT, "backend", "routes")
-V19_ROOT       = os.path.join(REPO_ROOT, "archive", "Red5-Studio-V1.9")
+V19_ROOT       = os.path.join(REPO_ROOT, "archive", "Red5-AHU-V1.9")
 
 
 # ---------------------------------------------------------------------------

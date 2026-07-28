@@ -138,8 +138,8 @@
       "kind": "plugin",
       "label": "Auth Service",
       "desc": "Stage B login, tokens, user management, config-gate enforcement",
-      "size": 23044,
-      "sha256": "70cb48c32e9ef612cab4a7d8e95947a522baabe411f8d56c2663c4d02da055f6",
+      "size": 28206,
+      "sha256": "7f335e7e70fc2a6ea8f48a00145e4212d51a845f03040f31c284275f2c2c3b2d",
       "show_in_ui": true,
       "hot_reload": true
     },
@@ -168,8 +168,8 @@
       "kind": "ui",
       "label": "update.html",
       "desc": "This page (Repair Mode + Data Bridges UI)",
-      "size": 78859,
-      "sha256": "8b915d573fa74bc5a940aacade591d2582098d7cb320303adba1f2f3e0d6b2c3",
+      "size": 84864,
+      "sha256": "c9f2a6b03844ac476b52009b6454e158bb58defcd1e46b3f7f000a449591b217",
       "show_in_ui": true,
       "hot_reload": false
     },

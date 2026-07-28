@@ -714,7 +714,27 @@ def register(app, ctx=None):
                      set_master_key,  methods=['POST'])
 
     # Enforcement hook (report-only until an admin enables it).
-    app.before_request(_enforce)
+    #
+    # Only register the before_request hook ONCE.  On a hot-reload,
+    # importlib.reload() re-runs register() AFTER the app has served its
+    # first request -- and Flask forbids before_request() at that point
+    # ("setup method ... can no longer be called").  Because the app object
+    # persists across reloads and importlib.reload() updates this module's
+    # globals in place, the hook registered at boot already executes the
+    # freshly reloaded _enforce code, so we simply skip re-adding it.
+    _already_hooked = getattr(app, '_red5_auth_enforce_hooked', False) or any(
+        getattr(fn, '__name__', '') == '_enforce'
+        and getattr(fn, '__module__', '') == __name__
+        for fn in (app.before_request_funcs.get(None) or [])
+    )
+    if not _already_hooked:
+        try:
+            app.before_request(_enforce)
+            app._red5_auth_enforce_hooked = True
+        except (AssertionError, RuntimeError):
+            # App already handled its first request (hot-reload path): the
+            # existing hook stays in effect with the reloaded code.
+            pass
 
     print('[auth_service] registered OK (state dir: %s, enforce: %s)'
           % (_STATE_DIR, _load_settings().get('enforce')))

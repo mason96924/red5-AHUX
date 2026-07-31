@@ -1,5 +1,13 @@
 const { useState, useMemo } = React;
 
+/* i18n helpers — resolve against the shared dictionary in js/i18n.js
+   (loaded by setup.html before this bundle).  t() falls back to the key
+   if i18n.js is somehow absent; useLang() subscribes a component to the
+   `langchange` event so the whole wizard re-renders (and re-translates)
+   the instant the language is switched. */
+const t = (k) => (typeof window !== 'undefined' && window.t ? window.t(k) : k);
+const useLang = () => (typeof window !== 'undefined' && window.useLang ? window.useLang() : null);
+
 /* =========================================================================
  * STEP DEFINITIONS — the 4 walk paths the user described
  * ========================================================================= */
@@ -7,18 +15,20 @@ const STEPS = [
     /* Walk order is the pentagon traversal: top → upper-right → lower-right → lower-left → upper-left.
        Labels intentionally drop the redundant "Setting" suffix so the
        main heading inside each circle can render in one line at a larger
-       font weight. */
-    { key:'psy',      label:'Psy Chart',       sub:'Givoni · RH range · axis',       kind:'page',  iconColor:'#818cf8', accent:'indigo' },
-    { key:'location', label:'Location',        sub:'City · lat / long',              kind:'modal', iconColor:'#fbbf24', accent:'amber'  },
-    { key:'language', label:'Language',        sub:'EN · CS · CT · JP · KO · …',     kind:'modal', iconColor:'#34d399', accent:'emerald'},
-    { key:'plugins',  label:'Plug-in',         sub:'List · upload · modify',         kind:'modal', iconColor:'#f472b6', accent:'pink'   },
-    { key:'repair',   label:'Update & Repair', sub:'Plug-in flash · controller OTA', kind:'link', iconColor:'#fb7185', accent:'rose', href:'/update.html?from=setup' },
+       font weight.  labelKey/subKey resolve via t() at render time so they
+       track the active language. */
+    { key:'psy',      labelKey:'sw_step_psy',      subKey:'sw_step_psy_sub',      kind:'page',  iconColor:'#818cf8', accent:'indigo' },
+    { key:'location', labelKey:'sw_step_location', subKey:'sw_step_location_sub', kind:'modal', iconColor:'#fbbf24', accent:'amber'  },
+    { key:'language', labelKey:'sw_step_language', subKey:'sw_step_language_sub', kind:'modal', iconColor:'#34d399', accent:'emerald'},
+    { key:'plugins',  labelKey:'sw_step_plugin',   subKey:'sw_step_plugin_sub',   kind:'modal', iconColor:'#f472b6', accent:'pink'   },
+    { key:'repair',   labelKey:'sw_step_repair',   subKey:'sw_step_repair_sub',   kind:'link',  iconColor:'#fb7185', accent:'rose', href:'/update.html?from=setup' },
 ];
 
 /* =========================================================================
  * ROOT APP
  * ========================================================================= */
 function App() {
+    useLang();   // re-render whole wizard (and all descendants) on language change
     /* completion + per-step config -- mockup state, never persisted */
     const [done, setDone] = useState({ psy:false, location:false, language:false, plugins:false, repair:false });
     const [route, setRoute] = useState('hub');   // 'hub' | 'psy'
@@ -64,12 +74,12 @@ function App() {
                         <span className="text-red-500">Red5</span> <span className="text-white">Studio</span>
                         <span className="text-slate-500 font-normal italic"> &nbsp;/&nbsp; setup walk</span>
                     </h1>
-                    <p className="text-slate-500 text-xs mt-1 font-mono tracking-wide">Configure once. Skip any step you don't need.</p>
+                    <p className="text-slate-500 text-xs mt-1 font-mono tracking-wide">{t('sw_subtitle')}</p>
                 </div>
                 <div className="flex items-center gap-4">
                     <a href="/dashboard.html"
                        onClick={() => { try { localStorage.setItem('red5.setup.done','1'); } catch(e){} }}
-                       className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-4">Skip all →</a>
+                       className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-4">{t('sw_skip_all')}</a>
                 </div>
             </div>
 
@@ -176,7 +186,7 @@ function App() {
                     </div>
                     <div className="text-[30px] sm:text-[33px] font-black uppercase tracking-[0.3em] text-slate-300 mt-3"
                          style={{textShadow:'0 2px 12px rgba(2,6,23,0.9)'}}>
-                        Done
+                        {t('sw_done')}
                     </div>
                 </div>
             </div>
@@ -184,9 +194,9 @@ function App() {
             {/* ------------- footer CTA ------------- */}
             <div className="max-w-5xl mx-auto mt-10 flex items-center justify-between fade-up" style={{animationDelay:'.18s'}}>
                 <p className="text-slate-500 text-xs font-mono">
-                    {completeCount === 0 && '↑ Pick a setting to start, or skip all and go straight to the dashboard.'}
-                    {completeCount > 0 && completeCount < 5 && `↑ ${5 - completeCount} step${5 - completeCount === 1 ? '' : 's'} remaining (optional).`}
-                    {completeCount === 5 && '✓ All steps configured.  Ready when you are.'}
+                    {completeCount === 0 && t('sw_foot_start')}
+                    {completeCount > 0 && completeCount < 5 && `↑ ${5 - completeCount} ${t('sw_steps_remaining')}`}
+                    {completeCount === 5 && t('sw_foot_all_done')}
                 </p>
                 <a href="/dashboard.html"
                    onClick={() => { try { localStorage.setItem('red5.setup.done','1'); } catch(e){} }}
@@ -194,7 +204,7 @@ function App() {
                               ${completeCount === 5
                                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
                                   : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'}`}>
-                    Open Dashboard →
+                    {t('sw_open_dashboard')}
                 </a>
             </div>
 
@@ -220,7 +230,7 @@ function Tile({ step, done, index, onClick }) {
     return (
         <button onClick={onClick}
                 data-testid={`setup-tile-${step.key}`}
-                aria-label={`Open ${step.label}`}
+                aria-label={t(step.labelKey)}
                 className={`tile-btn relative text-left bg-slate-900/70 border-2 border-slate-700/70
                             rounded-2xl p-6 sm:p-7 ${done ? 'done' : ''}`}>
             {done && <span className="check" data-testid={`setup-tile-${step.key}-done`}>✓</span>}
@@ -232,11 +242,11 @@ function Tile({ step, done, index, onClick }) {
                 <div className="text-3xl font-black text-slate-700">0{index}</div>
             </div>
             <h3 className="text-lg sm:text-xl font-black uppercase tracking-wider mb-1"
-                style={{color:step.iconColor}}>{step.label}</h3>
-            <p className="text-slate-400 text-sm leading-snug">{step.sub}</p>
+                style={{color:step.iconColor}}>{t(step.labelKey)}</h3>
+            <p className="text-slate-400 text-sm leading-snug">{t(step.subKey)}</p>
             <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
-                <span className="pill bg-slate-800 text-slate-400">{step.kind === 'page' ? 'Full page' : 'Popup'}</span>
-                {done && <span className="pill bg-emerald-900/40 text-emerald-400">Configured</span>}
+                <span className="pill bg-slate-800 text-slate-400">{step.kind === 'page' ? t('sw_full_page') : t('sw_popup')}</span>
+                {done && <span className="pill bg-emerald-900/40 text-emerald-400">{t('sw_configured')}</span>}
             </div>
         </button>
     );
@@ -255,7 +265,7 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
     return (
         <button onClick={onClick}
                 data-testid={`setup-tile-${step.key}`}
-                aria-label={`Open ${step.label}`}
+                aria-label={t(step.labelKey)}
                 className={`circle-tile group absolute rounded-full text-center
                             flex flex-col items-center justify-center
                             transition-all duration-200
@@ -286,10 +296,10 @@ function CircleTile({ step, done, index, leftPct, topPct, onClick }) {
             <div className="text-[10px] font-black text-slate-600 tracking-wider">0{index}</div>
             <h3 className="text-[22px] sm:text-[26px] font-black uppercase tracking-tight whitespace-nowrap leading-none mt-1.5"
                 style={{color:step.iconColor}}>
-                {step.label}
+                {t(step.labelKey)}
             </h3>
             <p className="text-slate-500 text-[10px] sm:text-[11px] leading-snug px-3 mt-1 line-clamp-2">
-                {step.sub}
+                {t(step.subKey)}
             </p>
         </button>
     );
@@ -407,12 +417,12 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
                 <button onClick={onBack}
                         className="text-slate-400 hover:text-white text-xs uppercase tracking-widest font-black">
-                    ← Back to setup
+                    {t('sw_back_to_setup')}
                 </button>
-                <h1 className="text-sm uppercase tracking-[0.3em] font-black text-indigo-400">Psy Chart Setting</h1>
+                <h1 className="text-sm uppercase tracking-[0.3em] font-black text-indigo-400">{t('sw_psy_chart_setting')}</h1>
                 <button onClick={persistAndSave}
                         className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs uppercase tracking-widest font-black">
-                    Save & return ✓
+                    {t('sw_save_return')}
                 </button>
             </div>
 
@@ -627,7 +637,7 @@ function PsyControlPanel({ cfg, update, setCfg }) {
                 meaningful in dark mode).  Live preview applies to the surrounding
                 control panel so the operator can FEEL the change before saving. */}
             <div data-testid="psy-cfg-theme-block">
-                <div className="field-label mb-2">Display Mode</div>
+                <div className="field-label mb-2">{t('sw_display_mode')}</div>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                     <button data-testid="psy-cfg-theme-dark"
                             onClick={() => setCfg(c => ({...c, theme:'dark', darkLevel:Math.min(c.darkLevel || 2.0, 2.6)}))}
@@ -635,7 +645,7 @@ function PsyControlPanel({ cfg, update, setCfg }) {
                                 ${cfg.theme === 'dark'
                                     ? 'bg-slate-800 border-yellow-500/70 text-yellow-300 shadow-lg shadow-yellow-500/10'
                                     : 'bg-slate-900/30 border-slate-700 text-slate-500 hover:bg-slate-800/60'}`}>
-                        🌙  Dim / Dark
+                        {t('sw_dim_dark')}
                     </button>
                     <button data-testid="psy-cfg-theme-light"
                             onClick={() => setCfg(c => ({...c, theme:'light', darkLevel:3.0}))}
@@ -643,13 +653,13 @@ function PsyControlPanel({ cfg, update, setCfg }) {
                                 ${cfg.theme === 'light'
                                     ? 'bg-slate-100 border-sky-500/70 text-sky-700 shadow-lg shadow-sky-500/10'
                                     : 'bg-slate-900/30 border-slate-700 text-slate-500 hover:bg-slate-800/60'}`}>
-                        ☀  Light
+                        {t('sw_light_mode')}
                     </button>
                 </div>
                 {/* Brightness slider — only meaningful when theme === 'dark' */}
                 <div className={cfg.theme === 'light' ? 'opacity-40 pointer-events-none' : ''}>
                     <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Dim brightness</label>
+                        <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500">{t('sw_dim_brightness')}</label>
                         <span className="text-[10px] font-mono text-yellow-300 tabular-nums">{Math.round((cfg.darkLevel || 2.0) * 100)}%</span>
                     </div>
                     <input type="range"
@@ -667,13 +677,13 @@ function PsyControlPanel({ cfg, update, setCfg }) {
 
             {/* Givoni toggle */}
             <div>
-                <div className="field-label mb-2">Givoni Engine</div>
+                <div className="field-label mb-2">{t('sw_givoni_engine')}</div>
                 <button onClick={() => update('givoni', !cfg.givoni)}
                         className={`w-full py-3 rounded-xl text-sm font-black uppercase tracking-widest transition-all
                                     ${cfg.givoni
                                         ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
                                         : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
-                    {cfg.givoni ? 'Givoni ON' : 'Givoni OFF'}
+                    {cfg.givoni ? t('sw_givoni_on') : t('sw_givoni_off')}
                 </button>
                 <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
                     Overlays the 4 climate-strategy regions (Comfort, Nat Vent, Evap, Mech Cool).
@@ -682,9 +692,9 @@ function PsyControlPanel({ cfg, update, setCfg }) {
 
             {/* RH range */}
             <div>
-                <div className="field-label mb-2">RH Sweet-Spot Range</div>
+                <div className="field-label mb-2">{t('sw_rh_sweet_spot')}</div>
                 <div className="mb-3">
-                    <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1 block">Venue preset</label>
+                    <label className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1 block">{t('sw_venue_preset')}</label>
                     <select className="field-input cursor-pointer"
                             value={cfg.rhPreset || 'custom'}
                             onChange={(e) => {
@@ -725,7 +735,7 @@ function PsyControlPanel({ cfg, update, setCfg }) {
 
             {/* Axis range */}
             <div>
-                <div className="field-label mb-2">Temperature Axis Range</div>
+                <div className="field-label mb-2">{t('sw_temp_axis_range')}</div>
                 <div className="flex items-center gap-3 mb-2">
                     <span className="text-xs font-mono text-slate-400 w-10">{cfg.tLo}°</span>
                     <input type="range" min="-40" max={cfg.tHi-10} value={cfg.tLo}
@@ -1138,7 +1148,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
 
 
     return (
-        <ModalShell title="Location Setting" subtitle="Click the map, drag the pin, or use your device" accent="amber" onClose={onClose} onSave={persistAndSave} size="max">
+        <ModalShell title={t('sw_location_setting')} subtitle={t('sw_location_sub')} accent="amber" onClose={onClose} onSave={persistAndSave} size="max">
             {saveMsg && (
                 <div data-testid="loc-save-msg"
                      className="mb-3 px-4 py-2.5 rounded-lg bg-amber-900/30 border border-amber-700/50 text-amber-200 text-xs font-mono">
@@ -1355,12 +1365,12 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>
-                            <div className="field-label mb-1.5">Latitude</div>
+                            <div className="field-label mb-1.5">{t('sw_latitude')}</div>
                             <input className="field-input" type="number" step="0.0001" value={cfg.lat}
                                    onChange={(e)=>setCfg({...cfg, lat:+e.target.value})}/>
                         </div>
                         <div>
-                            <div className="field-label mb-1.5">Longitude</div>
+                            <div className="field-label mb-1.5">{t('sw_longitude')}</div>
                             <input className="field-input" type="number" step="0.0001" value={cfg.lon}
                                    onChange={(e)=>setCfg({...cfg, lon:+e.target.value})}/>
                         </div>
@@ -1394,7 +1404,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                     )}
 
                     <div className="border-t border-slate-800 pt-3 mt-2">
-                        <div className="field-label mb-2">Quick jumps</div>
+                        <div className="field-label mb-2">{t('sw_quick_jumps')}</div>
                         <div className="grid grid-cols-2 gap-1.5">
                             {[
                                 { name:'Toronto, ON',   lat:43.6532, lon:-79.3832, z:11 },
@@ -1457,7 +1467,7 @@ function LanguageModal({ cfg, setCfg, onClose, onSave }) {
         onSave();
     };
     return (
-        <ModalShell title="Language Setting" subtitle="Pick your default interface language" accent="emerald" onClose={onClose} onSave={persistAndSave}>
+        <ModalShell title={t('sw_language_setting')} subtitle={t('sw_language_sub')} accent="emerald" onClose={onClose} onSave={persistAndSave}>
             <div className="grid grid-cols-2 gap-3">
                 {langs.map(l => (
                     <button key={l.code} onClick={()=>setCfg({...cfg, lang:l.code})}
@@ -1539,7 +1549,7 @@ function PluginsModal({ cfg, setCfg, onClose, onSave }) {
     };
 
     return (
-        <ModalShell title="Plug-in Setting" subtitle="Enable, upload or modify plug-ins" accent="pink" onClose={onClose} onSave={onSave} size="wide">
+        <ModalShell title={t('sw_plugin_setting')} subtitle={t('sw_plugin_sub')} accent="pink" onClose={onClose} onSave={onSave} size="wide">
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                 {ALL.map(p => {
                     const on = cfg.enabled.includes(p.id);
@@ -1562,7 +1572,7 @@ function PluginsModal({ cfg, setCfg, onClose, onSave }) {
                                             data-testid={`plugin-toggle-${p.id}`}
                                             className={`px-3 py-1 rounded-md text-[10px] uppercase tracking-widest font-black border
                                                 ${on ? 'border-pink-500/60 text-pink-300 bg-pink-900/30' : 'border-slate-600 text-slate-400 bg-slate-800'}`}>
-                                        {on ? 'Enabled' : 'Disabled'}
+                                        {on ? t('sw_enabled') : t('sw_disabled')}
                                     </button>
                                     <button onClick={() => setExpandedId(expanded ? null : p.id)}
                                             data-testid={`plugin-config-${p.id}`}
@@ -1570,7 +1580,7 @@ function PluginsModal({ cfg, setCfg, onClose, onSave }) {
                                                 ${expanded
                                                     ? 'border-pink-500 bg-pink-900/30 text-pink-200'
                                                     : 'border-slate-600 text-slate-400 bg-slate-800 hover:bg-slate-700 hover:border-pink-500/50 hover:text-pink-300'}`}>
-                                        {expanded ? 'Close ▴' : 'Configure ▾'}
+                                        {expanded ? t('sw_close_up') : t('sw_configure_dd')}
                                     </button>
                                 </div>
                             </div>
@@ -1626,11 +1636,11 @@ function PluginsModal({ cfg, setCfg, onClose, onSave }) {
                                                     });
                                                 }}
                                                 className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-black border border-slate-600 text-slate-400 hover:bg-slate-800">
-                                            Reset defaults
+                                            {t('sw_reset_defaults')}
                                         </button>
                                         <button onClick={() => setExpandedId(null)}
                                                 className="px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest font-black bg-pink-600 hover:bg-pink-500 text-white">
-                                            Done
+                                            {t('sw_done')}
                                         </button>
                                     </div>
                                 </div>
@@ -1684,12 +1694,12 @@ function ModalShell({ title, subtitle, accent='indigo', onClose, onSave, size=''
                 <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800 shrink-0 bg-slate-900 rounded-b-2xl">
                     <button data-testid="modal-cancel" onClick={onClose}
                             className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs uppercase tracking-widest font-black text-slate-400 hover:bg-slate-700">
-                        Cancel
+                        {t('cancel')}
                     </button>
                     <button data-testid="modal-save" onClick={onSave}
                             className="px-5 py-2 rounded-lg text-xs uppercase tracking-widest font-black text-white"
                             style={{background:c, boxShadow:`0 0 12px ${c}55`}}>
-                        Save & return ✓
+                        {t('sw_save_return')}
                     </button>
                 </div>
             </div>

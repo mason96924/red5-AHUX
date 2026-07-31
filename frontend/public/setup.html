@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   setup.html  —  PRODUCTION setup-walk page (1-time onboarding gate).
-  Compiled JSX bundle: /setup_walk.compiled.js?v=f2938a7201  (built from
+  Compiled JSX bundle: /setup_walk.compiled.js?v=d8888a9869  (built from
   /app/frontend/src/setup-walk/setup_walk.jsx via build.sh).
 
   Gate behaviour:
@@ -87,8 +87,11 @@
 <body>
 <div id="root"></div>
 
+<!-- i18n dictionary + t()/useLang() — must load before the compiled bundle
+     so the setup walk can resolve translations and re-render on langchange. -->
+<script src="js/i18n.js?v=2026-06-20a"></script>
 <!-- Compiled offline by /app/frontend/src/setup-walk/build.sh — DO NOT
      run @babel/standalone in the browser any more. -->
-<script src="/api/assets/setup_walk.compiled.js?v=f2938a7201"></script>
+<script src="/api/assets/setup_walk.compiled.js?v=d8888a9869"></script>
 </body>
 </html>

@@ -270,7 +270,130 @@
     config_password:           ['Config Password','配置密码','配置密碼','設定パスワード','구성 비밀번호'],
     enter_password_ph:         ['Enter password','输入密码','輸入密碼','パスワード入力','비밀번호 입력'],
     react_crash_prevented:     ['React Rendering Crash Prevented','已阻止 React 渲染崩溃','已阻止 React 渲染崩潰','React レンダリング クラッシュを防止','React 렌더링 충돌 방지됨'],
-    react_crash_msg:           ['System caught the following error instead of a black screen:','系统捕获以下错误而非黑屏:','系統捕獲以下錯誤而非黑屏:','黒画面の代わりに以下のエラーを捕捉:','검은 화면 대신 다음 오류를 포착:']
+    react_crash_msg:           ['System caught the following error instead of a black screen:','系统捕获以下错误而非黑屏:','系統捕獲以下錯誤而非黑屏:','黒画面の代わりに以下のエラーを捕捉:','검은 화면 대신 다음 오류를 포착:'],
+
+    /* ── AHU detail page (ahu.html) ── */
+    fleet:                     ['FLEET','机组列表','機組列表','設備一覧','설비 목록'],
+    connecting_ellipsis:       ['connecting…','连接中…','連線中…','接続中…','연결 중…'],
+    per_ahu_performance:       ['Per-AHU Performance','单机组性能','單機組性能','空調機別性能','공조기별 성능'],
+    g36_mode:                  ['G36 Mode','G36 模式','G36 模式','G36 モード','G36 모드'],
+    cooling_requests:          ['Cooling Requests','制冷请求','製冷請求','冷房要求','냉방 요청'],
+    heating_requests:          ['Heating Requests','制热请求','製熱請求','暖房要求','난방 요청'],
+    pressure_requests:         ['Pressure Requests','压力请求','壓力請求','圧力要求','압력 요청'],
+    from_vav_zones:            ['from VAV zones','来自 VAV 区域','來自 VAV 區域','VAV ゾーンから','VAV 구역에서'],
+    duct_static:               ['duct static','风管静压','風管靜壓','ダクト静圧','덕트 정압'],
+    uptime_24h:                ['Uptime · 24h','运行时间 · 24h','運行時間 · 24h','稼働時間 · 24h','가동 시간 · 24h'],
+    non_fault_mode_time:       ['non-fault mode time','非故障模式时间','非故障模式時間','非故障モード時間','비고장 모드 시간'],
+    mode_hours_today:          ['Mode Hours · Today','模式时长 · 今日','模式時長 · 今日','モード時間 · 本日','모드 시간 · 오늘'],
+    cz_compliance:             ['CZ Compliance','舒适区达标','舒適區達標','快適域適合','쾌적역 준수'],
+    zones_inside_range:        ['zones inside 21–24 °C','21–24 °C 内区域','21–24 °C 內區域','21–24 °C 内のゾーン','21–24 °C 이내 구역'],
+    zones_online:              ['Zones Online','在线区域','在線區域','オンライン区域','온라인 구역'],
+    supply_air_temp:           ['Supply Air Temp','送风温度','送風溫度','給気温度','급기 온도'],
+    supply_air_rh:             ['Supply Air RH','送风湿度','送風濕度','給気湿度','급기 습도'],
+    sat_reset_tr:              ['SAT Reset (Trim&Respond)','送风温度重置(增减响应)','送風溫度重置(增減響應)','給気温度リセット(トリム&レスポンス)','급기온도 재설정(트림&리스폰드)'],
+    dsp_reset_tr:              ['DSP Reset (Trim&Respond)','静压重置(增减响应)','靜壓重置(增減響應)','静圧リセット(トリム&レスポンス)','정압 재설정(트림&리스폰드)'],
+    deg_c_target:              ['°C target','°C 目标','°C 目標','°C 目標','°C 목표'],
+    pa_target:                 ['Pa target','Pa 目标','Pa 目標','Pa 目標','Pa 목표'],
+    time_range:                ['Time Range','时间范围','時間範圍','期間','시간 범위'],
+    custom_label:              ['Custom:','自定义:','自訂:','カスタム:','사용자 지정:'],
+    apply_btn:                 ['APPLY','应用','套用','適用','적용'],
+    minutes_ph:                ['minutes','分钟','分鐘','分','분'],
+    chart_sa_temp:             ['Supply Air Temperature (°C)','送风温度 (°C)','送風溫度 (°C)','給気温度 (°C)','급기 온도 (°C)'],
+    chart_sa_rh:               ['Supply Air Relative Humidity (%)','送风相对湿度 (%)','送風相對濕度 (%)','給気相対湿度 (%)','급기 상대습도 (%)'],
+    chart_airflow:             ['Airflow (% of design)','风量 (设计百分比)','風量 (設計百分比)','風量 (設計比 %)','풍량 (설계 %)'],
+    chart_ra_temp:             ['Return Air Temperature (°C)','回风温度 (°C)','回風溫度 (°C)','還気温度 (°C)','환기 온도 (°C)'],
+    operating_mode_timeline:   ['Operating Mode Timeline · 24h','运行模式时间轴 · 24h','運行模式時間軸 · 24h','運転モードタイムライン · 24h','운전 모드 타임라인 · 24h'],
+    occupied:                  ['Occupied','占用','佔用','在室','재실'],
+    warmup_cooldown:           ['Warmup/Cooldown','预热/预冷','預熱/預冷','暖機/冷却','예열/예냉'],
+    setback_unoccupied:        ['Setback/Unoccupied','回退/无人','回退/無人','セットバック/不在','셋백/비재실'],
+    freeze_protect:            ['Freeze-Protect','防冻保护','防凍保護','凍結防止','동결 방지'],
+    fault:                     ['Fault','故障','故障','故障','고장'],
+    vav_zones:                 ['VAV Zones','VAV 区域','VAV 區域','VAV ゾーン','VAV 구역'],
+    served_by_this_ahu:        ['Served by this AHU','由此空调机组服务','由此空調機組服務','この空調機が担当','이 공조기가 담당'],
+    zone:                      ['Zone','区域','區域','ゾーン','구역'],
+    temp:                      ['Temp','温度','溫度','温度','온도'],
+    rh:                        ['RH','湿度','濕度','湿度','습도'],
+    setpoint:                  ['Setpoint','设定点','設定點','設定値','설정값'],
+    damper:                    ['Damper','风阀','風閥','ダンパー','댐퍼'],
+    sup_temp:                  ['Sup Temp','送风温度','送風溫度','給気温度','급기 온도'],
+    airflow:                   ['Airflow','风量','風量','風量','풍량'],
+    state:                     ['State','状态','狀態','状態','상태'],
+    loading_ellipsis:          ['Loading…','加载中…','載入中…','読み込み中…','로딩 중…'],
+    band_matrix_title:         ['10-Band Strategy Matrix · Current Band','10 段策略矩阵 · 当前段','10 段策略矩陣 · 當前段','10 バンド戦略マトリクス · 現在バンド','10 밴드 전략 매트릭스 · 현재 밴드'],
+    band:                      ['Band','段','段','バンド','밴드'],
+    name:                      ['Name','名称','名稱','名称','이름'],
+    oa_temp:                   ['OA Temp','新风温度','外氣溫度','外気温度','외기 온도'],
+    oa_rh:                     ['OA RH','新风湿度','外氣濕度','外気湿度','외기 습도'],
+    sa_t_deliv:                ['SA T Deliv','送风送出温度','送風送出溫度','給気供給温度','급기 공급온도'],
+    sa_rh:                     ['SA RH','送风湿度','送風濕度','給気湿度','급기 습도'],
+    sa_w_gkg:                  ['SA W g/kg','送风含湿量 g/kg','送風含濕量 g/kg','給気絶対湿度 g/kg','급기 절대습도 g/kg'],
+    oa_damper:                 ['OA Damper','新风阀','外氣風閥','外気ダンパー','외기 댐퍼'],
+    cc_coil:                   ['CC','冷盘','冷盤','冷却コイル','냉각코일'],
+    hc_coil:                   ['HC','热盘','熱盤','加熱コイル','가열코일'],
+    hum_short:                 ['HUM','加湿','加濕','加湿','가습'],
+    control_tag:               ['Control Tag','控制标签','控制標籤','制御タグ','제어 태그'],
+    energy:                    ['Energy','能耗','能耗','エネルギー','에너지'],
+    loading_bands:             ['Loading bands…','加载段中…','載入段中…','バンド読み込み中…','밴드 로딩 중…'],
+    audit_log_title:           ['Audit Log · Setpoint & Control Changes','审计日志 · 设定点与控制变更','稽核日誌 · 設定點與控制變更','監査ログ · 設定値と制御変更','감사 로그 · 설정값 및 제어 변경'],
+    when:                      ['When','时间','時間','日時','시각'],
+    action:                    ['Action','操作','操作','操作','작업'],
+    user:                      ['User','用户','使用者','ユーザー','사용자'],
+    before_after:              ['Before → After','变更前 → 变更后','變更前 → 變更後','変更前 → 変更後','변경 전 → 변경 후'],
+    floor_plan_placement:      ['Floor-Plan Placement','平面图布置','平面圖佈置','フロアプラン配置','평면도 배치'],
+    no_vav_zones_reported:     ['No VAV zones reported for this AHU','此空调机组无 VAV 区域','此空調機組無 VAV 區域','この空調機に VAV ゾーンなし','이 공조기에 VAV 구역 없음'],
+    no_data_since_midnight:    ['No data since midnight','午夜以来无数据','午夜以來無資料','深夜以降データなし','자정 이후 데이터 없음'],
+    no_history_yet:            ['No history yet','暂无历史记录','暫無歷史記錄','履歴なし','기록 없음'],
+    ahu_not_found:             ['AHU not found','未找到空调机组','未找到空調機組','空調機が見つかりません','공조기를 찾을 수 없음'],
+    admin_signin_required:     ['admin sign-in required','需要管理员登录','需要管理員登入','管理者ログインが必要','관리자 로그인 필요'],
+
+    /* ── Setup Walk (setup.html / setup_walk.jsx) ── */
+    sw_subtitle:               ['Configure once. Skip any step you don\u2019t need.','一次配置完成。可跳过不需要的步骤。','一次設定完成。可跳過不需要的步驟。','一度設定すれば完了。不要な手順はスキップ可。','한 번만 설정하세요. 필요 없는 단계는 건너뛰세요.'],
+    sw_skip_all:               ['Skip all \u2192','全部跳过 \u2192','全部跳過 \u2192','すべてスキップ \u2192','모두 건너뛰기 \u2192'],
+    sw_done:                   ['Done','完成','完成','完了','완료'],
+    sw_open_dashboard:         ['Open Dashboard \u2192','打开仪表盘 \u2192','開啟儀表板 \u2192','ダッシュボードを開く \u2192','대시보드 열기 \u2192'],
+    sw_foot_start:             ['\u2191 Pick a setting to start, or skip all and go straight to the dashboard.','\u2191 选择一项设置开始，或全部跳过直接进入仪表盘。','\u2191 選擇一項設定開始，或全部跳過直接進入儀表板。','\u2191 設定を選んで開始、またはすべてスキップしてダッシュボードへ。','\u2191 설정을 선택해 시작하거나 모두 건너뛰고 대시보드로 이동하세요.'],
+    sw_foot_all_done:          ['\u2713 All steps configured.  Ready when you are.','\u2713 所有步骤已配置完成，随时可开始。','\u2713 所有步驟已設定完成，隨時可開始。','\u2713 すべての手順が完了しました。準備OKです。','\u2713 모든 단계가 설정되었습니다. 준비 완료.'],
+    sw_steps_remaining:        ['step(s) remaining (optional).','个步骤待完成（可选）。','個步驟待完成（可選）。','手順が残っています（任意）。','단계 남음 (선택 사항).'],
+    sw_step_psy:               ['Psy Chart','空气线图','空氣線圖','空気線図','공기선도'],
+    sw_step_psy_sub:           ['Givoni \u00b7 RH range \u00b7 axis','吉沃尼 \u00b7 湿度范围 \u00b7 坐标轴','吉沃尼 \u00b7 濕度範圍 \u00b7 座標軸','ギボーニ \u00b7 RH範囲 \u00b7 軸','기보니 \u00b7 습도 범위 \u00b7 축'],
+    sw_step_location:          ['Location','位置','位置','位置','위치'],
+    sw_step_location_sub:      ['City \u00b7 lat / long','城市 \u00b7 纬度 / 经度','城市 \u00b7 緯度 / 經度','都市 \u00b7 緯度 / 経度','도시 \u00b7 위도 / 경도'],
+    sw_step_language:          ['Language','语言','語言','言語','언어'],
+    sw_step_language_sub:      ['EN \u00b7 CS \u00b7 CT \u00b7 JP \u00b7 KO \u00b7 \u2026','EN \u00b7 CS \u00b7 CT \u00b7 JP \u00b7 KO \u00b7 \u2026','EN \u00b7 CS \u00b7 CT \u00b7 JP \u00b7 KO \u00b7 \u2026','EN \u00b7 CS \u00b7 CT \u00b7 JP \u00b7 KO \u00b7 \u2026','EN \u00b7 CS \u00b7 CT \u00b7 JP \u00b7 KO \u00b7 \u2026'],
+    sw_step_plugin:            ['Plug-in','插件','外掛','プラグイン','플러그인'],
+    sw_step_plugin_sub:        ['List \u00b7 upload \u00b7 modify','列表 \u00b7 上传 \u00b7 修改','列表 \u00b7 上傳 \u00b7 修改','一覧 \u00b7 アップロード \u00b7 変更','목록 \u00b7 업로드 \u00b7 수정'],
+    sw_step_repair:            ['Update & Repair','更新与修复','更新與修復','更新と修復','업데이트 및 복구'],
+    sw_step_repair_sub:        ['Plug-in flash \u00b7 controller OTA','插件刷写 \u00b7 控制器 OTA','外掛燒錄 \u00b7 控制器 OTA','プラグイン書込 \u00b7 コントローラOTA','플러그인 플래시 \u00b7 컨트롤러 OTA'],
+    sw_full_page:              ['Full page','整页','整頁','全画面','전체 페이지'],
+    sw_popup:                  ['Popup','弹窗','彈窗','ポップアップ','팝업'],
+    sw_configured:             ['Configured','已配置','已設定','設定済み','설정됨'],
+    sw_back_to_setup:          ['\u2190 Back to setup','\u2190 返回设置','\u2190 返回設定','\u2190 設定に戻る','\u2190 설정으로 돌아가기'],
+    sw_save_return:            ['Save & return \u2713','保存并返回 \u2713','儲存並返回 \u2713','保存して戻る \u2713','저장 후 돌아가기 \u2713'],
+    sw_psy_chart_setting:      ['Psy Chart Setting','空气线图设置','空氣線圖設定','空気線図設定','공기선도 설정'],
+    sw_display_mode:           ['Display Mode','显示模式','顯示模式','表示モード','표시 모드'],
+    sw_dim_dark:               ['\ud83c\udf19  Dim / Dark','\ud83c\udf19  暗色','\ud83c\udf19  暗色','\ud83c\udf19  ダーク','\ud83c\udf19  어둡게'],
+    sw_light_mode:             ['\u2600  Light','\u2600  亮色','\u2600  亮色','\u2600  ライト','\u2600  밝게'],
+    sw_dim_brightness:         ['Dim brightness','暗色亮度','暗色亮度','暗さの明るさ','어둡기 밝기'],
+    sw_givoni_engine:          ['Givoni Engine','吉沃尼引擎','吉沃尼引擎','ギボーニエンジン','기보니 엔진'],
+    sw_givoni_on:              ['Givoni ON','吉沃尼 开','吉沃尼 開','ギボーニ ON','기보니 켜짐'],
+    sw_givoni_off:             ['Givoni OFF','吉沃尼 关','吉沃尼 關','ギボーニ OFF','기보니 꺼짐'],
+    sw_rh_sweet_spot:          ['RH Sweet-Spot Range','湿度舒适区范围','濕度舒適區範圍','RH快適範囲','습도 최적 범위'],
+    sw_venue_preset:           ['Venue preset','场所预设','場所預設','施設プリセット','장소 프리셋'],
+    sw_temp_axis_range:        ['Temperature Axis Range','温度坐标轴范围','溫度座標軸範圍','温度軸範囲','온도 축 범위'],
+    sw_language_setting:       ['Language Setting','语言设置','語言設定','言語設定','언어 설정'],
+    sw_language_sub:           ['Pick your default interface language','选择默认界面语言','選擇預設介面語言','既定の表示言語を選択','기본 인터페이스 언어 선택'],
+    sw_location_setting:       ['Location Setting','位置设置','位置設定','位置設定','위치 설정'],
+    sw_location_sub:           ['Click the map, drag the pin, or use your device','点击地图、拖动图钉或使用设备定位','點擊地圖、拖動圖釘或使用裝置定位','地図クリック、ピンをドラッグ、または端末を使用','지도 클릭, 핀 드래그 또는 기기 위치 사용'],
+    sw_plugin_setting:         ['Plug-in Setting','插件设置','外掛設定','プラグイン設定','플러그인 설정'],
+    sw_plugin_sub:             ['Enable, upload or modify plug-ins','启用、上传或修改插件','啟用、上傳或修改外掛','プラグインの有効化・アップロード・変更','플러그인 활성화, 업로드 또는 수정'],
+    sw_enabled:                ['Enabled','已启用','已啟用','有効','활성화'],
+    sw_disabled:               ['Disabled','已禁用','已停用','無効','비활성화'],
+    sw_configure_dd:           ['Configure \u25be','配置 \u25be','設定 \u25be','設定 \u25be','구성 \u25be'],
+    sw_close_up:               ['Close \u25b4','收起 \u25b4','收起 \u25b4','閉じる \u25b4','닫기 \u25b4'],
+    sw_reset_defaults:         ['Reset defaults','恢复默认','還原預設','既定値に戻す','기본값 복원'],
+    sw_latitude:               ['Latitude','纬度','緯度','緯度','위도'],
+    sw_longitude:              ['Longitude','经度','經度','経度','경도'],
+    sw_quick_jumps:            ['Quick jumps','快速跳转','快速跳轉','クイックジャンプ','빠른 이동']
   };
 
   /* ── Build fast lookup: key -> { en, 'zh-CN', 'zh-TW', ja, ko } ── */
@@ -414,6 +537,40 @@
     parent.appendChild(container);
     return container;
   };
+
+  /* ── Declarative applier for vanilla (non-React) pages ──
+     Tag markup with:
+       data-i18n="key"        → sets textContent
+       data-i18n-ph="key"     → sets placeholder attribute
+       data-i18n-title="key"  → sets title attribute
+       data-i18n-aria="key"   → sets aria-label attribute
+     applyI18n() runs automatically on DOMContentLoaded and on every
+     langchange, and can be called manually after injecting new DOM.
+     No-op on pages that use none of these attributes, so it is safe to
+     load alongside the React dashboard. */
+  window.applyI18n = function(root){
+    var scope = root || document;
+    var set = function(sel, fn){
+      var nodes = scope.querySelectorAll(sel);
+      for (var i=0;i<nodes.length;i++){
+        var el = nodes[i];
+        var key = el.getAttribute(sel.replace(/[\[\]]/g,''));
+        var v = window.t(key);
+        if (v && v !== key) fn(el, v);
+      }
+    };
+    set('[data-i18n]',       function(el,v){ el.textContent = v; });
+    set('[data-i18n-ph]',    function(el,v){ el.setAttribute('placeholder', v); });
+    set('[data-i18n-title]', function(el,v){ el.setAttribute('title', v); });
+    set('[data-i18n-aria]',  function(el,v){ el.setAttribute('aria-label', v); });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function(){ window.applyI18n(); });
+  } else {
+    window.applyI18n();
+  }
+  window.addEventListener('langchange', function(){ window.applyI18n(); });
 
   /* ── Set initial html lang ── */
   document.documentElement.lang = currentLang;

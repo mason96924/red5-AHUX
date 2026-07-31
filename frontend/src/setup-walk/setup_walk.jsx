@@ -1,3 +1,10 @@
+/* Wrapped in an IIFE so top-level declarations stay function-scoped and do
+   NOT leak onto `window`.  This bundle is loaded as a CLASSIC <script>, where
+   a top-level `var foo` (what Babel compiles `const foo` down to) would become
+   `window.foo`.  Without this wrapper, the local `t`/`useLang` helpers below
+   overwrite the real `window.t`/`window.useLang` from js/i18n.js and then call
+   themselves → "Maximum call stack size exceeded" (blank screen). */
+(function () {
 const { useState, useMemo } = React;
 
 /* i18n helpers — resolve against the shared dictionary in js/i18n.js
@@ -1709,3 +1716,4 @@ function ModalShell({ title, subtitle, accent='indigo', onClose, onSave, size=''
 
 /* mount */
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+})();

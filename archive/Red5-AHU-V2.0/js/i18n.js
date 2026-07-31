@@ -270,7 +270,81 @@
     config_password:           ['Config Password','配置密码','配置密碼','設定パスワード','구성 비밀번호'],
     enter_password_ph:         ['Enter password','输入密码','輸入密碼','パスワード入力','비밀번호 입력'],
     react_crash_prevented:     ['React Rendering Crash Prevented','已阻止 React 渲染崩溃','已阻止 React 渲染崩潰','React レンダリング クラッシュを防止','React 렌더링 충돌 방지됨'],
-    react_crash_msg:           ['System caught the following error instead of a black screen:','系统捕获以下错误而非黑屏:','系統捕獲以下錯誤而非黑屏:','黒画面の代わりに以下のエラーを捕捉:','검은 화면 대신 다음 오류를 포착:']
+    react_crash_msg:           ['System caught the following error instead of a black screen:','系统捕获以下错误而非黑屏:','系統捕獲以下錯誤而非黑屏:','黒画面の代わりに以下のエラーを捕捉:','검은 화면 대신 다음 오류를 포착:'],
+
+    /* ── AHU detail page (ahu.html) ── */
+    fleet:                     ['FLEET','机组列表','機組列表','設備一覧','설비 목록'],
+    connecting_ellipsis:       ['connecting…','连接中…','連線中…','接続中…','연결 중…'],
+    per_ahu_performance:       ['Per-AHU Performance','单机组性能','單機組性能','空調機別性能','공조기별 성능'],
+    g36_mode:                  ['G36 Mode','G36 模式','G36 模式','G36 モード','G36 모드'],
+    cooling_requests:          ['Cooling Requests','制冷请求','製冷請求','冷房要求','냉방 요청'],
+    heating_requests:          ['Heating Requests','制热请求','製熱請求','暖房要求','난방 요청'],
+    pressure_requests:         ['Pressure Requests','压力请求','壓力請求','圧力要求','압력 요청'],
+    from_vav_zones:            ['from VAV zones','来自 VAV 区域','來自 VAV 區域','VAV ゾーンから','VAV 구역에서'],
+    duct_static:               ['duct static','风管静压','風管靜壓','ダクト静圧','덕트 정압'],
+    uptime_24h:                ['Uptime · 24h','运行时间 · 24h','運行時間 · 24h','稼働時間 · 24h','가동 시간 · 24h'],
+    non_fault_mode_time:       ['non-fault mode time','非故障模式时间','非故障模式時間','非故障モード時間','비고장 모드 시간'],
+    mode_hours_today:          ['Mode Hours · Today','模式时长 · 今日','模式時長 · 今日','モード時間 · 本日','모드 시간 · 오늘'],
+    cz_compliance:             ['CZ Compliance','舒适区达标','舒適區達標','快適域適合','쾌적역 준수'],
+    zones_inside_range:        ['zones inside 21–24 °C','21–24 °C 内区域','21–24 °C 內區域','21–24 °C 内のゾーン','21–24 °C 이내 구역'],
+    zones_online:              ['Zones Online','在线区域','在線區域','オンライン区域','온라인 구역'],
+    supply_air_temp:           ['Supply Air Temp','送风温度','送風溫度','給気温度','급기 온도'],
+    supply_air_rh:             ['Supply Air RH','送风湿度','送風濕度','給気湿度','급기 습도'],
+    sat_reset_tr:              ['SAT Reset (Trim&Respond)','送风温度重置(增减响应)','送風溫度重置(增減響應)','給気温度リセット(トリム&レスポンス)','급기온도 재설정(트림&리스폰드)'],
+    dsp_reset_tr:              ['DSP Reset (Trim&Respond)','静压重置(增减响应)','靜壓重置(增減響應)','静圧リセット(トリム&レスポンス)','정압 재설정(트림&리스폰드)'],
+    deg_c_target:              ['°C target','°C 目标','°C 目標','°C 目標','°C 목표'],
+    pa_target:                 ['Pa target','Pa 目标','Pa 目標','Pa 目標','Pa 목표'],
+    time_range:                ['Time Range','时间范围','時間範圍','期間','시간 범위'],
+    custom_label:              ['Custom:','自定义:','自訂:','カスタム:','사용자 지정:'],
+    apply_btn:                 ['APPLY','应用','套用','適用','적용'],
+    minutes_ph:                ['minutes','分钟','分鐘','分','분'],
+    chart_sa_temp:             ['Supply Air Temperature (°C)','送风温度 (°C)','送風溫度 (°C)','給気温度 (°C)','급기 온도 (°C)'],
+    chart_sa_rh:               ['Supply Air Relative Humidity (%)','送风相对湿度 (%)','送風相對濕度 (%)','給気相対湿度 (%)','급기 상대습도 (%)'],
+    chart_airflow:             ['Airflow (% of design)','风量 (设计百分比)','風量 (設計百分比)','風量 (設計比 %)','풍량 (설계 %)'],
+    chart_ra_temp:             ['Return Air Temperature (°C)','回风温度 (°C)','回風溫度 (°C)','還気温度 (°C)','환기 온도 (°C)'],
+    operating_mode_timeline:   ['Operating Mode Timeline · 24h','运行模式时间轴 · 24h','運行模式時間軸 · 24h','運転モードタイムライン · 24h','운전 모드 타임라인 · 24h'],
+    occupied:                  ['Occupied','占用','佔用','在室','재실'],
+    warmup_cooldown:           ['Warmup/Cooldown','预热/预冷','預熱/預冷','暖機/冷却','예열/예냉'],
+    setback_unoccupied:        ['Setback/Unoccupied','回退/无人','回退/無人','セットバック/不在','셋백/비재실'],
+    freeze_protect:            ['Freeze-Protect','防冻保护','防凍保護','凍結防止','동결 방지'],
+    fault:                     ['Fault','故障','故障','故障','고장'],
+    vav_zones:                 ['VAV Zones','VAV 区域','VAV 區域','VAV ゾーン','VAV 구역'],
+    served_by_this_ahu:        ['Served by this AHU','由此空调机组服务','由此空調機組服務','この空調機が担当','이 공조기가 담당'],
+    zone:                      ['Zone','区域','區域','ゾーン','구역'],
+    temp:                      ['Temp','温度','溫度','温度','온도'],
+    rh:                        ['RH','湿度','濕度','湿度','습도'],
+    setpoint:                  ['Setpoint','设定点','設定點','設定値','설정값'],
+    damper:                    ['Damper','风阀','風閥','ダンパー','댐퍼'],
+    sup_temp:                  ['Sup Temp','送风温度','送風溫度','給気温度','급기 온도'],
+    airflow:                   ['Airflow','风量','風量','風量','풍량'],
+    state:                     ['State','状态','狀態','状態','상태'],
+    loading_ellipsis:          ['Loading…','加载中…','載入中…','読み込み中…','로딩 중…'],
+    band_matrix_title:         ['10-Band Strategy Matrix · Current Band','10 段策略矩阵 · 当前段','10 段策略矩陣 · 當前段','10 バンド戦略マトリクス · 現在バンド','10 밴드 전략 매트릭스 · 현재 밴드'],
+    band:                      ['Band','段','段','バンド','밴드'],
+    name:                      ['Name','名称','名稱','名称','이름'],
+    oa_temp:                   ['OA Temp','新风温度','外氣溫度','外気温度','외기 온도'],
+    oa_rh:                     ['OA RH','新风湿度','外氣濕度','外気湿度','외기 습도'],
+    sa_t_deliv:                ['SA T Deliv','送风送出温度','送風送出溫度','給気供給温度','급기 공급온도'],
+    sa_rh:                     ['SA RH','送风湿度','送風濕度','給気湿度','급기 습도'],
+    sa_w_gkg:                  ['SA W g/kg','送风含湿量 g/kg','送風含濕量 g/kg','給気絶対湿度 g/kg','급기 절대습도 g/kg'],
+    oa_damper:                 ['OA Damper','新风阀','外氣風閥','外気ダンパー','외기 댐퍼'],
+    cc_coil:                   ['CC','冷盘','冷盤','冷却コイル','냉각코일'],
+    hc_coil:                   ['HC','热盘','熱盤','加熱コイル','가열코일'],
+    hum_short:                 ['HUM','加湿','加濕','加湿','가습'],
+    control_tag:               ['Control Tag','控制标签','控制標籤','制御タグ','제어 태그'],
+    energy:                    ['Energy','能耗','能耗','エネルギー','에너지'],
+    loading_bands:             ['Loading bands…','加载段中…','載入段中…','バンド読み込み中…','밴드 로딩 중…'],
+    audit_log_title:           ['Audit Log · Setpoint & Control Changes','审计日志 · 设定点与控制变更','稽核日誌 · 設定點與控制變更','監査ログ · 設定値と制御変更','감사 로그 · 설정값 및 제어 변경'],
+    when:                      ['When','时间','時間','日時','시각'],
+    action:                    ['Action','操作','操作','操作','작업'],
+    user:                      ['User','用户','使用者','ユーザー','사용자'],
+    before_after:              ['Before → After','变更前 → 变更后','變更前 → 變更後','変更前 → 変更後','변경 전 → 변경 후'],
+    floor_plan_placement:      ['Floor-Plan Placement','平面图布置','平面圖佈置','フロアプラン配置','평면도 배치'],
+    no_vav_zones_reported:     ['No VAV zones reported for this AHU','此空调机组无 VAV 区域','此空調機組無 VAV 區域','この空調機に VAV ゾーンなし','이 공조기에 VAV 구역 없음'],
+    no_data_since_midnight:    ['No data since midnight','午夜以来无数据','午夜以來無資料','深夜以降データなし','자정 이후 데이터 없음'],
+    no_history_yet:            ['No history yet','暂无历史记录','暫無歷史記錄','履歴なし','기록 없음'],
+    ahu_not_found:             ['AHU not found','未找到空调机组','未找到空調機組','空調機が見つかりません','공조기를 찾을 수 없음'],
+    admin_signin_required:     ['admin sign-in required','需要管理员登录','需要管理員登入','管理者ログインが必要','관리자 로그인 필요']
   };
 
   /* ── Build fast lookup: key -> { en, 'zh-CN', 'zh-TW', ja, ko } ── */
@@ -414,6 +488,40 @@
     parent.appendChild(container);
     return container;
   };
+
+  /* ── Declarative applier for vanilla (non-React) pages ──
+     Tag markup with:
+       data-i18n="key"        → sets textContent
+       data-i18n-ph="key"     → sets placeholder attribute
+       data-i18n-title="key"  → sets title attribute
+       data-i18n-aria="key"   → sets aria-label attribute
+     applyI18n() runs automatically on DOMContentLoaded and on every
+     langchange, and can be called manually after injecting new DOM.
+     No-op on pages that use none of these attributes, so it is safe to
+     load alongside the React dashboard. */
+  window.applyI18n = function(root){
+    var scope = root || document;
+    var set = function(sel, fn){
+      var nodes = scope.querySelectorAll(sel);
+      for (var i=0;i<nodes.length;i++){
+        var el = nodes[i];
+        var key = el.getAttribute(sel.replace(/[\[\]]/g,''));
+        var v = window.t(key);
+        if (v && v !== key) fn(el, v);
+      }
+    };
+    set('[data-i18n]',       function(el,v){ el.textContent = v; });
+    set('[data-i18n-ph]',    function(el,v){ el.setAttribute('placeholder', v); });
+    set('[data-i18n-title]', function(el,v){ el.setAttribute('title', v); });
+    set('[data-i18n-aria]',  function(el,v){ el.setAttribute('aria-label', v); });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function(){ window.applyI18n(); });
+  } else {
+    window.applyI18n();
+  }
+  window.addEventListener('langchange', function(){ window.applyI18n(); });
 
   /* ── Set initial html lang ── */
   document.documentElement.lang = currentLang;

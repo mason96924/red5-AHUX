@@ -248,8 +248,8 @@
       "kind": "ui",
       "label": "setup.html",
       "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
-      "size": 4763,
-      "sha256": "9540b834829249983b089af85ec6585314eddc888a0825d65c21bab3005eee47",
+      "size": 5302,
+      "sha256": "6e93520d64b61ff25e91e7783460557ff0ce574144a7c12ae68ca9008a21640a",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -428,8 +428,8 @@
       "kind": "ui",
       "label": "ahu.html",
       "desc": "AHU equipment graphic (linked from dashboard.compiled.js)",
-      "size": 38349,
-      "sha256": "0ff390792ce95c59c7f94a0fde5df4ada637c25b9143cf332361b75bb4e8540b",
+      "size": 38824,
+      "sha256": "302dbfa2c840ecc0dd607adf191381b0edaf842246ef2e3ada7194b140b5e85c",
       "show_in_ui": false,
       "hot_reload": false
     },

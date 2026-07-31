@@ -87,16 +87,26 @@
   .err{padding:1rem;color:#f87171;text-align:center;font-size:11px;letter-spacing:.1em}
 
 </style>
+<!-- i18n served from /api/assets/ on this backend; relative js/i18n.js 404s
+     and left labels showing raw keys. Blocking primary + fallback loader. -->
+<script src="/api/assets/js/i18n.js?v=2026-06-20a"></script>
+<script>
+    if(!window.t){
+        var _p=['/api/assets/js/i18n.js','/assets/js/i18n.js','/js/i18n.js'];
+        (function tryNext(i){if(i>=_p.length||window.t)return;var s=document.createElement('script');s.src=_p[i];s.onerror=function(){tryNext(i+1);};document.head.appendChild(s);})(0);
+    }
+</script>
 </head>
 <body>
 
 <header>
-  <a href="/dashboard.html" class="crumb" data-testid="ahu-back-link">← FLEET</a>
+  <a href="/dashboard.html" class="crumb" data-testid="ahu-back-link">← <span data-i18n="fleet">FLEET</span></a>
   <h1 id="ahu-title" data-testid="ahu-title">AHU —</h1>
   <span class="crumb" id="ahu-zones-count"></span>
   <div class="refresh" id="refresh-badge" data-testid="ahu-refresh-badge">
-    <span class="dot"></span><span id="refresh-text">connecting…</span>
+    <span class="dot"></span><span id="refresh-text" data-i18n="connecting_ellipsis">connecting…</span>
   </div>
+  <div id="lang-mount" style="margin-left:auto"></div>
 </header>
 
 <div class="wrap">
@@ -104,45 +114,45 @@
   <!-- KPI row: mode + 3 request counters + 2 reset values -->
   <div class="row k4">
     <div class="panel kpi mode" data-testid="ahu-kpi-mode">
-      <h2>G36 Mode</h2>
+      <h2 data-i18n="g36_mode">G36 Mode</h2>
       <div class="v" id="kpi-mode">—</div>
       <div class="u" id="kpi-mode-reason">—</div>
     </div>
     <div class="panel kpi" data-testid="ahu-kpi-cooling">
-      <h2>Cooling Requests</h2>
+      <h2 data-i18n="cooling_requests">Cooling Requests</h2>
       <div class="v" id="kpi-cooling">—</div>
-      <div class="u">from VAV zones</div>
+      <div class="u" data-i18n="from_vav_zones">from VAV zones</div>
     </div>
     <div class="panel kpi" data-testid="ahu-kpi-heating">
-      <h2>Heating Requests</h2>
+      <h2 data-i18n="heating_requests">Heating Requests</h2>
       <div class="v" id="kpi-heating">—</div>
-      <div class="u">from VAV zones</div>
+      <div class="u" data-i18n="from_vav_zones">from VAV zones</div>
     </div>
     <div class="panel kpi" data-testid="ahu-kpi-pressure">
-      <h2>Pressure Requests</h2>
+      <h2 data-i18n="pressure_requests">Pressure Requests</h2>
       <div class="v" id="kpi-pressure">—</div>
-      <div class="u">duct static</div>
+      <div class="u" data-i18n="duct_static">duct static</div>
     </div>
   </div>
 
   <!-- PHASE 2 KPI ROW: Uptime / Mode-hours-today / CZ-compliance -->
   <div class="row k4">
     <div class="panel kpi" data-testid="ahu-kpi-uptime">
-      <h2>Uptime · 24h</h2>
+      <h2 data-i18n="uptime_24h">Uptime · 24h</h2>
       <div class="v" id="kpi-uptime">—</div>
-      <div class="u">non-fault mode time</div>
+      <div class="u" data-i18n="non_fault_mode_time">non-fault mode time</div>
     </div>
     <div class="panel kpi" data-testid="ahu-kpi-mode-hours">
-      <h2>Mode Hours · Today</h2>
+      <h2 data-i18n="mode_hours_today">Mode Hours · Today</h2>
       <div id="kpi-mode-hours" style="font-size:11px;line-height:1.6;color:#cbd5e1">—</div>
     </div>
     <div class="panel kpi" data-testid="ahu-kpi-cz-compliance">
-      <h2>CZ Compliance</h2>
+      <h2 data-i18n="cz_compliance">CZ Compliance</h2>
       <div class="v" id="kpi-cz">—</div>
-      <div class="u">zones inside 21–24 °C</div>
+      <div class="u" data-i18n="zones_inside_range">zones inside 21–24 °C</div>
     </div>
     <div class="panel kpi" data-testid="ahu-kpi-zone-count">
-      <h2>Zones Online</h2>
+      <h2 data-i18n="zones_online">Zones Online</h2>
       <div class="v" id="kpi-zones-online">—</div>
       <div class="u" id="kpi-zones-online-detail">—</div>
     </div>
@@ -150,15 +160,15 @@
 
   <!-- Live state strip: SA / RA / SAT-reset / DSP-reset -->
   <div class="row k4">
-    <div class="panel kpi"><h2>Supply Air Temp</h2><div class="v" id="kpi-sa-t">—</div><div class="u">°C</div></div>
-    <div class="panel kpi"><h2>Supply Air RH</h2><div class="v" id="kpi-sa-rh">—</div><div class="u">%</div></div>
-    <div class="panel kpi"><h2>SAT Reset (Trim&Respond)</h2><div class="v" id="kpi-sat-reset">—</div><div class="u">°C target</div></div>
-    <div class="panel kpi"><h2>DSP Reset (Trim&Respond)</h2><div class="v" id="kpi-dsp-reset">—</div><div class="u">Pa target</div></div>
+    <div class="panel kpi"><h2 data-i18n="supply_air_temp">Supply Air Temp</h2><div class="v" id="kpi-sa-t">—</div><div class="u">°C</div></div>
+    <div class="panel kpi"><h2 data-i18n="supply_air_rh">Supply Air RH</h2><div class="v" id="kpi-sa-rh">—</div><div class="u">%</div></div>
+    <div class="panel kpi"><h2 data-i18n="sat_reset_tr">SAT Reset (Trim&Respond)</h2><div class="v" id="kpi-sat-reset">—</div><div class="u" data-i18n="deg_c_target">°C target</div></div>
+    <div class="panel kpi"><h2 data-i18n="dsp_reset_tr">DSP Reset (Trim&Respond)</h2><div class="v" id="kpi-dsp-reset">—</div><div class="u" data-i18n="pa_target">Pa target</div></div>
   </div>
 
   <!-- Time-range picker -->
   <div class="panel">
-    <h2>Time Range</h2>
+    <h2 data-i18n="time_range">Time Range</h2>
     <div class="picker">
       <button data-window="60"    data-testid="ahu-range-1h">1H</button>
       <button data-window="360"   data-testid="ahu-range-6h">6H</button>
@@ -166,8 +176,8 @@
       <button data-window="10080" data-testid="ahu-range-7d">7D</button>
       <button data-window="43200" data-testid="ahu-range-30d">30D</button>
       <div class="custom">
-        Custom: <input type="number" id="custom-min" min="15" max="43200" placeholder="minutes">
-        <button id="custom-apply" data-testid="ahu-range-custom-apply">APPLY</button>
+        <span data-i18n="custom_label">Custom:</span> <input type="number" id="custom-min" min="15" max="43200" placeholder="minutes" data-i18n-ph="minutes_ph">
+        <button id="custom-apply" data-testid="ahu-range-custom-apply" data-i18n="apply_btn">APPLY</button>
       </div>
     </div>
   </div>
@@ -175,90 +185,90 @@
   <!-- 3 trend charts: SA temp, SA RH, airflow -->
   <div class="row k2">
     <div class="panel">
-      <div class="chart-title"><span>Supply Air Temperature (°C)</span><span><span class="min" id="ch1-min"></span> · <span class="max" id="ch1-max"></span></span></div>
+      <div class="chart-title"><span data-i18n="chart_sa_temp">Supply Air Temperature (°C)</span><span><span class="min" id="ch1-min"></span> · <span class="max" id="ch1-max"></span></span></div>
       <div class="chart-wrap" data-testid="ahu-chart-sa-temp"><svg id="ch1" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
     </div>
     <div class="panel">
-      <div class="chart-title"><span>Supply Air Relative Humidity (%)</span><span><span class="min" id="ch2-min"></span> · <span class="max" id="ch2-max"></span></span></div>
+      <div class="chart-title"><span data-i18n="chart_sa_rh">Supply Air Relative Humidity (%)</span><span><span class="min" id="ch2-min"></span> · <span class="max" id="ch2-max"></span></span></div>
       <div class="chart-wrap" data-testid="ahu-chart-sa-rh"><svg id="ch2" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
     </div>
   </div>
   <div class="row k2">
     <div class="panel">
-      <div class="chart-title"><span>Airflow (% of design)</span><span><span class="min" id="ch3-min"></span> · <span class="max" id="ch3-max"></span></span></div>
+      <div class="chart-title"><span data-i18n="chart_airflow">Airflow (% of design)</span><span><span class="min" id="ch3-min"></span> · <span class="max" id="ch3-max"></span></span></div>
       <div class="chart-wrap" data-testid="ahu-chart-airflow"><svg id="ch3" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
     </div>
     <div class="panel">
-      <div class="chart-title"><span>Return Air Temperature (°C)</span><span><span class="min" id="ch4-min"></span> · <span class="max" id="ch4-max"></span></span></div>
+      <div class="chart-title"><span data-i18n="chart_ra_temp">Return Air Temperature (°C)</span><span><span class="min" id="ch4-min"></span> · <span class="max" id="ch4-max"></span></span></div>
       <div class="chart-wrap" data-testid="ahu-chart-ra-temp"><svg id="ch4" viewBox="0 0 600 140" preserveAspectRatio="none"></svg></div>
     </div>
   </div>
 
   <!-- G36 Mode Timeline ribbon -->
   <div class="panel">
-    <h2>Operating Mode Timeline · 24h</h2>
+    <h2 data-i18n="operating_mode_timeline">Operating Mode Timeline · 24h</h2>
     <div class="ribbon" id="mode-ribbon" data-testid="ahu-mode-ribbon"></div>
     <div class="legend">
-      <span><i style="background:#34d399"></i>Occupied</span>
-      <span><i style="background:#fbbf24"></i>Warmup/Cooldown</span>
-      <span><i style="background:#94a3b8"></i>Setback/Unoccupied</span>
-      <span><i style="background:#60a5fa"></i>Freeze-Protect</span>
-      <span><i style="background:#f87171"></i>Fault</span>
+      <span><i style="background:#34d399"></i><span data-i18n="occupied">Occupied</span></span>
+      <span><i style="background:#fbbf24"></i><span data-i18n="warmup_cooldown">Warmup/Cooldown</span></span>
+      <span><i style="background:#94a3b8"></i><span data-i18n="setback_unoccupied">Setback/Unoccupied</span></span>
+      <span><i style="background:#60a5fa"></i><span data-i18n="freeze_protect">Freeze-Protect</span></span>
+      <span><i style="background:#f87171"></i><span data-i18n="fault">Fault</span></span>
     </div>
   </div>
 
   <!-- VAV / zones breakdown table -->
   <div class="panel">
-    <h2>VAV Zones · <span id="zone-count" style="color:#64748b">—</span> Served by this AHU</h2>
+    <h2><span data-i18n="vav_zones">VAV Zones</span> · <span id="zone-count" style="color:#64748b">—</span> <span data-i18n="served_by_this_ahu">Served by this AHU</span></h2>
     <table data-testid="ahu-zones-table">
       <thead>
         <tr>
-          <th>Zone</th>
-          <th>Temp</th><th>RH</th><th>Setpoint</th>
-          <th>Damper</th><th>Sup Temp</th><th>Airflow</th>
-          <th>State</th>
+          <th data-i18n="zone">Zone</th>
+          <th data-i18n="temp">Temp</th><th data-i18n="rh">RH</th><th data-i18n="setpoint">Setpoint</th>
+          <th data-i18n="damper">Damper</th><th data-i18n="sup_temp">Sup Temp</th><th data-i18n="airflow">Airflow</th>
+          <th data-i18n="state">State</th>
         </tr>
       </thead>
-      <tbody id="zone-tbody"><tr><td colspan="8" class="loading">Loading…</td></tr></tbody>
+      <tbody id="zone-tbody"><tr><td colspan="8" class="loading" data-i18n="loading_ellipsis">Loading…</td></tr></tbody>
     </table>
   </div>
 
   <!-- PHASE 3a: 10-band CSV table with the current operating band highlighted -->
   <div class="panel">
-    <h2>10-Band Strategy Matrix · Current Band <span id="band-current-id" style="color:#fbbf24">—</span></h2>
+    <h2><span data-i18n="band_matrix_title">10-Band Strategy Matrix · Current Band</span> <span id="band-current-id" style="color:#fbbf24">—</span></h2>
     <div style="overflow-x:auto">
       <table data-testid="ahu-band-table">
         <thead>
           <tr>
-            <th>Band</th><th>Name</th>
-            <th>OA Temp</th><th>OA RH</th>
-            <th>SA T Deliv</th><th>SA RH</th><th>SA W g/kg</th>
-            <th>OA Damper</th><th>CC</th><th>HC</th><th>HUM</th>
-            <th>Control Tag</th><th>Energy</th>
+            <th data-i18n="band">Band</th><th data-i18n="name">Name</th>
+            <th data-i18n="oa_temp">OA Temp</th><th data-i18n="oa_rh">OA RH</th>
+            <th data-i18n="sa_t_deliv">SA T Deliv</th><th data-i18n="sa_rh">SA RH</th><th data-i18n="sa_w_gkg">SA W g/kg</th>
+            <th data-i18n="oa_damper">OA Damper</th><th data-i18n="cc_coil">CC</th><th data-i18n="hc_coil">HC</th><th data-i18n="hum_short">HUM</th>
+            <th data-i18n="control_tag">Control Tag</th><th data-i18n="energy">Energy</th>
           </tr>
         </thead>
-        <tbody id="band-tbody"><tr><td colspan="13" class="loading">Loading bands…</td></tr></tbody>
+        <tbody id="band-tbody"><tr><td colspan="13" class="loading" data-i18n="loading_bands">Loading bands…</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <!-- PHASE 2: Audit log of recent setpoint changes -->
   <div class="panel">
-    <h2>Audit Log · Setpoint &amp; Control Changes <span id="audit-status" style="color:#64748b;font-weight:normal;font-size:9px;letter-spacing:.15em">—</span></h2>
+    <h2><span data-i18n="audit_log_title">Audit Log · Setpoint &amp; Control Changes</span> <span id="audit-status" style="color:#64748b;font-weight:normal;font-size:9px;letter-spacing:.15em">—</span></h2>
     <table data-testid="ahu-audit-table">
       <thead>
         <tr>
-          <th>When</th><th>Action</th><th>User</th><th>Before → After</th>
+          <th data-i18n="when">When</th><th data-i18n="action">Action</th><th data-i18n="user">User</th><th data-i18n="before_after">Before → After</th>
         </tr>
       </thead>
-      <tbody id="audit-tbody"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody>
+      <tbody id="audit-tbody"><tr><td colspan="4" class="loading" data-i18n="loading_ellipsis">Loading…</td></tr></tbody>
     </table>
   </div>
 
   <!-- PHASE 3b: Equipment-mapper placement preview (hidden by default; revealed
        only when a real marker exists in map-config for this AHU) -->
   <div class="panel" id="mapper-panel" data-testid="ahu-mapper-panel" style="display:none">
-    <h2>Floor-Plan Placement</h2>
+    <h2 data-i18n="floor_plan_placement">Floor-Plan Placement</h2>
     <div id="mapper-preview" data-testid="ahu-mapper-preview" style="background:#0b0f1a;border:1px solid #1e293b;border-radius:4px;min-height:120px;padding:1rem;color:#64748b;font-size:11px;text-align:center"></div>
   </div>
 
@@ -276,6 +286,12 @@
   }
   $('ahu-title').textContent = 'AHU ' + ahuId;
   document.title = ahuId + ' · Performance';
+
+  // Language selector (vanilla) — mounts into the header; applyI18n()
+  // in i18n.js re-translates all [data-i18n] nodes on langchange.
+  if (window.createLangSelector) {
+    try { window.createLangSelector($('lang-mount')); } catch(e){}
+  }
 
   var windowMin = 1440;          // default 24h
   var stepS     = 60;            // recompute below based on windowMin

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASHRAE 55 / 62.1 / 90.1 / Guideline 36 — one chart to satisfy them all</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#475569; --faint:#64748b;
+    --line:#e2e8f0; --accent:#1d4ed8; --accent-soft:#eff6ff;
+    --ok:#047857; --ok-soft:#ecfdf5; --warn:#b45309; --warn-soft:#fffbeb;
+    --card:#ffffff; --page:#f8fafc;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); background:var(--page); line-height:1.5;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .sheet{max-width:940px;margin:24px auto;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:36px 40px;}
+  h1{font-size:25px;line-height:1.2;margin:0 0 6px}
+  .tagline{color:var(--muted);font-size:14px;margin:0 0 16px;max-width:78ch}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:0 0 24px}
+  .stat{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:#fff}
+  .stat .v{font-size:24px;font-weight:700;letter-spacing:-.01em;color:var(--accent)}
+  .stat .l{font-size:11px;color:var(--faint);margin-top:4px;line-height:1.35}
+  hr{border:none;border-top:1px solid var(--line);margin:22px 0}
+  h2{font-size:16px;margin:24px 0 10px}
+  p{margin:0 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin:2px 0 8px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);background:#f8fafc}
+  td.k{font-weight:600;white-space:nowrap}
+  tbody tr:nth-child(even){background:#fafcff}
+  .satisfy td.k{width:130px;color:var(--ink)}
+  .satisfy tr td:last-child{color:var(--muted)}
+  .callout{border-radius:10px;padding:14px 18px;margin:20px 0;border:1px solid var(--line)}
+  .callout.warn{background:var(--warn-soft);border-color:#fde68a}
+  .callout.warn .t{color:var(--warn)}
+  .callout.ok{background:var(--ok-soft);border-color:#a7f3d0}
+  .callout.ok .t{color:var(--ok)}
+  .callout .t{font-weight:700;font-size:13px;margin-bottom:4px}
+  .callout p{font-size:13px;margin:0;color:#334155}
+  .pillrow{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px}
+  .pill{font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);
+    border-radius:999px;padding:3px 10px;background:#fff}
+  .note{font-size:11.5px;color:var(--faint);font-style:italic;margin:2px 0 6px}
+  .foot{font-size:11px;color:var(--faint);margin-top:22px}
+  @media print{
+    body{background:#fff}
+    .sheet{border:none;margin:0;max-width:none;padding:0 8mm;border-radius:0}
+    table,.stat,.callout{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <h1>ASHRAE 55 · 62.1 · 90.1 · Guideline 36 — one chart to satisfy them all</h1>
+  <p class="tagline">Four rulebooks pull in different directions: comfort and fresh air want more conditioning, energy wants less, and Guideline 36 is the control logic that referees the trade-off. The psychrometric chart is the one picture where all four live on the same axes — so a single plotted operating point can be judged against every requirement at once.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="v">55</div><div class="l">Comfort zone drawn on the chart</div></div>
+    <div class="stat"><div class="v">62.1</div><div class="l">Fresh-air (OA) mixing line</div></div>
+    <div class="stat"><div class="v">90.1</div><div class="l">Enthalpy → free-cooling path</div></div>
+    <div class="stat"><div class="v">G36</div><div class="l">Sequences that referee it all</div></div>
+  </div>
+
+  <hr>
+
+  <h2>What each one is (in one line)</h2>
+  <table>
+    <thead><tr><th>Standard</th><th>Nickname</th><th>Governs</th><th>The core question it answers</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ASHRAE 55</td><td>Comfort</td><td>Thermal comfort</td><td>Will people <b>feel</b> comfortable?</td></tr>
+      <tr><td class="k">ASHRAE 62.1</td><td>Fresh air</td><td>Ventilation / indoor air quality</td><td>Is there enough <b>outside air</b> to keep air healthy?</td></tr>
+      <tr><td class="k">ASHRAE 90.1</td><td>Energy</td><td>Energy efficiency</td><td>Are we doing it <b>without wasting energy</b>?</td></tr>
+      <tr><td class="k">Guideline 36</td><td>Controls</td><td>Sequences of operation</td><td><b>How</b> do we run the equipment to hit all three?</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Core differences</h2>
+  <table>
+    <thead><tr><th></th><th>ASHRAE 55</th><th>ASHRAE 62.1</th><th>ASHRAE 90.1</th><th>Guideline 36</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Type</td><td>Standard (comfort)</td><td>Standard (health)</td><td>Standard (energy)</td><td>Guideline (best-practice)</td></tr>
+      <tr><td class="k">Primary variables</td><td>Temp, humidity, air speed, radiant, clothing, activity</td><td>Outdoor-air flow (cfm/person + cfm/ft²), CO₂ proxy</td><td>kW, COP, fan power, economizer, setpoint resets</td><td>All of the above, orchestrated</td></tr>
+      <tr><td class="k">Output</td><td>A comfort zone (T + humidity band)</td><td>A required minimum OA quantity</td><td>Energy budgets + mandatory efficiency features</td><td>Written control logic (the sequences)</td></tr>
+      <tr><td class="k">Enforced by</td><td>Design intent / occupant surveys</td><td>Code (mandatory most jurisdictions)</td><td>Building energy code</td><td>Voluntary — de-facto spec for good DDC</td></tr>
+      <tr><td class="k">Tension it creates</td><td>Wants tight T/RH → costs energy</td><td>Wants more OA → costs energy</td><td>Wants less energy → fights the other two</td><td>Referees the trade-off</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <div class="t">The key tension</div>
+    <p>55 and 62.1 pull toward <b>more</b> conditioning and ventilation; 90.1 pulls toward <b>less</b> energy. Guideline 36 is the rulebook that reconciles them — economizer changeover, demand-controlled ventilation, supply-air-temp and duct-static resets, trim-and-respond.</p>
+  </div>
+
+  <hr>
+
+  <h2>How the Psy-chart approach satisfies all four</h2>
+  <div class="pillrow"><span class="pill">one decision surface</span><span class="pill">T × humidity / enthalpy</span></div>
+  <p class="note">All four standards share the same axes — dry-bulb temperature × humidity/enthalpy — so one plotted point answers all four questions simultaneously.</p>
+  <table class="satisfy">
+    <thead><tr><th>Standard</th><th>What the Psy-chart shows / does</th></tr></thead>
+    <tbody>
+      <tr><td class="k">55 — Comfort</td><td>The comfort zone is drawn directly on the chart. Plot the room condition → instantly see if you're inside the acceptable T/RH band, and which way you're off (too humid, too cold).</td></tr>
+      <tr><td class="k">62.1 — Ventilation</td><td>The mixed-air point sits on the line between return and outdoor air; its position = the OA fraction. The chart makes the actual OA ratio visible, and CO₂/DCV overlays confirm the minimum fresh-air quantity.</td></tr>
+      <tr><td class="k">90.1 — Energy</td><td>Enthalpy lines reveal free cooling: when OA enthalpy is below return, the economizer meets the load with zero mechanical cooling. The shortest path from mixed-air to supply-air point = least energy.</td></tr>
+      <tr><td class="k">G36 — Sequences</td><td>The chart is visual proof the sequences (economizer changeover, SAT reset, DCV, dehumidification staging) land the operating point inside the 55 comfort zone, on the 62.1 OA line, hugging the 90.1 low-enthalpy path.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout ok">
+    <div class="t">In one sentence</div>
+    <p>The psychrometric chart turns four separate rulebooks into a single decision surface — plot where the air <b>is</b>, see where it <b>must be</b> (comfort zone), how it gets there (mixing &amp; coil process lines), and whether it does so at minimum energy (enthalpy) — which is exactly the judgment Guideline 36 automates in software.</p>
+  </div>
+
+  <p class="foot">Companion to the AHU Psychrometric Diagnostic HUB (Red5-Plus edge app): live OA/MA/SA/RA + VAV plotting, Guideline 36-style mode timeline, B1–B10 climate-band supply-air reset. Print to PDF for distribution.</p>
+
+</div>
+</body>
+</html>

@@ -212,7 +212,12 @@ $('loginBtn').onclick = async () => {
       return;
     }
     msg(d.password_was_set ? 'Password set — you are signed in.' : 'Signed in.', 'ok');
-    await refreshWhoami();
+    // Render the signed-in view straight from the login response instead of a
+    // second cookie-dependent /whoami call, so the session card (Open Floor /
+    // Go to Settings) still appears when the cookie can't be stored — e.g.
+    // inside a cross-site iframe served over http (enteliViz / command-center).
+    ROLE = d.role || 'viewer'; USER = d.username || '';
+    render();
   } else {
     msg(d.error === 'invalid credentials'
       ? 'Invalid username or password. Contact your administrator if you need an account.'

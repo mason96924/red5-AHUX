@@ -223,6 +223,22 @@ def _cookie_secure() -> bool:
     return os.environ.get("COOKIE_SECURE", "true").lower() in ("1", "true", "yes")
 
 
+def _partition_cookie(response: Response, name: str) -> None:
+    """Append the CHIPS `Partitioned` attribute to `name`'s Set-Cookie header so
+    the session cookie is accepted when the login page is embedded in a
+    cross-site iframe (enteliViz / command-center). Done at the header level so
+    it works regardless of the installed Starlette version. Only added when the
+    cookie is already `Secure`, since `Partitioned` without `Secure` is invalid."""
+    pfx = (name + "=").encode("latin-1")
+    hdrs = response.raw_headers
+    for i, (k, v) in enumerate(hdrs):
+        if k == b"set-cookie" and v.startswith(pfx):
+            lv = v.lower()
+            if b"secure" in lv and b"partitioned" not in lv:
+                hdrs[i] = (k, v + b"; Partitioned")
+            break
+
+
 def _set_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         key=COOKIE_NAME,
@@ -230,9 +246,10 @@ def _set_cookie(response: Response, token: str) -> None:
         max_age=TOKEN_TTL,
         path="/",
         httponly=True,
-        samesite="lax",
+        samesite="none",
         secure=_cookie_secure(),
     )
+    _partition_cookie(response, COOKIE_NAME)
 
 
 def clear_studio_cookie(response: Response) -> None:

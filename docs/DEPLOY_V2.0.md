@@ -253,7 +253,7 @@ If `/api/auth/login` returns 401 → your `.env` ADMIN_PASSWORD_HASH does not ma
 
 ### 6.1 Create the unit file
 ```bash
-sudo nano /etc/systemd/system/red5-backend.service
+sudo nano /etc/systemd/system/red5-ahu.service
 ```
 Paste:
 ```ini
@@ -295,21 +295,21 @@ Key points:
 ### 6.2 Enable + start
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable red5-backend.service
-sudo systemctl start red5-backend.service
+sudo systemctl enable red5-ahu.service
+sudo systemctl start red5-ahu.service
 ```
 
 ### 6.3 Verify
 ```bash
-sudo systemctl status red5-backend.service           # active (running), no failures
-sudo journalctl -u red5-backend.service -n 30 --no-pager
+sudo systemctl status red5-ahu.service           # active (running), no failures
+sudo journalctl -u red5-ahu.service -n 30 --no-pager
 curl -s http://127.0.0.1:8001/api/health             # same JSON as Phase 5
 ```
 
 **CHECKPOINT 6**:
 ```bash
-sudo systemctl is-active red5-backend.service        # active
-sudo systemctl is-enabled red5-backend.service       # enabled
+sudo systemctl is-active red5-ahu.service        # active
+sudo systemctl is-enabled red5-ahu.service       # enabled
 # Reboot test (one-time): sudo reboot, then SSH back and re-run is-active.
 ```
 
@@ -420,7 +420,7 @@ sudo systemctl list-timers | grep certbot
 Update `FRONTEND_ORIGIN` in `.env` if it was `http://...` placeholder earlier:
 ```bash
 sudo -u newborn sed -i 's|^FRONTEND_ORIGIN=.*|FRONTEND_ORIGIN=https://your-domain.example.com|' /home/red5-studio/backend/.env
-sudo systemctl restart red5-backend.service
+sudo systemctl restart red5-ahu.service
 ```
 
 ---
@@ -431,12 +431,12 @@ In a browser, open `https://your-domain.example.com/dashboard.html` and run thro
 
 | Test | Expected | If fails |
 |---|---|---|
-| Page loads, no console errors | Dashboard renders | Check `journalctl -u red5-backend -f` + browser devtools |
+| Page loads, no console errors | Dashboard renders | Check `journalctl -u red5-ahu -f` + browser devtools |
 | Login as `seeker0829@gmail.com` | Top-right shows your email, not "GUEST" | Phase 4 hash or Phase 7 `FRONTEND_ORIGIN` mismatch |
 | 3D WX tab → 11 preset buttons visible | All 11 cities in preset row | Frontend not re-uploaded — re-run Phase 2.2 |
 | Save a custom location | Reappears in dropdown after refresh | Check Mongo: `mongosh red5_v2_prod --eval 'db.tenant_locations.find().pretty()'` |
 | Monthly × Sites Comparison toggle | Chart renders saved + presets | Check `/api/weather-history` reachability |
-| Reboot the server: `sudo reboot` | Dashboard reachable within ~60s of boot | `systemctl status` on red5-backend + mongod + nginx |
+| Reboot the server: `sudo reboot` | Dashboard reachable within ~60s of boot | `systemctl status` on red5-ahu + mongod + nginx |
 
 **CHECKPOINT 8**: All 6 tests pass.
 
@@ -446,8 +446,8 @@ In a browser, open `https://your-domain.example.com/dashboard.html` and run thro
 
 ### Stop the service
 ```bash
-sudo systemctl stop red5-backend.service
-sudo systemctl disable red5-backend.service       # don't start on next boot
+sudo systemctl stop red5-ahu.service
+sudo systemctl disable red5-ahu.service       # don't start on next boot
 ```
 
 ### Roll the backend back to a previous version
@@ -457,10 +457,10 @@ sudo -u newborn cp -r /home/red5-studio/backend /home/red5-studio/backend.$(date
 ```
 Restore:
 ```bash
-sudo systemctl stop red5-backend.service
+sudo systemctl stop red5-ahu.service
 sudo -u newborn rm -rf /home/red5-studio/backend
 sudo -u newborn mv /home/red5-studio/backend.20260525-1430 /home/red5-studio/backend
-sudo systemctl start red5-backend.service
+sudo systemctl start red5-ahu.service
 ```
 
 ### Snapshot + restore MongoDB
@@ -479,7 +479,7 @@ mongorestore --uri "mongodb://localhost:27017" --drop \
 
 ### Tail logs while debugging
 ```bash
-sudo journalctl -u red5-backend.service -f          # systemd stdout
+sudo journalctl -u red5-ahu.service -f          # systemd stdout
 tail -f /home/red5-studio/logs/backend.err.log      # python tracebacks
 tail -f /var/log/nginx/access.log                   # request log
 tail -f /var/log/nginx/error.log                    # nginx errors
@@ -496,10 +496,10 @@ tail -f /var/log/nginx/error.log                    # nginx errors
    `FRONTEND_ORIGIN` in `.env` does not exactly match the origin in your browser address bar. Must include `https://` and no trailing slash.
 
 3. **`502 Bad Gateway` from nginx**
-   Backend is not running, or is on a different port than `127.0.0.1:8001`. Check `systemctl status red5-backend`.
+   Backend is not running, or is on a different port than `127.0.0.1:8001`. Check `systemctl status red5-ahu`.
 
 4. **`410 Gone` or `connection refused` after reboot**
-   `mongod` came up slower than the backend. The `Requires=mongod.service` in our unit handles this, but if you see it: `sudo systemctl restart red5-backend`.
+   `mongod` came up slower than the backend. The `Requires=mongod.service` in our unit handles this, but if you see it: `sudo systemctl restart red5-ahu`.
 
 5. **Frontend file changes don't show up after re-upload**
    Browsers cache hard. Hard-refresh (Cmd-Shift-R or Ctrl-F5) once, or bump a query string on the script tag in `dashboard.html`.
@@ -514,7 +514,7 @@ tail -f /var/log/nginx/error.log                    # nginx errors
 - **Backups**: cron a nightly `mongodump` to an off-box location (S3, another server).
 - **Firewall**: `sudo ufw allow OpenSSH && sudo ufw allow 'Nginx Full' && sudo ufw enable`.
 - **Fail2ban** on `/api/auth/login` — the brute-force protection is in-app, but fail2ban on the nginx access log adds a second layer.
-- **Log rotation**: `/etc/logrotate.d/red5-backend` for the files in `/home/red5-studio/logs/`.
+- **Log rotation**: `/etc/logrotate.d/red5-ahu` for the files in `/home/red5-studio/logs/`.
 - **MongoDB auth**: switch from `mongodb://localhost:27017` (anonymous) to a user-restricted role once you're past the "just make it work" phase.
 
 ---

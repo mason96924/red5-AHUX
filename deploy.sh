@@ -21,12 +21,12 @@
 #   [4] mirror any stand-alone static files that CRA might not pick up
 #       (defensive rsync; safe because yarn build already produced a complete
 #       build/ tree).  Excludes index.html so the React build is preserved.
-#   [5] restart red5-backend.service
+#   [5] restart red5-ahu.service
 #   [6] reload nginx
 #   [7] print served-file fingerprint so health is visible at a glance
 #
 # Usage (absolute path; safe from any cwd):
-#       ~/red5-studio/deploy.sh
+#       ~/red5-ahu/deploy.sh      (new consistent name; ~/red5-studio still works)
 #
 # Override via env vars if your layout differs:
 #       REPO_DIR=/srv/red5 NGINX_ROOT=/var/www/red5 ./deploy.sh
@@ -35,11 +35,19 @@
 set -euo pipefail
 
 # --- config -----------------------------------------------------------------
-REPO_DIR="${REPO_DIR:-$HOME/red5-studio}"
+# Repo dir: prefer the new consistent name (red5-ahu); fall back to the
+# historical red5-studio clone so this keeps working before/after the rename.
+if [ -n "${REPO_DIR:-}" ]; then
+    :                                   # explicit override wins
+elif [ -d "$HOME/red5-ahu" ]; then
+    REPO_DIR="$HOME/red5-ahu"
+else
+    REPO_DIR="$HOME/red5-studio"
+fi
 FRONTEND_DIR="${FRONTEND_DIR:-$REPO_DIR/frontend}"
 NGINX_ROOT="${NGINX_ROOT:-$( (grep -E '^\s*root\s' /etc/nginx/sites-available/red5 2>/dev/null || true) \
                           | head -1 | awk '{print $2}' | tr -d ';')}"
-BACKEND_SVC="${BACKEND_SVC:-red5-backend}"
+BACKEND_SVC="${BACKEND_SVC:-red5-ahu}"
 
 # --- pretty output ----------------------------------------------------------
 bold()   { printf '\033[1m%s\033[0m\n' "$*"; }

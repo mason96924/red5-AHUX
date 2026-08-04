@@ -32,7 +32,7 @@ the manual rsync/restart dance and run the bundled deploy script instead:
 
 It runs the full sequence: `git pull --ff-only` → rsync `frontend/public/`
 into nginx's actual root (auto-detected from `/etc/nginx/sites-available/red5`)
-→ restart `red5-backend.service` → reload nginx → print the served
+→ restart `red5-ahu.service` → reload nginx → print the served
 `setup.html` fingerprint so you can confirm the cache-busting hash made it
 through.  Safe to re-run; no `--delete` flag (so CRA's `build/static/` is
 preserved).
@@ -180,9 +180,9 @@ grep -c "js/dashboard/" /home/red5-studio/frontend/dashboard.html
 ## Phase 4 — Restart the backend
 
 ```bash
-sudo systemctl restart red5-backend.service
-sudo systemctl status  red5-backend.service        # active (running)
-sudo journalctl -u red5-backend.service -n 50 --no-pager
+sudo systemctl restart red5-ahu.service
+sudo systemctl status  red5-ahu.service        # active (running)
+sudo journalctl -u red5-ahu.service -n 50 --no-pager
 ```
 
 Watch the journal for `Application startup complete.` — that's your green
@@ -221,11 +221,11 @@ Any single 404 on `/js/dashboard/*.js` means Phase 3 missed that file — rsync 
 ```bash
 TS=20260525-1430     # the timestamp you wrote down in Phase 0
 
-sudo systemctl stop red5-backend.service
+sudo systemctl stop red5-ahu.service
 sudo -u newborn rm -rf /home/red5-studio/backend  /home/red5-studio/frontend
 sudo -u newborn mv /home/red5-studio/backend.$TS  /home/red5-studio/backend
 sudo -u newborn mv /home/red5-studio/frontend.$TS /home/red5-studio/frontend
-sudo systemctl start red5-backend.service
+sudo systemctl start red5-ahu.service
 
 # Mongo (only if you suspect data drift — unlikely, schema didn't change)
 mongorestore --uri "mongodb://localhost:27017" --drop \

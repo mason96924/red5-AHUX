@@ -208,7 +208,7 @@ print('Password matches hash:', ok)
 ## Part 8 — Run uvicorn as a background service (systemd)
 
 ```bash
-sudo tee /etc/systemd/system/red5-backend.service > /dev/null << EOF
+sudo tee /etc/systemd/system/red5-ahu.service > /dev/null << EOF
 [Unit]
 Description=Red5 Studio FastAPI Backend
 After=network.target mongod.service
@@ -229,9 +229,9 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now red5-backend
-sudo systemctl status red5-backend
-sudo journalctl -u red5-backend -f       # live logs (Ctrl+C to exit)
+sudo systemctl enable --now red5-ahu
+sudo systemctl status red5-ahu
+sudo journalctl -u red5-ahu -f       # live logs (Ctrl+C to exit)
 ```
 
 It now auto-starts on every boot, **after** MongoDB is ready.
@@ -328,7 +328,7 @@ asyncio.run(go())
 | `bcrypt.checkpw` returns False even with correct password | The `$` signs in the hash were shell-interpolated. Wrap the hash in **single quotes** when pasting into `.env` (no quotes at all is also fine since `.env` is literal). |
 | CORS errors in browser console | Add the exact origin to `FRONTEND_ORIGIN` (e.g. `http://localhost:8080`, not `http://localhost`). Multiple comma-separated. |
 | Login succeeds but `/api/auth/me` returns 401 next request | Cookie wasn't stored. Check that front-end and backend share the **same scheme** (both http or both https) and ideally the **same domain** (use the reverse-proxy setup in Part 9). |
-| Telemetry doesn't update on `/dashboard.html` | The dashboard polls every 3s — wait at least 5s after sign-in. If still empty, `journalctl -u red5-backend -n 50` to see backend errors. |
+| Telemetry doesn't update on `/dashboard.html` | The dashboard polls every 3s — wait at least 5s after sign-in. If still empty, `journalctl -u red5-ahu -n 50` to see backend errors. |
 | Port 8001 already in use | `sudo lsof -i :8001` then `kill -9 <PID>`, or change the port in the systemd unit + the front-end `.env`. |
 | MongoDB consumes too much RAM | Edit `/etc/mongod.conf` → `storage.wiredTiger.engineConfig.cacheSizeGB: 1` then `sudo systemctl restart mongod`. |
 
@@ -362,7 +362,7 @@ If you plan to expose this to the internet (not just localhost):
 
 ```bash
 sudo systemctl status mongod         # ✓ active (running)
-sudo systemctl status red5-backend   # ✓ active (running)
+sudo systemctl status red5-ahu   # ✓ active (running)
 sudo systemctl status caddy          # ✓ active (running) [if you use Caddy]
 curl -s http://localhost:8001/api/version | head -c 200
 curl -s http://localhost:8080/learn.html | head -c 200

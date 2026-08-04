@@ -207,15 +207,26 @@ $('loginBtn').onclick = async () => {
   const d = await r.json();
   if (d.ok) {
     $('p').value='';
-    if (d.role === 'editor') {
+    // Editors always advance to Settings. When embedded in an iframe
+    // (enteliViz / command-center) admins do too, and any other signed-in role
+    // goes straight to the live Dashboard — mirroring landing.html. This is what
+    // lets a cross-site iframe served over http advance after login: the browser
+    // drops the session cookie there, so we navigate on the login *response*
+    // instead of waiting on a cookie-dependent /whoami. Direct (top-level)
+    // browser use keeps the account / user-management view below.
+    let embedded = false;
+    try { embedded = (window.self !== window.top); } catch (e) { embedded = true; }
+    if (d.role === 'editor' || (embedded && d.role === 'admin')) {
       window.location.href = '/setup.html?force=1';
       return;
     }
+    if (embedded) {
+      window.location.href = '/dashboard.html';
+      return;
+    }
     msg(d.password_was_set ? 'Password set — you are signed in.' : 'Signed in.', 'ok');
-    // Render the signed-in view straight from the login response instead of a
-    // second cookie-dependent /whoami call, so the session card (Open Floor /
-    // Go to Settings) still appears when the cookie can't be stored — e.g.
-    // inside a cross-site iframe served over http (enteliViz / command-center).
+    // Direct browser use: render the account view straight from the login
+    // response instead of a second cookie-dependent /whoami call.
     ROLE = d.role || 'viewer'; USER = d.username || '';
     render();
   } else {

@@ -246,10 +246,9 @@ def _set_cookie(response: Response, token: str) -> None:
         max_age=TOKEN_TTL,
         path="/",
         httponly=True,
-        samesite="none",
+        samesite="lax",
         secure=_cookie_secure(),
     )
-    _partition_cookie(response, COOKIE_NAME)
 
 
 def clear_studio_cookie(response: Response) -> None:

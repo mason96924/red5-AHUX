@@ -230,16 +230,9 @@ async def password_login(payload: PasswordLoginRequest,
         max_age=int(SESSION_LIFETIME.total_seconds()),
         httponly=True,
         secure=True,
-        samesite="none",
+        samesite="lax",
         path="/",
     )
-    # CHIPS `Partitioned` so the cookie is accepted inside cross-site iframes
-    # (enteliViz / command-center). Header-level = Starlette-version-proof.
-    _pfx = (COOKIE_NAME + "=").encode("latin-1")
-    for _i, (_k, _v) in enumerate(response.raw_headers):
-        if _k == b"set-cookie" and _v.startswith(_pfx) and b"secure" in _v.lower() and b"partitioned" not in _v.lower():
-            response.raw_headers[_i] = (_k, _v + b"; Partitioned")
-            break
 
     # Tenant seed -- mirror the OAuth path so the rest of the app
     # (tenant_*, allowlist) just works.  Late-imported to avoid cycle.

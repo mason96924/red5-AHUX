@@ -207,26 +207,16 @@ $('loginBtn').onclick = async () => {
   const d = await r.json();
   if (d.ok) {
     $('p').value='';
-    // Embedded in an iframe (enteliViz / command-center monitoring wall):
-    // go straight to the live Dashboard. It renders view-only even without
-    // the session cookie (which a cross-site iframe drops), so login always
-    // advances on the login *response* rather than waiting on a cookie-
-    // dependent /whoami. We deliberately do NOT land on the Setup Walk here —
-    // that config page is the wrong destination for a monitoring wall.
-    let embedded = false;
-    try { embedded = (window.self !== window.top); } catch (e) { embedded = true; }
-    if (embedded) {
-      window.location.href = '/dashboard.html';
-      return;
-    }
-    // Direct (top-level) browser use keeps the original behavior.
+    // Editors go to Setup. Admins stay here on the account/management card
+    // (users + enforcement). The card is rendered from the login *response*
+    // instead of a second cookie-dependent /whoami call, so it appears even
+    // inside a cross-site iframe (enteliViz / command-center). For a hands-off
+    // monitoring wall, point the iframe directly at /dashboard.html (no login).
     if (d.role === 'editor') {
       window.location.href = '/setup.html?force=1';
       return;
     }
     msg(d.password_was_set ? 'Password set — you are signed in.' : 'Signed in.', 'ok');
-    // Render the account view straight from the login response instead of a
-    // second cookie-dependent /whoami call.
     ROLE = d.role || 'viewer'; USER = d.username || '';
     render();
   } else {

@@ -268,6 +268,18 @@ def clear_studio_cookie(response: Response) -> None:
         secure=_cookie_secure(),
     )
     _partition_cookie(response, COOKIE_NAME)
+    # Also expire any *legacy* unpartitioned cookie left by older builds
+    # (SameSite=Lax, no Partitioned) -- a different stored cookie that must be
+    # cleared separately or a pre-migration direct session sticks.
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value="",
+        max_age=0,
+        expires=0,
+        path="/",
+        httponly=True,
+        samesite="lax",
+    )
 
 
 def identity_from_request(request: Request) -> dict:

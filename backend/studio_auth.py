@@ -246,13 +246,28 @@ def _set_cookie(response: Response, token: str) -> None:
         max_age=TOKEN_TTL,
         path="/",
         httponly=True,
-        samesite="lax",
+        samesite="none",
         secure=_cookie_secure(),
     )
+    _partition_cookie(response, COOKIE_NAME)
 
 
 def clear_studio_cookie(response: Response) -> None:
-    response.delete_cookie(COOKIE_NAME, path="/")
+    # Expire with the SAME attributes used in _set_cookie (SameSite=None;
+    # Secure; Partitioned). A Partitioned cookie lives in separate per-top-site
+    # storage, so a plain delete_cookie() won't match it and the admin session
+    # sticks ("can't sign out"). Expire it with matching attributes instead.
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value="",
+        max_age=0,
+        expires=0,
+        path="/",
+        httponly=True,
+        samesite="none",
+        secure=_cookie_secure(),
+    )
+    _partition_cookie(response, COOKIE_NAME)
 
 
 def identity_from_request(request: Request) -> dict:

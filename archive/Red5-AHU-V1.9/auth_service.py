@@ -367,6 +367,13 @@ def login():
 
 def logout():
     resp = make_response(jsonify({'ok': True}))
+    # Expire BOTH variants so sign-out works regardless of which was set:
+    # the Secure; Partitioned one (HTTPS/iframe) and the legacy Lax one. A
+    # Partitioned cookie lives in separate per-top-site storage, so a Lax-only
+    # delete won't match it and the session would stick ("can't sign out").
+    resp.set_cookie(COOKIE_NAME, '', max_age=0, path='/',
+                    httponly=True, samesite='None', secure=True)
+    _partition_cookie(resp, COOKIE_NAME)
     resp.set_cookie(COOKIE_NAME, '', max_age=0, path='/',
                     httponly=True, samesite='Lax')
     return resp
@@ -573,9 +580,48 @@ def set_enforce():
 # --------------------------------------------------------------------------
 # Cookie helper
 # --------------------------------------------------------------------------
+def _req_is_https():
+    """True when the request reached us over HTTPS -- directly or via a
+    TLS-terminating proxy/tunnel (Cloudflare sets X-Forwarded-Proto=https).
+    Controls whether we may issue a cross-site-capable cookie."""
+    xfp = request.headers.get('X-Forwarded-Proto', '')
+    if xfp:
+        return xfp.split(',')[0].strip().lower() == 'https'
+    try:
+        return bool(request.is_secure)
+    except Exception:
+        return False
+
+
+def _partition_cookie(resp, name):
+    """Append the CHIPS `Partitioned` attribute to `name`'s Set-Cookie header
+    so the session cookie is accepted (and cleared) inside a cross-site iframe
+    (enteliWeb / command-center). Only added when the cookie is `Secure`
+    (Partitioned without Secure is invalid)."""
+    cookies = resp.headers.getlist('Set-Cookie')
+    if not cookies:
+        return
+    del resp.headers['Set-Cookie']
+    prefix = name + '='
+    for c in cookies:
+        lc = c.lower()
+        if c.startswith(prefix) and 'secure' in lc and 'partitioned' not in lc:
+            c = c + '; Partitioned'
+        resp.headers.add('Set-Cookie', c)
+
+
 def _set_cookie(resp, token):
-    resp.set_cookie(COOKIE_NAME, token, max_age=TOKEN_TTL, path='/',
-                    httponly=True, samesite='Lax')
+    # Over HTTPS (the c*.geniusmason.com proxy / enteliWeb iframe) issue a
+    # cross-site-capable cookie: SameSite=None; Secure; Partitioned. Over plain
+    # HTTP on the LAN (http://192.168.x.x) fall back to SameSite=Lax, since a
+    # Secure cookie would not be stored and would break direct login there.
+    if _req_is_https():
+        resp.set_cookie(COOKIE_NAME, token, max_age=TOKEN_TTL, path='/',
+                        httponly=True, samesite='None', secure=True)
+        _partition_cookie(resp, COOKIE_NAME)
+    else:
+        resp.set_cookie(COOKIE_NAME, token, max_age=TOKEN_TTL, path='/',
+                        httponly=True, samesite='Lax')
 
 
 # --------------------------------------------------------------------------

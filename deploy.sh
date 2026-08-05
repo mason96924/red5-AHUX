@@ -231,11 +231,22 @@ echo
 
 # --- 5. backend restart -----------------------------------------------------
 bold "[5/7] systemctl restart $BACKEND_SVC"
-if systemctl list-unit-files | grep -q "^${BACKEND_SVC}\.service"; then
+# Existence check must not pipe systemctl into grep: `grep -q` exits on the
+# first match and closes the pipe, systemctl dies on SIGPIPE (141), and
+# `set -o pipefail` reports the pipeline as failed even though the match
+# succeeded.  That silently skipped every restart on a box where the unit
+# was present, so the static files advanced while the backend stayed on old
+# code (2026-08-05).  `systemctl cat` needs no pipe and no privileges.
+RESTART_OK=1
+if systemctl cat "$BACKEND_SVC.service" >/dev/null 2>&1; then
     sudo systemctl restart "$BACKEND_SVC"
     sudo systemctl --no-pager --lines=0 status "$BACKEND_SVC" | head -3
 else
-    echo "       (skipped — no '$BACKEND_SVC.service' unit)"
+    RESTART_OK=0
+    yellow "       ⚠  no '$BACKEND_SVC.service' unit — backend NOT restarted"
+    yellow "          The frontend is now newer than the running Python."
+    yellow "          Pass the real unit name: BACKEND_SVC=<name> deploy.sh"
+    yellow "          (list them with: systemctl list-unit-files | grep red5)"
 fi
 echo
 
@@ -248,6 +259,14 @@ echo
 # --- 7. health fingerprint --------------------------------------------------
 bold "[7/7] verify served assets"
 PASS=1
+
+# A skipped backend restart is a half-deploy, so it must not be able to
+# report success -- that is how it went unnoticed until the frontend and
+# the running Python disagreed.
+if [[ "$RESTART_OK" != "1" ]]; then
+    red "       ✗ backend was not restarted (see step 5)"
+    PASS=0
+fi
 
 # 7a — setup.html cache-bust hash
 if [[ -f "$NGINX_ROOT/setup.html" ]]; then

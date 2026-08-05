@@ -1249,6 +1249,16 @@ global.initPsy3D = function(container, opts){
       _saAhuId      = null,
       _saRibbonOn   = false,
       _saMeasured   = null;
+  /* Request identity for the measured fetch: "ahu|from|to|step".  Every
+     layer toggle can ask for a refresh, and the weather rebuild asks for one
+     too, so without these three the panel re-requests the same window on
+     every click -- 19 overlapping full-year requests was the observed case,
+     which pins the status line on "Fetching" forever and never lands any
+     geometry.  _saCacheKey is what _saMeasured holds; _saInflightKey is what
+     is on the wire, so identical asks coalesce onto one promise. */
+  var _saCacheKey    = '',
+      _saInflightKey = '',
+      _saInflight    = null;
   var _p3RedrawPsyTex = null; /* populated by buildScene so theme listener can redraw floor chart */
   var weatherData=[],timeLabels=[],vavData=[];
 
@@ -1912,31 +1922,75 @@ global.initPsy3D = function(container, opts){
         });
       }).catch(function(){ /* leave dropdown empty on failure */ });
     })();
-    /* Fetch SA measured timeseries for the current AHU + weatherData
-       window.  Returns a Promise resolving to the samples array (may
-       be empty); rejects on transport / 4xx errors. */
-    function _fetchSaTimeseries(){
+    /* Sample cadence has to follow the window, not sit at a constant.  The
+       weather window here is whatever the operator loaded, which for the
+       default view is a full year: at a fixed 900s that is 35k samples and
+       7MB, and 70k line segments is visual mush on top of being slow.  Aim
+       for a few thousand samples whatever the span, rounded to a whole
+       number of 15-min ticks and clamped to what the backend accepts. */
+    function _saStepFor(span_s){
+      var step = Math.ceil(span_s / 2500 / 900) * 900;
+      return Math.max(900, Math.min(21600, step));
+    }
+    /* Fetch SA measured telemetry for the current AHU over the current
+       weather window.  Always resolves — to the samples array, or to [] with
+       the reason in the status line — because every caller is a UI event
+       handler with nowhere to put a rejection.  Pass force=true to bypass
+       the cache; in-flight requests for the same window are shared either
+       way. */
+    function _fetchSaTimeseries(force){
       if (!_saAhuId || !weatherData || !weatherData.length) {
         return Promise.resolve([]);
       }
       var fromTs = Math.floor(new Date(weatherData[0].ts).getTime() / 1000);
       var toTs   = Math.floor(new Date(weatherData[weatherData.length-1].ts).getTime() / 1000) + 3600;
-      var step   = 900;  /* 15-min cadence — coarse enough for a year, dense enough for 24h */
-      var url = '/api/ahu/' + encodeURIComponent(_saAhuId) +
-                '/sa-timeseries?from_ts=' + fromTs +
-                '&to_ts=' + toTs + '&step_s=' + step;
+      var step   = _saStepFor(toTs - fromTs);
+      var key    = _saAhuId + '|' + fromTs + '|' + toTs + '|' + step;
+      var days   = Math.round((toTs - fromTs) / 86400);
+      function _describe(samples){
+        _saSetStatus(samples.length + ' samples (' + days + 'd window, '
+                     + step + 's step)', '#22d3ee');
+      }
+      /* Same window, already in hand: the toggles are free. */
+      if (!force && key === _saCacheKey && _saMeasured && _saMeasured.length) {
+        _describe(_saMeasured);
+        return Promise.resolve(_saMeasured);
+      }
+      /* Same window, already on the wire: ride the existing request rather
+         than starting a second one.  This holds even for a forced refresh --
+         a request issued moments ago is as fresh as one issued now. */
+      if (key === _saInflightKey && _saInflight) return _saInflight;
+      var ahu = _saAhuId;
+      function _ask(s){
+        return fetch('/api/ahu/' + encodeURIComponent(ahu) +
+                     '/sa-timeseries?from_ts=' + fromTs +
+                     '&to_ts=' + toTs + '&step_s=' + s).then(function(r){
+          /* A coarse step is only valid against a backend that raised its
+             own ceiling.  Static assets can land ahead of a service restart,
+             so drop back to the old maximum once rather than showing the
+             operator a 422. */
+          if (r.status === 422 && s > 3600) { step = 3600; return _ask(3600); }
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        });
+      }
       _saSetStatus('Fetching ' + _saAhuId + '\u2026', '#94a3b8');
-      return fetch(url).then(function(r){
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      }).then(function(d){
+      _saInflightKey = key;
+      _saInflight = _ask(step).then(function(d){
         var samples = (d && d.samples) || [];
-        _saSetStatus(samples.length + ' samples (' + Math.round((toTs-fromTs)/86400) + 'd window, ' + step + 's step)', '#22d3ee');
+        _saCacheKey    = key;
+        _saInflightKey = '';
+        _saInflight    = null;
+        _describe(samples);
         return samples;
       }).catch(function(e){
+        _saCacheKey    = '';
+        _saInflightKey = '';
+        _saInflight    = null;
         _saSetStatus('error: ' + e.message, '#ef4444');
         return [];
       });
+      return _saInflight;
     }
     /* Refresh handler: pulls measured data (if needed) then rebuilds
        the SA Path geometry layer.  Idempotent. */
@@ -1946,8 +2000,12 @@ global.initPsy3D = function(container, opts){
       var needsMeasured = (_saSourceMode === 'measured' || _saSourceMode === 'both'
                            || !!(maSplitGroup && maSplitGroup.visible));
       var promise;
-      if (needsMeasured && _saAhuId && (forceRefetch || !_saMeasured || !_saMeasured.length)) {
-        promise = _fetchSaTimeseries().then(function(arr){ _saMeasured = arr; });
+      if (needsMeasured && _saAhuId) {
+        /* No "do we already have some samples?" test here: the cache key
+           inside _fetchSaTimeseries covers it and also catches the case a
+           sample-count test misses, which is samples held over from a
+           different AHU or a different weather window. */
+        promise = _fetchSaTimeseries(!!forceRefetch).then(function(arr){ _saMeasured = arr; });
       } else {
         if (!needsMeasured) _saSetStatus('Modeled (controller logic, no telemetry fetch)', '#94a3b8');
         promise = Promise.resolve();
@@ -1957,24 +2015,56 @@ global.initPsy3D = function(container, opts){
         if (typeof _buildMaSplitGeometry === 'function') _buildMaSplitGeometry();
       });
     }
+    /* This panel and the layer chips are two separate pieces of UI, and
+       saPathGroup starts hidden -- so picking an AHU, switching to Measured
+       or ticking the drift ribbon all built correct geometry into an
+       invisible group and looked completely inert.  Anyone touching these
+       controls is asking to see the layer, so turn it on; the chip is still
+       how you turn it back off. */
+    function _saEnsureLayerVisible(which){
+      var grp = (which === 'maSplit') ? maSplitGroup : saPathGroup;
+      if (!grp || grp.visible) return;
+      grp.visible = true;
+      var chip = document.getElementById('p3-tgl-' + which);
+      if (chip) chip.classList.remove('p3off');
+    }
     /* Wire the three controls.  AHU / Source changes refetch; ribbon
        toggle only restyles. */
     document.getElementById('p3-sa-ahu').onchange = function(){
       _saAhuId = this.value || null;
       _saMeasured = null;
+      if (_saAhuId) _saEnsureLayerVisible('saPath');
       _refreshSaPath(true);
     };
     document.getElementById('p3-sa-source').onchange = function(){
       _saSourceMode = this.value;
       var ribbonRow = document.getElementById('p3-sa-ribbon-row');
       if (ribbonRow) ribbonRow.style.display = (_saSourceMode === 'both') ? '' : 'none';
+      _saEnsureLayerVisible('saPath');
       _refreshSaPath(false);
     };
     document.getElementById('p3-sa-ribbon').onchange = function(){
       _saRibbonOn = !!this.checked;
+      if (_saRibbonOn) _saEnsureLayerVisible('saPath');
       if (typeof _buildSaPathGeometry === 'function') _buildSaPathGeometry();
     };
-    /* Selecting a different AHU invalidates MA too -- same samples. */
+    /* Mix / Coil draws from the selected AHU's telemetry, so switching the
+       layer on with the dropdown still blank can only report "choose an AHU".
+       Choose one for them -- an operator turning the layer on wants to see
+       mixed air, not a nudge. */
+    window.__psy3dSaAutoPickAhu = function(){
+      if (_saAhuId) return _saAhuId;
+      var sel = document.getElementById('p3-sa-ahu');
+      if (!sel) return null;
+      var first = null;
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value) { first = sel.options[i].value; break; }
+      }
+      if (!first) return null;
+      sel.value = first;
+      _saAhuId  = first;
+      return first;
+    };
     /* Expose the refresh hook for buildWeatherVis so the SA layer
        auto-refetches whenever a new OA window is loaded. */
     window.__psy3dRefreshSaPath = _refreshSaPath;
@@ -2086,6 +2176,7 @@ global.initPsy3D = function(container, opts){
            Open-Meteo.  Ask for a refresh on the way on; _refreshSaPath
            now treats this layer's visibility as a reason to fetch. */
         if (t[0]==='maSplit' && o.visible) {
+          if (typeof window.__psy3dSaAutoPickAhu === 'function') window.__psy3dSaAutoPickAhu();
           if (typeof window.__psy3dRefreshSaPath === 'function') window.__psy3dRefreshSaPath(false);
         }
         if (t[0]==='rhBand') {

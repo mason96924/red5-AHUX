@@ -233,8 +233,12 @@ async def ahu_sa_timeseries(
     ahu_id: str,
     from_ts: int = Query(..., description="Window start, unix epoch seconds"),
     to_ts:   int = Query(..., description="Window end (exclusive), unix epoch seconds"),
-    step_s:  int = Query(900, ge=60, le=3600,
-                         description="Sample cadence in seconds (default 15-min)"),
+    step_s:  int = Query(900, ge=60, le=21600,
+                         description="Sample cadence in seconds (default 15-min). "
+                                     "Callers plotting a long window should "
+                                     "coarsen this: the 3D engine's default "
+                                     "window is a full year, which at the 900s "
+                                     "default is 35k samples / 7MB."),
 ) -> dict:
     """SA / OA telemetry for an AHU over an explicit time window.
 

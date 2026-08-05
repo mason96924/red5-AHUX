@@ -1237,7 +1237,11 @@ def ahu_sa_timeseries(ahu_id):
         return jsonify({'error': 'from_ts must be < to_ts'}), 400
     if (to_ts - from_ts) > 366 * 86400:
         return jsonify({'error': 'window > 366 days'}), 400
-    step_s = max(60, min(3600, step_s))
+    # Ceiling matches the FastAPI twin: the 3D engine's default window is a
+    # full year, and at the 900s default that is 35k samples / 7MB per
+    # refresh -- far too much for a controller to serialise.  Long windows
+    # coarsen the step client-side, so allow up to 6h.
+    step_s = max(60, min(21600, step_s))
 
     seed_base = hash(ahu_id) % 1000
     samples = []

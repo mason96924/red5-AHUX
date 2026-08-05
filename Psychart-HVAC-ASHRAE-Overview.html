@@ -84,13 +84,13 @@
   .ncard h5{font-size:13.5px;margin:1px 0 6px 26px;line-height:1.2}
   .ncard p{font-size:12.3px;color:var(--muted);line-height:1.38}
   /* overlay slide */
-  .hub{position:absolute;left:4.75in;top:2.15in;width:3.85in;height:3.9in;
+  .hub{position:absolute;left:4.75in;top:2.1in;width:3.85in;height:4.0in;
     background:#fff;border:2px solid var(--accent);border-radius:14px;
     text-align:center;padding:.22in .2in}
   .hub h3{font-size:17px;color:var(--accent)}
   .hub .sub{font-size:12.5px;color:var(--faint);margin-top:4px}
   .hub .cap{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
-  .ocard{position:absolute;width:3.7in;height:1.7in;background:#fff;
+  .ocard{position:absolute;width:3.7in;height:1.9in;background:#fff;
     border:1px solid var(--line);border-radius:12px;padding:.22in .26in;
     overflow:hidden}
   .ocard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
@@ -194,6 +194,13 @@
       <!-- axes -->
       <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
       <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- lines of equal total energy (constant enthalpy), clipped at saturation -->
+      <g stroke="#7c3aed" opacity=".8">
+        <line x1="215" y1="256.6" x2="495" y2="349.6" stroke-width="1.3" stroke-dasharray="2 4"/>
+        <line x1="381.2" y1="133.7" x2="560" y2="193" stroke-width="1.3" stroke-dasharray="2 4"/>
+        <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke-width="1.8" stroke-dasharray="7 4"/>
+      </g>
+      <text x="265" y="215" font-size="10.5" font-weight="700" fill="#7c3aed" text-anchor="end">equal energy (enthalpy)</text>
       <!-- saturation curve (100% RH) -->
       <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
                 fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
@@ -221,7 +228,7 @@
             transform="rotate(-90 20 200)" text-anchor="middle">Moisture in the air  →</text>
     </svg>
   </div>
-  <div class="legend2"><b>OA</b> outside air &nbsp;·&nbsp; <b>RA</b> return air from the rooms &nbsp;·&nbsp; <b>MA</b> the mixture entering the coil &nbsp;·&nbsp; <b>SA</b> supply air delivered to the rooms. The dashed green line is mixing; the solid blue line is the cooling coil.</div>
+  <div class="legend2"><b>OA</b> outside air &nbsp;·&nbsp; <b>RA</b> return air &nbsp;·&nbsp; <b>MA</b> the mixture entering the coil &nbsp;·&nbsp; <b>SA</b> supply air delivered to the rooms. Dashed green = mixing; solid blue = the cooling coil. The <b style="color:#7c3aed">violet diagonals</b> are lines of equal total energy: outside air here holds 79 kJ/kg against return air's 48, so it sits well above RA's line and costs more to condition — no free cooling today.</div>
   <div class="ngrid">
     <div class="ncard"><div class="num">1</div><h5 style="color:var(--accent)">Two axes fix everything</h5>
       <p>Across is temperature; up is the actual weight of water the air carries. Pin both and the air's state is pinned — relative humidity, dew point, wet-bulb and energy content all follow from that single dot.</p></div>
@@ -294,6 +301,11 @@
     <svg viewBox="0 0 600 400" style="width:3.35in;height:2.23in;margin-top:6px">
       <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="2"/>
       <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="2"/>
+      <g stroke="#7c3aed" opacity=".85">
+        <line x1="215" y1="256.6" x2="495" y2="349.6" stroke-width="2" stroke-dasharray="3 5"/>
+        <line x1="381.2" y1="133.7" x2="560" y2="193" stroke-width="2" stroke-dasharray="3 5"/>
+        <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke-width="2.6" stroke-dasharray="9 5"/>
+      </g>
       <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
                 fill="none" stroke="#1d4ed8" stroke-width="3"/>
       <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.18)"
@@ -309,26 +321,27 @@
     <div class="cap">Every requirement around it becomes a shape on <b>these same axes</b>.</div>
   </div>
 
-  <div class="ocard" style="left:.7in;top:2.15in"><div class="top" style="background:var(--amber)"></div>
+  <div class="ocard" style="left:.7in;top:2.1in"><div class="top" style="background:var(--amber)"></div>
     <h4 style="color:var(--amber)">ASHRAE 55 draws an AREA</h4>
     <p>The comfort zone: the band of temperature and humidity occupants accept. The whole air-side of the standard becomes a region you must land the room inside.</p></div>
 
-  <div class="ocard" style="left:8.93in;top:2.15in"><div class="top" style="background:var(--green)"></div>
+  <div class="ocard" style="left:8.93in;top:2.1in"><div class="top" style="background:var(--green)"></div>
     <h4 style="color:var(--green)">ASHRAE 62.1 draws a POINT ON A LINE</h4>
     <p>The required outside-air fraction fixes exactly where the mixed-air dot must sit along the line between return and outside air.</p></div>
 
-  <div class="ocard" style="left:.7in;top:4.35in"><div class="top" style="background:var(--accent)"></div>
+  <div class="ocard" style="left:.7in;top:4.2in"><div class="top" style="background:var(--accent)"></div>
     <h4 style="color:var(--accent)">ASHRAE 90.1 draws a DIRECTION</h4>
-    <p>Lines of equal energy content show when outside air is the cheaper source, and how far the dot may be pushed before energy is simply thrown away.</p></div>
+    <p>The violet diagonals are equal-energy lines. Which side of them outside air falls on decides whether it is the cheaper source, and how far the dot may be pushed before energy is wasted.</p>
+    <p style="margin-top:5px;font-size:11.5px;color:var(--faint)"><i>Air-side only — fan power and chiller efficiency sit outside the chart.</i></p></div>
 
-  <div class="ocard" style="left:8.93in;top:4.35in"><div class="top" style="background:var(--ink)"></div>
+  <div class="ocard" style="left:8.93in;top:4.2in"><div class="top" style="background:var(--ink)"></div>
     <h4>Guideline 36 draws the PATH</h4>
     <p>The sequences are the route the dot travels through the day — economizer, coil, setpoint reset — from outside air all the way to the room.</p></div>
 
-  <svg class="arw" style="left:4.42in;top:2.9in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
-  <svg class="arw" style="left:4.42in;top:5.1in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
-  <svg class="arw" style="left:8.61in;top:2.9in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
-  <svg class="arw" style="left:8.61in;top:5.1in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:4.42in;top:2.95in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:4.42in;top:5.05in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:2.95in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:5.05in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
 
   <div class="catch" style="top:6.3in">
     <div class="t">Read this the right way round</div>

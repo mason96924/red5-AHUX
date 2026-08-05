@@ -26,6 +26,7 @@ FAINT    = RGBColor(0x64, 0x74, 0x8B)
 ACCENT   = RGBColor(0x1D, 0x4E, 0xD8)   # blue  (energy / structure)
 GREEN    = RGBColor(0x04, 0x78, 0x57)   # fresh air
 AMBER    = RGBColor(0xB4, 0x53, 0x09)   # comfort
+VIOLET   = RGBColor(0x7C, 0x3A, 0xED)   # equal-energy (enthalpy) lines
 PAGE     = RGBColor(0xF8, 0xFA, 0xFC)
 CARD     = RGBColor(0xFF, 0xFF, 0xFF)
 LINE     = RGBColor(0xE2, 0xE8, 0xF0)
@@ -109,6 +110,34 @@ def dot(s, x, y, color, r=0.07):
     ov.line.color.rgb = WHITE; ov.line.width = Pt(1)
     ov.shadow.inherit = False
     return ov
+
+
+# saturation curve, from ASHRAE saturation pressures at 101.325 kPa
+# (dry-bulb degC, humidity ratio g/kg dry air)
+SAT = [(0, 3.775), (5, 5.402), (10, 7.630), (15, 10.647), (20, 14.697),
+       (25, 20.082), (30, 27.202), (31.5, 30.0)]
+
+
+def wsat(T):
+    if T >= SAT[-1][0]:
+        return 99.0
+    for (t1, w1), (t2, w2) in zip(SAT, SAT[1:]):
+        if t1 <= T <= t2:
+            return w1 + (w2 - w1) * (T - t1) / (t2 - t1)
+    return 99.0
+
+
+def enth_seg(T0, W0, k=0.402):
+    """Endpoints of the constant-enthalpy line through (T0, W0), clipped to
+    the saturation curve and the plot box. k = dW/dT at constant enthalpy."""
+    pts = []
+    T = 0.0
+    while T <= 40.0001:
+        W = W0 + k * (T0 - T)
+        if 0.0 <= W <= 30.0 and W <= wsat(T):
+            pts.append((T, W))
+        T += 0.1
+    return (pts[0], pts[-1]) if pts else None
 
 
 def accent_header(s, kicker, title, tcolor=INK):
@@ -270,9 +299,18 @@ for W in (5, 10, 15, 20, 25):
 conn(s, PX(0), PY(0), PX(40), PY(0), color=AXIS, width=1.25)
 conn(s, PX(0), PY(0), PX(0), PY(30), color=AXIS, width=1.25)
 
-# saturation curve (100% RH) from ASHRAE saturation pressures at 101.325 kPa
-SAT = [(0, 3.775), (5, 5.402), (10, 7.630), (15, 10.647), (20, 14.697),
-       (25, 20.082), (30, 27.202), (31.5, 30.0)]
+# lines of equal total energy (constant enthalpy), clipped at saturation
+for (T0, W0), lw in [((13, 8.8), 0.9), ((33, 18.0), 0.9), ((24, 9.3), 1.4)]:
+    sg = enth_seg(T0, W0)
+    if sg:
+        (t1, w1), (t2, w2) = sg
+        conn(s, PX(t1), PY(w1), PX(t2), PY(w2), color=VIOLET, width=lw,
+             dash=True)
+box(s, Inches(PX(16.4) - 1.5), Inches(PY(13.06) - 0.12), Inches(1.5),
+    Inches(0.25), "equal energy (enthalpy)", size=9, bold=True, color=VIOLET,
+    align=PP_ALIGN.RIGHT)
+
+# saturation curve (100% RH)
 verts = [(Inches(PX(t)), Inches(PY(w))) for t, w in SAT]
 ff = s.shapes.build_freeform(verts[0][0], verts[0][1], 1.0)
 ff.add_line_segments(verts[1:], close=False)
@@ -312,11 +350,13 @@ box(s, Inches(PX(0)), Inches(PY(0) + 0.10), Inches(PX(40) - PX(0)),
     color=MUTED, align=PP_ALIGN.CENTER)
 box(s, Inches(0.75), Inches(PY(30) - 0.26), Inches(2.6), Inches(0.28),
     "\u2191  Moisture in the air", size=10.5, bold=True, color=MUTED)
-box(s, Inches(0.62), Inches(6.02), Inches(5.6), Inches(0.8),
-    "OA outside air  ·  RA return air from the rooms  ·  MA the mixture "
-    "entering the coil  ·  SA supply air delivered to the rooms.\n"
-    "Dashed green = mixing;  solid blue = the cooling coil.",
-    size=11, color=FAINT, line_spacing=1.25)
+box(s, Inches(0.62), Inches(6.02), Inches(5.6), Inches(1.05),
+    "OA outside air  ·  RA return air  ·  MA the mixture entering the coil  ·  "
+    "SA supply air delivered to the rooms. Dashed green = mixing; solid blue = "
+    "the cooling coil. The violet diagonals are lines of equal total energy: "
+    "outside air here holds 79 kJ/kg against return air's 48, so it sits well "
+    "above RA's line and costs more to condition — no free cooling today.",
+    size=10.5, color=FAINT, line_spacing=1.2)
 
 # reading guide — 2 x 3 cards on the right
 guide = [
@@ -455,6 +495,12 @@ def mini_chart(s, X0, Y0, SX, SY):
     py = lambda W: Y0 - W * SY
     conn(s, px(0), py(0), px(40), py(0), color=AXIS, width=1.5)
     conn(s, px(0), py(0), px(0), py(30), color=AXIS, width=1.5)
+    for (T0, W0), lw in [((13, 8.8), 0.9), ((33, 18.0), 0.9), ((24, 9.3), 1.3)]:
+        sg = enth_seg(T0, W0)
+        if sg:
+            (t1, w1), (t2, w2) = sg
+            conn(s, px(t1), py(w1), px(t2), py(w2), color=VIOLET, width=lw,
+                 dash=True)
     v = [(Inches(px(t)), Inches(py(w))) for t, w in SAT]
     b = s.shapes.build_freeform(v[0][0], v[0][1], 1.0)
     b.add_line_segments(v[1:], close=False)
@@ -475,7 +521,7 @@ s = slide()
 accent_header(s, "The big idea", "One sheet — every rulebook draws on it")
 
 # hub: the chart itself
-rect(s, Inches(4.75), Inches(2.15), Inches(3.85), Inches(3.9), fill=CARD,
+rect(s, Inches(4.75), Inches(2.1), Inches(3.85), Inches(4.0), fill=CARD,
      line=ACCENT, line_w=2.0)
 box(s, Inches(4.85), Inches(2.3), Inches(3.65), Inches(0.35),
     "The psychrometric chart", size=16, bold=True, color=ACCENT,
@@ -490,34 +536,38 @@ box(s, Inches(4.9), Inches(5.32), Inches(3.55), Inches(0.6),
 
 # four overlay cards
 overlays = [
-    (0.7, 2.15, AMBER, "ASHRAE 55 draws an AREA",
+    (0.7, 2.1, AMBER, "ASHRAE 55 draws an AREA",
      "The comfort zone: the band of temperature and humidity occupants "
      "accept. The air-side of the standard becomes a region you must land "
-     "the room inside."),
-    (8.93, 2.15, GREEN, "ASHRAE 62.1 draws a POINT ON A LINE",
+     "the room inside.", None),
+    (8.93, 2.1, GREEN, "ASHRAE 62.1 draws a POINT ON A LINE",
      "The required outside-air fraction fixes exactly where the mixed-air dot "
-     "must sit along the line between return and outside air."),
-    (0.7, 4.35, ACCENT, "ASHRAE 90.1 draws a DIRECTION",
-     "Lines of equal energy content show when outside air is the cheaper "
-     "source, and how far the dot may be pushed before energy is thrown "
-     "away."),
-    (8.93, 4.35, INK, "Guideline 36 draws the PATH",
+     "must sit along the line between return and outside air.", None),
+    (0.7, 4.2, ACCENT, "ASHRAE 90.1 draws a DIRECTION",
+     "The violet diagonals are equal-energy lines. Which side of them outside "
+     "air falls on decides whether it is the cheaper source — and how far the "
+     "dot may be pushed before energy is wasted.",
+     "Air-side only — fan power and chiller efficiency sit outside the chart."),
+    (8.93, 4.2, INK, "Guideline 36 draws the PATH",
      "The sequences are the route the dot travels through the day — "
-     "economizer, coil, setpoint reset — from outside air to the room."),
+     "economizer, coil, setpoint reset — from outside air to the room.", None),
 ]
-for x, y, c, h, d in overlays:
-    rect(s, Inches(x), Inches(y), Inches(3.7), Inches(1.7), fill=CARD,
+for x, y, c, h, d, note in overlays:
+    rect(s, Inches(x), Inches(y), Inches(3.7), Inches(1.9), fill=CARD,
          line=LINE)
     rect(s, Inches(x), Inches(y), Inches(3.7), Inches(0.1), fill=c, line=None,
          radius=False)
     box(s, Inches(x + 0.26), Inches(y + 0.22), Inches(3.2), Inches(0.32),
         h, size=13.5, bold=True, color=c)
-    box(s, Inches(x + 0.26), Inches(y + 0.62), Inches(3.22), Inches(0.95),
-        d, size=11, color=MUTED, line_spacing=1.15)
+    box(s, Inches(x + 0.26), Inches(y + 0.6), Inches(3.22), Inches(0.85),
+        d, size=10.5, color=MUTED, line_spacing=1.15)
+    if note:
+        box(s, Inches(x + 0.26), Inches(y + 1.48), Inches(3.22), Inches(0.35),
+            note, size=9.5, color=FAINT, line_spacing=1.1)
 
 # arrows pointing in at the chart
 for ax, adir in ((4.44, MSO_SHAPE.RIGHT_ARROW), (8.65, MSO_SHAPE.LEFT_ARROW)):
-    for ay in (2.92, 5.12):
+    for ay in (2.97, 5.07):
         ar = s.shapes.add_shape(adir, Inches(ax), Inches(ay), Inches(0.26),
                                 Inches(0.16))
         ar.fill.solid(); ar.fill.fore_color.rgb = AXIS

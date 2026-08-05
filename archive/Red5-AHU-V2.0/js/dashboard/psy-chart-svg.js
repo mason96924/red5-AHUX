@@ -256,7 +256,7 @@ function renderPsyChartSvg(ctx) {
                  className="absolute z-20 pointer-events-none"
                  style={{ width, height, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
                 <div className="absolute flex flex-wrap justify-end gap-1 pointer-events-auto"
-                     style={{ left: pad.left + gridWidth * 0.48, right: pad.right + 4, top: pad.top + gridHeight + 48, maxHeight: 40 }}>
+                     style={{ left: pad.left + gridWidth * 0.48, right: pad.right + 4, top: pad.top + gridHeight + 58, maxHeight: 40 }}>
                     <div className="ml-auto flex flex-wrap justify-end gap-1">
                         {chips.map(c => (
                             <span key={c.key}

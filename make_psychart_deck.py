@@ -792,7 +792,79 @@ box(s, tx + Inches(0.3), Inches(6.15), Inches(11.3), Inches(0.5),
     "building is already taking.", size=13, color=FAINT, line_spacing=1.15)
 
 # =========================================================================
-# 10 — CLOSING
+# 11 — WHAT IS IT WORTH (published figures, with their caveats)
+# =========================================================================
+s = slide()
+accent_header(s, "Published evidence", "What is it worth?")
+stats = [
+    (ACCENT, "31%",
+     "average HVAC energy saving from Guideline 36 sequences, against a "
+     "baseline of existing practice",
+     "Berkeley Lab, multi-zone VAV simulated in Spawn of EnergyPlus, medium "
+     "office. J. Building Performance Simulation, 2022"),
+    (GREEN, "9%",
+     "median whole-building saving from fault detection, range 1–28%, "
+     "two-year payback",
+     "Berkeley Lab Smart Energy Analytics Campaign — 6,500 buildings, over "
+     "half a billion sq ft"),
+    (AMBER, "64%",
+     "of economizers found faulty in the field — free cooling paid for and "
+     "never delivered",
+     "New Buildings Institute; a wider literature survey averages 58%, with "
+     "25–40% of rooftop units faulty at any moment"),
+    (VIOLET, "20–41%",
+     "seasonal saving from supervisory setpoint resets: 20% cooling, 18% "
+     "shoulder, 41% heating",
+     "PNNL, large-office emulator, Chicago, 2024 — airside and plant-side "
+     "resets combined"),
+]
+scw = 2.83; sgap = 0.19
+for i, (c, big, labl, src) in enumerate(stats):
+    l = Inches(0.7 + i * (scw + sgap)); t = Inches(2.05)
+    rect(s, l, t, Inches(scw), Inches(2.1), fill=CARD, line=LINE)
+    rect(s, l, t, Inches(scw), Inches(0.1), fill=c, line=None, radius=False)
+    box(s, l + Inches(0.26), t + Inches(0.2), Inches(scw - 0.4), Inches(0.55),
+        big, size=30, bold=True, color=c)
+    box(s, l + Inches(0.26), t + Inches(0.8), Inches(scw - 0.45), Inches(0.65),
+        labl, size=10.5, bold=True, color=INK, line_spacing=1.15)
+    box(s, l + Inches(0.26), t + Inches(1.5), Inches(scw - 0.45), Inches(0.55),
+        src, size=8, color=FAINT, line_spacing=1.15)
+
+panels = [
+    (0.7, GREEN, "Where the saving actually comes from",
+     "•  Free-cooling hours TAKEN rather than missed, because the decision is "
+     "made on energy rather than temperature alone.\n"
+     "•  Outside air delivered at the rate 62.1 requires — not quietly at "
+     "double it.\n"
+     "•  Supply air reset to follow the load instead of one fixed setpoint "
+     "all year.\n"
+     "•  Coil, damper and sensor faults caught in days rather than at the "
+     "next seasonal complaint."),
+    (6.78, AMBER, "Read these numbers honestly",
+     "•  They are measure-level results from simulation and field studies — "
+     "not a guarantee for any one building.\n"
+     "•  They overlap heavily. Do not add them together.\n"
+     "•  The largest savings come from the worst starting points; a "
+     "well-commissioned building has less to gain.\n"
+     "•  Enthalpy switching is NOT automatically better. Taylor & Cheng "
+     "(ASHRAE Journal, 2010) found fixed dry-bulb often wins once "
+     "humidity-sensor drift is counted — hence the 90.1-2013 sensor limits."),
+]
+for x, c, h, body in panels:
+    rect(s, Inches(x), Inches(4.42), Inches(5.85), Inches(1.95), fill=CARD,
+         line=LINE)
+    box(s, Inches(x + 0.28), Inches(4.56), Inches(5.3), Inches(0.32), h,
+        size=14, bold=True, color=c)
+    box(s, Inches(x + 0.28), Inches(4.95), Inches(5.35), Inches(1.35), body,
+        size=10.5, color=MUTED, line_spacing=1.2)
+
+box(s, Inches(0.7), Inches(6.6), Inches(11.93), Inches(0.6),
+    "The chart itself saves nothing. It makes the opportunity visible and the "
+    "fault obvious — the saving comes from acting on what it shows.",
+    size=13, bold=True, color=ACCENT, align=PP_ALIGN.CENTER, line_spacing=1.2)
+
+# =========================================================================
+# 12 — CLOSING
 # =========================================================================
 s = slide(bg=RGBColor(0x0B, 0x12, 0x24))
 rect(s, Inches(0), Inches(0), EMU_W, Inches(0.22), fill=ACCENT, line=None,

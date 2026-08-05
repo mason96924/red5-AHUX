@@ -1895,12 +1895,6 @@ global.initPsy3D = function(container, opts){
     _saAhuId      = null;
     _saRibbonOn   = false;
     _saMeasured   = null;
-    function _saSetStatus(txt, color){
-      var el = document.getElementById('p3-sa-status');
-      if (!el) return;
-      el.textContent = txt || '';
-      el.style.color = color || '#64748b';
-    }
     /* Populate the AHU dropdown from /api/data once on init.  We don't
        block the rest of the engine on this -- if the call fails the
        dropdown stays empty and the user can still use Modeled mode. */
@@ -1952,7 +1946,7 @@ global.initPsy3D = function(container, opts){
       var needsMeasured = (_saSourceMode === 'measured' || _saSourceMode === 'both'
                            || !!(maSplitGroup && maSplitGroup.visible));
       var promise;
-      if (needsMeasured && _saAhuId && (forceRefetch || !_saMeasured)) {
+      if (needsMeasured && _saAhuId && (forceRefetch || !_saMeasured || !_saMeasured.length)) {
         promise = _fetchSaTimeseries().then(function(arr){ _saMeasured = arr; });
       } else {
         if (!needsMeasured) _saSetStatus('Modeled (controller logic, no telemetry fetch)', '#94a3b8');
@@ -4661,6 +4655,15 @@ global.initPsy3D = function(container, opts){
                     controller-drift becomes visually scannable.
      Companion to OA→SA Drops (prescriptive setpoints).
      ------------------------------------------------------------------ */
+  /* Status line under the SA panel.  Engine scope, not setupControls scope:
+     the geometry builders report through it, and they live out here. */
+  function _saSetStatus(txt, color){
+    var el = document.getElementById('p3-sa-status');
+    if (!el) return;
+    el.textContent = txt || '';
+    el.style.color = color || '#64748b';
+  }
+
   /* Time-axis mapping shared by every per-timestamp layer (SA Path, Mix /
      Coil).  weatherData samples carry their own .frac; telemetry arrives as
      unix seconds and has to be projected onto the same Y or two layers
@@ -4703,8 +4706,19 @@ global.initPsy3D = function(container, opts){
     if (!maSplitGroup) return;
     while (maSplitGroup.children.length) maSplitGroup.remove(maSplitGroup.children[0]);
     if (!maSplitGroup.visible || !weatherData || !weatherData.length) return;
+    /* Every way this layer can come up empty used to look identical from the
+       outside -- an unselected AHU, an empty window and a payload with no
+       mixed-air channels all just drew nothing.  Name the case instead. */
+    if (!_saAhuId) {
+      _saSetStatus('Mix / Coil: choose an AHU above \u2014 MA comes from '
+                   + 'telemetry, not weather', '#f59e0b');
+      return;
+    }
     var measured = _saMeasured;
-    if (!measured || !measured.length) return;
+    if (!measured || !measured.length) {
+      _saSetStatus('Mix / Coil: no telemetry samples in this window', '#f59e0b');
+      return;
+    }
 
     var violet = [0.545, 0.361, 0.965];   /* #8b5cf6 -- the mixing pill */
     var blue   = [0.231, 0.510, 0.965];   /* #3b82f6 -- the coil pill   */
@@ -4728,7 +4742,19 @@ global.initPsy3D = function(container, opts){
       mc.push(amber[0]*dim, amber[1]*dim, amber[2]*dim);
       n++;
     });
-    if (!n) return;
+    if (!n) {
+      /* Samples arrived but none carry ma_*: either this unit has no MAT and
+         no damper feedback mapped, or the backend predates the mixed-air
+         fields and was not restarted. */
+      _saSetStatus('Mix / Coil: ' + measured.length + ' samples, none carry '
+                   + 'mixed air (no MAT or damper mapped, or backend not '
+                   + 'restarted)', '#f59e0b');
+      return;
+    }
+    var bases = {};
+    measured.forEach(function(s){ if (s && s.ma_basis) bases[s.ma_basis] = 1; });
+    _saSetStatus('Mix / Coil: ' + n + ' hooks, basis '
+                 + Object.keys(bases).join(' + '), '#8b5cf6');
     var segGeo = new THREE.BufferGeometry();
     segGeo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
     segGeo.setAttribute('color',    new THREE.Float32BufferAttribute(c, 3));

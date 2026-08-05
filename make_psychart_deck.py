@@ -795,40 +795,79 @@ box(s, tx + Inches(0.3), Inches(6.15), Inches(11.3), Inches(0.5),
 # 11 — WHAT IS IT WORTH (published figures, with their caveats)
 # =========================================================================
 s = slide()
-accent_header(s, "Published evidence", "What is it worth?")
-stats = [
-    (ACCENT, "31%",
-     "average HVAC energy saving from Guideline 36 sequences, against a "
-     "baseline of existing practice",
-     "Berkeley Lab, multi-zone VAV simulated in Spawn of EnergyPlus, medium "
-     "office. J. Building Performance Simulation, 2022"),
-    (GREEN, "9%",
-     "median whole-building saving from fault detection, range 1–28%, "
-     "two-year payback",
-     "Berkeley Lab Smart Energy Analytics Campaign — 6,500 buildings, over "
-     "half a billion sq ft"),
-    (AMBER, "64%",
-     "of economizers found faulty in the field — free cooling paid for and "
-     "never delivered",
-     "New Buildings Institute; a wider literature survey averages 58%, with "
-     "25–40% of rooftop units faulty at any moment"),
-    (VIOLET, "20–41%",
-     "seasonal saving from supervisory setpoint resets: 20% cooling, 18% "
-     "shoulder, 41% heating",
-     "PNNL, large-office emulator, Chicago, 2024 — airside and plant-side "
-     "resets combined"),
+accent_header(s, "Published evidence", "What is it worth — and whose credit is it?")
+
+# Two bands: savings that belong to the sequences, and what the chart adds.
+bands = [
+    (0.7, ACCENT, "What good air-side control is worth",
+     "The prize, and it belongs to the sequences. The chart does not produce "
+     "these savings — it makes them verifiable."),
+    (6.78, GREEN, "What the chart itself contributes",
+     "Visibility: the missed hours and the broken parts that a temperature "
+     "trend hides."),
 ]
-scw = 2.83; sgap = 0.19
-for i, (c, big, labl, src) in enumerate(stats):
-    l = Inches(0.7 + i * (scw + sgap)); t = Inches(2.05)
-    rect(s, l, t, Inches(scw), Inches(2.1), fill=CARD, line=LINE)
-    rect(s, l, t, Inches(scw), Inches(0.1), fill=c, line=None, radius=False)
-    box(s, l + Inches(0.26), t + Inches(0.2), Inches(scw - 0.4), Inches(0.55),
-        big, size=30, bold=True, color=c)
-    box(s, l + Inches(0.26), t + Inches(0.8), Inches(scw - 0.45), Inches(0.65),
-        labl, size=10.5, bold=True, color=INK, line_spacing=1.15)
-    box(s, l + Inches(0.26), t + Inches(1.5), Inches(scw - 0.45), Inches(0.55),
-        src, size=8, color=FAINT, line_spacing=1.15)
+for x, c, h, sub in bands:
+    box(s, Inches(x), Inches(1.86), Inches(5.85), Inches(0.28), h,
+        size=13, bold=True, color=c)
+    box(s, Inches(x), Inches(2.14), Inches(5.7), Inches(0.38), sub,
+        size=10, color=FAINT, line_spacing=1.15)
+
+# (x, colour, headline, seasons, label, source, attribution)
+stats = [
+    (0.7, ACCENT, "31%", None,
+     "average HVAC saving from Guideline 36 sequences, against existing "
+     "practice",
+     "Berkeley Lab, Spawn of EnergyPlus, medium office, 2022",
+     "Mostly static-pressure reset, zone minimum airflow and scheduling. "
+     "Only the economizer and SAT logic land on the chart."),
+    (3.76, VIOLET, None, [("41%", "heating"), ("20%", "cooling"),
+                          ("18%", "shoulder")],
+     "seasonal saving from supervisory setpoint resets",
+     "PNNL large-office emulator, Chicago, 2024",
+     "Airside and plant-side combined — the chilled- and hot-water resets "
+     "sit off the chart entirely."),
+    (6.78, GREEN, "9%", None,
+     "median whole-building saving from fault detection, range 1–28%",
+     "Berkeley Lab Smart Energy Analytics Campaign, 6,500 buildings",
+     "The standard AHU rule set (NIST APAR, 28 mass- and energy-balance "
+     "tests) is this chart's geometry in algebra. Covers all FDD, so read "
+     "it as an upper bound."),
+    (9.84, AMBER, "64%", None,
+     "of economizers found faulty in the field",
+     "New Buildings Institute; wider surveys average 58%",
+     "Opportunity size, not a return: how often the free-cooling asset is "
+     "already broken. The chart is how you notice."),
+]
+scw = 2.79
+for x, c, big, seasons, labl, src, attr in stats:
+    l = Inches(x); t = Inches(2.56)
+    rect(s, l, t, Inches(scw), Inches(1.95), fill=CARD, line=LINE)
+    rect(s, l, t, Inches(scw), Inches(0.09), fill=c, line=None, radius=False)
+    if seasons:
+        for j, (n, season) in enumerate(seasons):
+            sx = l + Inches(0.2 + j * 0.85)
+            box(s, sx, t + Inches(0.18), Inches(0.8), Inches(0.32), n,
+                size=19, bold=True, color=c)
+            box(s, sx, t + Inches(0.46), Inches(0.85), Inches(0.2),
+                season.upper(), size=7.5, bold=True, color=FAINT)
+    else:
+        box(s, l + Inches(0.2), t + Inches(0.18), Inches(scw - 0.4),
+            Inches(0.5), big, size=26, bold=True, color=c)
+    box(s, l + Inches(0.2), t + Inches(0.70), Inches(scw - 0.36), Inches(0.5),
+        labl, size=9.5, bold=True, color=INK, line_spacing=1.12)
+    box(s, l + Inches(0.2), t + Inches(1.16), Inches(scw - 0.36), Inches(0.3),
+        src, size=7.5, color=FAINT, line_spacing=1.12)
+    rect(s, l + Inches(0.2), t + Inches(1.45), Inches(0.02), Inches(0.38),
+         fill=LINE, line=None, radius=False)
+    box(s, l + Inches(0.28), t + Inches(1.43), Inches(scw - 0.44),
+        Inches(0.42), attr, size=7.5, color=MUTED, line_spacing=1.12)
+
+# "not a saving" flag on the prevalence figure
+rect(s, Inches(9.84 + scw - 0.98), Inches(2.74), Inches(0.8), Inches(0.2),
+     fill=RGBColor(0xFE, 0xF3, 0xC7), line=None)
+box(s, Inches(9.84 + scw - 0.98), Inches(2.755), Inches(0.8), Inches(0.18),
+    "NOT A SAVING", size=6.5, bold=True, color=RGBColor(0x92, 0x40, 0x0E),
+    align=PP_ALIGN.CENTER)
 
 panels = [
     (0.7, GREEN, "Where the saving actually comes from",
@@ -841,26 +880,26 @@ panels = [
      "•  Coil, damper and sensor faults caught in days rather than at the "
      "next seasonal complaint."),
     (6.78, AMBER, "Read these numbers honestly",
-     "•  They are measure-level results from simulation and field studies — "
-     "not a guarantee for any one building.\n"
-     "•  They overlap heavily. Do not add them together.\n"
-     "•  The largest savings come from the worst starting points; a "
-     "well-commissioned building has less to gain.\n"
-     "•  Enthalpy switching is NOT automatically better. Taylor & Cheng "
-     "(ASHRAE Journal, 2010) found fixed dry-bulb often wins once "
-     "humidity-sensor drift is counted — hence the 90.1-2013 sensor limits."),
+     "•  Measure-level results from simulation and field studies — not a "
+     "guarantee for any one building.\n"
+     "•  They overlap and are not additive; the left pair and the right pair "
+     "count much of the same energy twice.\n"
+     "•  The largest savings come from the worst starting points.\n"
+     "•  Enthalpy switching is NOT automatically better — Taylor & Cheng "
+     "(2010) found fixed dry-bulb often wins once humidity sensors drift, "
+     "hence 90.1-2013's accuracy limits."),
 ]
 for x, c, h, body in panels:
-    rect(s, Inches(x), Inches(4.42), Inches(5.85), Inches(1.95), fill=CARD,
+    rect(s, Inches(x), Inches(4.60), Inches(5.85), Inches(1.88), fill=CARD,
          line=LINE)
-    box(s, Inches(x + 0.28), Inches(4.56), Inches(5.3), Inches(0.32), h,
-        size=14, bold=True, color=c)
-    box(s, Inches(x + 0.28), Inches(4.95), Inches(5.35), Inches(1.35), body,
-        size=10.5, color=MUTED, line_spacing=1.2)
+    box(s, Inches(x + 0.28), Inches(4.72), Inches(5.3), Inches(0.3), h,
+        size=13, bold=True, color=c)
+    box(s, Inches(x + 0.28), Inches(5.07), Inches(5.35), Inches(1.28), body,
+        size=9.5, color=MUTED, line_spacing=1.18)
 
-box(s, Inches(0.7), Inches(6.6), Inches(11.93), Inches(0.6),
+box(s, Inches(0.7), Inches(6.58), Inches(11.93), Inches(0.6),
     "The chart itself saves nothing. It makes the opportunity visible and the "
-    "fault obvious — the saving comes from acting on what it shows.",
+    "fault obvious — the saving is booked by the sequence that acts on it.",
     size=13, bold=True, color=ACCENT, align=PP_ALIGN.CENTER, line_spacing=1.2)
 
 # =========================================================================

@@ -107,19 +107,31 @@
   .ctable td.psy{color:var(--green);font-weight:600}
   .ctable tr:nth-child(even) td{background:#fafcff}
   /* savings slide */
-  .srow{position:absolute;left:.7in;top:2.05in;display:grid;
-    grid-template-columns:repeat(4,2.83in);gap:.19in}
-  .scard{height:2.1in;background:#fff;border:1px solid var(--line);
-    border-radius:12px;padding:.26in;position:relative;overflow:hidden}
-  .scard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
-  .scard .big{font-size:38px;font-weight:800;line-height:1;margin-top:4px}
-  .scard .lab{font-size:12.8px;color:var(--ink);font-weight:700;margin-top:9px;
-    line-height:1.32}
-  .scard .src{font-size:10.3px;color:var(--faint);margin-top:8px;line-height:1.3}
-  .p2{position:absolute;top:4.42in;width:5.85in;height:1.95in;background:#fff;
-    border:1px solid var(--line);border-radius:12px;padding:.22in .28in}
-  .p2 h4{font-size:15.5px;margin-bottom:9px}
-  .p2 p{font-size:12.5px;color:var(--muted);line-height:1.38;margin-bottom:6px}
+  .bandh{position:absolute;top:1.90in;width:5.85in}
+  .bandh h5{font-size:14.5px;font-weight:800;margin-bottom:3px}
+  .bandh p{font-size:11.6px;color:var(--faint);line-height:1.3}
+  .srow{position:absolute;top:2.44in;display:grid;
+    grid-template-columns:repeat(2,2.79in);gap:.27in}
+  .scard{height:1.95in;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:.24in .2in .2in;position:relative;overflow:hidden}
+  .scard .top{position:absolute;left:0;top:0;width:100%;height:.09in}
+  .scard .big{font-size:33px;font-weight:800;line-height:1}
+  .scard .lab{font-size:11.4px;color:var(--ink);font-weight:700;margin-top:7px;
+    line-height:1.28}
+  .scard .src{font-size:9.6px;color:var(--faint);margin-top:6px;line-height:1.28}
+  .scard .attr{font-size:9.6px;margin-top:6px;line-height:1.28;padding-left:6px;
+    border-left:2px solid var(--line);color:var(--muted)}
+  .triple{display:flex;gap:.15in;align-items:flex-end}
+  .triple b{font-size:24px;font-weight:800;line-height:1;display:block}
+  .triple span{font-size:9.2px;color:var(--faint);text-transform:uppercase;
+    letter-spacing:.04em}
+  .tag{position:absolute;right:.16in;top:.24in;font-size:8.8px;font-weight:800;
+    text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;
+    border-radius:99px;background:#fef3c7;color:#92400e}
+  .p2{position:absolute;top:4.50in;width:5.85in;height:1.95in;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:.2in .28in}
+  .p2 h4{font-size:15px;margin-bottom:7px}
+  .p2 p{font-size:11.4px;color:var(--muted);line-height:1.33;margin-bottom:5px}
   .foot{position:absolute;left:.7in;top:6.6in;width:11.93in;text-align:center;
     font-size:15px;font-weight:700;color:var(--accent);line-height:1.35}
   /* closing */
@@ -456,24 +468,46 @@
 <!-- 11 WHAT IS IT WORTH -->
 <section class="slide">
   <div class="bar"></div><div class="kick">Published evidence</div>
-  <div class="title">What is it worth?</div>
-  <div class="srow">
+  <div class="title">What is it worth — and whose credit is it?</div>
+
+  <div class="bandh" style="left:.7in">
+    <h5 style="color:var(--accent)">What good air-side control is worth</h5>
+    <p>The prize, and it belongs to the sequences. The chart does not produce these savings — it makes them verifiable.</p>
+  </div>
+  <div class="bandh" style="left:6.78in">
+    <h5 style="color:var(--green)">What the chart itself contributes</h5>
+    <p>Visibility: the missed hours and the broken parts that a temperature trend hides.</p>
+  </div>
+
+  <div class="srow" style="left:.7in">
     <div class="scard"><div class="top" style="background:var(--accent)"></div>
       <div class="big" style="color:var(--accent)">31%</div>
-      <div class="lab">average HVAC energy saving from Guideline 36 sequences, against a baseline of existing practice</div>
-      <div class="src">Berkeley Lab, multi-zone VAV simulated in Spawn of EnergyPlus, medium office. <i>J. Building Performance Simulation</i>, 2022</div></div>
+      <div class="lab">average HVAC saving from Guideline 36 sequences, against existing practice</div>
+      <div class="src">Berkeley Lab, Spawn of EnergyPlus, medium office, 2022</div>
+      <div class="attr">Mostly static-pressure reset, zone minimum airflow and scheduling. Only the economizer and SAT logic land on the chart.</div></div>
+    <div class="scard"><div class="top" style="background:#7c3aed"></div>
+      <div class="triple" style="color:#7c3aed">
+        <div><b>41%</b><span>heating</span></div>
+        <div><b>20%</b><span>cooling</span></div>
+        <div><b>18%</b><span>shoulder</span></div>
+      </div>
+      <div class="lab">seasonal saving from supervisory setpoint resets</div>
+      <div class="src">PNNL large-office emulator, Chicago, 2024</div>
+      <div class="attr">Airside and plant-side combined — the chilled- and hot-water resets sit off the chart entirely.</div></div>
+  </div>
+
+  <div class="srow" style="left:6.78in">
     <div class="scard"><div class="top" style="background:var(--green)"></div>
       <div class="big" style="color:var(--green)">9%</div>
-      <div class="lab">median whole-building saving from fault detection, range 1–28%, two-year payback</div>
-      <div class="src">Berkeley Lab Smart Energy Analytics Campaign — 6,500 buildings, over half a billion sq ft</div></div>
+      <div class="lab">median whole-building saving from fault detection, range 1–28%</div>
+      <div class="src">Berkeley Lab Smart Energy Analytics Campaign, 6,500 buildings</div>
+      <div class="attr">The standard AHU rule set (NIST <b>APAR</b>, 28 mass- and energy-balance tests) is this chart's geometry in algebra. Covers all FDD, so read it as an upper bound.</div></div>
     <div class="scard"><div class="top" style="background:var(--amber)"></div>
+      <div class="tag">not a saving</div>
       <div class="big" style="color:var(--amber)">64%</div>
-      <div class="lab">of economizers found faulty in the field — free cooling paid for and never delivered</div>
-      <div class="src">New Buildings Institute; a wider literature survey averages 58%, with 25–40% of rooftop units faulty at any moment</div></div>
-    <div class="scard"><div class="top" style="background:#7c3aed"></div>
-      <div class="big" style="color:#7c3aed">20–41%</div>
-      <div class="lab">seasonal saving from supervisory setpoint resets: 20% cooling, 18% shoulder, 41% heating</div>
-      <div class="src">PNNL, large-office emulator, Chicago, 2024 — airside and plant-side resets combined</div></div>
+      <div class="lab">of economizers found faulty in the field</div>
+      <div class="src">New Buildings Institute; wider surveys average 58%</div>
+      <div class="attr">Opportunity size, not a return: how often the free-cooling asset is already broken. The chart is how you notice.</div></div>
   </div>
 
   <div class="p2" style="left:.7in">
@@ -486,13 +520,13 @@
 
   <div class="p2" style="left:6.78in">
     <h4 style="color:var(--amber)">Read these numbers honestly</h4>
-    <p>• They are measure-level results from simulation and field studies — not a guarantee for any one building.</p>
-    <p>• They overlap heavily. Do not add them together.</p>
-    <p>• The largest savings come from the worst starting points; a well-commissioned building has less to gain.</p>
-    <p>• Enthalpy switching is <b>not</b> automatically better. Taylor &amp; Cheng (<i>ASHRAE Journal</i>, 2010) found fixed dry-bulb often wins once humidity-sensor drift is counted — which is why 90.1-2013 imposed sensor-accuracy limits.</p>
+    <p>• Measure-level results from simulation and field studies — not a guarantee for any one building.</p>
+    <p>• They overlap and are not additive; the left pair and the right pair count much of the same energy twice.</p>
+    <p>• The largest savings come from the worst starting points.</p>
+    <p>• Enthalpy switching is <b>not</b> automatically better — Taylor &amp; Cheng (2010) found fixed dry-bulb often wins once humidity sensors drift, hence 90.1-2013's accuracy limits.</p>
   </div>
 
-  <div class="foot">The chart itself saves nothing. It makes the opportunity visible and the fault obvious — the saving comes from acting on what it shows.</div>
+  <div class="foot">The chart itself saves nothing. It makes the opportunity visible and the fault obvious — the saving is booked by the sequence that acts on it.</div>
 </section>
 
 <!-- 12 CLOSING -->

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Psychrometric Chart — HVAC's master diagram and the missing BMS tool</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#475569; --faint:#64748b; --line:#e2e8f0;
+    --accent:#1d4ed8; --green:#047857; --amber:#b45309; --page:#f8fafc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#334155;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink)}
+  .slide{position:relative;width:13.333in;height:7.5in;background:var(--page);
+    overflow:hidden;margin:18px auto;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  .bar{position:absolute;top:0;left:0;right:0;height:.16in;background:var(--accent)}
+  .kick{position:absolute;left:.7in;top:.42in;font-size:15px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .title{position:absolute;left:.7in;top:.74in;font-size:33px;font-weight:800;letter-spacing:-.01em;color:var(--ink);max-width:12in}
+  .lead{position:absolute;left:.7in;top:1.5in;width:11.9in;font-size:16.5px;color:var(--muted);line-height:1.45}
+  .dark{background:#0b1224;color:#fff}
+  /* title slide */
+  .t-brand{position:absolute;left:.9in;top:1.85in;font-size:64px;font-weight:800;color:#fff;line-height:1.05;max-width:11.5in}
+  .t-sub{position:absolute;left:.92in;top:3.5in;font-size:27px;color:#93c5fd;max-width:11.5in;line-height:1.3}
+  .t-desc{position:absolute;left:.92in;top:4.75in;font-size:18px;color:#cbd5e1;max-width:11.2in;line-height:1.5}
+  .t-tags{position:absolute;left:.9in;top:6.15in;display:flex;gap:14px}
+  .t-tag{background:#1e293b;border:1px solid #334155;color:#93c5fd;font-size:14px;font-weight:700;border-radius:999px;padding:9px 20px}
+  /* 3-card row */
+  .cards{position:absolute;left:.7in;display:flex;gap:.25in}
+  .goal{width:3.9in;background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.32in .34in}
+  .goal .edge{position:absolute;left:0;top:0;width:.14in;height:100%;border-radius:12px 0 0 12px}
+  .goal h3{font-size:19px;margin-bottom:11px}
+  .goal p{font-size:15px;color:var(--muted);line-height:1.45}
+  .catch{position:absolute;left:.7in;width:12.4in;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:15px 22px}
+  .catch .t{font-size:15px;font-weight:800;color:var(--amber);margin-bottom:5px}
+  .catch p{font-size:15.5px;color:var(--ink);line-height:1.45}
+  /* 4-card grid */
+  .hg{position:absolute;left:.7in;display:grid;grid-template-columns:5.85in 5.85in;gap:.22in}
+  .hcard{background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.24in .3in .24in .38in}
+  .hcard .edge{position:absolute;left:0;top:0;width:.13in;height:100%}
+  .hcard h4{font-size:17px;margin-bottom:7px}
+  .hcard p{font-size:14.5px;color:var(--muted);line-height:1.42}
+  /* 6-card reasons grid */
+  .rg{position:absolute;left:.7in;top:2.0in;display:grid;grid-template-columns:repeat(3,3.9in);gap:.2in}
+  .rcard{height:2.02in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative;padding:.26in .28in}
+  .rcard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
+  .rcard h4{font-size:16px;margin:7px 0 8px}
+  .rcard p{font-size:13.2px;color:var(--muted);line-height:1.4}
+  /* rulebook rows */
+  .rows{position:absolute;left:.7in;top:2.15in;width:12.4in}
+  .row{display:flex;align-items:stretch;height:1.02in;margin-bottom:.12in;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .row .code{width:2.5in;display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;font-weight:800}
+  .row .nick{width:2.2in;display:flex;align-items:center;padding-left:.3in;font-size:17px;font-weight:800}
+  .row .q{flex:1;display:flex;align-items:center;padding-left:.2in;font-size:16px;color:var(--muted)}
+  /* venn */
+  .venn{position:absolute;left:.5in;top:1.9in;width:8.4in;height:5.2in}
+  .circle{position:absolute;width:3.05in;height:3.05in;border-radius:50%;mix-blend-mode:multiply;border:2px solid}
+  .c-comfort{left:1.55in;top:1.05in;background:rgba(180,83,9,.30);border-color:var(--amber)}
+  .c-fresh{left:3.6in;top:1.05in;background:rgba(4,120,87,.30);border-color:var(--green)}
+  .c-energy{left:2.55in;top:2.35in;background:rgba(29,78,216,.30);border-color:var(--accent)}
+  .v-lab{position:absolute;font-size:14px;font-weight:800;text-align:center;line-height:1.25}
+  .vcenter{position:absolute;left:2.95in;top:2.55in;width:2.2in;text-align:center;font-size:17px;font-weight:800;color:var(--ink)}
+  .explain{position:absolute;right:.55in;top:2.0in;width:3.35in;height:3.4in;background:#fff;border:1px solid var(--line);border-radius:12px;padding:.28in}
+  .explain h3{color:var(--accent);font-size:17px;margin-bottom:10px}
+  .explain p{font-size:14.5px;color:var(--muted);line-height:1.5}
+  .ref{position:absolute;right:.55in;top:5.55in;width:3.35in;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:.2in .28in;font-size:13.5px;color:var(--green);font-weight:600}
+  .oneline{position:absolute;left:.7in;top:6.7in;width:11.9in;text-align:center;font-size:15px;font-weight:800;color:var(--accent)}
+  /* chart slide */
+  .chartwrap{position:absolute;left:.55in;top:1.95in}
+  .cnotes{position:absolute;left:7.35in;top:2.05in;width:5.3in}
+  .cnotes h3{color:var(--accent);font-size:17px;margin-bottom:12px}
+  .cnote{display:flex;gap:11px;margin-bottom:13px}
+  .cnote .n{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .cnote p{font-size:14.5px;color:var(--muted);line-height:1.45}
+  .legend{position:absolute;left:7.35in;top:6.35in;width:5.3in;font-size:13px;color:var(--faint);line-height:1.5}
+  /* comparison table */
+  .ctable{position:absolute;left:.7in;top:2.05in;width:12.4in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .ctable table{width:100%;border-collapse:collapse}
+  .ctable th,.ctable td{padding:12px 16px;font-size:14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  .ctable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);background:#f8fafc}
+  .ctable td:first-child{font-weight:700;color:var(--ink);width:2.9in}
+  .ctable td.trad{color:var(--muted);width:4.6in}
+  .ctable td.psy{color:var(--green);font-weight:600}
+  .ctable tr:nth-child(even) td{background:#fafcff}
+  /* closing */
+  .close-h{position:absolute;left:1in;top:2.4in;width:11.3in;text-align:center;font-size:44px;font-weight:800;color:#fff}
+  .close-p{position:absolute;left:1.4in;top:3.9in;width:10.5in;text-align:center;font-size:19px;color:#cbd5e1;line-height:1.55}
+  .close-n{position:absolute;left:2in;top:5.6in;width:9.3in;text-align:center;font-size:15.5px;color:#93c5fd;line-height:1.5;font-style:italic}
+  @page{size:13.333in 7.5in;margin:0}
+  @media print{
+    html,body{background:#fff}
+    .slide{margin:0;box-shadow:none;page-break-after:always}
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 TITLE -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="t-brand">The Psychrometric Chart</div>
+  <div class="t-sub">HVAC's master diagram — and the missing tool in most Building Management Systems</div>
+  <div class="t-desc">Why equipment designers cannot work without it, why traditional BMS never adopted it, and how this one chart answers ASHRAE 55, 62.1, 90.1 and Guideline 36 at the same time.</div>
+  <div class="t-tags"><span class="t-tag">Moist-air states</span><span class="t-tag">Design tool</span><span class="t-tag">ASHRAE-aligned</span><span class="t-tag">Live controls</span></div>
+</section>
+
+<!-- 2 WHO USES IT / WHAT EQUIPMENT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">Start here</div>
+  <div class="title">Who uses this chart — and on what equipment</div>
+  <div class="lead">Long before a building is controlled, someone has to choose the machines that condition its air. Those people live on the psychrometric chart.</div>
+  <div class="cards" style="top:2.35in">
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--accent)"></div>
+      <h3 style="color:var(--accent)">Who they are</h3>
+      <p>"HVAC equipment designers" are the mechanical engineers who select and size air-conditioning equipment:</p>
+      <p style="margin-top:9px">• manufacturers' application engineers<br>• consulting / design engineers<br>• commissioning engineers who prove it works</p>
+    </div>
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--green)"></div>
+      <h3 style="color:var(--green)">What "HVAC equipment" means</h3>
+      <p>The machines that actually change the air:</p>
+      <p style="margin-top:9px">• air-handling units (AHUs) and their heating / cooling coils<br>• mixing &amp; economizer dampers<br>• humidifiers and dehumidifiers<br>• energy-recovery wheels (ERV / HRV)<br>• chillers and DX systems, fans, VAV terminals</p>
+    </div>
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--amber)"></div>
+      <h3 style="color:var(--amber)">What they must decide</h3>
+      <p>• How much cooling or heating is needed<br>• How much of that cooling removes <b>moisture</b> rather than heat<br>• How big the coil must be<br>• How much outside air to mix in<br>• Whether condensation or coil freezing will occur</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 WHY DESIGNERS RELY ON IT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">Why it exists</div>
+  <div class="title">Why designers cannot work without it</div>
+  <div class="lead">Air conditioning is not simply "making air colder". It is moving <b>moist air</b> from one state to another — and the psychrometric chart is the map of every state air can be in.</div>
+  <div class="hg" style="top:2.4in">
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">Every process is a line</h4>
+      <p>Cooling, heating, humidifying, dehumidifying and mixing each move the air in a characteristic direction. Draw the line and you have described the process.</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">Capacity comes from the chart</h4>
+      <p>The energy content (enthalpy) at each end of the line, multiplied by airflow, is the kW the coil must deliver. That is how equipment gets sized.</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">Sensible vs latent</h4>
+      <p>The chart separates cooling that lowers temperature from cooling that removes water. The two behave differently and must be sized separately.</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--ink)"></div>
+      <h4>Physical limits are visible</h4>
+      <p>The curved boundary is 100% humidity — air cannot go beyond it. It shows where condensation begins and where a coil would freeze.</p></div>
+  </div>
+</section>
+
+<!-- 4 HOW TO READ IT (SVG chart) -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">How to read it</div>
+  <div class="title">One dot is the state of the air</div>
+  <div class="chartwrap">
+    <svg viewBox="0 0 600 400" style="width:6.6in;height:4.4in">
+      <rect x="0" y="0" width="600" height="400" fill="#ffffff" stroke="#e2e8f0"/>
+      <!-- grid -->
+      <g stroke="#eef2f7" stroke-width="1">
+        <line x1="122" y1="40" x2="122" y2="350"/><line x1="185" y1="40" x2="185" y2="350"/>
+        <line x1="247" y1="40" x2="247" y2="350"/><line x1="310" y1="40" x2="310" y2="350"/>
+        <line x1="372" y1="40" x2="372" y2="350"/><line x1="435" y1="40" x2="435" y2="350"/>
+        <line x1="497" y1="40" x2="497" y2="350"/>
+        <line x1="60" y1="288" x2="560" y2="288"/><line x1="60" y1="226" x2="560" y2="226"/>
+        <line x1="60" y1="164" x2="560" y2="164"/><line x1="60" y1="102" x2="560" y2="102"/>
+      </g>
+      <!-- axes -->
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- saturation curve (100% RH) -->
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+      <text x="462" y="60" font-size="12" font-weight="700" fill="#1d4ed8">100% RH</text>
+      <text x="462" y="76" font-size="11" fill="#64748b">(saturation)</text>
+      <!-- comfort zone -->
+      <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.16)" stroke="#b45309"
+            stroke-width="1.6" stroke-dasharray="5 3" rx="4"/>
+      <text x="286" y="216" font-size="11.5" font-weight="700" fill="#b45309">Comfort zone (ASHRAE 55)</text>
+      <!-- mixing line OA-RA -->
+      <line x1="472" y1="164" x2="360" y2="254" stroke="#047857" stroke-width="2" stroke-dasharray="6 4"/>
+      <!-- coil process MA -> SA -->
+      <line x1="394" y1="227" x2="222" y2="259" stroke="#1d4ed8" stroke-width="2.5"/>
+      <polygon points="222,259 233,253 233,265" fill="#1d4ed8"/>
+      <!-- state points -->
+      <g>
+        <circle cx="472" cy="164" r="6" fill="#b45309"/><text x="482" y="160" font-size="13" font-weight="800" fill="#b45309">OA</text>
+        <circle cx="360" cy="254" r="6" fill="#047857"/><text x="368" y="272" font-size="13" font-weight="800" fill="#047857">RA</text>
+        <circle cx="394" cy="227" r="6" fill="#0f172a"/><text x="402" y="222" font-size="13" font-weight="800" fill="#0f172a">MA</text>
+        <circle cx="222" cy="259" r="6" fill="#1d4ed8"/><text x="196" y="252" font-size="13" font-weight="800" fill="#1d4ed8">SA</text>
+      </g>
+      <!-- axis captions -->
+      <text x="300" y="378" font-size="12.5" font-weight="700" fill="#475569" text-anchor="middle">Dry-bulb temperature  →</text>
+      <text x="20" y="200" font-size="12.5" font-weight="700" fill="#475569"
+            transform="rotate(-90 20 200)" text-anchor="middle">Moisture in the air  →</text>
+    </svg>
+  </div>
+  <div class="cnotes">
+    <h3>Four things this picture tells you</h3>
+    <div class="cnote"><div class="n">1</div><p><b>Across</b> is temperature, <b>up</b> is how much water the air carries. One dot fixes both at once.</p></div>
+    <div class="cnote"><div class="n">2</div><p>The curve is <b>100% humidity</b>. Air can never sit above it — touch it and water condenses.</p></div>
+    <div class="cnote"><div class="n">3</div><p>Mix two air streams and the result lands on the <b>straight line between them</b>. Where it lands reveals the proportion of outside air.</p></div>
+    <div class="cnote"><div class="n">4</div><p>A line heading <b>down and to the left</b> is a cooling coil taking out both heat and moisture.</p></div>
+  </div>
+  <div class="legend"><b>OA</b> outside air &nbsp;·&nbsp; <b>RA</b> return air from the rooms &nbsp;·&nbsp; <b>MA</b> the mixture entering the coil &nbsp;·&nbsp; <b>SA</b> supply air delivered to the rooms.</div>
+</section>
+
+<!-- 5 WHY TRADITIONAL BMS DOESN'T USE IT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The gap</div>
+  <div class="title">Why traditional BMS never adopted the chart</div>
+  <div class="rg">
+    <div class="rcard"><div class="top" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">Controls think in single numbers</h4>
+      <p>A BMS is assembled from loops that each watch <b>one</b> value — a temperature, a pressure. A state point needs two readings judged together; classic controls had no concept of a two-dimensional air state.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">The sensors often aren't there</h4>
+      <p>You need temperature <b>and</b> humidity at the same place. Many units measure only dry-bulb on outside, mixed and return air — extra humidity sensors mean extra cost, wiring and calibration drift.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">The maths was too expensive</h4>
+      <p>Moisture content and energy content are non-linear and depend on barometric pressure. Older controllers had very little memory and no floating-point maths, so psychrometrics were simply left out.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">Graphics couldn't draw it</h4>
+      <p>Early front-ends drew simple equipment schematics and time-series trends. A live chart with curves and overlays needs real rendering — so the chart stayed a static page in the design binder.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">Design and operations are separate worlds</h4>
+      <p>The chart is used once, offline, to select equipment. What is handed to the controls contractor is a list of setpoints — not the physics behind them. The reasoning is lost at handover.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">The simpler option was allowed</h4>
+      <p>Codes permit dry-bulb-only economizer switching, so designs avoided humidity sensing that was historically unreliable. The easier, compliant path quietly became the default.</p></div>
+  </div>
+  <div class="catch" style="top:6.35in">
+    <div class="t">The consequence</div>
+    <p>Operators end up diagnosing a <b>two-dimensional</b> problem — heat <i>and</i> moisture — by staring at separate one-dimensional trend lines. The information is there; the picture is not.</p>
+  </div>
+</section>
+
+<!-- 6 RULEBOOKS -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The rulebooks</div>
+  <div class="title">Four ASHRAE standards, in one line each</div>
+  <div class="rows">
+    <div class="row"><div class="code" style="background:var(--amber)">ASHRAE 55</div><div class="nick" style="color:var(--amber)">Comfort</div><div class="q">Will people feel comfortable?</div></div>
+    <div class="row"><div class="code" style="background:var(--green)">ASHRAE 62.1</div><div class="nick" style="color:var(--green)">Fresh air</div><div class="q">Is there enough outside air to stay healthy?</div></div>
+    <div class="row"><div class="code" style="background:var(--accent)">ASHRAE 90.1</div><div class="nick" style="color:var(--accent)">Energy</div><div class="q">Are we doing it without wasting energy?</div></div>
+    <div class="row"><div class="code" style="background:var(--ink)">Guideline 36</div><div class="nick" style="color:var(--ink)">The referee</div><div class="q">How should the equipment be run to hit all three?</div></div>
+  </div>
+  <div class="catch" style="top:6.85in;padding:11px 22px">
+    <p style="font-size:15px">Comfort and fresh air push toward <b>more</b> conditioning; energy pushes toward <b>less</b>. Guideline 36 is the rulebook that settles the argument.</p>
+  </div>
+</section>
+
+<!-- 7 VENN -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The big idea</div>
+  <div class="title">One picture where all four rulebooks meet</div>
+  <div class="venn">
+    <div class="circle c-comfort"></div>
+    <div class="circle c-fresh"></div>
+    <div class="circle c-energy"></div>
+    <div class="v-lab" style="left:.3in;top:1.9in;color:var(--amber)">COMFORT<br>ASHRAE 55</div>
+    <div class="v-lab" style="left:6.5in;top:1.9in;color:var(--green)">FRESH AIR<br>ASHRAE 62.1</div>
+    <div class="v-lab" style="left:2.9in;top:5.65in;width:2.4in;color:var(--accent)">ENERGY · ASHRAE 90.1</div>
+    <div class="vcenter">Psychrometric<br>Chart</div>
+  </div>
+  <div class="explain"><h3>Why they overlap here</h3><p>All four standards are written about the same two quantities — <b>temperature</b> and <b>moisture</b>. Those are exactly the chart's two axes.<br><br>So a single plotted dot can be judged against comfort, fresh air and energy simultaneously, instead of one standard at a time.</p></div>
+  <div class="ref">Guideline 36 is the referee — the control logic that keeps the dot in the overlap automatically.</div>
+</section>
+
+<!-- 8 ONE DOT ANSWERS ALL FOUR -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">How it satisfies each</div>
+  <div class="title">One dot on the chart answers every question</div>
+  <div class="hg" style="top:2.15in">
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--amber)"></div><h4 style="color:var(--amber)">55 — Comfort</h4><p>The comfort zone is drawn straight onto the chart. Is the room dot inside the acceptable temperature/humidity band — and if not, which way is it off?</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--green)"></div><h4 style="color:var(--green)">62.1 — Fresh air</h4><p>The mixed-air dot must sit on the line between return and outside air. Its position along that line <i>is</i> the outside-air proportion.</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--accent)"></div><h4 style="color:var(--accent)">90.1 — Energy</h4><p>Equal-energy lines reveal free cooling: when outside air holds less energy than return air, the economizer can meet the load with no mechanical cooling.</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--ink)"></div><h4>G36 — Sequences</h4><p>Visible proof the sequences land the dot inside the comfort zone, on the correct fresh-air line, along the lowest-energy path.</p></div>
+  </div>
+  <div class="oneline">In one sentence: plot where the air IS, see where it MUST be, how it gets there, and whether it does so at least energy.</div>
+</section>
+
+<!-- 9 COMPARISON -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The difference</div>
+  <div class="title">Trend-based BMS vs a psychrometric-aware BMS</div>
+  <div class="ctable">
+    <table>
+      <tr><th>Question being asked</th><th>Trend-based BMS (today)</th><th>Psychrometric-aware BMS</th></tr>
+      <tr><td>What the operator sees</td><td class="trad">Several separate trend lines, read one at a time</td><td class="psy">One picture showing the air's actual state</td></tr>
+      <tr><td>Is the outside-air mix right?</td><td class="trad">Inferred from the damper command</td><td class="psy">The mixed-air dot must fall on the outside–return line</td></tr>
+      <tr><td>Can we free-cool right now?</td><td class="trad">Usually temperature-only, so humid-but-cool and dry-but-warm hours are misjudged</td><td class="psy">Decided on true energy content of the air</td></tr>
+      <tr><td>Humidity control</td><td class="trad">A separate loop, often fighting the cooling loop</td><td class="psy">Heat and moisture handled as one state</td></tr>
+      <tr><td>Finding faults</td><td class="trad">Alarm limits on individual points</td><td class="psy">The shape of the process line exposes coil, damper and sensor faults</td></tr>
+      <tr><td>Proving the standards</td><td class="trad">Checked manually, usually after the fact</td><td class="psy">Comfort, ventilation and energy judged together, live</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 10 CLOSING -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="close-h">One chart. Four rulebooks.</div>
+  <div class="close-p">The psychrometric chart is not a design-only artifact. Bringing it into the building's controls turns anonymous setpoints back into visible physics — and puts comfort, air quality and energy into a single picture an operator can read at a glance.</div>
+  <div class="close-n">The computing power to draw it live has been ordinary for years. What has kept the chart out of the control room is habit and missing humidity sensors — not physics, and no longer technology.</div>
+</section>
+
+</body>
+</html>

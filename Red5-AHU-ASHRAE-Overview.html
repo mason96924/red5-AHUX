@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Red5-AHU — ASHRAE Overview</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#475569; --faint:#64748b; --line:#e2e8f0;
+    --accent:#1d4ed8; --green:#047857; --amber:#b45309; --page:#f8fafc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#334155;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink)}
+  .slide{position:relative;width:13.333in;height:7.5in;background:var(--page);
+    overflow:hidden;margin:18px auto;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  .bar{position:absolute;top:0;left:0;right:0;height:.16in;background:var(--accent)}
+  .kick{position:absolute;left:.7in;top:.42in;font-size:15px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .title{position:absolute;left:.7in;top:.74in;font-size:33px;font-weight:800;letter-spacing:-.01em;color:var(--ink);max-width:12in}
+  .dark{background:#0b1224;color:#fff}
+  /* title slide */
+  .t-brand{position:absolute;left:.9in;top:2.0in;font-size:76px;font-weight:800;color:#fff}
+  .t-sub{position:absolute;left:.92in;top:3.35in;font-size:30px;color:#93c5fd;max-width:11.5in}
+  .t-desc{position:absolute;left:.92in;top:4.55in;font-size:19px;color:#cbd5e1;max-width:11.2in;line-height:1.5}
+  .t-tags{position:absolute;left:.9in;top:6.0in;display:flex;gap:14px}
+  .t-tag{background:#1e293b;border:1px solid #334155;color:#93c5fd;font-size:14px;font-weight:700;border-radius:999px;padding:9px 20px}
+  /* goals */
+  .cards{position:absolute;left:.7in;top:2.15in;display:flex;gap:.25in}
+  .goal{width:3.9in;height:2.5in;background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.35in .35in}
+  .goal .edge{position:absolute;left:0;top:0;width:.14in;height:100%;border-radius:12px 0 0 12px}
+  .goal h3{font-size:22px;margin-bottom:12px}
+  .goal p{font-size:16px;color:var(--muted);line-height:1.45}
+  .catch{position:absolute;left:.7in;top:5.1in;width:12.4in;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px 22px}
+  .catch .t{font-size:16px;font-weight:800;color:var(--amber);margin-bottom:6px}
+  .catch p{font-size:16px;color:var(--ink);line-height:1.45}
+  /* rulebook rows */
+  .rows{position:absolute;left:.7in;top:2.15in;width:12.4in}
+  .row{display:flex;align-items:stretch;height:1.02in;margin-bottom:.12in;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .row .code{width:2.5in;display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;font-weight:800}
+  .row .nick{width:2.2in;display:flex;align-items:center;padding-left:.3in;font-size:17px;font-weight:800}
+  .row .q{flex:1;display:flex;align-items:center;padding-left:.2in;font-size:16px;color:var(--muted)}
+  /* venn */
+  .venn{position:absolute;left:.5in;top:1.9in;width:8.4in;height:5.2in}
+  .circle{position:absolute;width:3.05in;height:3.05in;border-radius:50%;mix-blend-mode:multiply;border:2px solid}
+  .c-comfort{left:1.55in;top:1.05in;background:rgba(180,83,9,.30);border-color:var(--amber)}
+  .c-fresh{left:3.6in;top:1.05in;background:rgba(4,120,87,.30);border-color:var(--green)}
+  .c-energy{left:2.55in;top:2.35in;background:rgba(29,78,216,.30);border-color:var(--accent)}
+  .v-lab{position:absolute;font-size:14px;font-weight:800;text-align:center;line-height:1.25}
+  .vcenter{position:absolute;left:2.95in;top:2.55in;width:2.2in;text-align:center;font-size:17px;font-weight:800;color:var(--ink)}
+  .explain{position:absolute;right:.55in;top:2.0in;width:3.35in;height:3.4in;background:#fff;border:1px solid var(--line);border-radius:12px;padding:.28in}
+  .explain h3{color:var(--accent);font-size:17px;margin-bottom:10px}
+  .explain p{font-size:14.5px;color:var(--muted);line-height:1.5}
+  .ref{position:absolute;right:.55in;top:5.55in;width:3.35in;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:.2in .28in;font-size:13.5px;color:var(--green);font-weight:600}
+  /* how grid */
+  .hg{position:absolute;left:.7in;top:2.15in;display:grid;grid-template-columns:5.85in 5.85in;gap:.22in}
+  .hcard{height:1.9in;background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.24in .3in .24in .38in}
+  .hcard .edge{position:absolute;left:0;top:0;width:.13in;height:100%}
+  .hcard h4{font-size:18px;margin-bottom:8px}
+  .hcard p{font-size:14.5px;color:var(--muted);line-height:1.42}
+  .oneline{position:absolute;left:.7in;top:6.7in;width:11.9in;text-align:center;font-size:15px;font-weight:800;color:var(--accent)}
+  /* comparison */
+  .cmp-h{position:absolute;left:.7in;top:1.95in;font-size:16px;font-weight:800}
+  .brow{position:absolute;display:flex;align-items:center}
+  .blab{width:2.3in;font-size:14px;color:var(--muted)}
+  .btrack{width:5.7in;height:.62in;border-radius:8px;color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:flex-end;padding-right:12px}
+  .cap{position:absolute;left:.7in;top:4.2in;width:6in;font-size:13px;color:var(--faint);line-height:1.4}
+  .ftable{position:absolute;left:7.05in;top:1.95in;width:5.6in;height:4.7in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .ftable table{width:100%;border-collapse:collapse}
+  .ftable th,.ftable td{padding:11px 10px;font-size:12.5px;text-align:center;border-bottom:1px solid var(--line)}
+  .ftable th{color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-size:11px}
+  .ftable td:first-child,.ftable th:first-child{text-align:left;font-weight:700;color:var(--ink)}
+  .ftable td.good{color:var(--green);font-weight:800}
+  .ftable td.bad{color:var(--muted)}
+  .ftable tr:nth-child(even) td{background:#fafcff}
+  /* image slide */
+  .imgwrap{position:absolute;left:.7in;top:2.05in;height:4.7in}
+  .imgwrap img{height:4.7in;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .iexp{position:absolute;left:6.4in;top:2.25in;width:6.25in}
+  .iexp h3{color:var(--accent);font-size:17px;margin-bottom:12px}
+  .iexp p{font-size:15px;color:var(--muted);line-height:1.5;margin-bottom:12px}
+  /* why grid */
+  .wg{position:absolute;left:.7in;top:2.1in;display:grid;grid-template-columns:repeat(3,3.9in);gap:.22in}
+  .wcard{height:1.95in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative;padding:.28in}
+  .wcard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
+  .wcard h4{font-size:17px;margin:6px 0 8px}
+  .wcard p{font-size:13.5px;color:var(--muted);line-height:1.42}
+  /* closing */
+  .close-h{position:absolute;left:1in;top:2.5in;width:11.3in;text-align:center;font-size:46px;font-weight:800;color:#fff}
+  .close-p{position:absolute;left:1.4in;top:4.2in;width:10.5in;text-align:center;font-size:20px;color:#cbd5e1;line-height:1.5}
+  @page{size:13.333in 7.5in;margin:0}
+  @media print{
+    html,body{background:#fff}
+    .slide{margin:0;box-shadow:none;page-break-after:always}
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 TITLE -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="t-brand">Red5-AHU</div>
+  <div class="t-sub">One chart to keep buildings comfortable, healthy, and energy-smart</div>
+  <div class="t-desc">A plain-language look at how a smart air-handler tool meets every major ASHRAE standard — and why every Building Management System needs it.</div>
+  <div class="t-tags"><span class="t-tag">Edge-native</span><span class="t-tag">No cloud</span><span class="t-tag">BACnet-native</span><span class="t-tag">ASHRAE-aligned</span></div>
+</section>
+
+<!-- 2 PROBLEM -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The challenge</div>
+  <div class="title">Three things every building must do — at once</div>
+  <div class="cards">
+    <div class="goal"><div class="edge" style="background:var(--amber)"></div><h3 style="color:var(--amber)">Feel comfortable</h3><p>Not too hot, not too cold, not too humid.</p></div>
+    <div class="goal"><div class="edge" style="background:var(--green)"></div><h3 style="color:var(--green)">Stay healthy</h3><p>Enough fresh outside air so the air is safe to breathe.</p></div>
+    <div class="goal"><div class="edge" style="background:var(--accent)"></div><h3 style="color:var(--accent)">Save energy</h3><p>Do both of the above without wasting power or money.</p></div>
+  </div>
+  <div class="catch"><div class="t">The catch</div><p>These goals fight each other. More comfort and more fresh air usually cost more energy. Getting all three right, all day, in every season — is hard.</p></div>
+</section>
+
+<!-- 3 RULEBOOKS -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The rulebooks</div>
+  <div class="title">Four ASHRAE standards, in one line each</div>
+  <div class="rows">
+    <div class="row"><div class="code" style="background:var(--amber)">ASHRAE 55</div><div class="nick" style="color:var(--amber)">Comfort</div><div class="q">Will people feel comfortable?</div></div>
+    <div class="row"><div class="code" style="background:var(--green)">ASHRAE 62.1</div><div class="nick" style="color:var(--green)">Fresh air</div><div class="q">Is there enough outside air to stay healthy?</div></div>
+    <div class="row"><div class="code" style="background:var(--accent)">ASHRAE 90.1</div><div class="nick" style="color:var(--accent)">Energy</div><div class="q">Are we doing it without wasting energy?</div></div>
+    <div class="row"><div class="code" style="background:var(--ink)">Guideline 36</div><div class="nick" style="color:var(--ink)">The referee</div><div class="q">How do we run the equipment to hit all three?</div></div>
+  </div>
+</section>
+
+<!-- 4 VENN -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The big idea</div>
+  <div class="title">One picture where all four rulebooks meet</div>
+  <div class="venn">
+    <div class="circle c-comfort"></div>
+    <div class="circle c-fresh"></div>
+    <div class="circle c-energy"></div>
+    <div class="v-lab" style="left:.3in;top:1.9in;color:var(--amber)">COMFORT<br>ASHRAE 55</div>
+    <div class="v-lab" style="left:6.5in;top:1.9in;color:var(--green)">FRESH AIR<br>ASHRAE 62.1</div>
+    <div class="v-lab" style="left:2.9in;top:5.65in;width:2.4in;color:var(--accent)">ENERGY · ASHRAE 90.1</div>
+    <div class="vcenter">Psychrometric<br>Chart</div>
+  </div>
+  <div class="explain"><h3>Why it works</h3><p>All four standards live on the SAME chart — temperature across the bottom, humidity up the side.<br><br>Plot one dot for the air and you can instantly see comfort, fresh-air mix, and energy — all together.</p></div>
+  <div class="ref">Guideline 36 is the referee — the control logic that keeps the dot in the sweet spot automatically.</div>
+</section>
+
+<!-- 5 HOW -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">How it satisfies each</div>
+  <div class="title">One dot on the chart answers every question</div>
+  <div class="hg">
+    <div class="hcard"><div class="edge" style="background:var(--amber)"></div><h4 style="color:var(--amber)">55 — Comfort</h4><p>The comfort zone is drawn on the chart. Is the dot inside the good temperature/humidity band? If not, which way is it off?</p></div>
+    <div class="hcard"><div class="edge" style="background:var(--green)"></div><h4 style="color:var(--green)">62.1 — Fresh air</h4><p>The mixed-air dot sits on the line between return and outside air — its position shows the fresh-air share at a glance.</p></div>
+    <div class="hcard"><div class="edge" style="background:var(--accent)"></div><h4 style="color:var(--accent)">90.1 — Energy</h4><p>Enthalpy lines reveal free cooling: when outside air is cooler, the economizer meets the load with no mechanical cooling.</p></div>
+    <div class="hcard"><div class="edge" style="background:var(--ink)"></div><h4>G36 — Sequences</h4><p>Visual proof the automatic sequences land the dot in the comfort zone, on the fresh-air line, at the lowest-energy path.</p></div>
+  </div>
+  <div class="oneline">In one sentence: plot where the air IS, see where it MUST be, how it gets there, and whether it does so at minimum energy.</div>
+</section>
+
+<!-- 6 COMPARISON -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The difference</div>
+  <div class="title">Red5-AHU vs a traditional BMS</div>
+  <div class="cmp-h">Supply-air energy (lower is better)</div>
+  <div class="brow" style="left:.7in;top:2.55in"><div class="blab">Fixed setpoint</div><div class="btrack" style="width:3.4in;background:#64748b">100</div></div>
+  <div class="brow" style="left:.7in;top:3.4in"><div class="blab">Red5-AHU (B1–B10)</div><div class="btrack" style="width:.95in;background:var(--green)">&nbsp;</div><span style="position:absolute;left:3.4in;top:.14in;font-size:15px;font-weight:800;color:var(--green)">28</span></div>
+  <div class="cap">≈ 70–75% less supply-air energy than a fixed year-round setpoint (internal estimate, temperate climate).</div>
+  <div class="ftable">
+    <table>
+      <tr><th></th><th>Traditional BMS</th><th>Red5-AHU</th></tr>
+      <tr><td>Where it runs</td><td class="bad">Cloud / head-end PC</td><td class="good">On the controller</td></tr>
+      <tr><td>Standards built in</td><td class="bad">Add-on / manual</td><td class="good">55·62.1·90.1·G36</td></tr>
+      <tr><td>Diagnose an AHU</td><td class="bad">Dig through trends</td><td class="good">One glance</td></tr>
+      <tr><td>Vendor lock-in</td><td class="bad">Usually yes</td><td class="good">Open protocols</td></tr>
+      <tr><td>Languages</td><td class="bad">Often one</td><td class="good">Five</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 6b IMAGE -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">Seeing it in action</div>
+  <div class="title">The control follows the seasons</div>
+  <div class="imgwrap"><img src="frontend/public/band_monthly_energy.png" alt="Monthly energy by climate band"></div>
+  <div class="iexp">
+    <h3>What you're looking at</h3>
+    <p>Instead of one fixed target all year, Red5-AHU sets the supply-air target to match the season (climate bands B1–B10).</p>
+    <p>In mild months it leans on free outside-air cooling; in harsh months it does only as much conditioning as needed.</p>
+    <p>The result: month after month the air handler uses far less energy than a fixed setpoint — automatically, with no operator effort.</p>
+  </div>
+</section>
+
+<!-- 7 WHY -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">The bottom line</div>
+  <div class="title">Why it's an essential BMS tool</div>
+  <div class="wg">
+    <div class="wcard"><div class="top" style="background:var(--accent)"></div><h4 style="color:var(--accent)">Sees everything at once</h4><p>Comfort, fresh air, and energy on one live picture — no guesswork, no digging through data.</p></div>
+    <div class="wcard"><div class="top" style="background:var(--green)"></div><h4 style="color:var(--green)">Saves real energy</h4><p>Automatic free-cooling and climate-adaptive supply air cut supply-air energy ~70%.</p></div>
+    <div class="wcard"><div class="top" style="background:var(--amber)"></div><h4 style="color:var(--amber)">Runs on the controller</h4><p>No cloud, no extra server. Fewer parts to fail; keeps working if the network drops.</p></div>
+    <div class="wcard"><div class="top" style="background:var(--accent)"></div><h4 style="color:var(--accent)">Speaks BMS natively</h4><p>BACnet-native and open (MQTT/Modbus) — no vendor lock-in; integrates with what you have.</p></div>
+    <div class="wcard"><div class="top" style="background:var(--green)"></div><h4 style="color:var(--green)">Meets the standards</h4><p>Aligned to ASHRAE 55 / 62.1 / 90.1 and Guideline 36 out of the box.</p></div>
+    <div class="wcard"><div class="top" style="background:var(--amber)"></div><h4 style="color:var(--amber)">Easy to roll out</h4><p>Diagnose at a glance, clone the setup to the next unit, in five languages.</p></div>
+  </div>
+</section>
+
+<!-- 8 CLOSING -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="close-h">Four rulebooks. One chart. Zero cloud.</div>
+  <div class="close-p">Red5-AHU turns every air handler into a self-diagnosing, self-optimizing asset that satisfies ASHRAE 55, 62.1, 90.1 and Guideline 36 — right on the controller.</div>
+</section>
+
+</body>
+</html>

@@ -742,7 +742,7 @@ function renderSidebar(ctx) {
                     state only; full chart integration (per-AHU sweet-spot
                     polygons) is a follow-up. */}
                 <div className="flex items-stretch gap-2">
-                    <div className="flex-1 space-y-0.5 min-w-0">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%';
+                    <div className="flex-1 space-y-0.5 min-w-0 overflow-hidden">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%';
                         const active = pointVisibility[p.label] !== false;
                         const toggleVis = (e) => { e.stopPropagation(); setPointVisibility({ ...pointVisibility, [p.label]: !active }); };
                         return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>

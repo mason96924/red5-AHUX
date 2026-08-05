@@ -123,9 +123,16 @@
                    intruding on the OA/SA/RA stats column.
                    Any legacy in-between value in localStorage is
                    normalised to whichever side it's closest to. */
+                /* Three legal widths now, not two: MA adds a 4th stats row
+                   AND a 4th pill (exchange splits into mixing + coil), and
+                   360 is ~40 px short of both -- the nowrap stats text then
+                   overflows its min-w-0 column and the preset card, painted
+                   after it, covers the RH digits.  Snap to the nearest of
+                   264 / 360 / 400 so a widened sidebar survives a reload
+                   instead of being normalised straight back down. */
                 try {
                     const v = parseInt(localStorage.getItem('red5.sidebarWidth'), 10);
-                    if (!Number.isNaN(v)) return v < 312 ? 264 : 360;
+                    if (!Number.isNaN(v)) return v < 312 ? 264 : (v >= 380 ? 400 : 360);
                 } catch (e) {}
                 return 360;
             });
@@ -541,6 +548,18 @@
             const [showPath, setShowPath] = useState(true);
             const [vecVis, setVecVis] = useState({ enthalpy: true, sensible: true, latent: true, diagnostic: true });
             const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true, MA: true });
+
+            /* MA can't be known at first paint -- it depends on whether MAT is
+               mapped -- so the 4-pill width is applied once the data says so.
+               Only nudges the operator off the old FULL default: a deliberate
+               SLIM (264) stays slim, where the preset card is hidden anyway
+               and there is nothing to collide with. */
+            React.useEffect(() => {
+                const hasMA = (ahuData || []).some(a => (a.points || []).some(p => p && p.label === 'MA'));
+                if (!hasMA || sidebarWidth !== 360) return;
+                setSidebarWidth(400);
+                try { localStorage.setItem('red5.sidebarWidth', '400'); } catch (_) {}
+            }, [ahuData, sidebarWidth]);
 
             /* Per-AHU venue-preset → RH band map.  MUST stay byte-identical
                to the PRESETS list inside sidebar.js so a venue picked in

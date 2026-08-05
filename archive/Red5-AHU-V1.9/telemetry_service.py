@@ -1196,6 +1196,36 @@ def ahu_history(ahu_id):
 # ships, swap the body for a Mongo query against the historian
 # collection (same response shape, no frontend change needed).
 # ---------------------------------------------------------------------------
+def _sa_ts_damper_sp(oa_t):
+    """OA damper setpoint vs outside temperature, in percent.
+
+    A reduction of the ``OA_Damper_SP`` column of configs/band_guide.csv to a
+    pure function of dry-bulb.  The FastAPI build reads that CSV directly, but
+    this module has no band-table access, and parsing it per request to place a
+    synthetic MA point would be a poor trade.  What matters for the drawing is
+    the shape, and the shape is the whole point: wide open across the
+    economizer / pass-through window, back to a minimum-OA position once the
+    outside air stops being useful.
+
+    Ranges follow the table's bands: B3 COOL-DRY 30, B4 ECONOMIZER and
+    B5 PASS-THROUGH 100, B6 WARM-MOD 50, minimum 15 elsewhere.
+
+    Twin of ``_oa_damper_sp`` in backend/routes/history.py; keep the two in
+    step or the same window will draw differently on a controller and on the
+    Linux demo.  Note the FastAPI side deliberately does NOT read the CSV
+    either: it matches on temperature and humidity together, and the demo OA
+    box only overlaps PASS-THROUGH, so every hour would come back 100 percent
+    open and the mixing leg would vanish.
+    """
+    if 18.0 <= oa_t < 25.0:
+        return 100.0
+    if 15.0 <= oa_t < 18.0:
+        return 30.0
+    if 25.0 <= oa_t < 27.0:
+        return 50.0
+    return 15.0
+
+
 def ahu_sa_timeseries(ahu_id):
     try:
         from_ts = int(request.args.get('from_ts'))
@@ -1222,7 +1252,9 @@ def ahu_sa_timeseries(ahu_id):
         sa_rh = 58.0 + 6.0 * wave_slow + 2.5 * wave_fast
         ra_t  = 23.0 + 0.9 * wave_slow + 0.4 * wave_fast
         ra_rh = 48.0 - 4.0 * wave_slow + 1.6 * wave_fast
-        samples.append({
+        oa_w = _ahu_history_w(oa['t'], oa['rh']) / 1000.0
+        ra_w = _ahu_history_w(ra_t, ra_rh) / 1000.0
+        sample = {
             'ts':    int(ts),
             'sa_t':  round(sa_t,  2),
             'sa_rh': round(sa_rh, 1),
@@ -1231,8 +1263,41 @@ def ahu_sa_timeseries(ahu_id):
             'ra_rh': round(ra_rh, 1),
             'oa_t':  oa['t'],
             'oa_rh': oa['rh'],
-            'oa_w':  round(_ahu_history_w(oa['t'], oa['rh']) / 1000.0, 5),
-        })
+            'oa_w':  round(oa_w, 5),
+        }
+        # ---- Mixed air over the window -------------------------------------
+        # Same derivation as the live snapshot (mixed_air.derive_mixed_air), so
+        # the 3D free-vs-paid split and the chart's MA dot cannot disagree.  The
+        # MAH subset and the stratification offset match _attach_mixed_air so a
+        # given AHU is consistently instrumented across both paths; the beats
+        # are keyed on `ts` instead of the wall clock because a historical
+        # window has to be reproducible.
+        try:
+            from mixed_air import derive_mixed_air, rh_from_w  # noqa: PLC0415
+            phase = (sum(ord(c) for c in str(ahu_id)) % 100) / 100.0 * 6.283
+            oad = max(0.0, min(100.0, _sa_ts_damper_sp(float(oa['t']))
+                                      + 2.0 * math.sin(ts / 3600.0 + phase)))
+            f = oad / 100.0
+            mat = (f * float(oa['t']) + (1.0 - f) * ra_t
+                   + 0.35 * math.sin(ts / 1900.0 + phase))
+            mah = (rh_from_w(mat, f * oa_w + (1.0 - f) * ra_w)
+                   if sum(ord(c) for c in str(ahu_id)) % 3 == 0 else None)
+            ma, _diag = derive_mixed_air(
+                {'t': float(oa['t']), 'rh': float(oa['rh']), 'w': oa_w},
+                {'t': ra_t, 'rh': ra_rh, 'w': ra_w},
+                mat=mat, mah=mah, oad=oad)
+            sample['mat'] = round(mat, 2)
+            sample['oad'] = round(oad, 1)
+            if mah is not None:
+                sample['mah'] = round(mah, 1)
+            # Absent rather than null when MA cannot be located, so the client
+            # degrades the way the 2D chart does.
+            if ma:
+                sample.update({'ma_t':  ma['t'],  'ma_rh': ma['rh'],
+                               'ma_w':  ma['w'],  'ma_basis': ma['basis']})
+        except Exception:
+            pass
+        samples.append(sample)
         ts += step_s
     return jsonify({
         'ahu_id':  ahu_id,

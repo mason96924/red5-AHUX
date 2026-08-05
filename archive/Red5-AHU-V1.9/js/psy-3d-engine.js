@@ -1233,7 +1233,22 @@ global.initPsy3D = function(container, opts){
   });
 
   /* ---------- SCENE ---------- */
-  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup,saDropGroup,saPathGroup,rhBandGroup;
+  var scene,cam,ren,orb,basePlane,pathGroup,projGroup,czGroup,dhFloorGroup,vavGroup,saDropGroup,saPathGroup,rhBandGroup,maSplitGroup;
+
+  /* SA-overlay selection state.  These MUST be declared at engine scope --
+     the same scope as the builders further down -- and not inside
+     setupControls().  They were inside it, and since every read went
+     through a `typeof x !== 'undefined'` guard the scope miss could not
+     throw: it degraded silently to mode='modeled', ribbon=false,
+     measured=null, so the cyan measured path, the drift ribbon and the
+     apples-to-apples modelled path never drew even though the fetch
+     succeeded and the status line reported the sample count.  The builders
+     now read these directly, so a future scope mistake fails loudly
+     instead of blanking a layer. */
+  var _saSourceMode = 'modeled',
+      _saAhuId      = null,
+      _saRibbonOn   = false,
+      _saMeasured   = null;
   var _p3RedrawPsyTex = null; /* populated by buildScene so theme listener can redraw floor chart */
   var weatherData=[],timeLabels=[],vavData=[];
 
@@ -1654,6 +1669,7 @@ global.initPsy3D = function(container, opts){
        Hidden by default so existing scenes stay uncluttered. */
     saDropGroup=new THREE.Group();saDropGroup.visible=false;scene.add(saDropGroup);
     saPathGroup=new THREE.Group();saPathGroup.visible=false;scene.add(saPathGroup);
+    maSplitGroup=new THREE.Group();maSplitGroup.visible=false;scene.add(maSplitGroup);
 
     /* ---- RH-BAND SLAB --------------------------------------------------
        Translucent magenta volume bounded by the two RH curves
@@ -1872,10 +1888,13 @@ global.initPsy3D = function(container, opts){
        _saMeasured:    cached samples [{ts, sa_t, sa_rh, sa_w, oa_t, oa_rh, oa_w}]
                        indexed by ts in ms; null until first fetch succeeds.
        --------------------------------------------------------------- */
-    var _saSourceMode = 'modeled';
-    var _saAhuId      = null;
-    var _saRibbonOn   = false;
-    var _saMeasured   = null;
+    /* Assignments, not declarations -- these live at engine scope so the
+       geometry builders can see them (see the note there).  Re-running
+       initPsy3D still resets them here. */
+    _saSourceMode = 'modeled';
+    _saAhuId      = null;
+    _saRibbonOn   = false;
+    _saMeasured   = null;
     function _saSetStatus(txt, color){
       var el = document.getElementById('p3-sa-status');
       if (!el) return;
@@ -1928,7 +1947,10 @@ global.initPsy3D = function(container, opts){
     /* Refresh handler: pulls measured data (if needed) then rebuilds
        the SA Path geometry layer.  Idempotent. */
     function _refreshSaPath(forceRefetch){
-      var needsMeasured = (_saSourceMode === 'measured' || _saSourceMode === 'both');
+      /* The Mix / Coil layer needs the same measured samples, so its
+         visibility counts as a reason to fetch even in Modeled mode. */
+      var needsMeasured = (_saSourceMode === 'measured' || _saSourceMode === 'both'
+                           || !!(maSplitGroup && maSplitGroup.visible));
       var promise;
       if (needsMeasured && _saAhuId && (forceRefetch || !_saMeasured)) {
         promise = _fetchSaTimeseries().then(function(arr){ _saMeasured = arr; });
@@ -1938,6 +1960,7 @@ global.initPsy3D = function(container, opts){
       }
       promise.then(function(){
         if (typeof _buildSaPathGeometry === 'function') _buildSaPathGeometry();
+        if (typeof _buildMaSplitGeometry === 'function') _buildMaSplitGeometry();
       });
     }
     /* Wire the three controls.  AHU / Source changes refetch; ribbon
@@ -1957,6 +1980,7 @@ global.initPsy3D = function(container, opts){
       _saRibbonOn = !!this.checked;
       if (typeof _buildSaPathGeometry === 'function') _buildSaPathGeometry();
     };
+    /* Selecting a different AHU invalidates MA too -- same samples. */
     /* Expose the refresh hook for buildWeatherVis so the SA layer
        auto-refetches whenever a new OA window is loaded. */
     window.__psy3dRefreshSaPath = _refreshSaPath;
@@ -2044,8 +2068,8 @@ global.initPsy3D = function(container, opts){
 
     /* toggles */
     var tgEl=$('#p3-toggles');
-    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,saDrop:saDropGroup,saPath:saPathGroup,rhBand:rhBandGroup};
-    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['rhBand','#ec4899','RH Band'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ'],['saDrop','#22d3ee','OA\u2192SA Drops'],['saPath','#f59e0b','SA Path']].forEach(function(t){
+    var layers={chart:basePlane,path:pathGroup,proj:projGroup,comfort:czGroup,dhFloor:dhFloorGroup,vav:vavGroup,saDrop:saDropGroup,saPath:saPathGroup,rhBand:rhBandGroup,maSplit:maSplitGroup};
+    [['chart','#60a5fa','Psy Chart'],['path','#f472b6','Weather Path'],['proj','#fbbf24','Base Proj'],['comfort','#10b981','Comfort 3D'],['rhBand','#ec4899','RH Band'],['dhFloor','#f59e0b','\u0394H Strip'],['vav','#a78bfa','VAV CZ'],['saDrop','#22d3ee','OA\u2192SA Drops'],['saPath','#f59e0b','SA Path'],['maSplit','#8b5cf6',_t('layer_mix_coil','Mix / Coil')]].forEach(function(t){
       var div=document.createElement('div');div.className='p3-tgl';div.id='p3-tgl-'+t[0];
       div.innerHTML='<span class="p3td" style="background:'+t[1]+'"></span>'+t[2];
       // Sync initial off-state for layers that start hidden (saDropGroup).
@@ -2063,6 +2087,13 @@ global.initPsy3D = function(container, opts){
         // markers).  Rebuilding the weather vis is a single pass —
         // no refetch, no perceptible lag at the 720..8760-point
         // typical sizes. */
+        /* This layer is the only one that needs a fetch to have anything
+           to draw: MA comes from the selected AHU's timeseries, not from
+           Open-Meteo.  Ask for a refresh on the way on; _refreshSaPath
+           now treats this layer's visibility as a reason to fetch. */
+        if (t[0]==='maSplit' && o.visible) {
+          if (typeof window.__psy3dRefreshSaPath === 'function') window.__psy3dRefreshSaPath(false);
+        }
         if (t[0]==='rhBand') {
           var tchip = document.getElementById('p3-rhBand-tclip');
           if (tchip) tchip.style.display = o.visible ? 'inline-flex' : 'none';
@@ -4630,29 +4661,99 @@ global.initPsy3D = function(container, opts){
                     controller-drift becomes visually scannable.
      Companion to OA→SA Drops (prescriptive setpoints).
      ------------------------------------------------------------------ */
+  /* Time-axis mapping shared by every per-timestamp layer (SA Path, Mix /
+     Coil).  weatherData samples carry their own .frac; telemetry arrives as
+     unix seconds and has to be projected onto the same Y or two layers
+     describing the same hour would sit at different heights. */
+  function _tsToY(ts_unix_s){
+    if (!weatherData || !weatherData.length) return 0;
+    var t0_ms = new Date(weatherData[0].ts).getTime();
+    var tN_ms = new Date(weatherData[weatherData.length-1].ts).getTime();
+    var span_ms = Math.max(1, tN_ms - t0_ms);
+    var frac = (ts_unix_s * 1000 - t0_ms) / span_ms;
+    if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+    return frac2sy(frac);
+  }
+
+  /* ---------- MIX / COIL SPLIT --------------------------------------------
+     One two-segment hook per measured sample, at that sample's own time-Y:
+
+         OA --violet--> MA --blue--> SA
+
+     Violet is the mixing box: enthalpy the dampers moved for the price of
+     fan power alone.  Blue is the coil: enthalpy somebody paid for.  The two
+     sum to the OA->SA total the single exchange pill used to report, which is
+     the point of splitting it -- the total tells you how much work the hour
+     needed, and the split tells you who did it.
+
+     Read it by proportion, not by leg length alone.  At a 15 percent minimum
+     damper the violet leg is long because recirculated return air is doing
+     most of the conditioning; in the economizer window violet collapses
+     toward zero, not because nothing is free but because the air is already
+     near target and the whole hook is short.  Short hook = good hour.
+
+     Unlike the Drops layer this is not weather-driven: OA, MA and SA all come
+     from one telemetry sample, so nothing here is a model of a model.
+     Samples with no locatable MA carry no ma_* keys and are skipped, so an
+     AHU without mixed-air instrumentation draws nothing rather than something
+     invented, and a damper-basis MA is dimmed because its position is
+     inferred from a commanded percentage rather than measured. */
+  function _buildMaSplitGeometry(){
+    var THREE = window.THREE;
+    if (!maSplitGroup) return;
+    while (maSplitGroup.children.length) maSplitGroup.remove(maSplitGroup.children[0]);
+    if (!maSplitGroup.visible || !weatherData || !weatherData.length) return;
+    var measured = _saMeasured;
+    if (!measured || !measured.length) return;
+
+    var violet = [0.545, 0.361, 0.965];   /* #8b5cf6 -- the mixing pill */
+    var blue   = [0.231, 0.510, 0.965];   /* #3b82f6 -- the coil pill   */
+    var amber  = [0.961, 0.620, 0.043];   /* #f59e0b -- MA on the 2D chart */
+    var v = [], c = [], mv = [], mc = [], n = 0;
+    measured.forEach(function(s){
+      if (!s || s.ma_t == null || s.ma_w == null) return;
+      if (s.oa_t == null || s.sa_t == null) return;
+      var dim = (s.ma_basis === 'damper') ? 0.55 : 1.0;
+      var y   = _tsToY(s.ts);
+      var oaX = t2sx(s.oa_t), oaZ = w2sz(s.oa_w);
+      var maX = t2sx(s.ma_t), maZ = w2sz(s.ma_w);
+      var saX = t2sx(s.sa_t), saZ = w2sz(s.sa_w);
+      v.push(oaX, y, oaZ,  maX, y, maZ);
+      c.push(violet[0]*dim, violet[1]*dim, violet[2]*dim,
+             violet[0]*dim, violet[1]*dim, violet[2]*dim);
+      v.push(maX, y, maZ,  saX, y, saZ);
+      c.push(blue[0]*dim, blue[1]*dim, blue[2]*dim,
+             blue[0]*dim, blue[1]*dim, blue[2]*dim);
+      mv.push(maX, y, maZ);
+      mc.push(amber[0]*dim, amber[1]*dim, amber[2]*dim);
+      n++;
+    });
+    if (!n) return;
+    var segGeo = new THREE.BufferGeometry();
+    segGeo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    segGeo.setAttribute('color',    new THREE.Float32BufferAttribute(c, 3));
+    maSplitGroup.add(new THREE.LineSegments(segGeo, new THREE.LineBasicMaterial({
+      vertexColors:true, transparent:true, opacity:.6, depthWrite:false
+    })));
+    var dotGeo = new THREE.BufferGeometry();
+    dotGeo.setAttribute('position', new THREE.Float32BufferAttribute(mv, 3));
+    dotGeo.setAttribute('color',    new THREE.Float32BufferAttribute(mc, 3));
+    maSplitGroup.add(new THREE.Points(dotGeo, new THREE.PointsMaterial({
+      size:2.2, vertexColors:true, transparent:true, opacity:.9,
+      sizeAttenuation:true, depthWrite:false
+    })));
+  }
+
   function _buildSaPathGeometry(){
     var THREE = window.THREE;
     if (!saPathGroup || !weatherData || !weatherData.length) return;
     while (saPathGroup.children.length) saPathGroup.remove(saPathGroup.children[0]);
 
-    var mode = (typeof _saSourceMode !== 'undefined') ? _saSourceMode : 'modeled';
-    var ribbon = (typeof _saRibbonOn !== 'undefined') ? _saRibbonOn : false;
-    var measured = (typeof _saMeasured !== 'undefined') ? _saMeasured : null;
+    var mode = _saSourceMode, ribbon = _saRibbonOn, measured = _saMeasured;
     /* Amber #f59e0b (modeled), Cyan #22d3ee (measured) */
     var amber = [0.961, 0.620, 0.043];
     var cyan  = [0.133, 0.827, 0.933];
 
-    /* Time-axis mapping for measured samples: weatherData carries
-       .frac in [0..1].  We re-derive (t0,tN,span) from its ts so a
-       measured sample's unix-second ts maps to the same Y. */
-    var t0_ms = new Date(weatherData[0].ts).getTime();
-    var tN_ms = new Date(weatherData[weatherData.length-1].ts).getTime();
-    var span_ms = Math.max(1, tN_ms - t0_ms);
-    function _tsToY(ts_unix_s){
-      var frac = (ts_unix_s * 1000 - t0_ms) / span_ms;
-      if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
-      return frac2sy(frac);
-    }
 
     /* --- Modeled path (amber) ---------------------------------
        Apples-to-apples ribbon (2026-02): when measured telemetry is
@@ -4778,6 +4879,7 @@ global.initPsy3D = function(container, opts){
     while(projGroup.children.length)projGroup.remove(projGroup.children[0]);
     if(saDropGroup) while(saDropGroup.children.length)saDropGroup.remove(saDropGroup.children[0]);
     if(saPathGroup) while(saPathGroup.children.length)saPathGroup.remove(saPathGroup.children[0]);
+    if(maSplitGroup) while(maSplitGroup.children.length)maSplitGroup.remove(maSplitGroup.children[0]);
     timeLabels.forEach(function(s){scene.remove(s);});timeLabels=[];
     if(!weatherData.length)return;
     /* Stash the args so the RH-band slider listener can rebuild the

@@ -93,6 +93,8 @@
     pill_basis_mat:        ['MA from MAT — humidity inferred from the mixing line, not measured','MA 来自 MAT — 含湿量按混合线推算，非实测','MA 來自 MAT — 含濕量按混合線推算，非實測','MA は MAT — 絶対湿度は混合線から推算、実測ではない','MA는 MAT 기반 — 절대습도는 혼합선에서 추정, 실측 아님'],
     pill_basis_mat_damper: ['MA from MAT — humidity inferred from the damper (OA≈RA)','MA 来自 MAT — 含湿量按风阀推算 (OA≈RA)','MA 來自 MAT — 含濕量按風閥推算 (OA≈RA)','MA は MAT — 絶対湿度はダンパから推算 (OA≈RA)','MA는 MAT 기반 — 절대습도는 댐퍼로 추정 (OA≈RA)'],
     pill_basis_damper:     ['MA modelled from the damper command — this split is not measured','MA 由风阀指令建模 — 此拆分非实测','MA 由風閥指令建模 — 此拆分非實測','MA はダンパ指令からのモデル値 — この内訳は実測ではない','MA는 댐퍼 지령 기반 모델값 — 이 분리는 실측 아님'],
+    /* 3D layer toggle: the OA->MA->SA hook, mixing leg vs coil leg. */
+    layer_mix_coil:        ['Mix / Coil','混合/盘管','混合/盤管','混合/コイル','혼합/코일'],
 
     /* ── Setpoints ── */
     t_setpoint:            ['T Setpoint','温度设定点','溫度設定點','温度設定値','온도 설정점'],

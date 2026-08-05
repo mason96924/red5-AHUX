@@ -69,6 +69,8 @@ from models.state import (
 )
 from simulator import (
     _AHU_COLORS,
+    _AHU_HAS_MAH,
+    _AHU_PHASE,
     _DEMO_AHUS,
     _MANUAL_OVERRIDES,
     _VAV_DRIFT_STATE,
@@ -82,6 +84,7 @@ from simulator import (
     _scalar_drift,
     _simulate_ahu,
 )
+from models.mixing import derive_mixed_air, rh_from_w as _rh_from_w
 from server import (
     _anon_effective_config,
     _bundled_mock_mode_default,
@@ -203,6 +206,28 @@ async def ahu_history(ahu_id: str,
 #   3. Lets us cap the step at a coarser cadence (60..900 s) for the
 #      3D layer without affecting the existing 1-min drill-down.
 # ---------------------------------------------------------------------------
+def _oa_damper_sp(oa_t: float) -> float:
+    """OA damper setpoint vs outside dry-bulb, in percent.
+
+    The ``OA_Damper_SP`` column of band_guide.csv reduced to a function of
+    temperature: 30 at B3 COOL-DRY, 100 across B4 ECONOMIZER and
+    B5 PASS-THROUGH, 50 at B6 WARM-MOD, and a 15 percent minimum-OA position
+    everywhere else.  Used only to synthesise a plausible damper history for
+    the demo -- a real deployment reads OAD off the controller.
+
+    Twin of ``_sa_ts_damper_sp`` in archive/Red5-AHU-V1.9/telemetry_service.py;
+    keep the two in step or the same window will draw differently on a
+    controller and on the Linux demo.
+    """
+    if 18.0 <= oa_t < 25.0:
+        return 100.0
+    if 15.0 <= oa_t < 18.0:
+        return 30.0
+    if 25.0 <= oa_t < 27.0:
+        return 50.0
+    return 15.0
+
+
 @router.get("/api/ahu/{ahu_id}/sa-timeseries")
 async def ahu_sa_timeseries(
     ahu_id: str,
@@ -217,6 +242,15 @@ async def ahu_sa_timeseries(
     sample carries the same fields as ``/api/ahu-history`` plus a derived
     ``oa_w`` so the 3D engine doesn't have to recompute the humidity
     ratio client-side.
+
+    Each sample also carries the mixed-air channels ``mat`` / ``oad``
+    (``mah`` where that sensor is wired) and, when MA can be located,
+    ``ma_t`` / ``ma_rh`` / ``ma_w`` / ``ma_basis``.  MA is derived
+    server-side by ``models.mixing`` so the 3D free-vs-paid split cannot
+    drift from the 2D chart's MA dot, and ``ma_basis`` travels with the
+    point so a damper-only estimate can be labelled as modelled rather
+    than read as measurement.  The ``ma_*`` keys are absent, not null,
+    when neither MAT nor damper feedback exists.
 
     400 if ``from_ts >= to_ts`` or the window exceeds 366 days.
     """
@@ -238,17 +272,68 @@ async def ahu_sa_timeseries(
         sa_rh = 58.0 + 6.0 * wave_slow + 2.5 * wave_fast
         ra_t  = 23.0 + 0.9 * wave_slow + 0.4 * wave_fast
         ra_rh = 48.0 + 4.0 * (-wave_slow) + 1.6 * wave_fast
-        samples.append({
+        oa_t, oa_rh = float(oa["t"]), float(oa["rh"])
+        oa_w, ra_w = _humidity_ratio(oa_t, oa_rh), _humidity_ratio(ra_t, ra_rh)
+
+        # ---- Mixed air over the window -------------------------------------
+        # Derived by models.mixing, the same function the live snapshot uses,
+        # so a historical MA path and the chart's MA dot can never disagree
+        # about where MA is or which sensor put it there.
+        #
+        # The damper comes from _oa_damper_sp rather than _resolve_band, even
+        # though the band table carries an OA_Damper_SP column: the table
+        # matches on temperature AND humidity, the demo OA generator only ever
+        # produces 16..28 C at 37..73 % RH, and the one band that overlaps that
+        # box is PASS-THROUGH -- which is also the no-match fallback.  Every
+        # hour of the demo year therefore resolves to 100 % OA, which would
+        # pin MA on top of OA and flatten the mixing leg to nothing for the
+        # entire series.  A schedule keyed on dry-bulb alone reproduces the
+        # same column's intent and actually varies.
+        #
+        # Beats are keyed on `ts`, not the wall clock the live simulator uses,
+        # so re-requesting a window reproduces it; and they are slower than the
+        # live 60 s / 190 s beats, which a 15-minute cadence would alias into
+        # noise rather than a schedule.
+        phase = _AHU_PHASE(ahu_id)
+        oad = max(0.0, min(100.0, _oa_damper_sp(oa_t)
+                                  + 2.0 * math.sin(ts / 3600.0 + phase)))
+        _f = oad / 100.0
+        mat = (_f * oa_t + (1.0 - _f) * ra_t
+               + 0.35 * math.sin(ts / 1900.0 + phase))
+        mah = (_rh_from_w(mat, _f * oa_w + (1.0 - _f) * ra_w)
+               if _AHU_HAS_MAH(ahu_id) else None)
+        ma_pt, _ma_diag = derive_mixed_air(
+            {"t": oa_t, "rh": oa_rh, "w": oa_w},
+            {"t": ra_t, "rh": ra_rh, "w": ra_w},
+            mat=mat, mah=mah, oad=oad,
+        )
+
+        sample = {
             "ts":    int(ts),
             "sa_t":  round(sa_t,  2),
             "sa_rh": round(sa_rh, 1),
             "sa_w":  round(_humidity_ratio(sa_t,  sa_rh), 5),
             "ra_t":  round(ra_t,  2),
             "ra_rh": round(ra_rh, 1),
-            "oa_t":  round(float(oa["t"]),  2),
-            "oa_rh": round(float(oa["rh"]), 1),
-            "oa_w":  round(_humidity_ratio(float(oa["t"]), float(oa["rh"])), 5),
-        })
+            "oa_t":  round(oa_t,  2),
+            "oa_rh": round(oa_rh, 1),
+            "oa_w":  round(oa_w, 5),
+            "mat":   round(mat, 2),
+            "oad":   round(oad, 1),
+        }
+        if mah is not None:
+            sample["mah"] = round(mah, 1)
+        # Omitted entirely when MA cannot be located, so a consumer that finds
+        # no ma_* keys degrades the same way the 2D chart does rather than
+        # having to recognise a placeholder.
+        if ma_pt:
+            sample.update({
+                "ma_t":     ma_pt["t"],
+                "ma_rh":    ma_pt["rh"],
+                "ma_w":     ma_pt["w"],
+                "ma_basis": ma_pt["basis"],
+            })
+        samples.append(sample)
         ts += step_s
     return {
         "ahu_id":  ahu_id,

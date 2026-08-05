@@ -76,6 +76,18 @@
     ma_flag_off_mixing_line:   ['MA off the mixing line','MA 偏离混合线','MA 偏離混合線','MA が混合線から外れている','MA가 혼합선에서 벗어남'],
     ma_flag_oa_ra_temp_too_close: ['OA≈RA — fraction taken from damper','OA≈RA — 比例取自风阀','OA≈RA — 比例取自風閥','OA≈RA — 比率はダンパから','OA≈RA — 비율은 댐퍼 기준'],
 
+    /* ── Sidebar enthalpy pills.  Named for the leg each one measures so
+       the tooltip says which device the number belongs to. ── */
+    pill_mixing:           ['Mixing (OA→MA)','混合 (OA→MA)','混合 (OA→MA)','混合 (OA→MA)','혼합 (OA→MA)'],
+    pill_coil:             ['Coil (MA→SA)','盘管 (MA→SA)','盤管 (MA→SA)','コイル (MA→SA)','코일 (MA→SA)'],
+    pill_exchange:         ['Exchange (OA→SA)','焓变 (OA→SA)','焓變 (OA→SA)','エンタルピ変化 (OA→SA)','엔탈피 변화 (OA→SA)'],
+    pill_absorption:       ['Absorption (SA→RA)','吸热 (SA→RA)','吸熱 (SA→RA)','吸熱 (SA→RA)','흡수 (SA→RA)'],
+    pill_free_dilution:    ['free dilution by the dampers','风阀带来的免费稀释','風閥帶來的免費稀釋','ダンパによる無償の希釈','댐퍼에 의한 무상 희석'],
+    pill_coil_duty:        ['what the coil actually paid for','盘管实际承担的负荷','盤管實際承擔的負荷','コイルが実際に負担した熱量','코일이 실제로 부담한 열량'],
+    pill_room_load:        ['load the room added back','房间回加的负荷','房間回加的負荷','室が加えた負荷','실내가 더한 부하'],
+    pill_mix_plus_coil:    ['mixing + coil','混合 + 盘管','混合 + 盤管','混合 + コイル','혼합 + 코일'],
+    pill_coil_derived:     ['MA derived from MAT — latent split assumes the damper','MA 由 MAT 推算 — 潜热拆分依赖风阀','MA 由 MAT 推算 — 潛熱拆分依賴風閥','MA は MAT から推算 — 潜熱の内訳はダンパ前提','MA는 MAT 기반 추정 — 잠열 분리는 댐퍼 가정'],
+
     /* ── Setpoints ── */
     t_setpoint:            ['T Setpoint','温度设定点','溫度設定點','温度設定値','온도 설정점'],
     w_setpoint:            ['W Setpoint','含湿量设定点','含濕量設定點','絶対湿度設定値','절대습도 설정점'],

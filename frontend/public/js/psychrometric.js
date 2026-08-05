@@ -163,10 +163,23 @@ const getAhuDiagnostic = (ahu, comfortPoly, sweetSpot) => {
 
 // Energy metrics for AHU card
 const getEnergyMetrics = (ahu) => {
-    if (!ahu || !ahu.points) return { exchange: 0, absorption: 0 };
+    const none = { exchange: 0, absorption: 0, mixing: null, coil: null };
+    if (!ahu || !ahu.points) return none;
     const sa = ahu.points[1], oa = ahu.points[0], ra = ahu.points[2];
-    if (!ra || !oa || !sa) return { exchange: 0, absorption: 0 };
-    return { exchange: getH(sa.t, sa.w) - getH(oa.t, oa.w), absorption: getH(ra.t, ra.w) - getH(sa.t, sa.w) };
+    if (!ra || !oa || !sa) return none;
+    const hOa = getH(oa.t, oa.w), hSa = getH(sa.t, sa.w), hRa = getH(ra.t, ra.w);
+    /* MA splits the OA->SA drop into the part the dampers gave away for
+       free and the part the coil paid for; the sum is `exchange`, so the
+       pair is one number decomposed rather than two estimates.  No MA
+       (MAT unmapped) => nulls, and the caller shows `exchange` alone. */
+    const ma = ahu.points.find(p => p && p.label === 'MA');
+    const hMa = ma ? getH(ma.t, ma.w) : null;
+    return {
+        exchange:   hSa - hOa,
+        absorption: hRa - hSa,
+        mixing:     Number.isFinite(hMa) ? hMa - hOa : null,
+        coil:       Number.isFinite(hMa) ? hSa - hMa : null,
+    };
 };
 
 // Givoni-region color tokens.  Single source of truth shared by the chart

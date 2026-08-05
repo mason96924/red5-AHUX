@@ -219,11 +219,26 @@ def _update_rolling_avgs(snapshot: list) -> None:
             continue
         ex = h_sa - h_oa
         ab = h_ra - h_sa
+        # MA present => also track the two legs `ex` conflates, so the
+        # mixing and coil pills get a 24h baseline for their trend
+        # arrows.  Absent (MAT unmapped) => carry None; the endpoint
+        # returns null and the dashboard draws no arrow.
+        ma = pts.get("MA")
+        mx = co = None
+        if ma:
+            try:
+                h_ma = _enthalpy(float(ma["t"]), float(ma["w"]))
+            except (KeyError, TypeError, ValueError):
+                pass
+            else:
+                mx, co = h_ma - h_oa, h_sa - h_ma
         prev = _ROLLING_AVGS.get(aid)
         if not prev:
             _ROLLING_AVGS[aid] = {
                 "exchange":      ex, "absorption":      ab,
                 "exchange_1h":   ex, "absorption_1h":   ab,
+                "mixing":        mx, "coil":            co,
+                "mixing_1h":     mx, "coil_1h":         co,
                 "ex_hist": [ex],     "ab_hist": [ab],
                 "n":             1,
             }
@@ -239,10 +254,26 @@ def _update_rolling_avgs(snapshot: list) -> None:
                 "absorption":    a24 * ab + (1.0 - a24) * prev["absorption"],
                 "exchange_1h":   ALPHA_1H * ex + (1.0 - ALPHA_1H) * prev.get("exchange_1h",   prev["exchange"]),
                 "absorption_1h": ALPHA_1H * ab + (1.0 - ALPHA_1H) * prev.get("absorption_1h", prev["absorption"]),
+                # MA can appear or disappear mid-run (a point gets mapped,
+                # a sensor drops out), so these two hold the last known
+                # average rather than resetting to None on a gap.
+                "mixing":        _ewma_opt(mx, prev.get("mixing"), a24),
+                "coil":          _ewma_opt(co, prev.get("coil"),   a24),
+                "mixing_1h":     _ewma_opt(mx, prev.get("mixing_1h", prev.get("mixing")), ALPHA_1H),
+                "coil_1h":       _ewma_opt(co, prev.get("coil_1h",   prev.get("coil")),   ALPHA_1H),
                 "ex_hist":       ex_hist,
                 "ab_hist":       ab_hist,
                 "n":             prev.get("n", 0) + 1,
             }
+
+
+def _ewma_opt(cur, prev_val, alpha):
+    """EWMA that tolerates a missing sample or a missing history."""
+    if cur is None:
+        return prev_val
+    if prev_val is None:
+        return cur
+    return alpha * cur + (1.0 - alpha) * prev_val
 
 
 @router.post("/api/data-mode")

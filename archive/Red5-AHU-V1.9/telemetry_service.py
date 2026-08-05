@@ -164,11 +164,25 @@ def _update_rolling_avgs(snapshot):
             continue
         ex = h_sa - h_oa
         ab = h_ra - h_sa
+        # MA present => also track the two legs `ex` conflates (mixing box
+        # and coil) so their pills get a 24h baseline.  Absent => None, and
+        # the endpoint returns null so no trend arrow is drawn.
+        ma = pts.get('MA')
+        mx = co = None
+        if ma:
+            try:
+                h_ma = get_h(float(ma['t']), float(ma['w']))
+            except (KeyError, TypeError, ValueError):
+                pass
+            else:
+                mx, co = h_ma - h_oa, h_sa - h_ma
         prev = _ROLLING_AVGS.get(aid)
         if not prev:
             _ROLLING_AVGS[aid] = {
                 'exchange':      ex, 'absorption':      ab,
                 'exchange_1h':   ex, 'absorption_1h':   ab,
+                'mixing':        mx, 'coil':            co,
+                'mixing_1h':     mx, 'coil_1h':         co,
                 'ex_hist':       [ex], 'ab_hist':       [ab],
                 'n':             1,
             }
@@ -187,10 +201,32 @@ def _update_rolling_avgs(snapshot):
                 'absorption':    a24 * ab + (1.0 - a24) * prev['absorption'],
                 'exchange_1h':   a1h * ex + (1.0 - a1h) * prev.get('exchange_1h',   prev['exchange']),
                 'absorption_1h': a1h * ab + (1.0 - a1h) * prev.get('absorption_1h', prev['absorption']),
+                # MA can appear or vanish mid-run (a point gets mapped, a
+                # sensor drops out), so a gap holds the last known average
+                # instead of resetting it.
+                'mixing':        _ewma_opt(mx, prev.get('mixing'), a24),
+                'coil':          _ewma_opt(co, prev.get('coil'),   a24),
+                'mixing_1h':     _ewma_opt(mx, prev.get('mixing_1h', prev.get('mixing')), a1h),
+                'coil_1h':       _ewma_opt(co, prev.get('coil_1h',   prev.get('coil')),   a1h),
                 'ex_hist':       ex_hist,
                 'ab_hist':       ab_hist,
                 'n':             prev.get('n', 0) + 1,
             }
+
+
+def _ewma_opt(cur, prev_val, alpha):
+    """EWMA tolerating a missing sample or a missing history."""
+    if cur is None:
+        return prev_val
+    if prev_val is None:
+        return cur
+    return alpha * cur + (1.0 - alpha) * prev_val
+
+
+def _r3(v):
+    """Round, but keep None as null so the dashboard reads an absent
+    mixing/coil baseline as 'no arrow yet' rather than as zero."""
+    return None if v is None else round(v, 3)
 
 
 def ahu_rolling_avg_single(ahu_id):
@@ -200,6 +236,8 @@ def ahu_rolling_avg_single(ahu_id):
         'ahu_id':     ahu_id,
         'exchange':   round(ra.get('exchange',   0.0), 3),
         'absorption': round(ra.get('absorption', 0.0), 3),
+        'mixing':     _r3(ra.get('mixing')),
+        'coil':       _r3(ra.get('coil')),
         'n_samples':  ra.get('n', 0),
         'method':     'ewma',
     })
@@ -214,6 +252,10 @@ def ahu_rolling_avgs_batch():
             'absorption':    round(d.get('absorption',    0.0), 3),
             'exchange_1h':   round(d.get('exchange_1h',   d.get('exchange',   0.0)), 3),
             'absorption_1h': round(d.get('absorption_1h', d.get('absorption', 0.0)), 3),
+            'mixing':        _r3(d.get('mixing')),
+            'coil':          _r3(d.get('coil')),
+            'mixing_1h':     _r3(d.get('mixing_1h', d.get('mixing'))),
+            'coil_1h':       _r3(d.get('coil_1h',   d.get('coil'))),
             'ex_hist':       [round(v, 3) for v in (d.get('ex_hist') or [])],
             'ab_hist':       [round(v, 3) for v in (d.get('ab_hist') or [])],
             'n_samples':     d.get('n', 0),

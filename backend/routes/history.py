@@ -280,6 +280,13 @@ async def ahu_sa_timeseries(
 from models.state import _ROLLING_AVGS  # noqa: E402
 
 
+def _r3(v):
+    """Round, but keep None as null — the mixing/coil averages are absent
+    until an AHU actually reports MA, and the dashboard treats a
+    non-finite baseline as 'no trend arrow yet' rather than as zero."""
+    return None if v is None else round(v, 3)
+
+
 @router.get("/api/ahu/{ahu_id}/rolling-avg")
 async def ahu_rolling_avg_single(ahu_id: str) -> dict:
     ra = _ROLLING_AVGS.get(ahu_id) or {}
@@ -287,6 +294,8 @@ async def ahu_rolling_avg_single(ahu_id: str) -> dict:
         "ahu_id":     ahu_id,
         "exchange":   round(ra.get("exchange",   0.0), 3),
         "absorption": round(ra.get("absorption", 0.0), 3),
+        "mixing":     _r3(ra.get("mixing")),
+        "coil":       _r3(ra.get("coil")),
         "n_samples":  ra.get("n", 0),
         "method":     "ewma",
     }
@@ -308,6 +317,10 @@ async def ahu_rolling_avgs_batch() -> dict:
             "absorption":    round(d.get("absorption",    0.0), 3),
             "exchange_1h":   round(d.get("exchange_1h",   d.get("exchange",   0.0)), 3),
             "absorption_1h": round(d.get("absorption_1h", d.get("absorption", 0.0)), 3),
+            "mixing":        _r3(d.get("mixing")),
+            "coil":          _r3(d.get("coil")),
+            "mixing_1h":     _r3(d.get("mixing_1h", d.get("mixing"))),
+            "coil_1h":       _r3(d.get("coil_1h",   d.get("coil"))),
             "ex_hist":       [round(v, 3) for v in (d.get("ex_hist") or [])],
             "ab_hist":       [round(v, 3) for v in (d.get("ab_hist") or [])],
             "n_samples":     d.get("n", 0),

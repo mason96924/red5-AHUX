@@ -38,14 +38,20 @@ function renderSidebar(ctx) {
        40 px (one w-9 MetricBar + gap) to accommodate the new SA-drift
        pill on each AHU card -- without that headroom the AHU's preset
        text intrudes on the OA/SA/RA stats column.  The pill set is now
-       2 × w-9 (exchange + absorption) + 1 × w-9 (drift) = 3 pills. */
+       2 × w-9 (exchange + absorption) + 1 × w-9 (drift) = 3 pills.
+       When MA is mapped the exchange pill splits into mixing + coil,
+       making 4 pills, so every width constant gains one more slot. */
+    const PILL_SLOT = 40;                 // one w-9 MetricBar + its gap
+    const SLIM_MAX  = 400;
+    const hasMA = (ctx.filteredAhuData || []).some(a => (a.points || []).some(p => p && p.label === 'MA'));
+    const FULL_W = 360 + (hasMA ? PILL_SLOT : 0);
     const chevronRef = React.useRef(null);
     const [slimWidth, setSlimWidth] = React.useState(() => {
         // Seed from localStorage so the first paint after a hard reload
         // already snaps to the right width instead of flashing 264.
         try {
             const cached = parseInt(localStorage.getItem('red5.slimWidth') || '', 10);
-            if (Number.isFinite(cached) && cached >= 180 && cached <= 360) return cached;
+            if (Number.isFinite(cached) && cached >= 180 && cached <= SLIM_MAX) return cached;
         } catch (_) {}
         return 264;
     });
@@ -63,9 +69,10 @@ function renderSidebar(ctx) {
             const host = el.closest('[data-testid^="left-sidebar"]');
             const left = host ? host.getBoundingClientRect().left : 0;
             // L.45 (2026-02): +40 px room for the SA-drift MetricBar that
-            // sits to the right of the chevron on each AHU card.
-            const w = Math.ceil(r.right - left) + 4 + 40;
-            if (Number.isFinite(w) && w >= 180 && w <= 360) {
+            // sits to the right of the chevron on each AHU card, and +40
+            // again when MA splits exchange into mixing + coil.
+            const w = Math.ceil(r.right - left) + 4 + PILL_SLOT * (hasMA ? 2 : 1);
+            if (Number.isFinite(w) && w >= 180 && w <= SLIM_MAX) {
                 window.__red5_slim_width = w;
                 try { localStorage.setItem('red5.slimWidth', String(w)); } catch (_) {}
                 setSlimWidth(prev => (prev === w ? prev : w));
@@ -74,7 +81,7 @@ function renderSidebar(ctx) {
         measure();
         const id = setTimeout(measure, 200);
         return () => clearTimeout(id);
-    }, [ctx.i18nReady]);
+    }, [ctx.i18nReady, hasMA]);
 
     // Dark-mode brightness slider bounds.  Mirror of the constants in app.js
     // (lines 77-78); duplicated here because the sidebar's dark-level UI was
@@ -190,7 +197,7 @@ function renderSidebar(ctx) {
                    instead of dragging through awkward in-between
                    widths. */
                 const continuous = startW + (mv.clientX - startX);
-                const SLIM = slimWidth, FULL = 360, MID = (SLIM + FULL) / 2;
+                const SLIM = slimWidth, FULL = FULL_W, MID = (SLIM + FULL) / 2;
                 const next = continuous < MID ? SLIM : FULL;
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
@@ -233,13 +240,13 @@ function renderSidebar(ctx) {
                         <button
                             ref={chevronRef}
                             onClick={() => {
-                                const next = isCompact ? 360 : slimWidth;
+                                const next = isCompact ? FULL_W : slimWidth;
                                 setSidebarWidth(next);
                                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (_) {}
                             }}
                             className={`relative w-5 h-5 flex items-center justify-center rounded border text-[12px] font-black leading-none transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-indigo-300 hover:bg-slate-700 hover:border-indigo-400':'bg-slate-100 border-slate-300 text-indigo-600 hover:bg-slate-200 hover:border-indigo-500'}`}
                             title={isCompact
-                                ? "Expand sidebar to full width (360 px)"
+                                ? `Expand sidebar to full width (${FULL_W} px)`
                                 : `Collapse sidebar to slim width (${slimWidth} px)${_isAutoTuned ? ` · auto-tuned for ${_lang.toUpperCase()} title` : ''}`}
                             data-testid="sidebar-width-toggle-btn"
                             data-auto-tuned={_isAutoTuned ? 'true' : 'false'}
@@ -813,8 +820,12 @@ function renderSidebar(ctx) {
                             null and MetricBar renders no arrow. */}
                         {(() => {
                             const avg = (ahuRollingAvgs || {})[ahu.id];
-                            const dEx = avg && Number.isFinite(m.exchange)   && (avg.n_samples || 0) >= 2 ? (m.exchange   - avg.exchange)   : null;
-                            const dAb = avg && Number.isFinite(m.absorption) && (avg.n_samples || 0) >= 2 ? (m.absorption - avg.absorption) : null;
+                            const _seeded = !!avg && (avg.n_samples || 0) >= 2;
+                            const _delta = (cur, key) => (_seeded && Number.isFinite(cur) && Number.isFinite(avg[key])) ? (cur - avg[key]) : null;
+                            const dEx = _delta(m.exchange,   'exchange');
+                            const dAb = _delta(m.absorption, 'absorption');
+                            const dMx = _delta(m.mixing,     'mixing');
+                            const dCo = _delta(m.coil,       'coil');
                             /* SA drift pill (P1 refinement, 2026-02): controller-error
                                RMS in degC, with a delta vs the previous-window baseline
                                so the trend arrow follows the same up/down convention
@@ -824,10 +835,40 @@ function renderSidebar(ctx) {
                             const drift = (ahuDriftScores || {})[ahu.id];
                             const dDrift = drift && Number.isFinite(drift.rms_c) && Number.isFinite(drift.base_rms_c) && drift.n_samples >= 2
                                            ? (drift.rms_c - drift.base_rms_c) : null;
+                            /* With MA the OA->SA pill is replaced by the two
+                               legs it was conflating: mixing is what the
+                               dampers gave away, coil is what was paid for.
+                               They sum to exchange.  No MAT mapped => the
+                               single exchange pill, exactly as before. */
+                            const _split = Number.isFinite(m.coil);
+                            const _kj = v => Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)} kJ/kg` : '--';
+                            const _maPt = (ahu.points || []).find(p => p && p.label === 'MA');
+                            const _maDerived = _maPt ? _maPt.derived !== false : false;
+                            const _mixTitle  = `${t('pill_mixing')}: ${_kj(m.mixing)}  |  ${t('pill_free_dilution')}`;
+                            const _coilTitle = `${t('pill_coil')}: ${_kj(m.coil)}  |  ${t('pill_coil_duty')}`
+                                             + `  |  ${t('pill_mix_plus_coil')} = ${_kj(m.exchange)}`
+                                             + (_maDerived ? `  |  ${t('pill_coil_derived')}` : '');
+                            const _exTitle   = `${t('pill_exchange')}: ${_kj(m.exchange)}`;
+                            const _abTitle   = `${t('pill_absorption')}: ${_kj(m.absorption)}  |  ${t('pill_room_load')}`;
                             return (
                                 <React.Fragment>
-                                    <MetricBar theme={theme} val={m.exchange}   color="#3b82f6" height="h-full" width="w-9" max={15} showValue={true} delta={dEx} />
-                                    <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-9" max={15} showValue={true} delta={dAb} />
+                                    {_split ? (
+                                        <React.Fragment>
+                                            <div data-testid={`ahu-${ahu.id}-mixing-pill`} title={_mixTitle}>
+                                                <MetricBar theme={theme} val={m.mixing} color="#8b5cf6" height="h-full" width="w-9" max={15} showValue={true} delta={dMx} />
+                                            </div>
+                                            <div data-testid={`ahu-${ahu.id}-coil-pill`} title={_coilTitle}>
+                                                <MetricBar theme={theme} val={m.coil}   color="#3b82f6" height="h-full" width="w-9" max={15} showValue={true} delta={dCo} />
+                                            </div>
+                                        </React.Fragment>
+                                    ) : (
+                                        <div data-testid={`ahu-${ahu.id}-exchange-pill`} title={_exTitle}>
+                                            <MetricBar theme={theme} val={m.exchange} color="#3b82f6" height="h-full" width="w-9" max={15} showValue={true} delta={dEx} />
+                                        </div>
+                                    )}
+                                    <div data-testid={`ahu-${ahu.id}-absorption-pill`} title={_abTitle}>
+                                        <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-9" max={15} showValue={true} delta={dAb} />
+                                    </div>
                                     {drift && Number.isFinite(drift.rms_c) && (
                                         <div data-testid={`ahu-${ahu.id}-drift-pill`} title={`SA controller drift: ${drift.rms_c.toFixed(2)}°C RMS  |  base ${drift.base_rms_c.toFixed(2)}°C  |  trend ${drift.trend}`}>
                                             <MetricBar theme={theme} val={drift.rms_c} color="#f59e0b" height="h-full" width="w-9" max={5} showValue={true} delta={dDrift} />

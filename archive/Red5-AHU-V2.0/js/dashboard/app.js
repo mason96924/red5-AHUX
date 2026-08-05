@@ -535,7 +535,7 @@
             }, [ahuData]);
             const [showPath, setShowPath] = useState(true);
             const [vecVis, setVecVis] = useState({ enthalpy: true, sensible: true, latent: true, diagnostic: true });
-            const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true });
+            const [pointVisibility, setPointVisibility] = useState({ RA: true, OA: true, SA: true, MA: true });
 
             /* Per-AHU venue-preset → RH band map.  MUST stay byte-identical
                to the PRESETS list inside sidebar.js so a venue picked in

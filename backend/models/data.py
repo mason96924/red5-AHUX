@@ -21,13 +21,25 @@ PointValue = Union[float, int, str, bool, None]
 
 
 class PsyPoint(BaseModel):
-    """One of the three plotted dots in the chart (OA / SA / RA)."""
+    """One plotted dot in the chart: OA / SA / RA, plus MA when derivable.
+
+    MA is appended LAST rather than inserted in air-path order, so the
+    positional ``points[0..2]`` accesses in the dashboard and the health
+    route keep resolving to OA / SA / RA on units with no mixed-air data.
+    """
     model_config = ConfigDict(extra="allow")
     label: str
     t: float = Field(..., description="Dry-bulb temperature, deg C")
     rh: float = Field(..., description="Relative humidity, 0-100 percent")
     w: float = Field(..., description="Humidity ratio, kg-water / kg-dry-air")
     color: str = Field(..., description="Hex stroke colour, e.g. '#3b82f6'")
+    derived: Optional[bool] = Field(
+        None, description="True when the state was computed, not measured. "
+                          "A derived MA sits on the OA-RA line by "
+                          "construction and is never evidence that it does.")
+    basis: Optional[str] = Field(
+        None, description="MA only: 'measured' | 'mat' | 'mat+damper' | "
+                          "'damper' -- see models/mixing.py")
 
 
 class AHUPoints(BaseModel):
@@ -48,6 +60,11 @@ class AHUPoints(BaseModel):
     SAH: Optional[float] = Field(None, description="Supply-air RH, 0-100 percent")
     RAT: Optional[float] = Field(None, description="Return-air temperature, deg C")
     RAH: Optional[float] = Field(None, description="Return-air RH, 0-100 percent")
+    # Mixed air.  MAT is usually already present in the field as the freeze /
+    # low-limit sensor; MAH almost never is.  Both optional -- see
+    # models/mixing.py for what the chart can and cannot conclude from each.
+    MAT: Optional[float] = Field(None, description="Mixed-air temperature, deg C")
+    MAH: Optional[float] = Field(None, description="Mixed-air RH, 0-100 percent")
     # Fans -- Modbus/BACnet status, speed, power, alarm
     SAFM: Optional[float] = Field(None, description="Supply fan MODE: 0=off, 1=auto")
     EAFM: Optional[float] = Field(None, description="Exhaust fan MODE: 0=off, 1=auto")
@@ -127,6 +144,32 @@ class G36State(BaseModel):
     last_tick_at: str = Field(..., description="ISO-8601 UTC timestamp of the last G36 tick")
 
 
+class MixingState(BaseModel):
+    """Mixing-box cross-checks that accompany the MA point.
+
+    Present only when MA could be located at all.  The useful signal depends
+    entirely on ``basis``: with a derived MA the off-line distance is
+    meaningless (it is zero by construction) and the damper comparison is the
+    real check; with a fully measured MA both are available.
+    """
+    model_config = ConfigDict(extra="allow")
+    basis: str = Field(..., description="'measured' | 'mat' | 'mat+damper' | 'damper'")
+    oa_fraction: Optional[float] = Field(
+        None, description="Outdoor-air mass fraction actually used to place MA, 0-1")
+    oa_fraction_raw: Optional[float] = Field(
+        None, description="Unclamped fraction; outside 0-1 means MAT is "
+                          "impossible for this OA/RA pair")
+    oa_fraction_temp: Optional[float] = None
+    oa_fraction_humidity: Optional[float] = None
+    oa_fraction_damper: Optional[float] = None
+    damper_mismatch: Optional[float] = Field(
+        None, description="|measured fraction - damper fraction|, 0-1")
+    line_deviation_g_kg: Optional[float] = Field(
+        None, description="Measured MA minus predicted MA humidity ratio, g/kg. "
+                          "Only meaningful when basis == 'measured'.")
+    flags: List[str] = Field(default_factory=list)
+
+
 class AHUSnapshot(BaseModel):
     """One AHU's complete state -- this is what /api/data returns N of."""
     model_config = ConfigDict(extra="allow")
@@ -138,6 +181,7 @@ class AHUSnapshot(BaseModel):
     vavs: List[VAVSnapshot] = Field(default_factory=list)
     active_band: Optional[ActiveBand] = None
     g36: Optional[G36State] = None
+    mixing: Optional[MixingState] = None
 
 
 # /api/data returns a bare top-level array of AHUs.

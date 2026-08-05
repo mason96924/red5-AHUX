@@ -22,6 +22,7 @@ from typing import Optional
 # `_load_csv` is used by `_resolve_band` to look up the band-guide CSV.
 # Moved to models/loaders.py in Phase L.30 -- direct import, no shim needed.
 from models.loaders import _load_csv
+from models.mixing import derive_mixed_air, rh_from_w as _rh_from_w
 
 
 def _humidity_ratio(t_c: float, rh: float) -> float:
@@ -42,6 +43,21 @@ def _humidity_ratio(t_c: float, rh: float) -> float:
 def _enthalpy(t_c: float, w_kgkg: float) -> float:
     """Moist-air enthalpy [kJ/kg dry air].  Matches V1.9 psychrometric.js get_h."""
     return 1.006 * t_c + w_kgkg * (2501.0 + 1.86 * t_c)
+
+
+def _AHU_PHASE(ahu_id: str) -> float:
+    """Stable per-AHU phase offset so simulated sensor wander is not in lockstep."""
+    return (sum(ord(c) for c in ahu_id) % 100) / 100.0 * 6.283
+
+
+def _AHU_HAS_MAH(ahu_id: str) -> bool:
+    """Which demo units get a mixed-air humidity sensor 'installed'.
+
+    Deliberately a minority: MAH is rare in the field, and the dashboard needs
+    to show the derived ('mat') basis as the normal case rather than the
+    exception.
+    """
+    return sum(ord(c) for c in ahu_id) % 3 == 0
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +236,30 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
     fms  = round(safp * 1.0, 1)
     safa = round(safp - 2.5, 1)                           # actual hz feedback
 
+    # ---- Mixed air ---------------------------------------------------------
+    # Simulate the sensor rather than the ideal: mix by the damper's own
+    # fraction, then add a small offset standing in for stratification at a
+    # single-point MAT probe.  Without that offset the demo would show a
+    # perfect damper agreement no real AHU ever achieves, and the mismatch
+    # check would look like it does nothing.
+    _f = oad / 100.0
+    _mat_ideal = _f * oa["t"] + (1.0 - _f) * ra_t
+    mat = _mat_ideal + 0.35 * math.sin(time.time() / 190.0 + _AHU_PHASE(ahu_id))
+    # MAH is rare in the field.  Wire it on roughly a third of the demo units
+    # so both the 'measured' and 'mat' bases are visible on one screen.
+    mah = None
+    if _AHU_HAS_MAH(ahu_id):
+        _w_mix = _f * oa["w"] + (1.0 - _f) * _humidity_ratio(ra_t, ra_rh)
+        mah = _rh_from_w(mat, _w_mix)
+
     all_points = {
         # legacy 6
         "OAT": oa["t"], "OAH": oa["rh"],
         "SAT": round(sa_t, 2), "SAH": round(sa_rh, 1),
         "RAT": round(ra_t, 2), "RAH": round(ra_rh, 1),
+        # mixed air (MAT always; MAH only where "installed")
+        "MAT": round(mat, 2),
+        **({"MAH": round(mah, 1)} if mah is not None else {}),
         # fan controls + status
         "SAFM": safm, "EAFM": eafm,
         "SAFS": safs, "EAFS": eafs,
@@ -243,18 +278,27 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
         "ALM": 1.0 if fzs > 0 else 0.0,
     }
 
+    _points = [
+        {"label": "OA", "t": oa["t"], "rh": oa["rh"],
+         "w": oa["w"], "color": "#3b82f6"},
+        {"label": "SA", "t": round(sa_t, 2), "rh": round(sa_rh, 1),
+         "w": round(_humidity_ratio(sa_t, sa_rh), 5), "color": "#10b981"},
+        {"label": "RA", "t": round(ra_t, 2), "rh": round(ra_rh, 1),
+         "w": round(_humidity_ratio(ra_t, ra_rh), 5), "color": "#f43f5e"},
+    ]
+    # MA goes last -- positional points[0..2] accesses elsewhere must keep
+    # resolving to OA / SA / RA.
+    _ma, _mixing = derive_mixed_air(_points[0], _points[2], mat=mat, mah=mah,
+                                    oad=oad)
+    if _ma:
+        _points.append(_ma)
+
     return {
         "id": ahu_id,
         "procColor": color,
         "source": "demo",
-        "points": [
-            {"label": "OA", "t": oa["t"], "rh": oa["rh"],
-             "w": oa["w"], "color": "#3b82f6"},
-            {"label": "SA", "t": round(sa_t, 2), "rh": round(sa_rh, 1),
-             "w": round(_humidity_ratio(sa_t, sa_rh), 5), "color": "#10b981"},
-            {"label": "RA", "t": round(ra_t, 2), "rh": round(ra_rh, 1),
-             "w": round(_humidity_ratio(ra_t, ra_rh), 5), "color": "#f43f5e"},
-        ],
+        "points": _points,
+        **({"mixing": _mixing} if _mixing else {}),
         "all_points": all_points,
         "vavs": vav_list,
         "active_band": {

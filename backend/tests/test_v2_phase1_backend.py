@@ -73,8 +73,14 @@ if isinstance(data, list) and data:
     check("/api/data  -> entry has id + procColor + points + vavs + active_band",
           all(k in a for k in ("id", "procColor", "points", "vavs", "active_band")))
     labels = [p["label"] for p in a["points"]]
-    check("/api/data  -> point labels = ['OA','SA','RA']",
-          labels == ["OA", "SA", "RA"],
+    # OA/SA/RA must stay in the first three slots: the dashboard and the
+    # rolling-average helper both index points[0..2] positionally.  MA is
+    # appended after them when mixed-air data is available.
+    check("/api/data  -> point labels start ['OA','SA','RA']",
+          labels[:3] == ["OA", "SA", "RA"],
+          "got: %s" % labels)
+    check("/api/data  -> any extra point is MA only",
+          all(l == "MA" for l in labels[3:]),
           "got: %s" % labels)
     check("/api/data  -> OA has t, rh, w + numeric",
           all(isinstance(a["points"][0].get(k), (int, float)) for k in ("t", "rh", "w")))

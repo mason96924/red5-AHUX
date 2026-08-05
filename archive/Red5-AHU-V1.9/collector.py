@@ -231,7 +231,8 @@ def load_collector_config():
     config.setdefault('interval', DEFAULT_INTERVAL)
     config.setdefault('ahu_groups', {})
     config.setdefault('dashboard_point_map', {
-        'ahu': {'oa_t': 'OAT', 'oa_rh': 'OAH', 'sa_t': 'SAT', 'sa_rh': 'SAH'},
+        'ahu': {'oa_t': 'OAT', 'oa_rh': 'OAH', 'sa_t': 'SAT', 'sa_rh': 'SAH',
+                'ma_t': 'MAT', 'ma_rh': 'MAH'},
         'vav': {'zone_t': 't', 'zone_rh': 'rh'}
     })
     return config

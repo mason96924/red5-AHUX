@@ -44,6 +44,53 @@ get_w = None
 get_h = None
 ahu_records = None
 
+def _attach_mixed_air(entry, pts=None, simulate=False, ahu_map=None):
+    """Append the MA point (and its cross-checks) to a finished AHU entry.
+
+    MA is appended LAST so the dashboard's positional ``points[0..2]``
+    accesses keep resolving to OA / SA / RA on units with no mixed-air data.
+
+    ``simulate`` is for the two no-collector branches: there is no MAT to
+    read, so one is synthesised from the band's OA damper with a small offset
+    standing in for stratification at a single-point probe.  Live telemetry
+    never synthesises -- if MAT is not mapped, MA falls back to the damper
+    basis and is flagged as derived.
+
+    Wrapped in a blanket except: a diagnostic must never be able to take out
+    the telemetry response.
+    """
+    try:
+        from mixed_air import derive_mixed_air, rh_from_w  # noqa: PLC0415
+        by_label = {p.get('label'): p for p in entry.get('points') or []}
+        oa, ra = by_label.get('OA'), by_label.get('RA')
+        if not oa or not ra:
+            return entry
+        pts = pts if isinstance(pts, dict) else {}
+        # Honour the operator's dashboard_point_map so a site whose mixed-air
+        # objects are named something other than MAT/MAH still resolves.
+        m = ahu_map if isinstance(ahu_map, dict) else {}
+        mat = pts.get(m.get('ma_t', 'MAT'), pts.get('MA_T'))
+        mah = pts.get(m.get('ma_rh', 'MAH'), pts.get('MA_RH'))
+        oad = pts.get(m.get('oa_damper', 'OAD'))
+        if oad is None:
+            band = entry.get('active_band') or {}
+            oad = band.get('oa_damper_sp')
+        if simulate and mat is None and oad is not None:
+            f = max(0.0, min(1.0, float(oad) / 100.0))
+            mat = (f * float(oa['t']) + (1.0 - f) * float(ra['t'])
+                   + 0.35 * math.sin(time.time() / 190.0
+                                     + (sum(ord(c) for c in str(entry.get('id', ''))) % 100) / 100.0 * 6.283))
+            if sum(ord(c) for c in str(entry.get('id', ''))) % 3 == 0:
+                mah = rh_from_w(mat, f * float(oa['w']) + (1.0 - f) * float(ra['w']))
+        ma, diag = derive_mixed_air(oa, ra, mat=mat, mah=mah, oad=oad)
+        if ma:
+            entry['points'] = list(entry['points']) + [ma]
+            if diag:
+                entry['mixing'] = diag
+    except Exception:
+        pass
+    return entry
+
 
 # ---------------- BLOCK A: helpers (telemetry + write history) ----------------
 # --- TELEMETRY INTEGRATION ---
@@ -341,7 +388,8 @@ def api_data():
     telemetry = _load_telemetry()
     collector_config = _load_collector_config()
     dashboard_map = collector_config.get('dashboard_point_map', {
-        'ahu': {'oa_t': 'OAT', 'oa_rh': 'OAH', 'sa_t': 'SAT', 'sa_rh': 'SAH'},
+        'ahu': {'oa_t': 'OAT', 'oa_rh': 'OAH', 'sa_t': 'SAT', 'sa_rh': 'SAH',
+                'ma_t': 'MAT', 'ma_rh': 'MAH'},
         'vav': {'zone_t': 't', 'zone_rh': 'rh'}
     })
 
@@ -466,7 +514,7 @@ def api_data():
             }
             if _active_band:
                 ahu_entry["active_band"] = _active_band
-            output.append(ahu_entry); color_idx += 1
+            output.append(_attach_mixed_air(ahu_entry, pts, ahu_map=ahu_map)); color_idx += 1
         try:
             _update_rolling_avgs(output)
         except Exception:
@@ -539,7 +587,8 @@ def _sim_fallback_from_config(collector_config):
         }
         if _active_band:
             _entry["active_band"] = _active_band
-        output.append(_entry)
+        output.append(_attach_mixed_air(
+            _entry, _entry.get("all_points"), simulate=True))
         color_idx += 1
     try:
         _update_rolling_avgs(output)
@@ -608,7 +657,7 @@ def _mock_14_ahus():
         }
         if _active_band:
             _entry["active_band"] = _active_band
-        output.append(_entry)
+        output.append(_attach_mixed_air(_entry, simulate=True))
     try:
         _update_rolling_avgs(output)
     except Exception:

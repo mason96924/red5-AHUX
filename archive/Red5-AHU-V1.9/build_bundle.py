@@ -41,6 +41,7 @@ ROOT_FILES = [
     '_bridges_lib.py',
     'bacnet_diag_service.py',
     'band_csv_generator.py',
+    'mixed_air.py',
 
     # Stage B — auth + audit (2026-07).  *.py land in pgpy/ on bundle upload.
     'auth_service.py',

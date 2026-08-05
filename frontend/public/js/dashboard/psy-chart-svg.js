@@ -23,6 +23,68 @@
 function renderPsyChartSvg(ctx) {
     const { width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t } = ctx;
 
+    /* ----------------------------------------------------------------
+     * Process legs.  With MA present every drawn segment corresponds to
+     * exactly one piece of equipment:
+     *
+     *     OA -> MA, RA -> MA   the mixing box
+     *     MA -> SA             coil(s) + humidifier
+     *     SA -> RA             the room picking up load
+     *
+     * The two mixing legs are collinear by construction -- humidity ratio
+     * mixes linearly with mass fraction -- so they render as one straight
+     * OA-RA line passing through MA.  A measured MA (both MAT and MAH
+     * wired) may sit off that line, and the shallow V it then draws is the
+     * fault signal.
+     *
+     * Without MA we fall back to the legacy OA->SA chord.  That line is no
+     * physical process: it spans mixing and the coil at once, so the coil's
+     * apparent sensible/latent split is contaminated by mixing.  It stays
+     * only so units with no mixed-air data still draw something.
+     * ---------------------------------------------------------------- */
+    const processLegs = (ahu, isFocused) => {
+        const P = {};
+        (ahu.points || []).forEach(p => { if (p && p.label) P[p.label] = p; });
+        const shown = l => pointVisibility[l] !== false && !!P[l];
+        const sw = isFocused ? 3.5 : 1.5;
+        const dash = isFocused ? "" : "5,4";
+        // A derived MA lies on the OA-RA line because it was computed to,
+        // not because the box was measured doing it.  Dotted mixing legs say
+        // "constructed"; solid ones say "measured".
+        const derived = P.MA ? P.MA.derived !== false : false;
+        const legs = P.MA
+            ? [['OA', 'MA', true], ['RA', 'MA', true], ['MA', 'SA', false], ['SA', 'RA', false]]
+            : [['OA', 'SA', false], ['SA', 'RA', false]];
+        return legs.map(([a, b, isMix]) => {
+            if (!shown(a) || !shown(b)) return null;
+            return <line key={`${a}-${b}`}
+                x1={safe(x(P[a].t))} y1={safe(y(P[a].w))}
+                x2={safe(x(P[b].t))} y2={safe(y(P[b].w))}
+                stroke={ahu.procColor}
+                strokeWidth={isMix ? sw * 0.75 : sw}
+                strokeDasharray={isMix ? (derived ? "2,3" : "") : dash}
+                opacity={isMix ? 0.8 : 1} />;
+        });
+    };
+
+    /* Hover text for the MA dot -- states plainly which of the three bases
+       produced it, because the diagnostic worth trusting differs for each. */
+    const maTitle = (ahu, p) => {
+        const mx = ahu.mixing || {};
+        const basis = {
+            measured: t('ma_basis_measured'),
+            mat: t('ma_basis_mat'),
+            'mat+damper': t('ma_basis_mat_damper'),
+            damper: t('ma_basis_damper'),
+        }[p.basis || mx.basis] || (p.basis || '');
+        const bits = [`${t('mixed_air')} — ${basis}`];
+        if (mx.oa_fraction != null) bits.push(`${t('oa_fraction')}: ${Math.round(mx.oa_fraction * 100)}%`);
+        if (mx.oa_fraction_damper != null) bits.push(`${t('oa_damper')}: ${Math.round(mx.oa_fraction_damper * 100)}%`);
+        if (mx.line_deviation_g_kg != null) bits.push(`${t('off_line')}: ${mx.line_deviation_g_kg} g/kg`);
+        (mx.flags || []).forEach(f => bits.push(`⚠ ${t('ma_flag_' + f)}`));
+        return bits.join('\n');
+    };
+
     return (
 <div className="flex-1 relative flex items-center justify-center overflow-hidden font-black shadow-black shadow-inner">
     <div className="absolute top-10 left-24 z-10 pointer-events-none font-black shadow-black"><h2 className={`text-3xl font-black italic uppercase ${ui.heading} tracking-tight font-black shadow-black shadow-black`}>{t('psychrometric_chart')}</h2></div>
@@ -151,7 +213,7 @@ function renderPsyChartSvg(ctx) {
         </defs>
         <rect x={pad.left} y={pad.top} width={gridWidth} height={gridHeight} fill={ui.chartBg} className="transition-all duration-500 shadow-black shadow-black" />
         {renderGrid()}{renderGivoniOverlay()}
-        {ahuData.map(ahu => { const isFocused = selectedAhuId === ahu.id; return ( <g key={ahu.id} opacity={selectedAhuId && !isFocused ? 0.12 : 1}> {isFocused && showPath && ( <g>{(pointVisibility.OA && pointVisibility.SA) && <line x1={safe(x(ahu.points[0].t))} y1={safe(y(ahu.points[0].w))} x2={safe(x(ahu.points[1].t))} y2={safe(y(ahu.points[1].w))} stroke={ahu.procColor} strokeWidth={isFocused ? 3.5 : 1.5} strokeDasharray={isFocused ? "" : "5,4"} />}{(pointVisibility.SA && pointVisibility.RA) && <line x1={safe(x(ahu.points[1].t))} y1={safe(y(ahu.points[1].w))} x2={safe(x(ahu.points[2].t))} y2={safe(y(ahu.points[2].w))} stroke={ahu.procColor} strokeWidth={isFocused ? 3.5 : 1.5} strokeDasharray={isFocused ? "" : "5,4"} />}</g> )} {ahu.points && ahu.points.map(p => { if (pointVisibility[p.label] === false) return null; return ( <g key={p.label}><circle cx={safe(x(p.t))} cy={safe(y(p.w))} r={isFocused ? 6.5 : 4} fill={p.color} stroke={theme==='dark'?'white':'#334155'} strokeWidth="2" className="shadow-lg shadow-black" />{isFocused && p.label === 'SA' && ( <text x={safe(x(p.t))} y={safe(y(p.w) - 15)} textAnchor="middle" fill={theme==='dark'?'white':'#000'} fontSize="12" fontWeight="900" style={{ filter: theme==='dark'?'drop-shadow(0px 0px 4px rgba(0,0,0,0.8))':'' }} className="uppercase tracking-widest font-black tracking-tighter font-mono shadow-black">{ahu.id}</text> )}</g> ); })} {isFocused && ahu.vavs && ahu.vavs.map(v => { const isThisLocked = lockedVavId === v.id; const _vavSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null; const _vavGv = getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, _vavSweet, showGivoni); const _vavDotFill = _vavGv.dotFill; return ( <g key={v.id} onMouseDown={(e) => { e.stopPropagation(); setLockedVavId(isThisLocked ? null : v.id); setIsLockedToSA(false); }} className="cursor-pointer shadow-black shadow-black"><title>{v.id} -- {_vavGv.label}</title><circle cx={safe(x(v.t))} cy={safe(y(v.w))} r={isThisLocked ? "5.5" : "4"} fill={_vavDotFill} stroke={isThisLocked ? "#fff" : _vavDotFill} strokeWidth={isThisLocked ? "2" : "0.5"} className="transition-all shadow-black shadow-black" style={{ filter: `drop-shadow(0 0 ${isThisLocked ? '6' : '3'}px ${_vavDotFill})` }} /></g> ); })} </g> ); })}
+        {ahuData.map(ahu => { const isFocused = selectedAhuId === ahu.id; return ( <g key={ahu.id} opacity={selectedAhuId && !isFocused ? 0.12 : 1}> {isFocused && showPath && ( <g>{processLegs(ahu, isFocused)}</g> )} {ahu.points && ahu.points.map(p => { if (pointVisibility[p.label] === false) return null; const _maDerived = p.label === 'MA' && p.derived !== false; return ( <g key={p.label}>{p.label === 'MA' && <title>{maTitle(ahu, p)}</title>}<circle cx={safe(x(p.t))} cy={safe(y(p.w))} r={isFocused ? 6.5 : 4} fill={_maDerived ? (theme==='dark' ? '#0b1224' : '#ffffff') : p.color} stroke={_maDerived ? p.color : (theme==='dark'?'white':'#334155')} strokeWidth={_maDerived ? 2.5 : 2} className="shadow-lg shadow-black" />{isFocused && p.label === 'SA' && ( <text x={safe(x(p.t))} y={safe(y(p.w) - 15)} textAnchor="middle" fill={theme==='dark'?'white':'#000'} fontSize="12" fontWeight="900" style={{ filter: theme==='dark'?'drop-shadow(0px 0px 4px rgba(0,0,0,0.8))':'' }} className="uppercase tracking-widest font-black tracking-tighter font-mono shadow-black">{ahu.id}</text> )}</g> ); })} {isFocused && ahu.vavs && ahu.vavs.map(v => { const isThisLocked = lockedVavId === v.id; const _vavSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null; const _vavGv = getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, _vavSweet, showGivoni); const _vavDotFill = _vavGv.dotFill; return ( <g key={v.id} onMouseDown={(e) => { e.stopPropagation(); setLockedVavId(isThisLocked ? null : v.id); setIsLockedToSA(false); }} className="cursor-pointer shadow-black shadow-black"><title>{v.id} -- {_vavGv.label}</title><circle cx={safe(x(v.t))} cy={safe(y(v.w))} r={isThisLocked ? "5.5" : "4"} fill={_vavDotFill} stroke={isThisLocked ? "#fff" : _vavDotFill} strokeWidth={isThisLocked ? "2" : "0.5"} className="transition-all shadow-black shadow-black" style={{ filter: `drop-shadow(0 0 ${isThisLocked ? '6' : '3'}px ${_vavDotFill})` }} /></g> ); })} </g> ); })}
         {isProcessVisible && renderVectors()}
         <g onMouseDown={() => { setIsDraggingIndicator(true); setIsProcessVisible(true); setIsLockedToSA(false); setLockedVavId(null); }} className="cursor-move shadow-black shadow-black"><g transform={"translate(" + safe(x(indicatorPos.t)) + ", " + safe(y(indicatorPos.w)) + ")"}>
             <circle cx="0" cy="0" r="4" fill="white" stroke="#6366f1" strokeWidth="2.5" className="shadow-xl shadow-black" />

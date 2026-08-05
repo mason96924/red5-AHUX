@@ -63,6 +63,20 @@
     evaporative:           ['Evaporative','蒸发冷却','蒸發冷卻','蒸発冷却','증발 냉각'],
     rh_sweet_spot:         ['40-60% RH','40-60% 相对湿度','40-60% 相對濕度','40-60% 相対湿度','40-60% 상대습도'],
 
+    /* ── Mixed air (MA) + mixing-box cross-checks ── */
+    mixed_air:             ['Mixed Air','混合空气','混合空氣','混合空気','혼합 공기'],
+    oa_fraction:           ['OA fraction','新风比例','新風比例','外気混合率','외기 비율'],
+    oa_damper:             ['OA damper','新风风阀','新風風閥','外気ダンパ','외기 댐퍼'],
+    off_line:              ['Off mixing line','偏离混合线','偏離混合線','混合線からの偏差','혼합선 이탈'],
+    ma_basis_measured:     ['measured (MAT + MAH)','实测 (MAT + MAH)','實測 (MAT + MAH)','実測 (MAT + MAH)','실측 (MAT + MAH)'],
+    ma_basis_mat:          ['derived from MAT','由 MAT 推算','由 MAT 推算','MAT から推算','MAT 기반 추정'],
+    ma_basis_mat_damper:   ['MAT + damper (OA≈RA)','MAT + 风阀 (OA≈RA)','MAT + 風閥 (OA≈RA)','MAT + ダンパ (OA≈RA)','MAT + 댐퍼 (OA≈RA)'],
+    ma_basis_damper:       ['damper only — computed, not measured','仅风阀 — 计算值，非实测','僅風閥 — 計算值，非實測','ダンパのみ — 計算値、実測ではない','댐퍼만 — 계산값, 실측 아님'],
+    ma_flag_mat_outside_oa_ra: ['MAT outside OA–RA range — sensor or stratification','MAT 超出 OA–RA 范围 — 传感器或气流分层','MAT 超出 OA–RA 範圍 — 感測器或氣流分層','MAT が OA–RA 範囲外 — センサまたは層状化','MAT가 OA–RA 범위 밖 — 센서 또는 성층화'],
+    ma_flag_damper_mismatch:   ['Damper disagrees with measured mix','风阀指令与实测混合不一致','風閥指令與實測混合不一致','ダンパ指令と実測混合が不一致','댐퍼 지령과 실측 혼합 불일치'],
+    ma_flag_off_mixing_line:   ['MA off the mixing line','MA 偏离混合线','MA 偏離混合線','MA が混合線から外れている','MA가 혼합선에서 벗어남'],
+    ma_flag_oa_ra_temp_too_close: ['OA≈RA — fraction taken from damper','OA≈RA — 比例取自风阀','OA≈RA — 比例取自風閥','OA≈RA — 比率はダンパから','OA≈RA — 비율은 댐퍼 기준'],
+
     /* ── Setpoints ── */
     t_setpoint:            ['T Setpoint','温度设定点','溫度設定點','温度設定値','온도 설정점'],
     w_setpoint:            ['W Setpoint','含湿量设定点','含濕量設定點','絶対湿度設定値','절대습도 설정점'],

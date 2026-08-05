@@ -106,3 +106,6 @@ master_key.txt
 # ...but DO allow the no-secret templates to be shared.
 !*.env.example
 !*.txt.example
+
+# Local build toolchain for regenerating dashboard.compiled.js off-container
+.buildtools/

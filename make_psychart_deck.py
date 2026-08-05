@@ -27,6 +27,8 @@ ACCENT   = RGBColor(0x1D, 0x4E, 0xD8)   # blue  (energy / structure)
 GREEN    = RGBColor(0x04, 0x78, 0x57)   # fresh air
 AMBER    = RGBColor(0xB4, 0x53, 0x09)   # comfort
 VIOLET   = RGBColor(0x7C, 0x3A, 0xED)   # equal-energy (enthalpy) lines
+ROSE     = RGBColor(0xE1, 0x1D, 0x48)   # dry-bulb "open" but costlier
+SLATE    = RGBColor(0x33, 0x41, 0x55)
 PAGE     = RGBColor(0xF8, 0xFA, 0xFC)
 CARD     = RGBColor(0xFF, 0xFF, 0xFF)
 LINE     = RGBColor(0xE2, 0xE8, 0xF0)
@@ -404,7 +406,123 @@ for i, (h, d, c) in enumerate(guide):
         Inches(gch - 0.6), d, size=10, color=MUTED, line_spacing=1.12)
 
 # =========================================================================
-# 5 — WHY TRADITIONAL BMS NEVER ADOPTED IT
+# 5 — WORKED EXAMPLE: WHEN IS OUTSIDE AIR FREE?
+# =========================================================================
+s = slide()
+accent_header(s, "Worked example", "When is outside air free?")
+
+EX0, EY0 = 0.95, 5.50
+ESX, ESY = 0.115, 0.100
+ex = lambda T: EX0 + T * ESX
+ey = lambda W: EY0 - W * ESY
+
+rect(s, Inches(0.62), Inches(1.95), Inches(5.55), Inches(3.95), fill=CARD,
+     line=LINE)
+
+
+def poly(s, pts, fill, opacity):
+    v = [(Inches(ex(T)), Inches(ey(W))) for T, W in pts]
+    b = s.shapes.build_freeform(v[0][0], v[0][1], 1.0)
+    b.add_line_segments(v[1:], close=True)
+    shp = b.convert_to_shape()
+    shp.fill.solid(); shp.fill.fore_color.rgb = fill; set_alpha(shp, opacity)
+    shp.line.fill.background(); shp.shadow.inherit = False
+    return shp
+
+
+# the four decision regions, split by the RA enthalpy line and the RA dry-bulb
+poly(s, [(16.9, 12.15), (15, 10.647), (10, 7.630), (5, 5.402), (0, 3.775),
+         (0, 0), (24, 0), (24, 9.3)], GREEN, 13)
+poly(s, [(16.9, 12.15), (20, 14.697), (24, 19.005), (24, 9.3)], ROSE, 16)
+poly(s, [(24, 9.3), (24, 0), (40, 0), (40, 2.87)], AMBER, 16)
+poly(s, [(24, 9.3), (24, 19.005), (25, 20.082), (30, 27.202), (31.5, 30),
+         (40, 30), (40, 2.87)], FAINT, 10)
+
+conn(s, ex(0), ey(0), ex(40), ey(0), color=AXIS, width=1.25)
+conn(s, ex(0), ey(0), ex(0), ey(30), color=AXIS, width=1.25)
+# the two competing changeover lines
+conn(s, ex(24), ey(19.005), ex(24), ey(0), color=SLATE, width=1.5, dash=True)
+conn(s, ex(16.9), ey(12.15), ex(40), ey(2.87), color=VIOLET, width=2.0)
+# saturation
+_v = [(Inches(ex(t)), Inches(ey(w))) for t, w in SAT]
+_b = s.shapes.build_freeform(_v[0][0], _v[0][1], 1.0)
+_b.add_line_segments(_v[1:], close=False)
+_c = _b.convert_to_shape()
+_c.fill.background(); _c.line.color.rgb = ACCENT; _c.line.width = Pt(2.25)
+_c.shadow.inherit = False
+
+
+def lab(T, W, text, size=10, color=INK, w=1.7, bold=True):
+    box(s, Inches(ex(T) - 0.04), Inches(ey(W) - 0.13), Inches(w), Inches(0.26),
+        text, size=size, bold=bold, color=color)
+
+
+for (T, W), c, nm, r in [((24, 9.3), GREEN, "RA 48", 0.07),
+                         ((22, 14.96), ROSE, "A 60", 0.07),
+                         ((28, 2.33), AMBER, "B 34", 0.07),
+                         ((33, 18.0), FAINT, "OA 79", 0.055)]:
+    dot(s, ex(T), ey(W), c, r=r)
+lab(24.5, 7.4, "RA 48", 11, GREEN, w=0.9)
+lab(18.3, 15.6, "A 60", 11, ROSE, w=0.8)
+lab(28.8, 1.9, "B 34", 11, AMBER, w=0.8)
+lab(33.8, 18.4, "OA 79", 10, FAINT, w=0.9)
+lab(5.6, 1.9, "FREE COOLING", 10.5, GREEN, w=1.6)
+lab(5.6, 0.55, "both methods agree", 9, GREEN, w=1.7, bold=False)
+lab(31.4, 23.9, "hot & humid —", 9.5, FAINT, w=1.3)
+lab(31.4, 22.5, "minimum OA", 9.5, FAINT, w=1.3)
+lab(6.6, 13.2, "equal energy as RA", 9.5, VIOLET, w=1.6)
+lab(24.5, 16.7, "dry-bulb only", 9.5, SLATE, w=1.3)
+
+box(s, Inches(0.62), Inches(5.95), Inches(5.6), Inches(0.5),
+    "Numbers are total energy in kJ/kg.  RA 24 °C / 50% RH = 48  ·  "
+    "A 22 °C / 90% RH = 60  ·  B 28 °C / 10% RH = 34  ·  OA 33 °C / 18 g/kg "
+    "= 79 (the outside air from the previous slide).",
+    size=10, color=FAINT, line_spacing=1.2)
+
+# right-hand notes
+nx = Inches(6.4); nw = Inches(6.23)
+box(s, nx, Inches(2.0), nw, Inches(0.4), "Two lines, four outcomes",
+    size=16, bold=True, color=ACCENT)
+outcomes = [
+    ("1", GREEN, "Below-left of the violet line — outside air holds less "
+     "energy than the air coming back. Open the economizer and let mechanical "
+     "cooling back off."),
+    ("2", FAINT, "Above-right — outside air is a load, not a resource. Close "
+     "to the minimum ventilation rate 62.1 demands and let the coil do the "
+     "work."),
+    ("A", ROSE, "Cool but muggy. At 22 °C it is 2° cooler than the return, so "
+     "a dry-bulb economizer opens — yet it carries 60 kJ/kg against 48. You "
+     "have just imported latent load for the coil to wring back out."),
+    ("B", AMBER, "Warm but dry. At 28 °C dry-bulb keeps it shut, yet 34 kJ/kg "
+     "is far below the return. Energy says use it — though a dry-bulb high "
+     "limit still guards this corner when the load is mostly sensible."),
+    ("=", VIOLET, "On the line the two streams are energy-neutral, so the "
+     "choice falls to humidity and fan power. Sequences add a deadband here "
+     "so the dampers do not hunt."),
+]
+ny = 2.5
+for mark, c, txt in outcomes:
+    ov = s.shapes.add_shape(MSO_SHAPE.OVAL, nx, Inches(ny), Inches(0.26),
+                            Inches(0.26))
+    ov.fill.solid(); ov.fill.fore_color.rgb = c
+    ov.line.fill.background(); ov.shadow.inherit = False
+    box(s, nx, Inches(ny), Inches(0.26), Inches(0.26), mark, size=10.5,
+        bold=True, color=WHITE, align=PP_ALIGN.CENTER,
+        anchor=MSO_ANCHOR.MIDDLE)
+    box(s, nx + Inches(0.4), Inches(ny - 0.05), nw - Inches(0.42),
+        Inches(0.72), txt, size=11.5, color=MUTED, line_spacing=1.16)
+    ny += 0.76
+
+rect(s, Inches(0.7), Inches(6.5), Inches(11.93), Inches(0.8),
+     fill=RGBColor(0xEF, 0xF6, 0xFF), line=RGBColor(0xBF, 0xDB, 0xFE))
+box(s, Inches(0.98), Inches(6.6), Inches(11.4), Inches(0.6),
+    "A dry-bulb sensor can only draw the VERTICAL line; the chart draws the "
+    "DIAGONAL. The two shaded wedges are precisely where they disagree — and "
+    "where energy is quietly lost.",
+    size=13, color=INK, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.15)
+
+# =========================================================================
+# 6 — WHY TRADITIONAL BMS NEVER ADOPTED IT
 # =========================================================================
 s = slide()
 accent_header(s, "The gap", "Why traditional BMS never adopted the chart")

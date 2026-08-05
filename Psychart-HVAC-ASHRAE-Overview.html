@@ -245,7 +245,62 @@
   </div>
 </section>
 
-<!-- 5 WHY TRADITIONAL BMS DOESN'T USE IT -->
+<!-- 5 WORKED EXAMPLE — THE FREE-COOLING DECISION -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">Worked example</div>
+  <div class="title">When is outside air free?</div>
+  <div class="chartwrap" style="top:1.95in">
+    <svg viewBox="0 0 600 400" style="width:5.7in;height:3.8in">
+      <rect x="0" y="0" width="600" height="400" fill="#ffffff" stroke="#e2e8f0"/>
+      <!-- decision regions -->
+      <polygon points="271.2,224.5 247,240 185,271 122,294 60,311 60,350 360,350 360,253.9"
+               fill="rgba(4,120,87,.13)"/>
+      <polygon points="271.2,224.5 310,198.1 360,153.6 360,253.9" fill="rgba(225,29,72,.16)"/>
+      <polygon points="360,253.9 360,350 560,350 560,320.3" fill="rgba(180,83,9,.16)"/>
+      <polygon points="360,253.9 360,153.6 372,142 435,69 454,40 560,40 560,320.3"
+               fill="rgba(100,116,139,.10)"/>
+      <!-- axes -->
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- the two competing lines -->
+      <line x1="360" y1="153.6" x2="360" y2="350" stroke="#334155" stroke-width="1.8" stroke-dasharray="5 4"/>
+      <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke="#7c3aed" stroke-width="2.4"/>
+      <!-- saturation -->
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+      <!-- points -->
+      <circle cx="360" cy="253.9" r="6.5" fill="#047857"/>
+      <text x="366" y="272" font-size="12.5" font-weight="800" fill="#047857">RA 48</text>
+      <circle cx="335" cy="195.4" r="6.5" fill="#e11d48"/>
+      <text x="288" y="188" font-size="12.5" font-weight="800" fill="#e11d48">A 60</text>
+      <circle cx="410" cy="325.9" r="6.5" fill="#b45309"/>
+      <text x="420" y="331" font-size="12.5" font-weight="800" fill="#b45309">B 34</text>
+      <circle cx="472" cy="164" r="5.5" fill="#64748b"/>
+      <text x="481" y="160" font-size="11.5" font-weight="700" fill="#64748b">OA 79</text>
+      <!-- region + line labels -->
+      <text x="130" y="332" font-size="12" font-weight="800" fill="#047857">FREE COOLING</text>
+      <text x="130" y="346" font-size="10.5" fill="#047857">both methods agree</text>
+      <text x="455" y="105" font-size="11.5" font-weight="700" fill="#64748b">hot &amp; humid —</text>
+      <text x="455" y="119" font-size="11.5" font-weight="700" fill="#64748b">minimum OA</text>
+      <text x="145" y="215" font-size="10.5" font-weight="700" fill="#7c3aed">equal energy as RA</text>
+      <text x="366" y="178" font-size="10.5" font-weight="700" fill="#334155">dry-bulb only</text>
+    </svg>
+  </div>
+  <div class="legend2" style="top:5.88in">Numbers are total energy in kJ/kg. <b>RA</b> 24 °C / 50% RH = 48 &nbsp;·&nbsp; <b>A</b> 22 °C / 90% RH = 60 &nbsp;·&nbsp; <b>B</b> 28 °C / 10% RH = 34 &nbsp;·&nbsp; <b>OA</b> 33 °C / 18 g/kg = 79 (the outside air from the previous slide).</div>
+  <div class="cnotes" style="left:6.45in;top:2.0in;width:6.18in">
+    <h3>Two lines, four outcomes</h3>
+    <div class="cnote"><div class="n" style="background:#047857">1</div><p><b>Below-left of the violet line</b> — outside air holds less energy than the air coming back. Open the economizer and let mechanical cooling back off.</p></div>
+    <div class="cnote"><div class="n" style="background:#64748b">2</div><p><b>Above-right</b> — outside air is a load, not a resource. Close to the minimum ventilation rate 62.1 demands and let the coil do the work.</p></div>
+    <div class="cnote"><div class="n" style="background:#e11d48">A</div><p><b>Cool but muggy.</b> At 22 °C it is 2° cooler than the return, so a dry-bulb economizer opens — yet it carries 60 kJ/kg against 48. You have just imported latent load for the coil to wring back out.</p></div>
+    <div class="cnote"><div class="n" style="background:#b45309">B</div><p><b>Warm but dry.</b> At 28 °C dry-bulb keeps it shut, yet 34 kJ/kg is far below the return. Energy says use it — though a dry-bulb high limit still guards this corner when the load is mostly sensible.</p></div>
+    <div class="cnote"><div class="n" style="background:#7c3aed">=</div><p><b>On the line</b> the two streams are energy-neutral, so the choice falls to humidity and fan power. Sequences add a deadband here so the dampers do not hunt.</p></div>
+  </div>
+  <div class="catch" style="top:6.35in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">A dry-bulb sensor can only draw the <b>vertical</b> line; the chart draws the <b>diagonal</b>. The two shaded wedges are precisely where they disagree — and where energy is quietly lost.</p>
+  </div>
+</section>
+
+<!-- 6 WHY TRADITIONAL BMS DOESN'T USE IT -->
 <section class="slide">
   <div class="bar"></div><div class="kick">The gap</div>
   <div class="title">Why traditional BMS never adopted the chart</div>

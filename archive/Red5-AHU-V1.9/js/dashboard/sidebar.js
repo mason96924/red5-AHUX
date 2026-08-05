@@ -174,12 +174,19 @@ function renderSidebar(ctx) {
     const isPoppedToWin   = !!sidebarPopoutWin;
     const isPoppedFloat   = sidebarFloating && !isPoppedToWin;
     const isPopped        = isPoppedFloat || isPoppedToWin;
-    /* Compact-mode breakpoint (Phase L.40 — 2026-06-27).  When the
-       sidebar is dragged below ~270 px, hide the per-AHU venue-preset
-       dropdown + LOCK SA / PATH chips so each AHU row collapses to a
-       single legible line.  Popped/floating mode always renders the
-       full set because the operator manually picked a larger surface. */
-    const isCompact = !isPopped && sidebarWidth < 270;
+    /* Compact-mode breakpoint (Phase L.40 — 2026-06-27; made relative
+       2026-08-05).  Below it the per-AHU venue-preset card (the RH band)
+       and the LOCK SA / PATH chips are dropped so each AHU row collapses
+       to one legible line -- the band is a FULL-mode affordance only.
+       The threshold must move with the MEASURED slim width and must be
+       the same number the drag handler snaps on.  A fixed 270 px was
+       neither: the slim width is chevron-edge + one pill slot per bar, so
+       splitting exchange into mixing + coil added 40 px and put a
+       collapsed sidebar (~274 px) on the wrong side of the constant,
+       drawing the band on a row with no room for it.  Popped/floating
+       always renders the full set -- that surface was chosen by hand. */
+    const SNAP_MID  = (slimWidth + FULL_W) / 2;
+    const isCompact = !isPopped && sidebarWidth < SNAP_MID;
     const sidebarTree = (
 <div
     className={`${ui.sidebar} ${ui.text} ${isPopped ? '' : 'border-r ' + ui.border} flex flex-col z-20 shadow-2xl overflow-hidden flex-shrink-0 relative`}
@@ -210,8 +217,7 @@ function renderSidebar(ctx) {
                    instead of dragging through awkward in-between
                    widths. */
                 const continuous = startW + (mv.clientX - startX);
-                const SLIM = slimWidth, FULL = FULL_W, MID = (SLIM + FULL) / 2;
-                const next = continuous < MID ? SLIM : FULL;
+                const next = continuous < SNAP_MID ? slimWidth : FULL_W;
                 setSidebarWidth(next);
                 try { localStorage.setItem('red5.sidebarWidth', String(next)); } catch (e) {}
             };

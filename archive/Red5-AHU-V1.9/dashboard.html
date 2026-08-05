@@ -21,7 +21,7 @@
          after #root exists, with CDN/path fallbacks and on-screen errors. -->
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
          js/dashboard/* are now pre-compiled offline into the single bundle
-         /api/assets/dashboard.compiled.js?v=fc4e4dd812 (built via /app/frontend/src/dashboard/build.sh).
+         /api/assets/dashboard.compiled.js?v=292cd44f3b (built via /app/frontend/src/dashboard/build.sh).
          Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
@@ -495,7 +495,7 @@
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
     <script>
     (function () {
-        var HASH = 'fc4e4dd812';
+        var HASH = '292cd44f3b';
         var root = document.getElementById('root');
         function showBootError(msg) {
             if (!root) return;

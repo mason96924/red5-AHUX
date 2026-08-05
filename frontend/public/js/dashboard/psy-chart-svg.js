@@ -221,6 +221,70 @@ function renderPsyChartSvg(ctx) {
         </g></g>
         <text x={pad.left + gridWidth/2} y={pad.top + gridHeight + 70} textAnchor="middle" fill={ui.svgAxis} fontSize="14" fontWeight="900" className={`uppercase tracking-[0.3em] font-black italic shadow-black shadow-black`}>{t('dry_bulb_temp')} (°C)</text><text x={pad.left + gridWidth + 65} y={pad.top + gridHeight/2} transform={`rotate(-90, ${pad.left + gridWidth + 65}, ${pad.top+gridHeight/2})`} textAnchor="middle" fill={ui.svgAxis} fontSize="14" fontWeight="900" className={`uppercase tracking-[0.3em] font-black italic shadow-black shadow-black`}>{t('humidity_ratio')} (g/kg)</text>
     </svg>
+    {/* Property chips — far-right of the dry-bulb axis row. Values track
+        the indicator / locked VAV point. Inside the chart frame so the
+        weather strip and G36 ribbon below stay unobscured. */}
+    {(() => {
+        const currentAhu = ahuData && ahuData.find(a => a.id === selectedAhuId);
+        let tVal = indicatorPos && Number.isFinite(indicatorPos.t) ? indicatorPos.t : null;
+        let wVal = indicatorPos && Number.isFinite(indicatorPos.w) ? indicatorPos.w : null;
+        if (lockedVavId && currentAhu) {
+            const lv = currentAhu.vavs && currentAhu.vavs.find(v => v.id === lockedVavId);
+            if (lv && Number.isFinite(lv.t)) {
+                tVal = lv.t;
+                wVal = lv.w != null ? lv.w : (typeof getW === 'function' ? getW(lv.t, lv.rh) : null);
+            }
+        }
+        if (tVal == null || wVal == null || typeof getH !== 'function') return null;
+        const Wg = wVal * 1000;
+        const Pv = typeof getPv === 'function' ? getPv(wVal) : (wVal * 101.325) / (0.621945 + wVal);
+        const vSp = typeof getV === 'function' ? getV(tVal, wVal) : null;
+        const hVal = getH(tVal, wVal);
+        const tdp = typeof getTdpFromW === 'function' ? getTdpFromW(wVal) : null;
+        const twb = typeof getTwb === 'function' ? getTwb(tVal, wVal) : null;
+        const fmt = (n, d) => (Number.isFinite(n) ? n.toFixed(d) : '—');
+        const chips = [
+            { key: 'W',   sym: 'W',   val: fmt(Wg, 1),   unit: 'g/kg',   color: '#a3e635', title: 'Absolute humidity (humidity ratio)', active: false },
+            { key: 'Pv',  sym: 'Pv',  val: fmt(Pv, 2),   unit: 'kPa',    color: '#a78bfa', title: 'Vapor pressure', active: false },
+            { key: 'v',   sym: 'v',   val: fmt(vSp, 3),  unit: 'm³/kg',  color: '#fb7185', title: 'Specific volume (air volume)', active: false },
+            { key: 'h',   sym: 'h',   val: fmt(hVal, 1), unit: 'kJ/kg',  color: '#f472b6', title: 'Enthalpy', active: !!(vecVis && vecVis.enthalpy) },
+            { key: 'Tdp', sym: 'Tdp', val: fmt(tdp, 1),  unit: '°C',     color: '#fbbf24', title: 'Dew point', active: false },
+            { key: 'Twb', sym: 'Twb', val: fmt(twb, 1),  unit: '°C',     color: '#2dd4bf', title: 'Wet bulb', active: false },
+        ];
+        return (
+            <div data-testid="psy-axis-prop-chips"
+                 className="absolute z-20 pointer-events-none"
+                 style={{ width, height, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
+                <div className="absolute flex flex-wrap justify-end gap-1 pointer-events-auto"
+                     style={{ left: pad.left + gridWidth * 0.48, right: pad.right + 4, top: pad.top + gridHeight + 48, maxHeight: 40 }}>
+                    <div className="ml-auto flex flex-wrap justify-end gap-1">
+                        {chips.map(c => (
+                            <span key={c.key}
+                                  title={c.title}
+                                  data-testid={`psy-chip-${c.key}`}
+                                  className="inline-flex items-baseline gap-1 rounded-full border font-mono select-none"
+                                  style={{
+                                      height: 24,
+                                      padding: '0 8px 0 7px',
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      borderColor: c.active ? c.color : (theme === 'dark' ? '#475569' : '#cbd5e1'),
+                                      background: c.active
+                                          ? (theme === 'dark' ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.95)')
+                                          : (theme === 'dark' ? 'rgba(15,23,42,0.75)' : 'rgba(255,255,255,0.85)'),
+                                      color: c.active ? '#f1f5f9' : (theme === 'dark' ? '#94a3b8' : '#64748b'),
+                                      boxShadow: c.active ? `inset 3px 0 0 ${c.color}` : 'none',
+                                  }}>
+                                <span style={{ color: c.active ? c.color : 'inherit', fontWeight: 900 }}>{c.sym}</span>
+                                <span style={{ fontVariantNumeric: 'tabular-nums', color: c.active ? '#f8fafc' : (theme === 'dark' ? '#cbd5e1' : '#334155') }}>{c.val}</span>
+                                <span style={{ fontSize: 8, color: theme === 'dark' ? '#64748b' : '#94a3b8' }}>{c.unit}</span>
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    })()}
     {/* Legend — relocated 2026-06-26 from horizontal bottom-strip to a
         vertical stack parked in the chart's mid-left gutter (low T,
         mid-W area), where it doesn't collide with the Y-axis tick

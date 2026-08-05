@@ -27,6 +27,48 @@ const getW = (T, RH) => {
 
 const getH = (T, W) => safe(1.006 * T + W * (2501 + 1.86 * T));
 
+/* Partial vapor pressure of water vapour (kPa) from humidity ratio. */
+const getPv = (W, pAtm = P_ATM) => {
+    const w = Math.max(0, safe(W));
+    return safe((w * pAtm) / (0.621945 + w));
+};
+
+/* Moist-air specific volume (m³/kg dry air), ASHRAE Fundamentals. */
+const getV = (T, W, pAtm = P_ATM) => {
+    const tk = safe(T) + 273.15;
+    const w = Math.max(0, safe(W));
+    const p = pAtm > 0 ? pAtm : P_ATM;
+    return safe(0.287042 * tk * (1 + 1.607858 * w) / p);
+};
+
+/* Dew-point temperature (°C) from humidity ratio — binary search on Wsat. */
+const getTdpFromW = (W, maxIter = 24) => {
+    const target = Math.max(0, safe(W));
+    let lo = -60, hi = 60;
+    for (let i = 0; i < maxIter; i++) {
+        const mid = (lo + hi) / 2;
+        if (getW(mid, 100) < target) lo = mid; else hi = mid;
+    }
+    return safe(hi);
+};
+
+/* Wet-bulb temperature (°C) — ASHRAE psychrometric wet-bulb relation. */
+const getTwb = (T, W, maxIter = 28) => {
+    const t = safe(T);
+    const w = Math.max(0, safe(W));
+    let lo = -20, hi = t;
+    for (let i = 0; i < maxIter; i++) {
+        const twb = (lo + hi) / 2;
+        const ws = getW(twb, 100);
+        const num = (2501 - 2.326 * twb) * ws - 1.006 * (t - twb);
+        const den = 2501 + 1.86 * t - 4.186 * twb;
+        const wEq = den !== 0 ? num / den : w;
+        // Too-high Twb over-predicts W; cool the guess.
+        if (wEq > w) hi = twb; else lo = twb;
+    }
+    return safe((lo + hi) / 2);
+};
+
 // Build the Givoni Comfort Zone polygon vertices [t, w]
 const buildComfortZonePoly = () => {
     const pts = [];

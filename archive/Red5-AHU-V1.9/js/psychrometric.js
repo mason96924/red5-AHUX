@@ -27,6 +27,48 @@ const getW = (T, RH) => {
 
 const getH = (T, W) => safe(1.006 * T + W * (2501 + 1.86 * T));
 
+/* Partial vapor pressure of water vapour (kPa) from humidity ratio. */
+const getPv = (W, pAtm = P_ATM) => {
+    const w = Math.max(0, safe(W));
+    return safe((w * pAtm) / (0.621945 + w));
+};
+
+/* Moist-air specific volume (m³/kg dry air), ASHRAE Fundamentals. */
+const getV = (T, W, pAtm = P_ATM) => {
+    const tk = safe(T) + 273.15;
+    const w = Math.max(0, safe(W));
+    const p = pAtm > 0 ? pAtm : P_ATM;
+    return safe(0.287042 * tk * (1 + 1.607858 * w) / p);
+};
+
+/* Dew-point temperature (°C) from humidity ratio — binary search on Wsat. */
+const getTdpFromW = (W, maxIter = 24) => {
+    const target = Math.max(0, safe(W));
+    let lo = -60, hi = 60;
+    for (let i = 0; i < maxIter; i++) {
+        const mid = (lo + hi) / 2;
+        if (getW(mid, 100) < target) lo = mid; else hi = mid;
+    }
+    return safe(hi);
+};
+
+/* Wet-bulb temperature (°C) — ASHRAE psychrometric wet-bulb relation. */
+const getTwb = (T, W, maxIter = 28) => {
+    const t = safe(T);
+    const w = Math.max(0, safe(W));
+    let lo = -20, hi = t;
+    for (let i = 0; i < maxIter; i++) {
+        const twb = (lo + hi) / 2;
+        const ws = getW(twb, 100);
+        const num = (2501 - 2.326 * twb) * ws - 1.006 * (t - twb);
+        const den = 2501 + 1.86 * t - 4.186 * twb;
+        const wEq = den !== 0 ? num / den : w;
+        // Too-high Twb over-predicts W; cool the guess.
+        if (wEq > w) hi = twb; else lo = twb;
+    }
+    return safe((lo + hi) / 2);
+};
+
 // Build the Givoni Comfort Zone polygon vertices [t, w]
 const buildComfortZonePoly = () => {
     const pts = [];
@@ -192,27 +234,66 @@ const GIVONI_COLORS = {
     CZ_FILL:      '#10b981',  // outer CZ polygon fill (used at low opacity)
     SWEET_STROKE: '#047857',  // inner sweet-spot stroke
     SWEET_FILL:   '#059669',  // inner sweet-spot polygon fill
-    HOT_OUTSIDE:  '#f97316',  // Tier C dot — outside CZ on hot/humid side
-    COLD_OUTSIDE: '#1d4ed8',  // Tier C dot — outside CZ on cold/dry side
+    // Outer-tier quadrants per ASHRAE / Givoni convention.  Split by
+    // BOTH temperature (warm vs cool) AND humidity ratio (wet vs dry).
+    //
+    //                    W < ~9.3 g/kg (dry)   W >= ~9.3 g/kg (wet)
+    //   T >= 23.5  (warm)  HOT_DRY  (red)        HOT_HUMID (orange)
+    //   T <  23.5  (cool)  COLD_DRY (deep-blue)  COOL_WET  (cyan)
+    HOT_HUMID:    '#f97316',  // C+H warm + moist  (cool + dehumidify)
+    HOT_DRY:      '#ef4444',  // C+D warm + arid   (cool + humidify)
+    COOL_WET:     '#06b6d4',  // C-H cool + moist  (heat + dehumidify)
+    COLD_DRY:     '#1d4ed8',  // C-D cool + arid   (heat + humidify)
+    // Backward-compat aliases (older callers reference these names).
+    HOT_OUTSIDE:  '#f97316',  // old name -> HOT_HUMID
+    COLD_OUTSIDE: '#1d4ed8',  // old name -> COLD_DRY
     // Tier-dot colours (legend pills + per-VAV state indicators).  Decoupled
     // from the polygon fills so the chart geometry stays emerald while the
-    // legend offers clearer hue contrast between Tier A and Tier B.
+    // legend can offer clearer hue contrast.
     TIER_A_DOT:   '#10b981',  // bright emerald — true comfort, hold
     TIER_B_DOT:   '#a8c0a8',  // sage / light green-grey — comfort zone, RH soft-trim
 };
+
+// Humidity classification per industry standard.
+// Used to split the OUTSIDE of the comfort zone into wet vs dry quadrants.
+//
+// Threshold: Relative Humidity = 50%  (midpoint of the ASHRAE Standard
+// 55-2020 recommended 40-60% comfort band).  Why RH and not humidity
+// ratio W? -- Cool air physically cannot hold much moisture, so a W-based
+// threshold mis-labels e.g. 17 C / 90% RH as "dry" even though occupants
+// would call that air "damp" (mold risk per ASHRAE 62.1-2022 Sec. 5.10).
+// RH-based classification matches both occupant perception AND the
+// IAQ thresholds used by ASHRAE 62.1 (60% upper) and ASHRAE 55 (40%
+// lower comfort recommended band).
+//
+// References:
+//   ASHRAE Standard 55-2020 - Thermal Environmental Conditions for Human Occupancy
+//   ASHRAE Standard 62.1-2022 - Ventilation for Acceptable Indoor Air Quality
+//   ASHRAE Handbook of Fundamentals 2021, Ch. 9 (Thermal Comfort)
+const RH_WET_DRY_SPLIT = 50;   // %RH; midpoint of 40-60 comfort band
 
 // Givoni-aware tier classification + control-strategy resolver.
 // Returns a single object describing where the (T, RH, W) point sits
 // relative to the Givoni overlay AND what the controller should do
 // about it.  Tiers:
-//   A   - inside CZ AND inside operator-defined sweet-spot RH strip
-//         -> HOLD setpoints (true comfort)
-//   B   - inside CZ but outside sweet-spot strip
-//         -> SOFT TRIM (RH-only humidify or dehumidify; no temp change)
-//   C+  - outside CZ on hot/humid side  (T >= 23.5 by chart-centroid split)
-//         -> mechanical cooling (or dehumidify if T in [20,27] but RH high)
-//   C-  - outside CZ on cold/dry side   (T <  23.5)
-//         -> mechanical heating (or humidify if T in [20,27] but RH low)
+//   A    - inside CZ AND inside operator-defined sweet-spot RH strip
+//          -> HOLD setpoints (true comfort)
+//   B    - inside CZ but outside sweet-spot strip
+//          -> SOFT TRIM (RH-only humidify or dehumidify; no temp change)
+//   C+H  - outside CZ, warm + moist  (T >= 23.5, W >= WET_DRY_SPLIT)
+//          -> mech cool + dehumidify
+//   C+D  - outside CZ, warm + arid   (T >= 23.5, W <  WET_DRY_SPLIT)
+//          -> mech cool + humidify  (rare; arid-summer climates)
+//   C-H  - outside CZ, cool + moist  (T <  23.5, W >= WET_DRY_SPLIT)
+//          -> mech heat + dehumidify (shoulder-season "cold-and-clammy")
+//   C-D  - outside CZ, cool + arid   (T <  23.5, W <  WET_DRY_SPLIT)
+//          -> mech heat + humidify  (classic winter)
+//
+// The wet/dry split uses humidity ratio W (kg dry air) -- the proper
+// absolute-moisture measure per ASHRAE Handbook Fundamentals.  Using RH
+// here would be wrong because cool air at 89% RH carries much LESS
+// moisture than warm air at 60% RH, yet RH-only logic would label the
+// cool-air state "dry."
 //
 // All callers (VAV-table row dot, chart indicator tooltip, AHU strategy
 // banner) MUST use this resolver so the colour + recommendation stay
@@ -257,34 +338,58 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
         };
     }
 
-    // Tier C — outside Givoni
+    // Tier C — outside Givoni.  Split into 4 quadrants per ASHRAE
+    // Standard 55-2020 + 62.1-2022 conventions:
+    //   warm/cool axis: T threshold = 23.5 C  (CZ centroid)
+    //   wet/dry  axis: RH threshold = 50%      (midpoint of 40-60 band)
     const hotSide = t >= 23.5;
-    if (hotSide) {
-        // Hot side: pure mech cool when over 27 C, else dehumidify only
-        const strategy = (t > 27) ? 'COOL' : 'DEHUMIDIFY';
-        const subLabel = (t > 27) ? 'mechanical cool' : 'dehumidify';
+    const wetSide = rh >= RH_WET_DRY_SPLIT;
+
+    if (hotSide && wetSide) {
         return {
-            tier: 'C+',
-            dotFill: GIVONI_COLORS.HOT_OUTSIDE,
+            tier: 'C+H',
+            dotFill: GIVONI_COLORS.HOT_HUMID,
             dotOpacity: 1,
             ringStroke: '#9a3412',
-            strategy,
+            strategy: 'COOL_DEHUMIDIFY',
             label: 'Hot/humid',
-            subLabel,
-            tooltip: ('Outside CZ - hot/humid side (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | ' + subLabel),
+            subLabel: 'cool + dehumidify',
+            tooltip: ('Outside CZ - warm + humid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | cool + dehumidify'),
         };
     }
-    // Cold side
-    const strategy = (t < 20) ? 'HEAT' : 'HUMIDIFY';
-    const subLabel = (t < 20) ? 'mechanical heat' : 'humidify';
+    if (hotSide && !wetSide) {
+        return {
+            tier: 'C+D',
+            dotFill: GIVONI_COLORS.HOT_DRY,
+            dotOpacity: 1,
+            ringStroke: '#7f1d1d',
+            strategy: 'COOL_HUMIDIFY',
+            label: 'Hot/dry',
+            subLabel: 'cool + humidify',
+            tooltip: ('Outside CZ - warm + arid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | evaporative cool + humidify'),
+        };
+    }
+    if (!hotSide && wetSide) {
+        return {
+            tier: 'C-H',
+            dotFill: GIVONI_COLORS.COOL_WET,
+            dotOpacity: 1,
+            ringStroke: '#155e75',
+            strategy: 'HEAT_DEHUMIDIFY',
+            label: 'Cool/humid',
+            subLabel: 'heat + dehumidify',
+            tooltip: ('Outside CZ - cool + humid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | heat + dehumidify'),
+        };
+    }
+    // !hotSide && !wetSide -- cool + arid (heated indoor air, winter)
     return {
-        tier: 'C-',
-        dotFill: GIVONI_COLORS.COLD_OUTSIDE,
+        tier: 'C-D',
+        dotFill: GIVONI_COLORS.COLD_DRY,
         dotOpacity: 1,
         ringStroke: '#1e3a8a',
-        strategy,
-        label: 'Cold/dry',
-        subLabel,
-        tooltip: ('Outside CZ - cold/dry side (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | ' + subLabel),
+        strategy: 'HEAT_HUMIDIFY',
+        label: 'Cool/dry',
+        subLabel: 'heat + humidify',
+        tooltip: ('Outside CZ - cool + arid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | heat + humidify'),
     };
 };

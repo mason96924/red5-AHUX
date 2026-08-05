@@ -86,7 +86,12 @@
     pill_coil_duty:        ['what the coil actually paid for','盘管实际承担的负荷','盤管實際承擔的負荷','コイルが実際に負担した熱量','코일이 실제로 부담한 열량'],
     pill_room_load:        ['load the room added back','房间回加的负荷','房間回加的負荷','室が加えた負荷','실내가 더한 부하'],
     pill_mix_plus_coil:    ['mixing + coil','混合 + 盘管','混合 + 盤管','混合 + コイル','혼합 + 코일'],
-    pill_coil_derived:     ['MA derived from MAT — latent split assumes the damper','MA 由 MAT 推算 — 潜热拆分依赖风阀','MA 由 MAT 推算 — 潛熱拆分依賴風閥','MA は MAT から推算 — 潜熱の内訳はダンパ前提','MA는 MAT 기반 추정 — 잠열 분리는 댐퍼 가정'],
+    /* One caveat per derivation basis.  'mat' infers humidity from the
+       TEMPERATURE-derived fraction, not the damper, so the three cases
+       genuinely differ and a single string misreports two of them. */
+    pill_basis_mat:        ['MA from MAT — humidity inferred from the mixing line, not measured','MA 来自 MAT — 含湿量按混合线推算，非实测','MA 來自 MAT — 含濕量按混合線推算，非實測','MA は MAT — 絶対湿度は混合線から推算、実測ではない','MA는 MAT 기반 — 절대습도는 혼합선에서 추정, 실측 아님'],
+    pill_basis_mat_damper: ['MA from MAT — humidity inferred from the damper (OA≈RA)','MA 来自 MAT — 含湿量按风阀推算 (OA≈RA)','MA 來自 MAT — 含濕量按風閥推算 (OA≈RA)','MA は MAT — 絶対湿度はダンパから推算 (OA≈RA)','MA는 MAT 기반 — 절대습도는 댐퍼로 추정 (OA≈RA)'],
+    pill_basis_damper:     ['MA modelled from the damper command — this split is not measured','MA 由风阀指令建模 — 此拆分非实测','MA 由風閥指令建模 — 此拆分非實測','MA はダンパ指令からのモデル値 — この内訳は実測ではない','MA는 댐퍼 지령 기반 모델값 — 이 분리는 실측 아님'],
 
     /* ── Setpoints ── */
     t_setpoint:            ['T Setpoint','温度设定点','溫度設定點','温度設定値','온도 설정점'],

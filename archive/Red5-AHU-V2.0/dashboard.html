@@ -21,7 +21,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
          js/dashboard/* are now pre-compiled offline into the single bundle
-         /api/assets/dashboard.compiled.js?v=b98fef0186 (built via /app/frontend/src/dashboard/build.sh).
+         /api/assets/dashboard.compiled.js?v=7ff1e2d7a8 (built via /app/frontend/src/dashboard/build.sh).
          Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
@@ -31,7 +31,7 @@
          The bumped query string forces a refetch when any of these files
          change.  Bump the date stamp on a per-deploy basis whenever any
          of `js/*.js` changes -- it's just a string the server ignores. -->
-    <script src="js/i18n.js?v=2026-08-05a"></script>
+    <script src="js/i18n.js?v=2026-08-05b"></script>
     <script src="js/toast.js?v=2026-06-20a"></script>
     <script src="js/docs_index.js?v=2026-06-20a"></script>
     <script src="js/audit_log.js?v=2026-06-27a"></script>
@@ -483,6 +483,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=b98fef0186"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=7ff1e2d7a8"></script>
 </body>
 </html>

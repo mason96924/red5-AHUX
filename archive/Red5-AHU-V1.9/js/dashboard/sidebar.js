@@ -856,11 +856,18 @@ function renderSidebar(ctx) {
                             const _split = Number.isFinite(m.coil);
                             const _kj = v => Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)} kJ/kg` : '--';
                             const _maPt = (ahu.points || []).find(p => p && p.label === 'MA');
-                            const _maDerived = _maPt ? _maPt.derived !== false : false;
-                            const _mixTitle  = `${t('pill_mixing')}: ${_kj(m.mixing)}  |  ${t('pill_free_dilution')}`;
+                            /* Name the actual basis.  A damper-only MA makes both
+                               halves functions of one commanded percentage, resting
+                               on percent-open == percent-flow, so it must not read
+                               as a measurement. */
+                            const _basisKey = { 'mat': 'pill_basis_mat',
+                                                'mat+damper': 'pill_basis_mat_damper',
+                                                'damper': 'pill_basis_damper' }[_maPt && _maPt.basis];
+                            const _caveat = _basisKey ? `  |  ${t(_basisKey)}` : '';
+                            const _mixTitle  = `${t('pill_mixing')}: ${_kj(m.mixing)}  |  ${t('pill_free_dilution')}` + _caveat;
                             const _coilTitle = `${t('pill_coil')}: ${_kj(m.coil)}  |  ${t('pill_coil_duty')}`
                                              + `  |  ${t('pill_mix_plus_coil')} = ${_kj(m.exchange)}`
-                                             + (_maDerived ? `  |  ${t('pill_coil_derived')}` : '');
+                                             + _caveat;
                             const _exTitle   = `${t('pill_exchange')}: ${_kj(m.exchange)}`;
                             const _abTitle   = `${t('pill_absorption')}: ${_kj(m.absorption)}  |  ${t('pill_room_load')}`;
                             return (

@@ -71,6 +71,32 @@
   .cnote .n{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
   .cnote p{font-size:14.5px;color:var(--muted);line-height:1.45}
   .legend{position:absolute;left:7.35in;top:6.35in;width:5.3in;font-size:13px;color:var(--faint);line-height:1.5}
+  /* chart slide — reading-guide cards */
+  .legend2{position:absolute;left:.55in;top:5.92in;width:5.7in;font-size:12.5px;
+    color:var(--faint);line-height:1.5}
+  .ngrid{position:absolute;left:6.45in;top:2.0in;display:grid;
+    grid-template-columns:repeat(2,3.0in);gap:.15in}
+  .ncard{height:1.5in;background:#fff;border:1px solid var(--line);
+    border-radius:11px;padding:.2in .22in;position:relative}
+  .ncard .num{position:absolute;left:.22in;top:.19in;width:19px;height:19px;
+    border-radius:50%;background:var(--accent);color:#fff;font-size:11px;
+    font-weight:800;display:flex;align-items:center;justify-content:center}
+  .ncard h5{font-size:13.5px;margin:1px 0 6px 26px;line-height:1.2}
+  .ncard p{font-size:12.3px;color:var(--muted);line-height:1.38}
+  /* overlay slide */
+  .hub{position:absolute;left:4.75in;top:2.15in;width:3.85in;height:3.9in;
+    background:#fff;border:2px solid var(--accent);border-radius:14px;
+    text-align:center;padding:.22in .2in}
+  .hub h3{font-size:17px;color:var(--accent)}
+  .hub .sub{font-size:12.5px;color:var(--faint);margin-top:4px}
+  .hub .cap{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
+  .ocard{position:absolute;width:3.7in;height:1.7in;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:.22in .26in;
+    overflow:hidden}
+  .ocard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
+  .ocard h4{font-size:15.5px;margin:7px 0 6px}
+  .ocard p{font-size:12.8px;color:var(--muted);line-height:1.4}
+  .arw{position:absolute}
   /* comparison table */
   .ctable{position:absolute;left:.7in;top:2.05in;width:12.4in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
   .ctable table{width:100%;border-collapse:collapse}
@@ -123,6 +149,9 @@
       <p>• How much cooling or heating is needed<br>• How much of that cooling removes <b>moisture</b> rather than heat<br>• How big the coil must be<br>• How much outside air to mix in<br>• Whether condensation or coil freezing will occur</p>
     </div>
   </div>
+  <div class="catch" style="top:6.25in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">Every one of those decisions is a point or a line on the psychrometric chart. That is why the chart — not the equipment catalogue — is where air-conditioning design actually happens.</p>
+  </div>
 </section>
 
 <!-- 3 WHY DESIGNERS RELY ON IT -->
@@ -151,7 +180,7 @@
   <div class="bar"></div><div class="kick">How to read it</div>
   <div class="title">One dot is the state of the air</div>
   <div class="chartwrap">
-    <svg viewBox="0 0 600 400" style="width:6.6in;height:4.4in">
+    <svg viewBox="0 0 600 400" style="width:5.7in;height:3.8in">
       <rect x="0" y="0" width="600" height="400" fill="#ffffff" stroke="#e2e8f0"/>
       <!-- grid -->
       <g stroke="#eef2f7" stroke-width="1">
@@ -173,7 +202,7 @@
       <!-- comfort zone -->
       <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.16)" stroke="#b45309"
             stroke-width="1.6" stroke-dasharray="5 3" rx="4"/>
-      <text x="286" y="216" font-size="11.5" font-weight="700" fill="#b45309">Comfort zone (ASHRAE 55)</text>
+      <text x="347" y="309" font-size="11.5" font-weight="700" fill="#b45309" text-anchor="middle">Comfort zone (ASHRAE 55)</text>
       <!-- mixing line OA-RA -->
       <line x1="472" y1="164" x2="360" y2="254" stroke="#047857" stroke-width="2" stroke-dasharray="6 4"/>
       <!-- coil process MA -> SA -->
@@ -192,14 +221,21 @@
             transform="rotate(-90 20 200)" text-anchor="middle">Moisture in the air  →</text>
     </svg>
   </div>
-  <div class="cnotes">
-    <h3>Four things this picture tells you</h3>
-    <div class="cnote"><div class="n">1</div><p><b>Across</b> is temperature, <b>up</b> is how much water the air carries. One dot fixes both at once.</p></div>
-    <div class="cnote"><div class="n">2</div><p>The curve is <b>100% humidity</b>. Air can never sit above it — touch it and water condenses.</p></div>
-    <div class="cnote"><div class="n">3</div><p>Mix two air streams and the result lands on the <b>straight line between them</b>. Where it lands reveals the proportion of outside air.</p></div>
-    <div class="cnote"><div class="n">4</div><p>A line heading <b>down and to the left</b> is a cooling coil taking out both heat and moisture.</p></div>
+  <div class="legend2"><b>OA</b> outside air &nbsp;·&nbsp; <b>RA</b> return air from the rooms &nbsp;·&nbsp; <b>MA</b> the mixture entering the coil &nbsp;·&nbsp; <b>SA</b> supply air delivered to the rooms. The dashed green line is mixing; the solid blue line is the cooling coil.</div>
+  <div class="ngrid">
+    <div class="ncard"><div class="num">1</div><h5 style="color:var(--accent)">Two axes fix everything</h5>
+      <p>Across is temperature; up is the actual weight of water the air carries. Pin both and the air's state is pinned — relative humidity, dew point, wet-bulb and energy content all follow from that single dot.</p></div>
+    <div class="ncard"><div class="num">2</div><h5 style="color:var(--accent)">The curve is a hard limit</h5>
+      <p>It marks 100% humidity — air can never sit above it. Drive the dot onto the curve and water comes out: that is the dew point, a wet coil, a fogged window.</p></div>
+    <div class="ncard"><div class="num">3</div><h5 style="color:var(--green)">Mixing is a straight line</h5>
+      <p>Outside and return air blend to a point that must land on the line joining them. How far along it sits gives the proportion: a third of the way from RA means a third outside air.</p></div>
+    <div class="ncard"><div class="num">4</div><h5 style="color:var(--accent)">A coil pulls down and left</h5>
+      <p>Left removes temperature (sensible heat); down removes water (latent heat). The slope of MA→SA is the split between them — and that split is what sizing a coil actually means.</p></div>
+    <div class="ncard"><div class="num">5</div><h5 style="color:var(--amber)">Comfort is an area</h5>
+      <p>The acceptable range of temperature and humidity is drawn straight onto the chart. Supply air has to be chosen so the room lands inside that box — not merely at the right temperature.</p></div>
+    <div class="ncard"><div class="num">6</div><h5 style="color:var(--ink)">Faults show up as bad geometry</h5>
+      <p>If the mixed-air dot does not sit on the line between outside and return air, something is lying — a stuck damper or a drifting sensor. The picture catches what alarm limits miss.</p></div>
   </div>
-  <div class="legend"><b>OA</b> outside air &nbsp;·&nbsp; <b>RA</b> return air from the rooms &nbsp;·&nbsp; <b>MA</b> the mixture entering the coil &nbsp;·&nbsp; <b>SA</b> supply air delivered to the rooms.</div>
 </section>
 
 <!-- 5 WHY TRADITIONAL BMS DOESN'T USE IT -->
@@ -247,21 +283,57 @@
   </div>
 </section>
 
-<!-- 7 VENN -->
+<!-- 7 ONE SHEET, FOUR OVERLAYS -->
 <section class="slide">
   <div class="bar"></div><div class="kick">The big idea</div>
-  <div class="title">One picture where all four rulebooks meet</div>
-  <div class="venn">
-    <div class="circle c-comfort"></div>
-    <div class="circle c-fresh"></div>
-    <div class="circle c-energy"></div>
-    <div class="v-lab" style="left:.3in;top:1.9in;color:var(--amber)">COMFORT<br>ASHRAE 55</div>
-    <div class="v-lab" style="left:6.5in;top:1.9in;color:var(--green)">FRESH AIR<br>ASHRAE 62.1</div>
-    <div class="v-lab" style="left:2.9in;top:5.65in;width:2.4in;color:var(--accent)">ENERGY · ASHRAE 90.1</div>
-    <div class="vcenter">Psychrometric<br>Chart</div>
+  <div class="title">One sheet — every rulebook draws on it</div>
+
+  <div class="hub">
+    <h3>The psychrometric chart</h3>
+    <div class="sub">temperature × moisture — the only two axes</div>
+    <svg viewBox="0 0 600 400" style="width:3.35in;height:2.23in;margin-top:6px">
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="2"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="2"/>
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="3"/>
+      <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.18)"
+            stroke="#b45309" stroke-width="2" stroke-dasharray="6 4" rx="4"/>
+      <line x1="472" y1="164" x2="360" y2="254" stroke="#047857" stroke-width="3"
+            stroke-dasharray="7 5"/>
+      <line x1="394" y1="227" x2="222" y2="259" stroke="#1d4ed8" stroke-width="3.5"/>
+      <circle cx="472" cy="164" r="8" fill="#b45309"/>
+      <circle cx="360" cy="254" r="8" fill="#047857"/>
+      <circle cx="394" cy="227" r="8" fill="#0f172a"/>
+      <circle cx="222" cy="259" r="8" fill="#1d4ed8"/>
+    </svg>
+    <div class="cap">Every requirement around it becomes a shape on <b>these same axes</b>.</div>
   </div>
-  <div class="explain"><h3>Why they overlap here</h3><p>All four standards are written about the same two quantities — <b>temperature</b> and <b>moisture</b>. Those are exactly the chart's two axes.<br><br>So a single plotted dot can be judged against comfort, fresh air and energy simultaneously, instead of one standard at a time.</p></div>
-  <div class="ref">Guideline 36 is the referee — the control logic that keeps the dot in the overlap automatically.</div>
+
+  <div class="ocard" style="left:.7in;top:2.15in"><div class="top" style="background:var(--amber)"></div>
+    <h4 style="color:var(--amber)">ASHRAE 55 draws an AREA</h4>
+    <p>The comfort zone: the band of temperature and humidity occupants accept. The whole air-side of the standard becomes a region you must land the room inside.</p></div>
+
+  <div class="ocard" style="left:8.93in;top:2.15in"><div class="top" style="background:var(--green)"></div>
+    <h4 style="color:var(--green)">ASHRAE 62.1 draws a POINT ON A LINE</h4>
+    <p>The required outside-air fraction fixes exactly where the mixed-air dot must sit along the line between return and outside air.</p></div>
+
+  <div class="ocard" style="left:.7in;top:4.35in"><div class="top" style="background:var(--accent)"></div>
+    <h4 style="color:var(--accent)">ASHRAE 90.1 draws a DIRECTION</h4>
+    <p>Lines of equal energy content show when outside air is the cheaper source, and how far the dot may be pushed before energy is simply thrown away.</p></div>
+
+  <div class="ocard" style="left:8.93in;top:4.35in"><div class="top" style="background:var(--ink)"></div>
+    <h4>Guideline 36 draws the PATH</h4>
+    <p>The sequences are the route the dot travels through the day — economizer, coil, setpoint reset — from outside air all the way to the room.</p></div>
+
+  <svg class="arw" style="left:4.42in;top:2.9in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:4.42in;top:5.1in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:2.9in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:5.1in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+
+  <div class="catch" style="top:6.3in">
+    <div class="t">Read this the right way round</div>
+    <p>The chart is not the small overlap left over where four standards happen to agree. It is the <b>common sheet</b> they are all drawn on — an area, a line, a direction and a path, sharing one pair of axes. Satisfy all four and the shapes simply fit together.</p>
+  </div>
 </section>
 
 <!-- 8 ONE DOT ANSWERS ALL FOUR -->
@@ -291,6 +363,9 @@
       <tr><td>Finding faults</td><td class="trad">Alarm limits on individual points</td><td class="psy">The shape of the process line exposes coil, damper and sensor faults</td></tr>
       <tr><td>Proving the standards</td><td class="trad">Checked manually, usually after the fact</td><td class="psy">Comfort, ventilation and energy judged together, live</td></tr>
     </table>
+  </div>
+  <div class="catch" style="top:6.35in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">None of this needs new field equipment beyond humidity sensing on the air streams. The difference is what the software does with readings the building is already taking.</p>
   </div>
 </section>
 

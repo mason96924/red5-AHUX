@@ -202,6 +202,13 @@ bullet_card(s, x0 + 2 * (cw + gap), y, cw, ch, "What they must decide", AMBER,
              "How big the coil must be",
              "How much outside air to mix in",
              "Whether condensation or coil freezing will occur"])
+rect(s, Inches(0.7), Inches(6.25), Inches(11.93), Inches(0.8),
+     fill=RGBColor(0xEF, 0xF6, 0xFF), line=RGBColor(0xBF, 0xDB, 0xFE))
+box(s, Inches(0.98), Inches(6.35), Inches(11.4), Inches(0.6),
+    "Every one of those decisions is a point or a line on the psychrometric "
+    "chart. That is why the chart — not the equipment catalogue — is where "
+    "air-conditioning design actually happens.",
+    size=13.5, color=INK, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.15)
 
 # =========================================================================
 # 3 — WHY DESIGNERS RELY ON IT
@@ -246,12 +253,12 @@ s = slide()
 accent_header(s, "How to read it", "One dot is the state of the air")
 
 # plot mapping: x = dry-bulb 0..40 degC, y = humidity ratio 0..30 g/kg
-X0, Y0 = 0.9, 6.1          # origin (inches)
-SX, SY = 0.14, 0.13        # inches per degC / per g/kg
+X0, Y0 = 0.95, 5.55        # origin (inches)
+SX, SY = 0.115, 0.105      # inches per degC / per g/kg
 PX = lambda T: X0 + T * SX
 PY = lambda W: Y0 - W * SY
 
-rect(s, Inches(0.62), Inches(1.95), Inches(6.3), Inches(4.62),
+rect(s, Inches(0.62), Inches(1.95), Inches(5.55), Inches(4.0),
      fill=CARD, line=LINE)
 
 # faint grid
@@ -274,15 +281,16 @@ curve.fill.background()
 curve.line.color.rgb = ACCENT
 curve.line.width = Pt(2.25)
 curve.shadow.inherit = False
-box(s, Inches(PX(31.7)), Inches(PY(30) - 0.02), Inches(1.3), Inches(0.5),
-    "100% RH\n(saturation)", size=10.5, bold=True, color=ACCENT)
+box(s, Inches(PX(32)), Inches(PY(30) - 0.02), Inches(1.2), Inches(0.5),
+    "100% RH\n(saturation)", size=9.5, bold=True, color=ACCENT)
 
 # comfort zone (ASHRAE 55, approx 20-26 degC / 6-12 g/kg)
 cz = rect(s, Inches(PX(20)), Inches(PY(12)), Inches(PX(26) - PX(20)),
           Inches(PY(6) - PY(12)), fill=AMBER, line=AMBER, line_w=1.25)
 set_alpha(cz, 16)
-box(s, Inches(PX(14.5)), Inches(PY(12) - 0.32), Inches(2.6), Inches(0.3),
-    "Comfort zone (ASHRAE 55)", size=10.5, bold=True, color=AMBER)
+box(s, Inches((PX(20) + PX(26)) / 2 - 1.3), Inches(PY(6) + 0.05), Inches(2.6),
+    Inches(0.3), "Comfort zone (ASHRAE 55)", size=9.5, bold=True, color=AMBER,
+    align=PP_ALIGN.CENTER)
 
 # processes: OA-RA mixing line, then coil MA -> SA
 OA, RA = (33, 18.0), (24, 9.3)
@@ -291,50 +299,69 @@ conn(s, PX(OA[0]), PY(OA[1]), PX(RA[0]), PY(RA[1]), color=GREEN, width=1.75,
      dash=True)
 conn(s, PX(MA[0]), PY(MA[1]), PX(SA[0]), PY(SA[1]), color=ACCENT, width=2.25)
 for (T, W), c, nm, dx, dy in [
-        (OA, AMBER, "OA", 0.12, -0.20),
-        (RA, GREEN, "RA", 0.10, 0.06),
-        (MA, INK, "MA", 0.10, -0.24),
-        (SA, ACCENT, "SA", -0.48, -0.24)]:
-    dot(s, PX(T), PY(W), c)
-    box(s, Inches(PX(T) + dx), Inches(PY(W) + dy), Inches(0.5), Inches(0.28),
-        nm, size=12, bold=True, color=c)
+        (OA, AMBER, "OA", 0.10, -0.17),
+        (RA, GREEN, "RA", 0.09, 0.03),
+        (MA, INK, "MA", 0.09, -0.20),
+        (SA, ACCENT, "SA", -0.40, -0.20)]:
+    dot(s, PX(T), PY(W), c, r=0.06)
+    box(s, Inches(PX(T) + dx), Inches(PY(W) + dy), Inches(0.45), Inches(0.25),
+        nm, size=10.5, bold=True, color=c)
 # axis captions
-box(s, Inches(PX(0)), Inches(PY(0) + 0.12), Inches(5.6), Inches(0.3),
-    "Dry-bulb temperature  \u2192", size=11.5, bold=True, color=MUTED,
-    align=PP_ALIGN.CENTER)
-box(s, Inches(0.72), Inches(PY(30) - 0.30), Inches(3.0), Inches(0.3),
-    "\u2191  Moisture in the air", size=11.5, bold=True, color=MUTED)
-
-# right-hand notes
-nx = Inches(7.15); nw = Inches(5.45)
-box(s, nx, Inches(2.05), nw, Inches(0.4), "Four things this picture tells you",
-    size=16, bold=True, color=ACCENT)
-notes = [
-    "ACROSS is temperature, UP is how much water the air carries. One dot "
-    "fixes both at once.",
-    "The curve is 100% humidity. Air can never sit above it — touch it and "
-    "water condenses.",
-    "Mix two air streams and the result lands on the STRAIGHT LINE between "
-    "them. Where it lands reveals the proportion of outside air.",
-    "A line heading DOWN AND TO THE LEFT is a cooling coil taking out both "
-    "heat and moisture.",
-]
-ny = 2.6
-for i, n in enumerate(notes):
-    ov = s.shapes.add_shape(MSO_SHAPE.OVAL, nx, Inches(ny), Inches(0.28),
-                            Inches(0.28))
-    ov.fill.solid(); ov.fill.fore_color.rgb = ACCENT
-    ov.line.fill.background(); ov.shadow.inherit = False
-    box(s, nx, Inches(ny), Inches(0.28), Inches(0.28), str(i + 1), size=11,
-        bold=True, color=WHITE, align=PP_ALIGN.CENTER,
-        anchor=MSO_ANCHOR.MIDDLE)
-    box(s, nx + Inches(0.42), Inches(ny - 0.04), nw - Inches(0.45),
-        Inches(0.85), n, size=13.5, color=MUTED, line_spacing=1.18)
-    ny += 0.92
-box(s, nx, Inches(6.3), nw, Inches(0.6),
+box(s, Inches(PX(0)), Inches(PY(0) + 0.10), Inches(PX(40) - PX(0)),
+    Inches(0.28), "Dry-bulb temperature  \u2192", size=10.5, bold=True,
+    color=MUTED, align=PP_ALIGN.CENTER)
+box(s, Inches(0.75), Inches(PY(30) - 0.26), Inches(2.6), Inches(0.28),
+    "\u2191  Moisture in the air", size=10.5, bold=True, color=MUTED)
+box(s, Inches(0.62), Inches(6.02), Inches(5.6), Inches(0.8),
     "OA outside air  ·  RA return air from the rooms  ·  MA the mixture "
-    "entering the coil  ·  SA supply air delivered to the rooms.",
-    size=11.5, color=FAINT, line_spacing=1.2)
+    "entering the coil  ·  SA supply air delivered to the rooms.\n"
+    "Dashed green = mixing;  solid blue = the cooling coil.",
+    size=11, color=FAINT, line_spacing=1.25)
+
+# reading guide — 2 x 3 cards on the right
+guide = [
+    ("Two axes fix everything",
+     "Across is temperature; up is the actual weight of water the air "
+     "carries. Pin both and the air's state is pinned — relative humidity, "
+     "dew point, wet-bulb and energy content all follow from that one dot.",
+     ACCENT),
+    ("The curve is a hard limit",
+     "It marks 100% humidity — air can never sit above it. Drive the dot onto "
+     "the curve and water comes out: the dew point, a wet coil, a fogged "
+     "window.", ACCENT),
+    ("Mixing is a straight line",
+     "Outside and return air blend to a point on the line joining them. How "
+     "far along it sits gives the proportion: a third of the way from RA "
+     "means a third outside air.", GREEN),
+    ("A coil pulls down and left",
+     "Left removes temperature (sensible heat); down removes water (latent "
+     "heat). The slope of MA→SA is the split — and that split is what sizing "
+     "a coil actually means.", ACCENT),
+    ("Comfort is an area",
+     "The acceptable range of temperature and humidity is drawn straight onto "
+     "the chart. Supply air must be chosen so the room lands inside that box, "
+     "not merely at the right temperature.", AMBER),
+    ("Faults show as bad geometry",
+     "If the mixed-air dot is not on the line between outside and return air, "
+     "something is lying — a stuck damper or a drifting sensor. The picture "
+     "catches what alarm limits miss.", INK),
+]
+gx0 = 6.35; gcw = 2.98; gch = 1.6; ggx = 0.16; ggy = 0.14
+for i, (h, d, c) in enumerate(guide):
+    l = Inches(gx0 + (i % 2) * (gcw + ggx))
+    t = Inches(2.0 + (i // 2) * (gch + ggy))
+    rect(s, l, t, Inches(gcw), Inches(gch), fill=CARD, line=LINE)
+    ov = s.shapes.add_shape(MSO_SHAPE.OVAL, l + Inches(0.18), t + Inches(0.16),
+                            Inches(0.24), Inches(0.24))
+    ov.fill.solid(); ov.fill.fore_color.rgb = c
+    ov.line.fill.background(); ov.shadow.inherit = False
+    box(s, l + Inches(0.18), t + Inches(0.16), Inches(0.24), Inches(0.24),
+        str(i + 1), size=10, bold=True, color=WHITE, align=PP_ALIGN.CENTER,
+        anchor=MSO_ANCHOR.MIDDLE)
+    box(s, l + Inches(0.5), t + Inches(0.15), Inches(gcw - 0.65), Inches(0.3),
+        h, size=12.5, bold=True, color=c)
+    box(s, l + Inches(0.2), t + Inches(0.5), Inches(gcw - 0.4),
+        Inches(gch - 0.6), d, size=10, color=MUTED, line_spacing=1.12)
 
 # =========================================================================
 # 5 — WHY TRADITIONAL BMS NEVER ADOPTED IT
@@ -419,49 +446,92 @@ box(s, Inches(0.98), Inches(6.82), Inches(11.4), Inches(0.45),
     size=13.5, color=INK, anchor=MSO_ANCHOR.MIDDLE)
 
 # =========================================================================
-# 7 — VENN
+# 7 — ONE SHEET, FOUR OVERLAYS  (replaces the old Venn: the chart is not the
+#     overlap of the standards, it is the sheet all of them are drawn on)
 # =========================================================================
+def mini_chart(s, X0, Y0, SX, SY):
+    """Compact, unlabelled version of the chart for use as a motif."""
+    px = lambda T: X0 + T * SX
+    py = lambda W: Y0 - W * SY
+    conn(s, px(0), py(0), px(40), py(0), color=AXIS, width=1.5)
+    conn(s, px(0), py(0), px(0), py(30), color=AXIS, width=1.5)
+    v = [(Inches(px(t)), Inches(py(w))) for t, w in SAT]
+    b = s.shapes.build_freeform(v[0][0], v[0][1], 1.0)
+    b.add_line_segments(v[1:], close=False)
+    cv = b.convert_to_shape()
+    cv.fill.background(); cv.line.color.rgb = ACCENT; cv.line.width = Pt(2)
+    cv.shadow.inherit = False
+    cz = rect(s, Inches(px(20)), Inches(py(12)), Inches(px(26) - px(20)),
+              Inches(py(6) - py(12)), fill=AMBER, line=AMBER, line_w=1.25)
+    set_alpha(cz, 18)
+    conn(s, px(33), py(18), px(24), py(9.3), color=GREEN, width=1.75, dash=True)
+    conn(s, px(26.7), py(11.91), px(13), py(8.8), color=ACCENT, width=2)
+    for (T, W), c in [((33, 18), AMBER), ((24, 9.3), GREEN),
+                      ((26.7, 11.91), INK), ((13, 8.8), ACCENT)]:
+        dot(s, px(T), py(W), c, r=0.05)
+
+
 s = slide()
-accent_header(s, "The big idea", "One picture where all four rulebooks meet")
-cxf, cyf = 4.35, 4.45
-df = 2.95
-hx, hy = 1.02, 0.62
-D = Inches(df); half = df / 2.0
-for ccx, ccy, c in [(cxf - hx, cyf - hy, AMBER),
-                    (cxf + hx, cyf - hy, GREEN),
-                    (cxf,      cyf + hy, ACCENT)]:
-    ov = s.shapes.add_shape(MSO_SHAPE.OVAL,
-                            Inches(ccx - half), Inches(ccy - half), D, D)
-    ov.fill.solid(); ov.fill.fore_color.rgb = c; set_alpha(ov, 40)
-    ov.line.color.rgb = c; ov.line.width = Pt(1.5)
-    ov.shadow.inherit = False
-box(s, Inches(0.55), Inches(2.55), Inches(1.75), Inches(0.9),
-    "COMFORT\nASHRAE 55", size=13, bold=True, color=AMBER,
-    align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
-box(s, Inches(6.55), Inches(2.55), Inches(1.9), Inches(0.9),
-    "FRESH AIR\nASHRAE 62.1", size=13, bold=True, color=GREEN,
-    align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE)
-box(s, Inches(2.85), Inches(6.45), Inches(3.0), Inches(0.7),
-    "ENERGY · ASHRAE 90.1", size=13, bold=True, color=ACCENT,
+accent_header(s, "The big idea", "One sheet — every rulebook draws on it")
+
+# hub: the chart itself
+rect(s, Inches(4.75), Inches(2.15), Inches(3.85), Inches(3.9), fill=CARD,
+     line=ACCENT, line_w=2.0)
+box(s, Inches(4.85), Inches(2.3), Inches(3.65), Inches(0.35),
+    "The psychrometric chart", size=16, bold=True, color=ACCENT,
     align=PP_ALIGN.CENTER)
-box(s, Inches(cxf - 1.15), Inches(cyf - 0.5), Inches(2.3), Inches(1.0),
-    "Psychrometric\nChart", size=16, bold=True, color=INK,
-    align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-rx = Inches(9.3); rw = Inches(3.35)
-rect(s, rx, Inches(2.0), rw, Inches(4.6), fill=CARD, line=LINE)
-box(s, rx + Inches(0.25), Inches(2.2), rw - Inches(0.5), Inches(0.5),
-    "Why they overlap here", size=16, bold=True, color=ACCENT)
-box(s, rx + Inches(0.25), Inches(2.8), rw - Inches(0.5), Inches(2.6),
-    "All four standards are written about the same two quantities — "
-    "TEMPERATURE and MOISTURE. Those are exactly the chart's two axes.\n\n"
-    "So a single plotted dot can be judged against comfort, fresh air and "
-    "energy simultaneously, instead of one standard at a time.",
-    size=13.5, color=MUTED, line_spacing=1.2)
-rect(s, rx, Inches(5.55), rw, Inches(1.05),
-     fill=RGBColor(0xEC, 0xFD, 0xF5), line=RGBColor(0xA7, 0xF3, 0xD0))
-box(s, rx + Inches(0.25), Inches(5.68), rw - Inches(0.5), Inches(0.9),
-    "Guideline 36 is the referee — the control logic that keeps the dot in "
-    "the overlap automatically.", size=12.5, color=GREEN)
+box(s, Inches(4.85), Inches(2.66), Inches(3.65), Inches(0.3),
+    "temperature × moisture — the only two axes", size=11, color=FAINT,
+    align=PP_ALIGN.CENTER)
+mini_chart(s, 5.15, 5.10, 0.072, 0.058)
+box(s, Inches(4.9), Inches(5.32), Inches(3.55), Inches(0.6),
+    "Every requirement around it becomes a shape on THESE SAME AXES.",
+    size=11.5, color=MUTED, align=PP_ALIGN.CENTER, line_spacing=1.2)
+
+# four overlay cards
+overlays = [
+    (0.7, 2.15, AMBER, "ASHRAE 55 draws an AREA",
+     "The comfort zone: the band of temperature and humidity occupants "
+     "accept. The air-side of the standard becomes a region you must land "
+     "the room inside."),
+    (8.93, 2.15, GREEN, "ASHRAE 62.1 draws a POINT ON A LINE",
+     "The required outside-air fraction fixes exactly where the mixed-air dot "
+     "must sit along the line between return and outside air."),
+    (0.7, 4.35, ACCENT, "ASHRAE 90.1 draws a DIRECTION",
+     "Lines of equal energy content show when outside air is the cheaper "
+     "source, and how far the dot may be pushed before energy is thrown "
+     "away."),
+    (8.93, 4.35, INK, "Guideline 36 draws the PATH",
+     "The sequences are the route the dot travels through the day — "
+     "economizer, coil, setpoint reset — from outside air to the room."),
+]
+for x, y, c, h, d in overlays:
+    rect(s, Inches(x), Inches(y), Inches(3.7), Inches(1.7), fill=CARD,
+         line=LINE)
+    rect(s, Inches(x), Inches(y), Inches(3.7), Inches(0.1), fill=c, line=None,
+         radius=False)
+    box(s, Inches(x + 0.26), Inches(y + 0.22), Inches(3.2), Inches(0.32),
+        h, size=13.5, bold=True, color=c)
+    box(s, Inches(x + 0.26), Inches(y + 0.62), Inches(3.22), Inches(0.95),
+        d, size=11, color=MUTED, line_spacing=1.15)
+
+# arrows pointing in at the chart
+for ax, adir in ((4.44, MSO_SHAPE.RIGHT_ARROW), (8.65, MSO_SHAPE.LEFT_ARROW)):
+    for ay in (2.92, 5.12):
+        ar = s.shapes.add_shape(adir, Inches(ax), Inches(ay), Inches(0.26),
+                                Inches(0.16))
+        ar.fill.solid(); ar.fill.fore_color.rgb = AXIS
+        ar.line.fill.background(); ar.shadow.inherit = False
+
+rect(s, Inches(0.7), Inches(6.3), Inches(11.93), Inches(0.95),
+     fill=RGBColor(0xFF, 0xFB, 0xEB), line=RGBColor(0xFD, 0xE6, 0x8A))
+box(s, Inches(0.98), Inches(6.4), Inches(11.4), Inches(0.3),
+    "Read this the right way round", size=13, bold=True, color=AMBER)
+box(s, Inches(0.98), Inches(6.69), Inches(11.5), Inches(0.5),
+    "The chart is not the small overlap left where four standards happen to "
+    "agree. It is the COMMON SHEET they are all drawn on — an area, a line, a "
+    "direction and a path, sharing one pair of axes. Satisfy all four and the "
+    "shapes simply fit together.", size=12.5, color=INK, line_spacing=1.15)
 
 # =========================================================================
 # 8 — ONE DOT ANSWERS ALL FOUR
@@ -548,6 +618,10 @@ for i, (k, a, b) in enumerate(comp):
         anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.1)
     box(s, tx + c3, t, Inches(3.5), Inches(rh), b, size=12, bold=True,
         color=GREEN, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.1)
+box(s, tx + Inches(0.3), Inches(6.15), Inches(11.3), Inches(0.5),
+    "None of this needs new field equipment beyond humidity sensing on the "
+    "air streams — the difference is what the software does with readings the "
+    "building is already taking.", size=13, color=FAINT, line_spacing=1.15)
 
 # =========================================================================
 # 10 — CLOSING

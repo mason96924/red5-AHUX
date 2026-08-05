@@ -1842,6 +1842,7 @@
                in place.  If no AHU is selected we leave the slab
                untouched -- matches the operator's mental model that
                the 3D slab reflects "the AHU I'm currently looking at". */
+            const lastBandDispatchRef = useRef('');
             useEffect(() => {
                 // Determine which AHU's preset drives the 3D slab.  If
                 // the operator has clicked a card, respect that
@@ -1855,6 +1856,16 @@
                 if (!driverAhuId) return;
                 const spot = ahuSweetSpots.find(s => s.ahuId === driverAhuId);
                 if (!spot) return;
+                // ahuSweetSpots is a useMemo over ahuData, and ahuData is
+                // replaced by every /api/data poll -- so this effect re-runs
+                // on a 2s cadence with an identical band.  Firing the event
+                // anyway made the 3D engine rebuild its whole weather vis
+                // (and blank the SA / Mix-Coil layers for a round trip)
+                // twice a minute per minute: the layers visibly pulsed.
+                // Only speak when the band actually moved.
+                const bandKey = `${driverAhuId}|${spot.lo}|${spot.hi}`;
+                if (lastBandDispatchRef.current === bandKey) return;
+                lastBandDispatchRef.current = bandKey;
                 try {
                     localStorage.setItem('red5_sweet_spot_range',
                         JSON.stringify({ lo: spot.lo, hi: spot.hi }));

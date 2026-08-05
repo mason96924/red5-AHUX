@@ -5102,9 +5102,16 @@ global.initPsy3D = function(container, opts){
          - Measured/Both: refetches /api/ahu/{id}/sa-timeseries for the
            new OA window, then rebuilds with the fresh sample buffer.
        Falls back to _buildSaPathGeometry() if the wiring hasn't run
-       yet (defensive — shouldn't happen in normal flow). */
+       yet (defensive — shouldn't happen in normal flow).
+
+       Deliberately NOT a forced refetch.  A rebuild does not imply a new
+       time window -- an RH-band or T-clip change lands here too -- and the
+       fetch keys on the window anyway, so a genuinely new window still
+       refetches while a restyle serves from cache.  Forcing it here meant
+       every rebuild blanked the SA and Mix / Coil layers for the length of
+       a round trip, which reads as a pulse. */
     if (typeof window.__psy3dRefreshSaPath === 'function') {
-      window.__psy3dRefreshSaPath(true);
+      window.__psy3dRefreshSaPath(false);
     } else {
       _buildSaPathGeometry();
     }

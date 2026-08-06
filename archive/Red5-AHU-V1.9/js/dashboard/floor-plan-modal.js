@@ -32,13 +32,16 @@ function renderFloorPlanModal(ctx) {
         ahuData, mapConfig, setMapConfig, floorImage,
         buildingLatLon, sunState, setSunState,
         comfortZonePoly,
+        showGivoni, showSweetSpot, sweetSpotRange,
         // Helpers + look-up tables
-        theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal,
+        theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal, floatPipFloorPlanModal,
     } = ctx;
 
     if (!showFloorPlanForAhu) return null;
 
 const floorIsPopped = !!(floorPlanPopupWin && floorPlanPopupHost);
+const floorIsPip = !!(floorIsPopped && floorPlanPopupWin.__red5IsPip);
+const floorPipOk = typeof red5PipSupported === 'function' && red5PipSupported();
 const floorOuterStyle = floorIsPopped
     ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
     : { top: `${safe(floorPlanOffset.y)}px`, left: `${safe(floorPlanOffset.x)}px` };
@@ -54,16 +57,38 @@ const floorModalTree = (
     <div ref={floorOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-indigo-500/50 text-slate-100' : 'bg-white border-slate-300 text-slate-800'} ${floorIsPopped ? '' : 'rounded-2xl border'} shadow-2xl relative flex flex-col overflow-hidden`} style={floorInnerStyle} onMouseDown={e => e.stopPropagation()}>
         
         <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'} border-b p-4 flex justify-between items-center z-[60] relative`} onMouseDown={(e) => { if (floorIsPopped) return; setIsFloorPlanDragging(true); setDragStart({ x: e.clientX - floorPlanOffset.x, y: e.clientY - floorPlanOffset.y }); }}>
-            <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE {!floorIsPopped && <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal', textTransform:'none', letterSpacing:'normal'}}>Drag corner ↘ to resize</span>}</h3>
+            <h3 className={`text-lg font-black tracking-widest ml-2 uppercase ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-600'}`}>FLOOR PLAN - {showFloorPlanForAhu} ZONE {!floorIsPopped && <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal', textTransform:'none', letterSpacing:'normal'}}>Drag corner ↘ to resize</span>}{floorIsPopped && <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal', textTransform:'none', letterSpacing:'normal'}}>{floorIsPip ? 'Drag the float box across monitors' : 'Resize the popped-out window directly'}</span>}</h3>
             <div className="flex items-center gap-2 mr-2" onMouseDown={e => e.stopPropagation()}>
                 <button
                     data-testid="popout-floorplan-modal-btn"
-                    onClick={() => { if (floorPlanPopupWin && !floorPlanPopupWin.closed) { floorPlanPopupWin.close(); } else { popOutFloorPlanModal(); } }}
-                    title={floorIsPopped ? 'Re-attach floor plan to this window' : 'Pop the floor plan out into a draggable window'}
-                    className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${floorIsPopped ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                    onClick={() => {
+                        if (floorPlanPopupWin && !floorPlanPopupWin.closed && !floorPlanPopupWin.__red5IsPip) {
+                            floorPlanPopupWin.close();
+                        } else {
+                            popOutFloorPlanModal();
+                        }
+                    }}
+                    title={floorIsPopped && !floorIsPip ? 'Re-attach floor plan to this window' : 'Pop out into a browser window'}
+                    className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${floorIsPopped && !floorIsPip ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
                 >
-                    {floorIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                    {floorIsPopped && !floorIsPip ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
                 </button>
+                {floorPipOk && (
+                <button
+                    data-testid="pip-floorplan-modal-btn"
+                    onClick={() => {
+                        if (floorPlanPopupWin && !floorPlanPopupWin.closed && floorPlanPopupWin.__red5IsPip) {
+                            floorPlanPopupWin.close();
+                        } else if (typeof floatPipFloorPlanModal === 'function') {
+                            floatPipFloorPlanModal();
+                        }
+                    }}
+                    title={floorIsPip ? 'Re-attach float box to this window' : 'Float as a minimal always-on-top box (Chrome/Edge PiP)'}
+                    className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${floorIsPip ? 'bg-violet-700 border-violet-400 text-slate-100 hover:bg-violet-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-violet-500 hover:text-violet-600')}`}
+                >
+                    {floorIsPip ? '\u21A9 ATTACH' : '\u25A3 FLOAT'}
+                </button>
+                )}
                 <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-slate-100' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowFloorPlanForAhu(null)}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
@@ -165,15 +190,26 @@ const floorModalTree = (
                             {floorData.vavMarkers.map(marker => {
                                 const liveVav = activeAhu && activeAhu.vavs ? activeAhu.vavs.find(v => v.id === marker.name) : null;
                                 const isLocked = lockedVavId === marker.name;
-                                // Use the SAME 4-state diagnostic as the VAV list so map and list agree:
-                                //   optimal/comfort → green, warning → amber, alarm → red, no-data → slate
+                                // Use the SAME Givoni-tier resolver as the VAV list
+                                // (psy-chart-svg.js line ~111).  Single source of
+                                // truth for dot colour so the floor-plan pin and
+                                // the VAV table row bullet always agree:
+                                //   A → green (in CZ & sweet-spot)
+                                //   B → teal (in CZ, outside sweet-spot)
+                                //   C+H/D → red/orange (warm, outside CZ)
+                                //   C-W/D → blue (cool, outside CZ)
+                                // Previously this used `getVavDiagnostic` (a
+                                // 4-state optimal/comfort/warning/alarm classifier)
+                                // which diverged from the list after the VAV
+                                // table migrated to Givoni tiers in Phase L.35.
+                                const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                                const gv = liveVav ? getGivoniTier(liveVav.t, liveVav.w, liveVav.rh, comfortZonePoly, _gvSweet, showGivoni) : null;
                                 const saP = activeAhu && activeAhu.points ? activeAhu.points[1] : null;
                                 const diag = liveVav ? getVavDiagnostic(liveVav, saP, comfortZonePoly) : null;
-                                const dotColor = !liveVav ? 'bg-slate-500'
-                                    : diag.status === 'optimal' ? 'bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.8)]'
-                                    : diag.status === 'comfort' ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]'
-                                    : diag.status === 'warning' ? 'bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.8)]'
-                                    : 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)]';
+                                const dotStyle = gv
+                                    ? { backgroundColor: gv.dotFill, boxShadow: '0 0 12px ' + gv.dotFill + 'cc' }
+                                    : null;
+                                const dotColor = !liveVav ? 'bg-slate-500' : '';
 
                                 // Sun-Path → B1-B10 band trim (P0 hook).  Compute once per VAV
                                 // so both the ring tooltip path and the plain-marker path can
@@ -217,15 +253,16 @@ const floorModalTree = (
                                             return (
                                                 <div
                                                     className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : ''}`}
-                                                    style={{borderColor: ring, boxShadow: `0 0 15px ${ring}`}}
-                                                    title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${diag ? ' — ' + diag.status : ''}` : marker.name) + ' · sun-exposed' + trimSuffix}
+                                                    style={Object.assign({}, dotStyle || {}, {borderColor: ring, boxShadow: `0 0 15px ${ring}`})}
+                                                    title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + ' · sun-exposed' + trimSuffix}
                                                     onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                                 ></div>
                                             );
                                         })() || (
                                         <div 
                                             className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : 'border-white'}`}
-                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${diag ? ' — ' + diag.status : ''}` : marker.name) + trimSuffix}
+                                            style={dotStyle || undefined}
+                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + trimSuffix}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         ></div>)}
                                         <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono cursor-pointer transition-colors ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'} ${isLocked ? '!border-cyan-400' : 'group-hover:border-indigo-400'}`}

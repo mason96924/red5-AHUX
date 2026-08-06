@@ -826,29 +826,101 @@
             // image-resize effects can depend on *PopupHost without TDZ.)
 
             // Generic open-or-focus helper.  ``setterPair`` is [setWin, setHost]
-            // for the modal whose popup we're spawning.  Returns nothing —
-            // the calling button just kicks it off.
-            const openPopupFor = useCallback((label, title, currentWin, setterPair) => {
-                if (currentWin && !currentWin.closed) { currentWin.focus(); return; }
-                const result = red5OpenPopupWindow(label, title, 1600, 1000);
+            // for the modal whose popup we're spawning.  Size comes from the
+            // docked modal's persisted w×h so the popped window keeps the
+            // same aspect instead of a one-size-fits-all (or browser-default
+            // tiny) rectangle.
+            //
+            // ``closeOthers`` — optional list of [win, setWin, setHost] to
+            // clear when opening Document PiP (browser allows only one PiP
+            // per tab; also used when switching POP OUT ↔ FLOAT).
+            const watchExternalClose = useCallback((win, setterPair) => {
+                const watcher = setInterval(() => {
+                    if (!win || win.closed) {
+                        clearInterval(watcher);
+                        setterPair[0](null);
+                        setterPair[1](null);
+                    }
+                }, 400);
+                try {
+                    win.addEventListener('pagehide', () => {
+                        clearInterval(watcher);
+                        setterPair[0](null);
+                        setterPair[1](null);
+                    });
+                } catch (e) {}
+            }, []);
+
+            const closeExternal = useCallback((win, setterPair) => {
+                if (win && !win.closed) {
+                    try { win.close(); } catch (e) {}
+                }
+                setterPair[0](null);
+                setterPair[1](null);
+            }, []);
+
+            const openPopupFor = useCallback((label, title, currentWin, setterPair, size, closeOthers) => {
+                // Already a browser pop-out (not PiP) → focus / resize.
+                if (currentWin && !currentWin.closed && !currentWin.__red5IsPip) {
+                    try {
+                        const w = (size && size.w) || 1400;
+                        const h = (size && size.h) || 900;
+                        const chromeW = Math.max(0, (currentWin.outerWidth || w) - (currentWin.innerWidth || w));
+                        const chromeH = Math.max(0, (currentWin.outerHeight || h) - (currentWin.innerHeight || h));
+                        currentWin.resizeTo(w + chromeW, h + chromeH);
+                    } catch (e) {}
+                    try { currentWin.focus(); } catch (e) {}
+                    return;
+                }
+                // Switching from PiP → browser window, or fresh open.
+                if (currentWin && !currentWin.closed) closeExternal(currentWin, setterPair);
+                if (Array.isArray(closeOthers)) {
+                    closeOthers.forEach(entry => {
+                        if (entry && entry[0] && entry[0] !== currentWin)
+                            closeExternal(entry[0], [entry[1], entry[2]]);
+                    });
+                }
+                const w = (size && size.w) || 1600;
+                const h = (size && size.h) || 900;
+                const result = red5OpenPopupWindow(label, title, w, h);
                 if (!result) {
                     toast('Popup window blocked. Please allow popups for this site, then click Pop Out again.');
                     return;
                 }
                 setterPair[0](result.win);
                 setterPair[1](result.host);
-                const watcher = setInterval(() => {
-                    if (result.win.closed) {
-                        clearInterval(watcher);
-                        setterPair[0](null);
-                        setterPair[1](null);
-                    }
-                }, 400);
-            }, []);
+                watchExternalClose(result.win, setterPair);
+            }, [closeExternal, watchExternalClose]);
 
-            const popOutAhuModal       = useCallback(() => openPopupFor('ahu_modal',  'Red5 AHU Equipment Diagram (popped out)',  ahuModalPopupWin,  [setAhuModalPopupWin,  setAhuModalPopupHost]),  [openPopupFor, ahuModalPopupWin]);
-            const popOutVavModal       = useCallback(() => openPopupFor('vav_modal',  'Red5 VAV Detail (popped out)',             vavModalPopupWin,  [setVavModalPopupWin,  setVavModalPopupHost]),  [openPopupFor, vavModalPopupWin]);
-            const popOutFloorPlanModal = useCallback(() => openPopupFor('floor_plan', 'Red5 Floor Plan (popped out)',             floorPlanPopupWin, [setFloorPlanPopupWin, setFloorPlanPopupHost]), [openPopupFor, floorPlanPopupWin]);
+            const openPipFor = useCallback(async (label, title, currentWin, setterPair, size, closeOthers) => {
+                if (!red5PipSupported()) {
+                    toast('Float (PiP) needs Chrome or Edge. Use Pop Out instead.');
+                    return;
+                }
+                // Already floating this modal in PiP → focus (nothing else to do).
+                if (currentWin && !currentWin.closed && currentWin.__red5IsPip) {
+                    try { currentWin.focus(); } catch (e) {}
+                    return;
+                }
+                if (currentWin && !currentWin.closed) closeExternal(currentWin, setterPair);
+                // Document PiP allows only one window per tab — detach siblings.
+                if (Array.isArray(closeOthers)) {
+                    closeOthers.forEach(entry => {
+                        if (entry && entry[0] && entry[0] !== currentWin)
+                            closeExternal(entry[0], [entry[1], entry[2]]);
+                    });
+                }
+                const w = (size && size.w) || 1600;
+                const h = (size && size.h) || 900;
+                const result = await red5OpenPipWindow(label, title, w, h);
+                if (!result) {
+                    toast('Could not open Float window. Try Pop Out, or check PiP is allowed.');
+                    return;
+                }
+                setterPair[0](result.win);
+                setterPair[1](result.host);
+                watchExternalClose(result.win, setterPair);
+            }, [closeExternal, watchExternalClose]);
 
             // Close every popup when the parent tab is about to unload.
             useEffect(() => {
@@ -869,6 +941,8 @@
                 if (!selectedVavForModal && vavModalPopupWin && !vavModalPopupWin.closed) vavModalPopupWin.close();
             }, [selectedVavForModal, vavModalPopupWin]);
             // floor-plan auto-close is wired below after showFloorPlanForAhu is declared
+            // popOut* callbacks are declared after vavModalSize / floorPlanModalSize
+            // to avoid TDZ (those sizes live further down).
             const [vavImgDims, setVavImgDims] = useState({ natW: 1600, natH: 1004, dispW: 1600, dispH: 1004 });
             const vavImgRef = useRef(null);
             const vavOuterRef = useRef(null);
@@ -994,6 +1068,32 @@
             useEffect(() => {
                 if (!showFloorPlanForAhu && floorPlanPopupWin && !floorPlanPopupWin.closed) floorPlanPopupWin.close();
             }, [showFloorPlanForAhu, floorPlanPopupWin]);
+
+            const popOutAhuModal       = useCallback(() => openPopupFor('ahu_modal',  'Red5 AHU Equipment Diagram (popped out)',  ahuModalPopupWin,  [setAhuModalPopupWin,  setAhuModalPopupHost],  ahuModalSize, [
+                [vavModalPopupWin, setVavModalPopupWin, setVavModalPopupHost],
+                [floorPlanPopupWin, setFloorPlanPopupWin, setFloorPlanPopupHost],
+            ].filter(e => e[0] && e[0].__red5IsPip)),  [openPopupFor, ahuModalPopupWin, ahuModalSize, vavModalPopupWin, floorPlanPopupWin]);
+            const popOutVavModal       = useCallback(() => openPopupFor('vav_modal',  'Red5 VAV Detail (popped out)',             vavModalPopupWin,  [setVavModalPopupWin,  setVavModalPopupHost],  vavModalSize, [
+                [ahuModalPopupWin, setAhuModalPopupWin, setAhuModalPopupHost],
+                [floorPlanPopupWin, setFloorPlanPopupWin, setFloorPlanPopupHost],
+            ].filter(e => e[0] && e[0].__red5IsPip)),  [openPopupFor, vavModalPopupWin, vavModalSize, ahuModalPopupWin, floorPlanPopupWin]);
+            const popOutFloorPlanModal = useCallback(() => openPopupFor('floor_plan', 'Red5 Floor Plan (popped out)',             floorPlanPopupWin, [setFloorPlanPopupWin, setFloorPlanPopupHost], floorPlanModalSize, [
+                [ahuModalPopupWin, setAhuModalPopupWin, setAhuModalPopupHost],
+                [vavModalPopupWin, setVavModalPopupWin, setVavModalPopupHost],
+            ].filter(e => e[0] && e[0].__red5IsPip)), [openPopupFor, floorPlanPopupWin, floorPlanModalSize, ahuModalPopupWin, vavModalPopupWin]);
+
+            const floatPipAhuModal = useCallback(() => openPipFor('ahu_modal', 'Red5 AHU Equipment Diagram', ahuModalPopupWin, [setAhuModalPopupWin, setAhuModalPopupHost], ahuModalSize, [
+                [vavModalPopupWin, setVavModalPopupWin, setVavModalPopupHost],
+                [floorPlanPopupWin, setFloorPlanPopupWin, setFloorPlanPopupHost],
+            ]), [openPipFor, ahuModalPopupWin, ahuModalSize, vavModalPopupWin, floorPlanPopupWin]);
+            const floatPipVavModal = useCallback(() => openPipFor('vav_modal', 'Red5 VAV Detail', vavModalPopupWin, [setVavModalPopupWin, setVavModalPopupHost], vavModalSize, [
+                [ahuModalPopupWin, setAhuModalPopupWin, setAhuModalPopupHost],
+                [floorPlanPopupWin, setFloorPlanPopupWin, setFloorPlanPopupHost],
+            ]), [openPipFor, vavModalPopupWin, vavModalSize, ahuModalPopupWin, floorPlanPopupWin]);
+            const floatPipFloorPlanModal = useCallback(() => openPipFor('floor_plan', 'Red5 Floor Plan', floorPlanPopupWin, [setFloorPlanPopupWin, setFloorPlanPopupHost], floorPlanModalSize, [
+                [ahuModalPopupWin, setAhuModalPopupWin, setAhuModalPopupHost],
+                [vavModalPopupWin, setVavModalPopupWin, setVavModalPopupHost],
+            ]), [openPipFor, floorPlanPopupWin, floorPlanModalSize, ahuModalPopupWin, vavModalPopupWin]);
             const [floorPlanOffset, setFloorPlanOffset] = useState({ x: 100, y: 50 });
 
             /* Sun-Path Phase A integration (Dashboard). Tracks live sun-state
@@ -2578,7 +2678,7 @@
                         global sweetSpotRange slider state. */}
                     {selectedVavForModal && renderVavEquipmentModal({
                         API_URL, _setForceApTick, ahuData, setAhuData, selectedAhuId,
-                        ccEquipTypes, mapConfig, popOutVavModal,
+                        ccEquipTypes, mapConfig, popOutVavModal, floatPipVavModal,
                         selectedVavForModal, setSelectedVavForModal, setDragStart,
                         setIsVavModalDragging, setVavImgDims, vavImgDims, sunState, theme,
                         vavCfm, vavImage, vavImgRef, vavTypeImages,
@@ -2607,7 +2707,7 @@
                         buildingLatLon, sunState, setSunState,
                         comfortZonePoly,
                         showGivoni, showSweetSpot, sweetSpotRange,
-                        theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal,
+                        theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal, floatPipFloorPlanModal,
                     })}
 
 
@@ -2616,7 +2716,7 @@
                         API_URL, _setForceApTick,
                         ahuBodyRef, ahuData, ahuImage, ahuImgDims, ahuImgRef,
                         ahuModalOffset, ahuModalPopupHost, ahuModalPopupWin, ahuModalSize,
-                        ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal,
+                        ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal, floatPipAhuModal,
                         setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
                         setShowAhuModalFor, showAhuModalFor, theme,
                     })}

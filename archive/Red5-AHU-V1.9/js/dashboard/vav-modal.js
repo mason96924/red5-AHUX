@@ -38,7 +38,7 @@ function renderVavEquipmentModal(ctx) {
         ahuData, setAhuData, selectedAhuId,
         ccEquipTypes,
         mapConfig,
-        popOutVavModal,
+        popOutVavModal, floatPipVavModal,
         selectedVavForModal, setSelectedVavForModal,
         setDragStart, setIsVavModalDragging,
         setVavImgDims, vavImgDims,
@@ -161,6 +161,8 @@ function renderVavEquipmentModal(ctx) {
                         };
 
                         const vavIsPopped = !!(vavModalPopupWin && vavModalPopupHost);
+                        const vavIsPip = !!(vavIsPopped && vavModalPopupWin.__red5IsPip);
+                        const vavPipOk = typeof red5PipSupported === 'function' && red5PipSupported();
                         const vavOuterStyle = vavIsPopped
                             ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
                             : { top: `${safe(vavModalOffset.y)}px`, left: `${safe(vavModalOffset.x)}px` };
@@ -187,7 +189,7 @@ function renderVavEquipmentModal(ctx) {
                                                 <span>SA {modalBandTrim.sa_t_sp}°C</span>
                                                 {modalBandTrim.sun_trim_c !== 0 && <span className="opacity-80">({modalBandTrim.sun_trim_c > 0 ? '+' : ''}{modalBandTrim.sun_trim_c.toFixed(2)} sun)</span>}
                                             </span>
-                                        )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{vavIsPopped ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>
+                                        )}<span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{vavIsPopped ? (vavIsPip ? 'Drag the float box across monitors' : 'Resize the popped-out window directly') : 'Drag corner ↘ to resize'}</span></h3>
                                         <div className="flex items-center gap-2 mr-1" onMouseDown={e => e.stopPropagation()}>
                                             <button
                                                 data-testid="qr-phone-preview-btn"
@@ -199,12 +201,34 @@ function renderVavEquipmentModal(ctx) {
                                             </button>
                                             <button
                                                 data-testid="popout-vav-modal-btn"
-                                                onClick={() => { if (vavModalPopupWin && !vavModalPopupWin.closed) { vavModalPopupWin.close(); } else { popOutVavModal(); } }}
-                                                title={vavIsPopped ? 'Re-attach VAV modal to this window' : 'Pop the VAV modal out into a draggable window'}
-                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${vavIsPopped ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                                onClick={() => {
+                                                    if (vavModalPopupWin && !vavModalPopupWin.closed && !vavModalPopupWin.__red5IsPip) {
+                                                        vavModalPopupWin.close();
+                                                    } else {
+                                                        popOutVavModal();
+                                                    }
+                                                }}
+                                                title={vavIsPopped && !vavIsPip ? 'Re-attach VAV modal to this window' : 'Pop out into a browser window'}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${vavIsPopped && !vavIsPip ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
                                             >
-                                                {vavIsPopped ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                                {vavIsPopped && !vavIsPip ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
                                             </button>
+                                            {vavPipOk && (
+                                            <button
+                                                data-testid="pip-vav-modal-btn"
+                                                onClick={() => {
+                                                    if (vavModalPopupWin && !vavModalPopupWin.closed && vavModalPopupWin.__red5IsPip) {
+                                                        vavModalPopupWin.close();
+                                                    } else if (typeof floatPipVavModal === 'function') {
+                                                        floatPipVavModal();
+                                                    }
+                                                }}
+                                                title={vavIsPip ? 'Re-attach float box to this window' : 'Float as a minimal always-on-top box (Chrome/Edge PiP)'}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${vavIsPip ? 'bg-violet-700 border-violet-400 text-slate-100 hover:bg-violet-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-violet-500 hover:text-violet-600')}`}
+                                            >
+                                                {vavIsPip ? '\u21A9 ATTACH' : '\u25A3 FLOAT'}
+                                            </button>
+                                            )}
                                             <button className={`${theme === 'dark' ? 'text-slate-400 hover:text-slate-100' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setSelectedVavForModal(null)}>
                                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                             </button>

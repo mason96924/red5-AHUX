@@ -21,7 +21,7 @@
          after #root exists, with CDN/path fallbacks and on-screen errors. -->
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
          js/dashboard/* are now pre-compiled offline into the single bundle
-         /api/assets/dashboard.compiled.js?v=8ff065b543 (built via /app/frontend/src/dashboard/build.sh).
+         /api/assets/dashboard.compiled.js?v=5a73070ef4 (built via /app/frontend/src/dashboard/build.sh).
          Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
@@ -515,19 +515,19 @@
             }
         });
         var paths = [
-            '/api/assets/dashboard.compiled.js?v=8ff065b543?v=' + HASH,
-            '/api/assets/js/api/assets/dashboard.compiled.js?v=8ff065b543?v=' + HASH,
-            '/api/assets/dashboard.compiled.js?v=8ff065b543?v=' + HASH,
-            '/assets/js/api/assets/dashboard.compiled.js?v=8ff065b543?v=' + HASH,
-            '/js/api/assets/dashboard.compiled.js?v=8ff065b543?v=' + HASH,
+            '/api/assets/dashboard.compiled.js?v=5a73070ef4?v=' + HASH,
+            '/api/assets/js/api/assets/dashboard.compiled.js?v=5a73070ef4?v=' + HASH,
+            '/api/assets/dashboard.compiled.js?v=5a73070ef4?v=' + HASH,
+            '/assets/js/api/assets/dashboard.compiled.js?v=5a73070ef4?v=' + HASH,
+            '/js/api/assets/dashboard.compiled.js?v=5a73070ef4?v=' + HASH,
             'dashboard.compiled.js?v=' + HASH,
-            'js/api/assets/dashboard.compiled.js?v=8ff065b543?v=' + HASH
+            'js/api/assets/dashboard.compiled.js?v=5a73070ef4?v=' + HASH
         ];
         var pi = 0;
         function loadBundle() {
             if (pi >= paths.length) {
                 showBootError('Could not load dashboard.compiled.js from any path. '
-                    + 'Open <code>/api/assets/dashboard.compiled.js?v=8ff065b543</code> directly — '
+                    + 'Open <code>/api/assets/dashboard.compiled.js?v=5a73070ef4</code> directly — '
                     + 'it must start with <code>"use strict";function</code> and be ~392&nbsp;KB.');
                 return;
             }

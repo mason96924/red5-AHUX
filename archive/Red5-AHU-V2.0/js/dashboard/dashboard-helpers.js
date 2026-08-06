@@ -33,44 +33,142 @@
 // ReactDOM.createPortal() to render their modal tree into the popup,
 // preserving all React state, telemetry, click handlers etc.
 //
-// The popup auto-closes when the parent tab unloads (registered by
-// the calling component) — we don't try to keep orphaned popups
-// alive because they'd point at a dead React root.
+// Also: red5OpenPipWindow — Document Picture-in-Picture (Chrome/Edge):
+// a minimal always-on-top floating box with almost no browser chrome.
+// Only one PiP window is allowed per tab; use alongside window.open
+// pop-outs (operators pick POP OUT vs FLOAT).
 // ----------------------------------------------------------------------
+
+/** Shared: copy parent styles into an already-opened external window. */
+function red5FillExternalWindow(win, name, title) {
+    try {
+        if (!win.document.head.querySelector('title')) {
+            const titleEl = win.document.createElement('title');
+            titleEl.textContent = title;
+            win.document.head.appendChild(titleEl);
+        } else {
+            win.document.title = title;
+        }
+    } catch (e) {}
+    try {
+        if (!win.document.head.querySelector('base')) {
+            const baseEl = win.document.createElement('base');
+            baseEl.href = window.location.href;
+            win.document.head.appendChild(baseEl);
+        }
+    } catch (e) {}
+    // Clone styles once (idempotent if host already exists).
+    try {
+        if (!win.document.getElementById('red5-popup-' + name)) {
+            document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
+                win.document.head.appendChild(node.cloneNode(true));
+            });
+            const tailwind = document.querySelector('script[src*="tailwindcss"]');
+            if (tailwind) {
+                const tw = win.document.createElement('script');
+                tw.src = tailwind.src;
+                win.document.head.appendChild(tw);
+            }
+        }
+    } catch (e) {}
+    try {
+        win.document.body.className = document.body.className;
+        win.document.body.style.margin = '0';
+        win.document.body.style.background = 'transparent';
+        win.document.body.style.overflow = 'hidden';
+        win.document.body.style.width = '100%';
+        win.document.body.style.height = '100%';
+    } catch (e) {}
+    let host = null;
+    try {
+        host = win.document.getElementById('red5-popup-' + name);
+        if (!host) {
+            host = win.document.createElement('div');
+            host.id = 'red5-popup-' + name;
+            host.style.cssText = 'display:block;width:100%;height:100%;min-height:100%;position:relative;box-sizing:border-box;';
+            win.document.body.appendChild(host);
+        }
+    } catch (e) {
+        return null;
+    }
+    return host;
+}
+
+function red5ClampPopupSize(width, height) {
+    const w = Math.max(480, Math.round(Number(width) || 1400));
+    const h = Math.max(360, Math.round(Number(height) || 900));
+    const availW = (typeof screen !== 'undefined' && screen.availWidth) ? screen.availWidth : w;
+    const availH = (typeof screen !== 'undefined' && screen.availHeight) ? screen.availHeight : h;
+    return {
+        openW: Math.min(w, Math.max(640, availW - 40)),
+        openH: Math.min(h, Math.max(480, availH - 60)),
+    };
+}
+
+function red5PipSupported() {
+    return !!(typeof window !== 'undefined' && window.documentPictureInPicture
+        && typeof window.documentPictureInPicture.requestWindow === 'function');
+}
+
 function red5OpenPopupWindow(name, title, width, height) {
     const winName = 'red5_' + name;
-    const features = 'width=' + width + ',height=' + height +
+    const { openW, openH } = red5ClampPopupSize(width, height);
+    const features = 'width=' + openW + ',height=' + openH +
         ',resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no';
     const win = window.open('', winName, features);
     if (!win) return null;
-    win.document.open();
-    win.document.write('<!doctype html><html><head></head><body></body></html>');
-    win.document.close();
-    const titleEl = win.document.createElement('title');
-    titleEl.textContent = title;
-    win.document.head.appendChild(titleEl);
-    const baseEl = win.document.createElement('base');
-    baseEl.href = window.location.href;
-    win.document.head.appendChild(baseEl);
-    // Clone every <style> and stylesheet <link> so Tailwind class names resolve.
-    document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach(node => {
-        win.document.head.appendChild(node.cloneNode(true));
-    });
-    // Re-execute the Tailwind CDN runtime so utility classes are compiled in the popup.
-    const tailwind = document.querySelector('script[src*="tailwindcss"]');
-    if (tailwind) {
-        const tw = win.document.createElement('script');
-        tw.src = tailwind.src;
-        win.document.head.appendChild(tw);
+
+    // Modern Chromium often ignores features width/height (and reuses a
+    // named window at its previous tiny size). Force the content area to
+    // match the docked modal after chrome is measurable.
+    const applySize = () => {
+        try {
+            const chromeW = Math.max(0, (win.outerWidth || openW) - (win.innerWidth || openW));
+            const chromeH = Math.max(0, (win.outerHeight || openH) - (win.innerHeight || openH));
+            win.resizeTo(openW + chromeW, openH + chromeH);
+        } catch (e) { /* popup resize blocked by browser policy */ }
+    };
+    try { win.resizeTo(openW, openH); } catch (e) {}
+    try { setTimeout(applySize, 0); setTimeout(applySize, 50); } catch (e) {}
+
+    try {
+        win.document.open();
+        win.document.write('<!doctype html><html><head></head><body></body></html>');
+        win.document.close();
+    } catch (e) {}
+    win.__red5IsPip = false;
+    const host = red5FillExternalWindow(win, name, title);
+    if (!host) return null;
+    return { win: win, host: host, isPip: false };
+}
+
+/**
+ * Document Picture-in-Picture floating window (Chrome / Edge).
+ * Minimal chrome, always-on-top, user can drag across monitors.
+ * Must be called from a user-gesture handler. Async.
+ */
+async function red5OpenPipWindow(name, title, width, height) {
+    if (!red5PipSupported()) return null;
+    const { openW, openH } = red5ClampPopupSize(width, height);
+    let win;
+    try {
+        win = await window.documentPictureInPicture.requestWindow({
+            width: openW,
+            height: openH,
+            disallowReturnToOpener: true,
+        });
+    } catch (e) {
+        console.warn('[red5] Document PiP request failed:', e);
+        return null;
     }
-    win.document.body.className = document.body.className;
-    win.document.body.style.margin = '0';
-    win.document.body.style.background = 'transparent';
-    const host = win.document.createElement('div');
-    host.id = 'red5-popup-' + name;
-    host.style.cssText = 'display:block;width:100vw;min-height:100vh;position:relative;';
-    win.document.body.appendChild(host);
-    return { win: win, host: host };
+    if (!win) return null;
+    win.__red5IsPip = true;
+    const host = red5FillExternalWindow(win, name, title);
+    if (!host) {
+        try { win.close(); } catch (e) {}
+        return null;
+    }
+    return { win: win, host: host, isPip: true };
 }
 
 // ====================================================================

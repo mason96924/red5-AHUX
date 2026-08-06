@@ -20,7 +20,7 @@
  *   API_URL, _setForceApTick, ahuBodyRef, ahuData, ahuImage, ahuImgDims,
  *   ahuImgRef, ahuModalOffset, ahuModalPopupHost, ahuModalPopupWin,
  *   ahuModalSize, ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig,
- *   popOutAhuModal, setAhuData, setAhuImgDims, setDragStart,
+ *   popOutAhuModal, floatPipAhuModal, setAhuData, setAhuImgDims, setDragStart,
  *   setIsAhuModalDragging, setShowAhuModalFor, showAhuModalFor, theme
  *
  * LOCALS — declared inside the body, NOT passed via ctx (would cause
@@ -36,7 +36,7 @@ function renderAhuEquipmentModal(ctx) {
         ahuModalOffset, ahuModalPopupHost, ahuModalPopupWin, ahuModalSize,
         ahuOuterRef, ahuTypeImages,
         ccEquipTypes, mapConfig,
-        popOutAhuModal,
+        popOutAhuModal, floatPipAhuModal,
         setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
         setShowAhuModalFor, showAhuModalFor,
         theme,
@@ -290,6 +290,8 @@ function renderAhuEquipmentModal(ctx) {
                         // draggable/resizable from the docked overlay
                         // (the OS window chrome handles both natively).
                         const isPopped = !!(ahuModalPopupWin && ahuModalPopupHost);
+                        const isPip = !!(isPopped && ahuModalPopupWin.__red5IsPip);
+                        const pipOk = typeof red5PipSupported === 'function' && red5PipSupported();
                         const outerStyle = isPopped
                             ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
                             : { top: `${safe(ahuModalOffset.y)}px`, left: `${safe(ahuModalOffset.x)}px` };
@@ -305,7 +307,7 @@ function renderAhuEquipmentModal(ctx) {
                                 <div ref={ahuOuterRef} className={`${dk ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${isPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={innerStyle} onMouseDown={e => e.stopPropagation()}>
 
                                     <div className={`cursor-grab active:cursor-grabbing ${dk ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-2.5 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (ahuModalPopupWin) return; setIsAhuModalDragging(true); setDragStart({ x: e.clientX - ahuModalOffset.x, y: e.clientY - ahuModalOffset.y }); }}>
-                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${dk ? 'text-slate-300' : 'text-slate-700'}`}>{showAhuModalFor} EQUIPMENT DIAGRAM <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{ahuModalPopupWin ? 'Resize the popped-out window directly' : 'Drag corner ↘ to resize'}</span></h3>
+                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${dk ? 'text-slate-300' : 'text-slate-700'}`}>{showAhuModalFor} EQUIPMENT DIAGRAM <span style={{color:'#64748b', fontSize:'10px', marginLeft:'8px', fontWeight:'normal'}}>{isPopped ? (isPip ? 'Drag the float box across monitors' : 'Resize the popped-out window directly') : 'Drag corner ↘ to resize'}</span></h3>
                                         <div className="flex items-center gap-2 mr-1" onMouseDown={e => e.stopPropagation()}>
                                             <button
                                                 data-testid="qr-phone-preview-btn"
@@ -317,12 +319,34 @@ function renderAhuEquipmentModal(ctx) {
                                             </button>
                                             <button
                                                 data-testid="popout-ahu-modal-btn"
-                                                onClick={() => { if (ahuModalPopupWin && !ahuModalPopupWin.closed) { ahuModalPopupWin.close(); } else { popOutAhuModal(); } }}
-                                                title={ahuModalPopupWin ? 'Re-attach modal to this window' : 'Pop modal out into a draggable window (move it to another monitor)'}
-                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${ahuModalPopupWin ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (dk ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                                                onClick={() => {
+                                                    if (ahuModalPopupWin && !ahuModalPopupWin.closed && !ahuModalPopupWin.__red5IsPip) {
+                                                        ahuModalPopupWin.close();
+                                                    } else {
+                                                        popOutAhuModal();
+                                                    }
+                                                }}
+                                                title={isPopped && !isPip ? 'Re-attach modal to this window' : 'Pop out into a browser window (move to another monitor)'}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${isPopped && !isPip ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (dk ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
                                             >
-                                                {ahuModalPopupWin ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
+                                                {isPopped && !isPip ? '\u21A9 ATTACH' : '\u2197 POP OUT'}
                                             </button>
+                                            {pipOk && (
+                                            <button
+                                                data-testid="pip-ahu-modal-btn"
+                                                onClick={() => {
+                                                    if (ahuModalPopupWin && !ahuModalPopupWin.closed && ahuModalPopupWin.__red5IsPip) {
+                                                        ahuModalPopupWin.close();
+                                                    } else if (typeof floatPipAhuModal === 'function') {
+                                                        floatPipAhuModal();
+                                                    }
+                                                }}
+                                                title={isPip ? 'Re-attach float box to this window' : 'Float as a minimal always-on-top box (Chrome/Edge PiP)'}
+                                                className={`px-2 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${isPip ? 'bg-violet-700 border-violet-400 text-slate-100 hover:bg-violet-600' : (dk ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-violet-500 hover:text-violet-600')}`}
+                                            >
+                                                {isPip ? '\u21A9 ATTACH' : '\u25A3 FLOAT'}
+                                            </button>
+                                            )}
                                             <button className={`${dk ? 'text-slate-400 hover:text-slate-100' : 'text-slate-500 hover:text-slate-800'} transition-colors cursor-pointer`} onClick={() => setShowAhuModalFor(null)}>
                                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                             </button>

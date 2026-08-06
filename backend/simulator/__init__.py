@@ -173,11 +173,29 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
         # setpoint (ZSP), occupancy (OCC).  Drive the terminal-hub graphic.
         # Each driver gets its own scalar Markov walk so the equipment
         # graphics also breathe instead of pulsing on a fixed clock.
+        #
+        # VST = discharge leaving a passive VAV box (optional reheat only).
+        # There is no cooling in the box, so VST must be ≥ AHU SA.  Reheat
+        # rises when the zone sits below setpoint (perimeter / low-sun /
+        # envelope-loss case); core zones that are warm stay near SA with
+        # only a tiny duct-gain bump.  Never invent an independent ~14 °C
+        # oscillator — that made VST≪SA on the zone-delivery psych chart.
         d_dpr = _scalar_drift(ahu_id + ":" + vn + ":DPR", sigma=0.9, clamp=8.0)
-        d_vst = _scalar_drift(ahu_id + ":" + vn + ":VST", sigma=0.08, clamp=0.8)
+        d_vst = _scalar_drift(ahu_id + ":" + vn + ":VST", sigma=0.05, clamp=0.4)
         dpr = max(0.0, min(100.0, 45.0 + 25.0 * wave_b + 10.0 * wave_a + d_dpr))
-        vst = 14.0 + 1.5 * wave_a + d_vst                     # supply ~12.5-15.5
         zsp = 23.0 + 0.5 * math.sin(t_now / 600.0 + seed)    # slow setpoint drift
+        # Reheat demand: °C the zone is below setpoint (0 when at/above).
+        # Scale so a 2 °C under-setpoint zone gets ~4–6 °C reheat rise.
+        reheat_need = max(0.0, zsp - vt)
+        reheat_rise = min(8.0, reheat_need * 2.5)
+        # ~every 3rd VAV acts as a "cold perimeter" even when zone is near
+        # ZSP, so reheat is visible on the demo without every box reheating.
+        if (hash(vn) % 3) == 0 and reheat_rise < 1.5:
+            reheat_rise = 1.5 + 1.0 * max(0.0, wave_b)
+        duct_gain = 0.15 + 0.1 * max(0.0, wave_a)            # passive warm-up
+        vst = sa_t + duct_gain + reheat_rise + d_vst
+        if vst < sa_t:
+            vst = sa_t  # physical floor: passive box cannot cool
         afm = max(0.0, min(1.0, 1.0 if dpr > 5.0 else 0.0))  # airflow status
         afs = afm
         vav_list.append({
@@ -190,7 +208,7 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
                 "t":   round(vt, 2),
                 "rh":  round(vrh, 1),
                 "DPR": round(dpr, 1),    # damper position
-                "VST": round(vst, 2),    # supply temp
+                "VST": round(vst, 2),    # discharge temp (≥ SA; +reheat)
                 "ZSP": round(zsp, 2),    # zone setpoint
                 "AFM": afm,              # airflow manual command
                 "AFS": afs,              # airflow status

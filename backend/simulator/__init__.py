@@ -161,42 +161,65 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
         seed   = (i * 1.7 + hash(vn) % 100 * 0.013)
         wave_a = math.sin(t_now / 22.0 + seed)
         wave_b = math.sin(t_now / 95.0 + seed * 0.7)
-        # Markov drift on top of the deterministic beat -- gives each zone
-        # the look of a real BACnet sensor (door-open dips, sun-load creep,
-        # occupancy nudges) instead of a clean sinusoid.  State persists
-        # per-VAV across polls (see _markov_drift above).
         d_t, d_rh = _markov_drift(ahu_id + ":" + vn)
-        vt  = 22.5 + 2.6 * wave_b + 0.6 * wave_a + d_t       # zone temp 19.9-25.1 + drift
-        vrh = 47.0 + 6.5 * (-wave_b) + 2.0 * (-wave_a) + d_rh  # zone RH 38.5-55.5 + drift
-        vw  = _humidity_ratio(vt, vrh)
-        # VAV-level driver points: damper position (DPR), supply temp (VST),
-        # setpoint (ZSP), occupancy (OCC).  Drive the terminal-hub graphic.
-        # Each driver gets its own scalar Markov walk so the equipment
-        # graphics also breathe instead of pulsing on a fixed clock.
-        #
-        # VST = discharge leaving a passive VAV box (optional reheat only).
-        # There is no cooling in the box, so VST must be ≥ AHU SA.  Reheat
-        # rises when the zone sits below setpoint (perimeter / low-sun /
-        # envelope-loss case); core zones that are warm stay near SA with
-        # only a tiny duct-gain bump.  Never invent an independent ~14 °C
-        # oscillator — that made VST≪SA on the zone-delivery psych chart.
         d_dpr = _scalar_drift(ahu_id + ":" + vn + ":DPR", sigma=0.9, clamp=8.0)
-        d_vst = _scalar_drift(ahu_id + ":" + vn + ":VST", sigma=0.05, clamp=0.4)
-        dpr = max(0.0, min(100.0, 45.0 + 25.0 * wave_b + 10.0 * wave_a + d_dpr))
-        zsp = 23.0 + 0.5 * math.sin(t_now / 600.0 + seed)    # slow setpoint drift
-        # Reheat demand: °C the zone is below setpoint (0 when at/above).
-        # Scale so a 2 °C under-setpoint zone gets ~4–6 °C reheat rise.
-        reheat_need = max(0.0, zsp - vt)
-        reheat_rise = min(8.0, reheat_need * 2.5)
-        # ~every 3rd VAV acts as a "cold perimeter" even when zone is near
-        # ZSP, so reheat is visible on the demo without every box reheating.
-        if (hash(vn) % 3) == 0 and reheat_rise < 1.5:
-            reheat_rise = 1.5 + 1.0 * max(0.0, wave_b)
-        duct_gain = 0.15 + 0.1 * max(0.0, wave_a)            # passive warm-up
+        d_vst = _scalar_drift(ahu_id + ":" + vn + ":VST", sigma=0.03, clamp=0.25)
+
+        zsp = 23.0 + 0.5 * math.sin(t_now / 600.0 + seed)
+        # ~1 in 4 boxes = cold perimeter (low sun / envelope loss).  The
+        # rest are core — no reheat.
+        is_perimeter = (hash(vn) % 4) == 0
+
+        # ---- Discharge (VST) -------------------------------------------------
+        # Passive VAV: VST ≈ SA (+ tiny duct gain).  The ONLY active terminal
+        # heat is reheat, and only when AHU SA is cold (cooling delivery for
+        # the core) AND this perimeter zone would otherwise undershoot ZSP.
+        # Never reheat when SA is already warm/neutral — that invented the
+        # absurd SA=23 / VST=28 / Zone=21 picture.
+        duct_gain = 0.15 + 0.05 * max(0.0, wave_a)
+        reheat_rise = 0.0
+        sa_is_cold = sa_t < 17.5
+        if sa_is_cold and is_perimeter:
+            # How far cold SA alone would leave a lossy perimeter below ZSP.
+            # Target a modest reheat so VST lands near ZSP, not above it.
+            deficit = zsp - (sa_t + duct_gain)
+            if deficit > 1.0:
+                reheat_rise = min(6.0, deficit * (0.55 + 0.1 * max(0.0, wave_b)))
         vst = sa_t + duct_gain + reheat_rise + d_vst
         if vst < sa_t:
-            vst = sa_t  # physical floor: passive box cannot cool
-        afm = max(0.0, min(1.0, 1.0 if dpr > 5.0 else 0.0))  # airflow status
+            vst = sa_t
+        # Do not overshoot setpoint with reheat (controller would stop).
+        if reheat_rise > 0 and vst > zsp + 0.5:
+            vst = zsp + 0.5
+
+        # ---- Zone air -------------------------------------------------------
+        # Zone is the result of VST air + room load / envelope — so it must
+        # stay near the discharge story, not an independent oscillator.
+        if sa_is_cold and reheat_rise <= 0.05:
+            # Cooling core: cold discharge, internal load lifts zone into CZ.
+            load_rise = 8.5 + 1.2 * wave_b + 0.4 * wave_a + 0.6 * d_t
+            if is_perimeter:
+                load_rise -= 2.0  # less gain / more loss, still above VST
+            vt = vst + max(5.5, min(11.0, load_rise))
+        elif reheat_rise > 0.05:
+            # Reheat on: zone pulled toward ZSP, stays within a few °C of VST
+            # (envelope still bleeds a little heat).
+            vt = 0.65 * vst + 0.35 * zsp + 0.4 * wave_b + 0.3 * d_t
+            vt = max(vst - 2.5, min(zsp + 0.8, vt))
+        else:
+            # Warm/neutral SA: no reheat — zone tracks near VST/SA.
+            vt = vst + 0.4 * wave_b + 0.25 * wave_a + 0.4 * d_t
+            if is_perimeter:
+                vt -= 0.6
+            vt = max(vst - 1.2, min(vst + 1.5, vt))
+
+        vt = max(18.0, min(27.0, vt))
+        vrh = 47.0 + 5.0 * (-wave_b) + 1.5 * (-wave_a) + 0.7 * d_rh
+        vrh = max(35.0, min(60.0, vrh))
+        vw  = _humidity_ratio(vt, vrh)
+
+        dpr = max(0.0, min(100.0, 45.0 + 25.0 * wave_b + 10.0 * wave_a + d_dpr))
+        afm = max(0.0, min(1.0, 1.0 if dpr > 5.0 else 0.0))
         afs = afm
         vav_list.append({
             "id": vn,
@@ -207,12 +230,12 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
             "all_points": {
                 "t":   round(vt, 2),
                 "rh":  round(vrh, 1),
-                "DPR": round(dpr, 1),    # damper position
-                "VST": round(vst, 2),    # discharge temp (≥ SA; +reheat)
-                "ZSP": round(zsp, 2),    # zone setpoint
-                "AFM": afm,              # airflow manual command
-                "AFS": afs,              # airflow status
-                "OCC": 1.0,              # occupancy (always on in demo)
+                "DPR": round(dpr, 1),
+                "VST": round(vst, 2),    # discharge (≥ SA; reheat only if justified)
+                "ZSP": round(zsp, 2),
+                "AFM": afm,
+                "AFS": afs,
+                "OCC": 1.0,
             },
         })
     ra_t = sum(v["t"] for v in vav_list) / len(vav_list) if vav_list else 24.0

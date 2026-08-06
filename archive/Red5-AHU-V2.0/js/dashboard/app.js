@@ -2546,7 +2546,7 @@
                         setIsVavModalDragging, setVavImgDims, vavImgDims, sunState, theme,
                         vavCfm, vavImage, vavImgRef, vavTypeImages,
                         vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize,
-                        vavOuterRef,
+                        vavOuterRef, sweetSpotRange, showSweetSpot,
                     })}
 
                     {/* Floor Plan Mapper Modal */}

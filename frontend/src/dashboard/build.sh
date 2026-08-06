@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-compile the dashboard's 20 JSX modules into a SINGLE plain JS bundle.
+# Pre-compile the dashboard's 21 JSX modules into a SINGLE plain JS bundle.
 #
 # Why:
 #   dashboard.html used to (a) load `@babel/standalone` (3 MB) at runtime,
@@ -36,6 +36,7 @@ MODULES=(
     "$PUB/js/preview-components.js"
     "$PUB/js/sun-path.js"
     "$PUB/js/dashboard/dashboard-helpers.js"
+    "$PUB/js/dashboard/vav-psy-chart.js"
     "$PUB/js/dashboard/vav-modal.js"
     "$PUB/js/dashboard/ahu-modal.js"
     "$PUB/js/dashboard/band-clamp-modal.js"

@@ -40,11 +40,6 @@
 
         const App = () => {
             const lang = window.useLang ? window.useLang() : 'en';
-            // i18n.js and toast.js attach to window; the pre-compiled bundle
-            // runs in strict mode so bare `t` / `toast` identifiers must be
-            // bound here (shorthand props like `{ t }` were ReferenceErrors).
-            const t = (...args) => (window.t ? window.t(...args) : (args[0] || ''));
-            const toast = (...args) => { if (window.toast) return window.toast(...args); };
             const [i18nReady, setI18nReady] = useState(!!window.LangSelector);
             const [vavImage, setVavImage] = useState(null);
             const [floorImage, setFloorImage] = useState(null);
@@ -2551,7 +2546,7 @@
                         setIsVavModalDragging, setVavImgDims, vavImgDims, sunState, theme,
                         vavCfm, vavImage, vavImgRef, vavTypeImages,
                         vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize,
-                        vavOuterRef,
+                        vavOuterRef, sweetSpotRange, showSweetSpot,
                     })}
 
                     {/* Floor Plan Mapper Modal */}
@@ -2619,5 +2614,3 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ErrorBoundary><App /></ErrorBoundary>);
-        window.__red5DashboardMounted = true;
-        if (typeof window.__red5BootOk === 'function') window.__red5BootOk();

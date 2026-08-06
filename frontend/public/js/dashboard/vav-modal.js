@@ -28,7 +28,8 @@
  *   selectedVavForModal, setSelectedVavForModal, setDragStart,
  *   setIsVavModalDragging, setVavImgDims, vavImgDims, sunState, theme,
  *   vavCfm, vavImage, vavImgRef, vavTypeImages, vavModalOffset,
- *   vavModalPopupHost, vavModalPopupWin, vavModalSize, vavOuterRef
+ *   vavModalPopupHost, vavModalPopupWin, vavModalSize, vavOuterRef,
+ *   sweetSpotRange, showSweetSpot
  * ------------------------------------------------------------------ */
 
 function renderVavEquipmentModal(ctx) {
@@ -46,6 +47,7 @@ function renderVavEquipmentModal(ctx) {
         vavImage, vavImgRef, vavTypeImages,
         vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize,
         vavOuterRef,
+        sweetSpotRange, showSweetSpot,
     } = ctx;
                         const currentAhuForModal = ahuData.find(a => a.id === selectedAhuId) || ahuData[0];
                         const saPoint = currentAhuForModal?.points?.find(p => p.label === 'SA');
@@ -209,7 +211,8 @@ function renderVavEquipmentModal(ctx) {
                                         </div>
                                     </div>
 
-                                    <div className={`red5-graphic-zone relative w-full flex-1 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
+                                    <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
+                                    <div className={`red5-graphic-zone relative w-full min-h-[240px] lg:min-h-0 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2 lg:border-r lg:border-slate-700`}>
                                         {!effectiveVavImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
                                                 <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("vav_image_missing") : "VAV IMAGE MISSING"}</span>
@@ -404,6 +407,17 @@ function renderVavEquipmentModal(ctx) {
                                             </div>
                                         </div>
                                         )}
+                                    </div>
+                                    <div className="relative w-full min-h-[280px] lg:min-h-0 overflow-hidden border-t lg:border-t-0 border-slate-700">
+                                        {typeof renderVavPsyChart === 'function' && renderVavPsyChart({
+                                            vav: selectedVavForModal,
+                                            saPoint,
+                                            ahuId: currentAhuForModal && currentAhuForModal.id,
+                                            sweetSpotRange,
+                                            showSweetSpot,
+                                            theme,
+                                        })}
+                                    </div>
                                     </div>
                                 </div>
                             </div>

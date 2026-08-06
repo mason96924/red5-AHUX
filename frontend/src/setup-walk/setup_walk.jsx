@@ -408,7 +408,12 @@ function PsyChartSettingPage({ cfg, setCfg, onBack, onSave }) {
                 }));
             }
             window.dispatchEvent(new CustomEvent('r5-rh-band-change', {
-                detail: { lo: cfg.rhLo, hi: cfg.rhHi }
+                detail: {
+                    lo: cfg.rhLo,
+                    hi: cfg.rhHi,
+                    preset: cfg.rhPreset || 'custom',
+                    applyToAllAhus: true,
+                }
             }));
             console.info('[setup walk] psy chart saved -> RH', cfg.rhLo, '-', cfg.rhHi,
                          '% T-axis', cfg.tLo, '..', cfg.tHi, '°C preset=', cfg.rhPreset);

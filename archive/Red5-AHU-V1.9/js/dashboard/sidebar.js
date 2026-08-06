@@ -97,19 +97,6 @@ function renderSidebar(ctx) {
 
     const { sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, ahuDriftScores, t } = ctx;
 
-    const openConfigPage = async () => {
-        try {
-            const r = await fetch('/api/auth/whoami', { credentials: 'same-origin' });
-            const d = await r.json();
-            if (d.role === 'editor' || d.role === 'admin') {
-                sessionStorage.setItem('engineerAuthenticated', 'true');
-                window.location.href = '/equipment_mapper.html';
-                return;
-            }
-        } catch (e) { /* fall through */ }
-        window.location.href = '/?auth=config';
-    };
-
     /* ---------------- Per-AHU Apply-to-Controller state ---------------
        For each AHU in `ahuSweetSpots` (current local pick), compare its
        lo/hi against `appliedAhuBands[ahuId]` (the last-applied band
@@ -370,7 +357,7 @@ function renderSidebar(ctx) {
             <button onClick={openCollectorCfg} className={`p-1 rounded border transition-all ${theme==='dark'?'bg-slate-800 border-slate-600 text-cyan-400 hover:bg-slate-700 hover:border-cyan-400':'bg-slate-100 border-slate-300 text-cyan-600 hover:bg-cyan-50'}`} data-testid="collector-config-btn" title={window.t ? window.t("collector_configuration") : "Collector Configuration"} aria-label="Collector Configuration">
                 <Icon name="radio-tower" size={12} />
             </button>
-            <button onClick={openConfigPage} className={`p-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded transition-all`} title={t('config')} aria-label={t('config')}>
+            <button onClick={() => { setConfigPwInput(''); setConfigPwError(''); setShowConfigAuth(true); }} className={`p-1 ${theme==='dark'?'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-amber-500 hover:text-amber-400':'bg-slate-100 border-slate-300 text-slate-600 hover:bg-amber-50 hover:text-amber-600'} border rounded transition-all`} title={t('config')} aria-label={t('config')}>
                 <Icon name="settings" size={12} />
             </button>
             {/* Reset Modal Sizes: clears localStorage entries
@@ -801,8 +788,18 @@ function renderSidebar(ctx) {
                             { id:'meeting',    name:'Meeting',     lo:30, hi:60 },
                             { id:'exhibition', name:'Exhibition',  lo:40, hi:55 },
                         ];
-                        let savedId = 'custom';
-                        try { savedId = localStorage.getItem(`red5_rh_preset_${ahu.id}`) || 'custom'; } catch (e) {}
+                        /* Prefer ahuSweetSpots (React-driven) so setup-walk
+                           / r5-ahu-preset-change updates re-render this card.
+                           Fall back to per-AHU LS, then global walk preset. */
+                        const spot = (ahuSweetSpots || []).find(s => s.ahuId === ahu.id);
+                        let savedId = (spot && spot.presetId) || 'custom';
+                        if (!spot) {
+                            try {
+                                savedId = localStorage.getItem(`red5_rh_preset_${ahu.id}`)
+                                    || localStorage.getItem('red5_rh_preset')
+                                    || 'custom';
+                            } catch (e) {}
+                        }
                         const cur = PRESETS.find(p => p.id === savedId) || PRESETS[0];
                         const onPick = (e) => {
                             e.stopPropagation();
@@ -818,7 +815,7 @@ function renderSidebar(ctx) {
                                 <span className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-emerald-400':'text-emerald-600'}`} style={{lineHeight:'1'}}>{cur.name.toUpperCase()}</span>
                                 <span className={`text-[10px] font-mono font-black tabular-nums ${ui.text}`} style={{lineHeight:'1.1'}}>{cur.lo}-{cur.hi}%</span>
                                 <select data-testid={`ahu-rh-preset-${ahu.id}`}
-                                        defaultValue={savedId}
+                                        value={savedId}
                                         onChange={onPick}
                                         onClick={(e) => e.stopPropagation()}
                                         className={`text-[8px] mt-0.5 px-1 py-0.5 rounded border ${theme==='dark'?'bg-slate-900 border-slate-700 text-slate-300':'bg-white border-slate-300 text-slate-700'} font-mono font-black uppercase tracking-wider focus:outline-none`}

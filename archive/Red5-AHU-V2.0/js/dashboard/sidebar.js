@@ -322,7 +322,7 @@ function renderSidebar(ctx) {
                 button that jumps to the Psy Chart Setting page where
                 the operator manages defaults + axis + theme. */}
             <button
-                onClick={() => { window.location.href = '/api/assets/setup.html?force=1'; }}
+                onClick={() => { window.location.href = '/setup.html?force=1'; }}
                 data-testid="open-setup-btn"
                 title="Open Setup Walk (Psy Chart, Location, Language, Plug-ins)"
                 aria-label="Open Setup Walk"
@@ -788,8 +788,18 @@ function renderSidebar(ctx) {
                             { id:'meeting',    name:'Meeting',     lo:30, hi:60 },
                             { id:'exhibition', name:'Exhibition',  lo:40, hi:55 },
                         ];
-                        let savedId = 'custom';
-                        try { savedId = localStorage.getItem(`red5_rh_preset_${ahu.id}`) || 'custom'; } catch (e) {}
+                        /* Prefer ahuSweetSpots (React-driven) so setup-walk
+                           / r5-ahu-preset-change updates re-render this card.
+                           Fall back to per-AHU LS, then global walk preset. */
+                        const spot = (ahuSweetSpots || []).find(s => s.ahuId === ahu.id);
+                        let savedId = (spot && spot.presetId) || 'custom';
+                        if (!spot) {
+                            try {
+                                savedId = localStorage.getItem(`red5_rh_preset_${ahu.id}`)
+                                    || localStorage.getItem('red5_rh_preset')
+                                    || 'custom';
+                            } catch (e) {}
+                        }
                         const cur = PRESETS.find(p => p.id === savedId) || PRESETS[0];
                         const onPick = (e) => {
                             e.stopPropagation();
@@ -805,7 +815,7 @@ function renderSidebar(ctx) {
                                 <span className={`text-[8px] font-black uppercase tracking-widest ${theme==='dark'?'text-emerald-400':'text-emerald-600'}`} style={{lineHeight:'1'}}>{cur.name.toUpperCase()}</span>
                                 <span className={`text-[10px] font-mono font-black tabular-nums ${ui.text}`} style={{lineHeight:'1.1'}}>{cur.lo}-{cur.hi}%</span>
                                 <select data-testid={`ahu-rh-preset-${ahu.id}`}
-                                        defaultValue={savedId}
+                                        value={savedId}
                                         onChange={onPick}
                                         onClick={(e) => e.stopPropagation()}
                                         className={`text-[8px] mt-0.5 px-1 py-0.5 rounded border ${theme==='dark'?'bg-slate-900 border-slate-700 text-slate-300':'bg-white border-slate-300 text-slate-700'} font-mono font-black uppercase tracking-wider focus:outline-none`}

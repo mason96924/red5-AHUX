@@ -592,10 +592,17 @@ window.SunCompass = function SunCompass(props){
     localStorage.setItem('red5SunCompass', JSON.stringify({
       enabled: enabled, expanded: expanded
     }));
+    // Live GHI must NOT dim a simulated hour/day.  Applying wall-clock
+    // GHI (often near-zero at night) to a scrubbed midday sun crushed
+    // SunRayOverlay intensity to ~0.1 and made hour simulation look
+    // broken (glow + VAV sun rings stopped tracking the slider).
+    var now = new Date();
+    var simulating = (hour !== now.getHours()) || (doy !== currentDoy());
+    var wxOk = weatherNow && weatherNow.success;
     if (props.onChange) props.onChange({
       enabled: enabled, sun: sun, hour: hour, doy: doy,
-      cloudCover: (weatherNow && weatherNow.success) ? weatherNow.cloud_cover : null,
-      ghiWm2:     (weatherNow && weatherNow.success) ? weatherNow.ghi_wm2     : null,
+      cloudCover: wxOk ? weatherNow.cloud_cover : null,
+      ghiWm2:     (!simulating && wxOk) ? weatherNow.ghi_wm2 : null,
       weatherNow: weatherNow || null
     });
   }, [enabled, expanded, hour, doy, lat, lon, weatherNow]);

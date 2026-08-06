@@ -585,6 +585,35 @@
                 return () => window.removeEventListener('r5-ahu-preset-change', h);
             }, []);
 
+            /* Live update — setup walk Save (and any other writer of
+               r5-rh-band-change with applyToAllAhus) must update React
+               sweetSpotRange AND seed per-AHU venue keys so the sidebar
+               AHU detail cards reflect the walk-through choice.  Also
+               keeps sweetSpotRange in sync when the selected AHU's
+               band is mirrored (issue: VAV psy chart ignored per-AHU). */
+            useEffect(() => {
+                const onRhBandChange = (e) => {
+                    const d = e && e.detail;
+                    if (!d || !Number.isFinite(d.lo) || !Number.isFinite(d.hi) || !(d.lo < d.hi)) return;
+                    setSweetSpotRange(prev =>
+                        (prev && prev.lo === d.lo && prev.hi === d.hi) ? prev : { lo: d.lo, hi: d.hi });
+                    if (d.applyToAllAhus) {
+                        const preset = d.preset || 'custom';
+                        try {
+                            localStorage.setItem('red5_rh_preset', preset);
+                            (ahuData || []).forEach(ahu => {
+                                if (ahu && ahu.id) {
+                                    localStorage.setItem('red5_rh_preset_' + ahu.id, preset);
+                                }
+                            });
+                        } catch (err) {}
+                        setAhuPresetVersion(v => v + 1);
+                    }
+                };
+                window.addEventListener('r5-rh-band-change', onRhBandChange);
+                return () => window.removeEventListener('r5-rh-band-change', onRhBandChange);
+            }, [ahuData]);
+
             /* Per-AHU "applied to controller" bands — fetched from the
                backend on mount.  Used by the sidebar to decide which AHU
                rows are dirty (current preset !== applied preset) and so
@@ -1814,9 +1843,15 @@
                renderGivoniOverlay reads this to draw a polygon per
                visible/selected AHU instead of one global polygon. */
             const ahuSweetSpots = useMemo(() => {
+                let globalPreset = 'custom';
+                try { globalPreset = localStorage.getItem('red5_rh_preset') || 'custom'; } catch (e) {}
                 return ahuData.map(ahu => {
                     let id = 'custom';
-                    try { id = localStorage.getItem(`red5_rh_preset_${ahu.id}`) || 'custom'; } catch (e) {}
+                    try {
+                        id = localStorage.getItem(`red5_rh_preset_${ahu.id}`)
+                            || globalPreset
+                            || 'custom';
+                    } catch (e) {}
                     const band = VENUE_PRESET_MAP[id] || VENUE_PRESET_MAP.custom;
                     return { ahuId: ahu.id, presetId: id, lo: band.lo, hi: band.hi, color: ahu.procColor || '#10b981' };
                 });
@@ -2538,7 +2573,9 @@
                         theme, toast, t,
                     })}
 
-                    {/* VAV Graphic Overlay Modal */}
+                    {/* VAV Graphic Overlay Modal — RH band from selected
+                        AHU's venue preset (ahuSweetSpots), not only the
+                        global sweetSpotRange slider state. */}
                     {selectedVavForModal && renderVavEquipmentModal({
                         API_URL, _setForceApTick, ahuData, setAhuData, selectedAhuId,
                         ccEquipTypes, mapConfig, popOutVavModal,
@@ -2546,7 +2583,12 @@
                         setIsVavModalDragging, setVavImgDims, vavImgDims, sunState, theme,
                         vavCfm, vavImage, vavImgRef, vavTypeImages,
                         vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize,
-                        vavOuterRef, sweetSpotRange, showSweetSpot,
+                        vavOuterRef,
+                        sweetSpotRange: (() => {
+                            const spot = (ahuSweetSpots || []).find(s => s.ahuId === selectedAhuId);
+                            return spot ? { lo: spot.lo, hi: spot.hi } : sweetSpotRange;
+                        })(),
+                        showSweetSpot,
                     })}
 
                     {/* Floor Plan Mapper Modal */}

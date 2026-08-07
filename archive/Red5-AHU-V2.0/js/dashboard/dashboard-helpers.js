@@ -433,7 +433,7 @@ const bandStory = (b) => {
  * enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
  * Point colours (fixed — match operator request / live chart intent):
  *   OA darker blue · RA pinkish-red · SA darker green · MA black with yellow ring.
- *   State dots/rings ~30% opaque (fill + stroke) so overlaps stay readable.
+ *   State dots/rings 20% transparent (opacity 0.80) so overlaps stay readable.
  * Click the plot to drop a magnifying glass (center = click); drag to move;
  * slider / wheel adjusts zoom (leftmost = Off). Double-click clears the lens.
  * MUST be invoked on every App render (even with ahu=null) so its React
@@ -607,7 +607,7 @@ function renderProcessMiniBadge(ctx) {
     const colSA = '#065f46';     /* darker green — supply */
     const colMA = '#0f172a';     /* black — mixed */
     const colMARing = '#eab308'; /* yellow ring around MA */
-    const dotOp = 0.30;          /* ~30% opaque fill + ring — overlaps readable */
+    const dotOp = 0.80;          /* 20% transparent fill + ring — overlaps readable */
     const colBand = '#047857';  /* overview green for RH band + mix line only */
     const colH = '#6d28d9';
     const colSat = '#1d4ed8';

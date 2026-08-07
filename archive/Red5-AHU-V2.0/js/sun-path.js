@@ -459,21 +459,41 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
             opacity={0.55 + 0.35 * open}
       />
     );
-    if (enter < 0.05 || open < 0.02) continue;
-    var intensity = enter * open * elevF * weatherF;
-    if (intensity < 0.04) continue;
-    var throwLen = 8 + 22 * intensity;
-    var spread = half * 0.35;
-    /* Shaft follows light travel into the room (inward half-space). */
+    if (enter < 0.05 || open < 0.01) continue;
+    /* Open → glow strength (noticeable ramp):
+         just-open / low % → today's soft shaft (baseline ×1)
+         open 100%         → ~3.2× stronger + longer throw + bloom
+       Fully closed (0%) → no shaft. */
+    var openEase = Math.pow(open, 0.7);
+    var base = enter * elevF * weatherF;
+    if (base < 0.03) continue;
+    var openBoost = 1.0 + 2.2 * openEase;          // 1.0× … 3.2×
+    var intensity = base * openBoost;
+    var throwLen = (6 + 16 * base) * (1.0 + 1.4 * openEase);
+    var spread = half * (0.30 + 0.48 * openEase);
     var fx1 = x1 + lx * throwLen + (-ny) * spread;
     var fy1 = y1 + ly * throwLen + ( nx) * spread;
     var fx2 = x2 + lx * throwLen + ( ny) * spread;
     var fy2 = y2 + ly * throwLen + (-nx) * spread;
-    var op = Math.min(0.42, 0.08 + intensity * 0.45);
+    var opCore = Math.min(0.90, 0.10 + base * 0.38 + openEase * 0.55);
+    var opBloom = Math.min(0.60, 0.04 + base * 0.16 + openEase * 0.42);
+    var midX = (x1 + x2) / 2 + lx * (throwLen * 0.22);
+    var midY = (y1 + y2) / 2 + ly * (throwLen * 0.22);
+    var bloomR = Math.max(4, half * 0.9 + 3 + 12 * openEase);
+    var amber = isLight ? '251,191,36' : '251,146,60';
+    var hot = isLight ? '253,224,71' : '251,191,36';
     shafts.push(
       <polygon key={'ws-'+ (w.id || i)}
                points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}
-               fill={isLight ? 'rgba(251,191,36,'+op+')' : 'rgba(251,146,60,'+op+')'}
+               fill={'rgba('+amber+','+opCore+')'}
+      />
+    );
+    shafts.push(
+      <ellipse key={'wbloom-'+ (w.id || i)}
+               cx={midX} cy={midY}
+               rx={bloomR} ry={bloomR * 0.55}
+               transform={'rotate('+(Math.atan2(ly, lx)*180/Math.PI)+' '+midX+' '+midY+')'}
+               fill={'rgba('+hot+','+opBloom+')'}
       />
     );
   }

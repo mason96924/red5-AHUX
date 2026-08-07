@@ -1123,6 +1123,8 @@
             // regardless of what the operator selected. 
             const [isFloorPlanDragging, setIsFloorPlanDragging] = useState(false);
             const [mapConfig, setMapConfig] = useState(null);
+            const [floorWindowsPanelOpen, setFloorWindowsPanelOpen] = useState(false);
+            const [selectedFloorWindowId, setSelectedFloorWindowId] = useState(null);
             
             // Weather strip state
             const [showWeatherStrip, setShowWeatherStrip] = useState(false);
@@ -1957,6 +1959,43 @@
                 return null;
             };
 
+            // Live floor-plan: set window open % (0–100) → blind_level 0–1 closed.
+            // Updates shafts immediately and debounces POST /api/save-config.
+            const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct) => {
+                const open = Math.max(0, Math.min(100, Number(openPct) || 0)) / 100;
+                const blind = 1 - open;
+                setMapConfig(prev => {
+                    if (!prev || !Array.isArray(prev.floors)) return prev;
+                    let changed = false;
+                    const floors = prev.floors.map(f => {
+                        if ((f.id || f.name) !== floorId) return f;
+                        const windows = (f.windows || []).map(w => {
+                            if (w.id !== windowId) return w;
+                            if (Math.abs((w.blind_level || 0) - blind) < 1e-6) return w;
+                            changed = true;
+                            return Object.assign({}, w, { blind_level: blind });
+                        });
+                        return changed ? Object.assign({}, f, { windows }) : f;
+                    });
+                    if (!changed) return prev;
+                    const next = Object.assign({}, prev, { floors });
+                    try { clearTimeout(window.__red5WinBlindSaveT); } catch (e) {}
+                    window.__red5WinBlindSaveT = setTimeout(() => {
+                        const API_URL = window.API_BASE_URL || window.location.origin;
+                        fetch(`${API_URL}/api/save-config`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ map_config: next, image_manifest: {} }),
+                        }).then(r => r.json()).then(j => {
+                            if (j && (j.success || j.ok || j.persisted)) return;
+                            if (window.toast) window.toast((j && j.error) || 'Blind save needs sign-in / write access.', 'info');
+                        }).catch(() => {});
+                    }, 450);
+                    return next;
+                });
+            }, []);
+
             const ahuMetrics = useMemo(() => {
                 if (!selectedAhuId) return { exchange: 0, absorption: 0 };
                 const ahu = ahuData.find(a => a.id === selectedAhuId);
@@ -2733,6 +2772,9 @@
                         ahuData, mapConfig, setMapConfig, floorImage,
                         buildingLatLon, sunState, setSunState,
                         buildingFacingOffset,
+                        floorWindowsPanelOpen, setFloorWindowsPanelOpen,
+                        selectedFloorWindowId, setSelectedFloorWindowId,
+                        setFloorWindowOpenPct,
                         comfortZonePoly,
                         showGivoni, showSweetSpot, sweetSpotRange,
                         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal, floatPipFloorPlanModal,
@@ -2786,7 +2828,7 @@
         root.render(<ErrorBoundary><App /></ErrorBoundary>);
         // Prove the compiled JS (not just dashboard.html) actually mounted.
         try {
-            window.__RED5_BUNDLE_ID = 'SP12';
+            window.__RED5_BUNDLE_ID = 'SP13';
             window.__red5DashboardMounted = true;
             var _stamp = document.getElementById('red5-html-build');
             if (_stamp) {

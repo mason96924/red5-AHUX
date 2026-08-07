@@ -1,94 +1,140 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- Cache-control: psy_3d.html and friends have no compiled bundle to ?v=-stamp, so the HTML itself must opt-out of browser caching. Without this, PROD users see stale UI after every deploy until they hard-refresh.  Sentinel data-cache-policy attribute is used by scripts/inject_no_cache_meta.py and deploy.sh preflight to detect missing tags.  Do NOT remove. -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta charset="utf-8"/>
 <title>Process mini badge — preview</title>
 <style>
-  body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
-    background:#0f172a;font-family:ui-sans-serif,system-ui,sans-serif;color:#e2e8f0}
-  h1{font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:#94a3b8;font-weight:700}
-  .row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
-  .col{display:flex;flex-direction:column;gap:10px;align-items:center}
-  .lab{font-size:11px;color:#64748b}
-  .badge-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;
-    border:1px solid #475569;background:#1e293b;color:#93c5fd;font:700 10px/1 ui-monospace,Menlo,monospace;
-    letter-spacing:.06em;cursor:pointer}
-  .badge-btn .dot{width:7px;height:7px;border-radius:50%}
-  .mini{width:440px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 10px 8px;
-    box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  :root { --page:#f8fafc; --ink:#0f172a; }
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;
+    background:var(--page);font-family:system-ui,sans-serif;color:#334155;padding:28px}
+  h1{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#64748b;font-weight:700;margin:0}
+  .mini{width:456px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px;
+    box-shadow:0 10px 28px rgba(15,23,42,.08)}
   .mini-title{font:800 9px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;
     color:#64748b;margin:0 0 6px 4px}
   .vals{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;padding:6px 4px 2px;
     font:700 11px/1.25 ui-monospace,Menlo,monospace}
-  .vals b{font-weight:800}
-  .oa{color:#3b82f6}.ra{color:#f43f5e}.ma{color:#0f172a}.sa{color:#10b981}
+  .oa{color:#b45309}.ra{color:#047857}.ma{color:#0f172a}.sa{color:#1d4ed8}
+  .note{max-width:460px;font-size:12px;color:#64748b;line-height:1.5;text-align:center}
 </style>
 </head>
 <body>
-  <h1>Dashboard process mini-badge — overview sketch (2×)</h1>
-  <div class="row">
-    <div class="col">
-      <div class="lab">Collapsed (button)</div>
-      <button class="badge-btn" type="button">
-        <span class="dot" style="background:#3b82f6"></span>
-        <span class="dot" style="background:#0f172a"></span>
-        <span class="dot" style="background:#f43f5e"></span>
-        <span class="dot" style="background:#10b981"></span>
-        PROCESS
-      </button>
-    </div>
-    <div class="col">
-      <div class="lab">Expanded ~440×248 — light, no grid, sat + enthalpy + green RH band</div>
-      <div class="mini">
-        <div class="mini-title">AHU-01 · OA–MA–SA / RA · 40–60% RH</div>
-        <svg viewBox="0 0 440 248" width="440" height="248" aria-label="Process sketch">
-          <rect x="2" y="2" width="436" height="244" rx="6" fill="#fff" stroke="#e2e8f0"/>
-          <!-- 100% RH saturation -->
-          <path d="M36 210 C 120 200, 200 160, 280 100 C 340 55, 380 28, 410 18"
-                fill="none" stroke="#1d4ed8" stroke-width="2.8" stroke-linecap="round"/>
-          <text x="300" y="36" fill="#1d4ed8" font-size="11" font-weight="700" font-family="system-ui">100% RH (saturation)</text>
-          <!-- Green RH band (curved isopleth strip — not Givoni) -->
-          <polygon points="180,118 220,108 260,118 260,158 220,168 180,158"
-                   fill="#10b981" fill-opacity=".18" stroke="#059669" stroke-width="1.6" stroke-dasharray="5 3"/>
-          <text x="220" y="142" text-anchor="middle" fill="#047857" font-size="11" font-weight="800" font-family="system-ui">RH band (40–60%)</text>
-          <!-- Enthalpy diagonals OA / RA / SA -->
-          <g fill="none" stroke="#7c3aed" stroke-dasharray="4 3">
-            <path d="M90 40 L400 120" stroke-width="1.4" opacity=".85"/>
-            <path d="M70 90 L390 175" stroke-width="1.4" opacity=".85"/>
-            <path d="M50 150 L280 210" stroke-width="1.7" opacity=".95"/>
-          </g>
-          <text x="170" y="205" fill="#7c3aed" font-size="10" font-weight="700" font-family="system-ui">equal energy (enthalpy)</text>
-          <!-- Mix + process — OA blue / RA rose / SA emerald (live chart) -->
-          <path d="M355 70 L250 145" stroke="#f43f5e" stroke-width="1.8" stroke-dasharray="6 4" opacity=".9"/>
-          <defs>
-            <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="#10b981"/>
-            </marker>
-          </defs>
-          <path d="M290 118 L120 175" stroke="#10b981" stroke-width="2.4" marker-end="url(#arr)"/>
-          <circle cx="355" cy="70" r="5.5" fill="#3b82f6"/><text x="363" y="62" fill="#3b82f6" font-size="13" font-weight="800" font-family="system-ui">OA</text>
-          <circle cx="250" cy="145" r="5.5" fill="#f43f5e"/><text x="258" y="161" fill="#f43f5e" font-size="13" font-weight="800" font-family="system-ui">RA</text>
-          <circle cx="290" cy="118" r="5" fill="#0f172a"/><text x="298" y="110" fill="#0f172a" font-size="13" font-weight="800" font-family="system-ui">MA</text>
-          <circle cx="120" cy="175" r="5.5" fill="#10b981"/><text x="98" y="167" fill="#10b981" font-size="13" font-weight="800" font-family="system-ui">SA</text>
-          <text x="220" y="238" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="system-ui">Dry-bulb temperature →</text>
-          <text x="14" y="130" fill="#94a3b8" font-size="11" font-family="system-ui" transform="rotate(-90,14,130)">Moisture in the air →</text>
-        </svg>
-        <div class="vals">
-          <div class="oa"><b>OA</b> 32.0° · 60%</div>
-          <div class="ra"><b>RA</b> 24.0° · 50%</div>
-          <div class="ma"><b>MA</b> 27.1° · 55%</div>
-          <div class="sa"><b>SA</b> 13.0° · 95%</div>
-        </div>
-      </div>
+  <h1>Process mini-badge — matches overview sat curve (bottom-left → upper-right)</h1>
+  <div class="mini">
+    <div class="mini-title">AHU-01 · OA–MA–SA / RA · 40–60% RH</div>
+    <svg id="chart" viewBox="0 0 440 248" width="440" height="248" aria-label="Process sketch"></svg>
+    <div class="vals">
+      <div class="oa"><b>OA</b> 32.0° · 55%</div>
+      <div class="ra"><b>RA</b> 24.0° · 50%</div>
+      <div class="ma"><b>MA</b> 26.4° · 52%</div>
+      <div class="sa"><b>SA</b> 13.0° · 95%</div>
     </div>
   </div>
-  <p style="max-width:560px;text-align:center;font-size:12px;color:#64748b;line-height:1.5">
-    Overview-slide geometry at 2×: light background, saturation curve, OA/RA/SA enthalpy lines,
-    green RH band only (no Givoni). OA/RA colours follow the live chart (blue / rose), not the slide amber/green.
+  <p class="note">
+    Light page + white card. Saturation = getW(T,100) with moisture UP.
+    Valid air sits <b>below</b> the blue curve — same as the overview slide.
   </p>
+<script src="js/psychrometric.js"></script>
+<script>
+(function () {
+  /* Dry-bulb from 5 °C (not −15); W 0–30 g/kg */
+  var tMin = 5, tMax = 50, wMin = 0, wMax = 0.030;
+  var VW = 440, VH = 248, L = 40, R = 18, TOP = 20, BOT = 30;
+  var gw = VW - L - R, gh = VH - TOP - BOT;
+  function xOf(t) { return L + ((t - tMin) / (tMax - tMin)) * gw; }
+  /* Moisture UP = smaller SVG y (overview polyline: x↑ y↓) */
+  function yOf(w) { return TOP + gh - ((w - wMin) / (wMax - wMin)) * gh; }
+
+  function wSat(t) {
+    if (typeof getW === 'function') return getW(t, 100);
+    var tC = Math.max(-20, Math.min(60, t));
+    var ps = 0.61094 * Math.exp((17.625 * tC) / (tC + 243.04));
+    return 0.621945 * ps / (101.325 - ps);
+  }
+  function hOf(t, w) {
+    if (typeof getH === 'function') return getH(t, w);
+    return 1.006 * t + w * (2501 + 1.86 * t);
+  }
+  function rhW(t, rh) {
+    if (typeof getW === 'function') return getW(t, rh);
+    return wSat(t) * (rh / 100);
+  }
+
+  /* Demo states roughly like overview: OA warm, RA comfort, SA near sat */
+  var OA = { t: 33, w: rhW(33, 55) };
+  var RA = { t: 24, w: rhW(24, 50) };
+  var SA = { t: 13, w: rhW(13, 95) };
+  var MA = { t: 0.7 * RA.t + 0.3 * OA.t, w: 0.7 * RA.w + 0.3 * OA.w };
+
+  var sat = [];
+  for (var t = tMin; t <= tMax + 1e-9; t += 0.35) {
+    var ws = wSat(t);
+    if (ws > wMax) { sat.push([t, wMax]); break; }
+    if (ws >= wMin) sat.push([t, ws]);
+  }
+  function pathFrom(pts) {
+    return pts.map(function (p, i) {
+      return (i ? 'L' : 'M') + xOf(p[0]).toFixed(1) + ',' + yOf(p[1]).toFixed(1);
+    }).join(' ');
+  }
+  function hPath(pt) {
+    var h0 = hOf(pt.t, pt.w), segs = [], cur = [];
+    for (var t = tMin; t <= tMax; t += 0.4) {
+      var w = (h0 - 1.006 * t) / (2501 + 1.86 * t);
+      var ok = isFinite(w) && w >= wMin && w <= wMax && w <= wSat(t) + 0.0002;
+      if (!ok) { if (cur.length > 1) segs.push(pathFrom(cur)); cur = []; continue; }
+      cur.push([t, w]);
+    }
+    if (cur.length > 1) segs.push(pathFrom(cur));
+    return segs[0] || '';
+  }
+
+  var rhLo = 40, rhHi = 60, band = [];
+  for (var tt = 20; tt <= 27.01; tt += 0.35) band.push([tt, rhW(tt, rhHi)]);
+  for (var tt2 = 27; tt2 >= 19.99; tt2 -= 0.35) band.push([tt2, rhW(tt2, rhLo)]);
+
+  var ox = xOf(OA.t), oy = yOf(OA.w);
+  var rx = xOf(RA.t), ry = yOf(RA.w);
+  var sx = xOf(SA.t), sy = yOf(SA.w);
+  var mx = xOf(MA.t), my = yOf(MA.w);
+
+  /* Label just outside sat where RA enthalpy meets 100% RH */
+  var hRA0 = hOf(RA.t, RA.w), tHit = RA.t;
+  for (var th = RA.t; th >= tMin; th -= 0.2) {
+    var wh = (hRA0 - 1.006 * th) / (2501 + 1.86 * th);
+    var ws = wSat(th);
+    if (isFinite(wh) && isFinite(ws) && wh >= ws - 0.0001) { tHit = th; break; }
+  }
+  var hLabelX = Math.max(L + 90, Math.min(L + gw * 0.62, xOf(tHit) - 4));
+  var hLabelY = Math.max(TOP + 22, Math.min(TOP + gh * 0.55, yOf(Math.min(wMax, wSat(tHit))) - 10));
+
+  var svg = document.getElementById('chart');
+  svg.innerHTML =
+    '<rect x="2" y="2" width="436" height="244" rx="6" fill="#ffffff" stroke="#e2e8f0"/>' +
+    '<line x1="'+L+'" y1="'+(TOP+gh)+'" x2="'+(L+gw)+'" y2="'+(TOP+gh)+'" stroke="#94a3b8" stroke-width="1.4"/>' +
+    '<line x1="'+L+'" y1="'+TOP+'" x2="'+L+'" y2="'+(TOP+gh)+'" stroke="#94a3b8" stroke-width="1.4"/>' +
+    '<path d="'+hPath(OA)+'" fill="none" stroke="#7c3aed" stroke-width="1.3" stroke-dasharray="2 4" opacity="0.8"/>' +
+    '<path d="'+hPath(SA)+'" fill="none" stroke="#7c3aed" stroke-width="1.3" stroke-dasharray="2 4" opacity="0.8"/>' +
+    '<path d="'+hPath(RA)+'" fill="none" stroke="#7c3aed" stroke-width="1.8" stroke-dasharray="7 4" opacity="0.95"/>' +
+    '<path d="'+pathFrom(sat)+'" fill="none" stroke="#1d4ed8" stroke-width="2.5" stroke-linecap="round"/>' +
+    '<text x="'+(L+gw*0.78)+'" y="'+(TOP+16)+'" fill="#1d4ed8" font-size="12" font-weight="700" font-family="system-ui">100% RH</text>' +
+    '<text x="'+(L+gw*0.78)+'" y="'+(TOP+30)+'" fill="#64748b" font-size="11" font-family="system-ui">(saturation)</text>' +
+    '<text x="'+hLabelX+'" y="'+hLabelY+'" fill="#7c3aed" font-size="10.5" font-weight="700" text-anchor="end" font-family="system-ui">equal energy (enthalpy)</text>' +
+    '<polygon points="'+band.map(function(p){return xOf(p[0]).toFixed(1)+','+yOf(p[1]).toFixed(1)}).join(' ')+'" fill="#10b981" fill-opacity="0.16" stroke="#047857" stroke-width="1.6" stroke-dasharray="5 3"/>' +
+    '<text x="'+xOf(18.5)+'" y="'+(yOf((rhW(20,rhLo)+rhW(20,rhHi))/2)+4)+'" fill="#047857" font-size="11" font-weight="700" text-anchor="middle" font-family="system-ui">RH band</text>' +
+    '<line x1="'+ox+'" y1="'+oy+'" x2="'+rx+'" y2="'+ry+'" stroke="#047857" stroke-width="2" stroke-dasharray="6 4"/>' +
+    '<defs><marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#1d4ed8"/></marker></defs>' +
+    '<line x1="'+mx+'" y1="'+my+'" x2="'+sx+'" y2="'+sy+'" stroke="#1d4ed8" stroke-width="2.5" marker-end="url(#arr)"/>' +
+    '<circle cx="'+ox+'" cy="'+oy+'" r="6" fill="#b45309"/><text x="'+(ox+10)+'" y="'+(oy-6)+'" fill="#b45309" font-size="13" font-weight="800" font-family="system-ui">OA</text>' +
+    '<circle cx="'+rx+'" cy="'+ry+'" r="6" fill="#047857"/><text x="'+(rx+8)+'" y="'+(ry+18)+'" fill="#047857" font-size="13" font-weight="800" font-family="system-ui">RA</text>' +
+    '<circle cx="'+mx+'" cy="'+my+'" r="5.5" fill="#0f172a"/><text x="'+(mx+9)+'" y="'+(my-7)+'" fill="#0f172a" font-size="13" font-weight="800" font-family="system-ui">MA</text>' +
+    '<circle cx="'+sx+'" cy="'+sy+'" r="6" fill="#1d4ed8"/><text x="'+(sx-26)+'" y="'+(sy-8)+'" fill="#1d4ed8" font-size="13" font-weight="800" font-family="system-ui">SA</text>' +
+    '<text x="'+(L+gw/2)+'" y="'+(VH-8)+'" fill="#475569" font-size="12" font-weight="700" text-anchor="middle" font-family="system-ui">Dry-bulb temperature  →</text>' +
+    '<text x="14" y="'+(TOP+gh/2)+'" fill="#475569" font-size="12" font-weight="700" text-anchor="middle" transform="rotate(-90,14,'+(TOP+gh/2)+')" font-family="system-ui">Moisture in the air  →</text>';
+})();
+</script>
 </body>
 </html>

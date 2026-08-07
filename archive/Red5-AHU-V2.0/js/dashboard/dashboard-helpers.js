@@ -427,14 +427,14 @@ const bandStory = (b) => {
 };
 
 /* ------------------------------------------------------------------
- * renderProcessMiniBadge — overview-slide style OA–MA–SA / RA sketch.
- * Light plot, saturation curve, OA/RA/SA enthalpy lines, green RH band
- * (sweet-spot strip only — not full Givoni). No cartesian grid.
- * Point colours follow live chart (OA blue / RA rose / SA emerald).
- * Ctx: { ahu, theme, sweetSpotRange, showSweetSpot }
+ * renderProcessMiniBadge — overview-slide OA–MA–SA / RA sketch.
+ * Full psy range from 5 °C dry-bulb (not −15), light plot, saturation curve,
+ * purple enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
+ * Colours match the overview slide: OA amber · RA green · SA blue · MA black.
+ * Ctx: { ahu, theme, sweetSpotRange, showSweetSpot, T_MIN, T_MAX }
  * ------------------------------------------------------------------ */
 function renderProcessMiniBadge(ctx) {
-    const { ahu, theme, sweetSpotRange, showSweetSpot } = ctx || {};
+    const { ahu, theme, sweetSpotRange, showSweetSpot, T_MIN: tMinIn, T_MAX: tMaxIn } = ctx || {};
     if (!ahu || !ahu.points) return null;
     const by = {};
     (ahu.points || []).forEach((p) => { if (p && p.label) by[p.label] = p; });
@@ -447,38 +447,14 @@ function renderProcessMiniBadge(ctx) {
     const _getW = (typeof getW === 'function') ? getW : null;
     const _getH = (typeof getH === 'function') ? getH : null;
 
-    const pts = [OA, RA, SA].concat(MA ? [MA] : []);
-    let tMin = Math.min.apply(null, pts.map((p) => Number(p.t)));
-    let tMax = Math.max.apply(null, pts.map((p) => Number(p.t)));
-    let wMin = Math.min.apply(null, pts.map((p) => Number(p.w)));
-    let wMax = Math.max.apply(null, pts.map((p) => Number(p.w)));
-    /* Frame process + RH band + sat curve (overview-style white card). */
-    tMin = Math.min(tMin, 18);
-    tMax = Math.max(tMax, 28);
-    if (_getW) {
-        try {
-            const candidates = [
-                _getW(tMax + 1, 100),
-                _getW(24, rhHi),
-                _getW(27, rhHi),
-                _getW(20, rhLo),
-            ];
-            candidates.forEach((w) => {
-                if (Number.isFinite(w)) {
-                    wMax = Math.max(wMax, w);
-                    wMin = Math.min(wMin, w);
-                }
-            });
-        } catch (_) {}
-    }
-    const tPad = Math.max(1.5, (tMax - tMin) * 0.14);
-    const wPad = Math.max(0.0012, (wMax - wMin) * 0.16);
-    tMin -= tPad; tMax += tPad; wMin = Math.max(0, wMin - wPad); wMax += wPad;
-    if (!(tMax > tMin)) { tMin = 10; tMax = 35; }
-    if (!(wMax > wMin)) { wMin = 0; wMax = 0.02; }
+    /* Chart window: dry-bulb from 5 °C (not −15) through main-chart T_MAX; W 0–30 g/kg. */
+    const tMin = 5;
+    const tMax = Number.isFinite(tMaxIn) ? Math.max(tMaxIn, 35) : 50;
+    const wMin = 0;
+    const wMax = 0.030; /* 30 g/kg — matches main-chart W_MAX */
 
-    /* ~2× prior mini size — readable overview sketch. */
-    const VW = 440, VH = 248, L = 36, R = 22, TOP = 22, BOT = 28;
+    /* ~2× card — overview sketch on white. */
+    const VW = 440, VH = 248, L = 40, R = 18, TOP = 20, BOT = 30;
     const gw = VW - L - R, gh = VH - TOP - BOT;
     const xOf = (t) => L + ((Number(t) - tMin) / (tMax - tMin)) * gw;
     const yOf = (w) => TOP + gh - ((Number(w) - wMin) / (wMax - wMin)) * gh;
@@ -490,28 +466,32 @@ function renderProcessMiniBadge(ctx) {
     };
 
     const satSegs = [];
-    for (let tt = tMin; tt <= tMax + 1e-9; tt += 0.4) {
+    for (let tt = tMin; tt <= tMax + 1e-9; tt += 0.35) {
         let ws = null;
         if (_getW) {
             try { ws = _getW(tt, 100); } catch (_) { ws = null; }
         }
         if (!Number.isFinite(ws)) {
-            const tC = Math.max(-20, Math.min(50, tt));
+            const tC = Math.max(-20, Math.min(60, tt));
             const ps = 0.61094 * Math.exp((17.625 * tC) / (tC + 243.04));
             ws = 0.621945 * ps / (101.325 - ps);
         }
-        if (ws < wMin - 0.001) continue;
-        satSegs.push(xOf(tt).toFixed(1) + ',' + yOf(Math.min(ws, wMax)).toFixed(1));
+        if (ws < wMin) continue;
+        if (ws > wMax) {
+            satSegs.push(xOf(tt).toFixed(1) + ',' + yOf(wMax).toFixed(1));
+            break;
+        }
+        satSegs.push(xOf(tt).toFixed(1) + ',' + yOf(ws).toFixed(1));
     }
     const satPath = satSegs.length > 1 ? ('M ' + satSegs.join(' L ')) : '';
 
-    /* Constant-enthalpy diagonals through OA / RA / SA. */
+    /* Constant-enthalpy diagonals — overview style: violet, dashed, clipped at sat. */
     const enthalpyPath = (pt) => {
         if (!_getH || !pt) return '';
         const h0 = _getH(Number(pt.t), Number(pt.w));
         if (!Number.isFinite(h0)) return '';
         const segs = [];
-        for (let tt = tMin; tt <= tMax + 1e-9; tt += 0.5) {
+        for (let tt = tMin; tt <= tMax + 1e-9; tt += 0.4) {
             const w = (h0 - 1.006 * tt) / (2501 + 1.86 * tt);
             if (!Number.isFinite(w) || w < wMin || w > wMax) {
                 if (segs.length) segs.push(null);
@@ -520,7 +500,7 @@ function renderProcessMiniBadge(ctx) {
             if (_getW) {
                 try {
                     const ws = _getW(tt, 100);
-                    if (Number.isFinite(ws) && w > ws + 0.0002) {
+                    if (Number.isFinite(ws) && w > ws + 0.00015) {
                         if (segs.length) segs.push(null);
                         continue;
                     }
@@ -539,21 +519,44 @@ function renderProcessMiniBadge(ctx) {
     const hRA = enthalpyPath(RA);
     const hSA = enthalpyPath(SA);
 
-    /* Green RH band only (lo–hi isopleths) — not full Givoni CZ. */
+    /* Green RH band (lo–hi isopleths over comfort T) — not Givoni engine. */
     let bandPts = '';
     if (drawBand && _getW) {
         const top = [], bot = [];
-        const tBandLo = Math.max(tMin, 19.5);
-        const tBandHi = Math.min(tMax, 27.5);
-        for (let tt = tBandLo; tt <= tBandHi + 1e-9; tt += 0.4) {
-            top.push([tt, _getW(tt, rhHi)]);
+        const tBandLo = 20, tBandHi = 27;
+        for (let tt = tBandLo; tt <= tBandHi + 1e-9; tt += 0.35) {
+            top.push([tt, Math.min(wMax, _getW(tt, rhHi))]);
         }
-        for (let tt = tBandHi; tt >= tBandLo - 1e-9; tt -= 0.4) {
-            bot.push([tt, _getW(tt, rhLo)]);
+        for (let tt = tBandHi; tt >= tBandLo - 1e-9; tt -= 0.35) {
+            bot.push([tt, Math.max(wMin, _getW(tt, rhLo))]);
         }
         bandPts = top.concat(bot).map(([t, w]) =>
             xOf(t).toFixed(1) + ',' + yOf(w).toFixed(1)
         ).join(' ');
+    }
+
+    /* "equal energy (enthalpy)" — just outside sat where RA’s h-line meets 100% RH. */
+    let hLabelX = L + gw * 0.40;
+    let hLabelY = TOP + 56;
+    if (_getH && _getW && RA) {
+        const h0 = _getH(Number(RA.t), Number(RA.w));
+        let tHit = Number(RA.t);
+        /* Along constant-h, colder T → higher W → hits sat to the left of RA */
+        for (let tt = Number(RA.t); tt >= tMin; tt -= 0.2) {
+            const wh = (h0 - 1.006 * tt) / (2501 + 1.86 * tt);
+            let ws;
+            try { ws = _getW(tt, 100); } catch (_) { ws = null; }
+            if (!Number.isFinite(wh) || !Number.isFinite(ws)) continue;
+            if (wh >= ws - 0.0001) { tHit = tt; break; }
+        }
+        let wsHit;
+        try { wsHit = _getW(tHit, 100); } catch (_) { wsHit = null; }
+        if (Number.isFinite(wsHit)) {
+            hLabelX = xOf(tHit) - 4;
+            hLabelY = yOf(Math.min(wMax, wsHit)) - 10;
+        }
+        hLabelX = Math.max(L + 90, Math.min(L + gw * 0.62, hLabelX));
+        hLabelY = Math.max(TOP + 22, Math.min(TOP + gh * 0.55, hLabelY));
     }
 
     const ox = xOf(OA.t), oy = yOf(OA.w);
@@ -562,24 +565,24 @@ function renderProcessMiniBadge(ctx) {
     const mx = MA ? xOf(MA.t) : (ox + rx) / 2;
     const my = MA ? yOf(MA.w) : (oy + ry) / 2;
 
-    /* Live-chart colours (do not use overview-slide amber/green for OA/RA). */
-    const colOA = (OA && OA.color) || '#3b82f6';
-    const colRA = (RA && RA.color) || '#f43f5e';
-    const colSA = (SA && SA.color) || '#10b981';
+    /* Overview-slide font / point colours (attachment 1). */
+    const colOA = '#b45309';
+    const colRA = '#047857';
+    const colSA = '#1d4ed8';
     const colMA = '#0f172a';
     const colH = '#7c3aed';
     const colSat = '#1d4ed8';
     const dark = theme === 'dark';
-    /* Always light plot — matches overview slide even on dark dashboard. */
     const cardBg = '#ffffff';
     const cardBd = dark ? '#475569' : '#e2e8f0';
     const titleC = '#64748b';
-    const axisC = '#94a3b8';
+    const axisC = '#64748b';
     const arrId = 'pmini-arr-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    const bandLabelX = xOf(Math.min(tMax - 0.5, Math.max(tMin + 0.5, 23.5)));
+    /* Left of the band polygon — clear of RA (inside the band at ~24 °C) */
+    const bandLabelX = xOf(18.5);
     const bandLabelY = _getW
-        ? yOf(_getW(23.5, (rhLo + rhHi) / 2))
+        ? yOf((_getW(20, rhLo) + _getW(20, rhHi)) / 2) + 4
         : (TOP + gh * 0.55);
 
     return (
@@ -595,7 +598,7 @@ function renderProcessMiniBadge(ctx) {
                         ? 'bg-slate-900/90 border-slate-600 text-sky-300 hover:border-sky-400'
                         : 'bg-white/95 border-slate-300 text-sky-700 hover:border-sky-500'
                 }`}
-                title="Show OA–MA–SA / RA process sketch"
+                title="Show OA–MA–SA / RA process sketch (full chart range)"
             >
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colOA }} />
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colMA }} />
@@ -613,62 +616,68 @@ function renderProcessMiniBadge(ctx) {
                 </div>
                 <svg viewBox={`0 0 ${VW} ${VH}`} width={VW} height={VH} aria-hidden="true">
                     <rect x="2" y="2" width={VW - 4} height={VH - 4} rx="6" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
+                    {/* Axes only — no cartesian grid (overview comparison). */}
+                    <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#94a3b8" strokeWidth="1.4" />
+                    <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#94a3b8" strokeWidth="1.4" />
+                    {/* Enthalpy: RA bold (7 4), SA/OA thin dotted (2 4) — matches reference */}
+                    {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.3" strokeDasharray="2 4" opacity="0.8" />}
+                    {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.3" strokeDasharray="2 4" opacity="0.8" />}
+                    {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="1.8" strokeDasharray="7 4" opacity="0.95" />}
                     {/* 100% RH saturation */}
                     {satPath && (
-                        <path d={satPath} fill="none" stroke={colSat} strokeWidth="2.8" strokeLinecap="round" />
+                        <path d={satPath} fill="none" stroke={colSat} strokeWidth="2.5" strokeLinecap="round" />
                     )}
                     {satPath && (
-                        <text x={L + gw * 0.78} y={TOP + 14} fill={colSat} fontSize="11" fontWeight="700"
-                              fontFamily="system-ui,sans-serif">100% RH (saturation)</text>
+                        <g fontFamily="system-ui,sans-serif">
+                            <text x={L + gw * 0.78} y={TOP + 16} fill={colSat} fontSize="12" fontWeight="700">100% RH</text>
+                            <text x={L + gw * 0.78} y={TOP + 30} fill="#64748b" fontSize="11">(saturation)</text>
+                        </g>
                     )}
-                    {/* Green RH band (operator sweet-spot) — not Givoni */}
+                    {/* Caption at RA h-line ∩ sat — just outside the curve */}
+                    {hRA && (
+                        <text x={hLabelX} y={hLabelY} fill={colH} fontSize="10.5" fontWeight="700"
+                              textAnchor="end" fontFamily="system-ui,sans-serif">equal energy (enthalpy)</text>
+                    )}
+                    {/* Green RH band — replaces overview comfort box */}
                     {bandPts && (
                         <g>
                             <polygon points={bandPts}
-                                     fill="#10b981" fillOpacity="0.18"
-                                     stroke="#059669" strokeWidth="1.6"
+                                     fill="#10b981" fillOpacity="0.16"
+                                     stroke="#047857" strokeWidth="1.6"
                                      strokeDasharray="5 3" />
-                            <text x={bandLabelX} y={bandLabelY + 4} fill="#047857" fontSize="11"
-                                  fontWeight="800" textAnchor="middle"
+                            <text x={bandLabelX} y={bandLabelY} fill="#047857" fontSize="11"
+                                  fontWeight="700" textAnchor="middle"
                                   fontFamily="system-ui,sans-serif">
-                                RH band ({rhLo}–{rhHi}%)
+                                RH band
                             </text>
                         </g>
                     )}
-                    {/* Enthalpy through OA / RA / SA */}
-                    {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="4 3" opacity="0.85" />}
-                    {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="4 3" opacity="0.85" />}
-                    {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.7" strokeDasharray="4 3" opacity="0.95" />}
-                    {hSA && (
-                        <text x={sx + 18} y={sy + 22} fill={colH} fontSize="10" fontWeight="700"
-                              fontFamily="system-ui,sans-serif">equal energy (enthalpy)</text>
-                    )}
-                    {/* Mix OA–RA + process MA→SA */}
-                    <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colRA} strokeWidth="1.8"
-                          strokeDasharray="6 4" opacity="0.9" />
+                    {/* Mix OA–RA (green dash) + coil MA→SA (blue) */}
+                    <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colRA} strokeWidth="2"
+                          strokeDasharray="6 4" />
                     <defs>
                         <marker id={arrId} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
                             <path d="M0,0 L7,3.5 L0,7 Z" fill={colSA} />
                         </marker>
                     </defs>
-                    <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.4"
+                    <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.5"
                           markerEnd={'url(#' + arrId + ')'} />
-                    <circle cx={ox} cy={oy} r="5.5" fill={colOA} />
-                    <text x={ox + 8} y={oy - 8} fill={colOA} fontSize="13" fontWeight="800"
+                    <circle cx={ox} cy={oy} r="6" fill={colOA} />
+                    <text x={ox + 10} y={oy - 6} fill={colOA} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">OA</text>
-                    <circle cx={rx} cy={ry} r="5.5" fill={colRA} />
-                    <text x={rx + 8} y={ry + 16} fill={colRA} fontSize="13" fontWeight="800"
+                    <circle cx={rx} cy={ry} r="6" fill={colRA} />
+                    <text x={rx + 8} y={ry + 18} fill={colRA} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">RA</text>
-                    <circle cx={mx} cy={my} r="5" fill={colMA} />
-                    <text x={mx + 8} y={my - 8} fill={colMA} fontSize="13" fontWeight="800"
+                    <circle cx={mx} cy={my} r="5.5" fill={colMA} />
+                    <text x={mx + 9} y={my - 7} fill={colMA} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">MA</text>
-                    <circle cx={sx} cy={sy} r="5.5" fill={colSA} />
-                    <text x={sx - 22} y={sy - 8} fill={colSA} fontSize="13" fontWeight="800"
+                    <circle cx={sx} cy={sy} r="6" fill={colSA} />
+                    <text x={sx - 26} y={sy - 8} fill={colSA} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">SA</text>
                     <text x={L + gw / 2} y={VH - 8} fill={axisC} fontSize="11" textAnchor="middle"
                           fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
-                    <text x={12} y={TOP + gh / 2} fill={axisC} fontSize="11" textAnchor="middle"
-                          transform={`rotate(-90, 12, ${TOP + gh / 2})`}
+                    <text x={14} y={TOP + gh / 2} fill={axisC} fontSize="11" textAnchor="middle"
+                          transform={`rotate(-90, 14, ${TOP + gh / 2})`}
                           fontFamily="system-ui,sans-serif">Moisture in the air →</text>
                 </svg>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1.5 font-mono text-[11px] font-bold leading-tight">

@@ -93,6 +93,8 @@ function renderPsyChartSvg(ctx) {
         theme,
         sweetSpotRange,
         showSweetSpot,
+        T_MIN,
+        T_MAX,
     })}
     
     {/* Selected AHU "info card" (the floating box on the chart that

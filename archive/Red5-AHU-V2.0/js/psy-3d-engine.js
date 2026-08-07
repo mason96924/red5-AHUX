@@ -36,7 +36,7 @@ global.initPsy3D = function(container, opts){
   opts = opts || {};
 
   /* ---------- BUILD MARKER (so the user can verify deployment) ----- */
-  var BUILD_TAG = 'V1.9-2026-05-02-d';
+  var BUILD_TAG = 'V1.9-2026-08-07-e';
   try { console.info('[psy3d] init build=' + BUILD_TAG); } catch(e){}
 
   /* ---------- HARD GUARD AGAINST DOUBLE-INIT ----------------------
@@ -1561,16 +1561,65 @@ global.initPsy3D = function(container, opts){
     W3=root.clientWidth;H3=root.clientHeight;
     scene=new THREE.Scene();scene.background=new THREE.Color(_p3Theme() === 'light' ? P3_LIGHT_BG : P3_DARK_BG);
     cam=new THREE.PerspectiveCamera(45,W3/H3,.1,3000);cam.position.set(320,220,300);
-    /* Guard the WebGLRenderer ctor — if the browser has somehow run out
-       of contexts (other tabs, hardware accel disabled, GPU process
-       crashed, etc.) the THREE constructor throws "Error creating
-       WebGL context" which used to bubble up and trip the React error
-       boundary, producing the "React Rendering Crash Prevented"
-       black-screen the user reported.  Catch it locally, paint a
-       human-readable fallback into the container, and bail without
-       killing the rest of the dashboard. */
+    /* Guard the WebGLRenderer ctor. Chrome (esp. dual-GPU Macs) often
+       refuses {antialias + powerPreference:'high-performance'} while
+       Safari/Opera accept it — try a short ladder of softer options
+       before showing the "unavailable" panel. */
+    function _loseProbe(gl) {
+      try {
+        var ext = gl && gl.getExtension && gl.getExtension('WEBGL_lose_context');
+        if (ext) ext.loseContext();
+      } catch (_) {}
+    }
+    function _makeRenderer() {
+      var attempts = [
+        { antialias: true,  powerPreference: 'default',         failIfMajorPerformanceCaveat: false },
+        { antialias: false, powerPreference: 'default',         failIfMajorPerformanceCaveat: false },
+        { antialias: false, powerPreference: 'low-power',       failIfMajorPerformanceCaveat: false },
+        { antialias: true,  powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false },
+        { antialias: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }
+      ];
+      var lastErr = null;
+      for (var ai = 0; ai < attempts.length; ai++) {
+        var opt = attempts[ai];
+        var canvas = null;
+        var gl = null;
+        try {
+          canvas = document.createElement('canvas');
+          var attrs = {
+            alpha: false,
+            antialias: !!opt.antialias,
+            depth: true,
+            stencil: false,
+            powerPreference: opt.powerPreference,
+            failIfMajorPerformanceCaveat: !!opt.failIfMajorPerformanceCaveat
+          };
+          gl = canvas.getContext('webgl2', attrs)
+            || canvas.getContext('webgl', attrs)
+            || canvas.getContext('experimental-webgl', attrs);
+          if (!gl) {
+            lastErr = new Error('getContext returned null (' + opt.powerPreference + ', aa=' + opt.antialias + ')');
+            continue;
+          }
+          var r = new THREE.WebGLRenderer({
+            canvas: canvas,
+            context: gl,
+            antialias: !!opt.antialias,
+            powerPreference: opt.powerPreference,
+            failIfMajorPerformanceCaveat: !!opt.failIfMajorPerformanceCaveat
+          });
+          try { console.info('[psy3d] WebGL ok attempt=' + ai + ' pref=' + opt.powerPreference + ' aa=' + opt.antialias); } catch (_) {}
+          return r;
+        } catch (e) {
+          lastErr = e;
+          _loseProbe(gl);
+          try { console.warn('[psy3d] WebGL attempt ' + ai + ' failed:', e && e.message); } catch (_) {}
+        }
+      }
+      throw lastErr || new Error('Error creating WebGL context');
+    }
     try {
-      ren = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+      ren = _makeRenderer();
     } catch(glErr) {
       try { console.error('[psy3d] WebGL context unavailable:', glErr); } catch(e){}
       try {
@@ -1578,9 +1627,10 @@ global.initPsy3D = function(container, opts){
         fb.style.cssText = 'padding:24px;color:#94a3b8;background:#0f172a;font-family:system-ui,sans-serif;line-height:1.55;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center';
         fb.innerHTML = '<div style="font-size:14px;font-weight:700;color:#fbbf24;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px">3D weather strip unavailable</div>'+
           '<div style="font-size:12px;max-width:520px">The browser refused a WebGL context.  Common causes:</div>'+
-          '<ul style="font-size:11px;text-align:left;margin-top:12px;max-width:520px"><li>Other browser tabs holding too many contexts \u2014 close them and click Retry</li>'+
-          '<li>Hardware acceleration disabled in browser settings</li>'+
-          '<li>GPU process crashed \u2014 restart the browser</li></ul>'+
+          '<ul style="font-size:11px;text-align:left;margin-top:12px;max-width:520px"><li>Other Chrome tabs holding too many contexts \u2014 close them and click Retry</li>'+
+          '<li>Hardware acceleration disabled in Chrome settings (System)</li>'+
+          '<li>GPU process crashed \u2014 restart Chrome</li>'+
+          '<li>Chrome dual-GPU quirk \u2014 Retry uses softer WebGL flags</li></ul>'+
           '<button id="p3-wgl-retry" style="margin-top:16px;padding:8px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:#1e293b;color:#60a5fa;border:1px solid #60a5fa;border-radius:6px;cursor:pointer;font-family:inherit">Retry</button>'+
           '<div style="font-size:9px;color:#64748b;margin-top:10px">Auto-retries when you switch back to this tab.</div>'+
           '<div style="font-size:10px;color:#64748b;margin-top:14px">Build: ' + BUILD_TAG + '</div>';

@@ -131,9 +131,9 @@ window.red5ExposureRingStyle = function(score){
   };
 };
 
-/* Blind open factor (0..1) for a marker at plan % coords.
-   Windows that can cast inbound sunlight onto the marker contribute their
-   open %; closed blinds kill the factor.  No windows → 1 (unchanged). */
+/* Blind open / in-shaft factor (0..1) for a marker at plan % coords.
+   MUST use the same light-travel vector as WindowsSunshaftOverlay
+   (lx=-sin(az), ly=cos(az)).  Closed blinds → 0; open + in beam → up to 1. */
 window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
   opts = opts || {};
   if (!windows || !windows.length) return 1;
@@ -142,7 +142,11 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
   var az = ((sun.azimuth || 0) + northOffsetDeg) % 360;
   if (az < 0) az += 360;
   var rad = az * Math.PI / 180;
-  var lx = Math.sin(rad), ly = -Math.cos(rad);
+  /* Same inbound travel as WindowsSunshaftOverlay — NOT the exposure-score vector. */
+  var lx = -Math.sin(rad);
+  var ly =  Math.cos(rad);
+  var elev = Math.max(0, sun.elevation || 0);
+  var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
   var centerX = 50, centerY = 50;
   var best = 0;
   for (var i = 0; i < windows.length; i++) {
@@ -153,6 +157,7 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
     if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
     var open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
     if (open < 0.01) continue;
+    var openEase = Math.pow(open, 0.7);
     var wrad = ang * Math.PI / 180;
     var tx = Math.cos(wrad), ty = Math.sin(wrad);
     var nx = -ty, ny = tx;
@@ -162,32 +167,36 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
     var enter = nx * lx + ny * ly;
     if (enter < 0.05) continue;
     var dx = mxPct - cx, dy = myPct - cy;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 0.8) continue;
-    var inward = (dx * nx + dy * ny) / dist;
-    if (inward < 0.05) continue;
-    var along = (dx * lx + dy * ly) / dist;
-    if (along < 0.08) continue;
+    /* Distance along the inbound beam (into the room). */
+    var alongDist = dx * lx + dy * ly;
+    if (alongDist < 0.4) continue;
+    var base = enter * elevF;
+    var throwLen = (8 + 20 * base) * (1.0 + 1.0 * openEase);
+    if (alongDist > throwLen * 1.25) continue;
     var half = (Number.isFinite(len) && len > 0.5 ? len : 8) / 2;
     var lat = Math.abs(dx * tx + dy * ty);
-    var spread = half + dist * 0.40;
-    if (lat > spread) continue;
-    var latF = Math.max(0, 1 - lat / spread);
-    var strength = open * (0.35 + 0.65 * enter) * (0.40 + 0.60 * Math.min(1, along)) * latF;
+    /* Widen with throw — same idea as shaft spread. */
+    var maxLat = half * (0.55 + 0.55 * openEase) + alongDist * 0.35;
+    if (lat > maxLat) continue;
+    var latF = Math.max(0, 1 - lat / maxLat);
+    var depthF = Math.max(0.25, 1 - alongDist / (throwLen * 1.25));
+    /* Ring intensity tracks blind open % for VAVs in this shaft. */
+    var strength = open * (0.45 + 0.55 * enter) * elevF * latF * (0.55 + 0.45 * depthF);
     if (strength > best) best = strength;
   }
   return Math.min(1, best);
 };
 
-/* Combined sun × blind score for a VAV/AHU marker (plan % coords). */
+/* Combined score for a VAV/AHU marker (plan % coords).
+   With mapped windows: amber ring = in-sunshaft × blind open (matches painted shafts).
+   Without windows: fall back to plan-centroid sun exposure. */
 window.red5SunBlindScore = function(mxPct, myPct, sun, windows, opts){
   opts = opts || {};
-  var sunScore = window.red5SunExposureScore(mxPct / 100, myPct / 100, sun, opts);
-  if (!(sunScore > 0.02)) return 0;
-  var blindF = window.red5WindowBlindFactor(mxPct, myPct, windows, sun, opts);
-  /* No mapped windows → pure sun exposure.  With windows → ring tracks open %. */
-  if (!windows || !windows.length) return sunScore;
-  return sunScore * blindF;
+  if (!sun || !sun.is_day) return 0;
+  if (!windows || !windows.length) {
+    return window.red5SunExposureScore(mxPct / 100, myPct / 100, sun, opts);
+  }
+  return window.red5WindowBlindFactor(mxPct, myPct, windows, sun, opts);
 };
 
 /* ---------- B1-B10 BAND × SUN-EXPOSURE TRIM ----------------------- */

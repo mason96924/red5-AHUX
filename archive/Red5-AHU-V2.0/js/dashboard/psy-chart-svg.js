@@ -91,6 +91,8 @@ function renderPsyChartSvg(ctx) {
     {selectedAhuId && typeof renderProcessMiniBadge === 'function' && renderProcessMiniBadge({
         ahu: ahuData.find(a => a.id === selectedAhuId),
         theme,
+        sweetSpotRange,
+        showSweetSpot,
     })}
     
     {/* Selected AHU "info card" (the floating box on the chart that

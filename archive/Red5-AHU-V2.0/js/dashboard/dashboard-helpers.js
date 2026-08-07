@@ -427,36 +427,45 @@ const bandStory = (b) => {
 };
 
 /* ------------------------------------------------------------------
- * renderProcessMiniBadge — compact OA–MA–SA / RA sketch (overview-slide style).
- * Not a full psych chart: just geometry + readable T/RH values.
- * Ctx: { ahu, theme, getH }
+ * renderProcessMiniBadge — compact OA–MA–SA / RA sketch.
+ * RH band + Givoni CZ match the main psy chart (isopleth polygons + clipPath).
+ * Ctx: { ahu, theme, sweetSpotRange, showSweetSpot }
  * ------------------------------------------------------------------ */
 function renderProcessMiniBadge(ctx) {
-    const { ahu, theme } = ctx || {};
+    const { ahu, theme, sweetSpotRange, showSweetSpot } = ctx || {};
     if (!ahu || !ahu.points) return null;
     const by = {};
     (ahu.points || []).forEach((p) => { if (p && p.label) by[p.label] = p; });
     const OA = by.OA, RA = by.RA, SA = by.SA, MA = by.MA;
     if (!OA || !RA || !SA) return null;
 
+    const rhLo = (sweetSpotRange && Number.isFinite(sweetSpotRange.lo)) ? sweetSpotRange.lo : 40;
+    const rhHi = (sweetSpotRange && Number.isFinite(sweetSpotRange.hi)) ? sweetSpotRange.hi : 60;
+    const drawBand = showSweetSpot !== false;
+
     const pts = [OA, RA, SA].concat(MA ? [MA] : []);
     let tMin = Math.min.apply(null, pts.map((p) => Number(p.t)));
     let tMax = Math.max.apply(null, pts.map((p) => Number(p.t)));
     let wMin = Math.min.apply(null, pts.map((p) => Number(p.w)));
     let wMax = Math.max.apply(null, pts.map((p) => Number(p.w)));
-    /* Include saturation W at the warm end so the 100% RH curve sits above the points
-       (same geometry as Psychart-HVAC-ASHRAE-Overview.html). */
     const _getW = (typeof getW === 'function') ? getW : null;
+    /* Keep Givoni CZ (20–27 °C) + RH band in frame with the process points. */
+    tMin = Math.min(tMin, 19);
+    tMax = Math.max(tMax, 28);
     if (_getW) {
         try {
             const wHi = _getW(tMax + 1, 100);
-            const wLo = _getW(Math.max(0, tMin - 1), 100);
+            const wCz = _getW(25, 80);
+            const wBand = _getW(24, rhHi);
+            const wLo = _getW(20, Math.min(20, rhLo));
             if (Number.isFinite(wHi)) wMax = Math.max(wMax, wHi);
-            if (Number.isFinite(wLo)) wMin = Math.min(wMin, wLo * 0.4);
+            if (Number.isFinite(wCz)) wMax = Math.max(wMax, wCz);
+            if (Number.isFinite(wBand)) wMax = Math.max(wMax, wBand);
+            if (Number.isFinite(wLo)) wMin = Math.min(wMin, wLo);
         } catch (_) {}
     }
-    const tPad = Math.max(1.5, (tMax - tMin) * 0.18);
-    const wPad = Math.max(0.0012, (wMax - wMin) * 0.18);
+    const tPad = Math.max(1.2, (tMax - tMin) * 0.12);
+    const wPad = Math.max(0.0010, (wMax - wMin) * 0.14);
     tMin -= tPad; tMax += tPad; wMin = Math.max(0, wMin - wPad); wMax += wPad;
     if (!(tMax > tMin)) { tMin = 10; tMax = 35; }
     if (!(wMax > wMin)) { wMin = 0; wMax = 0.02; }
@@ -471,25 +480,55 @@ function renderProcessMiniBadge(ctx) {
         return (Number.isFinite(t) ? t.toFixed(1) + '\u00B0' : '--') +
             ' \u00B7 ' + (Number.isFinite(rh) ? rh.toFixed(0) + '%' : '--');
     };
+    const ptsStr = (arr) => (arr || []).map(([t, w]) =>
+        xOf(t).toFixed(1) + ',' + yOf(w).toFixed(1)
+    ).join(' ');
 
-    /* Saturation polyline: Wsat(T) rising bottom-left → upper-right (valid air below). */
-    const satSegs = [];
-    const nSat = 14;
-    for (let i = 0; i <= nSat; i++) {
-        const tt = tMin + (i / nSat) * (tMax - tMin);
-        let ws;
-        if (_getW) {
-            try { ws = _getW(tt, 100); } catch (_) { ws = null; }
+    /* RH isopleths — same levels / styling as main chart renderGrid. */
+    const rhLevels = [20, 40, 60, 80, 100];
+    const rhPaths = rhLevels.map((rh) => {
+        const segs = [];
+        for (let tt = tMin; tt <= tMax + 1e-9; tt += 0.5) {
+            let w;
+            if (_getW) {
+                try { w = _getW(tt, rh); } catch (_) { w = null; }
+            }
+            if (!Number.isFinite(w) || w < wMin - 0.002 || w > wMax + 0.002) {
+                if (segs.length) segs.push(null);
+                continue;
+            }
+            segs.push(xOf(tt).toFixed(1) + ',' + yOf(Math.min(Math.max(w, wMin), wMax)).toFixed(1));
         }
-        if (!Number.isFinite(ws)) {
-            /* Magnus-ish sketch fallback so the bow matches the overview slide */
-            const tC = Math.max(-20, Math.min(50, tt));
-            const ps = 0.61094 * Math.exp((17.625 * tC) / (tC + 243.04));
-            ws = 0.621945 * ps / (101.325 - ps);
-        }
-        satSegs.push(xOf(tt).toFixed(1) + ',' + yOf(Math.min(ws, wMax)).toFixed(1));
-    }
-    const satPath = satSegs.join(' ');
+        const paths = [];
+        let cur = [];
+        const flush = () => { if (cur.length > 1) paths.push(cur.join(' L ')); cur = []; };
+        segs.forEach((p) => { if (p == null) flush(); else cur.push(p); });
+        flush();
+        return { rh, paths };
+    });
+
+    /* Givoni CZ + sweet-spot RH band — same geometry as renderGivoniOverlay. */
+    const czPoly = (typeof buildComfortZonePoly === 'function')
+        ? buildComfortZonePoly()
+        : (function () {
+            const out = [];
+            if (!_getW) return out;
+            for (let t = 20; t <= 25; t += 0.5) out.push([t, _getW(t, 80)]);
+            out.push([27, _getW(27, 50)], [27, _getW(27, 20)]);
+            for (let t = 27; t >= 20; t -= 0.5) out.push([t, _getW(t, 20)]);
+            return out;
+        })();
+    const buildSweetPoly = (lo, hi) => {
+        if (!_getW) return [];
+        const top = [], bot = [];
+        for (let tt = 20; tt <= 27; tt += 0.5) top.push([tt, _getW(tt, hi)]);
+        for (let tt = 27; tt >= 20; tt -= 0.5) bot.push([tt, _getW(tt, lo)]);
+        return top.concat(bot);
+    };
+    const sweetPoly = drawBand ? buildSweetPoly(rhLo, rhHi) : [];
+    const czPts = ptsStr(czPoly);
+    const sweetPts = ptsStr(sweetPoly);
+    const clipId = 'pmini-cz-clip-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
 
     const ox = xOf(OA.t), oy = yOf(OA.w);
     const rx = xOf(RA.t), ry = yOf(RA.w);
@@ -497,19 +536,17 @@ function renderProcessMiniBadge(ctx) {
     const mx = MA ? xOf(MA.t) : (ox + rx) / 2;
     const my = MA ? yOf(MA.w) : (oy + ry) / 2;
 
-    // Comfort box — approximate graphical zone in local coords (20–27°C band)
-    const czX = xOf(20), czX2 = xOf(27);
-    const czYTop = _getW ? yOf(_getW(23.5, 60)) : yOf(0.011);
-    const czYBot = _getW ? yOf(_getW(23.5, 30)) : yOf(0.006);
-    const czLeft = Math.min(czX, czX2), czTop = Math.min(czYTop, czYBot);
-    const czW = Math.abs(czX2 - czX), czH = Math.abs(czYTop - czYBot);
-
     const dark = theme === 'dark';
+    const colOA = (OA && OA.color) || '#3b82f6';
+    const colRA = (RA && RA.color) || '#f43f5e';
+    const colSA = (SA && SA.color) || '#10b981';
+    const colMA = dark ? '#e2e8f0' : '#0f172a';
     const cardBg = dark ? 'rgba(15,23,42,0.96)' : '#ffffff';
     const cardBd = dark ? '#334155' : '#e2e8f0';
     const plotBg = dark ? '#0b1224' : '#f8fafc';
     const gridC = dark ? '#1e293b' : '#e2e8f0';
     const titleC = dark ? '#94a3b8' : '#64748b';
+    const rhMinor = dark ? '#334155' : '#cbd5e1';
 
     return (
         <details
@@ -526,10 +563,10 @@ function renderProcessMiniBadge(ctx) {
                 }`}
                 title="Show compact OA–MA–SA / RA process sketch"
             >
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#ea580c' }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#0f172a', outline: dark ? '1px solid #94a3b8' : 'none' }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#16a34a' }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#2563eb' }} />
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colOA }} />
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colMA, outline: dark ? '1px solid #94a3b8' : 'none' }} />
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colRA }} />
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colSA }} />
                 Process
             </summary>
             <div
@@ -538,6 +575,7 @@ function renderProcessMiniBadge(ctx) {
             >
                 <div className="px-1 pb-0.5 text-[8px] font-black uppercase tracking-[0.14em] font-mono" style={{ color: titleC }}>
                     {ahu.id} · OA–MA–SA / RA
+                    {drawBand ? ` · ${rhLo}–${rhHi}% RH` : ''}
                 </div>
                 <svg viewBox={`0 0 ${VW} ${VH}`} width={VW} height={VH} aria-hidden="true">
                     <rect x="4" y="2" width={VW - 8} height={VH - 4} rx="4" fill={plotBg} />
@@ -549,38 +587,51 @@ function renderProcessMiniBadge(ctx) {
                             <line key={'h' + i} x1={L} y1={TOP + gh * f} x2={L + gw} y2={TOP + gh * f} />
                         ))}
                     </g>
-                    {/* 100% RH saturation — overview-slide bow (bottom-left → upper-right) */}
-                    <polyline points={satPath} fill="none" stroke="#1d4ed8" strokeWidth="2.3" />
-                    {czW > 4 && czH > 4 && (
-                        <rect x={czLeft} y={czTop} width={czW} height={czH}
-                              fill="rgba(180,83,9,0.16)" stroke="#b45309" strokeWidth="1.3"
-                              strokeDasharray="4 3" rx="2" />
+                    {/* RH isopleths — main chart: 100% indigo, others muted */}
+                    {rhPaths.map(({ rh, paths }) => paths.map((d, i) => (
+                        <path key={'rh' + rh + '-' + i} d={'M ' + d} fill="none"
+                              stroke={rh === 100 ? '#4f46e5' : rhMinor}
+                              strokeWidth={rh === 100 ? 2 : 1}
+                              opacity={rh === 100 ? 0.55 : 0.45} />
+                    )))}
+                    {czPts && (
+                        <g>
+                            <defs>
+                                <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+                                    <polygon points={czPts} />
+                                </clipPath>
+                            </defs>
+                            <polygon points={czPts} fill="#10b981" fillOpacity="0.15"
+                                     stroke="#10b981" strokeWidth="1.2" />
+                            {drawBand && sweetPts && (
+                                <polygon points={sweetPts} clipPath={'url(#' + clipId + ')'}
+                                         fill="#059669" fillOpacity="0.32"
+                                         stroke="#34d399" strokeWidth="0.9"
+                                         strokeDasharray="3,2" />
+                            )}
+                        </g>
                     )}
-                    <g stroke="#7c3aed" strokeWidth="1" strokeDasharray="3 3" opacity="0.7">
-                        <line x1={L + gw * 0.12} y1={TOP + gh * 0.55} x2={L + gw * 0.95} y2={TOP + gh * 0.92} />
-                        <line x1={L + gw * 0.35} y1={TOP + gh * 0.22} x2={L + gw} y2={TOP + gh * 0.55} />
-                    </g>
-                    <line x1={ox} y1={oy} x2={rx} y2={ry} stroke="#047857" strokeWidth="1.6" strokeDasharray="5 3" />
+                    <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colRA} strokeWidth="1.6" strokeDasharray="5 3" opacity="0.85" />
                     <defs>
                         <marker id="pmini-arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                            <path d="M0,0 L6,3 L0,6 Z" fill="#1d4ed8" />
+                            <path d="M0,0 L6,3 L0,6 Z" fill={colSA} />
                         </marker>
                     </defs>
-                    <line x1={mx} y1={my} x2={sx} y2={sy} stroke="#1d4ed8" strokeWidth="2.1" markerEnd="url(#pmini-arr)" />
-                    <circle cx={ox} cy={oy} r="4.2" fill="#b45309" />
-                    <text x={ox + 6} y={oy - 5} fill="#b45309" fontSize="9" fontWeight="800">OA</text>
-                    <circle cx={rx} cy={ry} r="4.2" fill="#047857" />
-                    <text x={rx + 6} y={ry + 12} fill="#047857" fontSize="9" fontWeight="800">RA</text>
-                    <circle cx={mx} cy={my} r="3.8" fill={dark ? '#e2e8f0' : '#0f172a'} />
-                    <text x={mx + 6} y={my - 5} fill={dark ? '#e2e8f0' : '#0f172a'} fontSize="9" fontWeight="800">MA</text>
-                    <circle cx={sx} cy={sy} r="4.2" fill="#1d4ed8" />
-                    <text x={sx - 16} y={sy - 5} fill="#1d4ed8" fontSize="9" fontWeight="800">SA</text>
+                    <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.1" markerEnd="url(#pmini-arr)" />
+                    <circle cx={ox} cy={oy} r="4.2" fill={colOA} />
+                    <text x={ox + 6} y={oy - 5} fill={colOA} fontSize="9" fontWeight="800">OA</text>
+                    <circle cx={rx} cy={ry} r="4.2" fill={colRA} />
+                    <text x={rx + 6} y={ry + 12} fill={colRA} fontSize="9" fontWeight="800">RA</text>
+                    <circle cx={mx} cy={my} r="3.8" fill={colMA} />
+                    <text x={mx + 6} y={my - 5} fill={colMA} fontSize="9" fontWeight="800">MA</text>
+                    <circle cx={sx} cy={sy} r="4.2" fill={colSA} />
+                    <text x={sx - 16} y={sy - 5} fill={colSA} fontSize="9" fontWeight="800">SA</text>
                 </svg>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 px-1 pt-0.5 font-mono text-[10px] font-bold leading-tight">
-                    <div style={{ color: '#b45309' }}><span className="opacity-80">OA</span> {fmt(OA)}</div>
-                    <div style={{ color: '#047857' }}><span className="opacity-80">RA</span> {fmt(RA)}</div>
-                    <div style={{ color: dark ? '#e2e8f0' : '#0f172a' }}><span className="opacity-80">MA</span> {MA ? fmt(MA) : '—'}</div>
-                    <div style={{ color: '#1d4ed8' }}><span className="opacity-80">SA</span> {fmt(SA)}</div>
+                    <div style={{ color: colOA }}><span className="opacity-80">OA</span> {fmt(OA)}</div>
+                    <div style={{ color: colRA }}><span className="opacity-80">RA</span> {fmt(RA)}</div>
+                    <div style={{ color: colMA }}><span className="opacity-80">MA</span> {MA ? fmt(MA) : '—'}</div>
+                    <div style={{ color: colSA }}><span className="opacity-80">SA</span> {fmt(SA)}</div>
                 </div>
             </div>
         </details>

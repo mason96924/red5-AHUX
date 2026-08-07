@@ -430,7 +430,9 @@ const bandStory = (b) => {
  * renderProcessMiniBadge — overview-slide OA–MA–SA / RA sketch.
  * Full psy range from 5 °C dry-bulb (not −15), light plot, saturation curve,
  * purple enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
- * Colours match the overview slide: OA amber · RA green · SA blue · MA black.
+ * Point colours (fixed — match operator request / live chart intent):
+ *   OA dark cyan · RA pinkish-red · SA green · MA black with yellow ring.
+ * RH-band / mix stroke stay overview green. Geometry matches the overview sketch.
  * Ctx: { ahu, theme, sweetSpotRange, showSweetSpot, T_MIN, T_MAX }
  * ------------------------------------------------------------------ */
 function renderProcessMiniBadge(ctx) {
@@ -565,19 +567,21 @@ function renderProcessMiniBadge(ctx) {
     const mx = MA ? xOf(MA.t) : (ox + rx) / 2;
     const my = MA ? yOf(MA.w) : (oy + ry) / 2;
 
-    /* Overview-slide font / point colours (attachment 1). */
-    const colOA = '#b45309';
-    const colRA = '#047857';
-    const colSA = '#1d4ed8';
-    const colMA = '#0f172a';
-    const colH = '#7c3aed';
+    /* Fixed point colours (do not inherit / wash from dark parent). */
+    const colOA = '#0e7490';     /* dark cyan — outdoor */
+    const colRA = '#e11d48';     /* pinkish red — return */
+    const colSA = '#059669';     /* green — supply */
+    const colMA = '#0f172a';     /* black — mixed */
+    const colMARing = '#eab308'; /* yellow ring around MA */
+    const colBand = '#047857';  /* overview green for RH band + mix line only */
+    const colH = '#6d28d9';
     const colSat = '#1d4ed8';
-    const dark = theme === 'dark';
     const cardBg = '#ffffff';
-    const cardBd = dark ? '#475569' : '#e2e8f0';
-    const titleC = '#64748b';
-    const axisC = '#64748b';
+    const cardBd = '#cbd5e1';
+    const titleC = '#334155';
+    const axisC = '#334155';
     const arrId = 'pmini-arr-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
+    void theme; /* badge is always light; ignore dashboard dark theme inheritance */
 
     /* Left of the band polygon — clear of RA (inside the band at ~24 °C) */
     const bandLabelX = xOf(18.5);
@@ -589,102 +593,97 @@ function renderProcessMiniBadge(ctx) {
         <details
             data-testid="process-mini-badge"
             className="absolute top-3 right-3 z-40 select-none"
-            style={{ maxWidth: 460 }}
+            style={{ maxWidth: 460, color: '#0f172a', isolation: 'isolate', opacity: 1 }}
             onMouseDown={(e) => e.stopPropagation()}
         >
             <summary
-                className={`list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black tracking-wider uppercase font-mono ${
-                    dark
-                        ? 'bg-slate-900/90 border-slate-600 text-sky-300 hover:border-sky-400'
-                        : 'bg-white/95 border-slate-300 text-sky-700 hover:border-sky-500'
-                }`}
+                className="list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black tracking-wider uppercase font-mono bg-slate-900 border-slate-500 text-white hover:border-sky-400"
                 title="Show OA–MA–SA / RA process sketch (full chart range)"
             >
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colOA }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colMA }} />
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colMA, outline: `2px solid ${colMARing}`, outlineOffset: 1 }} />
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colRA }} />
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colSA }} />
                 Process
             </summary>
             <div
                 className="mt-1.5 rounded-xl border p-2 shadow-xl"
-                style={{ background: cardBg, borderColor: cardBd, width: VW + 16 }}
+                style={{ background: cardBg, borderColor: cardBd, width: VW + 16, color: '#0f172a' }}
             >
                 <div className="px-1 pb-1 text-[9px] font-black uppercase tracking-[0.14em] font-mono" style={{ color: titleC }}>
                     {ahu.id} · OA–MA–SA / RA
                     {drawBand ? ` · ${rhLo}–${rhHi}% RH` : ''}
                 </div>
-                <svg viewBox={`0 0 ${VW} ${VH}`} width={VW} height={VH} aria-hidden="true">
+                <svg viewBox={`0 0 ${VW} ${VH}`} width={VW} height={VH} aria-hidden="true"
+                     style={{ color: '#0f172a', display: 'block' }}>
                     <rect x="2" y="2" width={VW - 4} height={VH - 4} rx="6" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
-                    {/* Axes only — no cartesian grid (overview comparison). */}
-                    <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#94a3b8" strokeWidth="1.4" />
-                    <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#94a3b8" strokeWidth="1.4" />
-                    {/* Enthalpy: RA bold (7 4), SA/OA thin dotted (2 4) — matches reference */}
-                    {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.3" strokeDasharray="2 4" opacity="0.8" />}
-                    {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.3" strokeDasharray="2 4" opacity="0.8" />}
-                    {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="1.8" strokeDasharray="7 4" opacity="0.95" />}
+                    {/* Axes only — no cartesian grid */}
+                    <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
+                    <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
+                    {/* Enthalpy: RA bold, SA/OA thin — full opacity (no wash) */}
+                    {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
+                    {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
+                    {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="2" strokeDasharray="7 4" />}
                     {/* 100% RH saturation */}
                     {satPath && (
-                        <path d={satPath} fill="none" stroke={colSat} strokeWidth="2.5" strokeLinecap="round" />
+                        <path d={satPath} fill="none" stroke={colSat} strokeWidth="2.8" strokeLinecap="round" />
                     )}
                     {satPath && (
                         <g fontFamily="system-ui,sans-serif">
-                            <text x={L + gw * 0.78} y={TOP + 16} fill={colSat} fontSize="12" fontWeight="700">100% RH</text>
-                            <text x={L + gw * 0.78} y={TOP + 30} fill="#64748b" fontSize="11">(saturation)</text>
+                            <text x={L + gw * 0.78} y={TOP + 16} fill={colSat} style={{ fill: colSat }} fontSize="12" fontWeight="700">100% RH</text>
+                            <text x={L + gw * 0.78} y={TOP + 30} fill="#475569" style={{ fill: '#475569' }} fontSize="11">(saturation)</text>
                         </g>
                     )}
-                    {/* Caption at RA h-line ∩ sat — just outside the curve */}
                     {hRA && (
-                        <text x={hLabelX} y={hLabelY} fill={colH} fontSize="10.5" fontWeight="700"
+                        <text x={hLabelX} y={hLabelY} fill={colH} style={{ fill: colH }} fontSize="10.5" fontWeight="700"
                               textAnchor="end" fontFamily="system-ui,sans-serif">equal energy (enthalpy)</text>
                     )}
-                    {/* Green RH band — replaces overview comfort box */}
                     {bandPts && (
                         <g>
                             <polygon points={bandPts}
-                                     fill="#10b981" fillOpacity="0.16"
-                                     stroke="#047857" strokeWidth="1.6"
+                                     fill="#10b981" fillOpacity="0.22"
+                                     stroke={colBand} strokeWidth="1.8"
                                      strokeDasharray="5 3" />
-                            <text x={bandLabelX} y={bandLabelY} fill="#047857" fontSize="11"
-                                  fontWeight="700" textAnchor="middle"
+                            <text x={bandLabelX} y={bandLabelY} fill={colBand} style={{ fill: colBand }} fontSize="11"
+                                  fontWeight="800" textAnchor="middle"
                                   fontFamily="system-ui,sans-serif">
                                 RH band
                             </text>
                         </g>
                     )}
-                    {/* Mix OA–RA (green dash) + coil MA→SA (blue) */}
-                    <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colRA} strokeWidth="2"
+                    <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colBand} strokeWidth="2.2"
                           strokeDasharray="6 4" />
                     <defs>
                         <marker id={arrId} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
                             <path d="M0,0 L7,3.5 L0,7 Z" fill={colSA} />
                         </marker>
                     </defs>
-                    <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.5"
+                    <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
                           markerEnd={'url(#' + arrId + ')'} />
-                    <circle cx={ox} cy={oy} r="6" fill={colOA} />
-                    <text x={ox + 10} y={oy - 6} fill={colOA} fontSize="13" fontWeight="800"
+                    <circle cx={ox} cy={oy} r="6.5" fill={colOA} />
+                    <text x={ox + 10} y={oy - 6} fill={colOA} style={{ fill: colOA }} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">OA</text>
-                    <circle cx={rx} cy={ry} r="6" fill={colRA} />
-                    <text x={rx + 8} y={ry + 18} fill={colRA} fontSize="13" fontWeight="800"
+                    <circle cx={rx} cy={ry} r="6.5" fill={colRA} />
+                    <text x={rx + 8} y={ry + 18} fill={colRA} style={{ fill: colRA }} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">RA</text>
-                    <circle cx={mx} cy={my} r="5.5" fill={colMA} />
-                    <text x={mx + 9} y={my - 7} fill={colMA} fontSize="13" fontWeight="800"
+                    <circle cx={mx} cy={my} r="6" fill={colMA} stroke={colMARing} strokeWidth="2.5" />
+                    <text x={mx + 9} y={my - 7} fill={colMA} style={{ fill: colMA }} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">MA</text>
-                    <circle cx={sx} cy={sy} r="6" fill={colSA} />
-                    <text x={sx - 26} y={sy - 8} fill={colSA} fontSize="13" fontWeight="800"
+                    <circle cx={sx} cy={sy} r="6.5" fill={colSA} />
+                    <text x={sx - 26} y={sy - 8} fill={colSA} style={{ fill: colSA }} fontSize="13" fontWeight="800"
                           fontFamily="system-ui,sans-serif">SA</text>
-                    <text x={L + gw / 2} y={VH - 8} fill={axisC} fontSize="11" textAnchor="middle"
-                          fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
-                    <text x={14} y={TOP + gh / 2} fill={axisC} fontSize="11" textAnchor="middle"
+                    <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
+                          textAnchor="middle" fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
+                    <text x={14} y={TOP + gh / 2} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
+                          textAnchor="middle"
                           transform={`rotate(-90, 14, ${TOP + gh / 2})`}
                           fontFamily="system-ui,sans-serif">Moisture in the air →</text>
                 </svg>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1.5 font-mono text-[11px] font-bold leading-tight">
-                    <div style={{ color: colOA }}><span className="opacity-70">OA</span> {fmt(OA)}</div>
-                    <div style={{ color: colRA }}><span className="opacity-70">RA</span> {fmt(RA)}</div>
-                    <div style={{ color: colMA }}><span className="opacity-70">MA</span> {MA ? fmt(MA) : '—'}</div>
-                    <div style={{ color: colSA }}><span className="opacity-70">SA</span> {fmt(SA)}</div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1.5 font-mono text-[11px] font-extrabold leading-tight">
+                    <div style={{ color: colOA }}>OA {fmt(OA)}</div>
+                    <div style={{ color: colRA }}>RA {fmt(RA)}</div>
+                    <div style={{ color: colMA }}>MA {MA ? fmt(MA) : '—'}</div>
+                    <div style={{ color: colSA }}>SA {fmt(SA)}</div>
                 </div>
             </div>
         </details>

@@ -237,15 +237,20 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
     var alongDist = dx * lx + dy * ly;
     if (alongDist < 0.4) continue;
     var base = enter * elevF;
-    var throwLen = (8 + 20 * base) * (1.0 + 1.0 * openEase);
-    if (alongDist > throwLen * 1.25) continue;
+    var throwLen = (10 + 24 * base) * (1.0 + 1.0 * openEase);
+    if (alongDist > throwLen * 1.15) continue;
     var half = (Number.isFinite(len) && len > 0.5 ? len : 8) / 2;
     var lat = Math.abs(dx * tx + dy * ty);
-    /* Widen with throw — same idea as shaft spread. */
-    var maxLat = half * (0.55 + 0.55 * openEase) + alongDist * 0.35;
+    /* Widen with throw — same idea as shaft spread. Soft tip: ring fades
+       with depth so VAVs in the washed-out tip get weaker amber. */
+    var maxLat = half * (0.55 + 0.55 * openEase) + alongDist * 0.40;
     if (lat > maxLat) continue;
     var latF = Math.max(0, 1 - lat / maxLat);
-    var depthF = Math.max(0.25, 1 - alongDist / (throwLen * 1.25));
+    var depthF = Math.max(0.15, 1 - alongDist / throwLen);
+    /* Soft landing: beyond ~70% of throw, ring strength falls off fast. */
+    if (alongDist / throwLen > 0.70) {
+      depthF *= Math.max(0, 1 - (alongDist / throwLen - 0.70) / 0.30);
+    }
     /* Ring intensity tracks blind open % for VAVs in this shaft. */
     var strength = open * (0.45 + 0.55 * enter) * elevF * latF * (0.55 + 0.45 * depthF);
     if (strength > best) best = strength;
@@ -600,19 +605,22 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     );
     if (enter < 0.05 || open < 0.01) continue;
     /* Open → shaft strength; closed → no sunlight through this window.
-       Shaft only (no glass-edge / window-halo glow — that reads on VAVs). */
+       Throw uses a soft gradient tip so the floor landing is gradual,
+       not a hard mid-room edge. */
     var openEase = Math.pow(open, 0.7);
     var base = enter * elevF * weatherF;
     if (base < 0.03) continue;
-    var openBoost = 1.0 + 1.6 * openEase;          // 1.0× … 2.6×
-    var throwLen = (8 + 20 * base) * (1.0 + 1.0 * openEase);
-    var spread = half * (0.28 + 0.35 * openEase);
+    var throwLen = (10 + 24 * base) * (1.0 + 1.0 * openEase);
+    var spread = half * (0.28 + 0.40 * openEase);
     var fx1 = x1 + lx * throwLen + (-ny) * spread;
     var fy1 = y1 + ly * throwLen + ( nx) * spread;
     var fx2 = x2 + lx * throwLen + ( ny) * spread;
     var fy2 = y2 + ly * throwLen + (-nx) * spread;
-    var opCore = Math.min(0.55, 0.08 + base * 0.28 + openEase * 0.32);
+    var opCore = Math.min(0.58, 0.10 + base * 0.30 + openEase * 0.34);
     var amber = isLight ? '251,191,36' : '251,146,60';
+    var gx0 = (x1 + x2) / 2, gy0 = (y1 + y2) / 2;
+    var gx1 = (fx1 + fx2) / 2, gy1 = (fy1 + fy2) / 2;
+    var gradId = 'r5-shaft-grad-' + (w.id || i);
     var clipId = null;
     var room = (rooms.length && window.red5RoomForWindow) ? window.red5RoomForWindow(w, rooms) : null;
     var rVerts = room && (room.vertices || room.points);
@@ -625,10 +633,20 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
         </clipPath>
       );
     }
+    clipDefs.push(
+      <linearGradient key={gradId} id={gradId}
+                      gradientUnits="userSpaceOnUse"
+                      x1={gx0} y1={gy0} x2={gx1} y2={gy1}>
+        <stop offset="0%"   stopColor={'rgb('+amber+')'} stopOpacity={opCore} />
+        <stop offset="45%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.72} />
+        <stop offset="78%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.28} />
+        <stop offset="100%" stopColor={'rgb('+amber+')'} stopOpacity="0" />
+      </linearGradient>
+    );
     shafts.push(
       <polygon key={'ws-'+ (w.id || i)}
                points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}
-               fill={'rgba('+amber+','+opCore+')'}
+               fill={'url(#'+gradId+')'}
                clipPath={clipId ? ('url(#'+clipId+')') : undefined}
       />
     );

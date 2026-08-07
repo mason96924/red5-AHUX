@@ -431,7 +431,8 @@ const bandStory = (b) => {
  * Full psy range from 5 °C dry-bulb (not −15), light plot, saturation curve,
  * purple enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
  * Point colours (fixed — match operator request / live chart intent):
- *   OA dark cyan · RA pinkish-red · SA green · MA black with yellow ring.
+ *   OA darker blue · RA pinkish-red · SA darker green · MA black with yellow ring.
+ *   State dots translucent (fillOpacity 0.42) with solid stroke.
  * Click the plot to drop a magnifying glass (center = click); drag to move;
  * slider / wheel adjusts zoom (leftmost = Off). Double-click clears the lens.
  * MUST be invoked on every App render (even with ahu=null) so its React
@@ -581,11 +582,12 @@ function renderProcessMiniBadge(ctx) {
     const my = MA ? yOf(MA.w) : (oy + ry) / 2;
 
     /* Fixed point colours (do not inherit / wash from dark parent). */
-    const colOA = '#0e7490';     /* dark cyan — outdoor */
+    const colOA = '#1e3a8a';     /* darker blue — outdoor */
     const colRA = '#e11d48';     /* pinkish red — return */
-    const colSA = '#059669';     /* green — supply */
+    const colSA = '#065f46';     /* darker green — supply */
     const colMA = '#0f172a';     /* black — mixed */
     const colMARing = '#eab308'; /* yellow ring around MA */
+    const dotFillOp = 0.42;      /* translucent state dots */
     const colBand = '#047857';  /* overview green for RH band + mix line only */
     const colH = '#6d28d9';
     const colSat = '#1d4ed8';
@@ -655,16 +657,16 @@ function renderProcessMiniBadge(ctx) {
                   strokeDasharray="6 4" />
             <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
                   markerEnd={'url(#' + arrId + ')'} />
-            <circle cx={ox} cy={oy} r="6.5" fill={colOA} />
+            <circle cx={ox} cy={oy} r="6.5" fill={colOA} fillOpacity={dotFillOp} stroke={colOA} strokeWidth="1.6" />
             <text x={ox + 10} y={oy - 6} fill={colOA} style={{ fill: colOA }} fontSize="13" fontWeight="800"
                   fontFamily="system-ui,sans-serif">OA</text>
-            <circle cx={rx} cy={ry} r="6.5" fill={colRA} />
+            <circle cx={rx} cy={ry} r="6.5" fill={colRA} fillOpacity={dotFillOp} stroke={colRA} strokeWidth="1.6" />
             <text x={rx + 8} y={ry + 18} fill={colRA} style={{ fill: colRA }} fontSize="13" fontWeight="800"
                   fontFamily="system-ui,sans-serif">RA</text>
-            <circle cx={mx} cy={my} r="6" fill={colMA} stroke={colMARing} strokeWidth="2.5" />
+            <circle cx={mx} cy={my} r="6" fill={colMA} fillOpacity={dotFillOp} stroke={colMARing} strokeWidth="2.5" />
             <text x={mx + 9} y={my - 7} fill={colMA} style={{ fill: colMA }} fontSize="13" fontWeight="800"
                   fontFamily="system-ui,sans-serif">MA</text>
-            <circle cx={sx} cy={sy} r="6.5" fill={colSA} />
+            <circle cx={sx} cy={sy} r="6.5" fill={colSA} fillOpacity={dotFillOp} stroke={colSA} strokeWidth="1.6" />
             <text x={sx - 26} y={sy - 8} fill={colSA} style={{ fill: colSA }} fontSize="13" fontWeight="800"
                   fontFamily="system-ui,sans-serif">SA</text>
             <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
@@ -718,7 +720,7 @@ function renderProcessMiniBadge(ctx) {
                                        setLens(lastLens);
                                    }
                                }}
-                               style={{ width: 72, accentColor: '#0e7490', cursor: 'pointer' }} />
+                               style={{ width: 72, accentColor: '#1e3a8a', cursor: 'pointer' }} />
                     </label>
                 </div>
                 <svg viewBox={`0 0 ${VW} ${VH}`} width={VW} height={VH} aria-hidden="true"

@@ -706,6 +706,25 @@
             const [isVavModalDragging, setIsVavModalDragging] = useState(false);
             const [vavCfm, setVavCfm] = useState(400);
 
+            // Keep open VAV modal bound to the same live row the Terminal Hub
+            // shows. Click stored a snapshot; /api/data replaces ahuData every
+            // poll — refresh the selection object by id (prefer selected AHU).
+            useEffect(() => {
+                if (!selectedVavForModal || !Array.isArray(ahuData)) return;
+                const id = selectedVavForModal.id;
+                const prefer = ahuData.find(a => a.id === selectedAhuId);
+                const order = prefer
+                    ? [prefer, ...ahuData.filter(a => a !== prefer)]
+                    : ahuData;
+                for (const a of order) {
+                    const hit = (a.vavs || []).find(v => v.id === id);
+                    if (hit) {
+                        if (hit !== selectedVavForModal) setSelectedVavForModal(hit);
+                        return;
+                    }
+                }
+            }, [ahuData, selectedAhuId, selectedVavForModal && selectedVavForModal.id]);
+
             // AHU + VAV modal dimensions persisted to localStorage so the
             // operator's preferred diagram size restores on next open
             // instead of always defaulting to 1600x900 / 1400x850.  Lazy
@@ -2836,7 +2855,7 @@
         root.render(<ErrorBoundary><App /></ErrorBoundary>);
         // Prove the compiled JS (not just dashboard.html) actually mounted.
         try {
-            window.__RED5_BUNDLE_ID = 'SP27';
+            window.__RED5_BUNDLE_ID = 'SP28';
             window.__red5DashboardMounted = true;
             var _stamp = document.getElementById('red5-html-build');
             if (_stamp) {

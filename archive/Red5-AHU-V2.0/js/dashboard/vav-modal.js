@@ -50,14 +50,18 @@ function renderVavEquipmentModal(ctx) {
         sweetSpotRange, showSweetSpot,
         comfortZonePoly, showGivoni, getGivoniTier,
     } = ctx;
-                        /* Re-resolve from live ahuData each render. The table click
-                           stores a snapshot; telemetry polls update ahuData only,
-                           so reading the snapshot alone lagged until re-select. */
+                        /* Re-resolve from live ahuData each render. Prefer the
+                           currently selected AHU so duplicate VAV names across
+                           AHUs don't bind the wrong terminal. */
                         const selectedVavId = selectedVavSnapshot && selectedVavSnapshot.id;
                         let selectedVavForModal = selectedVavSnapshot;
                         let owningAhu = null;
                         if (selectedVavId && Array.isArray(ahuData)) {
-                            for (const a of ahuData) {
+                            const prefer = ahuData.find(a => a.id === selectedAhuId);
+                            const searchOrder = prefer
+                                ? [prefer, ...ahuData.filter(a => a !== prefer)]
+                                : ahuData;
+                            for (const a of searchOrder) {
                                 const hit = (a.vavs || []).find(v => v.id === selectedVavId);
                                 if (hit) { selectedVavForModal = hit; owningAhu = a; break; }
                             }
@@ -157,9 +161,13 @@ function renderVavEquipmentModal(ctx) {
                         const vavEquipId = selectedVavForModal.id;
                         const vavAp = (() => {
                             const out = { ...(selectedVavForModal.all_points || {}) };
-                            // Also allow top-level properties like t, rh, cfm on selectedVavForModal
-                            if (selectedVavForModal.t != null && out.t == null) out.t = selectedVavForModal.t;
-                            if (selectedVavForModal.rh != null && out.rh == null) out.rh = selectedVavForModal.rh;
+                            /* Table columns are top-level t/rh/w/h. Schema overlays
+                               often read all_points keys that can lag or map to a
+                               different sensor — force the same values the hub shows. */
+                            if (selectedVavForModal.t != null) out.t = selectedVavForModal.t;
+                            if (selectedVavForModal.rh != null) out.rh = selectedVavForModal.rh;
+                            if (selectedVavForModal.w != null) out.w = selectedVavForModal.w;
+                            if (selectedVavForModal.h != null) out.h = selectedVavForModal.h;
                             const pw = (typeof window !== 'undefined' && window._pendingWrites) || {};
                             const nowMs = Date.now();
                             for (const k of Object.keys(pw)) {

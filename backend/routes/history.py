@@ -511,7 +511,17 @@ async def ahu_drift_scores(
     step_s = max(60, window_min * 60 // 50)   # ~50 samples per window for RMS
 
     out: dict[str, dict] = {}
-    for aid in list((_ROLLING_AVGS or {}).keys()):
+    # Prefer AHUs already seen by rolling-avg sampling; if that store is
+    # still empty (fresh restart / first poll), fall back to configured
+    # AHU groups so the sidebar SA-drift pill is never blank.
+    aids = list((_ROLLING_AVGS or {}).keys())
+    if not aids:
+        try:
+            cfg = _load_json("collector_config.json") or {}
+            aids = list((cfg.get("ahu_groups") or {}).keys())
+        except Exception:
+            aids = []
+    for aid in aids:
         cur_rms,  cur_n  = _drift_rms_for_window(aid, cur_from,  now,      step_s)
         base_rms, _      = _drift_rms_for_window(aid, base_from, cur_from, step_s)
         if base_rms > 0:

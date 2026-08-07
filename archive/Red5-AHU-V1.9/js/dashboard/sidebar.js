@@ -892,11 +892,19 @@ function renderSidebar(ctx) {
                                     <div data-testid={`ahu-${ahu.id}-absorption-pill`} title={_abTitle}>
                                         <MetricBar theme={theme} val={m.absorption} color="#f472b6" height="h-full" width="w-9" max={15} showValue={true} delta={dAb} />
                                     </div>
-                                    {drift && Number.isFinite(drift.rms_c) && (
-                                        <div data-testid={`ahu-${ahu.id}-drift-pill`} title={`SA controller drift: ${drift.rms_c.toFixed(2)}°C RMS  |  base ${drift.base_rms_c.toFixed(2)}°C  |  trend ${drift.trend}`}>
-                                            <MetricBar theme={theme} val={drift.rms_c} color="#f59e0b" height="h-full" width="w-9" max={5} showValue={true} delta={dDrift} />
-                                        </div>
-                                    )}
+                                    {/* SA drift pill — always reserved (amber). When the
+                                        controller has not yet scored this AHU, show an empty
+                                        slot rather than dropping the pill (V1.9 regression). */}
+                                    <div data-testid={`ahu-${ahu.id}-drift-pill`}
+                                         title={drift && Number.isFinite(drift.rms_c)
+                                             ? `SA controller drift: ${drift.rms_c.toFixed(2)}°C RMS  |  base ${Number(drift.base_rms_c).toFixed(2)}°C  |  trend ${drift.trend}`
+                                             : 'SA controller drift: waiting for /api/ahu-drift-scores'}>
+                                        <MetricBar theme={theme}
+                                                   val={drift && Number.isFinite(drift.rms_c) ? drift.rms_c : 0}
+                                                   color="#f59e0b" height="h-full" width="w-9" max={5}
+                                                   showValue={!!(drift && Number.isFinite(drift.rms_c))}
+                                                   delta={dDrift} />
+                                    </div>
                                 </React.Fragment>
                             );
                         })()}

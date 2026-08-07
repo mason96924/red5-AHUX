@@ -488,7 +488,7 @@
     <!-- Always-visible build proof (HTML only — no JS). If this corner
          badge is missing after /update, the new dashboard.html never
          landed on the controller. -->
-    <div id="red5-html-build" style="position:fixed;bottom:6px;right:8px;z-index:99999;font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:#f59e0b;background:rgba(15,23,42,0.85);border:1px solid #b45309;border-radius:4px;padding:4px 8px;pointer-events:none;letter-spacing:0.04em">SP39</div>
+    <div id="red5-html-build" style="position:fixed;bottom:6px;right:8px;z-index:99999;font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:#f59e0b;background:rgba(15,23,42,0.85);border:1px solid #b45309;border-radius:4px;padding:4px 8px;pointer-events:none;letter-spacing:0.04em">SP40</div>
     <!-- Pre-compiled offline by /app/frontend/src/dashboard/build.sh —
          contains the verbatim concatenation of (in order):
             psychrometric.js, dashboard-components.js, schema-config.js,
@@ -503,9 +503,9 @@
         // Updated by frontend/src/dashboard/build.sh; do NOT hardcode a second
         // ?v= into the path strings below (that produced ?v=abc?v= + HASH and
         // left browsers stuck on a stale pre-sun-path-fix bundle on V1.9).
-        var HASH = 'fc96873f45';
+        var HASH = '3f07df1524';
         var stamp = document.getElementById('red5-html-build');
-        if (stamp) stamp.textContent = 'SP39·' + HASH;
+        if (stamp) stamp.textContent = 'SP40·' + HASH;
         var root = document.getElementById('root');
         function showBootError(msg) {
             if (!root) return;
@@ -545,7 +545,7 @@
             s.onload = function () {
                 setTimeout(function () {
                     if (!window.__RED5_BUNDLE_ID && stamp) {
-                        stamp.textContent = 'SP39·' + HASH + '·NOJS';
+                        stamp.textContent = 'SP40·' + HASH + '·NOJS';
                         stamp.style.color = '#f87171';
                         stamp.style.borderColor = '#ef4444';
                     }

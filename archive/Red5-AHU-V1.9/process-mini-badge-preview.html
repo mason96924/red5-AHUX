@@ -18,18 +18,18 @@
     border:1px solid #475569;background:#1e293b;color:#93c5fd;font:700 10px/1 ui-monospace,Menlo,monospace;
     letter-spacing:.06em;cursor:pointer}
   .badge-btn .dot{width:7px;height:7px;border-radius:50%}
-  .mini{width:220px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:8px 8px 6px;
+  .mini{width:440px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 10px 8px;
     box-shadow:0 8px 24px rgba(0,0,0,.35)}
   .mini-title{font:800 9px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;
-    color:#64748b;margin:0 0 4px 4px}
-  .vals{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;padding:4px 4px 2px;
-    font:700 10px/1.25 ui-monospace,Menlo,monospace}
+    color:#64748b;margin:0 0 6px 4px}
+  .vals{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;padding:6px 4px 2px;
+    font:700 11px/1.25 ui-monospace,Menlo,monospace}
   .vals b{font-weight:800}
   .oa{color:#3b82f6}.ra{color:#f43f5e}.ma{color:#0f172a}.sa{color:#10b981}
 </style>
 </head>
 <body>
-  <h1>Dashboard process mini-badge — size preview</h1>
+  <h1>Dashboard process mini-badge — overview sketch (2×)</h1>
   <div class="row">
     <div class="col">
       <div class="lab">Collapsed (button)</div>
@@ -42,42 +42,40 @@
       </button>
     </div>
     <div class="col">
-      <div class="lab">Expanded — main-chart CZ + RH band</div>
+      <div class="lab">Expanded ~440×248 — light, no grid, sat + enthalpy + green RH band</div>
       <div class="mini">
         <div class="mini-title">AHU-01 · OA–MA–SA / RA · 40–60% RH</div>
-        <svg viewBox="0 0 220 120" width="220" height="120" aria-label="Mini process sketch">
-          <rect x="8" y="6" width="204" height="108" fill="#f8fafc" rx="4"/>
-          <g stroke="#e2e8f0" stroke-width="1">
-            <path d="M28 20 V104 M58 20 V104 M88 20 V104 M118 20 V104 M148 20 V104 M178 20 V104"/>
-            <path d="M18 30 H202 M18 50 H202 M18 70 H202 M18 90 H202"/>
+        <svg viewBox="0 0 440 248" width="440" height="248" aria-label="Process sketch">
+          <rect x="2" y="2" width="436" height="244" rx="6" fill="#fff" stroke="#e2e8f0"/>
+          <!-- 100% RH saturation -->
+          <path d="M36 210 C 120 200, 200 160, 280 100 C 340 55, 380 28, 410 18"
+                fill="none" stroke="#1d4ed8" stroke-width="2.8" stroke-linecap="round"/>
+          <text x="300" y="36" fill="#1d4ed8" font-size="11" font-weight="700" font-family="system-ui">100% RH (saturation)</text>
+          <!-- Green RH band (curved isopleth strip — not Givoni) -->
+          <polygon points="180,118 220,108 260,118 260,158 220,168 180,158"
+                   fill="#10b981" fill-opacity=".18" stroke="#059669" stroke-width="1.6" stroke-dasharray="5 3"/>
+          <text x="220" y="142" text-anchor="middle" fill="#047857" font-size="11" font-weight="800" font-family="system-ui">RH band (40–60%)</text>
+          <!-- Enthalpy diagonals OA / RA / SA -->
+          <g fill="none" stroke="#7c3aed" stroke-dasharray="4 3">
+            <path d="M90 40 L400 120" stroke-width="1.4" opacity=".85"/>
+            <path d="M70 90 L390 175" stroke-width="1.4" opacity=".85"/>
+            <path d="M50 150 L280 210" stroke-width="1.7" opacity=".95"/>
           </g>
-          <!-- RH isopleths — main chart style (100% indigo) -->
-          <g fill="none" opacity=".5">
-            <path d="M40 100 Q90 88 140 55 Q165 35 185 18" stroke="#cbd5e1" stroke-width="1"/>
-            <path d="M35 100 Q85 80 130 48 Q160 28 182 12" stroke="#4f46e5" stroke-width="2" opacity=".7"/>
-            <path d="M50 100 Q95 92 145 70" stroke="#cbd5e1" stroke-width="1"/>
-            <path d="M60 100 Q100 95 150 82" stroke="#cbd5e1" stroke-width="1"/>
-          </g>
-          <!-- Givoni CZ + RH band (sweet strip) -->
+          <text x="170" y="205" fill="#7c3aed" font-size="10" font-weight="700" font-family="system-ui">equal energy (enthalpy)</text>
+          <!-- Mix + process — OA blue / RA rose / SA emerald (live chart) -->
+          <path d="M355 70 L250 145" stroke="#f43f5e" stroke-width="1.8" stroke-dasharray="6 4" opacity=".9"/>
           <defs>
-            <clipPath id="prev-cz">
-              <polygon points="95,52 118,48 138,58 138,88 118,92 95,88"/>
-            </clipPath>
-            <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6 Z" fill="#10b981"/>
+            <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7 Z" fill="#10b981"/>
             </marker>
           </defs>
-          <polygon points="95,52 118,48 138,58 138,88 118,92 95,88"
-                   fill="#10b981" fill-opacity=".15" stroke="#10b981" stroke-width="1.2"/>
-          <polygon points="95,62 118,58 138,68 138,82 118,86 95,78"
-                   clip-path="url(#prev-cz)"
-                   fill="#059669" fill-opacity=".32" stroke="#34d399" stroke-width=".9" stroke-dasharray="3 2"/>
-          <path d="M178 48 L130 78" stroke="#f43f5e" stroke-width="1.7" stroke-dasharray="5 3" opacity=".85"/>
-          <path d="M145 68 L78 82" stroke="#10b981" stroke-width="2.2" marker-end="url(#arr)"/>
-          <circle cx="178" cy="48" r="4.5" fill="#3b82f6"/><text x="184" y="44" fill="#3b82f6" font-size="9" font-weight="800" font-family="system-ui">OA</text>
-          <circle cx="130" cy="78" r="4.5" fill="#f43f5e"/><text x="136" y="92" fill="#f43f5e" font-size="9" font-weight="800" font-family="system-ui">RA</text>
-          <circle cx="145" cy="68" r="4" fill="#0f172a"/><text x="150" y="64" fill="#0f172a" font-size="9" font-weight="800" font-family="system-ui">MA</text>
-          <circle cx="78" cy="82" r="4.5" fill="#10b981"/><text x="58" y="78" fill="#10b981" font-size="9" font-weight="800" font-family="system-ui">SA</text>
+          <path d="M290 118 L120 175" stroke="#10b981" stroke-width="2.4" marker-end="url(#arr)"/>
+          <circle cx="355" cy="70" r="5.5" fill="#3b82f6"/><text x="363" y="62" fill="#3b82f6" font-size="13" font-weight="800" font-family="system-ui">OA</text>
+          <circle cx="250" cy="145" r="5.5" fill="#f43f5e"/><text x="258" y="161" fill="#f43f5e" font-size="13" font-weight="800" font-family="system-ui">RA</text>
+          <circle cx="290" cy="118" r="5" fill="#0f172a"/><text x="298" y="110" fill="#0f172a" font-size="13" font-weight="800" font-family="system-ui">MA</text>
+          <circle cx="120" cy="175" r="5.5" fill="#10b981"/><text x="98" y="167" fill="#10b981" font-size="13" font-weight="800" font-family="system-ui">SA</text>
+          <text x="220" y="238" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="system-ui">Dry-bulb temperature →</text>
+          <text x="14" y="130" fill="#94a3b8" font-size="11" font-family="system-ui" transform="rotate(-90,14,130)">Moisture in the air →</text>
         </svg>
         <div class="vals">
           <div class="oa"><b>OA</b> 32.0° · 60%</div>
@@ -88,9 +86,9 @@
       </div>
     </div>
   </div>
-  <p style="max-width:520px;text-align:center;font-size:12px;color:#64748b;line-height:1.5">
-    Intent: one-tap badge on the psych chart opens this sketch sized for reading OA/MA/RA/SA values —
-    Givoni CZ + RH band match the main psy chart (emerald strip clipped to CZ), not an amber rectangle.
+  <p style="max-width:560px;text-align:center;font-size:12px;color:#64748b;line-height:1.5">
+    Overview-slide geometry at 2×: light background, saturation curve, OA/RA/SA enthalpy lines,
+    green RH band only (no Givoni). OA/RA colours follow the live chart (blue / rose), not the slide amber/green.
   </p>
 </body>
 </html>

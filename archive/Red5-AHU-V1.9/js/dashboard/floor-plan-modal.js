@@ -16,8 +16,8 @@
  * (modulo a single block of dedent) so behaviour stays unchanged.
  * ------------------------------------------------------------------ */
 
-/** Draggable ▤ Window · Open chip — parks clear of the sun-path badge. */
-function LiveWindowOpenButton(props) {
+/** Draggable ▤ Blinds chip — parks clear of the sun-path badge. */
+function LiveBlindsButton(props) {
     const {
         theme, floorWindowsPanelOpen, setFloorWindowsPanelOpen,
         selectedFloorWindowId, setSelectedFloorWindowId, windows,
@@ -97,10 +97,105 @@ function LiveWindowOpenButton(props) {
             }}
             onMouseDown={onMouseDown}
             onClick={onClick}
-            title="Drag to move · click to open this floor’s window blinds"
+            title="Drag to move · click to set blinds (closed ↔ open)"
         >
-            ▤ Window · Open
+            ▤ Blinds
         </button>
+    );
+}
+
+/** Draggable per-window blind 0–100% pill (Closed ↔ Open). */
+function LiveBlindControlPill(props) {
+    const {
+        theme, wi, wid, w, floorKey, openPct,
+        setFloorWindowOpenPct, setFloorWindowsPanelOpen, setSelectedFloorWindowId,
+    } = props;
+    const placeAbove = (Number(w.y) || 50) > 22;
+    const storageKey = 'red5.liveBlindPillPos.' + String(wid);
+    const [pos, setPos] = React.useState(() => {
+        try {
+            const p = JSON.parse(localStorage.getItem(storageKey) || 'null');
+            if (p && typeof p.x === 'number' && typeof p.y === 'number') return p;
+        } catch (_) {}
+        return { x: 0, y: 0 };
+    });
+    const [drag, setDrag] = React.useState(null);
+    const posRef = React.useRef(pos);
+    posRef.current = pos;
+
+    React.useEffect(() => {
+        if (!drag) return undefined;
+        const onMove = (e) => {
+            setPos({
+                x: drag.baseX + (e.clientX - drag.startX),
+                y: drag.baseY + (e.clientY - drag.startY),
+            });
+        };
+        const onUp = () => {
+            setDrag(null);
+            try { localStorage.setItem(storageKey, JSON.stringify(posRef.current)); } catch (_) {}
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [drag, storageKey]);
+
+    const baseTx = placeAbove ? '-50%' : '-50%';
+    const baseTy = placeAbove ? 'calc(-100% - 16px)' : '16px';
+
+    return (
+        <div
+            data-testid="live-window-individual-control"
+            className={`absolute z-[55] w-[220px] rounded-md border shadow-2xl pointer-events-auto ${
+                theme === 'dark' ? 'bg-slate-950/95 border-amber-500/70 text-slate-200' : 'bg-white/95 border-amber-400 text-slate-800'
+            }`}
+            style={{
+                left: `${w.x}%`,
+                top: `${w.y}%`,
+                transform: `translate(${baseTx}, ${baseTy}) translate(${pos.x}px, ${pos.y}px)`,
+                cursor: drag ? 'grabbing' : 'grab',
+                userSelect: 'none',
+                touchAction: 'none',
+            }}
+            onMouseDown={(e) => {
+                if (e.button !== 0) return;
+                const t = e.target;
+                if (t && t.closest && (t.closest('button') || t.closest('input'))) return;
+                e.stopPropagation();
+                e.preventDefault();
+                setDrag({ startX: e.clientX, startY: e.clientY, baseX: pos.x, baseY: pos.y });
+            }}
+            title="Drag to move · this window’s blind only"
+        >
+            <div className={`flex items-center justify-between px-2 py-1.5 border-b text-[9px] uppercase tracking-widest ${
+                theme === 'dark' ? 'border-slate-700 text-amber-300' : 'border-slate-200 text-amber-700'
+            }`}>
+                <span>W{wi + 1} · Blind</span>
+                <button type="button" className="text-sm px-1 opacity-60 hover:opacity-100 cursor-pointer"
+                        onClick={() => {
+                            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
+                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
+                        }}>×</button>
+            </div>
+            <div className="px-2 py-2">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] opacity-60 w-10 shrink-0">Closed</span>
+                    <input type="range" min="0" max="100" step="1" value={openPct}
+                           className="flex-1 min-w-0 accent-amber-400 cursor-pointer"
+                           data-testid={`live-window-open-${wid}`}
+                           onChange={(e) => {
+                               const v = parseInt(e.target.value, 10) || 0;
+                               if (setFloorWindowOpenPct) setFloorWindowOpenPct(floorKey, w.id, v, wi);
+                           }}/>
+                    <span className="text-[8px] opacity-60 w-8 shrink-0 text-right">Open</span>
+                    <span className="font-mono text-[10px] text-amber-400 w-9 text-right">{openPct}%</span>
+                </div>
+                <div className="text-[8px] opacity-50 mt-1">This window only · 0% closed · 100% open</div>
+            </div>
+        </div>
     );
 }
 
@@ -232,17 +327,30 @@ const floorModalTree = (
                                     showBars={false}
                                 />
                             )}
-                            {/* Live window bars — click one window to open ITS blind control */}
+                            {/* Live window bars — amber glow on the WINDOW (blind open %), not on VAVs */}
                             {(floorData.floor.windows || []).map((w, wi) => {
                                 const wid = w.id != null ? w.id : ('idx-' + wi);
                                 const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
                                 const open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
+                                const openEase = Math.pow(open, 0.7);
                                 const len = Math.max(Number(w.length) || 8, 3);
+                                const sunOn = !!(sunState && sunState.enabled && sunState.sun && sunState.sun.is_day);
+                                /* Closed → cool bar, no glow. Open → amber bar + bloom on the glass. */
+                                const glow = openEase > 0.02;
+                                const barBg = glow
+                                    ? (sel ? '#fbbf24' : '#f59e0b')
+                                    : (sel ? '#38bdf8' : '#7dd3fc');
+                                const barOp = glow ? (0.55 + 0.40 * openEase) : 0.50;
+                                const bloom = sunOn && glow
+                                    ? `0 0 ${6 + 18 * openEase}px ${2 + 8 * openEase}px rgba(251,191,36,${0.35 + 0.55 * openEase}), 0 0 ${4 + 10 * openEase}px rgba(253,224,71,${0.25 + 0.45 * openEase})`
+                                    : (glow
+                                        ? `0 0 ${4 + 10 * openEase}px rgba(251,191,36,${0.25 + 0.35 * openEase})`
+                                        : '0 0 4px rgba(125,211,252,0.35)');
                                 return (
                                     <div
                                         key={wid}
                                         data-testid={`live-window-${wid}`}
-                                        title={`W${wi + 1} · open ${Math.round(open * 100)}% — click to set this window`}
+                                        title={`W${wi + 1} · blind ${Math.round(open * 100)}% open — click to set`}
                                         onMouseDown={(e) => {
                                             e.stopPropagation();
                                             if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
@@ -253,7 +361,7 @@ const floorModalTree = (
                                             left: `${w.x}%`,
                                             top: `${w.y}%`,
                                             width: `${len}%`,
-                                            height: '10px',
+                                            height: `${Math.max(12, 10 + 8 * openEase)}px`,
                                             transform: `translate(-50%, -50%) rotate(${Number(w.angle_deg) || 0}deg)`,
                                             cursor: 'pointer',
                                             zIndex: sel ? 45 : 35,
@@ -263,15 +371,17 @@ const floorModalTree = (
                                         <div style={{
                                             position: 'absolute', left: 0, right: 0, top: '2px', bottom: '2px',
                                             borderRadius: 2,
-                                            background: sel ? '#fbbf24' : '#7dd3fc',
-                                            opacity: 0.45 + 0.45 * open,
-                                            boxShadow: sel ? '0 0 10px rgba(251,191,36,0.7)' : '0 0 4px rgba(125,211,252,0.35)',
-                                            border: sel ? '1px solid #fde68a' : '1px solid rgba(186,230,253,0.45)',
+                                            background: barBg,
+                                            opacity: barOp,
+                                            boxShadow: bloom,
+                                            border: glow
+                                                ? `1px solid rgba(253,224,71,${0.45 + 0.45 * openEase})`
+                                                : '1px solid rgba(186,230,253,0.45)',
                                         }} />
                                     </div>
                                 );
                             })}
-                            {/* Individual Open control — anchored to the selected window only */}
+                            {/* Individual blind control — draggable Closed ↔ Open pill */}
                             {floorWindowsPanelOpen && (() => {
                                 const wins = floorData.floor.windows || [];
                                 let wi = wins.findIndex((w, i) => {
@@ -284,48 +394,19 @@ const floorModalTree = (
                                 const wid = w.id != null ? w.id : ('idx-' + wi);
                                 const floorKey = floorData.floor.id || floorData.floor.name || 'floor';
                                 const openPct = Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
-                                const placeAbove = (Number(w.y) || 50) > 22;
                                 return (
-                                    <div
-                                        key={'live-win-ctrl-' + wid}
-                                        data-testid="live-window-individual-control"
-                                        className={`absolute z-[55] w-[210px] rounded-md border shadow-2xl pointer-events-auto ${
-                                            theme === 'dark' ? 'bg-slate-950/95 border-amber-500/70 text-slate-200' : 'bg-white/95 border-amber-400 text-slate-800'
-                                        }`}
-                                        style={{
-                                            left: `${w.x}%`,
-                                            top: `${w.y}%`,
-                                            transform: placeAbove
-                                                ? 'translate(-50%, calc(-100% - 16px))'
-                                                : 'translate(-50%, 16px)',
-                                        }}
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                    >
-                                        <div className={`flex items-center justify-between px-2 py-1.5 border-b text-[9px] uppercase tracking-widest ${
-                                            theme === 'dark' ? 'border-slate-700 text-amber-300' : 'border-slate-200 text-amber-700'
-                                        }`}>
-                                            <span>W{wi + 1} · Open</span>
-                                            <button type="button" className="text-sm px-1 opacity-60 hover:opacity-100"
-                                                    onClick={() => {
-                                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
-                                                        if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
-                                                    }}>×</button>
-                                        </div>
-                                        <div className="px-2 py-2">
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-[9px] opacity-60 w-9 shrink-0">Open</span>
-                                                <input type="range" min="0" max="100" step="1" value={openPct}
-                                                       className="flex-1 min-w-0 accent-amber-400"
-                                                       data-testid={`live-window-open-${wid}`}
-                                                       onChange={(e) => {
-                                                           const v = parseInt(e.target.value, 10) || 0;
-                                                           if (setFloorWindowOpenPct) setFloorWindowOpenPct(floorKey, w.id, v, wi);
-                                                       }}/>
-                                                <span className="font-mono text-[10px] text-amber-400 w-9 text-right">{openPct}%</span>
-                                            </div>
-                                            <div className="text-[8px] opacity-50 mt-1">This window only · 0% closed · 100% open</div>
-                                        </div>
-                                    </div>
+                                    <LiveBlindControlPill
+                                        key={'live-blind-pill-' + wid}
+                                        theme={theme}
+                                        wi={wi}
+                                        wid={wid}
+                                        w={w}
+                                        floorKey={floorKey}
+                                        openPct={openPct}
+                                        setFloorWindowOpenPct={setFloorWindowOpenPct}
+                                        setFloorWindowsPanelOpen={setFloorWindowsPanelOpen}
+                                        setSelectedFloorWindowId={setSelectedFloorWindowId}
+                                    />
                                 );
                             })()}
                             {/* INLINE zIndex (not Tailwind): must sit ABOVE SunRayOverlay
@@ -337,7 +418,7 @@ const floorModalTree = (
                                 {floorData.floor.name} - {floorData.floor.image_path}
                             </div>
                             {(floorData.floor.windows || []).length > 0 && (
-                                <LiveWindowOpenButton
+                                <LiveBlindsButton
                                     theme={theme}
                                     floorWindowsPanelOpen={floorWindowsPanelOpen}
                                     setFloorWindowsPanelOpen={setFloorWindowsPanelOpen}
@@ -371,7 +452,7 @@ const floorModalTree = (
                                         )}
                                         <div 
                                             className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActive ? 'bg-orange-500 border-white shadow-[0_0_25px_rgba(249,115,22,0.9)] scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500 shadow-black' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
-                                            style={(sunRing && !isActive) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
+                                            style={(sunRing && !isActive) ? {borderColor: sunRing, boxShadow: `inset 0 0 0 1.5px ${sunRing}`} : {}}
                                             title={marker.name + (sunRing ? ' · sun-exposed' : '')}
                                             onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(marker.name); setShowFloorPlanForAhu(marker.name); setLockedVavId(null); }}
                                         >
@@ -463,7 +544,7 @@ const floorModalTree = (
                                         })()}
                                         <div
                                             className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : (sunRing ? '' : 'border-white')}`}
-                                            style={Object.assign({}, dotStyle || {}, (sunRing && !isLocked) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {})}
+                                            style={Object.assign({}, dotStyle || {}, (sunRing && !isLocked) ? {borderColor: sunRing, boxShadow: `inset 0 0 0 1.5px ${sunRing}`} : {})}
                                             title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + (sunRing ? ' · sun-exposed' : '') + trimSuffix}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         ></div>
@@ -597,7 +678,7 @@ const floorModalTree = (
                                                 }}/>
                                             )}
                                             <div className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActiveAhu ? 'bg-orange-500 border-white scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
-                                                style={(sunRing && !isActiveAhu) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
+                                                style={(sunRing && !isActiveAhu) ? {borderColor: sunRing, boxShadow: `inset 0 0 0 1.5px ${sunRing}`} : {}}
                                                 title={ahu.id + (sunRing ? ' · sun-exposed' : '')}
                                                 onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(ahu.id); setLockedVavId(null); }}
                                             >
@@ -635,7 +716,7 @@ const floorModalTree = (
                                                 }}/>
                                             )}
                                             <div className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${isLocked ? 'bg-rose-500 scale-125' : 'bg-emerald-500'} ${sunRing ? '' : 'border-white'}`}
-                                                style={sunRing ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
+                                                style={sunRing ? {borderColor: sunRing, boxShadow: `inset 0 0 0 1.5px ${sunRing}`} : {}}
                                                 title={v.id + (sunRing ? ' · sun-exposed' : '')}
                                                 onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }}
                                             ></div>

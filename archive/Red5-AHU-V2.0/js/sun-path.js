@@ -482,6 +482,19 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var bloomR = Math.max(4, half * 0.9 + 3 + 12 * openEase);
     var amber = isLight ? '251,191,36' : '251,146,60';
     var hot = isLight ? '253,224,71' : '251,191,36';
+    /* Bright glass-edge glow — amber reads ON the window, not mid-room. */
+    var glassX = (x1 + x2) / 2;
+    var glassY = (y1 + y2) / 2;
+    var glassOp = Math.min(0.85, 0.20 + openEase * 0.65);
+    var glassR = Math.max(3, half * 0.55 + 4 + 10 * openEase);
+    shafts.push(
+      <ellipse key={'wglass-'+ (w.id || i)}
+               cx={glassX} cy={glassY}
+               rx={glassR} ry={Math.max(2.2, glassR * 0.38)}
+               transform={'rotate('+(ang)+' '+glassX+' '+glassY+')'}
+               fill={'rgba('+hot+','+glassOp+')'}
+      />
+    );
     shafts.push(
       <polygon key={'ws-'+ (w.id || i)}
                points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}

@@ -563,9 +563,9 @@ const floorModalTree = (
                                             <div className={`${isLocked ? 'text-cyan-400' : 'text-sky-500'} font-black mb-0.5`}>{marker.name}</div>
                                             {liveVav && <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{liveVav.t.toFixed(1)}&deg;C</span><span className="text-slate-500">·</span><span>{liveVav.rh.toFixed(0)}%</span></div>}
                                             {!liveVav && <div className="text-slate-500">--</div>}
-                                            {vavBandTrim && vavBandTrim.sun_trim_c !== 0 && (
+                                            {vavBandTrim && vavBandTrim.sun_trim_c !== 0 && sunRing && (
                                                 <div className={`mt-0.5 text-[8px] tracking-wider ${vavBandTrim.sun_trim_c < 0 ? (theme==='dark' ? 'text-amber-400' : 'text-amber-600') : (theme==='dark' ? 'text-sky-400' : 'text-sky-600')}`}
-                                                    title={`Sun-exposure ${(vavBandTrim.sun_score*100).toFixed(0)}% → ${vavBandTrim.id} SA ${vavBandTrim.base_sa_t}°C ${vavBandTrim.sun_trim_c > 0 ? '+' : ''}${vavBandTrim.sun_trim_c.toFixed(2)}°C`}>
+                                                    title={`Amber-ring sun ${(vavBandTrim.sun_score*100).toFixed(0)}% → zone heat gain; ${vavBandTrim.id} SA ${vavBandTrim.base_sa_t}°C ${vavBandTrim.sun_trim_c > 0 ? '+' : ''}${vavBandTrim.sun_trim_c.toFixed(2)}°C pre-cool`}>
                                                     ΔSA {vavBandTrim.sun_trim_c > 0 ? '+' : ''}{vavBandTrim.sun_trim_c.toFixed(2)}°C
                                                 </div>
                                             )}

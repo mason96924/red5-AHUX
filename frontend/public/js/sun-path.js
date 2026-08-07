@@ -269,59 +269,43 @@ window.red5SunBlindScore = function(mxPct, myPct, sun, windows, opts){
 /* Shifts an AHU's active B1-B10 SA-temperature setpoint per individual
    VAV based on that VAV's solar-exposure score.  The band itself stays
    the same (climate driven, AHU-wide) — only the local SA target the
-   VAV chases is nudged so:
-       • Sun-exposed VAVs (score → 1) get a COLDER local SA target
-         (pre-cooling for the sun-soaked façade).
-       • Shaded VAVs        (score → 0) get a WARMER local SA target
-         (less over-cooling on cool, north-facing zones).
-   Trim window: ±1.5 °C around the band SA setpoint, linear in score.
-       delta_c = -3 * (score - 0.5)      // gentle, bounded.
-   In heating-dominated bands (B1, B2) the same formula applies and is
-   physically correct: sun-exposed zones already gain heat through the
-   façade so the local target can drop a bit; shaded zones need a
-   slightly warmer SA to compensate.
+   VAV chases is nudged.
 
-   Input:  band        — active_band record (any shape with `sa_t_sp` OR
-                         `sa_t`; works for both the collector's payload
-                         and the JS BANDS table).
-           sunScore    — 0..1 from red5SunExposureScore.
-           opts.maxTrim_c — override max trim (default 1.5).
+   ONLY VAVs with an amber outer ring (in-shaft × open blinds × in-room,
+   score > ring threshold) contribute.  Shaded / closed-blind / out-of-
+   room VAVs get sun_trim_c = 0 — no bogus “upward” ΔSA from score=0.
 
-   Output: {
-     id, sa_t_sp / sa_t (trimmed), sa_rh_sp / sa_rh (untouched),
-     oa_damper_sp / oa_damper, cc_mode, hc_mode, hum_mode,
-     reheat_t,
-     base_sa_t,         // original setpoint, for comparison badges
-     sun_score,         // pass-through 0..1
-     sun_trim_c         // signed °C delta applied
-   }
-   Returns the input band unmodified (with sun_trim_c=0) when sunScore is
-   null/undefined or the band is null/undefined.                        */
+   Amber-ring VAVs: solar heat drives upward zone-temp drift, so the
+   local SA target is nudged colder (pre-cool) proportional to score:
+       delta_c = -maxTrim * score     // 0 at threshold edge → -maxTrim at 1
+   Default maxTrim = 1.5 °C.
+
+   Input:  band, sunScore (0..1), opts.maxTrim_c
+   Output: band copy + base_sa_t, sun_score, sun_trim_c                 */
 window.red5BandSunTrim = function(band, sunScore, opts){
   if (!band) return null;
-  if (sunScore == null || isNaN(sunScore)) {
-    var pass = {};
-    for (var k in band) pass[k] = band[k];
-    pass.sun_score = 0; pass.sun_trim_c = 0;
-    pass.base_sa_t = ('sa_t_sp' in band) ? band.sa_t_sp : band.sa_t;
-    return pass;
-  }
   opts = opts || {};
   var maxTrim = (typeof opts.maxTrim_c === 'number') ? opts.maxTrim_c : 1.5;
-  // Linear: score=0.5 → 0, score=1 → -maxTrim, score=0 → +maxTrim
-  var delta = -2 * maxTrim * (sunScore - 0.5);
-  // Snap to 0.05 °C to keep telemetry-style displays stable.
-  delta = Math.round(delta * 20) / 20;
+  var ringMin = (typeof opts.ringMin === 'number') ? opts.ringMin : 0.02;
   var out = {};
   for (var kk in band) out[kk] = band[kk];
+  out.base_sa_t = ('sa_t_sp' in band) ? band.sa_t_sp : (('sa_t' in band) ? band.sa_t : null);
+
+  /* No amber ring → no sun contribution to temperature drift / SA trim. */
+  if (sunScore == null || isNaN(sunScore) || !(sunScore > ringMin)) {
+    out.sun_score = 0;
+    out.sun_trim_c = 0;
+    return out;
+  }
+
+  var t = Math.min(1, Math.max(0, sunScore));
+  /* Pre-cool for solar heat gain (upward zone-temp drift on amber VAVs). */
+  var delta = -maxTrim * t;
+  delta = Math.round(delta * 20) / 20;
   if ('sa_t_sp' in band) {
-    out.base_sa_t = band.sa_t_sp;
-    out.sa_t_sp   = +(band.sa_t_sp + delta).toFixed(2);
+    out.sa_t_sp = +(band.sa_t_sp + delta).toFixed(2);
   } else if ('sa_t' in band) {
-    out.base_sa_t = band.sa_t;
-    out.sa_t      = +(band.sa_t + delta).toFixed(2);
-  } else {
-    out.base_sa_t = null;
+    out.sa_t = +(band.sa_t + delta).toFixed(2);
   }
   out.sun_score  = sunScore;
   out.sun_trim_c = delta;

@@ -64,12 +64,26 @@ function renderVavEquipmentModal(ctx) {
                                 if (marker) { vavTypeId = String(marker.equipment_type_id || ''); vavMarkerPos = {x:marker.x, y:marker.y}; break; }
                             }
                         }
-                        // Sun-Path → B1-B10 trim for this specific VAV (P0 hook).  Same
-                        // formula as the floor-plan tooltip; only computed when the sun
-                        // overlay is enabled and this VAV's position is known.
+                        // Sun-Path → B1-B10 trim: only amber-ring VAVs (in-shaft × blinds).
                         let modalSunScore = null, modalBandTrim = null;
-                        if (sunState && sunState.enabled && sunState.sun && vavMarkerPos && window.red5SunExposureScore) {
-                            modalSunScore = window.red5SunExposureScore(vavMarkerPos.x/100, vavMarkerPos.y/100, sunState.sun);
+                        if (sunState && sunState.enabled && sunState.sun && vavMarkerPos) {
+                            let floorWins = [], floorRooms = [];
+                            if (mapConfig && mapConfig.floors) {
+                                for (const floor of mapConfig.floors) {
+                                    const marker = (floor.markers || []).find(m => m.type === 'vav' && m.name === selectedVavForModal.id);
+                                    if (marker) {
+                                        floorWins = floor.windows || [];
+                                        floorRooms = floor.rooms || [];
+                                        break;
+                                    }
+                                }
+                            }
+                            const opts = { rooms: floorRooms };
+                            modalSunScore = window.red5SunBlindScore
+                                ? window.red5SunBlindScore(vavMarkerPos.x, vavMarkerPos.y, sunState.sun, floorWins, opts)
+                                : (window.red5SunExposureScore
+                                    ? window.red5SunExposureScore(vavMarkerPos.x/100, vavMarkerPos.y/100, sunState.sun)
+                                    : 0);
                             const _ahuForBand = ahuData.find(a => a.id === selectedAhuId) || ahuData[0];
                             if (_ahuForBand && _ahuForBand.active_band && window.red5BandSunTrim) {
                                 modalBandTrim = window.red5BandSunTrim(_ahuForBand.active_band, modalSunScore);

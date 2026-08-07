@@ -200,9 +200,12 @@ function LiveBlindControlPill(props) {
 }
 
 /** Amber VAV/AHU ring: sun exposure × blind open of windows lighting this marker. */
-function liveSunRingStyle(xPct, yPct, sunState, windows, buildingFacingOffset) {
+function liveSunRingStyle(xPct, yPct, sunState, windows, buildingFacingOffset, rooms) {
     if (!(sunState && sunState.enabled && sunState.sun)) return { score: 0, style: null, color: null };
-    const opts = { northOffsetDeg: typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0 };
+    const opts = {
+        northOffsetDeg: typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0,
+        rooms: rooms || [],
+    };
     const wins = windows || [];
     let score = 0;
     if (window.red5SunBlindScore) {
@@ -336,11 +339,13 @@ const floorModalTree = (
                             {sunState && sunState.enabled && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
                                 <window.WindowsSunshaftOverlay
                                     windows={floorData.floor.windows}
+                                    rooms={floorData.floor.rooms || []}
                                     sun={sunState.sun}
                                     theme={theme}
                                     cloudCover={sunState.cloudCover}
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
                                     showBars={false}
+                                    showRooms={true}
                                 />
                             )}
                             {/* Live window bars — click to set blinds; no amber halo on the glass */}
@@ -435,7 +440,7 @@ const floorModalTree = (
                                 // shadow for this marker when the overlay is active.
                                 let sunRing = null, sunRingStyle = null, sunShadow = null;
                                 if (sunState && sunState.enabled && sunState.sun) {
-                                    const ring = liveSunRingStyle(marker.x, marker.y, sunState, floorData.floor.windows, buildingFacingOffset);
+                                    const ring = liveSunRingStyle(marker.x, marker.y, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms);
                                     sunRing = ring.color;
                                     sunRingStyle = ring.style;
                                     if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
@@ -515,7 +520,7 @@ const floorModalTree = (
                                 let vavSunScore = null, vavBandTrim = null, sunRing = null, sunRingStyle = null;
                                 if (sunState && sunState.enabled && sunState.sun
                                     && Number.isFinite(mx) && Number.isFinite(my)) {
-                                    const ring = liveSunRingStyle(mx, my, sunState, floorData.floor.windows, buildingFacingOffset);
+                                    const ring = liveSunRingStyle(mx, my, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms);
                                     vavSunScore = ring.score;
                                     sunRing = ring.color;
                                     sunRingStyle = ring.style;

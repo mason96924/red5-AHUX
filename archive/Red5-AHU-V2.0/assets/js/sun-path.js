@@ -99,7 +99,62 @@ window.red5SunExposureScore = function(markerXFrac, markerYFrac, sun, opts){
   return Math.max(0, facade * Math.max(alt, 0.15)); // keep daytime ring readable near horizon
 };
 
-/* ---------- EXPOSURE → COLOR -------------------------------------- */
+/* ---------- ROOM POLYGONS (plan % coords, ELC-inspired) ------------- */
+window.red5PointInPolygon = function(x, y, verts){
+  if (!verts || verts.length < 3) return false;
+  var inside = false;
+  for (var i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    var xi = Number(verts[i][0]), yi = Number(verts[i][1]);
+    var xj = Number(verts[j][0]), yj = Number(verts[j][1]);
+    var intersect = ((yi > y) !== (yj > y))
+      && (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
+window.red5PolygonArea = function(verts){
+  if (!verts || verts.length < 3) return 0;
+  var a = 0;
+  for (var i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    a += (Number(verts[j][0]) + Number(verts[i][0]))
+       * (Number(verts[j][1]) - Number(verts[i][1]));
+  }
+  return Math.abs(a) / 2;
+};
+
+/* Smallest containing room (plan %), or null. */
+window.red5FindContainingRoom = function(x, y, rooms){
+  if (!rooms || !rooms.length) return null;
+  var best = null, bestArea = Infinity;
+  for (var i = 0; i < rooms.length; i++) {
+    var r = rooms[i];
+    var verts = r && (r.vertices || r.points);
+    if (!verts || verts.length < 3) continue;
+    if (!window.red5PointInPolygon(x, y, verts)) continue;
+    var a = window.red5PolygonArea(verts);
+    if (a < bestArea) { bestArea = a; best = r; }
+  }
+  return best;
+};
+
+/* Sample a point just inside the window (toward plan center) to own a room. */
+window.red5RoomForWindow = function(w, rooms){
+  if (!w || !rooms || !rooms.length) return null;
+  var cx = Number(w.x), cy = Number(w.y);
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  var ang = Number(w.angle_deg) || 0;
+  var rad = ang * Math.PI / 180;
+  var tx = Math.cos(rad), ty = Math.sin(rad);
+  var nx = -ty, ny = tx;
+  var ix = 50 - cx, iy = 50 - cy;
+  if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
+  if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
+  /* Nudge ~1.5% of plan into the room. */
+  var sx = cx + nx * 1.5, sy = cy + ny * 1.5;
+  return window.red5FindContainingRoom(sx, sy, rooms)
+      || window.red5FindContainingRoom(cx, cy, rooms);
+};
 /* Blend from soft amber → bright amber as the score rises.
    Returns a CSS color string used as a ring/halo around the marker.
    Score < 0.02 returns null (no overlay applied).        */
@@ -138,6 +193,7 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
   opts = opts || {};
   if (!windows || !windows.length) return 1;
   if (!sun || !sun.is_day) return 0;
+  var rooms = opts.rooms || null;
   var northOffsetDeg = opts.northOffsetDeg || 0;
   var az = ((sun.azimuth || 0) + northOffsetDeg) % 360;
   if (az < 0) az += 360;
@@ -166,6 +222,16 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
     if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
     var enter = nx * lx + ny * ly;
     if (enter < 0.05) continue;
+    /* Room boundary: if this window belongs to a traced room, the VAV
+       must sit inside that same polygon — no amber through walls. */
+    var room = null;
+    if (rooms && rooms.length && window.red5RoomForWindow) {
+      room = window.red5RoomForWindow(w, rooms);
+      if (room) {
+        var rVerts = room.vertices || room.points;
+        if (!window.red5PointInPolygon(mxPct, myPct, rVerts)) continue;
+      }
+    }
     var dx = mxPct - cx, dy = myPct - cy;
     /* Distance along the inbound beam (into the room). */
     var alongDist = dx * lx + dy * ly;
@@ -497,6 +563,7 @@ window.red5FacingToNorthOffset = function(facing, lat){
    when sun travel aligns with that inward normal — never outbound.    */
 window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var wins = props.windows || [];
+  var rooms = props.rooms || [];
   var sun = props.sun;
   if (!sun || !sun.is_day || !wins.length) return null;
   var northOff = props.northOffsetDeg || 0;
@@ -517,6 +584,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
 
   var bars = [];
   var shafts = [];
+  var clipDefs = [];
   for (var i = 0; i < wins.length; i++) {
     var w = wins[i];
     var cx = Number(w.x), cy = Number(w.y);
@@ -561,14 +629,44 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var fy2 = y2 + ly * throwLen + (-nx) * spread;
     var opCore = Math.min(0.55, 0.08 + base * 0.28 + openEase * 0.32);
     var amber = isLight ? '251,191,36' : '251,146,60';
+    var clipId = null;
+    var room = (rooms.length && window.red5RoomForWindow) ? window.red5RoomForWindow(w, rooms) : null;
+    var rVerts = room && (room.vertices || room.points);
+    if (rVerts && rVerts.length >= 3) {
+      clipId = 'r5-room-clip-' + (w.id || i);
+      var pts = rVerts.map(function(v){ return Number(v[0]) + ',' + Number(v[1]); }).join(' ');
+      clipDefs.push(
+        <clipPath key={clipId} id={clipId} clipPathUnits="userSpaceOnUse">
+          <polygon points={pts} />
+        </clipPath>
+      );
+    }
     shafts.push(
       <polygon key={'ws-'+ (w.id || i)}
                points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}
                fill={'rgba('+amber+','+opCore+')'}
+               clipPath={clipId ? ('url(#'+clipId+')') : undefined}
       />
     );
   }
   var showBars = props.showBars !== false;
+  var roomOutlines = [];
+  if (props.showRooms !== false && rooms.length) {
+    for (var ri = 0; ri < rooms.length; ri++) {
+      var rr = rooms[ri];
+      var rv = rr && (rr.vertices || rr.points);
+      if (!rv || rv.length < 3) continue;
+      roomOutlines.push(
+        <polygon key={'room-'+ (rr.id || ri)}
+                 points={rv.map(function(v){ return Number(v[0])+','+Number(v[1]); }).join(' ')}
+                 fill="none"
+                 stroke={isLight ? 'rgba(56,189,248,0.35)' : 'rgba(125,211,252,0.40)'}
+                 strokeWidth="0.35"
+                 strokeDasharray="1.2 0.8"
+        />
+      );
+    }
+  }
   return (
     <svg
       className="absolute inset-0 pointer-events-none"
@@ -577,6 +675,8 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       style={{width:'100%', height:'100%', zIndex: 7, mixBlendMode: isLight ? 'multiply' : 'screen'}}
       data-testid="windows-sunshaft-overlay"
     >
+      {clipDefs.length ? <defs>{clipDefs}</defs> : null}
+      {roomOutlines}
       {shafts}
       {showBars ? bars : null}
     </svg>

@@ -1959,18 +1959,25 @@
                 return null;
             };
 
-            // Live floor-plan: set window open % (0–100) → blind_level 0–1 closed.
+            // Live floor-plan: set ONE window's open % (0–100) → blind_level 0–1 closed.
+            // Match by window id when present, else by index so each bar stays independent.
             // Updates shafts immediately and debounces POST /api/save-config.
-            const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct) => {
+            const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct, windowIndex) => {
                 const open = Math.max(0, Math.min(100, Number(openPct) || 0)) / 100;
                 const blind = 1 - open;
                 setMapConfig(prev => {
                     if (!prev || !Array.isArray(prev.floors)) return prev;
                     let changed = false;
                     const floors = prev.floors.map(f => {
-                        if ((f.id || f.name) !== floorId) return f;
-                        const windows = (f.windows || []).map(w => {
-                            if (w.id !== windowId) return w;
+                        if (f.id !== floorId && f.name !== floorId && (f.id || f.name) !== floorId) return f;
+                        const windows = (f.windows || []).map((w, i) => {
+                            let match = false;
+                            if (windowId != null && w.id != null) {
+                                match = String(w.id) === String(windowId);
+                            } else if (windowIndex != null) {
+                                match = i === windowIndex;
+                            }
+                            if (!match) return w;
                             if (Math.abs((w.blind_level || 0) - blind) < 1e-6) return w;
                             changed = true;
                             return Object.assign({}, w, { blind_level: blind });
@@ -2828,7 +2835,7 @@
         root.render(<ErrorBoundary><App /></ErrorBoundary>);
         // Prove the compiled JS (not just dashboard.html) actually mounted.
         try {
-            window.__RED5_BUNDLE_ID = 'SP14';
+            window.__RED5_BUNDLE_ID = 'SP15';
             window.__red5DashboardMounted = true;
             var _stamp = document.getElementById('red5-html-build');
             if (_stamp) {

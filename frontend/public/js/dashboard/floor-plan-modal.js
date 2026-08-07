@@ -144,19 +144,20 @@ const floorModalTree = (
                                     showBars={false}
                                 />
                             )}
-                            {/* Live window bars — always visible; click opens blinds panel */}
+                            {/* Live window bars — click one window to open ITS blind control */}
                             {(floorData.floor.windows || []).map((w, wi) => {
-                                const sel = selectedFloorWindowId === w.id;
+                                const wid = w.id != null ? w.id : ('idx-' + wi);
+                                const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
                                 const open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
                                 const len = Math.max(Number(w.length) || 8, 3);
                                 return (
                                     <div
-                                        key={w.id || ('lw-' + wi)}
-                                        data-testid={`live-window-${w.id || wi}`}
-                                        title={`Window · open ${Math.round(open * 100)}% — click to set blinds`}
+                                        key={wid}
+                                        data-testid={`live-window-${wid}`}
+                                        title={`W${wi + 1} · open ${Math.round(open * 100)}% — click to set this window`}
                                         onMouseDown={(e) => {
                                             e.stopPropagation();
-                                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(w.id);
+                                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
                                             if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
                                         }}
                                         style={{
@@ -182,6 +183,63 @@ const floorModalTree = (
                                     </div>
                                 );
                             })}
+                            {/* Individual Open control — anchored to the selected window only */}
+                            {floorWindowsPanelOpen && (() => {
+                                const wins = floorData.floor.windows || [];
+                                let wi = wins.findIndex((w, i) => {
+                                    const wid = w.id != null ? w.id : ('idx-' + i);
+                                    return selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
+                                });
+                                if (wi < 0 && wins.length) wi = 0;
+                                const w = wi >= 0 ? wins[wi] : null;
+                                if (!w) return null;
+                                const wid = w.id != null ? w.id : ('idx-' + wi);
+                                const floorKey = floorData.floor.id || floorData.floor.name || 'floor';
+                                const openPct = Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
+                                const placeAbove = (Number(w.y) || 50) > 22;
+                                return (
+                                    <div
+                                        key={'live-win-ctrl-' + wid}
+                                        data-testid="live-window-individual-control"
+                                        className={`absolute z-[55] w-[210px] rounded-md border shadow-2xl pointer-events-auto ${
+                                            theme === 'dark' ? 'bg-slate-950/95 border-amber-500/70 text-slate-200' : 'bg-white/95 border-amber-400 text-slate-800'
+                                        }`}
+                                        style={{
+                                            left: `${w.x}%`,
+                                            top: `${w.y}%`,
+                                            transform: placeAbove
+                                                ? 'translate(-50%, calc(-100% - 16px))'
+                                                : 'translate(-50%, 16px)',
+                                        }}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                    >
+                                        <div className={`flex items-center justify-between px-2 py-1.5 border-b text-[9px] uppercase tracking-widest ${
+                                            theme === 'dark' ? 'border-slate-700 text-amber-300' : 'border-slate-200 text-amber-700'
+                                        }`}>
+                                            <span>W{wi + 1} · Open</span>
+                                            <button type="button" className="text-sm px-1 opacity-60 hover:opacity-100"
+                                                    onClick={() => {
+                                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
+                                                        if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
+                                                    }}>×</button>
+                                        </div>
+                                        <div className="px-2 py-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[9px] opacity-60 w-9 shrink-0">Open</span>
+                                                <input type="range" min="0" max="100" step="1" value={openPct}
+                                                       className="flex-1 min-w-0 accent-amber-400"
+                                                       data-testid={`live-window-open-${wid}`}
+                                                       onChange={(e) => {
+                                                           const v = parseInt(e.target.value, 10) || 0;
+                                                           if (setFloorWindowOpenPct) setFloorWindowOpenPct(floorKey, w.id, v, wi);
+                                                       }}/>
+                                                <span className="font-mono text-[10px] text-amber-400 w-9 text-right">{openPct}%</span>
+                                            </div>
+                                            <div className="text-[8px] opacity-50 mt-1">This window only · 0% closed · 100% open</div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             {/* INLINE zIndex (not Tailwind): must sit ABOVE SunRayOverlay
                                 (zIndex:5) and BuildingShadow (zIndex:6).  Map_config path
                                 previously wrapped markers in a z-auto layer under the ray,
@@ -199,10 +257,23 @@ const floorModalTree = (
                                             ? 'bg-amber-600 border-amber-400 text-slate-900'
                                             : (theme === 'dark' ? 'bg-slate-900/90 border-sky-500/50 text-sky-300 hover:bg-slate-800' : 'bg-white/90 border-sky-400 text-sky-700 hover:bg-sky-50')
                                     }`}
-                                    onMouseDown={(e) => { e.stopPropagation(); if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(!floorWindowsPanelOpen); }}
-                                    title="Adjust live window open / blind state (0–100%)"
+                                    onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                        if (floorWindowsPanelOpen) {
+                                            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
+                                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
+                                            return;
+                                        }
+                                        const wins = floorData.floor.windows || [];
+                                        if (!selectedFloorWindowId && wins.length && setSelectedFloorWindowId) {
+                                            const w0 = wins[0];
+                                            setSelectedFloorWindowId(w0.id != null ? w0.id : 'idx-0');
+                                        }
+                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
+                                    }}
+                                    title="Click a window bar to set that window’s open % (individual)"
                                 >
-                                    ▤ Windows · Open
+                                    ▤ Window · Open
                                 </button>
                             )}
                             {/* Render ALL AHU markers from map_config */}
@@ -514,55 +585,6 @@ const floorModalTree = (
                 }
             })()}
 
-            {/* Live Windows · Open panel — runtime blinds on the floor graphic */}
-            {floorWindowsPanelOpen && (() => {
-                const fd = getFloorForAhu(showFloorPlanForAhu);
-                const wins = (fd && fd.floor && fd.floor.windows) || [];
-                if (!wins.length) return null;
-                const floorKey = (fd.floor.id || fd.floor.name || 'floor');
-                return (
-                    <div
-                        data-testid="live-windows-panel"
-                        className={`absolute right-3 bottom-3 z-[80] w-[280px] max-h-[50%] flex flex-col rounded-md border shadow-2xl pointer-events-auto ${
-                            theme === 'dark' ? 'bg-slate-950/95 border-slate-600 text-slate-200' : 'bg-white/95 border-slate-300 text-slate-800'
-                        }`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                    >
-                        <div className={`flex items-center justify-between px-2.5 py-2 border-b text-[10px] uppercase tracking-widest ${theme === 'dark' ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
-                            <span>Windows · Open</span>
-                            <button type="button" className="text-base px-1 opacity-60 hover:opacity-100"
-                                    onClick={() => setFloorWindowsPanelOpen && setFloorWindowsPanelOpen(false)}>×</button>
-                        </div>
-                        <div className="overflow-y-auto p-2 space-y-2" style={{maxHeight: 'calc(50vh - 48px)'}}>
-                            {wins.map((w, i) => {
-                                const openPct = Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
-                                const sel = selectedFloorWindowId === w.id;
-                                return (
-                                    <div key={w.id || i}
-                                         className={`rounded border px-2 py-2 ${sel
-                                             ? (theme === 'dark' ? 'border-amber-500 bg-slate-900' : 'border-amber-400 bg-amber-50')
-                                             : (theme === 'dark' ? 'border-slate-700 bg-slate-900/60' : 'border-slate-200 bg-slate-50')}`}
-                                         onClick={() => setSelectedFloorWindowId && setSelectedFloorWindowId(w.id)}>
-                                        <div className="font-mono text-[11px] mb-1">W{i + 1} · {(Number(w.length) || 0).toFixed(1)}% · {Math.round(Number(w.angle_deg) || 0)}°</div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-[9px] opacity-60 w-10 shrink-0">Open</span>
-                                            <input type="range" min="0" max="100" step="1" value={openPct}
-                                                   className="flex-1 min-w-0 accent-sky-400"
-                                                   data-testid={`live-window-open-${w.id || i}`}
-                                                   onChange={(e) => {
-                                                       const v = parseInt(e.target.value, 10) || 0;
-                                                       if (setFloorWindowOpenPct) setFloorWindowOpenPct(floorKey, w.id, v);
-                                                   }}/>
-                                            <span className="font-mono text-[10px] text-sky-400 w-9 text-right">{openPct}%</span>
-                                        </div>
-                                        <div className="text-[8px] opacity-50 mt-1">0% closed · 100% open (sun in)</div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                );
-            })()}
         </div>
     </div>
 </div>

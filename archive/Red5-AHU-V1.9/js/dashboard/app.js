@@ -1102,6 +1102,16 @@
                inside the Floor Plan modal.  Read-only here — authored by the
                Config Tool's Sun-Path compass; the dashboard only consumes. */
             const [sunState, setSunState] = useState(null);
+            // Belt-and-suspenders: SunCompass also broadcasts on window so a
+            // missed props.onChange (seen on V1.9: dial ON, parent sunState
+            // null → no VAV rings) cannot leave markers dark.
+            useEffect(() => {
+                const onSun = (e) => {
+                    if (e && e.detail) setSunState(e.detail);
+                };
+                window.addEventListener('r5-sun-state', onSun);
+                return () => window.removeEventListener('r5-sun-state', onSun);
+            }, []);
             // Building lat/lon for solar math.  DERIVED from `weatherLocation`
             // (declared below) so the floor-plan sun path follows the user's
             // active weather selection in real time.  Falls back to NYC only
@@ -1127,6 +1137,18 @@
             const buildingLatLon = (weatherLocation && typeof weatherLocation.lat === 'number')
                 ? {lat: weatherLocation.lat, lon: weatherLocation.lon}
                 : {lat: 40.7128, lon: -74.0060};
+            // ELC-style building aspect (façade facing). Slim v1: drives
+            // northOffsetDeg for sun ray / window shafts on the floor plan.
+            const [buildingFacing, setBuildingFacing] = useState(() => {
+                try {
+                    const v = localStorage.getItem('red5.building_facing');
+                    if (v && ['auto','N','NE','E','SE','S','SW','W','NW'].indexOf(v) >= 0) return v;
+                } catch (e) {}
+                return 'auto';
+            });
+            const buildingFacingOffset = (typeof window.red5FacingToNorthOffset === 'function')
+                ? window.red5FacingToNorthOffset(buildingFacing, buildingLatLon.lat)
+                : 0;
             // Saved-location list is now controller-backed (single source of truth on the
             // controller). Local copy mirrors `savedWeatherLocations` so the modal can
             // render synchronously without flicker.
@@ -1156,6 +1178,11 @@
                         const active = state.active && typeof state.active.lat === 'number' && typeof state.active.lon === 'number' ? state.active : null;
                         const saved = Array.isArray(state.saved) ? state.saved.filter(s => s && typeof s.lat === 'number' && typeof s.lon === 'number') : [];
                         const pinned = state.default && typeof state.default.lat === 'number' && typeof state.default.lon === 'number' ? state.default : null;
+                        const facing = state.building_facing;
+                        if (facing && ['auto','N','NE','E','SE','S','SW','W','NW'].indexOf(facing) >= 0) {
+                            setBuildingFacing(facing);
+                            try { localStorage.setItem('red5.building_facing', facing); } catch (e) {}
+                        }
                         try { localStorage.setItem('savedWeatherLocations', JSON.stringify(saved)); } catch (e) {}
                         if (pinned) {
                             try { localStorage.setItem('defaultWeatherLocation', JSON.stringify(pinned)); } catch (e) {}
@@ -1198,7 +1225,7 @@
                 return fetch(`${API_URL}/api/weather-location`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ active: active || null, saved: savedList || [] }),
+                    body: JSON.stringify({ active: active || null, saved: savedList || [], building_facing: buildingFacing || 'auto' }),
                     signal: controller.signal
                 })
                 .then(async r => {
@@ -1229,7 +1256,7 @@
                 .finally(() => {
                     clearTimeout(timer);
                 });
-            }, []);
+            }, [buildingFacing]);
 
             // ----------------------------------------------------------------
             // Pin / unpin a default location.  Persists to the server's
@@ -2705,6 +2732,7 @@
                         setSelectedVavForModal, setVavCfm, setIsLockedToSA,
                         ahuData, mapConfig, setMapConfig, floorImage,
                         buildingLatLon, sunState, setSunState,
+                        buildingFacingOffset,
                         comfortZonePoly,
                         showGivoni, showSweetSpot, sweetSpotRange,
                         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal, floatPipFloorPlanModal,
@@ -2756,3 +2784,14 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        // Prove the compiled JS (not just dashboard.html) actually mounted.
+        try {
+            window.__RED5_BUNDLE_ID = 'SP10';
+            window.__red5DashboardMounted = true;
+            var _stamp = document.getElementById('red5-html-build');
+            if (_stamp) {
+                var _t = String(_stamp.textContent || '');
+                if (_t.indexOf('·JS') < 0) _stamp.textContent = _t + '·JS';
+            }
+            if (typeof window.__red5BootOk === 'function') window.__red5BootOk();
+        } catch (_e) {}

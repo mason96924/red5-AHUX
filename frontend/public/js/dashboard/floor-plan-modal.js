@@ -31,6 +31,7 @@ function renderFloorPlanModal(ctx) {
         // Data
         ahuData, mapConfig, setMapConfig, floorImage,
         buildingLatLon, sunState, setSunState,
+        buildingFacingOffset,
         comfortZonePoly,
         showGivoni, showSweetSpot, sweetSpotRange,
         // Helpers + look-up tables
@@ -127,9 +128,23 @@ const floorModalTree = (
                                 />
                             )}
                             {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
-                                <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
+                                <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}
+                                    northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0} />
                             )}
-                            <div className="absolute inset-0 pointer-events-none">
+                            {sunState && sunState.enabled && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
+                                <window.WindowsSunshaftOverlay
+                                    windows={floorData.floor.windows}
+                                    sun={sunState.sun}
+                                    theme={theme}
+                                    cloudCover={sunState.cloudCover}
+                                    northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
+                                />
+                            )}
+                            {/* INLINE zIndex (not Tailwind): must sit ABOVE SunRayOverlay
+                                (zIndex:5) and BuildingShadow (zIndex:6).  Map_config path
+                                previously wrapped markers in a z-auto layer under the ray,
+                                so amber rings computed but were painted under the wash. */}
+                            <div className="absolute inset-0 pointer-events-none" style={{zIndex: 40}}>
                             <div className={`absolute top-4 left-4 z-10 text-sm font-mono px-3 py-1.5 rounded pointer-events-auto ${theme === 'dark' ? 'text-emerald-400 bg-slate-900/80' : 'text-emerald-700 bg-white/80'}`}>
                                 {floorData.floor.name} - {floorData.floor.image_path}
                             </div>
@@ -159,7 +174,7 @@ const floorModalTree = (
                                         )}
                                         <div 
                                             className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActive ? 'bg-orange-500 border-white shadow-[0_0_25px_rgba(249,115,22,0.9)] scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500 shadow-black' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
-                                            style={(sunRing && !isActive) ? {borderColor: sunRing, boxShadow: `0 0 18px ${sunRing}`} : {}}
+                                            style={(sunRing && !isActive) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
                                             title={marker.name + (sunRing ? ' · sun-exposed' : '')}
                                             onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(marker.name); setShowFloorPlanForAhu(marker.name); setLockedVavId(null); }}
                                         >
@@ -214,9 +229,14 @@ const floorModalTree = (
                                 // Sun-Path → B1-B10 band trim (P0 hook).  Compute once per VAV
                                 // so both the ring tooltip path and the plain-marker path can
                                 // surface the per-VAV trimmed SA target.
-                                let vavSunScore = null, vavBandTrim = null;
-                                if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
-                                    vavSunScore = window.red5SunExposureScore(marker.x/100, marker.y/100, sunState.sun);
+                                // Coerce x/y — map_config occasionally stores numeric strings;
+                                // NaN scores produced invisible rgba(NaN,…) “rings”.
+                                const mx = Number(marker.x), my = Number(marker.y);
+                                let vavSunScore = null, vavBandTrim = null, sunRing = null;
+                                if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore
+                                    && Number.isFinite(mx) && Number.isFinite(my)) {
+                                    vavSunScore = window.red5SunExposureScore(mx/100, my/100, sunState.sun);
+                                    sunRing = window.red5ExposureColor ? window.red5ExposureColor(vavSunScore) : null;
                                     if (activeAhu && activeAhu.active_band && window.red5BandSunTrim) {
                                         vavBandTrim = window.red5BandSunTrim(activeAhu.active_band, vavSunScore);
                                     }
@@ -226,7 +246,7 @@ const floorModalTree = (
                                     : '';
 
                                 return (
-                                    <div key={marker.id} className="absolute flex flex-col items-center z-20 group pointer-events-auto" style={{ left: `${marker.x}%`, top: `${marker.y}%`, transform: 'translate(-50%, -50%)' }}>
+                                    <div key={marker.id} className="absolute flex flex-col items-center z-20 group pointer-events-auto" style={{ left: `${mx}%`, top: `${my}%`, transform: 'translate(-50%, -50%)' }}>
                                         {(() => {
                                             // Sun-Path Phase A: directional shadow for this
                                             // VAV marker pointing away from the sun.
@@ -244,27 +264,12 @@ const floorModalTree = (
                                                 }}/>
                                             );
                                         })()}
-                                        {(() => {
-                                            // Compute sun-exposure ring for the dot.
-                                            if (!(sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore)) return null;
-                                            const sc = vavSunScore != null ? vavSunScore : window.red5SunExposureScore(marker.x/100, marker.y/100, sunState.sun);
-                                            const ring = window.red5ExposureColor(sc);
-                                            if (!ring) return null;
-                                            return (
-                                                <div
-                                                    className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : ''}`}
-                                                    style={Object.assign({}, dotStyle || {}, {borderColor: ring, boxShadow: `0 0 15px ${ring}`})}
-                                                    title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + ' · sun-exposed' + trimSuffix}
-                                                    onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
-                                                ></div>
-                                            );
-                                        })() || (
-                                        <div 
-                                            className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : 'border-white'}`}
-                                            style={dotStyle || undefined}
-                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + trimSuffix}
+                                        <div
+                                            className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : (sunRing ? '' : 'border-white')}`}
+                                            style={Object.assign({}, dotStyle || {}, (sunRing && !isLocked) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {})}
+                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + (sunRing ? ' · sun-exposed' : '') + trimSuffix}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
-                                        ></div>)}
+                                        ></div>
                                         <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono cursor-pointer transition-colors ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'} ${isLocked ? '!border-cyan-400' : 'group-hover:border-indigo-400'}`}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         >
@@ -395,7 +400,7 @@ const floorModalTree = (
                                                 }}/>
                                             )}
                                             <div className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActiveAhu ? 'bg-orange-500 border-white scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
-                                                style={(sunRing && !isActiveAhu) ? {borderColor: sunRing, boxShadow: `0 0 18px ${sunRing}`} : {}}
+                                                style={(sunRing && !isActiveAhu) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
                                                 title={ahu.id + (sunRing ? ' · sun-exposed' : '')}
                                                 onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(ahu.id); setLockedVavId(null); }}
                                             >
@@ -433,7 +438,7 @@ const floorModalTree = (
                                                 }}/>
                                             )}
                                             <div className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${isLocked ? 'bg-rose-500 scale-125' : 'bg-emerald-500'} ${sunRing ? '' : 'border-white'}`}
-                                                style={sunRing ? {borderColor: sunRing, boxShadow: `0 0 15px ${sunRing}`} : {}}
+                                                style={sunRing ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
                                                 title={v.id + (sunRing ? ' · sun-exposed' : '')}
                                                 onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }}
                                             ></div>

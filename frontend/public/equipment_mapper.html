@@ -330,6 +330,11 @@
             const [floorMarkers, setFloorMarkers] = useState([]); // Physical AHU/VAV instances with coordinates
             const [draggedMarkerType, setDraggedMarkerType] = useState(null); // 'ahu' or 'vav'
             const [selectedMarkerId, setSelectedMarkerId] = useState(null);
+            // Slim v1 windows (ELC-inspired): percent coords, blinds 0..1, no 3D aligner UI.
+            const [floorWindows, setFloorWindows] = useState([]); // {id,floorIdx,x,y,length,angle_deg,blind_level}
+            const [windowMode, setWindowMode] = useState(null); // null | {phase:'p1'|'p2', p1:{x,y}}
+            const [windowsPanelOpen, setWindowsPanelOpen] = useState(false);
+            const [selectedWindowId, setSelectedWindowId] = useState(null);
             const [showPsychroChart, setShowPsychroChart] = useState(false);
             const [psychroChartData, setPsychroChartData] = useState(null);
             const [draggingFloorMarker, setDraggingFloorMarker] = useState(null);
@@ -1920,6 +1925,14 @@
                                 floorIdx: m.floorIdx > floorIdx ? m.floorIdx - 1 : m.floorIdx
                             }))
                     );
+                    setFloorWindows(prev =>
+                        prev
+                            .filter(w => w.floorIdx !== floorIdx)
+                            .map(w => ({
+                                ...w,
+                                floorIdx: w.floorIdx > floorIdx ? w.floorIdx - 1 : w.floorIdx
+                            }))
+                    );
                     
                     // Update current floor index
                     if (currentFloorIdx >= floorPlans.length - 1) {
@@ -1929,12 +1942,49 @@
             };
 
             const handleFloorCanvasClick = (e) => {
-                if (!draggedMarkerType || !floorCanvasRef.current) return;
-                
+                if (!floorCanvasRef.current) return;
                 const rect = floorCanvasRef.current.getBoundingClientRect();
                 const xPct = ((e.clientX - rect.left) / rect.width) * 100;
                 const yPct = ((e.clientY - rect.top) / rect.height) * 100;
 
+                // Slim window placement: two clicks for endpoints.
+                if (windowMode) {
+                    e.stopPropagation();
+                    if (windowMode.phase === 'p1') {
+                        setWindowMode({ phase: 'p2', p1: { x: xPct, y: yPct } });
+                        return;
+                    }
+                    const p1 = windowMode.p1;
+                    const dx = xPct - p1.x, dy = yPct - p1.y;
+                    const length = Math.hypot(dx, dy);
+                    if (length < 1.0) {
+                        toast('Window too short — drag a longer span (min ~1% of plan).');
+                        setWindowMode(null);
+                        return;
+                    }
+                    const angle_deg = Math.atan2(dy, dx) * 180 / Math.PI;
+                    const newWin = {
+                        id: 'w_' + Date.now(),
+                        floorIdx: currentFloorIdx,
+                        x: (p1.x + xPct) / 2,
+                        y: (p1.y + yPct) / 2,
+                        length: length,
+                        angle_deg: angle_deg,
+                        blind_level: 0,
+                        sill_height_m: 1.0,
+                        head_height_m: 2.2,
+                        skew_x: 0.42, skew_y: 0, stretch_x: 1, stretch_y: 1,
+                    };
+                    setFloorWindows(prev => [...prev, newWin]);
+                    setSelectedWindowId(newWin.id);
+                    setWindowsPanelOpen(true);
+                    setWindowMode(null);
+                    setDraggedMarkerType(null);
+                    return;
+                }
+
+                if (!draggedMarkerType) return;
+                
                 const newMarker = {
                     id: `${draggedMarkerType}_${Date.now()}`,
                     type: draggedMarkerType,
@@ -2100,6 +2150,20 @@
                                 zone_temp: m.zone_temp,
                                 damper_position: m.damper_position
                             }
+                        })),
+                        windows: floorWindows.filter(w => w.floorIdx === idx).map(w => ({
+                            id: w.id,
+                            x: w.x,
+                            y: w.y,
+                            length: w.length,
+                            angle_deg: w.angle_deg,
+                            blind_level: w.blind_level || 0,
+                            sill_height_m: w.sill_height_m != null ? w.sill_height_m : 1.0,
+                            head_height_m: w.head_height_m != null ? w.head_height_m : 2.2,
+                            skew_x: w.skew_x != null ? w.skew_x : 0.42,
+                            skew_y: w.skew_y != null ? w.skew_y : 0,
+                            stretch_x: w.stretch_x != null ? w.stretch_x : 1,
+                            stretch_y: w.stretch_y != null ? w.stretch_y : 1,
                         }))
                     }))
                 };
@@ -3044,6 +3108,27 @@
                                 }
                             });
                             setFloorMarkers(allMarkers);
+                            const allWindows = [];
+                            data.floors.forEach((floor, idx) => {
+                                (floor.windows || []).forEach(w => {
+                                    allWindows.push({
+                                        id: w.id || ('w_' + idx + '_' + allWindows.length),
+                                        floorIdx: idx,
+                                        x: Number(w.x),
+                                        y: Number(w.y),
+                                        length: Number(w.length) || 8,
+                                        angle_deg: Number(w.angle_deg) || 0,
+                                        blind_level: Math.min(1, Math.max(0, Number(w.blind_level) || 0)),
+                                        sill_height_m: w.sill_height_m != null ? w.sill_height_m : 1.0,
+                                        head_height_m: w.head_height_m != null ? w.head_height_m : 2.2,
+                                        skew_x: w.skew_x != null ? w.skew_x : 0.42,
+                                        skew_y: w.skew_y != null ? w.skew_y : 0,
+                                        stretch_x: w.stretch_x != null ? w.stretch_x : 1,
+                                        stretch_y: w.stretch_y != null ? w.stretch_y : 1,
+                                    });
+                                });
+                            });
+                            setFloorWindows(allWindows);
                             setCurrentFloorIdx(0);
                             setActiveTarget({ type: 'floor_plan', idx: 0 });
                             
@@ -3051,8 +3136,9 @@
                             const markerCount = allMarkers.length;
                             const ahuCount = allMarkers.filter(m => m.type === 'ahu').length;
                             const vavCount = allMarkers.filter(m => m.type === 'vav').length;
+                            const winCount = allWindows.length;
                             
-                            toast(`map_config.json loaded.\n\n${floorCount} floor${floorCount !== 1 ? 's' : ''}, ${ahuCount} AHU${ahuCount !== 1 ? 's' : ''}, ${vavCount} VAV${vavCount !== 1 ? 's' : ''}.\n\nYou can continue editing from where you left off.`);
+                            toast(`map_config.json loaded.\n\n${floorCount} floor${floorCount !== 1 ? 's' : ''}, ${ahuCount} AHU${ahuCount !== 1 ? 's' : ''}, ${vavCount} VAV${vavCount !== 1 ? 's' : ''}, ${winCount} window${winCount !== 1 ? 's' : ''}.\n\nYou can continue editing from where you left off.`);
                         }
                     } catch (err) {
                         toast('Error loading map_config.json: ' + err.message);
@@ -4370,16 +4456,41 @@
                                     <div className="mb-4 pb-4 border-b border-slate-800">
                                         <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2">Step 3: Place Equipment</div>
                                         <div className="flex gap-2 mb-3">
-                                            <button onClick={() => setDraggedMarkerType('ahu')} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'ahu' ? 'bg-green-600 text-white' : 'bg-slate-800 border border-green-500 text-green-400 hover:bg-green-900/30'}`}>
+                                            <button onClick={() => { setDraggedMarkerType('ahu'); setWindowMode(null); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'ahu' ? 'bg-green-600 text-white' : 'bg-slate-800 border border-green-500 text-green-400 hover:bg-green-900/30'}`}>
                                                 + Add AHU
                                             </button>
-                                            <button onClick={() => setDraggedMarkerType('vav')} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'vav' ? 'bg-blue-600 text-white' : 'bg-slate-800 border border-blue-500 text-blue-400 hover:bg-blue-900/30'}`}>
+                                            <button onClick={() => { setDraggedMarkerType('vav'); setWindowMode(null); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'vav' ? 'bg-blue-600 text-white' : 'bg-slate-800 border border-blue-500 text-blue-400 hover:bg-blue-900/30'}`}>
                                                 + Add VAV
+                                            </button>
+                                        </div>
+                                        <div className="flex gap-2 mb-3">
+                                            <button
+                                                data-testid="mapper-place-window-btn"
+                                                onClick={() => {
+                                                    setDraggedMarkerType(null);
+                                                    setWindowMode(windowMode ? null : { phase: 'p1' });
+                                                    setWindowsPanelOpen(true);
+                                                }}
+                                                className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${windowMode ? 'bg-sky-600 text-white' : 'bg-slate-800 border border-sky-500 text-sky-300 hover:bg-sky-900/30'}`}
+                                            >
+                                                ▤ Place Window
+                                            </button>
+                                            <button
+                                                data-testid="mapper-windows-panel-btn"
+                                                onClick={() => setWindowsPanelOpen(o => !o)}
+                                                className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${windowsPanelOpen ? 'bg-amber-700 text-white' : 'bg-slate-800 border border-amber-500/50 text-amber-300 hover:bg-amber-900/20'}`}
+                                            >
+                                                Windows · Blinds
                                             </button>
                                         </div>
                                         {draggedMarkerType && (
                                             <div className="text-[9px] text-amber-400 font-bold text-center mb-2 animate-pulse">
                                                 Click on the floor plan to place {draggedMarkerType.toUpperCase()}
+                                            </div>
+                                        )}
+                                        {windowMode && (
+                                            <div className="text-[9px] text-sky-300 font-bold text-center mb-2 animate-pulse">
+                                                {windowMode.phase === 'p1' ? 'Click first window endpoint' : 'Click second window endpoint'}
                                             </div>
                                         )}
                                     </div>
@@ -4812,7 +4923,7 @@
                                         style={{ 
                                             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, 
                                             transition: isPanning || draggingFloorMarker ? 'none' : 'transform 0.15s ease-out',
-                                            cursor: draggedMarkerType ? 'crosshair' : 'default'
+                                            cursor: (draggedMarkerType || windowMode) ? 'crosshair' : 'default'
                                         }}
                                         className="relative inline-block border-2 border-slate-700 shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-slate-900 max-w-full max-h-full pointer-events-auto"
                                     >
@@ -4841,6 +4952,35 @@
                                         {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
                                             <window.SunRayOverlay sun={sunState.sun} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
                                         )}
+                                        {sunState && sunState.enabled && sunState.sun && window.WindowsSunshaftOverlay && (
+                                            <window.WindowsSunshaftOverlay
+                                                windows={floorWindows.filter(w => w.floorIdx === currentFloorIdx)}
+                                                sun={sunState.sun}
+                                                cloudCover={sunState.cloudCover}
+                                            />
+                                        )}
+                                        {/* Window bars (always visible in mapper; shafts only when sun on) */}
+                                        {floorWindows.filter(w => w.floorIdx === currentFloorIdx).map(w => {
+                                            const rad = (Number(w.angle_deg) || 0) * Math.PI / 180;
+                                            const half = (Number(w.length) || 8) / 2;
+                                            const tx = Math.cos(rad), ty = Math.sin(rad);
+                                            const x1 = w.x - tx * half, y1 = w.y - ty * half;
+                                            const x2 = w.x + tx * half, y2 = w.y + ty * half;
+                                            const sel = selectedWindowId === w.id;
+                                            const open = 1 - Math.min(1, Math.max(0, w.blind_level || 0));
+                                            return (
+                                                <svg key={w.id} className="absolute inset-0 pointer-events-none" style={{zIndex: 15}} viewBox="0 0 100 100" preserveAspectRatio="none">
+                                                    <line x1={x1} y1={y1} x2={x2} y2={y2}
+                                                          stroke={sel ? '#fbbf24' : '#7dd3fc'}
+                                                          strokeWidth={sel ? 1.6 : 1.1}
+                                                          strokeLinecap="round"
+                                                          opacity={0.5 + 0.4 * open}
+                                                          style={{pointerEvents:'stroke', cursor:'pointer'}}
+                                                          onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); setWindowsPanelOpen(true); }}
+                                                    />
+                                                </svg>
+                                            );
+                                        })}
                                         
                                         {/* Floor Markers */}
                                         {floorMarkers.filter(m => m.floorIdx === currentFloorIdx).map(marker => {
@@ -5701,6 +5841,53 @@
                         onBatchDelete={batchDeleteFiles}
                         onClearSelection={() => setSelectedFiles(new Set())}
                     />
+
+                    {/* WINDOWS · BLINDS panel (slim v1 — ELC-inspired) */}
+                    {windowsPanelOpen && activeTarget.type === 'floor_plan' && (
+                        <div data-testid="windows-panel"
+                             className="fixed right-6 bottom-6 z-[400] w-[290px] max-h-[60vh] bg-[#10141a] border border-slate-700 rounded-md shadow-2xl text-slate-200 flex flex-col"
+                             onMouseDown={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between px-2.5 py-2 border-b border-slate-700 text-[11px] uppercase tracking-widest text-slate-400">
+                                <span>Windows · Blinds</span>
+                                <button onClick={() => setWindowsPanelOpen(false)} className="text-slate-500 hover:text-white text-base px-1">×</button>
+                            </div>
+                            <div className="overflow-y-auto p-2 space-y-2" style={{maxHeight:'calc(60vh - 40px)'}}>
+                                {floorWindows.filter(w => w.floorIdx === currentFloorIdx).length === 0 ? (
+                                    <div className="text-[11px] text-slate-500 px-1 py-3 leading-snug">
+                                        No windows on this floor yet. Click <b className="text-sky-300">▤ Place Window</b>, then two endpoints on the plan.
+                                    </div>
+                                ) : floorWindows.filter(w => w.floorIdx === currentFloorIdx).map((w, i) => {
+                                    const pct = Math.round((w.blind_level || 0) * 100);
+                                    const sel = selectedWindowId === w.id;
+                                    return (
+                                        <div key={w.id}
+                                             className={`rounded border px-2 py-2 ${sel ? 'border-amber-500 bg-slate-900' : 'border-slate-700 bg-slate-950/60'}`}
+                                             onClick={() => setSelectedWindowId(w.id)}>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-mono text-[11px] text-slate-200">W{i+1} · {(w.length||0).toFixed(1)}% · {Math.round(w.angle_deg||0)}°</span>
+                                                <button className="text-[10px] text-rose-400 hover:text-rose-300"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setFloorWindows(prev => prev.filter(x => x.id !== w.id));
+                                                            if (selectedWindowId === w.id) setSelectedWindowId(null);
+                                                        }}>Delete</button>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[9px] text-slate-500 w-11 shrink-0">Blinds →</span>
+                                                <input type="range" min="0" max="100" step="1" value={pct}
+                                                       className="flex-1 min-w-0 accent-sky-300"
+                                                       onChange={(e) => {
+                                                           const v = (parseInt(e.target.value, 10) || 0) / 100;
+                                                           setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_level: v } : x));
+                                                       }}/>
+                                                <span className="font-mono text-[10px] text-slate-400 w-9 text-right">{pct}%</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* PSYCHROMETRIC CHART MODAL (Placeholder) */}
                     {showPsychroChart && (

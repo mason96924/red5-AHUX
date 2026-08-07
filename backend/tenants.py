@@ -293,6 +293,7 @@ async def read_weather_location(tenant: Optional[dict]) -> Optional[dict]:
         "active":  doc.get("active"),
         "saved":   doc.get("saved", []),
         "default": doc.get("default"),   # pinned-on-fresh-session location
+        "building_facing": doc.get("building_facing") or "auto",
     }
 
 
@@ -430,6 +431,9 @@ class WeatherLocationUpdate(BaseModel):
     # Pass `{}` (empty dict) or `null` to clear the pin.  Shape:
     #   {"lat": <float>, "lon": <float>, "name": <str>}
     default: Optional[dict] = None
+    # ELC-style building aspect — which way the main façade faces.
+    # auto | N | NE | E | SE | S | SW | W | NW
+    building_facing: Optional[str] = None
 
 
 async def read_collector_config(tenant: Optional[dict]) -> Optional[dict]:
@@ -514,6 +518,13 @@ async def write_weather_location(tenant: dict, update: WeatherLocationUpdate) ->
             }
         else:
             unset_doc["default"] = ""
+    if "building_facing" in sent and update.building_facing is not None:
+        facing = str(update.building_facing).strip().upper()
+        if facing == "AUTO":
+            facing = "auto"
+        allowed = {"auto", "N", "NE", "E", "SE", "S", "SW", "W", "NW"}
+        if facing in allowed:
+            set_doc["building_facing"] = facing
     ops: dict[str, Any] = {"$set": set_doc}
     if unset_doc:
         ops["$unset"] = unset_doc

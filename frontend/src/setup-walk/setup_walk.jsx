@@ -42,7 +42,14 @@ function App() {
     const [modal, setModal] = useState(null);     // 'location' | 'language' | 'plugins' | null
 
     const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhPreset:'office', rhLo:30, rhHi:60, tLo:-15, tHi:50, theme:'dark', darkLevel:2.0 });
-    const [locCfg, setLocCfg]         = useState({ siteName:'My Building', city:'Toronto, ON', lat:43.6532, lon:-79.3832 });
+    const [locCfg, setLocCfg]         = useState(() => {
+        let facing = 'auto';
+        try {
+            const v = localStorage.getItem('red5.building_facing');
+            if (v && ['auto','N','NE','E','SE','S','SW','W','NW'].indexOf(v) >= 0) facing = v;
+        } catch (e) {}
+        return { siteName:'My Building', city:'Toronto, ON', lat:43.6532, lon:-79.3832, buildingFacing: facing };
+    });
     const [langCfg, setLangCfg]       = useState(() => {
         /* Lazy init from the same localStorage key the dashboard reads, so
          * reopening the setup walk shows the currently-active language
@@ -854,6 +861,11 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                     // even if its own hydrate hasn't run yet this session.
                     try { localStorage.setItem('savedWeatherLocations', JSON.stringify(saved)); } catch (e) {}
                 }
+                const facing = j.building_facing;
+                if (facing && ['auto','N','NE','E','SE','S','SW','W','NW'].indexOf(facing) >= 0) {
+                    setCfg(c => ({ ...c, buildingFacing: facing }));
+                    try { localStorage.setItem('red5.building_facing', facing); } catch (e) {}
+                }
             } catch (e) { /* offline -> localStorage value already in state */ }
         })();
         return () => { cancelled = true; };
@@ -1115,15 +1127,18 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
             localStorage.setItem('savedWeatherLocations', JSON.stringify(nextSaved));
             // Keep the old key too -- some legacy plug-ins still look at it.
             localStorage.setItem('red5.weather_location', JSON.stringify(loc));
+            const facing = cfg.buildingFacing || 'auto';
+            localStorage.setItem('red5.building_facing', facing);
         } catch (e) { /* private mode -- ignore */ }
 
         let persisted = false, warning = '';
         try {
+            const facing = cfg.buildingFacing || 'auto';
             const r = await fetch('/api/weather-location', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type':'application/json' },
-                body: JSON.stringify({ active: loc, default: loc, saved: nextSaved }),
+                body: JSON.stringify({ active: loc, default: loc, saved: nextSaved, building_facing: facing }),
             });
             const j = await r.json();
             window._lastWeatherLocationSave = j;
@@ -1143,7 +1158,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         // it's already mounted in another tab/window.
         try {
             window.dispatchEvent(new CustomEvent('red5:weatherLocationChanged',
-                { detail: { active: loc, saved: nextSaved } }));
+                { detail: { active: loc, saved: nextSaved, building_facing: cfg.buildingFacing || 'auto' } }));
         } catch (e) { /* IE-less environments -- no-op */ }
 
         if (persisted) {
@@ -1386,6 +1401,27 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                             <input className="field-input" type="number" step="0.0001" value={cfg.lon}
                                    onChange={(e)=>setCfg({...cfg, lon:+e.target.value})}/>
                         </div>
+                    </div>
+
+                    <div>
+                        <div className="field-label mb-1.5">ASPECT — Building facing</div>
+                        <select className="field-input" data-testid="loc-building-facing"
+                                value={cfg.buildingFacing || 'auto'}
+                                onChange={(e)=>setCfg({...cfg, buildingFacing: e.target.value})}
+                                title="Compass direction the main façade faces outward">
+                            <option value="auto">Auto (by hemisphere)</option>
+                            <option value="N">N — North</option>
+                            <option value="NE">NE — Northeast</option>
+                            <option value="E">E — East</option>
+                            <option value="SE">SE — Southeast</option>
+                            <option value="S">S — South</option>
+                            <option value="SW">SW — Southwest</option>
+                            <option value="W">W — West</option>
+                            <option value="NW">NW — Northwest</option>
+                        </select>
+                        <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                            NH default → South · SH default → North. Used for sun-path / window glow orientation.
+                        </p>
                     </div>
 
                     <button onClick={useMyLocation}

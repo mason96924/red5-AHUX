@@ -79,35 +79,37 @@ window.red5SolarPosition = function(lat, lon, date){
 window.red5SunExposureScore = function(markerXFrac, markerYFrac, sun, opts){
   opts = opts || {};
   var northOffsetDeg = opts.northOffsetDeg || 0;
-  if (!sun.is_day) return 0;
-  // Screen Y grows downward; subtract from 0.5 so "up" is north
+  if (!sun || !sun.is_day) return 0;
+  // Sun direction in SCREEN space (x right/east, y down).  az 0=N → up
+  // (negative y), az 90=E → right.  Marker on that half of the plan
+  // relative to the centroid is "sun-facing".
+  var az = ((sun.azimuth || 0) + northOffsetDeg) % 360;
+  if (az < 0) az += 360;
+  var rad = az * Math.PI / 180;
+  var sx = Math.sin(rad);
+  var sy = -Math.cos(rad);
   var dx = markerXFrac - 0.5;
-  var dy = (0.5 - markerYFrac);
-  if (Math.abs(dx) + Math.abs(dy) < 0.01) return 0; // near centroid → can't tell
-  var bearing = Math.atan2(dx, dy) * 180 / Math.PI; // 0=N, 90=E, -90=W
-  if (bearing < 0) bearing += 360;
-  bearing = (bearing + northOffsetDeg) % 360;
-  if (bearing < 0) bearing += 360;
-  var diff = Math.abs(((bearing - sun.azimuth + 540) % 360) - 180);
-  // Remap: diff=0 (perfectly facing sun) → 1, diff=90 → 0
-  var facade = Math.max(0, Math.cos(diff * Math.PI / 180));
-  var alt    = Math.sin(sun.elevation * Math.PI / 180);
-  return Math.max(0, facade * alt);
+  var dy = markerYFrac - 0.5;
+  var dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 0.02) return 0; // near centroid → ambiguous
+  var align = (dx * sx + dy * sy) / dist; // -1..+1
+  var facade = Math.max(0, align);
+  var elev = (typeof sun.elevation === 'number') ? sun.elevation : 0;
+  var alt = Math.sin(Math.max(0, elev) * Math.PI / 180);
+  return Math.max(0, facade * Math.max(alt, 0.15)); // keep daytime ring readable near horizon
 };
 
 /* ---------- EXPOSURE → COLOR -------------------------------------- */
 /* Blend from neutral (no extra glow) → amber → bright orange as the
    score rises.  Returns a CSS color string used as a ring/halo around
-   the marker.  Score < 0.15 returns null (no overlay applied).        */
+   the marker.  Score < 0.02 returns null (no overlay applied).        */
 window.red5ExposureColor = function(score){
-  if (score < 0.15) return null;
-  // t: 0..1 from threshold to full sun
-  var t = Math.min(1, (score - 0.15) / 0.85);
-  // 0 → amber-500 (#f59e0b), 1 → orange-red (#ef4444)
+  if (!(score > 0.02)) return null;
+  var t = Math.min(1, (score - 0.02) / 0.98);
   var r = Math.round(245 + (239 - 245) * t);
   var g = Math.round(158 + ( 68 - 158) * t);
   var b = Math.round( 11 + ( 68 -  11) * t);
-  return 'rgba('+r+','+g+','+b+',0.9)';
+  return 'rgba('+r+','+g+','+b+',0.95)';
 };
 
 /* ---------- B1-B10 BAND × SUN-EXPOSURE TRIM ----------------------- */
@@ -378,6 +380,107 @@ window.BuildingShadow = function BuildingShadow(props){
    the plan from the sun's incoming direction, so the viewer immediately
    sees "light is coming from the NE/SW/..." without reading numbers.
    Pointer events disabled so it never blocks marker clicks.            */
+/* ---------- BUILDING FACING (ELC aspect) ----------------------------- */
+/* Compass direction the main façade faces.  `auto` → S in northern
+   hemisphere, N in southern.  Used by slim window sunshafts and as
+   optional northOffsetDeg for plan-aligned solar math.               */
+window.red5ResolvedBuildingFacing = function(facing, lat){
+  var f = String(facing || 'auto').toUpperCase();
+  if (['N','NE','E','SE','S','SW','W','NW'].indexOf(f) >= 0) return f;
+  return (Number.isFinite(lat) && lat < 0) ? 'N' : 'S';
+};
+window.red5BuildingFacingDeg = function(facingLetter){
+  return ({N:0, NE:45, E:90, SE:135, S:180, SW:225, W:270, NW:315})[facingLetter] || 180;
+};
+/* Map facing → floor-plan northOffsetDeg.  Convention: facing S (typical
+   NH) means plan north is up → offset 0.  Facing E → rotate plan so
+   east façade is "down"/front → northOffsetDeg = -90.                 */
+window.red5FacingToNorthOffset = function(facing, lat){
+  var letter = window.red5ResolvedBuildingFacing(facing, lat);
+  var faceDeg = window.red5BuildingFacingDeg(letter);
+  /* Facing S (=180) → offset 0; facing E (=90) → offset -90. */
+  return ((180 - faceDeg) + 360) % 360;
+  /* Keep in -180..180 for nicer diffs */
+};
+
+/* ---------- WINDOWS + SUNSHAFT OVERLAY (slim v1) --------------------- */
+/* Percent-space bars + soft trapezoid shafts.  Blinds (0..1) attenuate
+   shaft opacity.  Fixed 2.5D defaults — no aligner UI.                */
+window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
+  var wins = props.windows || [];
+  var sun = props.sun;
+  if (!sun || !sun.is_day || !wins.length) return null;
+  var northOff = props.northOffsetDeg || 0;
+  var az = ((sun.azimuth || 0) + northOff) % 360;
+  if (az < 0) az += 360;
+  var azRad = az * Math.PI / 180;
+  /* Direction light travels ON the plan (from sun toward opposite). */
+  var lx = -Math.sin(azRad);
+  var ly =  Math.cos(azRad);
+  var elev = Math.max(0, sun.elevation || 0);
+  var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
+  var cloud = (typeof props.cloudCover === 'number') ? Math.max(0, Math.min(100, props.cloudCover)) : 0;
+  var weatherF = Math.max(0.12, 1.0 - (cloud / 100) * 0.85);
+  var isLight = props.theme === 'light';
+
+  var bars = [];
+  var shafts = [];
+  for (var i = 0; i < wins.length; i++) {
+    var w = wins[i];
+    var cx = Number(w.x), cy = Number(w.y);
+    var len = Number(w.length);
+    var ang = Number(w.angle_deg) || 0;
+    if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(len) || len < 0.5) continue;
+    var blind = Math.min(1, Math.max(0, Number(w.blind_level) || 0));
+    var rad = ang * Math.PI / 180;
+    var tx = Math.cos(rad), ty = Math.sin(rad);
+    var nx = -ty, ny = tx;
+    /* Prefer the normal that faces into the incoming light. */
+    if (nx * lx + ny * ly < 0) { nx = -nx; ny = -ny; }
+    var half = len / 2;
+    var x1 = cx - tx * half, y1 = cy - ty * half;
+    var x2 = cx + tx * half, y2 = cy + ty * half;
+    var open = 1 - blind;
+    var dot = Math.max(0, nx * lx + ny * ly);
+    var intensity = dot * open * elevF * weatherF;
+    bars.push(
+      <line key={'wb-'+ (w.id || i)}
+            x1={x1} y1={y1} x2={x2} y2={y2}
+            stroke={isLight ? '#38bdf8' : '#7dd3fc'}
+            strokeWidth={Math.max(0.6, Math.min(1.8, len * 0.04))}
+            strokeLinecap="round"
+            opacity={0.55 + 0.35 * open}
+      />
+    );
+    if (intensity < 0.04) continue;
+    var throwLen = 8 + 22 * intensity;
+    var spread = half * 0.35;
+    var fx1 = x1 + lx * throwLen + (-ny) * spread;
+    var fy1 = y1 + ly * throwLen + ( nx) * spread;
+    var fx2 = x2 + lx * throwLen + ( ny) * spread;
+    var fy2 = y2 + ly * throwLen + (-nx) * spread;
+    var op = Math.min(0.42, 0.08 + intensity * 0.45);
+    shafts.push(
+      <polygon key={'ws-'+ (w.id || i)}
+               points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}
+               fill={isLight ? 'rgba(251,191,36,'+op+')' : 'rgba(251,146,60,'+op+')'}
+      />
+    );
+  }
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      preserveAspectRatio="none"
+      viewBox="0 0 100 100"
+      style={{width:'100%', height:'100%', zIndex: 7, mixBlendMode: isLight ? 'multiply' : 'screen'}}
+      data-testid="windows-sunshaft-overlay"
+    >
+      {shafts}
+      {bars}
+    </svg>
+  );
+};
+
 window.SunRayOverlay = function SunRayOverlay(props){
   if (!props.sun || !props.sun.is_day) return null;
   var az = (props.sun.azimuth + (props.northOffsetDeg || 0)) % 360;
@@ -582,30 +685,38 @@ window.SunCompass = function SunCompass(props){
   var date = new Date(utcMs);
   var sun = window.red5SolarPosition(lat, lon, date);
 
-  // Report upward so the parent can color markers + dim the ray overlay
-  // based on live cloud cover / GHI (option "A" wiring).  We include the
-  // weatherNow payload here so call sites that pass the compass output
-  // straight to <SunRayOverlay> only need to forward two extra props.
-  React.useEffect(function(){
-    // Persist only the UI state (enabled + expanded).  Hour/day are not
-    // persisted — sliders always snap to current time on next mount.
-    localStorage.setItem('red5SunCompass', JSON.stringify({
-      enabled: enabled, expanded: expanded
-    }));
-    // Live GHI must NOT dim a simulated hour/day.  Applying wall-clock
-    // GHI (often near-zero at night) to a scrubbed midday sun crushed
-    // SunRayOverlay intensity to ~0.1 and made hour simulation look
-    // broken (glow + VAV sun rings stopped tracking the slider).
+  // Report upward so the parent can color markers + dim the ray overlay.
+  // Dual path: props.onChange (React) AND window 'r5-sun-state' event.
+  // The event exists because V1.9 production builds were observed with the
+  // compass UI ON (local state) while parent sunState stayed null — so VAV
+  // rings never updated even though the dial/sliders moved.
+  function emitSunState(nextSun) {
     var now = new Date();
     var simulating = (hour !== now.getHours()) || (doy !== currentDoy());
     var wxOk = weatherNow && weatherNow.success;
-    if (props.onChange) props.onChange({
-      enabled: enabled, sun: sun, hour: hour, doy: doy,
+    // DAY play is simulation mode — overlay (ray + VAV rings) must be on.
+    // Previously ▶ DAY only advanced the dial while `enabled` stayed false,
+    // so operators saw the sun move with zero VAV highlighting.
+    var overlayOn = !!(enabled || playing);
+    var payload = {
+      enabled: overlayOn, sun: nextSun || sun, hour: hour, doy: doy,
       cloudCover: wxOk ? weatherNow.cloud_cover : null,
       ghiWm2:     (!simulating && wxOk) ? weatherNow.ghi_wm2 : null,
-      weatherNow: weatherNow || null
-    });
-  }, [enabled, expanded, hour, doy, lat, lon, weatherNow]);
+      weatherNow: weatherNow || null,
+      playing: !!playing
+    };
+    try { localStorage.setItem('red5SunCompass', JSON.stringify({
+      enabled: enabled, expanded: expanded
+    })); } catch (_e) {}
+    if (props.onChange) props.onChange(payload);
+    try {
+      window.dispatchEvent(new CustomEvent('r5-sun-state', { detail: payload }));
+    } catch (_e2) {}
+  }
+
+  React.useLayoutEffect(function(){
+    emitSunState(sun);
+  }, [enabled, expanded, hour, doy, lat, lon, weatherNow, playing]);
 
   // Day-of-year → pretty month/day label
   var d0 = new Date(year, 0, doy);
@@ -745,7 +856,13 @@ window.SunCompass = function SunCompass(props){
           NOW
         </button>
         <button
-          onClick={function(){ setPlaying(!playing); }}
+          onClick={function(){
+            var next = !playing;
+            // Starting DAY simulation always arms the overlay so VAV
+            // rings track the moving sun.  Stopping leaves `enabled` as-is.
+            if (next) setEnabled(true);
+            setPlaying(next);
+          }}
           style={{
             marginLeft:4, display:'inline-block', padding:'0 6px', borderRadius:3,
             fontSize:7, fontWeight:900, letterSpacing:'.08em',
@@ -753,7 +870,7 @@ window.SunCompass = function SunCompass(props){
             color: playing ? (isLight ? '#78350f' : '#0f172a') : C.dim
           }}
           data-testid="sun-compass-play"
-          title="Animate sun across the day"
+          title="Animate sun across the day (also turns overlay ON)"
         >
           {playing ? '⏸' : '▶'} DAY
         </button>

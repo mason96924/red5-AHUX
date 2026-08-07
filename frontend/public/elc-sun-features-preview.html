@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>red5-ahu ← red5-elc reference preview (no changes yet)</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #10141a;
+    --line: #2a3344;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.45);
+    --sky: #96d2ff;
+    --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 24px 60px;
+    background: radial-gradient(ellipse at top, #152038 0%, var(--bg) 55%);
+    color: var(--text);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  h1 { font-size: 20px; letter-spacing: .04em; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; max-width: 920px; }
+  .sub code { color: #fbbf24; font-size: 12px; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 1180px;
+  }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.35);
+  }
+  .card-h {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    background: #0c1016;
+  }
+  .card-h h2 { margin: 0; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #cbd5e1; }
+  .badge {
+    font: 10px/1 ui-monospace, Menlo, monospace;
+    color: #fbbf24; border: 1px solid #b45309; border-radius: 999px;
+    padding: 4px 8px; white-space: nowrap;
+  }
+  .card-b { padding: 16px; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+  .src { font-size: 11px; color: #64748b; margin-top: 8px; font-family: ui-monospace, Menlo, monospace; }
+
+  /* ---- 1. faint ring glow ---- */
+  .ring-stage {
+    display: flex; gap: 28px; justify-content: space-around; align-items: flex-end;
+    min-height: 160px; padding: 20px 8px 8px;
+    background:
+      linear-gradient(180deg, rgba(15,23,42,.2), transparent),
+      repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(148,163,184,.06) 20px),
+      repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(148,163,184,.06) 20px);
+    border-radius: 8px; border: 1px dashed #334155;
+  }
+  .vav {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .dot {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #22c55e;
+    border: 3px solid #f59e0b;
+  }
+  .dot.glow {
+    box-shadow:
+      0 0 0 1px rgba(245,158,11,.45),
+      0 0 8px 2px rgba(245,158,11,.55),
+      0 0 18px 4px rgba(251,146,60,.40);
+  }
+  .lbl {
+    min-width: 88px; text-align: center;
+    background: rgba(15,23,42,.9); border: 1px solid #334155;
+    border-radius: 6px; padding: 6px 8px; font: 10px/1.3 ui-monospace, Menlo, monospace;
+  }
+  .lbl .name { color: #38bdf8; font-weight: 800; margin-bottom: 2px; }
+  .cap { font-size: 11px; color: var(--muted); text-align: center; }
+
+  /* ---- 2. aspect in location ---- */
+  .loc-mock {
+    display: grid; grid-template-columns: 1.2fr .8fr; gap: 12px;
+  }
+  .mapfake {
+    height: 180px; border-radius: 8px; border: 1px solid var(--line);
+    background:
+      radial-gradient(circle at 42% 48%, #1e3a5f 0%, transparent 40%),
+      linear-gradient(135deg, #0f172a, #1e293b 50%, #0f172a);
+    position: relative;
+  }
+  .pin {
+    position: absolute; left: 42%; top: 48%; transform: translate(-50%,-100%);
+    width: 14px; height: 14px; background: var(--amber); border-radius: 50% 50% 50% 0;
+    transform: translate(-50%,-100%) rotate(-45deg);
+    box-shadow: 0 0 0 3px rgba(245,158,11,.25);
+  }
+  .fields label {
+    display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 4px;
+  }
+  .fields input, .fields select {
+    width: 100%; background: #0b1220; border: 1px solid var(--line);
+    color: var(--text); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;
+    font: 13px ui-sans-serif, system-ui;
+  }
+  .fields select {
+    border-color: #b45309; box-shadow: 0 0 0 1px rgba(245,158,11,.15);
+  }
+  .hint { font-size: 11px; color: #64748b; margin-top: -6px; margin-bottom: 8px; }
+
+  /* ---- 3+4. floor windows + blinds + sunshaft ---- */
+  .floor-stage {
+    position: relative; height: 240px; border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--line);
+    background: #1a2332;
+  }
+  .floor-plan {
+    position: absolute; inset: 18px 18px 18px 18px;
+    background:
+      linear-gradient(rgba(148,163,184,.08) 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, rgba(148,163,184,.08) 1px, transparent 1px) 0 0 / 24px 24px,
+      #243044;
+    border: 2px solid #475569; border-radius: 2px;
+  }
+  .win-bar {
+    position: absolute; left: 0; top: 38%; width: 5px; height: 72px;
+    background: linear-gradient(180deg, #bae6fd, #7dd3fc 40%, #38bdf8);
+    box-shadow: 0 0 8px rgba(125,211,252,.55);
+    transform: translateY(-50%);
+  }
+  .win-bar.partial::after {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; height: 45%;
+    background: repeating-linear-gradient(90deg, #0f172a 0 2px, #334155 2px 4px);
+    opacity: .85;
+  }
+  .sunshaft {
+    position: absolute; left: 5px; top: 38%; width: 160px; height: 90px;
+    transform: translateY(-50%) skewX(-18deg);
+    background: linear-gradient(90deg,
+      rgba(251,191,36,.38) 0%,
+      rgba(251,146,60,.18) 35%,
+      rgba(251,146,60,0) 100%);
+    filter: blur(1px);
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+  .sunshaft.dim { opacity: .35; }
+  .vav-on-floor {
+    position: absolute; left: 42%; top: 52%;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #22c55e; border: 3px solid #f59e0b;
+    box-shadow:
+      0 0 0 1px rgba(245,158,11,.45),
+      0 0 8px 2px rgba(245,158,11,.55),
+      0 0 18px 4px rgba(251,146,60,.40);
+    transform: translate(-50%,-50%);
+  }
+  .compass {
+    position: absolute; right: 10px; top: 10px; width: 54px; height: 54px;
+    border-radius: 50%; border: 1px solid #475569; background: rgba(15,23,42,.75);
+  }
+  .compass::before {
+    content: 'N'; position: absolute; left: 50%; top: 4px; transform: translateX(-50%);
+    font: 9px ui-monospace, Menlo, monospace; color: #94a3b8;
+  }
+  .ray {
+    position: absolute; left: 50%; top: 50%; width: 2px; height: 22px;
+    background: #fbbf24; transform-origin: bottom center;
+    transform: translate(-50%, -100%) rotate(-55deg);
+    box-shadow: 0 0 8px #f59e0b;
+  }
+
+  .wp {
+    position: absolute; right: 10px; bottom: 10px; width: 250px;
+    background: #10141a; border: 1px solid var(--line); border-radius: 6px;
+    box-shadow: 0 8px 20px rgba(0,0,0,.5); font-size: 11px;
+  }
+  .wp-h {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 10px; border-bottom: 1px solid var(--line);
+    letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  }
+  .wp-row { padding: 8px 10px; border-bottom: 1px solid #1e2633; }
+  .wp-row:last-child { border-bottom: 0; }
+  .wp-id { font-family: ui-monospace, Menlo, monospace; color: #e2e8f0; margin-bottom: 4px; }
+  .slider-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .slider-row span.cap { width: 44px; flex-shrink: 0; font-size: 9px; color: var(--muted); text-align: left; }
+  .slider-row input[type=range] { flex: 1; accent-color: #96d2ff; min-width: 0; }
+  .slider-row .val { min-width: 40px; text-align: right; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
+  .toolbar {
+    display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .ghost {
+    background: #1a1f28; border: 1px solid var(--line); color: var(--text);
+    border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: default;
+  }
+  .ghost.on { border-color: #38bdf8; color: #7dd3fc; box-shadow: 0 0 0 1px rgba(56,189,248,.2); }
+
+  .full { grid-column: 1 / -1; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+  <h1>Reference preview — port from red5-elc (no ahu changes yet)</h1>
+  <p class="sub">
+    Visual targets for your four asks. Confirm these look right, then I’ll implement in
+    <code>red5-ahu</code>. Sources: ELC <code>settings.html</code> (aspect),
+    <code>floor.html</code> (windows · blinds · sunshaft), plus a toned ring glow for sun-exposed VAVs.
+  </p>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="card">
+      <div class="card-h">
+        <h2>1 · Faint glow on VAV outer ring</h2>
+        <span class="badge">dashboard floor plan</span>
+      </div>
+      <div class="card-b">
+        <div class="ring-stage">
+          <div class="vav">
+            <div class="dot"></div>
+            <div class="lbl"><div class="name">VAV-01</div>24.1° · 48%</div>
+            <div class="cap">Today (ring only)</div>
+          </div>
+          <div class="vav">
+            <div class="dot glow"></div>
+            <div class="lbl"><div class="name">VAV-01</div>24.1° · 48%</div>
+            <div class="cap">Proposed (ring + faint glow)</div>
+          </div>
+        </div>
+        <p class="note">Label stays neutral. Only the circle’s amber border gets a soft outer halo — no solid amber label, no SUN% badge.</p>
+        <p class="src">glow ≈ 0 0 8px 2px rgba(245,158,11,.55) + 0 0 18px 4px rgba(251,146,60,.40)</p>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="card">
+      <div class="card-h">
+        <h2>2 · Building aspect in Location setup</h2>
+        <span class="badge">setup walk · location</span>
+      </div>
+      <div class="card-b">
+        <div class="loc-mock">
+          <div class="mapfake"><div class="pin"></div></div>
+          <div class="fields">
+            <label>Site name</label>
+            <input value="My Building" readonly />
+            <label>Latitude / Longitude</label>
+            <input value="43.6532 · −79.3832" readonly />
+            <label>ASPECT — Building facing</label>
+            <select>
+              <option>Auto (by hemisphere)</option>
+              <option>N — North</option>
+              <option selected>S — South</option>
+              <option>E — East</option>
+              <option>W — West</option>
+              <option>NE / SE / SW / NW…</option>
+            </select>
+            <div class="hint">NH default → South · SH default → North</div>
+          </div>
+        </div>
+        <p class="note">Same control as ELC Project Profile: compass direction the main façade faces. Drives which side sun-glow treats as “front”.</p>
+        <p class="src">ELC settings.html · #p-facing · building_facing</p>
+      </div>
+    </div>
+
+    <!-- 3+4 -->
+    <div class="card full">
+      <div class="card-h">
+        <h2>3 · Floor windows + sun glow through glass &nbsp;·&nbsp; 4 · Blinds 0–100%</h2>
+        <span class="badge">config · floor / map</span>
+      </div>
+      <div class="card-b">
+        <div class="toolbar">
+          <span class="ghost">Layout</span>
+          <span class="ghost on">▤ Windows</span>
+          <span class="ghost">+ Place window (two clicks)</span>
+        </div>
+        <div class="floor-stage">
+          <div class="floor-plan">
+            <div class="win-bar partial" title="Window pane"></div>
+            <div class="sunshaft dim" title="Sunshaft attenuated by blinds"></div>
+            <div class="vav-on-floor" title="Sun-exposed VAV"></div>
+          </div>
+          <div class="compass"><div class="ray"></div></div>
+          <div class="wp">
+            <div class="wp-h">
+              <span>Windows · Blinds</span>
+              <span>×</span>
+            </div>
+            <div class="wp-row">
+              <div class="wp-id">W1 · 2.40 m · 90°</div>
+              <div class="slider-row">
+                <span class="cap">Blinds →</span>
+                <input type="range" min="0" max="100" value="45" />
+                <span class="val">45%</span>
+              </div>
+              <div class="slider-row">
+                <span class="cap">Length</span>
+                <input type="range" min="20" max="800" value="240" />
+                <span class="val">2.40 m</span>
+              </div>
+            </div>
+            <div class="wp-row">
+              <div class="wp-id">W2 · 1.80 m · 0°</div>
+              <div class="slider-row">
+                <span class="cap">Blinds →</span>
+                <input type="range" min="0" max="100" value="0" />
+                <span class="val">0%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">
+          <span><i style="background:#7dd3fc"></i>Window bar on plan</span>
+          <span><i style="background:#fbbf24"></i>Sunshaft into room (attenuated by blinds)</span>
+          <span><i style="background:#22c55e;border:2px solid #f59e0b;box-sizing:border-box"></i>VAV in beam</span>
+        </div>
+        <p class="note">
+          ELC flow: enter window mode → click two endpoints on the floor plan → window bar appears.
+          Floating <b>Windows · Blinds</b> panel: per-window <b>Blinds 0–100%</b> (stored as <code>blind_level</code> 0–1).
+          Higher blinds → weaker volumetric sunshaft; right-click pane toggles 0% ↔ last open %.
+        </p>
+        <p class="src">ELC floor.html · window mode · #windows-panel · .wp-blind · _paintWindowsAndBeams</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -64,18 +64,18 @@ def _coerce_loc(d):
 def _read_weather_state():
     """Load the on-controller weather state, migrating any legacy single-loc file."""
     if not os.path.isfile(WEATHER_LOC_PATH):
-        return {'active': None, 'saved': [], 'default': None}
+        return {'active': None, 'saved': [], 'default': None, 'building_facing': 'auto'}
     try:
         with open(WEATHER_LOC_PATH, 'r') as f:
             data = json.load(f)
     except Exception:
-        return {'active': None, 'saved': [], 'default': None}
+        return {'active': None, 'saved': [], 'default': None, 'building_facing': 'auto'}
     # Legacy format: bare {lat, lon, name}
     if isinstance(data, dict) and 'lat' in data and 'lon' in data and 'active' not in data and 'saved' not in data:
         active = _coerce_loc(data)
-        return {'active': active, 'saved': [active] if active else [], 'default': None}
+        return {'active': active, 'saved': [active] if active else [], 'default': None, 'building_facing': 'auto'}
     if not isinstance(data, dict):
-        return {'active': None, 'saved': [], 'default': None}
+        return {'active': None, 'saved': [], 'default': None, 'building_facing': 'auto'}
     active = _coerce_loc(data.get('active')) if data.get('active') is not None else None
     default = _coerce_loc(data.get('default')) if data.get('default') is not None else None
     raw_saved = data.get('saved') or []
@@ -95,7 +95,18 @@ def _read_weather_state():
     # operator has pinned a `default`, surface that as the active location.
     if not active and default:
         active = default
-    return {'active': active, 'saved': saved, 'default': default}
+    facing = data.get('building_facing') or 'auto'
+    if isinstance(facing, str):
+        facing = facing.strip()
+        if facing.upper() == 'AUTO':
+            facing = 'auto'
+        elif facing.upper() in ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'):
+            facing = facing.upper()
+        else:
+            facing = 'auto'
+    else:
+        facing = 'auto'
+    return {'active': active, 'saved': saved, 'default': default, 'building_facing': facing}
 
 def _write_weather_state(state):
     try:
@@ -166,7 +177,7 @@ def set_weather_location():
     try:
         body = request.get_json(silent=True) or {}
         # Detect format
-        is_full = ('active' in body) or ('saved' in body) or ('default' in body)
+        is_full = ('active' in body) or ('saved' in body) or ('default' in body) or ('building_facing' in body)
         if is_full:
             existing = _read_weather_state()
             # Active + saved replace whatever is currently stored; default is
@@ -196,7 +207,17 @@ def set_weather_location():
                 default = _coerce_loc(body.get('default')) if body.get('default') else None
             else:
                 default = existing.get('default')
-            state = {'active': active, 'saved': saved, 'default': default}
+            if 'building_facing' in body and body.get('building_facing') is not None:
+                facing = str(body.get('building_facing')).strip()
+                if facing.upper() == 'AUTO':
+                    facing = 'auto'
+                elif facing.upper() in ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'):
+                    facing = facing.upper()
+                else:
+                    facing = existing.get('building_facing') or 'auto'
+            else:
+                facing = existing.get('building_facing') or 'auto'
+            state = {'active': active, 'saved': saved, 'default': default, 'building_facing': facing}
         else:
             loc = _coerce_loc(body)
             if not loc:
@@ -206,7 +227,8 @@ def set_weather_location():
             key = (round(loc['lat'], 4), round(loc['lon'], 4))
             saved = [s for s in saved if (round(s['lat'], 4), round(s['lon'], 4)) != key]
             saved.insert(0, loc)
-            state = {'active': loc, 'saved': saved[:20], 'default': existing.get('default')}
+            state = {'active': loc, 'saved': saved[:20], 'default': existing.get('default'),
+                     'building_facing': existing.get('building_facing') or 'auto'}
         _write_weather_state(state)
         return jsonify({'success': True, 'state': state})
     except Exception as e:

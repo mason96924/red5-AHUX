@@ -39,7 +39,7 @@ function renderVavEquipmentModal(ctx) {
         ccEquipTypes,
         mapConfig,
         popOutVavModal, floatPipVavModal,
-        selectedVavForModal, setSelectedVavForModal,
+        selectedVavForModal: selectedVavSnapshot, setSelectedVavForModal,
         setDragStart, setIsVavModalDragging,
         setVavImgDims, vavImgDims,
         sunState, theme,
@@ -50,7 +50,21 @@ function renderVavEquipmentModal(ctx) {
         sweetSpotRange, showSweetSpot,
         comfortZonePoly, showGivoni, getGivoniTier,
     } = ctx;
-                        const currentAhuForModal = ahuData.find(a => a.id === selectedAhuId) || ahuData[0];
+                        /* Re-resolve from live ahuData each render. The table click
+                           stores a snapshot; telemetry polls update ahuData only,
+                           so reading the snapshot alone lagged until re-select. */
+                        const selectedVavId = selectedVavSnapshot && selectedVavSnapshot.id;
+                        let selectedVavForModal = selectedVavSnapshot;
+                        let owningAhu = null;
+                        if (selectedVavId && Array.isArray(ahuData)) {
+                            for (const a of ahuData) {
+                                const hit = (a.vavs || []).find(v => v.id === selectedVavId);
+                                if (hit) { selectedVavForModal = hit; owningAhu = a; break; }
+                            }
+                        }
+                        const currentAhuForModal = owningAhu
+                            || ahuData.find(a => a.id === selectedAhuId)
+                            || ahuData[0];
                         const saPoint = currentAhuForModal?.points?.find(p => p.label === 'SA');
                         const saTemp = saPoint ? saPoint.t : 22;
                         const vavTemp = selectedVavForModal.t;

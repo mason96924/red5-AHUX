@@ -199,6 +199,22 @@ function LiveBlindControlPill(props) {
     );
 }
 
+/** Amber VAV/AHU ring: sun exposure × blind open of windows lighting this marker. */
+function liveSunRingStyle(xPct, yPct, sunState, windows, buildingFacingOffset) {
+    if (!(sunState && sunState.enabled && sunState.sun)) return { score: 0, style: null, color: null };
+    const opts = { northOffsetDeg: typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0 };
+    const wins = windows || [];
+    let score = 0;
+    if (window.red5SunBlindScore) {
+        score = window.red5SunBlindScore(Number(xPct), Number(yPct), sunState.sun, wins, opts);
+    } else if (window.red5SunExposureScore) {
+        score = window.red5SunExposureScore(Number(xPct) / 100, Number(yPct) / 100, sunState.sun, opts);
+    }
+    const style = window.red5ExposureRingStyle ? window.red5ExposureRingStyle(score) : null;
+    const color = window.red5ExposureColor ? window.red5ExposureColor(score) : null;
+    return { score: score || 0, style: style || null, color: color || null };
+}
+
 function renderFloorPlanModal(ctx) {
     const {
         // State + setters
@@ -327,25 +343,12 @@ const floorModalTree = (
                                     showBars={false}
                                 />
                             )}
-                            {/* Live window bars — amber glow on the WINDOW (blind open %), not on VAVs */}
+                            {/* Live window bars — click to set blinds; no amber halo on the glass */}
                             {(floorData.floor.windows || []).map((w, wi) => {
                                 const wid = w.id != null ? w.id : ('idx-' + wi);
                                 const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
                                 const open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
-                                const openEase = Math.pow(open, 0.7);
                                 const len = Math.max(Number(w.length) || 8, 3);
-                                const sunOn = !!(sunState && sunState.enabled && sunState.sun && sunState.sun.is_day);
-                                /* Closed → cool bar, no glow. Open → amber bar + bloom on the glass. */
-                                const glow = openEase > 0.02;
-                                const barBg = glow
-                                    ? (sel ? '#fbbf24' : '#f59e0b')
-                                    : (sel ? '#38bdf8' : '#7dd3fc');
-                                const barOp = glow ? (0.55 + 0.40 * openEase) : 0.50;
-                                const bloom = sunOn && glow
-                                    ? `0 0 ${6 + 18 * openEase}px ${2 + 8 * openEase}px rgba(251,191,36,${0.35 + 0.55 * openEase}), 0 0 ${4 + 10 * openEase}px rgba(253,224,71,${0.25 + 0.45 * openEase})`
-                                    : (glow
-                                        ? `0 0 ${4 + 10 * openEase}px rgba(251,191,36,${0.25 + 0.35 * openEase})`
-                                        : '0 0 4px rgba(125,211,252,0.35)');
                                 return (
                                     <div
                                         key={wid}
@@ -361,7 +364,7 @@ const floorModalTree = (
                                             left: `${w.x}%`,
                                             top: `${w.y}%`,
                                             width: `${len}%`,
-                                            height: `${Math.max(12, 10 + 8 * openEase)}px`,
+                                            height: '10px',
                                             transform: `translate(-50%, -50%) rotate(${Number(w.angle_deg) || 0}deg)`,
                                             cursor: 'pointer',
                                             zIndex: sel ? 45 : 35,
@@ -371,12 +374,10 @@ const floorModalTree = (
                                         <div style={{
                                             position: 'absolute', left: 0, right: 0, top: '2px', bottom: '2px',
                                             borderRadius: 2,
-                                            background: barBg,
-                                            opacity: barOp,
-                                            boxShadow: bloom,
-                                            border: glow
-                                                ? `1px solid rgba(253,224,71,${0.45 + 0.45 * openEase})`
-                                                : '1px solid rgba(186,230,253,0.45)',
+                                            background: sel ? '#38bdf8' : '#7dd3fc',
+                                            opacity: 0.45 + 0.40 * open,
+                                            boxShadow: '0 0 4px rgba(125,211,252,0.35)',
+                                            border: sel ? '1px solid #e0f2fe' : '1px solid rgba(186,230,253,0.45)',
                                         }} />
                                     </div>
                                 );
@@ -432,10 +433,11 @@ const floorModalTree = (
                                 const isActive = marker.name === showFloorPlanForAhu || marker.id === showFloorPlanForAhu;
                                 // Sun-Path Phase A: compute exposure halo + directional
                                 // shadow for this marker when the overlay is active.
-                                let sunRing = null, sunShadow = null;
-                                if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
-                                    const sc = window.red5SunExposureScore(marker.x/100, marker.y/100, sunState.sun);
-                                    sunRing = window.red5ExposureColor(sc);
+                                let sunRing = null, sunRingStyle = null, sunShadow = null;
+                                if (sunState && sunState.enabled && sunState.sun) {
+                                    const ring = liveSunRingStyle(marker.x, marker.y, sunState, floorData.floor.windows, buildingFacingOffset);
+                                    sunRing = ring.color;
+                                    sunRingStyle = ring.style;
                                     if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                 }
                                 return (
@@ -452,7 +454,7 @@ const floorModalTree = (
                                         )}
                                         <div 
                                             className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActive ? 'bg-orange-500 border-white shadow-[0_0_25px_rgba(249,115,22,0.9)] scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500 shadow-black' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
-                                            style={(sunRing && !isActive) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
+                                            style={(sunRingStyle && !isActive) ? sunRingStyle : {}}
                                             title={marker.name + (sunRing ? ' · sun-exposed' : '')}
                                             onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(marker.name); setShowFloorPlanForAhu(marker.name); setLockedVavId(null); }}
                                         >
@@ -510,11 +512,13 @@ const floorModalTree = (
                                 // Coerce x/y — map_config occasionally stores numeric strings;
                                 // NaN scores produced invisible rgba(NaN,…) “rings”.
                                 const mx = Number(marker.x), my = Number(marker.y);
-                                let vavSunScore = null, vavBandTrim = null, sunRing = null;
-                                if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore
+                                let vavSunScore = null, vavBandTrim = null, sunRing = null, sunRingStyle = null;
+                                if (sunState && sunState.enabled && sunState.sun
                                     && Number.isFinite(mx) && Number.isFinite(my)) {
-                                    vavSunScore = window.red5SunExposureScore(mx/100, my/100, sunState.sun);
-                                    sunRing = window.red5ExposureColor ? window.red5ExposureColor(vavSunScore) : null;
+                                    const ring = liveSunRingStyle(mx, my, sunState, floorData.floor.windows, buildingFacingOffset);
+                                    vavSunScore = ring.score;
+                                    sunRing = ring.color;
+                                    sunRingStyle = ring.style;
                                     if (activeAhu && activeAhu.active_band && window.red5BandSunTrim) {
                                         vavBandTrim = window.red5BandSunTrim(activeAhu.active_band, vavSunScore);
                                     }
@@ -544,8 +548,8 @@ const floorModalTree = (
                                         })()}
                                         <div
                                             className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : (sunRing ? '' : 'border-white')}`}
-                                            style={Object.assign({}, dotStyle || {}, (sunRing && !isLocked) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {})}
-                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + (sunRing ? ' · sun-exposed' : '') + trimSuffix}
+                                            style={Object.assign({}, dotStyle || {}, (sunRingStyle && !isLocked) ? sunRingStyle : {})}
+                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + (sunRing ? ' · sun / blind' : '') + trimSuffix}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         ></div>
                                         <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono cursor-pointer transition-colors ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'} ${isLocked ? '!border-cyan-400' : 'group-hover:border-indigo-400'}`}
@@ -659,10 +663,11 @@ const floorModalTree = (
                                 return floorAhus.map((ahu, i) => {
                                     const pos = ahuPositions[i]; const isActiveAhu = showFloorPlanForAhu === ahu.id;
                                     // Sun-Path Phase A: halo + shadow for fallback AHU markers
-                                    let sunRing = null, sunShadow = null;
-                                    if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
-                                        const sc = window.red5SunExposureScore(pos.left/100, pos.top/100, sunState.sun);
-                                        sunRing = window.red5ExposureColor(sc);
+                                    let sunRing = null, sunRingStyle = null, sunShadow = null;
+                                    if (sunState && sunState.enabled && sunState.sun) {
+                                        const ring = liveSunRingStyle(pos.left, pos.top, sunState, [], buildingFacingOffset);
+                                        sunRing = ring.color;
+                                        sunRingStyle = ring.style;
                                         if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                     }
                                     return (
@@ -678,7 +683,7 @@ const floorModalTree = (
                                                 }}/>
                                             )}
                                             <div className={`w-14 h-14 rounded-lg border-2 cursor-pointer group-hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-lg ${isActiveAhu ? 'bg-orange-500 border-white scale-110' : (theme === 'dark' ? 'bg-slate-800 border-slate-500' : 'bg-white border-slate-400')} opacity-80 group-hover:opacity-100`}
-                                                style={(sunRing && !isActiveAhu) ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
+                                                style={(sunRingStyle && !isActiveAhu) ? sunRingStyle : {}}
                                                 title={ahu.id + (sunRing ? ' · sun-exposed' : '')}
                                                 onMouseDown={(e) => { e.stopPropagation(); setSelectedAhuId(ahu.id); setShowFloorPlanForAhu(ahu.id); setLockedVavId(null); }}
                                             >
@@ -697,10 +702,11 @@ const floorModalTree = (
                                     const gp = safePos[i % safePos.length]; const isLocked = lockedVavId === v.id;
                                     // Sun-Path Phase A: halo + directional shadow for
                                     // fallback-layout VAV dots.
-                                    let sunRing = null, sunShadow = null;
-                                    if (sunState && sunState.enabled && sunState.sun && window.red5SunExposureScore) {
-                                        const sc = window.red5SunExposureScore(gp.left/100, gp.top/100, sunState.sun);
-                                        sunRing = window.red5ExposureColor(sc);
+                                    let sunRing = null, sunRingStyle = null, sunShadow = null;
+                                    if (sunState && sunState.enabled && sunState.sun) {
+                                        const ring = liveSunRingStyle(gp.left, gp.top, sunState, [], buildingFacingOffset);
+                                        sunRing = ring.color;
+                                        sunRingStyle = ring.style;
                                         if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                     }
                                     return (
@@ -716,8 +722,8 @@ const floorModalTree = (
                                                 }}/>
                                             )}
                                             <div className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${isLocked ? 'bg-rose-500 scale-125' : 'bg-emerald-500'} ${sunRing ? '' : 'border-white'}`}
-                                                style={sunRing ? {borderColor: sunRing, boxShadow: `0 0 0 1px ${sunRing}66, 0 0 8px 2px ${sunRing}99, 0 0 18px 4px ${sunRing}66`} : {}}
-                                                title={v.id + (sunRing ? ' · sun-exposed' : '')}
+                                                style={sunRingStyle || {}}
+                                                title={v.id + (sunRing ? ' · sun / blind' : '')}
                                                 onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }}
                                             ></div>
                                             <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'}`}

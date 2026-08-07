@@ -100,9 +100,9 @@ window.red5SunExposureScore = function(markerXFrac, markerYFrac, sun, opts){
 };
 
 /* ---------- EXPOSURE → COLOR -------------------------------------- */
-/* Blend from neutral (no extra glow) → amber → bright orange as the
-   score rises.  Returns a CSS color string used as a ring/halo around
-   the marker.  Score < 0.02 returns null (no overlay applied).        */
+/* Blend from soft amber → bright amber as the score rises.
+   Returns a CSS color string used as a ring/halo around the marker.
+   Score < 0.02 returns null (no overlay applied).        */
 window.red5ExposureColor = function(score){
   if (!(score > 0.02)) return null;
   var t = Math.min(1, (score - 0.02) / 0.98);
@@ -110,6 +110,84 @@ window.red5ExposureColor = function(score){
   var g = Math.round(158 + ( 68 - 158) * t);
   var b = Math.round( 11 + ( 68 -  11) * t);
   return 'rgba('+r+','+g+','+b+',0.95)';
+};
+
+/* Ring style whose bloom intensity tracks score (blind-open × sun). */
+window.red5ExposureRingStyle = function(score){
+  if (!(score > 0.02)) return null;
+  var t = Math.min(1, Math.max(0, score));
+  var col = window.red5ExposureColor(t);
+  if (!col) return null;
+  var aCore = (0.25 + 0.70 * t).toFixed(2);
+  var aMid  = (0.30 + 0.55 * t).toFixed(2);
+  var aOut  = (0.15 + 0.40 * t).toFixed(2);
+  var b1 = (3 + 10 * t).toFixed(1);
+  var s1 = (1 + 2.5 * t).toFixed(1);
+  var b2 = (8 + 16 * t).toFixed(1);
+  var s2 = (2 + 4 * t).toFixed(1);
+  return {
+    borderColor: col,
+    boxShadow: '0 0 0 1px rgba(251,191,36,'+aCore+'), 0 0 '+b1+'px '+s1+'px rgba(251,191,36,'+aMid+'), 0 0 '+b2+'px '+s2+'px rgba(251,146,60,'+aOut+')'
+  };
+};
+
+/* Blind open factor (0..1) for a marker at plan % coords.
+   Windows that can cast inbound sunlight onto the marker contribute their
+   open %; closed blinds kill the factor.  No windows → 1 (unchanged). */
+window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
+  opts = opts || {};
+  if (!windows || !windows.length) return 1;
+  if (!sun || !sun.is_day) return 0;
+  var northOffsetDeg = opts.northOffsetDeg || 0;
+  var az = ((sun.azimuth || 0) + northOffsetDeg) % 360;
+  if (az < 0) az += 360;
+  var rad = az * Math.PI / 180;
+  var lx = Math.sin(rad), ly = -Math.cos(rad);
+  var centerX = 50, centerY = 50;
+  var best = 0;
+  for (var i = 0; i < windows.length; i++) {
+    var w = windows[i];
+    var cx = Number(w.x), cy = Number(w.y);
+    var len = Number(w.length);
+    var ang = Number(w.angle_deg) || 0;
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+    var open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
+    if (open < 0.01) continue;
+    var wrad = ang * Math.PI / 180;
+    var tx = Math.cos(wrad), ty = Math.sin(wrad);
+    var nx = -ty, ny = tx;
+    var ix = centerX - cx, iy = centerY - cy;
+    if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
+    if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
+    var enter = nx * lx + ny * ly;
+    if (enter < 0.05) continue;
+    var dx = mxPct - cx, dy = myPct - cy;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.8) continue;
+    var inward = (dx * nx + dy * ny) / dist;
+    if (inward < 0.05) continue;
+    var along = (dx * lx + dy * ly) / dist;
+    if (along < 0.08) continue;
+    var half = (Number.isFinite(len) && len > 0.5 ? len : 8) / 2;
+    var lat = Math.abs(dx * tx + dy * ty);
+    var spread = half + dist * 0.40;
+    if (lat > spread) continue;
+    var latF = Math.max(0, 1 - lat / spread);
+    var strength = open * (0.35 + 0.65 * enter) * (0.40 + 0.60 * Math.min(1, along)) * latF;
+    if (strength > best) best = strength;
+  }
+  return Math.min(1, best);
+};
+
+/* Combined sun × blind score for a VAV/AHU marker (plan % coords). */
+window.red5SunBlindScore = function(mxPct, myPct, sun, windows, opts){
+  opts = opts || {};
+  var sunScore = window.red5SunExposureScore(mxPct / 100, myPct / 100, sun, opts);
+  if (!(sunScore > 0.02)) return 0;
+  var blindF = window.red5WindowBlindFactor(mxPct, myPct, windows, sun, opts);
+  /* No mapped windows → pure sun exposure.  With windows → ring tracks open %. */
+  if (!windows || !windows.length) return sunScore;
+  return sunScore * blindF;
 };
 
 /* ---------- B1-B10 BAND × SUN-EXPOSURE TRIM ----------------------- */
@@ -460,53 +538,24 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       />
     );
     if (enter < 0.05 || open < 0.01) continue;
-    /* Open → glow strength (noticeable ramp):
-         just-open / low % → today's soft shaft (baseline ×1)
-         open 100%         → ~3.2× stronger + longer throw + bloom
-       Fully closed (0%) → no shaft. */
+    /* Open → shaft strength; closed → no sunlight through this window.
+       Shaft only (no glass-edge / window-halo glow — that reads on VAVs). */
     var openEase = Math.pow(open, 0.7);
     var base = enter * elevF * weatherF;
     if (base < 0.03) continue;
-    var openBoost = 1.0 + 2.2 * openEase;          // 1.0× … 3.2×
-    var intensity = base * openBoost;
-    var throwLen = (6 + 16 * base) * (1.0 + 1.4 * openEase);
-    var spread = half * (0.30 + 0.48 * openEase);
+    var openBoost = 1.0 + 1.6 * openEase;          // 1.0× … 2.6×
+    var throwLen = (8 + 20 * base) * (1.0 + 1.0 * openEase);
+    var spread = half * (0.28 + 0.35 * openEase);
     var fx1 = x1 + lx * throwLen + (-ny) * spread;
     var fy1 = y1 + ly * throwLen + ( nx) * spread;
     var fx2 = x2 + lx * throwLen + ( ny) * spread;
     var fy2 = y2 + ly * throwLen + (-nx) * spread;
-    var opCore = Math.min(0.90, 0.10 + base * 0.38 + openEase * 0.55);
-    var opBloom = Math.min(0.60, 0.04 + base * 0.16 + openEase * 0.42);
-    var midX = (x1 + x2) / 2 + lx * (throwLen * 0.22);
-    var midY = (y1 + y2) / 2 + ly * (throwLen * 0.22);
-    var bloomR = Math.max(4, half * 0.9 + 3 + 12 * openEase);
+    var opCore = Math.min(0.55, 0.08 + base * 0.28 + openEase * 0.32);
     var amber = isLight ? '251,191,36' : '251,146,60';
-    var hot = isLight ? '253,224,71' : '251,191,36';
-    /* Bright glass-edge glow — amber reads ON the window, not mid-room. */
-    var glassX = (x1 + x2) / 2;
-    var glassY = (y1 + y2) / 2;
-    var glassOp = Math.min(0.85, 0.20 + openEase * 0.65);
-    var glassR = Math.max(3, half * 0.55 + 4 + 10 * openEase);
-    shafts.push(
-      <ellipse key={'wglass-'+ (w.id || i)}
-               cx={glassX} cy={glassY}
-               rx={glassR} ry={Math.max(2.2, glassR * 0.38)}
-               transform={'rotate('+(ang)+' '+glassX+' '+glassY+')'}
-               fill={'rgba('+hot+','+glassOp+')'}
-      />
-    );
     shafts.push(
       <polygon key={'ws-'+ (w.id || i)}
                points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}
                fill={'rgba('+amber+','+opCore+')'}
-      />
-    );
-    shafts.push(
-      <ellipse key={'wbloom-'+ (w.id || i)}
-               cx={midX} cy={midY}
-               rx={bloomR} ry={bloomR * 0.55}
-               transform={'rotate('+(Math.atan2(ly, lx)*180/Math.PI)+' '+midX+' '+midY+')'}
-               fill={'rgba('+hot+','+opBloom+')'}
       />
     );
   }

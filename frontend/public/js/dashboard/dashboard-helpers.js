@@ -432,10 +432,20 @@ const bandStory = (b) => {
  * purple enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
  * Point colours (fixed — match operator request / live chart intent):
  *   OA dark cyan · RA pinkish-red · SA green · MA black with yellow ring.
- * RH-band / mix stroke stay overview green. Geometry matches the overview sketch.
+ * Click the plot to drop a magnifying glass (center = click); drag to move;
+ * slider / wheel adjusts zoom (leftmost = Off). Double-click clears the lens.
  * Ctx: { ahu, theme, sweetSpotRange, showSweetSpot, T_MIN, T_MAX }
  * ------------------------------------------------------------------ */
 function renderProcessMiniBadge(ctx) {
+    /* Hooks first — this helper is invoked during App render like a component. */
+    const VW = 440, VH = 248;
+    const [lens, setLens] = React.useState(null); /* { cx, cy } in SVG user units */
+    const [lastLens, setLastLens] = React.useState({ cx: VW * 0.56, cy: VH * 0.60 });
+    const [zoom, setZoom] = React.useState(2.2); /* 1.0 = Off */
+    const [dragging, setDragging] = React.useState(false);
+    const lensR = 93; /* 1.5× prior 62 px radius */
+    const magOn = zoom > 1.001 && !!lens;
+
     const { ahu, theme, sweetSpotRange, showSweetSpot, T_MIN: tMinIn, T_MAX: tMaxIn } = ctx || {};
     if (!ahu || !ahu.points) return null;
     const by = {};
@@ -456,7 +466,7 @@ function renderProcessMiniBadge(ctx) {
     const wMax = 0.030; /* 30 g/kg — matches main-chart W_MAX */
 
     /* ~2× card — overview sketch on white. */
-    const VW = 440, VH = 248, L = 40, R = 18, TOP = 20, BOT = 30;
+    const L = 40, R = 18, TOP = 20, BOT = 30;
     const gw = VW - L - R, gh = VH - TOP - BOT;
     const xOf = (t) => L + ((Number(t) - tMin) / (tMax - tMin)) * gw;
     const yOf = (w) => TOP + gh - ((Number(w) - wMin) / (wMax - wMin)) * gh;
@@ -589,6 +599,80 @@ function renderProcessMiniBadge(ctx) {
         ? yOf((_getW(20, rhLo) + _getW(20, rhHi)) / 2) + 4
         : (TOP + gh * 0.55);
 
+    const clipId = 'pmini-clip-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const svgToLocal = (svgEl, clientX, clientY) => {
+        try {
+            const pt = svgEl.createSVGPoint();
+            pt.x = clientX; pt.y = clientY;
+            const ctm = svgEl.getScreenCTM();
+            if (!ctm) return null;
+            const p = pt.matrixTransform(ctm.inverse());
+            return {
+                cx: Math.max(8, Math.min(VW - 8, p.x)),
+                cy: Math.max(8, Math.min(VH - 8, p.y)),
+            };
+        } catch (_) { return null; }
+    };
+
+    const chartLayers = (
+        <g>
+            <rect x="2" y="2" width={VW - 4} height={VH - 4} rx="6" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
+            <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
+            <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
+            {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
+            {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
+            {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="2" strokeDasharray="7 4" />}
+            {satPath && (
+                <path d={satPath} fill="none" stroke={colSat} strokeWidth="2.8" strokeLinecap="round" />
+            )}
+            {satPath && (
+                <g fontFamily="system-ui,sans-serif">
+                    <text x={L + gw * 0.78} y={TOP + 16} fill={colSat} style={{ fill: colSat }} fontSize="12" fontWeight="700">100% RH</text>
+                    <text x={L + gw * 0.78} y={TOP + 30} fill="#475569" style={{ fill: '#475569' }} fontSize="11">(saturation)</text>
+                </g>
+            )}
+            {hRA && (
+                <text x={hLabelX} y={hLabelY} fill={colH} style={{ fill: colH }} fontSize="10.5" fontWeight="700"
+                      textAnchor="end" fontFamily="system-ui,sans-serif">equal energy (enthalpy)</text>
+            )}
+            {bandPts && (
+                <g>
+                    <polygon points={bandPts}
+                             fill="#10b981" fillOpacity="0.22"
+                             stroke={colBand} strokeWidth="1.8"
+                             strokeDasharray="5 3" />
+                    <text x={bandLabelX} y={bandLabelY} fill={colBand} style={{ fill: colBand }} fontSize="11"
+                          fontWeight="800" textAnchor="middle"
+                          fontFamily="system-ui,sans-serif">
+                        RH band
+                    </text>
+                </g>
+            )}
+            <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colBand} strokeWidth="2.2"
+                  strokeDasharray="6 4" />
+            <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
+                  markerEnd={'url(#' + arrId + ')'} />
+            <circle cx={ox} cy={oy} r="6.5" fill={colOA} />
+            <text x={ox + 10} y={oy - 6} fill={colOA} style={{ fill: colOA }} fontSize="13" fontWeight="800"
+                  fontFamily="system-ui,sans-serif">OA</text>
+            <circle cx={rx} cy={ry} r="6.5" fill={colRA} />
+            <text x={rx + 8} y={ry + 18} fill={colRA} style={{ fill: colRA }} fontSize="13" fontWeight="800"
+                  fontFamily="system-ui,sans-serif">RA</text>
+            <circle cx={mx} cy={my} r="6" fill={colMA} stroke={colMARing} strokeWidth="2.5" />
+            <text x={mx + 9} y={my - 7} fill={colMA} style={{ fill: colMA }} fontSize="13" fontWeight="800"
+                  fontFamily="system-ui,sans-serif">MA</text>
+            <circle cx={sx} cy={sy} r="6.5" fill={colSA} />
+            <text x={sx - 26} y={sy - 8} fill={colSA} style={{ fill: colSA }} fontSize="13" fontWeight="800"
+                  fontFamily="system-ui,sans-serif">SA</text>
+            <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
+                  textAnchor="middle" fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
+            <text x={14} y={TOP + gh / 2} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
+                  textAnchor="middle"
+                  transform={`rotate(-90, 14, ${TOP + gh / 2})`}
+                  fontFamily="system-ui,sans-serif">Moisture in the air →</text>
+        </g>
+    );
+
     return (
         <details
             data-testid="process-mini-badge"
@@ -610,76 +694,128 @@ function renderProcessMiniBadge(ctx) {
                 className="mt-1.5 rounded-xl border p-2 shadow-xl"
                 style={{ background: cardBg, borderColor: cardBd, width: VW + 16, color: '#0f172a' }}
             >
-                <div className="px-1 pb-1 text-[9px] font-black uppercase tracking-[0.14em] font-mono" style={{ color: titleC }}>
-                    {ahu.id} · OA–MA–SA / RA
-                    {drawBand ? ` · ${rhLo}–${rhHi}% RH` : ''}
+                <div className="px-1 pb-1 flex items-center gap-2" style={{ color: titleC }}>
+                    <div className="text-[9px] font-black uppercase tracking-[0.14em] font-mono flex-1 min-w-0">
+                        {ahu.id} · OA–MA–SA / RA
+                        {drawBand ? ` · ${rhLo}–${rhHi}% RH` : ''}
+                    </div>
+                    <label className="shrink-0 inline-flex items-center gap-1 font-mono text-[9px] font-bold"
+                           title="Magnifier zoom — slide fully left to turn off"
+                           onMouseDown={(e) => e.stopPropagation()}>
+                        <span style={{ color: '#64748b' }}>{zoom <= 1.001 ? 'Off' : (zoom.toFixed(1) + '\u00D7')}</span>
+                        <input type="range" min="1" max="4.5" step="0.1" value={zoom}
+                               data-testid="process-mini-zoom"
+                               onChange={(e) => {
+                                   const z = Number(e.target.value);
+                                   setZoom(z);
+                                   if (z <= 1.001) {
+                                       if (lens) setLastLens(lens);
+                                       setLens(null);
+                                   } else if (!lens) {
+                                       setLens(lastLens);
+                                   }
+                               }}
+                               style={{ width: 72, accentColor: '#0e7490', cursor: 'pointer' }} />
+                    </label>
                 </div>
                 <svg viewBox={`0 0 ${VW} ${VH}`} width={VW} height={VH} aria-hidden="true"
-                     style={{ color: '#0f172a', display: 'block' }}>
-                    <rect x="2" y="2" width={VW - 4} height={VH - 4} rx="6" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
-                    {/* Axes only — no cartesian grid */}
-                    <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
-                    <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
-                    {/* Enthalpy: RA bold, SA/OA thin — full opacity (no wash) */}
-                    {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
-                    {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
-                    {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="2" strokeDasharray="7 4" />}
-                    {/* 100% RH saturation */}
-                    {satPath && (
-                        <path d={satPath} fill="none" stroke={colSat} strokeWidth="2.8" strokeLinecap="round" />
-                    )}
-                    {satPath && (
-                        <g fontFamily="system-ui,sans-serif">
-                            <text x={L + gw * 0.78} y={TOP + 16} fill={colSat} style={{ fill: colSat }} fontSize="12" fontWeight="700">100% RH</text>
-                            <text x={L + gw * 0.78} y={TOP + 30} fill="#475569" style={{ fill: '#475569' }} fontSize="11">(saturation)</text>
-                        </g>
-                    )}
-                    {hRA && (
-                        <text x={hLabelX} y={hLabelY} fill={colH} style={{ fill: colH }} fontSize="10.5" fontWeight="700"
-                              textAnchor="end" fontFamily="system-ui,sans-serif">equal energy (enthalpy)</text>
-                    )}
-                    {bandPts && (
-                        <g>
-                            <polygon points={bandPts}
-                                     fill="#10b981" fillOpacity="0.22"
-                                     stroke={colBand} strokeWidth="1.8"
-                                     strokeDasharray="5 3" />
-                            <text x={bandLabelX} y={bandLabelY} fill={colBand} style={{ fill: colBand }} fontSize="11"
-                                  fontWeight="800" textAnchor="middle"
-                                  fontFamily="system-ui,sans-serif">
-                                RH band
-                            </text>
-                        </g>
-                    )}
-                    <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colBand} strokeWidth="2.2"
-                          strokeDasharray="6 4" />
+                     data-testid="process-mini-svg"
+                     style={{ color: '#0f172a', display: 'block', cursor: magOn ? 'grab' : 'zoom-in', touchAction: 'none' }}
+                     onClick={(e) => {
+                         if (dragging) return;
+                         if (e.detail >= 2) {
+                             if (lens) setLastLens(lens);
+                             setLens(null);
+                             setZoom(1);
+                             return;
+                         }
+                         const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
+                         if (!loc) return;
+                         setLens(loc);
+                         setLastLens(loc);
+                         if (zoom <= 1.001) setZoom(2.2);
+                     }}
+                     onWheel={(e) => {
+                         e.preventDefault();
+                         e.stopPropagation();
+                         const dy = e.deltaY;
+                         setZoom((z) => {
+                             const next = Math.max(1, Math.min(4.5, z + (dy < 0 ? 0.15 : -0.15)));
+                             if (next <= 1.001) {
+                                 setLens((cur) => { if (cur) setLastLens(cur); return null; });
+                             } else {
+                                 setLens((cur) => {
+                                     if (cur) return cur;
+                                     const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
+                                     const place = loc || lastLens;
+                                     setLastLens(place);
+                                     return place;
+                                 });
+                             }
+                             return next;
+                         });
+                     }}
+                     onMouseDown={(e) => {
+                         e.stopPropagation();
+                         if (!magOn || e.button !== 0) return;
+                         const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
+                         if (!loc) return;
+                         const dx = loc.cx - lens.cx, dy = loc.cy - lens.cy;
+                         if (dx * dx + dy * dy <= lensR * lensR) setDragging(true);
+                     }}
+                     onMouseMove={(e) => {
+                         if (!dragging) return;
+                         const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
+                         if (loc) { setLens(loc); setLastLens(loc); }
+                     }}
+                     onMouseUp={() => setDragging(false)}
+                     onMouseLeave={() => setDragging(false)}
+                >
                     <defs>
                         <marker id={arrId} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
                             <path d="M0,0 L7,3.5 L0,7 Z" fill={colSA} />
                         </marker>
                     </defs>
-                    <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
-                          markerEnd={'url(#' + arrId + ')'} />
-                    <circle cx={ox} cy={oy} r="6.5" fill={colOA} />
-                    <text x={ox + 10} y={oy - 6} fill={colOA} style={{ fill: colOA }} fontSize="13" fontWeight="800"
-                          fontFamily="system-ui,sans-serif">OA</text>
-                    <circle cx={rx} cy={ry} r="6.5" fill={colRA} />
-                    <text x={rx + 8} y={ry + 18} fill={colRA} style={{ fill: colRA }} fontSize="13" fontWeight="800"
-                          fontFamily="system-ui,sans-serif">RA</text>
-                    <circle cx={mx} cy={my} r="6" fill={colMA} stroke={colMARing} strokeWidth="2.5" />
-                    <text x={mx + 9} y={my - 7} fill={colMA} style={{ fill: colMA }} fontSize="13" fontWeight="800"
-                          fontFamily="system-ui,sans-serif">MA</text>
-                    <circle cx={sx} cy={sy} r="6.5" fill={colSA} />
-                    <text x={sx - 26} y={sy - 8} fill={colSA} style={{ fill: colSA }} fontSize="13" fontWeight="800"
-                          fontFamily="system-ui,sans-serif">SA</text>
-                    <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
-                          textAnchor="middle" fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
-                    <text x={14} y={TOP + gh / 2} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
-                          textAnchor="middle"
-                          transform={`rotate(-90, 14, ${TOP + gh / 2})`}
-                          fontFamily="system-ui,sans-serif">Moisture in the air →</text>
+                    {chartLayers}
+                    {magOn && (
+                        <g data-testid="process-mini-lens" style={{ pointerEvents: 'none' }}>
+                            <defs>
+                                <clipPath id={clipId}>
+                                    <circle cx={lens.cx} cy={lens.cy} r={lensR} />
+                                </clipPath>
+                                <filter id={clipId + '-sh'} x="-20%" y="-20%" width="140%" height="140%">
+                                    <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#0f172a" floodOpacity="0.28" />
+                                </filter>
+                            </defs>
+                            <circle cx={lens.cx} cy={lens.cy} r={lensR + 1.5}
+                                    fill="none" stroke="#0f172a" strokeOpacity="0.12" strokeWidth="10" />
+                            <g clipPath={'url(#' + clipId + ')'}>
+                                <g transform={`translate(${lens.cx} ${lens.cy}) scale(${zoom}) translate(${-lens.cx} ${-lens.cy})`}>
+                                    {chartLayers}
+                                </g>
+                            </g>
+                            <circle cx={lens.cx} cy={lens.cy} r={lensR}
+                                    fill="none" stroke="#e2e8f0" strokeWidth="5"
+                                    filter={'url(#' + clipId + '-sh)'} />
+                            <circle cx={lens.cx} cy={lens.cy} r={lensR}
+                                    fill="none" stroke="#0f172a" strokeWidth="1.6" />
+                            <circle cx={lens.cx} cy={lens.cy} r={lensR - 3}
+                                    fill="none" stroke="#ffffff" strokeOpacity="0.55" strokeWidth="1.2" />
+                            <line x1={lens.cx + lensR * 0.72} y1={lens.cy + lensR * 0.72}
+                                  x2={lens.cx + lensR * 1.15} y2={lens.cy + lensR * 1.15}
+                                  stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+                            <line x1={lens.cx + lensR * 0.72} y1={lens.cy + lensR * 0.72}
+                                  x2={lens.cx + lensR * 1.15} y2={lens.cy + lensR * 1.15}
+                                  stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" />
+                        </g>
+                    )}
                 </svg>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1.5 font-mono text-[11px] font-extrabold leading-tight">
+                <div className="px-1 pt-1 text-[8px] font-mono" style={{ color: '#94a3b8' }}>
+                    {magOn
+                        ? 'Drag lens · scroll/slider zoom · left=Off · double-click clears'
+                        : 'Slider left = Off · click plot or raise zoom to magnify'}
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1 font-mono text-[11px] font-extrabold leading-tight">
                     <div style={{ color: colOA }}>OA {fmt(OA)}</div>
                     <div style={{ color: colRA }}>RA {fmt(RA)}</div>
                     <div style={{ color: colMA }}>MA {MA ? fmt(MA) : '—'}</div>

@@ -87,7 +87,16 @@ rm -f "$TMP"
 # from /root/data/ and /app/frontend/public/ respectively, so the shared
 # dashboard.html works on either backend with zero divergence.
 HASH=$(md5sum "$DST" | cut -c1-10)
-sed -i -E "s|(/api)?/(assets/)?dashboard\.compiled\.js(\?v=[a-f0-9]+)?|/api/assets/dashboard.compiled.js?v=$HASH|g" "$PUB/dashboard.html"
+# V2.0 / shared: rewrite the simple <script src="...dashboard.compiled.js?v=...">
+# tag.  IMPORTANT: do NOT run this regex against V1.9's multi-path boot loader
+# strings that end in `?v=' + HASH` — that produced broken
+# `?v=<stamp>?v=' + HASH` URLs and left the controller stuck on a stale
+# cached bundle (sun-path hour sim looked broken on V1.9 only).
+sed -i -E "s|src=\"(/api)?/(assets/)?dashboard\.compiled\.js(\?v=[a-f0-9]+)?\"|src=\"/api/assets/dashboard.compiled.js?v=$HASH\"|g" "$PUB/dashboard.html"
+# V1.9 boot loader (if present in this tree or archives): bump var HASH only.
+if grep -q "var HASH = '" "$PUB/dashboard.html" 2>/dev/null; then
+    sed -i -E "s|var HASH = '[a-f0-9]+'|var HASH = '$HASH'|g" "$PUB/dashboard.html"
+fi
 echo "Cache-bust dashboard.html → /api/assets/dashboard.compiled.js?v=$HASH"
 
 echo "Built $DST  ($(wc -c < "$DST" | awk '{printf "%.1f KB", $1/1024}'),  $(wc -l < "$DST") lines)"

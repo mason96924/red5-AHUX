@@ -11,7 +11,7 @@ detect missing tags.  Do NOT remove. -->
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta charset="utf-8"/>
-<title>Process mini badge — magnifier preview</title>
+<title>Process mini badge — auto-frame preview</title>
 <style>
   :root { --page:#f8fafc; --ink:#0f172a; }
   body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
@@ -31,44 +31,45 @@ detect missing tags.  Do NOT remove. -->
     font:700 11px/1.25 ui-monospace,Menlo,monospace}
   .oa{color:#1e3a8a}.ra{color:#e11d48}.ma{color:#0f172a}.sa{color:#065f46}
   .note{max-width:460px;font-size:12px;color:#64748b;line-height:1.5;text-align:center}
+  .frame{font:600 11px/1.4 ui-monospace,Menlo,monospace;color:#475569;background:#fff;border:1px solid #e2e8f0;
+    border-radius:8px;padding:8px 12px}
 </style>
 </head>
 <body>
-  <h1>Process mini-badge — click-centered magnifier</h1>
+  <h1>Process mini-badge — auto-framed on OA / RA / MA / SA</h1>
   <div class="mini">
     <div class="row">
       <div class="mini-title">AHU-01 · OA–MA–SA / RA · 40–60% RH</div>
-      <label class="zoom-lab"><span id="zoomLbl">2.5×</span>
-        <input id="zoom" type="range" min="1" max="4.5" step="0.1" value="2.5"/>
+      <label class="zoom-lab"><span id="zoomLbl">Off</span>
+        <input id="zoom" type="range" min="1" max="4.5" step="0.1" value="1"/>
       </label>
     </div>
-    <svg id="chart" viewBox="0 0 440 248" width="440" height="248" aria-label="Process sketch with magnifier"></svg>
-    <div class="hint" id="hint">Drag lens · scroll/slider zoom · double-click to clear</div>
+    <svg id="chart" viewBox="0 0 440 248" width="440" height="248" aria-label="Process sketch auto-framed"></svg>
+    <div class="hint" id="hint">Slider left = Off · click plot or raise zoom to magnify</div>
     <div class="vals">
-      <div class="oa"><b>OA</b> 32.0° · 55%</div>
-      <div class="ra"><b>RA</b> 24.0° · 50%</div>
-      <div class="ma"><b>MA</b> 26.4° · 52%</div>
-      <div class="sa"><b>SA</b> 13.0° · 95%</div>
+      <div class="oa"><b>OA</b> 17.4° · 69%</div>
+      <div class="ra"><b>RA</b> 23.1° · 46%</div>
+      <div class="ma"><b>MA</b> 17.9° · 66%</div>
+      <div class="sa"><b>SA</b> 23.2° · 50%</div>
     </div>
   </div>
+  <div class="frame" id="frameMeta">frame…</div>
   <p class="note">
-    Magnifier centers on click. Zoom is adjustable (slider or scroll).
-    Same behaviour as the live Process badge.
+    Plot window centers on the OA/RA/MA/SA cluster (same framing intent as the
+    main chart crop). Style unchanged: no grid, no process bands — sat curve,
+    enthalpy dashes, RH band, and state dots only.
   </p>
 <script src="js/psychrometric.js"></script>
 <script>
 (function () {
-  var tMin = 5, tMax = 50, wMin = 0, wMax = 0.030;
   var VW = 440, VH = 248, L = 40, R = 18, TOP = 20, BOT = 30;
   var gw = VW - L - R, gh = VH - TOP - BOT;
-  var lensR = 93; /* 1.5× prior 62 px radius */
+  var lensR = 93;
   var lastLens = { cx: 248, cy: 148 };
-  var lens = { cx: 248, cy: 148 }; /* pre-placed on RA/MA cluster for preview */
-  var zoom = 2.5;
+  var lens = null;
+  var zoom = 1;
   var dragging = false;
 
-  function xOf(t) { return L + ((t - tMin) / (tMax - tMin)) * gw; }
-  function yOf(w) { return TOP + gh - ((w - wMin) / (wMax - wMin)) * gh; }
   function wSat(t) {
     if (typeof getW === 'function') return getW(t, 100);
     var tC = Math.max(-20, Math.min(60, t));
@@ -84,13 +85,35 @@ detect missing tags.  Do NOT remove. -->
     return wSat(t) * (rh / 100);
   }
 
-  var OA = { t: 33, w: rhW(33, 55) };
-  var RA = { t: 24, w: rhW(24, 50) };
-  var SA = { t: 13, w: rhW(13, 95) };
-  var MA = { t: 0.7 * RA.t + 0.3 * OA.t, w: 0.7 * RA.w + 0.3 * OA.w };
+  /* Live values from operator screenshot (2026-08-08). */
+  var OA = { t: 17.4, w: rhW(17.4, 69) };
+  var RA = { t: 23.1, w: rhW(23.1, 46) };
+  var SA = { t: 23.2, w: rhW(23.2, 50) };
+  var MA = { t: 17.9, w: rhW(17.9, 66) };
+
+  var cluster = [OA, RA, SA, MA];
+  var tLo = Infinity, tHi = -Infinity, wLo = Infinity, wHi = -Infinity;
+  cluster.forEach(function (p) {
+    tLo = Math.min(tLo, p.t); tHi = Math.max(tHi, p.t);
+    wLo = Math.min(wLo, p.w); wHi = Math.max(wHi, p.w);
+  });
+  var tMid = (tLo + tHi) / 2, wMid = (wLo + wHi) / 2;
+  var tHalf = Math.max((tHi - tLo) * 1.4, 6);
+  var wHalf = Math.max((wHi - wLo) * 1.5, 0.003);
+  var tMin = tMid - tHalf, tMax = tMid + tHalf;
+  var wMin = wMid - wHalf, wMax = wMid + wHalf;
+  if (wMin < 0) { wMax -= wMin; wMin = 0; }
+
+  function xOf(t) { return L + ((t - tMin) / (tMax - tMin)) * gw; }
+  function yOf(w) { return TOP + gh - ((w - wMin) / (wMax - wMin)) * gh; }
+
+  document.getElementById('frameMeta').textContent =
+    'Auto-frame  T ' + tMin.toFixed(1) + '–' + tMax.toFixed(1) + ' °C   ·   W ' +
+    (wMin * 1000).toFixed(1) + '–' + (wMax * 1000).toFixed(1) + ' g/kg' +
+    '   (cluster mid @ ' + tMid.toFixed(1) + ' °C)';
 
   var sat = [];
-  for (var t = tMin; t <= tMax + 1e-9; t += 0.35) {
+  for (var t = tMin; t <= tMax + 1e-9; t += 0.25) {
     var ws = wSat(t);
     if (ws > wMax) { sat.push([t, wMax]); break; }
     if (ws >= wMin) sat.push([t, ws]);
@@ -102,7 +125,7 @@ detect missing tags.  Do NOT remove. -->
   }
   function hPath(pt) {
     var h0 = hOf(pt.t, pt.w), segs = [], cur = [];
-    for (var tt = tMin; tt <= tMax; tt += 0.4) {
+    for (var tt = tMin; tt <= tMax; tt += 0.3) {
       var w = (h0 - 1.006 * tt) / (2501 + 1.86 * tt);
       var ok = isFinite(w) && w >= wMin && w <= wMax && w <= wSat(tt) + 0.0002;
       if (!ok) { if (cur.length > 1) segs.push(pathFrom(cur)); cur = []; continue; }
@@ -113,8 +136,11 @@ detect missing tags.  Do NOT remove. -->
   }
 
   var rhLo = 40, rhHi = 60, band = [];
-  for (var tt = 20; tt <= 27.01; tt += 0.35) band.push([tt, rhW(tt, rhHi)]);
-  for (var tt2 = 27; tt2 >= 19.99; tt2 -= 0.35) band.push([tt2, rhW(tt2, rhLo)]);
+  var tBandLo = Math.max(tMin, 18), tBandHi = Math.min(tMax, 28);
+  if (tBandHi > tBandLo + 0.4) {
+    for (var tt = tBandLo; tt <= tBandHi + 0.01; tt += 0.35) band.push([tt, Math.min(wMax, Math.max(wMin, rhW(tt, rhHi)))]);
+    for (var tt2 = tBandHi; tt2 >= tBandLo - 0.01; tt2 -= 0.35) band.push([tt2, Math.min(wMax, Math.max(wMin, rhW(tt2, rhLo)))]);
+  }
 
   var ox = xOf(OA.t), oy = yOf(OA.w);
   var rx = xOf(RA.t), ry = yOf(RA.w);
@@ -128,7 +154,8 @@ detect missing tags.  Do NOT remove. -->
     if (isFinite(wh) && isFinite(ws2) && wh >= ws2 - 0.0001) { tHit = th; break; }
   }
   var hLabelX = Math.max(L + 90, Math.min(L + gw * 0.62, xOf(tHit) - 4));
-  var hLabelY = Math.max(TOP + 22, Math.min(TOP + gh * 0.55, yOf(Math.min(wMax, wSat(tHit))) - 10));
+  var hLabelY = Math.max(TOP + 22, Math.min(TOP + gh * 0.55, yOf(Math.min(wMax, Math.max(wMin, wSat(tHit)))) - 10));
+  var tBandLabel = tBandLo + Math.min(2.5, (tBandHi - tBandLo) * 0.35);
 
   function chartInner() {
     return '' +
@@ -138,12 +165,12 @@ detect missing tags.  Do NOT remove. -->
       '<path d="'+hPath(OA)+'" fill="none" stroke="#6d28d9" stroke-width="1.3" stroke-dasharray="2 4"/>' +
       '<path d="'+hPath(SA)+'" fill="none" stroke="#6d28d9" stroke-width="1.3" stroke-dasharray="2 4"/>' +
       '<path d="'+hPath(RA)+'" fill="none" stroke="#6d28d9" stroke-width="1.8" stroke-dasharray="7 4"/>' +
-      '<path d="'+pathFrom(sat)+'" fill="none" stroke="#1d4ed8" stroke-width="2.5" stroke-linecap="round"/>' +
-      '<text x="'+(L+gw*0.78)+'" y="'+(TOP+16)+'" fill="#1d4ed8" font-size="12" font-weight="700" font-family="system-ui">100% RH</text>' +
-      '<text x="'+(L+gw*0.78)+'" y="'+(TOP+30)+'" fill="#64748b" font-size="11" font-family="system-ui">(saturation)</text>' +
+      (sat.length > 1 ? '<path d="'+pathFrom(sat)+'" fill="none" stroke="#1d4ed8" stroke-width="2.5" stroke-linecap="round"/>' : '') +
+      '<text x="'+(L+gw*0.72)+'" y="'+(TOP+16)+'" fill="#1d4ed8" font-size="12" font-weight="700" font-family="system-ui">100% RH</text>' +
+      '<text x="'+(L+gw*0.72)+'" y="'+(TOP+30)+'" fill="#64748b" font-size="11" font-family="system-ui">(saturation)</text>' +
       '<text x="'+hLabelX+'" y="'+hLabelY+'" fill="#6d28d9" font-size="10.5" font-weight="700" text-anchor="end" font-family="system-ui">equal energy (enthalpy)</text>' +
-      '<polygon points="'+band.map(function(p){return xOf(p[0]).toFixed(1)+','+yOf(p[1]).toFixed(1)}).join(' ')+'" fill="#10b981" fill-opacity="0.16" stroke="#047857" stroke-width="1.6" stroke-dasharray="5 3"/>' +
-      '<text x="'+xOf(18.5)+'" y="'+(yOf((rhW(20,rhLo)+rhW(20,rhHi))/2)+4)+'" fill="#047857" font-size="11" font-weight="700" text-anchor="middle" font-family="system-ui">RH band</text>' +
+      (band.length ? '<polygon points="'+band.map(function(p){return xOf(p[0]).toFixed(1)+','+yOf(p[1]).toFixed(1)}).join(' ')+'" fill="#10b981" fill-opacity="0.16" stroke="#047857" stroke-width="1.6" stroke-dasharray="5 3"/>' : '') +
+      (band.length ? '<text x="'+xOf(tBandLabel)+'" y="'+(yOf((rhW(tBandLabel,rhLo)+rhW(tBandLabel,rhHi))/2)+4)+'" fill="#047857" font-size="11" font-weight="700" text-anchor="middle" font-family="system-ui">RH band</text>' : '') +
       '<line x1="'+ox+'" y1="'+oy+'" x2="'+rx+'" y2="'+ry+'" stroke="#047857" stroke-width="2" stroke-dasharray="6 4"/>' +
       '<line x1="'+mx+'" y1="'+my+'" x2="'+sx+'" y2="'+sy+'" stroke="#065f46" stroke-width="2.5" marker-end="url(#arr)"/>' +
       '<circle cx="'+ox+'" cy="'+oy+'" r="6" fill="#1e3a8a" fill-opacity="0.42" stroke="#1e3a8a" stroke-width="1.6"/><text x="'+(ox+10)+'" y="'+(oy-6)+'" fill="#1e3a8a" font-size="13" font-weight="800" font-family="system-ui">OA</text>' +

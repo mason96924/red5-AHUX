@@ -428,8 +428,9 @@ const bandStory = (b) => {
 
 /* ------------------------------------------------------------------
  * renderProcessMiniBadge — overview-slide OA–MA–SA / RA sketch.
- * Full psy range from 5 °C dry-bulb (not −15), light plot, saturation curve,
- * purple enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
+ * Auto-frames the plot so the OA/RA/MA/SA cluster sits in the middle
+ * (not a fixed 5–50 °C window). Light plot, saturation curve, purple
+ * enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
  * Point colours (fixed — match operator request / live chart intent):
  *   OA darker blue · RA pinkish-red · SA darker green · MA black with yellow ring.
  *   State dots translucent (fillOpacity 0.42) with solid stroke.
@@ -450,7 +451,7 @@ function renderProcessMiniBadge(ctx) {
     const lensR = 93; /* 1.5× prior 62 px radius */
     const magOn = zoom > 1.001 && !!lens;
 
-    const { ahu, theme, sweetSpotRange, showSweetSpot, T_MIN: tMinIn, T_MAX: tMaxIn } = ctx || {};
+    const { ahu, theme, sweetSpotRange, showSweetSpot } = ctx || {};
     if (!ahu || !ahu.points) return null;
     const by = {};
     (ahu.points || []).forEach((p) => { if (p && p.label) by[p.label] = p; });
@@ -463,11 +464,26 @@ function renderProcessMiniBadge(ctx) {
     const _getW = (typeof getW === 'function') ? getW : null;
     const _getH = (typeof getH === 'function') ? getH : null;
 
-    /* Chart window: dry-bulb from 5 °C (not −15) through main-chart T_MAX; W 0–30 g/kg. */
-    const tMin = 5;
-    const tMax = Number.isFinite(tMaxIn) ? Math.max(tMaxIn, 35) : 50;
-    const wMin = 0;
-    const wMax = 0.030; /* 30 g/kg — matches main-chart W_MAX */
+    /* Auto-frame around OA/RA/MA/SA — cluster midpoint = plot center. */
+    const cluster = [OA, RA, SA].concat(MA ? [MA] : []);
+    let tLo = Infinity, tHi = -Infinity, wLo = Infinity, wHi = -Infinity;
+    cluster.forEach((p) => {
+        const t = Number(p.t), w = Number(p.w);
+        if (Number.isFinite(t)) { tLo = Math.min(tLo, t); tHi = Math.max(tHi, t); }
+        if (Number.isFinite(w)) { wLo = Math.min(wLo, w); wHi = Math.max(wHi, w); }
+    });
+    if (!Number.isFinite(tLo)) { tLo = 15; tHi = 25; }
+    if (!Number.isFinite(wLo)) { wLo = 0.006; wHi = 0.012; }
+    const tMid = (tLo + tHi) / 2;
+    const wMid = (wLo + wHi) / 2;
+    /* Half-span: ≥ ~1.4× data span, with floor so a tight cluster still has air. */
+    const tHalf = Math.max((tHi - tLo) * 1.4, 6);
+    const wHalf = Math.max((wHi - wLo) * 1.5, 0.003);
+    let tMin = tMid - tHalf;
+    let tMax = tMid + tHalf;
+    let wMin = wMid - wHalf;
+    let wMax = wMid + wHalf;
+    if (wMin < 0) { wMax -= wMin; wMin = 0; }
 
     /* ~2× card — overview sketch on white. */
     const L = 40, R = 18, TOP = 20, BOT = 30;
@@ -535,20 +551,24 @@ function renderProcessMiniBadge(ctx) {
     const hRA = enthalpyPath(RA);
     const hSA = enthalpyPath(SA);
 
-    /* Green RH band (lo–hi isopleths over comfort T) — not Givoni engine. */
+    /* Green RH band (lo–hi isopleths) — clip to visible dry-bulb window. */
     let bandPts = '';
+    let tBandLo = 20, tBandHi = 27;
     if (drawBand && _getW) {
         const top = [], bot = [];
-        const tBandLo = 20, tBandHi = 27;
-        for (let tt = tBandLo; tt <= tBandHi + 1e-9; tt += 0.35) {
-            top.push([tt, Math.min(wMax, _getW(tt, rhHi))]);
+        tBandLo = Math.max(tMin, 18);
+        tBandHi = Math.min(tMax, 28);
+        if (tBandHi > tBandLo + 0.4) {
+            for (let tt = tBandLo; tt <= tBandHi + 1e-9; tt += 0.35) {
+                top.push([tt, Math.min(wMax, Math.max(wMin, _getW(tt, rhHi)))]);
+            }
+            for (let tt = tBandHi; tt >= tBandLo - 1e-9; tt -= 0.35) {
+                bot.push([tt, Math.min(wMax, Math.max(wMin, _getW(tt, rhLo)))]);
+            }
+            bandPts = top.concat(bot).map(([t, w]) =>
+                xOf(t).toFixed(1) + ',' + yOf(w).toFixed(1)
+            ).join(' ');
         }
-        for (let tt = tBandHi; tt >= tBandLo - 1e-9; tt -= 0.35) {
-            bot.push([tt, Math.max(wMin, _getW(tt, rhLo))]);
-        }
-        bandPts = top.concat(bot).map(([t, w]) =>
-            xOf(t).toFixed(1) + ',' + yOf(w).toFixed(1)
-        ).join(' ');
     }
 
     /* "equal energy (enthalpy)" — just outside sat where RA’s h-line meets 100% RH. */
@@ -598,10 +618,11 @@ function renderProcessMiniBadge(ctx) {
     const arrId = 'pmini-arr-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
     void theme; /* badge is always light; ignore dashboard dark theme inheritance */
 
-    /* Left of the band polygon — clear of RA (inside the band at ~24 °C) */
-    const bandLabelX = xOf(18.5);
+    /* RH-band label near the left edge of the visible band polygon */
+    const tBandLabel = tBandLo + Math.min(2.5, (tBandHi - tBandLo) * 0.35);
+    const bandLabelX = xOf(tBandLabel);
     const bandLabelY = _getW
-        ? yOf((_getW(20, rhLo) + _getW(20, rhHi)) / 2) + 4
+        ? yOf((_getW(tBandLabel, rhLo) + _getW(tBandLabel, rhHi)) / 2) + 4
         : (TOP + gh * 0.55);
 
     const clipId = 'pmini-clip-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -687,7 +708,7 @@ function renderProcessMiniBadge(ctx) {
         >
             <summary
                 className="list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black tracking-wider uppercase font-mono bg-slate-900 border-slate-500 text-white hover:border-sky-400"
-                title="Show OA–MA–SA / RA process sketch (full chart range)"
+                title="Show OA–MA–SA / RA process sketch (auto-framed on state points)"
             >
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colOA }} />
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colMA, outline: `2px solid ${colMARing}`, outlineOffset: 1 }} />

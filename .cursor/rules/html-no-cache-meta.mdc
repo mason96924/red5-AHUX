@@ -1,0 +1,27 @@
+---
+description: Every frontend/archive HTML must keep the no-cache meta sentinel for deploy.sh
+globs: "**/*.html"
+alwaysApply: true
+---
+
+# HTML no-cache meta (deploy preflight)
+
+`deploy.sh` step `[0a/7]` refuses to deploy if any `frontend/public/*.html` lacks:
+
+```html
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+```
+
+The **sentinel** is `data-cache-policy="no-cache"`. A bare `Cache-Control` meta without that attribute still fails deploy.
+
+## When rewriting or creating HTML
+
+- Never strip these three meta tags from `<head>`.
+- After any `Write`/`overwrite` of HTML under `frontend/public/`, `archive/Red5-AHU-V1.9/`, or `archive/Red5-AHU-V2.0/`, verify the sentinel is present (or run `python3 scripts/inject_no_cache_meta.py` from a tree where its ROOTS resolve).
+- Mirror the same head block into archive copies of the same file.
+
+## Common failure
+
+Rewriting `process-mini-badge-preview.html` without the sentinel breaks Linux V2.0 `./deploy.sh` after every push.

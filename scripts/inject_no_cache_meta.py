@@ -25,7 +25,14 @@ import os
 import re
 import sys
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# Prefer repo-relative paths (works on Mac + Linux). Keep /app/... for
+# the container layout used in some CI images.
 ROOTS = [
+    os.path.join(ROOT, "frontend", "public"),
+    os.path.join(ROOT, "archive", "Red5-AHU-V2.0"),
+    os.path.join(ROOT, "archive", "Red5-AHU-V1.9"),
     "/app/frontend/public",
     "/app/archive/Red5-AHU-V2.0",
     "/app/archive/Red5-AHU-V1.9",

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Process mini badge — preview</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;
+    background:#0f172a;font-family:ui-sans-serif,system-ui,sans-serif;color:#e2e8f0}
+  h1{font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:#94a3b8;font-weight:700}
+  .row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  .col{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .lab{font-size:11px;color:#64748b}
+  /* collapsed badge button */
+  .badge-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;
+    border:1px solid #475569;background:#1e293b;color:#93c5fd;font:700 10px/1 ui-monospace,Menlo,monospace;
+    letter-spacing:.06em;cursor:pointer}
+  .badge-btn .dot{width:7px;height:7px;border-radius:50%}
+  /* expanded mini card — matches customer sketch */
+  .mini{width:220px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:8px 8px 6px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  .mini-title{font:800 9px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;
+    color:#64748b;margin:0 0 4px 4px}
+  .vals{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;padding:4px 4px 2px;
+    font:700 10px/1.25 ui-monospace,Menlo,monospace}
+  .vals b{font-weight:800}
+  .oa{color:#ea580c}.ra{color:#16a34a}.ma{color:#0f172a}.sa{color:#2563eb}
+</style>
+</head>
+<body>
+  <h1>Dashboard process mini-badge — size preview</h1>
+  <div class="row">
+    <div class="col">
+      <div class="lab">Collapsed (button)</div>
+      <button class="badge-btn" type="button">
+        <span class="dot" style="background:#ea580c"></span>
+        <span class="dot" style="background:#0f172a"></span>
+        <span class="dot" style="background:#16a34a"></span>
+        <span class="dot" style="background:#2563eb"></span>
+        PROCESS
+      </button>
+    </div>
+    <div class="col">
+      <div class="lab">Expanded (~220×168) — values readable, not a full chart</div>
+      <div class="mini">
+        <div class="mini-title">AHU-01 · OA–MA–SA / RA</div>
+        <svg viewBox="0 0 220 120" width="220" height="120" aria-label="Mini process sketch">
+          <!-- light grid -->
+          <rect x="8" y="6" width="204" height="108" fill="#f8fafc" rx="4"/>
+          <g stroke="#e2e8f0" stroke-width="1">
+            <path d="M28 20 V104 M58 20 V104 M88 20 V104 M118 20 V104 M148 20 V104 M178 20 V104"/>
+            <path d="M18 30 H202 M18 50 H202 M18 70 H202 M18 90 H202"/>
+          </g>
+          <!-- saturation curve — same bow as Psychart overview slide (bottom-left → upper-right, states sit below) -->
+          <polyline points="18,98 42,93 66,86 90,76 114,63 138,45 162,22 170,12"
+                    fill="none" stroke="#1d4ed8" stroke-width="2.4"/>
+          <text x="172" y="18" fill="#1d4ed8" font-size="7" font-weight="700" font-family="system-ui">100% RH</text>
+          <!-- comfort zone -->
+          <rect x="100" y="62" width="36" height="28" fill="rgba(180,83,9,.16)" stroke="#b45309" stroke-width="1.4" stroke-dasharray="4 3" rx="2"/>
+          <text x="118" y="98" text-anchor="middle" fill="#b45309" font-size="7" font-weight="700" font-family="system-ui">Comfort</text>
+          <!-- enthalpy diagonals -->
+          <g stroke="#7c3aed" opacity=".75" stroke-dasharray="3 3">
+            <path d="M55 78 L175 108"/>
+            <path d="M95 42 L200 72"/>
+          </g>
+          <!-- mix line OA–RA -->
+          <path d="M178 48 L130 78" stroke="#047857" stroke-width="1.7" stroke-dasharray="5 3"/>
+          <!-- process MA→SA -->
+          <defs>
+            <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#1d4ed8"/>
+            </marker>
+          </defs>
+          <path d="M145 68 L78 82" stroke="#1d4ed8" stroke-width="2.2" marker-end="url(#arr)"/>
+          <!-- points -->
+          <circle cx="178" cy="48" r="4.5" fill="#b45309"/><text x="184" y="44" fill="#b45309" font-size="9" font-weight="800" font-family="system-ui">OA</text>
+          <circle cx="130" cy="78" r="4.5" fill="#047857"/><text x="136" y="92" fill="#047857" font-size="9" font-weight="800" font-family="system-ui">RA</text>
+          <circle cx="145" cy="68" r="4" fill="#0f172a"/><text x="150" y="64" fill="#0f172a" font-size="9" font-weight="800" font-family="system-ui">MA</text>
+          <circle cx="78" cy="82" r="4.5" fill="#1d4ed8"/><text x="58" y="78" fill="#1d4ed8" font-size="9" font-weight="800" font-family="system-ui">SA</text>
+          <text x="110" y="116" text-anchor="middle" fill="#94a3b8" font-size="8" font-family="system-ui">Dry-bulb →</text>
+        </svg>
+        <div class="vals">
+          <div class="oa"><b>OA</b> 32.0° · 60%</div>
+          <div class="ra"><b>RA</b> 24.0° · 50%</div>
+          <div class="ma"><b>MA</b> 27.1° · 55%</div>
+          <div class="sa"><b>SA</b> 13.0° · 95%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p style="max-width:520px;text-align:center;font-size:12px;color:#64748b;line-height:1.5">
+    Intent: one-tap badge on the psych chart opens this sketch sized for reading OA/MA/RA/SA values —
+    same geometry as the customer overview slide, not a second full chart.
+  </p>
+</body>
+</html>

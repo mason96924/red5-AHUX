@@ -2855,7 +2855,7 @@
         root.render(<ErrorBoundary><App /></ErrorBoundary>);
         // Prove the compiled JS (not just dashboard.html) actually mounted.
         try {
-            window.__RED5_BUNDLE_ID = 'SP30';
+            window.__RED5_BUNDLE_ID = 'SP31';
             window.__red5DashboardMounted = true;
             var _stamp = document.getElementById('red5-html-build');
             if (_stamp) {

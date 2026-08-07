@@ -332,9 +332,6 @@ const floorModalTree = (
                                 previously wrapped markers in a z-auto layer under the ray,
                                 so amber rings computed but were painted under the wash. */}
                             <div className="absolute inset-0 pointer-events-none" style={{zIndex: 40}}>
-                            <div className={`absolute top-4 left-4 z-10 text-sm font-mono px-3 py-1.5 rounded pointer-events-auto ${theme === 'dark' ? 'text-emerald-400 bg-slate-900/80' : 'text-emerald-700 bg-white/80'}`}>
-                                {floorData.floor.name} - {floorData.floor.image_path}
-                            </div>
                             {/* Render ALL AHU markers from map_config */}
                             {floorData.allMarkers.filter(m => m.type === 'ahu').map(marker => {
                                 const isActive = marker.name === showFloorPlanForAhu || marker.id === showFloorPlanForAhu;

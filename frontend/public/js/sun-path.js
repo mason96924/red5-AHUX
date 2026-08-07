@@ -404,8 +404,10 @@ window.red5FacingToNorthOffset = function(facing, lat){
 };
 
 /* ---------- WINDOWS + SUNSHAFT OVERLAY (slim v1) --------------------- */
-/* Percent-space bars + soft trapezoid shafts.  Blinds (0..1) attenuate
-   shaft opacity.  Fixed 2.5D defaults — no aligner UI.                */
+/* Percent-space bars + soft trapezoid shafts.  Blinds (0..1 closed)
+   attenuate shaft opacity.  Light ONLY enters: window normal is
+   oriented toward plan center (interior heuristic); shafts paint only
+   when sun travel aligns with that inward normal — never outbound.    */
 window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var wins = props.windows || [];
   var sun = props.sun;
@@ -422,6 +424,9 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var cloud = (typeof props.cloudCover === 'number') ? Math.max(0, Math.min(100, props.cloudCover)) : 0;
   var weatherF = Math.max(0.12, 1.0 - (cloud / 100) * 0.85);
   var isLight = props.theme === 'light';
+  /* Interior reference — plan centre, or caller override. */
+  var centerX = (typeof props.interiorX === 'number') ? props.interiorX : 50;
+  var centerY = (typeof props.interiorY === 'number') ? props.interiorY : 50;
 
   var bars = [];
   var shafts = [];
@@ -435,14 +440,16 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var rad = ang * Math.PI / 180;
     var tx = Math.cos(rad), ty = Math.sin(rad);
     var nx = -ty, ny = tx;
-    /* Prefer the normal that faces into the incoming light. */
-    if (nx * lx + ny * ly < 0) { nx = -nx; ny = -ny; }
+    /* Orient normal INWARD (toward plan interior), not toward the sun. */
+    var ix = centerX - cx, iy = centerY - cy;
+    if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
+    if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
     var half = len / 2;
     var x1 = cx - tx * half, y1 = cy - ty * half;
     var x2 = cx + tx * half, y2 = cy + ty * half;
     var open = 1 - blind;
-    var dot = Math.max(0, nx * lx + ny * ly);
-    var intensity = dot * open * elevF * weatherF;
+    /* Entering only: light travel must hit the inward face. */
+    var enter = nx * lx + ny * ly;
     bars.push(
       <line key={'wb-'+ (w.id || i)}
             x1={x1} y1={y1} x2={x2} y2={y2}
@@ -452,9 +459,12 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
             opacity={0.55 + 0.35 * open}
       />
     );
+    if (enter < 0.05 || open < 0.02) continue;
+    var intensity = enter * open * elevF * weatherF;
     if (intensity < 0.04) continue;
     var throwLen = 8 + 22 * intensity;
     var spread = half * 0.35;
+    /* Shaft follows light travel into the room (inward half-space). */
     var fx1 = x1 + lx * throwLen + (-ny) * spread;
     var fy1 = y1 + ly * throwLen + ( nx) * spread;
     var fx2 = x2 + lx * throwLen + ( ny) * spread;

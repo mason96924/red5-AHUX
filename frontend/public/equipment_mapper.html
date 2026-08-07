@@ -4658,25 +4658,37 @@
                                         ) : (
                                             floorWindows.filter(w => w.floorIdx === currentFloorIdx).map((w, i) => {
                                                 const sel = selectedWindowId === w.id;
-                                                const pct = Math.round((w.blind_level || 0) * 100);
+                                                const openPct = Math.round((1 - Math.min(1, Math.max(0, w.blind_level || 0))) * 100);
                                                 return (
                                                     <div
                                                         key={w.id}
                                                         onClick={() => { setSelectedWindowId(sel ? null : w.id); setWindowsPanelOpen(true); }}
-                                                        className={`p-2 rounded-lg border cursor-pointer transition-all flex items-center gap-2 ${
+                                                        className={`p-2 rounded-lg border cursor-pointer transition-all ${
                                                             sel ? 'bg-slate-800 border-amber-500 shadow-lg' : 'bg-slate-900 border-slate-700 hover:border-slate-600'
                                                         }`}
                                                     >
-                                                        <div className="w-4 h-1.5 rounded-sm bg-sky-400 shrink-0" />
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="text-[10px] font-bold text-white font-mono truncate">W{i+1} · {(w.length||0).toFixed(1)}% · {Math.round(w.angle_deg||0)}°</div>
-                                                            <div className="text-[8px] text-slate-500">Blinds {pct}%</div>
+                                                        <div className="flex items-center gap-2 mb-1.5">
+                                                            <div className="w-4 h-1.5 rounded-sm bg-sky-400 shrink-0" />
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="text-[10px] font-bold text-white font-mono truncate">W{i+1} · {(w.length||0).toFixed(1)}% · {Math.round(w.angle_deg||0)}°</div>
+                                                            </div>
+                                                            <button
+                                                                title="Delete window"
+                                                                onClick={(e) => { e.stopPropagation(); deleteWindow(w.id); }}
+                                                                className="w-6 h-6 rounded bg-red-900/40 border border-red-500/40 text-red-300 hover:bg-red-800/60 text-[12px] font-black shrink-0"
+                                                            >−</button>
                                                         </div>
-                                                        <button
-                                                            title="Delete window"
-                                                            onClick={(e) => { e.stopPropagation(); deleteWindow(w.id); }}
-                                                            className="w-6 h-6 rounded bg-red-900/40 border border-red-500/40 text-red-300 hover:bg-red-800/60 text-[12px] font-black shrink-0"
-                                                        >−</button>
+                                                        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                                            <span className="text-[8px] text-slate-500 w-10 shrink-0">Open</span>
+                                                            <input type="range" min="0" max="100" step="1" value={openPct}
+                                                                   className="flex-1 min-w-0 accent-sky-300"
+                                                                   title="Blind open state: 100% = fully open (sun in), 0% = closed"
+                                                                   onChange={(e) => {
+                                                                       const open = (parseInt(e.target.value, 10) || 0) / 100;
+                                                                       setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_level: 1 - open } : x));
+                                                                   }}/>
+                                                            <span className="font-mono text-[9px] text-sky-300 w-9 text-right">{openPct}%</span>
+                                                        </div>
                                                     </div>
                                                 );
                                             })
@@ -5049,7 +5061,7 @@
                                                 <div
                                                     key={w.id}
                                                     data-testid={`floor-window-${w.id}`}
-                                                    title={`Window · blinds ${Math.round((w.blind_level||0)*100)}% — drag to move`}
+                                                    title={`Window · open ${Math.round((1-(w.blind_level||0))*100)}% — drag to move`}
                                                     onMouseDown={(e) => handleWindowDragStart(e, w.id)}
                                                     onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); setWindowsPanelOpen(true); }}
                                                     style={{
@@ -5952,7 +5964,7 @@
                                         No windows on this floor yet. Click <b className="text-sky-300">▤ Place Window</b>, then two endpoints on the plan.
                                     </div>
                                 ) : floorWindows.filter(w => w.floorIdx === currentFloorIdx).map((w, i) => {
-                                    const pct = Math.round((w.blind_level || 0) * 100);
+                                    const openPct = Math.round((1 - Math.min(1, Math.max(0, w.blind_level || 0))) * 100);
                                     const sel = selectedWindowId === w.id;
                                     return (
                                         <div key={w.id}
@@ -5967,15 +5979,17 @@
                                                         }}>Delete</button>
                                             </div>
                                             <div className="flex items-center gap-1.5">
-                                                <span className="text-[9px] text-slate-500 w-11 shrink-0">Blinds →</span>
-                                                <input type="range" min="0" max="100" step="1" value={pct}
+                                                <span className="text-[9px] text-slate-500 w-11 shrink-0" title="100% = fully open">Open →</span>
+                                                <input type="range" min="0" max="100" step="1" value={openPct}
                                                        className="flex-1 min-w-0 accent-sky-300"
+                                                       data-testid={`window-open-${w.id}`}
                                                        onChange={(e) => {
-                                                           const v = (parseInt(e.target.value, 10) || 0) / 100;
-                                                           setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_level: v } : x));
+                                                           const open = (parseInt(e.target.value, 10) || 0) / 100;
+                                                           setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_level: 1 - open } : x));
                                                        }}/>
-                                                <span className="font-mono text-[10px] text-slate-400 w-9 text-right">{pct}%</span>
+                                                <span className="font-mono text-[10px] text-sky-300 w-9 text-right">{openPct}%</span>
                                             </div>
+                                            <div className="text-[8px] text-slate-600 mt-1">0% closed · 100% fully open (sun in)</div>
                                         </div>
                                     );
                                 })}

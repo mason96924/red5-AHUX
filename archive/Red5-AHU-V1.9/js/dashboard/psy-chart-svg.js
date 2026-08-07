@@ -88,8 +88,8 @@ function renderPsyChartSvg(ctx) {
     return (
 <div className="flex-1 relative flex items-center justify-center overflow-hidden font-black shadow-black shadow-inner">
     <div className="absolute top-10 left-24 z-10 pointer-events-none font-black shadow-black"><h2 className={`text-3xl font-black italic uppercase ${ui.heading} tracking-tight font-black shadow-black shadow-black`}>{t('psychrometric_chart')}</h2></div>
-    {selectedAhuId && typeof renderProcessMiniBadge === 'function' && renderProcessMiniBadge({
-        ahu: ahuData.find(a => a.id === selectedAhuId),
+    {typeof renderProcessMiniBadge === 'function' && renderProcessMiniBadge({
+        ahu: selectedAhuId ? (ahuData.find(a => a.id === selectedAhuId) || null) : null,
         theme,
         sweetSpotRange,
         showSweetSpot,

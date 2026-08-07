@@ -434,6 +434,9 @@ const bandStory = (b) => {
  *   OA dark cyan · RA pinkish-red · SA green · MA black with yellow ring.
  * Click the plot to drop a magnifying glass (center = click); drag to move;
  * slider / wheel adjusts zoom (leftmost = Off). Double-click clears the lens.
+ * MUST be invoked on every App render (even with ahu=null) so its React
+ * hooks stay at a stable call index — gating the call behind selectedAhuId
+ * caused "React Rendering Crash Prevented" (hooks count flip).
  * Ctx: { ahu, theme, sweetSpotRange, showSweetSpot, T_MIN, T_MAX }
  * ------------------------------------------------------------------ */
 function renderProcessMiniBadge(ctx) {

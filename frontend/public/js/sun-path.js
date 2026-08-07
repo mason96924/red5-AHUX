@@ -615,6 +615,17 @@ window.SunCompass = function SunCompass(props){
   var [hour, setHour] = React.useState(new Date().getHours());
   var [doy,  setDoy]  = React.useState(currentDoy());
   var [playing, setPlaying] = React.useState(false);
+  /* Draggable offset so the badge can clear the Window · Open chip (and
+     anything else parked in the top-right).  Persisted with UI state. */
+  var [pos, setPos] = React.useState(function(){
+    var p = stored.pos;
+    if (p && typeof p.x === 'number' && typeof p.y === 'number') return { x: p.x, y: p.y };
+    return { x: 0, y: 0 };
+  });
+  var [drag, setDrag] = React.useState(null);
+  var dragMovedRef = React.useRef(false);
+  var posRef = React.useRef(pos);
+  posRef.current = pos;
   /* Live weather payload from /api/weather-current.  Refreshed every
      5 min while the compass is enabled+expanded; the backend cache
      and the window.red5FetchCurrentWeather dedupe layer mean this
@@ -685,11 +696,51 @@ window.SunCompass = function SunCompass(props){
         var s = JSON.parse(localStorage.getItem('red5SunCompass') || '{}');
         setEnabled(!!s.enabled);
         if (typeof s.expanded === 'boolean') setExpanded(s.expanded);
+        if (s.pos && typeof s.pos.x === 'number' && typeof s.pos.y === 'number') {
+          setPos({ x: s.pos.x, y: s.pos.y });
+        }
       } catch(e){}
     }
     window.addEventListener('red5-sun-reload', onReload);
     return function(){ window.removeEventListener('red5-sun-reload', onReload); };
   }, []);
+
+  React.useEffect(function(){
+    if (!drag) return undefined;
+    function onMove(e){
+      var dx = e.clientX - drag.startX;
+      var dy = e.clientY - drag.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMovedRef.current = true;
+      setPos({ x: drag.baseX + dx, y: drag.baseY + dy });
+    }
+    function onUp(){
+      setDrag(null);
+      try {
+        var cur = {};
+        try { cur = JSON.parse(localStorage.getItem('red5SunCompass') || '{}') || {}; } catch (_e) {}
+        cur.enabled = !!enabled;
+        cur.expanded = !!expanded;
+        cur.pos = { x: posRef.current.x, y: posRef.current.y };
+        localStorage.setItem('red5SunCompass', JSON.stringify(cur));
+      } catch (_e2) {}
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return function(){
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [drag, enabled, expanded]);
+
+  function startCompassDrag(e){
+    if (e.button != null && e.button !== 0) return;
+    var t = e.target;
+    if (t && t.closest && (t.closest('button') || t.closest('input') || t.closest('select') || t.closest('a'))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragMovedRef.current = false;
+    setDrag({ startX: e.clientX, startY: e.clientY, baseX: pos.x, baseY: pos.y });
+  }
 
   /* Animate-day: auto-advance `hour` from 5 AM → 8 PM at 350ms/step when
      `playing` is true.  Loops back to 5 AM after reaching 20.          */
@@ -737,7 +788,7 @@ window.SunCompass = function SunCompass(props){
       playing: !!playing
     };
     try { localStorage.setItem('red5SunCompass', JSON.stringify({
-      enabled: enabled, expanded: expanded
+      enabled: enabled, expanded: expanded, pos: { x: posRef.current.x, y: posRef.current.y }
     })); } catch (_e) {}
     if (props.onChange) props.onChange(payload);
     try {
@@ -757,14 +808,22 @@ window.SunCompass = function SunCompass(props){
   // When collapsed, render a tiny chip-style badge so the compass never
   // obscures the floor plan but still signals its live state + offers a
   // one-click way to re-expand.  VAV/AHU halos remain active regardless.
+  var posStyle = {
+    top: 12, right: 12,
+    transform: 'translate(' + pos.x + 'px,' + pos.y + 'px)',
+    cursor: drag ? 'grabbing' : 'grab',
+    userSelect: 'none',
+    touchAction: 'none'
+  };
   if (!expanded) {
     return (
       <div
-        className="absolute top-3 right-3 z-30 rounded-full px-2.5 py-1 flex items-center gap-1.5 backdrop-blur-md shadow-lg cursor-pointer"
-        style={{background: C.panel, border: '1px solid ' + C.border}}
+        className="absolute z-30 rounded-full px-2.5 py-1 flex items-center gap-1.5 backdrop-blur-md shadow-lg"
+        style={Object.assign({background: C.panel, border: '1px solid ' + C.border}, posStyle)}
         data-testid="sun-compass"
-        onClick={function(){ setExpanded(true); }}
-        title="Expand sun compass"
+        onMouseDown={startCompassDrag}
+        onClick={function(){ if (!dragMovedRef.current) setExpanded(true); }}
+        title="Drag to move · click to expand"
       >
         <span style={{color: C.titleFg, fontWeight:900, fontSize:10, letterSpacing:'.12em'}}>☀</span>
         {enabled ? (
@@ -781,11 +840,13 @@ window.SunCompass = function SunCompass(props){
 
   return (
     <div
-      className="absolute top-3 right-3 z-30 rounded-lg p-3 backdrop-blur-md shadow-2xl"
-      style={{width: 210, background: C.panel, border: '1px solid ' + C.border}}
+      className="absolute z-30 rounded-lg p-3 backdrop-blur-md shadow-2xl"
+      style={Object.assign({width: 210, background: C.panel, border: '1px solid ' + C.border}, posStyle)}
       data-testid="sun-compass"
+      onMouseDown={startCompassDrag}
+      title="Drag header area to move"
     >
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2" style={{cursor: drag ? 'grabbing' : 'grab'}}>
         <div className="flex items-center gap-1.5">
           <span style={{color: C.titleFg, fontWeight:900, fontSize:9, letterSpacing:'.15em', textTransform:'uppercase'}}>☀ Sun Path</span>
           {enabled && <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{background: C.sun}}></span>}
@@ -809,7 +870,7 @@ window.SunCompass = function SunCompass(props){
               background: enabled ? C.sun : C.chipBg,
               color: enabled ? (isLight ? '#78350f' : '#0f172a') : C.dim,
               fontSize:8, fontWeight:900, letterSpacing:'.08em', textTransform:'uppercase',
-              padding:'2px 8px', borderRadius:4
+              padding:'2px 8px', borderRadius:4, cursor:'pointer'
             }}
             data-testid="sun-compass-toggle"
           >

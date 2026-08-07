@@ -16,6 +16,94 @@
  * (modulo a single block of dedent) so behaviour stays unchanged.
  * ------------------------------------------------------------------ */
 
+/** Draggable ▤ Window · Open chip — parks clear of the sun-path badge. */
+function LiveWindowOpenButton(props) {
+    const {
+        theme, floorWindowsPanelOpen, setFloorWindowsPanelOpen,
+        selectedFloorWindowId, setSelectedFloorWindowId, windows,
+    } = props;
+    const [pos, setPos] = React.useState(() => {
+        try {
+            const p = JSON.parse(localStorage.getItem('red5.liveWindowOpenBtnPos') || 'null');
+            if (p && typeof p.x === 'number' && typeof p.y === 'number') return p;
+        } catch (_) {}
+        /* Default below the collapsed sun chip so they don't stack. */
+        return { x: 0, y: 40 };
+    });
+    const [drag, setDrag] = React.useState(null);
+    const movedRef = React.useRef(false);
+    const posRef = React.useRef(pos);
+    posRef.current = pos;
+
+    React.useEffect(() => {
+        if (!drag) return undefined;
+        const onMove = (e) => {
+            const dx = e.clientX - drag.startX;
+            const dy = e.clientY - drag.startY;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) movedRef.current = true;
+            setPos({ x: drag.baseX + dx, y: drag.baseY + dy });
+        };
+        const onUp = () => {
+            setDrag(null);
+            try { localStorage.setItem('red5.liveWindowOpenBtnPos', JSON.stringify(posRef.current)); } catch (_) {}
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+    }, [drag]);
+
+    const onMouseDown = (e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        e.preventDefault();
+        movedRef.current = false;
+        setDrag({ startX: e.clientX, startY: e.clientY, baseX: pos.x, baseY: pos.y });
+    };
+
+    const onClick = (e) => {
+        e.stopPropagation();
+        if (movedRef.current) return;
+        if (floorWindowsPanelOpen) {
+            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
+            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
+            return;
+        }
+        const wins = windows || [];
+        if (!selectedFloorWindowId && wins.length && setSelectedFloorWindowId) {
+            const w0 = wins[0];
+            setSelectedFloorWindowId(w0.id != null ? w0.id : 'idx-0');
+        }
+        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
+    };
+
+    return (
+        <button
+            type="button"
+            data-testid="live-windows-blinds-btn"
+            className={`absolute z-40 px-2.5 py-1.5 rounded border text-[10px] font-black uppercase tracking-wider pointer-events-auto transition-colors ${
+                floorWindowsPanelOpen
+                    ? 'bg-amber-600 border-amber-400 text-slate-900'
+                    : (theme === 'dark' ? 'bg-slate-900/90 border-sky-500/50 text-sky-300 hover:bg-slate-800' : 'bg-white/90 border-sky-400 text-sky-700 hover:bg-sky-50')
+            }`}
+            style={{
+                top: 16, right: 16,
+                transform: `translate(${pos.x}px, ${pos.y}px)`,
+                cursor: drag ? 'grabbing' : 'grab',
+                userSelect: 'none',
+                touchAction: 'none',
+            }}
+            onMouseDown={onMouseDown}
+            onClick={onClick}
+            title="Drag to move · click to open this floor’s window blinds"
+        >
+            ▤ Window · Open
+        </button>
+    );
+}
+
 function renderFloorPlanModal(ctx) {
     const {
         // State + setters
@@ -249,32 +337,14 @@ const floorModalTree = (
                                 {floorData.floor.name} - {floorData.floor.image_path}
                             </div>
                             {(floorData.floor.windows || []).length > 0 && (
-                                <button
-                                    type="button"
-                                    data-testid="live-windows-blinds-btn"
-                                    className={`absolute top-4 right-4 z-10 px-2.5 py-1.5 rounded border text-[10px] font-black uppercase tracking-wider pointer-events-auto transition-all ${
-                                        floorWindowsPanelOpen
-                                            ? 'bg-amber-600 border-amber-400 text-slate-900'
-                                            : (theme === 'dark' ? 'bg-slate-900/90 border-sky-500/50 text-sky-300 hover:bg-slate-800' : 'bg-white/90 border-sky-400 text-sky-700 hover:bg-sky-50')
-                                    }`}
-                                    onMouseDown={(e) => {
-                                        e.stopPropagation();
-                                        if (floorWindowsPanelOpen) {
-                                            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
-                                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
-                                            return;
-                                        }
-                                        const wins = floorData.floor.windows || [];
-                                        if (!selectedFloorWindowId && wins.length && setSelectedFloorWindowId) {
-                                            const w0 = wins[0];
-                                            setSelectedFloorWindowId(w0.id != null ? w0.id : 'idx-0');
-                                        }
-                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
-                                    }}
-                                    title="Click a window bar to set that window’s open % (individual)"
-                                >
-                                    ▤ Window · Open
-                                </button>
+                                <LiveWindowOpenButton
+                                    theme={theme}
+                                    floorWindowsPanelOpen={floorWindowsPanelOpen}
+                                    setFloorWindowsPanelOpen={setFloorWindowsPanelOpen}
+                                    selectedFloorWindowId={selectedFloorWindowId}
+                                    setSelectedFloorWindowId={setSelectedFloorWindowId}
+                                    windows={floorData.floor.windows || []}
+                                />
                             )}
                             {/* Render ALL AHU markers from map_config */}
                             {floorData.allMarkers.filter(m => m.type === 'ahu').map(marker => {

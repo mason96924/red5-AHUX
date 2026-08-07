@@ -447,8 +447,8 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       <line key={'wb-'+ (w.id || i)}
             x1={x1} y1={y1} x2={x2} y2={y2}
             stroke={isLight ? '#38bdf8' : '#7dd3fc'}
-            strokeWidth={Math.max(0.6, Math.min(1.8, len * 0.04))}
-            strokeLinecap="round"
+            strokeWidth={Math.max(0.45, Math.min(1.0, len * 0.03))}
+            strokeLinecap="butt"
             opacity={0.55 + 0.35 * open}
       />
     );
@@ -467,6 +467,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       />
     );
   }
+  var showBars = props.showBars !== false;
   return (
     <svg
       className="absolute inset-0 pointer-events-none"
@@ -476,7 +477,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       data-testid="windows-sunshaft-overlay"
     >
       {shafts}
-      {bars}
+      {showBars ? bars : null}
     </svg>
   );
 };

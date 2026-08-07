@@ -48,6 +48,7 @@ function renderVavEquipmentModal(ctx) {
         vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize,
         vavOuterRef,
         sweetSpotRange, showSweetSpot,
+        comfortZonePoly, showGivoni, getGivoniTier,
     } = ctx;
                         const currentAhuForModal = ahuData.find(a => a.id === selectedAhuId) || ahuData[0];
                         const saPoint = currentAhuForModal?.points?.find(p => p.label === 'SA');
@@ -89,6 +90,18 @@ function renderVavEquipmentModal(ctx) {
                                 modalBandTrim = window.red5BandSunTrim(_ahuForBand.active_band, modalSunScore);
                             }
                         }
+                        /* VAV action strategy (what THIS box should do) — Givoni tier. */
+                        const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                        const _vavT = Number(selectedVavForModal.t);
+                        const _vavRh = Number(selectedVavForModal.rh);
+                        const _vavW = (selectedVavForModal.w != null)
+                            ? Number(selectedVavForModal.w)
+                            : ((typeof getW === 'function' && Number.isFinite(_vavT) && Number.isFinite(_vavRh))
+                                ? getW(_vavT, _vavRh) : null);
+                        const vavStrategy = (typeof getGivoniTier === 'function' && comfortZonePoly
+                            && Number.isFinite(_vavT) && Number.isFinite(_vavRh) && Number.isFinite(_vavW))
+                            ? getGivoniTier(_vavT, _vavW, _vavRh, comfortZonePoly, _gvSweet, showGivoni !== false)
+                            : null;
                         if ((!vavTypeId || vavTypeId === 'null' || vavTypeId === 'undefined') && ccEquipTypes && ccEquipTypes.vav_types) {
                             const firstKey = Object.keys(ccEquipTypes.vav_types)[0];
                             if (firstKey) vavTypeId = firstKey;
@@ -192,7 +205,23 @@ function renderVavEquipmentModal(ctx) {
                                 <div ref={vavOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${vavIsPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={vavInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                     
                                     <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (vavIsPopped) return; setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
-                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}{modalBandTrim && (
+                                        <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}{vavStrategy && (
+                                            <span
+                                                className="ml-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold tracking-wider"
+                                                style={{
+                                                    background: `${vavStrategy.dotFill}22`,
+                                                    borderColor: `${vavStrategy.dotFill}99`,
+                                                    color: theme === 'dark' ? '#e2e8f0' : '#1e293b',
+                                                }}
+                                                title={`${vavStrategy.tooltip}${modalBandTrim ? ` · AHU ${modalBandTrim.id} SA ${modalBandTrim.sa_t_sp}°C${modalBandTrim.sun_trim_c ? ` (${modalBandTrim.sun_trim_c > 0 ? '+' : ''}${modalBandTrim.sun_trim_c.toFixed(2)} sun)` : ''}` : ''}`}
+                                            >
+                                                <span className="uppercase" style={{ color: vavStrategy.dotFill }}>{vavStrategy.strategy.replace(/_/g, ' ')}</span>
+                                                <span className="opacity-70 font-normal normal-case tracking-normal">{vavStrategy.subLabel}</span>
+                                                {modalBandTrim && (
+                                                    <span className="opacity-50 text-[8px] ml-0.5">· {modalBandTrim.id} SA {modalBandTrim.sa_t_sp}°</span>
+                                                )}
+                                            </span>
+                                        )}{!vavStrategy && modalBandTrim && (
                                             <span className={`ml-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold tracking-wider ${modalBandTrim.sun_trim_c < 0
                                                 ? (theme === 'dark' ? 'bg-amber-500/15 border-amber-500/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-amber-700')
                                                 : modalBandTrim.sun_trim_c > 0

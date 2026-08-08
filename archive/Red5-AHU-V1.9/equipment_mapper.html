@@ -2435,10 +2435,9 @@
                 return { cfg: emptyCollectorShell(), source: 'empty' };
             };
 
-            // Patch master: update only AHUs present on the current floor (e.g. AHU-01,
-            // AHU-02). All other AHUs in the master file are left untouched.
-            // VAVs named on this floor are rewritten for those AHUs; VAVs that are not
-            // markers on this floor stay (other floors / hand edits).
+            // Patch master: for each AHU on the current floor, REPLACE its vavs
+            // list with what the floor map says (do not keep old master VAVs).
+            // AHUs not on this floor are left untouched.
             const mergeFloorIntoMasterCollector = (master, floorPatch, floorMarkersOnFloor) => {
                 const out = {
                     version: master.version || floorPatch.version || '1.1',
@@ -2454,20 +2453,29 @@
                     if (!(k in out) && k !== 'ahu_groups') out[k] = master[k];
                 });
 
-                const floorVavNames = new Set(
-                    (floorMarkersOnFloor || [])
-                        .filter(m => m.type === 'vav' && (m.name || '').trim())
-                        .map(m => m.name.trim())
-                );
+                // Deep-clone groups so we don't mutate the template/live refs
+                Object.keys(out.ahu_groups).forEach((k) => {
+                    out.ahu_groups[k] = {
+                        ...out.ahu_groups[k],
+                        vavs: [...(out.ahu_groups[k].vavs || [])],
+                    };
+                });
+
                 const updated = [];
                 Object.entries(floorPatch.ahu_groups || {}).forEach(([ahuName, grp]) => {
                     const prev = out.ahu_groups[ahuName] || {};
-                    const kept = (prev.vavs || []).filter(v => !floorVavNames.has(v));
-                    const mergedVavs = [...new Set([...kept, ...((grp && grp.vavs) || [])])];
+                    const prevCsv = prev.csv_object || '';
+                    const patchCsv = (grp && grp.csv_object) || '';
+                    // Prefer real BACnet IDs (CSV1); ignore mapper auto CSV_AHU01
+                    let csv = prevCsv || patchCsv || ('CSV_' + ahuName.replace(/[-\s]/g, ''));
+                    if (/^CSV_AHU/i.test(csv) && prevCsv && !/^CSV_AHU/i.test(prevCsv)) csv = prevCsv;
+                    if (/^CSV_AHU/i.test(csv) && patchCsv && !/^CSV_AHU/i.test(patchCsv)) csv = patchCsv;
+
                     out.ahu_groups[ahuName] = {
                         ...prev,
-                        csv_object: prev.csv_object || (grp && grp.csv_object) || ('CSV_' + ahuName.replace(/[-\s]/g, '')),
-                        vavs: mergedVavs,
+                        csv_object: csv,
+                        // REPLACE — floor map is the source of truth for this AHU
+                        vavs: [...((grp && grp.vavs) || [])],
                     };
                     updated.push(ahuName);
                 });
@@ -2588,7 +2596,11 @@
                 const notes = [
                     `Downloaded collector_config.json — FULL plant master (${afterAhus} AHUs).`,
                     `Baseline: ${source} (controller had ${liveCount}, template has ${tmplCount}).`,
-                    `Patched from "${floorName}": ${updatedAhus.join(', ')}.`,
+                    `Replaced VAV lists from "${floorName}":`,
+                    ...updatedAhus.map((ahu) => {
+                        const vs = (merged.ahu_groups[ahu] && merged.ahu_groups[ahu].vavs) || [];
+                        return `  ${ahu}: [${vs.join(', ') || '(none)'}]`;
+                    }),
                     `VAVs in file: ${masterVavCount}.`,
                 ];
                 if (liveCount > 0 && liveCount < tmplCount) {

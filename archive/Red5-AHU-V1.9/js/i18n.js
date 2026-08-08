@@ -168,7 +168,7 @@
     download_to_browser:    ['Download to Browser','下载到浏览器','下載到瀏覽器','ブラウザにDL','브라우저에 다운로드'],
     export_map_config: ['Export map_config.json (all floors)','导出 map_config.json（全部楼层）','匯出 map_config.json（全部樓層）','map_config.json をエクスポート（全フロア）','map_config.json 내보내기（전체 층）'],
     export_map_config_short: ['Export Map','导出平面图','匯出平面圖','Map出力','Map 내보내기'],
-    export_collector_config: ['Export collector_config.json from the current floor only','仅从当前楼层导出 collector_config.json','僅從目前樓層匯出 collector_config.json','現在のフロアのみ collector_config.json をエクスポート','현재 층만 collector_config.json 내보내기'],
+    export_collector_config: ['Merge current floor into master collector_config.json and download','将当前楼层合并进主 collector_config.json 并下载','將目前樓層合併進主 collector_config.json 並下載','現在のフロアをマスター collector_config.json にマージしてDL','현재 층을 master collector_config.json에 병합 후 다운로드'],
     export_collector_config_short: ['Export Collector','导出采集配置','匯出採集配置','Collector出力','Collector 내보내기'],
     upload_image:           ['Upload Image','上传图片','上傳圖片','画像アップロード','이미지 업로드'],
     change_image:           ['Change Image','更换图片','更換圖片','画像を変更','이미지 변경'],

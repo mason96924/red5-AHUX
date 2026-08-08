@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MA label glow + category popup mockup</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --card: #111827;
+    --card-bd: #1e293b;
+    --ink: #e2e8f0;
+    --muted: #94a3b8;
+    --oa: #3b82f6;
+    --sa: #10b981;
+    --ra: #f43f5e;
+    --ma: #f59e0b;
+    --glow: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+    padding: 36px 20px 56px;
+    background:
+      radial-gradient(800px 400px at 20% 0%, #1e293b 0%, transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 "Source Sans 3", "IBM Plex Sans", system-ui, sans-serif;
+  }
+  h1 {
+    margin: 0;
+    font: 700 13px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .note {
+    max-width: 560px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0;
+  }
+  .sidebar {
+    width: 360px;
+    background: #0f172a;
+    border: 1px solid var(--card-bd);
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.45);
+  }
+  .ahu {
+    background: var(--card);
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 10px 10px;
+  }
+  .ahu.selected {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 1px rgba(56,189,248,.35);
+  }
+  .ahu-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .ahu-id {
+    font: 800 11px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 0.06em;
+    color: #f8fafc;
+  }
+  .band {
+    margin-left: auto;
+    font: 800 8px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 0.08em;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border: 1px solid #854d0e;
+    background: #422006;
+    color: #fbbf24;
+  }
+  .body { display: flex; gap: 10px; align-items: stretch; }
+  .stats { flex: 1; min-width: 0; }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 700 9px/1.2 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    padding: 3px 0;
+  }
+  .row:last-child { border-bottom: 0; }
+  .lbl {
+    width: 1.55rem;
+    flex-shrink: 0;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.04em;
+    background: transparent;
+    border: none;
+    padding: 1px 2px;
+    margin: 0;
+    cursor: default;
+    text-align: left;
+    font-family: inherit;
+    font-size: 9px;
+    border-radius: 2px;
+  }
+  .val { color: #cbd5e1; white-space: nowrap; }
+  .pills {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 72px;
+    flex-shrink: 0;
+  }
+  .pill {
+    flex: 1;
+    border-radius: 999px;
+    border: 1px solid #334155;
+    background: #1e293b;
+    font: 700 7px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 0.04em;
+  }
+
+  .lbl.ma-alert {
+    color: var(--ma);
+    cursor: help;
+    outline: 1px solid rgba(239, 68, 68, 0.85);
+    outline-offset: 1px;
+    box-shadow:
+      0 0 0 1px rgba(239, 68, 68, 0.35),
+      0 0 6px 1px rgba(239, 68, 68, 0.55),
+      0 0 12px 2px rgba(239, 68, 68, 0.25);
+    animation: ma-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes ma-pulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(239,68,68,.35), 0 0 6px 1px rgba(239,68,68,.45), 0 0 10px 1px rgba(239,68,68,.2); }
+    50%      { box-shadow: 0 0 0 1px rgba(239,68,68,.55), 0 0 8px 2px rgba(239,68,68,.65), 0 0 14px 2px rgba(239,68,68,.3); }
+  }
+
+  .ma-wrap { position: relative; display: inline-flex; }
+  .tip {
+    display: none;
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 280px;
+    z-index: 40;
+    padding: 11px 12px 12px;
+    border-radius: 8px;
+    background: #0b1220;
+    border: 1px solid rgba(239, 68, 68, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(239, 68, 68, 0.2),
+      0 12px 28px rgba(0,0,0,.55),
+      0 0 18px rgba(239, 68, 68, 0.2);
+    color: #e2e8f0;
+    font: 600 11px/1.4 "IBM Plex Sans", system-ui, sans-serif;
+    pointer-events: none;
+  }
+  .tip::before {
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 6px solid transparent;
+    border-right-color: rgba(239, 68, 68, 0.55);
+    border-left: 0;
+  }
+  .ma-wrap:hover .tip,
+  .ma-wrap:focus-within .tip,
+  .ma-wrap.tip-open .tip { display: block; }
+
+  .tip-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .cat {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 800 14px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color: #fff;
+    background: linear-gradient(160deg, #ef4444, #b91c1c);
+    box-shadow: 0 0 10px rgba(239,68,68,.45);
+  }
+  .tip .flag {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(239,68,68,.15);
+    border: 1px solid rgba(239,68,68,.4);
+    color: #fecaca;
+    font: 700 8px/1.2 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .tip .k {
+    display: block;
+    font: 700 9px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #f87171;
+    margin: 0 0 3px;
+  }
+  .tip .v {
+    display: block;
+    color: #f1f5f9;
+    margin: 0 0 9px;
+    font-weight: 600;
+  }
+  .tip .v:last-child { margin-bottom: 0; }
+  .tip .needs-explain {
+    margin-top: 2px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(248,113,113,.25);
+    color: #cbd5e1;
+    font-weight: 500;
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+  .tip .needs-explain strong {
+    color: #fecaca;
+    font-weight: 700;
+  }
+
+  .variants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    justify-content: center;
+    align-items: flex-start;
+    width: 100%;
+    max-width: 980px;
+  }
+  .cap {
+    margin: 8px 0 0;
+    text-align: center;
+    font: 600 11px/1.3 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color: var(--muted);
+  }
+
+  /* --- Needs key for all categories --- */
+  .needs-panel {
+    width: min(920px, 100%);
+    background: #0f172a;
+    border: 1px solid var(--card-bd);
+    border-radius: 12px;
+    padding: 16px 18px 18px;
+  }
+  .needs-panel h2 {
+    margin: 0 0 6px;
+    font: 700 12px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #f87171;
+  }
+  .needs-panel .sub {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .needs-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  @media (min-width: 720px) {
+    .needs-grid { grid-template-columns: 1fr 1fr; }
+  }
+  .need-card {
+    background: #111827;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .need-card .head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .need-card .badge {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 800 12px/1 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color: #fff;
+    background: #b91c1c;
+  }
+  .need-card .title {
+    font: 700 12px/1.3 "IBM Plex Sans", system-ui, sans-serif;
+    color: #f8fafc;
+  }
+  .need-card .points {
+    font: 600 11px/1.35 "IBM Plex Sans", system-ui, sans-serif;
+    color: #fbbf24;
+    margin: 0 0 6px;
+  }
+  .need-card .needs-short {
+    font: 600 10px/1.3 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color: #94a3b8;
+    margin: 0 0 6px;
+  }
+  .need-card .explain {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #cbd5e1;
+  }
+  .need-card .explain em {
+    color: #fecaca;
+    font-style: normal;
+    font-weight: 700;
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <h1>Sidebar AHU badge · MA category popup</h1>
+  <p class="note">
+    Glowing <strong style="color:#f59e0b">MA</strong> shows category letter
+    <strong style="color:#f87171">A–H</strong> in the error popup, then
+    Pattern → Points to → Why → Needs, plus a short explanation of what
+    those Needs mean.
+  </p>
+
+  <div class="variants">
+    <div>
+      <div class="sidebar">
+        <div class="ahu selected">
+          <div class="ahu-head">
+            <span class="ahu-id">AHU-01</span>
+            <span class="band">BAND B5</span>
+          </div>
+          <div class="body">
+            <div class="stats">
+              <div class="row">
+                <button class="lbl" style="color:var(--oa)" type="button">OA</button>
+                <span class="val">17.4° / 69%</span>
+              </div>
+              <div class="row">
+                <button class="lbl" style="color:var(--sa)" type="button">SA</button>
+                <span class="val">23.2° / 50%</span>
+              </div>
+              <div class="row">
+                <button class="lbl" style="color:var(--ra)" type="button">RA</button>
+                <span class="val">23.1° / 46%</span>
+              </div>
+              <div class="row">
+                <span class="ma-wrap tip-open">
+                  <button class="lbl ma-alert" type="button">MA</button>
+                  <div class="tip" style="display:block">
+                    <div class="tip-top">
+                      <span class="cat" title="Category B">B</span>
+                      <span class="flag">off_mixing_line · damper_mismatch</span>
+                    </div>
+                    <span class="k">Pattern</span>
+                    <span class="v">Off-chord + large damper_mismatch</span>
+                    <span class="k">Points to</span>
+                    <span class="v">Economizer / damper / leakage / stratification</span>
+                    <span class="k">Why</span>
+                    <span class="v">Commanded OA% ≠ actual mix fraction from MAT</span>
+                    <span class="k">Needs</span>
+                    <span class="v">MAT, OAD (± MAH)</span>
+                    <div class="needs-explain">
+                      <strong>Needs means:</strong> confirm mix fraction from mixed-air
+                      temperature (MAT) against outdoor damper command (OAD).
+                      MAH is optional but separates damper faults from RH sensor error.
+                    </div>
+                  </div>
+                </span>
+                <span class="val">19.8° / 58%</span>
+              </div>
+            </div>
+            <div class="pills">
+              <div class="pill">MIX</div>
+              <div class="pill">COIL</div>
+              <div class="pill">SAΔ</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Example popup · Category B</p>
+    </div>
+
+    <div>
+      <div class="sidebar">
+        <div class="ahu selected">
+          <div class="ahu-head">
+            <span class="ahu-id">AHU-02</span>
+            <span class="band">BAND B3</span>
+          </div>
+          <div class="body">
+            <div class="stats">
+              <div class="row">
+                <button class="lbl" style="color:var(--oa)" type="button">OA</button>
+                <span class="val">12.1° / 55%</span>
+              </div>
+              <div class="row">
+                <button class="lbl" style="color:var(--sa)" type="button">SA</button>
+                <span class="val">14.8° / 88%</span>
+              </div>
+              <div class="row">
+                <button class="lbl" style="color:var(--ra)" type="button">RA</button>
+                <span class="val">22.6° / 48%</span>
+              </div>
+              <div class="row">
+                <span class="ma-wrap tip-open">
+                  <button class="lbl ma-alert" type="button">MA</button>
+                  <div class="tip" style="display:block">
+                    <div class="tip-top">
+                      <span class="cat" title="Category E">E</span>
+                      <span class="flag">off_mixing_line</span>
+                    </div>
+                    <span class="k">Pattern</span>
+                    <span class="v">Plotted OA ≠ air entering the mixing box</span>
+                    <span class="k">Points to</span>
+                    <span class="v">ERV / HRV</span>
+                    <span class="k">Why</span>
+                    <span class="v">Wheel moves OA toward RA before mixing</span>
+                    <span class="k">Needs</span>
+                    <span class="v">EA T/RH, wheel enable, or OA-after-ERV</span>
+                    <div class="needs-explain">
+                      <strong>Needs means:</strong> prove the wheel is active and
+                      compare exhaust air (or OA after the wheel) to free-stream OA —
+                      without those points, ERV looks like a random sensor fault.
+                    </div>
+                  </div>
+                </span>
+                <span class="val">16.4° / 52%</span>
+              </div>
+            </div>
+            <div class="pills">
+              <div class="pill">MIX</div>
+              <div class="pill">COIL</div>
+              <div class="pill">SAΔ</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Example popup · Category E</p>
+    </div>
+  </div>
+
+  <section class="needs-panel">
+    <h2>Needs column — what each category requires</h2>
+    <p class="sub">
+      “Needs” is the minimum sensor / status set to <em>confirm</em> that category
+      (not just raise the glow). Without it, several causes look the same on the chart.
+    </p>
+    <div class="needs-grid">
+
+      <article class="need-card">
+        <div class="head"><span class="badge">A</span><div class="title">Off-chord + small damper_mismatch</div></div>
+        <p class="points">Points to: Sensor / probe (MAT or MAH)</p>
+        <p class="needs-short">Needs: MAT + MAH, OAD</p>
+        <p class="explain">
+          <em>Why those needs:</em> MAT alone cannot prove off-chord (W is forced onto the line).
+          You need <em>MAH</em> for independent humidity, and <em>OAD</em> to show the mix
+          ratio still matches the damper — so the fault is the sensor, not economizer.
+        </p>
+      </article>
+
+      <article class="need-card">
+        <div class="head"><span class="badge">B</span><div class="title">Off-chord + large damper_mismatch</div></div>
+        <p class="points">Points to: Economizer / damper / leakage / stratification</p>
+        <p class="needs-short">Needs: MAT, OAD (± MAH)</p>
+        <p class="explain">
+          <em>Why those needs:</em> Compare temperature-derived OA fraction from
+          <em>MAT</em> to commanded <em>OAD</em>. Large disagreement ⇒ damper/leak/stratification.
+          <em>MAH</em> is optional: it strengthens the case but is not required to flag a damper mismatch.
+        </p>
+      </article>
+
+      <article class="need-card">
+        <div class="head"><span class="badge">C</span><div class="title">mat_outside_oa_ra (f &lt; 0 or &gt; 1)</div></div>
+        <p class="points">Points to: Sensor bias or stratification</p>
+        <p class="needs-short">Needs: MAT, OA, RA, ΔT ≥ ~2 °C</p>
+        <p class="explain">
+          <em>Why those needs:</em> Fraction f = (MAT−RA)/(OA−RA) is junk when OA≈RA.
+          You need a usable <em>ΔT between OA and RA</em> (~2 °C APAR floor) plus all three
+          temperatures so “MAT outside the OA–RA range” is a real APAR-style rule, not noise.
+        </p>
+      </article>
+
+      <article class="need-card">
+        <div class="head"><span class="badge">D</span><div class="title">Off-chord wetter; OAD ≈ minimum</div></div>
+        <p class="points">Points to: Unmeasured moisture / EA path / duct leak</p>
+        <p class="needs-short">Needs: MAT + MAH</p>
+        <p class="explain">
+          <em>Why those needs:</em> Extra water mass only shows when MA humidity is
+          <em>measured</em> (MAT+MAH). Without MAH you cannot see “wetter than the chord.”
+          OAD≈min is the operating context, not an extra sensor.
+        </p>
+      </article>
+
+      <article class="need-card">
+        <div class="head"><span class="badge">E</span><div class="title">Plotted OA ≠ air entering mix box</div></div>
+        <p class="points">Points to: ERV / HRV</p>
+        <p class="needs-short">Needs: EA T/RH, wheel enable, or OA-after-ERV</p>
+        <p class="explain">
+          <em>Why those needs:</em> Free-stream OA on the chart is not the OA after the wheel.
+          You need <em>wheel enable</em> and either <em>exhaust air</em> or <em>OA after ERV</em>
+          to show the transfer — otherwise ERV looks identical to a bad OA/MA sensor.
+        </p>
+      </article>
+
+      <article class="need-card">
+        <div class="head"><span class="badge">F</span><div class="title">Off-chord only when wheel ON</div></div>
+        <p class="points">Points to: ERV / HRV (confirmed)</p>
+        <p class="needs-short">Needs: Wheel status + same MA/OA/RA sensors</p>
+        <p class="explain">
+          <em>Why those needs:</em> Controlled A/B: deviation appears with wheel ON and
+          clears with wheel OFF, using the <em>same</em> sensors. Wheel status is mandatory;
+          no new points beyond what already showed the off-chord.
+        </p>
+      </article>
+
+      <article class="need-card">
+        <div class="head"><span class="badge">G</span><div class="title">Off-chord mainly at high OAD</div></div>
+        <p class="points">Points to: Economizer leakage / nonlinear damper / bypass</p>
+        <p class="needs-short">Needs: OAD + MAT (± MAH)</p>
+        <p class="explain">
+          <em>Why those needs:</em> Correlate deviation with <em>OAD</em> position over time.
+          MAT tracks whether mix quality collapses at extreme economizer open.
+          MAH optional for off-chord confirmation at those positions.
+        </p>
+      </article>
+
+      <article class="need-card">
+        <div class="head"><span class="badge">H</span><div class="title">Persistent bias vs OAD &amp; wheel</div></div>
+        <p class="points">Points to: Sensor drift (OA, RA, or MA)</p>
+        <p class="needs-short">Needs: Cross-check / handheld</p>
+        <p class="explain">
+          <em>Why those needs:</em> Process signals (OAD, wheel) do not explain the bias.
+          Confirm with a <em>second sensor or handheld</em> on OA, RA, or MA — the BMS
+          points alone cannot tell which of the three drifted.
+        </p>
+      </article>
+
+    </div>
+  </section>
+
+  <p class="note">
+    Mock only — not wired into the live sidebar yet.<br>
+    <code style="color:#cbd5e1">frontend/public/docs/ma_sidebar_label_glow_mockup.html</code>
+    · related
+    <a href="ma_off_chord_diagnostics.html" style="color:#7dd3fc">ma_off_chord_diagnostics.html</a>
+  </p>
+</body>
+</html>

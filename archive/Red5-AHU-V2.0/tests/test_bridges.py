@@ -86,7 +86,7 @@ print("\n-- 2. Telemetry snapshot --")
 test('2a. snapshot returns (None,0) when no telemetry file yet',
      bl.snapshot_telemetry() == (None, 0))
 sample = {'ahu': {'AHU01': {'sa_t': 13.2, 'oa_t': 8.1, 'fan_speed': 65, 'band': 'B5'}}}
-with open(os.path.join(td, 'data', 'telemetry.json'), 'w') as f:
+with open(os.path.join(td, 'data', 'configs', 'telemetry.json'), 'w') as f:
     json.dump(sample, f)
 snap, mtime = bl.snapshot_telemetry()
 test('2b. snapshot reads written telemetry', snap == sample and mtime > 0)
@@ -99,8 +99,9 @@ ok, info = bl.enqueue_write('AV1', 22.5, 'mqtt', allowlist=['AV1'])
 test('3b. allowlisted write enqueues', ok)
 with open(os.path.join(td, 'data', 'configs', 'write_queue.json')) as f:
     q = json.load(f)
-test('3c. queue has 1 entry, source=bridge:mqtt',
-     len(q) == 1 and q[0]['source'] == 'bridge:mqtt' and q[0]['object_id'] == 'AV1')
+test('3c. queue has 1 entry, collector-compatible csv_object',
+     len(q) == 1 and q[0]['source'] == 'bridge:mqtt'
+     and q[0].get('csv_object') == 'AV1' and q[0].get('csv_value') == '22.5')
 ok, info = bl.enqueue_write('AV2', 22.5, 'mqtt', allowlist=['AV1'])
 test('3d. non-allowlisted target refused even if other targets are allowed',
      not ok and 'AV2' in info)

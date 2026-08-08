@@ -3,7 +3,7 @@
 """
 Red5 Telemetry Collector v1.1
 Standalone background script that polls BACnet CSV objects via dibt.Read()
-and writes parsed telemetry to /root/data/telemetry.json
+and writes parsed telemetry to /root/data/configs/telemetry.json
 
 Architecture:
   - One CSV BACnet object per AHU, containing the AHU's own points
@@ -127,9 +127,14 @@ def process_write_queue(mock_mode=False):
     results = _load_json_list(WRITE_RESULTS_PATH)
     processed = 0
     for entry in queue:
-        csv_obj  = entry.get('csv_object') or ''
+        # UI path: {csv_object, csv_value}. Bridge path (legacy): {object_id, value}.
+        csv_obj  = entry.get('csv_object') or entry.get('object_id') or ''
         ref      = csv_obj + '.Present_Value'
-        csv_val  = entry.get('csv_value', '')
+        csv_val  = entry.get('csv_value', entry.get('value', ''))
+        if csv_val is None:
+            csv_val = ''
+        elif not isinstance(csv_val, str):
+            csv_val = str(csv_val)
         equip    = entry.get('equip_name', '')
         # Defensive BACnet target validation.  Object NAMES (e.g.
         # 'AHU01_SAT_SP', 'OAT_SENSOR_01') will silently fail at
@@ -148,10 +153,11 @@ def process_write_queue(mock_mode=False):
             'id':         entry.get('id'),
             'ts':         entry.get('ts'),
             'completed':  time.time(),
-            'csv_object': entry.get('csv_object'),
+            'csv_object': csv_obj,
             'csv_value':  csv_val,
             'equip_name': equip,
             'writes':     entry.get('writes'),
+            'source':     entry.get('source'),
             'target_kind': target_kind,
         }
         if mock_mode or 'dibt' not in globals():
@@ -759,33 +765,35 @@ def collect_all(ahu_groups, mock_mode=False):
 
     telemetry['read_ok'] = ok_count
     telemetry['read_errors'] = err_count
+    telemetry['equipment_count'] = len(telemetry['equipment'])
     return telemetry
 
 
 def write_telemetry(telemetry):
-    """Write telemetry.json. On the PG-object runtime, the classic
-    open->json.dump streams bytes over seconds and an overlapping Flask
-    /api/data read can land on a half-written file, causing the dashboard
-    to momentarily see empty AHU/VAV state.
-
-    Fix: serialize the entire payload to a string in memory FIRST, then
-    issue a single write() -- so the file is either fully old or fully
-    new, never partial.
+    """Write telemetry.json atomically (tmp + rename) so overlapping Flask
+    /api/data reads never land on a half-written file.
     """
     try:
         os.makedirs(os.path.dirname(TELEMETRY_PATH), exist_ok=True)
     except Exception:
         pass
     try:
-        payload = json.dumps(telemetry)  # serialize in memory
+        payload = json.dumps(telemetry)
     except Exception as e:
         log(f'write_telemetry serialize failed: {e}')
         return
+    tmp = TELEMETRY_PATH + '.tmp'
     try:
-        with open(TELEMETRY_PATH, 'w') as f:
+        with open(tmp, 'w') as f:
             f.write(payload)
+        os.replace(tmp, TELEMETRY_PATH)
     except Exception as e:
         log(f'write_telemetry write failed: {e}')
+        try:
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
 
 
 # ===== Main Loop =====

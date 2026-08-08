@@ -19,7 +19,8 @@ import threading
 DATA_ROOT     = '/root/data'
 CONFIGS_DIR   = os.path.join(DATA_ROOT, 'configs')
 BRIDGES_CONF  = os.path.join(CONFIGS_DIR, 'bridges.json')
-TELEMETRY_F   = os.path.join(DATA_ROOT, 'telemetry.json')
+# Must match collector.py / telemetry_service.py (configs/, not data root).
+TELEMETRY_F   = os.path.join(CONFIGS_DIR, 'telemetry.json')
 WRITE_QUEUE_F = os.path.join(CONFIGS_DIR, 'write_queue.json')
 LOG_F         = os.path.join(DATA_ROOT, 'bridges.log')
 
@@ -87,9 +88,9 @@ def save_bridges_config(cfg):
 # --------------------------------------------------------- telemetry tap --
 def snapshot_telemetry():
     """Returns the most recent telemetry snapshot collector.py wrote to
-    /root/data/telemetry.json, plus its mtime so a bridge can decide whether
-    anything has changed since its last publish.  Returns (None, 0) if the
-    file isn't readable yet."""
+    /root/data/configs/telemetry.json, plus its mtime so a bridge can decide
+    whether anything has changed since its last publish.  Returns (None, 0)
+    if the file isn't readable yet."""
     try:
         st = os.stat(TELEMETRY_F)
         with open(TELEMETRY_F, 'r') as f:
@@ -103,6 +104,10 @@ def enqueue_write(object_id, value, bridge_name, allowlist):
     """Append a BACnet write request to write_queue.json.  Refuses if the
     target object_id is not in the bridge's write_allowlist (operator
     explicitly opts in per object).  Empty allowlist = read-only.
+
+    Queue entry shape matches collector.process_write_queue /
+    POST /api/write-point: {csv_object, csv_value, ...}.  object_id is the
+    BACnet ObjectID (e.g. CSV1, AV23); value becomes Present_Value.
 
     Returns (ok: bool, msg: str).  collector.py drains the queue on its
     next BACnet cycle.
@@ -122,11 +127,18 @@ def enqueue_write(object_id, value, bridge_name, allowlist):
             q = []
         if not isinstance(q, list):
             q = []
+        csv_value = value if isinstance(value, str) else str(value)
         q.append({
-            'object_id': object_id,
-            'value':     value,
-            'source':    'bridge:' + bridge_name,
-            'ts':        time.time(),
+            'id':         '%d-%s' % (int(time.time() * 1000), bridge_name),
+            'ts':         time.time(),
+            'csv_object': object_id,
+            'csv_value':  csv_value,
+            'equip_name': '',
+            'writes':     {object_id: value},
+            'source':     'bridge:' + bridge_name,
+            # Legacy aliases kept for older tests / log greps
+            'object_id':  object_id,
+            'value':      value,
         })
         os.makedirs(CONFIGS_DIR, exist_ok=True)
         tmp = WRITE_QUEUE_F + '.tmp'

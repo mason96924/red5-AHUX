@@ -308,21 +308,25 @@ def api_data():
             oa_rh = pts.get(ahu_map.get('oa_rh', 'OAH'))
             sa_t = pts.get(ahu_map.get('sa_t', 'SAT'))
             sa_rh = pts.get(ahu_map.get('sa_rh', 'SAH'))
-            # Live-data fallback (2026-05-20): when an AHU-level read is None
-            # (BACnet point unmapped or device offline), drive the value with
-            # a slow sinusoid so the chart points and trends never freeze.
-            # Real telemetry always wins.  `any()` over a tuple is used
-            # instead of a multi-term `or` chain to stay clear of the
-            # V1.9 controller parser's long-or-chain hang (see CHANGELOG).
+            live_mode = not telemetry.get('mock_mode')
+            # Adapter A soak: never invent OA/SA when on live BACnet — mask
+            # hides bad CSV maps. Simulator/mock may still synthesize.
+            gaps = []
             if any(v is None for v in (oa_t, oa_rh, sa_t, sa_rh)):
-                _t_now = time.time()
-                _ahu_seed = sum(ord(c) for c in ahu_name) * 0.01
-                _ow = math.sin(_t_now / 600.0 + _ahu_seed)      # ~10 min OA drift
-                _sw = math.sin(_t_now / 220.0 + _ahu_seed)      # ~3.5 min SA drift
-                if oa_t is None:  oa_t  = 18.0 + 6.0 * _ow      # 12-24 C
-                if oa_rh is None: oa_rh = 60.0 + 14.0 * (-_ow)  # 46-74 %
-                if sa_t is None:  sa_t  = 15.5 + 1.2 * _sw      # 14.3-16.7 C
-                if sa_rh is None: sa_rh = 60.0 + 6.0 * _sw      # 54-66 %
+                if live_mode:
+                    if oa_t is None:  gaps.append(ahu_map.get('oa_t', 'OAT'))
+                    if oa_rh is None: gaps.append(ahu_map.get('oa_rh', 'OAH'))
+                    if sa_t is None:  gaps.append(ahu_map.get('sa_t', 'SAT'))
+                    if sa_rh is None: gaps.append(ahu_map.get('sa_rh', 'SAH'))
+                else:
+                    _t_now = time.time()
+                    _ahu_seed = sum(ord(c) for c in ahu_name) * 0.01
+                    _ow = math.sin(_t_now / 600.0 + _ahu_seed)
+                    _sw = math.sin(_t_now / 220.0 + _ahu_seed)
+                    if oa_t is None:  oa_t  = 18.0 + 6.0 * _ow
+                    if oa_rh is None: oa_rh = 60.0 + 14.0 * (-_ow)
+                    if sa_t is None:  sa_t  = 15.5 + 1.2 * _sw
+                    if sa_rh is None: sa_rh = 60.0 + 6.0 * _sw
             vav_map = dashboard_map.get('vav', {})
             embedded_vavs = ahu_data.get('vavs', {})
 
@@ -344,31 +348,37 @@ def api_data():
                     vav_pts = {**vav_pts, **_sim_overrides[vav_name]}
                 vt = vav_pts.get(vav_map.get('zone_t', 't'))
                 vrh = vav_pts.get(vav_map.get('zone_rh', 'rh'))
-                # ----------------------------------------------------------
-                # Live-data fallback (2026-05-20): if either zone reading is
-                # None (no physical sensor wired) substitute a per-VAV beat
-                # of two sinusoids so the dashboard never sits frozen at
-                # 22 / 45.  Real telemetry always wins.  See V2.0 server.py
-                # for the symmetric implementation.
-                # ----------------------------------------------------------
                 if vt is None or vrh is None:
-                    _seed = sum(ord(c) for c in vav_name) * 0.013
-                    _t_now = time.time()
-                    _wa = math.sin(_t_now / 22.0 + _seed)
-                    _wb = math.sin(_t_now / 95.0 + _seed * 0.7)
-                    # Markov drift layer -- mean-reverting OU walk on top of
-                    # the beat so the synthesized waveform looks like real
-                    # zone-sensor noise instead of a clean sinusoid.
-                    _dt, _drh = _markov_drift(ahu_name + ":" + vav_name)
-                    if vt is None:
-                        vt = 22.5 + 2.6 * _wb + 0.6 * _wa + _dt
-                    if vrh is None:
-                        vrh = 47.0 + 6.5 * (-_wb) + 2.0 * (-_wa) + _drh
-                vw = get_w(vt, vrh)
-                vav_list.append({"id": vav_name, "t": vt, "rh": vrh, "w": vw, "h": get_h(vt, vw), "all_points": vav_pts})
-                vav_temps.append(vt); vav_rhs.append(vrh)
-            ra_t = sum(vav_temps) / len(vav_temps) if vav_temps else 24.0
-            ra_rh = sum(vav_rhs) / len(vav_rhs) if vav_rhs else 50.0
+                    if live_mode:
+                        if vt is None:
+                            gaps.append('%s.%s' % (vav_name, vav_map.get('zone_t', 't')))
+                        if vrh is None:
+                            gaps.append('%s.%s' % (vav_name, vav_map.get('zone_rh', 'rh')))
+                    else:
+                        _seed = sum(ord(c) for c in vav_name) * 0.013
+                        _t_now = time.time()
+                        _wa = math.sin(_t_now / 22.0 + _seed)
+                        _wb = math.sin(_t_now / 95.0 + _seed * 0.7)
+                        _dt, _drh = _markov_drift(ahu_name + ":" + vav_name)
+                        if vt is None:
+                            vt = 22.5 + 2.6 * _wb + 0.6 * _wa + _dt
+                        if vrh is None:
+                            vrh = 47.0 + 6.5 * (-_wb) + 2.0 * (-_wa) + _drh
+                vw = get_w(vt, vrh) if (vt is not None and vrh is not None) else None
+                vh = get_h(vt, vw) if (vt is not None and vw is not None) else None
+                vav_list.append({"id": vav_name, "t": vt, "rh": vrh, "w": vw, "h": vh, "all_points": vav_pts})
+                if vt is not None:
+                    vav_temps.append(vt)
+                if vrh is not None:
+                    vav_rhs.append(vrh)
+            if vav_temps:
+                ra_t = sum(vav_temps) / len(vav_temps)
+            else:
+                ra_t = None if live_mode else 24.0
+            if vav_rhs:
+                ra_rh = sum(vav_rhs) / len(vav_rhs)
+            else:
+                ra_rh = None if live_mode else 50.0
             # Apply AHU-level sim overrides
             if _sim_overrides.get(ahu_name):
                 pts = {**pts, **_sim_overrides[ahu_name]}
@@ -381,7 +391,7 @@ def api_data():
             # dropped the field).  V2.0's server.py includes the same
             # block in its synthetic response -- this keeps parity.
             _active_band = ahu_data.get('active_band') if isinstance(ahu_data, dict) else None
-            if not _active_band:
+            if not _active_band and oa_t is not None and oa_rh is not None:
                 # Simulator / no-collector fallback: classify the band
                 # ourselves from the OA values we already have.  Wrapped
                 # in try/except because classify_band depends on a global
@@ -403,16 +413,22 @@ def api_data():
                     }
                 except Exception:
                     _active_band = None
+            _oa_w = get_w(oa_t, oa_rh) if (oa_t is not None and oa_rh is not None) else None
+            _sa_w = get_w(sa_t, sa_rh) if (sa_t is not None and sa_rh is not None) else None
+            _ra_w = get_w(ra_t, ra_rh) if (ra_t is not None and ra_rh is not None) else None
             ahu_entry = {
                 "id": ahu_name, "procColor": proc_colors[color_idx % len(proc_colors)],
-                "source": "live" if not telemetry.get('mock_mode') else "simulator",
+                "source": "live" if live_mode else "simulator",
                 "points": [
-                    {"label": "OA", "t": oa_t, "rh": oa_rh, "w": get_w(oa_t, oa_rh), "color": "#3b82f6"},
-                    {"label": "SA", "t": sa_t, "rh": sa_rh, "w": get_w(sa_t, sa_rh), "color": "#10b981"},
-                    {"label": "RA", "t": ra_t, "rh": ra_rh, "w": get_w(ra_t, ra_rh), "color": "#f43f5e"},
+                    {"label": "OA", "t": oa_t, "rh": oa_rh, "w": _oa_w, "color": "#3b82f6"},
+                    {"label": "SA", "t": sa_t, "rh": sa_rh, "w": _sa_w, "color": "#10b981"},
+                    {"label": "RA", "t": ra_t, "rh": ra_rh, "w": _ra_w, "color": "#f43f5e"},
                 ],
                 "all_points": pts, "vavs": vav_list
             }
+            if gaps:
+                ahu_entry["data_quality"] = "degraded"
+                ahu_entry["gaps"] = gaps
             if _active_band:
                 ahu_entry["active_band"] = _active_band
             output.append(_attach_mixed_air(ahu_entry, pts, ahu_map=ahu_map)); color_idx += 1

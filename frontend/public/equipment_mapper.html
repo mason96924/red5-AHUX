@@ -2308,8 +2308,7 @@
                 toast(notes.join('\n'));
             };
 
-            const exportMapConfig = () => {
-                // Prepare data
+            const buildMapConfigPayload = () => {
                 const mapConfigData = {
                     version: "1.1",
                     deployment_note: "Floor plan images stored with relative paths under /root/data/",
@@ -2358,7 +2357,7 @@
                         })).filter(r => r.vertices.length >= 3),
                     }))
                 };
-                
+
                 const imageManifest = {
                     note: "Images stored with relative paths under /root/data/",
                     images: floorPlans.map(floor => ({
@@ -2368,8 +2367,6 @@
                     }))
                 };
 
-                // Generate collector_config.json from all floor markers
-                // VAVs assigned by FLOOR — all VAVs on the same floor as an AHU belong to it
                 const allMarkersWithFloor = floorMarkers.map(m => ({
                     type: m.type,
                     name: m.name,
@@ -2380,6 +2377,31 @@
                 const collectorConfigData = generateCollectorConfig(allMarkersWithFloor);
                 delete collectorConfigData._meta;
 
+                return { mapConfigData, imageManifest, collectorConfigData };
+            };
+
+            // Download-only: map_config.json (all floors — markers / windows / rooms).
+            const exportMapConfigDownload = () => {
+                if (!floorPlans.length) {
+                    toast('Add a floor plan first.');
+                    return;
+                }
+                const { mapConfigData } = buildMapConfigPayload();
+                const markerCount = floorMarkers.length;
+                const floorCount = floorPlans.length;
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(mapConfigData, null, 2));
+                const a = document.createElement('a');
+                a.setAttribute("href", dataStr);
+                a.setAttribute("download", "map_config.json");
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                toast(`Downloaded map_config.json (${floorCount} floor${floorCount === 1 ? '' : 's'}, ${markerCount} marker${markerCount === 1 ? '' : 's'}).`);
+            };
+
+            const exportMapConfig = () => {
+                const { mapConfigData, imageManifest, collectorConfigData } = buildMapConfigPayload();
+
                 // Debug: show what was generated
                 const debugLines = ['Collector Config Generated:'];
                 Object.entries(collectorConfigData.ahu_groups).forEach(([ahu, grp]) => {
@@ -2387,11 +2409,11 @@
                     debugLines.push('  ' + grp.vavs.join(', '));
                 });
                 console.log(debugLines.join('\n'));
-                
+
                 // Check if deployment path is set
                 if (deploymentPath && deploymentPath.trim()) {
                     const apiUrl = window.API_BASE_URL || '';
-                    
+
                     // Save map_config + collector_config in parallel
                     Promise.all([
                         fetch(`${apiUrl}/api/save-config`, {
@@ -2417,7 +2439,7 @@
                         else msgs.push('map_config.json error: ' + (mapResult.error || 'Unknown'));
                         if (collResult.success) msgs.push('collector_config.json saved');
                         else msgs.push('collector_config.json error: ' + (collResult.error || 'Unknown'));
-                        
+
                         const ahuCount = Object.keys(collectorConfigData.ahu_groups).length;
                         const vavCount = Object.values(collectorConfigData.ahu_groups).reduce((s, g) => s + g.vavs.length, 0);
                         msgs.push('\nCollector config: ' + ahuCount + ' AHUs, ' + vavCount + ' VAVs');
@@ -2434,7 +2456,7 @@
                     downloadToBrowser(mapConfigData, imageManifest, collectorConfigData);
                 }
             };
-            
+
             const downloadToBrowser = (mapConfigData, imageManifest, collectorConfigData) => {
                 // Export map_config.json
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(mapConfigData, null, 2));
@@ -5181,7 +5203,16 @@
                             </div>
                             )}
                             {configMode === 'map' && floorPlans.length > 0 && (
-                            <div className="grid grid-cols-2 gap-1.5">
+                            <div className="grid grid-cols-3 gap-1.5">
+                                <button onClick={exportMapConfigDownload}
+                                        title={t('export_map_config')}
+                                        data-testid="sb-export-map-btn"
+                                        className="py-3.5 bg-slate-800 hover:bg-slate-700 border border-emerald-700 text-emerald-300 hover:text-emerald-200 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all active:scale-95">
+                                    {t('export_map_config_short')}
+                                    <span className="block text-[7px] font-bold normal-case tracking-normal opacity-70 mt-0.5">
+                                        all floors
+                                    </span>
+                                </button>
                                 <button onClick={exportCollectorConfig}
                                         title={t('export_collector_config')}
                                         data-testid="sb-export-collector-btn"

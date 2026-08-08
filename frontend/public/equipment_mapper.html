@@ -2547,36 +2547,45 @@
                     toast('Add a floor plan and place AHU/VAV markers first.');
                     return;
                 }
-                const floorName = floorPlans[currentFloorIdx]?.name || (`Floor ${currentFloorIdx + 1}`);
+                const floorName = (floorPlans[currentFloorIdx] && floorPlans[currentFloorIdx].name)
+                    || ('Floor ' + (currentFloorIdx + 1));
+                // Coerce floorIdx — map load / JSON can leave string indices on V1.9.
                 const floorOnly = floorMarkers
-                    .filter(m => m.floorIdx === currentFloorIdx)
+                    .filter(m => Number(m.floorIdx) === Number(currentFloorIdx))
                     .map(m => ({
                         type: m.type,
                         name: m.name,
-                        floorIdx: m.floorIdx,
+                        floorIdx: Number(m.floorIdx),
                         ahu_id: m.ahu_id || '',
                         id: m.id,
                     }));
                 const floorPatch = generateCollectorConfig(floorOnly);
-                const skipped = floorPatch._meta?.skippedUnnamed || 0;
-                const orphans = floorPatch._meta?.orphanVavs || [];
+                const meta = floorPatch._meta || {};
+                const skipped = meta.skippedUnnamed || 0;
+                const orphans = meta.orphanVavs || [];
                 delete floorPatch._meta;
                 const updatedNames = Object.keys(floorPatch.ahu_groups || {});
                 if (updatedNames.length === 0) {
                     toast(
                         skipped
-                            ? `No named AHU on "${floorName}". Name your AHU marker(s) first (${skipped} unnamed skipped).`
-                            : `No AHU markers on "${floorName}". Place and name at least one AHU on this floor.`
+                            ? ('No named AHU on "' + floorName + '". Name your AHU marker(s) first (' + skipped + ' unnamed skipped).')
+                            : ('No AHU markers on "' + floorName + '" (floorIdx=' + currentFloorIdx + ', markersOnFloor=' + floorOnly.length + ').')
                     );
                     return;
                 }
 
                 toast('Building full-plant master collector_config.json…');
-                const { cfg: live } = await fetchMasterCollectorConfig();
-                const { master, source, liveCount, tmplCount } = resolveFullPlantMaster(live);
-                const beforeAhus = Object.keys(master.ahu_groups || {}).length;
+                const fetched = await fetchMasterCollectorConfig();
+                const live = fetched.cfg;
+                const resolved = resolveFullPlantMaster(live);
+                const master = resolved.master;
+                const source = resolved.source;
+                const liveCount = resolved.liveCount;
+                const tmplCount = resolved.tmplCount;
 
-                const { merged, updatedAhus } = mergeFloorIntoMasterCollector(master, floorPatch, floorOnly);
+                const mergeResult = mergeFloorIntoMasterCollector(master, floorPatch, floorOnly);
+                const merged = mergeResult.merged;
+                const updatedAhus = mergeResult.updatedAhus;
 
                 // Prefer template/real csv_object over auto CSV_AHU* from the floor patch
                 updatedAhus.forEach((ahu) => {
@@ -2588,26 +2597,40 @@
                     }
                 });
 
+                // Hard verify: each updated AHU must match the floor patch VAV list exactly
+                const mismatches = [];
+                updatedAhus.forEach((ahu) => {
+                    const want = JSON.stringify((floorPatch.ahu_groups[ahu] && floorPatch.ahu_groups[ahu].vavs) || []);
+                    const got = JSON.stringify((merged.ahu_groups[ahu] && merged.ahu_groups[ahu].vavs) || []);
+                    if (want !== got) mismatches.push(ahu);
+                });
+                if (mismatches.length) {
+                    toast('Export aborted — floor VAV replace failed for: ' + mismatches.join(', '));
+                    return;
+                }
+
                 const afterAhus = Object.keys(merged.ahu_groups || {}).length;
                 const masterVavCount = Object.values(merged.ahu_groups).reduce((s, g) => s + (g.vavs || []).length, 0);
 
-                downloadJsonFile(merged, 'collector_config.json');
+                // Unique filename so Downloads cannot be confused with a stale collector_config.json
+                const outName = 'collector_config_SP57.json';
+                downloadJsonFile(merged, outName);
 
                 const notes = [
-                    `Downloaded collector_config.json — FULL plant master (${afterAhus} AHUs).`,
-                    `Baseline: ${source} (controller had ${liveCount}, template has ${tmplCount}).`,
-                    `Replaced VAV lists from "${floorName}":`,
-                    ...updatedAhus.map((ahu) => {
-                        const vs = (merged.ahu_groups[ahu] && merged.ahu_groups[ahu].vavs) || [];
-                        return `  ${ahu}: [${vs.join(', ') || '(none)'}]`;
-                    }),
-                    `VAVs in file: ${masterVavCount}.`,
-                ];
+                    'Downloaded ' + outName + ' — FULL plant (' + afterAhus + ' AHUs).',
+                    'Baseline: ' + source + ' (controller ' + liveCount + ', template ' + tmplCount + ').',
+                    'Floor "' + floorName + '" markers used: ' + floorOnly.length + '.',
+                    'Replaced VAV lists:',
+                ].concat(updatedAhus.map((ahu) => {
+                    const vs = (merged.ahu_groups[ahu] && merged.ahu_groups[ahu].vavs) || [];
+                    return '  ' + ahu + ': [' + (vs.join(', ') || '(none)') + ']';
+                }));
+                notes.push('VAVs in file: ' + masterVavCount + '.');
                 if (liveCount > 0 && liveCount < tmplCount) {
-                    notes.push(`Controller master was truncated (${liveCount} AHUs) — restored AHU-03+ from full-plant template.`);
+                    notes.push('Controller master was truncated — restored AHU-03+ from template.');
                 }
-                if (skipped) notes.push(`${skipped} unnamed marker(s) skipped.`);
-                if (orphans.length) notes.push(`Orphan VAVs: ${orphans.join(', ')}`);
+                if (skipped) notes.push(skipped + ' unnamed marker(s) skipped.');
+                if (orphans.length) notes.push('Orphan VAVs: ' + orphans.join(', '));
                 toast(notes.join('\n'));
             };
 
@@ -5529,7 +5552,7 @@
                                         className="py-3.5 bg-slate-800 hover:bg-slate-700 border border-cyan-700 text-cyan-300 hover:text-cyan-200 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all active:scale-95">
                                     Export Master
                                     <span className="block text-[7px] font-bold normal-case tracking-normal opacity-70 mt-0.5">
-                                        downloads .json
+                                        SP57 · downloads .json
                                     </span>
                                 </button>
                                 <button onClick={exportMapConfig}

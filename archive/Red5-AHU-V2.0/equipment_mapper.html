@@ -1044,7 +1044,7 @@
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
-                            toast(`✅ Clean schema saved to:\n\n${data.file}\n\nThis is your starting template for building a complete config.`);
+                            toast(`✅ Clean schema saved to:\n\n${(data.files && data.files.length) ? data.files.join('\n') : data.file}\n\nThis is your starting template for building a complete config.`);
                         } else {
                             throw new Error(data.error || 'Save failed');
                         }
@@ -1743,9 +1743,11 @@
                     .then(res => res.json())
                     .then(data => {
                         if (data.success) {
-                            // V2.0 hosted demo: data.file is "virtual-controller://<tenant_id>/equipment_types".
-                            // V1.9 controller: data.file is "/root/data/configs/equipment_types.json".
-                            toast(`Equipment schema saved to:\n\n${data.file}`);
+                            // V1.9: dual-write site + configs. V2.0 demo may return virtual path.
+                            const files = (data.files && data.files.length)
+                                ? data.files.join('\n')
+                                : data.file;
+                            toast(`Equipment schema saved to:\n\n${files}`);
                         } else if (data.warning) {
                             // Anonymous V2.0 demo: cleanly fall back to browser download
                             // with a friendly message -- no scary "error" wording.
@@ -3547,10 +3549,33 @@
                 };
                 
                 if (source.trim() === '1') {
-                    // Try configs/ subfolder first, then root
-                    loadConfigFromController('configs/equipment_types.json', (text) => applySchema(text), () => {
-                        loadConfigFromController('equipment_types.json', (text) => applySchema(text));
-                    });
+                    // Prefer site copy at /root/data/equipment_types.json (survives
+                    // bundle overwrite of configs/), then configs/ fallback.
+                    // /api/equipment-types already prefers site→configs; also try
+                    // /api/assets/equipment_types.json explicitly as first probe.
+                    const trySiteThenConfigs = () => {
+                        loadConfigFromController('equipment_types.json', (text) => applySchema(text), () => {
+                            loadConfigFromController('configs/equipment_types.json', (text) => applySchema(text), (err) => {
+                                toast('Failed to load equipment_types.json from controller:\n' + (err && err.message || err));
+                            });
+                        });
+                    };
+                    // Probe flat asset path first (always /root/data/<file>)
+                    (async () => {
+                        try {
+                            const apiUrl = window.API_BASE_URL || '';
+                            const r = await fetch(`${apiUrl}/api/assets/equipment_types.json`, { credentials: 'include' });
+                            if (r.ok) {
+                                const text = await r.text();
+                                const parsed = JSON.parse(text);
+                                if (parsed && (parsed.ahu_types || parsed.vav_types)) {
+                                    applySchema(text);
+                                    return;
+                                }
+                            }
+                        } catch (_) { /* fall through */ }
+                        trySiteThenConfigs();
+                    })();
                 } else {
                     const input = document.createElement('input');
                     input.type = 'file';

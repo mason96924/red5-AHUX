@@ -692,12 +692,20 @@ def get_assets():
 
 @app.route('/api/equipment-types')
 def get_equipment_types():
-    filepath = os.path.join(CONFIG_DIR, 'equipment_types.json')
-    if not os.path.exists(filepath):
-        filepath = os.path.join('/root/data', 'equipment_types.json')
-    if os.path.exists(filepath):
-        with open(filepath, 'r') as f:
-            return jsonify(json.load(f))
+    """Prefer site override at /root/data/equipment_types.json (survives bundle
+    updates that ship factory configs/equipment_types.json). Fall back to
+    /root/data/configs/equipment_types.json."""
+    candidates = [
+        os.path.join(DATA_ROOT, 'equipment_types.json'),
+        os.path.join(CONFIG_DIR, 'equipment_types.json'),
+    ]
+    for filepath in candidates:
+        if os.path.isfile(filepath):
+            try:
+                with open(filepath, 'r') as f:
+                    return jsonify(json.load(f))
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
     return jsonify({})
 
 @app.route('/api/map-config')
@@ -712,14 +720,28 @@ def get_map_config():
 
 @app.route('/api/save-equipment-schema', methods=['POST'])
 def save_equipment_schema():
+    """Write equipment schema to BOTH:
+      - /root/data/equipment_types.json           (site copy — bundle does not overwrite)
+      - /root/data/configs/equipment_types.json  (legacy / factory path)
+    Schema load prefers the site copy first.
+    """
     try:
         data = request.json
         equipment_schema = data.get('equipment_schema', {})
         os.makedirs(CONFIG_DIR, exist_ok=True)
-        filepath = os.path.join(CONFIG_DIR, 'equipment_types.json')
-        with open(filepath, 'w') as f:
-            json.dump(equipment_schema, f, indent=2)
-        return jsonify({"success": True, "message": "Equipment schema saved", "file": filepath})
+        os.makedirs(DATA_ROOT, exist_ok=True)
+        site_path = os.path.join(DATA_ROOT, 'equipment_types.json')
+        configs_path = os.path.join(CONFIG_DIR, 'equipment_types.json')
+        payload = json.dumps(equipment_schema, indent=2)
+        for filepath in (site_path, configs_path):
+            with open(filepath, 'w') as f:
+                f.write(payload)
+        return jsonify({
+            "success": True,
+            "message": "Equipment schema saved (site + configs)",
+            "file": site_path,
+            "files": [site_path, configs_path],
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

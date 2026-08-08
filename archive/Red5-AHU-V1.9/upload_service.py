@@ -29,6 +29,7 @@ import os
 import re
 import sys
 import time
+import json
 import base64
 import hashlib
 import hmac as hmac_mod
@@ -653,6 +654,9 @@ def _extract_zip_streaming(zip_path):
                 'configs/map_config.json',
                 'configs/collector_config.json',
                 'configs/image_files_manifest.json',
+                # Site override copy (Controller dual-write). Bundle json is
+                # normally forced under configs/, but preserve if present.
+                'equipment_types.json',
             }
             if clean_name in _SITE_CONFIG_PRESERVE and os.path.isfile(dest_path):
                 skipped.append({
@@ -2089,3 +2093,52 @@ def register(app, ctx):
                      api_zip_files,          methods=['POST'])
     app.add_url_rule('/api/zip-dir',                'api_zip_dir',
                      api_zip_dir,            methods=['POST'])
+
+    # ---- Equipment schema dual-write (site + configs) --------------------
+    # app.py is NOT auto-deployed by bundle upload (bootloader).  Rebind the
+    # live view functions here so a normal /update zip that includes
+    # upload_service.py still gets: save → /root/data/equipment_types.json
+    # AND configs/; GET prefers the site copy.  Survives factory configs/
+    # overwrite on later bundle updates.
+    def _equipment_types_get():
+        from flask import jsonify
+        candidates = [
+            os.path.join(DATA_ROOT, 'equipment_types.json'),
+            os.path.join(DATA_ROOT, 'configs', 'equipment_types.json'),
+        ]
+        for filepath in candidates:
+            if os.path.isfile(filepath):
+                try:
+                    with open(filepath, 'r') as f:
+                        return jsonify(json.load(f))
+                except Exception as e:
+                    return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({})
+
+    def _equipment_schema_save():
+        from flask import jsonify, request
+        try:
+            data = request.json or {}
+            equipment_schema = data.get('equipment_schema', {})
+            configs_dir = os.path.join(DATA_ROOT, 'configs')
+            os.makedirs(configs_dir, exist_ok=True)
+            os.makedirs(DATA_ROOT, exist_ok=True)
+            site_path = os.path.join(DATA_ROOT, 'equipment_types.json')
+            configs_path = os.path.join(configs_dir, 'equipment_types.json')
+            payload = json.dumps(equipment_schema, indent=2)
+            for filepath in (site_path, configs_path):
+                with open(filepath, 'w') as f:
+                    f.write(payload)
+            return jsonify({
+                'success': True,
+                'message': 'Equipment schema saved (site + configs)',
+                'file': site_path,
+                'files': [site_path, configs_path],
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    if 'get_equipment_types' in app.view_functions:
+        app.view_functions['get_equipment_types'] = _equipment_types_get
+    if 'save_equipment_schema' in app.view_functions:
+        app.view_functions['save_equipment_schema'] = _equipment_schema_save

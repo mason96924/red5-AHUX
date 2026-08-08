@@ -2027,6 +2027,16 @@
                 }
 
                 if (!draggedMarkerType) return;
+
+                // If this floor already has exactly one named AHU, pre-bind new VAVs to it
+                const soleAhuName = (() => {
+                    if (draggedMarkerType !== 'vav') return '';
+                    const named = floorMarkers
+                        .filter(m => m.floorIdx === currentFloorIdx && m.type === 'ahu' && (m.name || '').trim())
+                        .map(m => m.name.trim());
+                    const uniq = [...new Set(named)];
+                    return uniq.length === 1 ? uniq[0] : '';
+                })();
                 
                 const newMarker = {
                     id: `${draggedMarkerType}_${Date.now()}`,
@@ -2045,10 +2055,11 @@
                         humidity: 45.0,
                         enthalpy: 28.5
                     } : {}),
-                    // VAV placeholder telemetry
+                    // VAV placeholder telemetry + optional parent AHU
                     ...(draggedMarkerType === 'vav' ? {
                         zone_temp: 72.0,
-                        damper_position: 65
+                        damper_position: 65,
+                        ahu_id: soleAhuName,
                     } : {})
                 };
 
@@ -2157,65 +2168,79 @@
 
             // Build collector_config.json from floor-plan AHU/VAV markers.
             // Shared by Save-to-Controller and the dedicated Export button.
+            // VAV → AHU priority: explicit marker.ahu_id → sole AHU on floor →
+            // E/S/W/N name suffix match → first AHU on that floor.
             const generateCollectorConfig = (markers) => {
                 const groups = {};
                 const orphanVavs = [];
-
-                // Group markers by floor, dedup within each floor only
-                const byFloor = {};
-                markers.forEach(m => {
-                    if (!m.name) return;
-                    const fi = m.floorIdx !== undefined ? m.floorIdx : -1;
-                    if (!byFloor[fi]) byFloor[fi] = { ahus: [], vavs: [] };
-                    const name = m.name.trim();
-                    if (m.type === 'ahu' && !byFloor[fi].ahus.includes(name)) byFloor[fi].ahus.push(name);
-                    if (m.type === 'vav' && !byFloor[fi].vavs.includes(name)) byFloor[fi].vavs.push(name);
-                });
+                let skippedUnnamed = 0;
 
                 const getOrientation = (name) => {
-                    const m = name.match(/[-_]([ESWN])$/i);
+                    const m = String(name || '').match(/[-_]([ESWN])$/i);
                     return m ? m[1].toUpperCase() : null;
                 };
 
-                // Process each floor independently
-                // VAV names are NOT globally unique — same name on different floors = different box
+                const ensureGroup = (ahuName) => {
+                    if (!groups[ahuName]) {
+                        const csvObj = 'CSV_' + ahuName.replace(/[-\s]/g, '');
+                        groups[ahuName] = { csv_object: csvObj, vavs: [] };
+                    }
+                    return groups[ahuName];
+                };
+
+                // Group markers by floor (keep full marker objects for ahu_id)
+                const byFloor = {};
+                markers.forEach(m => {
+                    if (!m || !m.type) return;
+                    const name = (m.name || '').trim();
+                    if (!name) {
+                        skippedUnnamed += 1;
+                        return;
+                    }
+                    const fi = m.floorIdx !== undefined ? m.floorIdx : -1;
+                    if (!byFloor[fi]) byFloor[fi] = { ahus: [], vavs: [] };
+                    if (m.type === 'ahu') {
+                        if (!byFloor[fi].ahus.some(a => a.name === name)) {
+                            byFloor[fi].ahus.push({ name, id: m.id });
+                        }
+                    } else if (m.type === 'vav') {
+                        if (!byFloor[fi].vavs.some(v => v.name === name)) {
+                            byFloor[fi].vavs.push({
+                                name,
+                                ahu_id: (m.ahu_id || '').trim(),
+                            });
+                        }
+                    }
+                });
+
                 Object.keys(byFloor).sort((a, b) => a - b).forEach(fi => {
                     const floor = byFloor[fi];
+                    const ahuNames = floor.ahus.map(a => a.name);
+                    ahuNames.forEach(ensureGroup);
 
-                    // Create AHU groups
-                    floor.ahus.forEach(ahuName => {
-                        if (!groups[ahuName]) {
-                            const csvObj = 'CSV_' + ahuName.replace(/[-\s]/g, '');
-                            groups[ahuName] = { csv_object: csvObj, vavs: [] };
-                        }
-                    });
-
-                    if (floor.ahus.length === 0) {
-                        floor.vavs.forEach(v => orphanVavs.push(v));
+                    if (ahuNames.length === 0) {
+                        floor.vavs.forEach(v => orphanVavs.push(v.name));
                         return;
                     }
 
                     floor.vavs.forEach(v => {
-                        if (floor.ahus.length === 1) {
-                            // Single AHU on floor — all VAVs go to it
-                            groups[floor.ahus[0]].vavs.push(v);
+                        let target = null;
+                        if (v.ahu_id && ahuNames.includes(v.ahu_id)) {
+                            target = v.ahu_id;
+                        } else if (v.ahu_id && groups[v.ahu_id]) {
+                            // Parent AHU named but lives on another floor — still honor it
+                            target = v.ahu_id;
+                            ensureGroup(target);
+                        } else if (ahuNames.length === 1) {
+                            target = ahuNames[0];
                         } else {
-                            // Multi-AHU floor — match by E/S/W/N orientation
-                            const vOrient = getOrientation(v);
-                            let matched = false;
+                            const vOrient = getOrientation(v.name);
                             if (vOrient) {
-                                for (const ahuName of floor.ahus) {
-                                    if (getOrientation(ahuName) === vOrient) {
-                                        groups[ahuName].vavs.push(v);
-                                        matched = true;
-                                        break;
-                                    }
-                                }
+                                target = ahuNames.find(a => getOrientation(a) === vOrient) || null;
                             }
-                            if (!matched) {
-                                groups[floor.ahus[0]].vavs.push(v);
-                            }
+                            if (!target) target = ahuNames[0];
                         }
+                        ensureGroup(target).vavs.push(v.name);
                     });
                 });
 
@@ -2223,7 +2248,6 @@
                     console.warn('Orphaned VAVs (no AHU on their floor):', orphanVavs);
                 }
 
-                // Final dedup within each AHU
                 Object.keys(groups).forEach(a => { groups[a].vavs = [...new Set(groups[a].vavs)]; });
 
                 return {
@@ -2234,22 +2258,40 @@
                     dashboard_point_map: {
                         ahu: { oa_t: 'OAT', oa_rh: 'OAH', sa_t: 'SAT', sa_rh: 'SAH' },
                         vav: { zone_t: 't', zone_rh: 'rh' }
-                    }
+                    },
+                    _meta: { skippedUnnamed, orphanVavs }
                 };
             };
 
-            // Download-only: collector_config.json from current floor markers
+            // Download-only: collector_config.json from the *current floor*
+            // (not the whole plant). Use Save → Controller for all floors.
             const exportCollectorConfig = () => {
                 if (!floorPlans.length) {
                     toast('Add a floor plan and place AHU/VAV markers first.');
                     return;
                 }
-                const allMarkersWithFloor = floorMarkers.map(m => ({ type: m.type, name: m.name, floorIdx: m.floorIdx }));
-                const collectorConfigData = generateCollectorConfig(allMarkersWithFloor);
+                const floorName = floorPlans[currentFloorIdx]?.name || (`Floor ${currentFloorIdx + 1}`);
+                const floorOnly = floorMarkers
+                    .filter(m => m.floorIdx === currentFloorIdx)
+                    .map(m => ({
+                        type: m.type,
+                        name: m.name,
+                        floorIdx: m.floorIdx,
+                        ahu_id: m.ahu_id || '',
+                        id: m.id,
+                    }));
+                const collectorConfigData = generateCollectorConfig(floorOnly);
+                const skipped = collectorConfigData._meta?.skippedUnnamed || 0;
+                const orphans = collectorConfigData._meta?.orphanVavs || [];
+                delete collectorConfigData._meta;
                 const ahuCount = Object.keys(collectorConfigData.ahu_groups).length;
                 const vavCount = Object.values(collectorConfigData.ahu_groups).reduce((s, g) => s + g.vavs.length, 0);
                 if (ahuCount === 0) {
-                    toast('No AHU markers found — place at least one AHU on the floor plan.');
+                    toast(
+                        skipped
+                            ? `No named AHU on "${floorName}". Name your AHU marker(s) first (${skipped} unnamed skipped).`
+                            : `No AHU markers on "${floorName}". Place and name at least one AHU on this floor.`
+                    );
                     return;
                 }
                 const collStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(collectorConfigData, null, 2));
@@ -2259,7 +2301,11 @@
                 document.body.appendChild(collAnchor);
                 collAnchor.click();
                 collAnchor.remove();
-                toast(`Downloaded collector_config.json (${ahuCount} AHUs, ${vavCount} VAVs).\nCopy to /root/data/configs/ on the controller if needed.`);
+                const notes = [`Downloaded collector_config.json from "${floorName}" only (${ahuCount} AHUs, ${vavCount} VAVs).`];
+                if (skipped) notes.push(`${skipped} unnamed marker(s) on this floor were skipped.`);
+                if (orphans.length) notes.push(`Orphan VAV(s) with no AHU: ${orphans.join(', ')}`);
+                notes.push('Save → Controller still writes all floors to /root/data/configs/.');
+                toast(notes.join('\n'));
             };
 
             const exportMapConfig = () => {
@@ -2279,6 +2325,7 @@
                             y: m.y,
                             active: m.active,
                             equipment_type_id: m.equipment_type_id || '',
+                            ...(m.type === 'vav' && m.ahu_id ? { ahu_id: m.ahu_id } : {}),
                             telemetry: m.type === 'ahu' ? {
                                 oa_temp: m.oa_temp,
                                 sa_temp: m.sa_temp,
@@ -2323,8 +2370,15 @@
 
                 // Generate collector_config.json from all floor markers
                 // VAVs assigned by FLOOR — all VAVs on the same floor as an AHU belong to it
-                const allMarkersWithFloor = floorMarkers.map(m => ({ type: m.type, name: m.name, floorIdx: m.floorIdx }));
+                const allMarkersWithFloor = floorMarkers.map(m => ({
+                    type: m.type,
+                    name: m.name,
+                    floorIdx: m.floorIdx,
+                    ahu_id: m.ahu_id || '',
+                    id: m.id,
+                }));
                 const collectorConfigData = generateCollectorConfig(allMarkersWithFloor);
+                delete collectorConfigData._meta;
 
                 // Debug: show what was generated
                 const debugLines = ['Collector Config Generated:'];
@@ -3220,7 +3274,8 @@
                                             y: m.y,
                                             active: m.active,
                                             equipment_type_id: m.equipment_type_id || '',
-                                            floorIdx: idx
+                                            floorIdx: idx,
+                                            ...(m.type === 'vav' ? { ahu_id: m.ahu_id || '' } : {}),
                                         };
                                         
                                         if (m.telemetry) {
@@ -4763,6 +4818,29 @@
                                                                         })()}
                                                                     </select>
                                                                 </div>
+
+                                                                {/* Parent AHU — drives collector_config ahu_groups */}
+                                                                {marker.type === 'vav' && (
+                                                                <div className="space-y-1">
+                                                                    <div className="text-[7px] font-black text-cyan-400 uppercase tracking-wider">Parent AHU</div>
+                                                                    <select
+                                                                        value={marker.ahu_id || ''}
+                                                                        onChange={e => updateMarkerField(marker.id, 'ahu_id', e.target.value)}
+                                                                        onClick={e => e.stopPropagation()}
+                                                                        className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-[9px] outline-none focus:border-cyan-500 font-mono"
+                                                                        style={{ color: marker.ahu_id ? '#22d3ee' : '#64748b' }}
+                                                                    >
+                                                                        <option value="" style={{ color: '#64748b' }}>— Auto (floor / name) —</option>
+                                                                        {floorMarkers
+                                                                            .filter(m => m.type === 'ahu' && (m.name || '').trim())
+                                                                            .map(m => m.name.trim())
+                                                                            .filter((n, i, arr) => arr.indexOf(n) === i)
+                                                                            .map(n => (
+                                                                                <option key={n} value={n} style={{ color: '#22d3ee' }}>{n}</option>
+                                                                            ))}
+                                                                    </select>
+                                                                </div>
+                                                                )}
                                                                 
                                                                 {/* Telemetry Data - Placeholder values */}
                                                                 <div className="bg-slate-950/50 border border-slate-700/50 rounded p-2 space-y-1">
@@ -5109,6 +5187,9 @@
                                         data-testid="sb-export-collector-btn"
                                         className="py-3.5 bg-slate-800 hover:bg-slate-700 border border-cyan-700 text-cyan-300 hover:text-cyan-200 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all active:scale-95">
                                     {t('export_collector_config_short')}
+                                    <span className="block text-[7px] font-bold normal-case tracking-normal opacity-70 mt-0.5">
+                                        {(floorPlans[currentFloorIdx]?.name) || `Floor ${currentFloorIdx + 1}`} only
+                                    </span>
                                 </button>
                                 <button onClick={exportMapConfig}
                                         title={deploymentPath ? t('save_to_controller') : t('download_to_browser')}

@@ -166,7 +166,7 @@
     save_to_controller:     ['Save to Virtual Controller','保存到虚拟控制器','儲存至虛擬控制器','仮想コントローラに保存','가상 컨트롤러에 저장'],
     save_to_controller_short: ['Save → Controller','保存→控制器','儲存→控制器','保存→コントローラ','저장→컨트롤러'],
     download_to_browser:    ['Download to Browser','下载到浏览器','下載到瀏覽器','ブラウザにDL','브라우저에 다운로드'],
-    export_collector_config: ['Export collector_config.json from floor markers','从平面图导出 collector_config.json','從平面圖匯出 collector_config.json','フロアから collector_config.json をエクスポート','평면도에서 collector_config.json 내보내기'],
+    export_collector_config: ['Export collector_config.json from the current floor only','仅从当前楼层导出 collector_config.json','僅從目前樓層匯出 collector_config.json','現在のフロアのみ collector_config.json をエクスポート','현재 층만 collector_config.json 내보내기'],
     export_collector_config_short: ['Export Collector','导出采集配置','匯出採集配置','Collector出力','Collector 내보내기'],
     upload_image:           ['Upload Image','上传图片','上傳圖片','画像アップロード','이미지 업로드'],
     change_image:           ['Change Image','更换图片','更換圖片','画像を変更','이미지 변경'],

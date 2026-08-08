@@ -408,6 +408,21 @@ def _extract_zip_streaming(zip_path):
                 skipped.append({'file': clean_name, 'reason': 'Resolved outside target directory'})
                 continue
 
+            # Site-authored configs: never clobber on bundle update. Fresh
+            # controllers (file missing) still get the bundled defaults.
+            _SITE_CONFIG_PRESERVE = {
+                'configs/equipment_types.json',
+                'configs/map_config.json',
+                'configs/collector_config.json',
+                'configs/image_files_manifest.json',
+            }
+            if clean_name in _SITE_CONFIG_PRESERVE and os.path.isfile(dest_path):
+                skipped.append({
+                    'file': clean_name,
+                    'reason': 'Site config preserved (already on controller)',
+                })
+                continue
+
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             try:
                 size_written = 0

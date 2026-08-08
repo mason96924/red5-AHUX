@@ -2263,36 +2263,74 @@
                 };
             };
 
-            // Load master collector_config.json from the controller (or empty shell).
+            // Empty shell used only when no master can be loaded.
+            const emptyCollectorShell = () => ({
+                version: '1.1',
+                interval: 5,
+                mock_mode: true,
+                ahu_groups: {},
+                dashboard_point_map: {
+                    ahu: { oa_t: 'OAT', oa_rh: 'OAH', sa_t: 'SAT', sa_rh: 'SAH' },
+                    vav: { zone_t: 't', zone_rh: 'rh' }
+                }
+            });
+
+            const normalizeCollectorConfig = (j) => {
+                if (!j || typeof j !== 'object') return null;
+                // Controller: { success, config }. Cloud/demo: bare cfg. Some builds nest under .data.
+                if (j.ahu_groups && typeof j.ahu_groups === 'object') return j;
+                if (j.config && typeof j.config === 'object' && j.config.ahu_groups) return j.config;
+                if (j.data && typeof j.data === 'object' && j.data.ahu_groups) return j.data;
+                if (j.config && typeof j.config === 'object') return j.config;
+                return null;
+            };
+
+            const pickCollectorConfigFile = () => new Promise((resolve) => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json,application/json';
+                input.onchange = () => {
+                    const f = input.files && input.files[0];
+                    if (!f) { resolve(null); return; }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        try {
+                            const parsed = JSON.parse(reader.result);
+                            const cfg = normalizeCollectorConfig(parsed) || (parsed && parsed.ahu_groups ? parsed : null);
+                            resolve(cfg);
+                        } catch (e) {
+                            console.warn('pickCollectorConfigFile parse error', e);
+                            resolve(null);
+                        }
+                    };
+                    reader.onerror = () => resolve(null);
+                    reader.readAsText(f);
+                };
+                // Cancel: some browsers fire no event — resolve null after blur delay is unreliable;
+                // user can re-click Export. If they cancel the dialog, onchange never runs.
+                input.addEventListener('cancel', () => resolve(null));
+                input.click();
+            });
+
+            // Load master collector_config.json from the controller / demo API.
             const fetchMasterCollectorConfig = async () => {
                 const apiUrl = window.API_BASE_URL || '';
                 try {
                     const r = await fetch(`${apiUrl}/api/collector-config`, { credentials: 'include' });
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     const j = await r.json();
-                    // Controller: { success, config }. Cloud/demo may return the cfg object directly.
-                    const cfg = (j && j.config && typeof j.config === 'object') ? j.config
-                              : (j && j.ahu_groups) ? j
-                              : null;
-                    if (cfg && typeof cfg === 'object') return cfg;
+                    const cfg = normalizeCollectorConfig(j);
+                    if (cfg) return { cfg, source: 'api' };
                 } catch (err) {
                     console.warn('fetchMasterCollectorConfig:', err);
                 }
-                return {
-                    version: '1.1',
-                    interval: 5,
-                    mock_mode: true,
-                    ahu_groups: {},
-                    dashboard_point_map: {
-                        ahu: { oa_t: 'OAT', oa_rh: 'OAH', sa_t: 'SAT', sa_rh: 'SAH' },
-                        vav: { zone_t: 't', zone_rh: 'rh' }
-                    }
-                };
+                return { cfg: emptyCollectorShell(), source: 'empty' };
             };
 
-            // Merge current-floor AHU/VAV patch into master collector_config.
-            // Preserves other floors' groups and csv_object values. VAVs that are
-            // named markers on this floor are rewritten; other master VAVs kept.
+            // Patch master: update only AHUs present on the current floor (e.g. AHU-01,
+            // AHU-02). All other AHUs in the master file are left untouched.
+            // VAVs named on this floor are rewritten for those AHUs; VAVs that are not
+            // markers on this floor stay (other floors / hand edits).
             const mergeFloorIntoMasterCollector = (master, floorPatch, floorMarkersOnFloor) => {
                 const out = {
                     version: master.version || floorPatch.version || '1.1',
@@ -2304,7 +2342,6 @@
                         vav: { zone_t: 't', zone_rh: 'rh' }
                     }
                 };
-                // Copy through any extra top-level keys (e.g. write_queue settings)
                 Object.keys(master || {}).forEach(k => {
                     if (!(k in out) && k !== 'ahu_groups') out[k] = master[k];
                 });
@@ -2314,8 +2351,8 @@
                         .filter(m => m.type === 'vav' && (m.name || '').trim())
                         .map(m => m.name.trim())
                 );
-                const patchGroups = floorPatch.ahu_groups || {};
-                Object.entries(patchGroups).forEach(([ahuName, grp]) => {
+                const updated = [];
+                Object.entries(floorPatch.ahu_groups || {}).forEach(([ahuName, grp]) => {
                     const prev = out.ahu_groups[ahuName] || {};
                     const kept = (prev.vavs || []).filter(v => !floorVavNames.has(v));
                     const mergedVavs = [...new Set([...kept, ...((grp && grp.vavs) || [])])];
@@ -2324,11 +2361,13 @@
                         csv_object: prev.csv_object || (grp && grp.csv_object) || ('CSV_' + ahuName.replace(/[-\s]/g, '')),
                         vavs: mergedVavs,
                     };
+                    updated.push(ahuName);
                 });
-                return out;
+                return { merged: out, updatedAhus: updated };
             };
 
-            // Download master collector_config.json after merging the *current floor* into it.
+            // Export the FULL master collector_config.json, with only the current
+            // floor's AHUs (e.g. Floor 1 → AHU-01, AHU-02) patched in.
             const exportCollectorConfig = async () => {
                 if (!floorPlans.length) {
                     toast('Add a floor plan and place AHU/VAV markers first.');
@@ -2348,8 +2387,8 @@
                 const skipped = floorPatch._meta?.skippedUnnamed || 0;
                 const orphans = floorPatch._meta?.orphanVavs || [];
                 delete floorPatch._meta;
-                const floorAhuCount = Object.keys(floorPatch.ahu_groups).length;
-                if (floorAhuCount === 0) {
+                const updatedNames = Object.keys(floorPatch.ahu_groups || {});
+                if (updatedNames.length === 0) {
                     toast(
                         skipped
                             ? `No named AHU on "${floorName}". Name your AHU marker(s) first (${skipped} unnamed skipped).`
@@ -2358,12 +2397,32 @@
                     return;
                 }
 
-                toast(`Merging "${floorName}" into master collector_config.json…`);
-                const master = await fetchMasterCollectorConfig();
-                const beforeAhus = Object.keys(master.ahu_groups || {}).length;
-                const merged = mergeFloorIntoMasterCollector(master, floorPatch, floorOnly);
+                let { cfg: master, source } = await fetchMasterCollectorConfig();
+                let masterCount = Object.keys(master.ahu_groups || {}).length;
+
+                // If the controller has no usable master, ask for the existing
+                // collector_config.json so we patch into THAT file — never export
+                // a floor-only fragment pretending to be the master.
+                if (masterCount === 0) {
+                    toast(
+                        `No master collector_config.json on the controller.\n` +
+                        `Choose your existing master file to update (${updatedNames.join(', ')} from "${floorName}").`
+                    );
+                    const picked = await pickCollectorConfigFile();
+                    if (!picked || !picked.ahu_groups || Object.keys(picked.ahu_groups).length === 0) {
+                        toast(
+                            `Export cancelled — need an existing master collector_config.json.\n` +
+                            `Pick the plant master file (with all AHUs), then Export Collector again.`
+                        );
+                        return;
+                    }
+                    master = picked;
+                    source = 'file';
+                    masterCount = Object.keys(master.ahu_groups || {}).length;
+                }
+
+                const { merged, updatedAhus } = mergeFloorIntoMasterCollector(master, floorPatch, floorOnly);
                 const afterAhus = Object.keys(merged.ahu_groups || {}).length;
-                const floorVavCount = Object.values(floorPatch.ahu_groups).reduce((s, g) => s + (g.vavs || []).length, 0);
                 const masterVavCount = Object.values(merged.ahu_groups).reduce((s, g) => s + (g.vavs || []).length, 0);
 
                 const collStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(merged, null, 2));
@@ -2375,13 +2434,15 @@
                 collAnchor.remove();
 
                 const notes = [
-                    `Downloaded updated master collector_config.json.`,
-                    `Merged "${floorName}": ${floorAhuCount} AHU(s), ${floorVavCount} VAV(s) from this floor.`,
-                    `Master now: ${afterAhus} AHU(s) (was ${beforeAhus}), ${masterVavCount} VAV(s) total.`,
-                    `csv_object values from the existing master were preserved when present.`,
+                    `Downloaded FULL master collector_config.json (${afterAhus} AHUs, ${masterVavCount} VAVs).`,
+                    `Updated from "${floorName}": ${updatedAhus.join(', ')}.`,
+                    `All other AHUs unchanged. Master source: ${source}.`,
                 ];
                 if (skipped) notes.push(`${skipped} unnamed marker(s) on this floor were skipped.`);
                 if (orphans.length) notes.push(`Orphan VAV(s) with no AHU: ${orphans.join(', ')}`);
+                if (afterAhus === updatedAhus.length && source !== 'file') {
+                    notes.push(`Note: master only had these AHUs — if you expected more, pick a fuller master file next time.`);
+                }
                 toast(notes.join('\n'));
             };
 
@@ -5296,7 +5357,7 @@
                                         className="py-3.5 bg-slate-800 hover:bg-slate-700 border border-cyan-700 text-cyan-300 hover:text-cyan-200 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all active:scale-95">
                                     {t('export_collector_config_short')}
                                     <span className="block text-[7px] font-bold normal-case tracking-normal opacity-70 mt-0.5">
-                                        merge {(floorPlans[currentFloorIdx]?.name) || `Floor ${currentFloorIdx + 1}`} → master
+                                        master + {(floorPlans[currentFloorIdx]?.name) || `Floor ${currentFloorIdx + 1}`}
                                     </span>
                                 </button>
                                 <button onClick={exportMapConfig}

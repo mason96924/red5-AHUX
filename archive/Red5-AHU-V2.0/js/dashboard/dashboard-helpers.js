@@ -433,7 +433,8 @@ const bandStory = (b) => {
  * enthalpy diagonals through OA/RA/SA (RA bold), green RH band only.
  * Point colours (fixed — match operator request / live chart intent):
  *   OA darker blue · RA pinkish-red · SA darker green · MA black with yellow ring.
- *   State dots/rings 20% transparent (opacity 0.80) so overlaps stay readable.
+ *   State dots/rings 20% transparent (opacity 0.80), including MA yellow ring.
+ *   OA/RA/MA/SA labels 10% transparent (opacity 0.90).
  * Click the plot to drop a magnifying glass (center = click); drag to move;
  * slider / wheel adjusts zoom (leftmost = Off). Double-click clears the lens.
  * MUST be invoked on every App render (even with ahu=null) so its React
@@ -607,7 +608,8 @@ function renderProcessMiniBadge(ctx) {
     const colSA = '#065f46';     /* darker green — supply */
     const colMA = '#0f172a';     /* black — mixed */
     const colMARing = '#eab308'; /* yellow ring around MA */
-    const dotOp = 0.80;          /* 20% transparent fill + ring — overlaps readable */
+    const dotOp = 0.80;          /* 20% transparent fill + ring (incl. MA yellow) */
+    const labelOp = 0.90;        /* 10% transparent OA/RA/MA/SA labels */
     const colBand = '#047857';  /* overview green for RH band + mix line only */
     const colH = '#6d28d9';
     const colSat = '#1d4ed8';
@@ -679,17 +681,17 @@ function renderProcessMiniBadge(ctx) {
             <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
                   markerEnd={'url(#' + arrId + ')'} />
             <circle cx={ox} cy={oy} r="6.5" fill={colOA} fillOpacity={dotOp} stroke={colOA} strokeOpacity={dotOp} strokeWidth="1.6" />
-            <text x={ox + 10} y={oy - 6} fill={colOA} style={{ fill: colOA }} fontSize="13" fontWeight="800"
-                  fontFamily="system-ui,sans-serif">OA</text>
+            <text x={ox + 10} y={oy - 6} fill={colOA} fillOpacity={labelOp} style={{ fill: colOA, fillOpacity: labelOp }}
+                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">OA</text>
             <circle cx={rx} cy={ry} r="6.5" fill={colRA} fillOpacity={dotOp} stroke={colRA} strokeOpacity={dotOp} strokeWidth="1.6" />
-            <text x={rx + 8} y={ry + 18} fill={colRA} style={{ fill: colRA }} fontSize="13" fontWeight="800"
-                  fontFamily="system-ui,sans-serif">RA</text>
+            <text x={rx + 8} y={ry + 18} fill={colRA} fillOpacity={labelOp} style={{ fill: colRA, fillOpacity: labelOp }}
+                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">RA</text>
             <circle cx={mx} cy={my} r="6" fill={colMA} fillOpacity={dotOp} stroke={colMARing} strokeOpacity={dotOp} strokeWidth="2.5" />
-            <text x={mx + 9} y={my - 7} fill={colMA} style={{ fill: colMA }} fontSize="13" fontWeight="800"
-                  fontFamily="system-ui,sans-serif">MA</text>
+            <text x={mx + 9} y={my - 7} fill={colMA} fillOpacity={labelOp} style={{ fill: colMA, fillOpacity: labelOp }}
+                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">MA</text>
             <circle cx={sx} cy={sy} r="6.5" fill={colSA} fillOpacity={dotOp} stroke={colSA} strokeOpacity={dotOp} strokeWidth="1.6" />
-            <text x={sx - 26} y={sy - 8} fill={colSA} style={{ fill: colSA }} fontSize="13" fontWeight="800"
-                  fontFamily="system-ui,sans-serif">SA</text>
+            <text x={sx - 26} y={sy - 8} fill={colSA} fillOpacity={labelOp} style={{ fill: colSA, fillOpacity: labelOp }}
+                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">SA</text>
             <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
                   textAnchor="middle" fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
             <text x={14} y={TOP + gh / 2} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"

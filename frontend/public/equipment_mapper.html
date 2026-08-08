@@ -2263,6 +2263,114 @@
                 };
             };
 
+            // Full-plant baseline (AHU-01..05). Used when the controller master
+            // was previously wiped down to a single floor — Export/Save must NOT
+            // treat that truncated file as the plant master.
+            const FULL_PLANT_COLLECTOR_TEMPLATE = {
+  "version": "1.1",
+  "interval": 5,
+  "mock_mode": true,
+  "ahu_groups": {
+    "AHU-01": {
+      "csv_object": "CSV1",
+      "vavs": [
+        "VAV-01-E",
+        "VAV-02-E",
+        "VAV-03-E",
+        "VAV-04-E",
+        "VAV-01-S",
+        "VAV-02-S",
+        "VAV-01-W",
+        "VAV-02-W",
+        "VAV-01-N",
+        "VAV-02-N"
+      ]
+    },
+    "AHU-02": {
+      "csv_object": "CSV2",
+      "vavs": [
+        "VAV-01-E",
+        "VAV-02-E",
+        "VAV-03-E",
+        "VAV-04-E",
+        "VAV-01-S",
+        "VAV-02-S",
+        "VAV-03-S",
+        "VAV-01-W",
+        "VAV-02-W",
+        "VAV-01-N",
+        "VAV-02-N",
+        "VAV-03-N"
+      ]
+    },
+    "AHU-03": {
+      "csv_object": "CSV3",
+      "vavs": [
+        "VAV-01-N",
+        "VAV-02-N",
+        "VAV-03-N",
+        "VAV-04-N",
+        "VAV-01-W",
+        "VAV-02-W",
+        "VAV-03-W",
+        "VAV-04-W",
+        "VAV-01-E",
+        "VAV-02-E",
+        "VAV-01-S",
+        "VAV-02-S",
+        "VAV-03-S",
+        "VAV-04-S",
+        "VAV-05-S"
+      ]
+    },
+    "AHU-04": {
+      "csv_object": "CSV4",
+      "vavs": [
+        "VAV-01-N",
+        "VAV-02-N",
+        "VAV-01-E",
+        "VAV-02-E",
+        "VAV-01-S",
+        "VAV-02-S",
+        "VAV-03-S",
+        "VAV-01-W",
+        "VAV-02-W",
+        "VAV-03-W",
+        "VAV-04-W"
+      ]
+    },
+    "AHU-05": {
+      "csv_object": "CSV5",
+      "vavs": [
+        "VAV-01-N",
+        "VAV-02-N",
+        "VAV-03-N",
+        "VAV-04-N",
+        "VAV-05-N",
+        "VAV-01-W",
+        "VAV-02-W",
+        "VAV-03-W",
+        "VAV-04-W",
+        "VAV-05-W"
+      ]
+    }
+  },
+  "dashboard_point_map": {
+    "ahu": {
+      "oa_t": "OAT",
+      "oa_rh": "OAH",
+      "sa_t": "SAT",
+      "sa_rh": "SAH",
+      "ma_t": "MAT",
+      "ma_rh": "MAH"
+    },
+    "vav": {
+      "zone_t": "t",
+      "zone_rh": "rh"
+    }
+  }
+};
+
             // Empty shell used only when no master can be loaded.
             const emptyCollectorShell = () => ({
                 version: '1.1',
@@ -2378,11 +2486,54 @@
                 setTimeout(() => URL.revokeObjectURL(url), 1500);
             };
 
-            // Export FULL master collector_config.json (no open-file dialog):
-            // 1) load master from controller GET /api/collector-config
-            // 2) patch AHUs from the current floor into that master
-            // 3) download collector_config.json immediately
-            // Fallback: if controller has no master, then ask to pick a file once.
+            const cloneCollector = (cfg) => JSON.parse(JSON.stringify(cfg || {}));
+
+            // Build the real plant master:
+            // - If live controller config has at least as many AHUs as the full-plant
+            //   template, trust live.
+            // - Otherwise start from FULL_PLANT_COLLECTOR_TEMPLATE and overlay live
+            //   csv_object / mock_mode (so a wiped Floor-1-only controller master
+            //   cannot shrink the export).
+            const resolveFullPlantMaster = (liveCfg) => {
+                const template = cloneCollector(FULL_PLANT_COLLECTOR_TEMPLATE);
+                const live = liveCfg && typeof liveCfg === 'object' ? liveCfg : {};
+                const liveGroups = live.ahu_groups || {};
+                const tmplGroups = template.ahu_groups || {};
+                const liveCount = Object.keys(liveGroups).length;
+                const tmplCount = Object.keys(tmplGroups).length;
+
+                if (liveCount >= tmplCount && liveCount > 0) {
+                    return { master: cloneCollector(live), source: 'controller', liveCount, tmplCount };
+                }
+
+                const master = cloneCollector(template);
+                if (live.mock_mode != null) master.mock_mode = live.mock_mode;
+                if (live.interval != null) master.interval = live.interval;
+                if (live.version) master.version = live.version;
+                if (live.dashboard_point_map) master.dashboard_point_map = live.dashboard_point_map;
+
+                Object.entries(liveGroups).forEach(([ahu, grp]) => {
+                    if (!master.ahu_groups[ahu]) {
+                        master.ahu_groups[ahu] = { ...grp };
+                        return;
+                    }
+                    const csv = (grp && grp.csv_object) || '';
+                    // Keep real BACnet IDs (CSV1); ignore mapper auto names (CSV_AHU01)
+                    if (csv && !/^CSV_AHU/i.test(csv)) {
+                        master.ahu_groups[ahu].csv_object = csv;
+                    }
+                });
+
+                return {
+                    master,
+                    source: liveCount === 0 ? 'full-plant-template' : 'template+controller-overlay',
+                    liveCount,
+                    tmplCount,
+                };
+            };
+
+            // Export FULL master collector_config.json:
+            // full plant baseline + current-floor AHU patch → download.
             const exportCollectorConfig = async () => {
                 if (!floorPlans.length) {
                     toast('Add a floor plan and place AHU/VAV markers first.');
@@ -2412,49 +2563,39 @@
                     return;
                 }
 
-                toast(`Loading master collector_config.json…`);
-                let { cfg: master, source } = await fetchMasterCollectorConfig();
-                let beforeAhus = Object.keys(master.ahu_groups || {}).length;
-
-                if (beforeAhus === 0) {
-                    toast(
-                        `No master on controller.\n` +
-                        `Pick your full-plant collector_config.json once (fallback).`
-                    );
-                    const picked = await pickCollectorConfigFile();
-                    if (!picked || !Object.keys(picked.ahu_groups || {}).length) {
-                        toast('Export cancelled — controller has no master and no file was selected.');
-                        return;
-                    }
-                    master = picked;
-                    source = 'file';
-                    beforeAhus = Object.keys(master.ahu_groups).length;
-                }
+                toast('Building full-plant master collector_config.json…');
+                const { cfg: live } = await fetchMasterCollectorConfig();
+                const { master, source, liveCount, tmplCount } = resolveFullPlantMaster(live);
+                const beforeAhus = Object.keys(master.ahu_groups || {}).length;
 
                 const { merged, updatedAhus } = mergeFloorIntoMasterCollector(master, floorPatch, floorOnly);
+
+                // Prefer template/real csv_object over auto CSV_AHU* from the floor patch
+                updatedAhus.forEach((ahu) => {
+                    const tmplCsv = (FULL_PLANT_COLLECTOR_TEMPLATE.ahu_groups[ahu] || {}).csv_object;
+                    const cur = merged.ahu_groups[ahu];
+                    if (!cur) return;
+                    if (tmplCsv && (!cur.csv_object || /^CSV_AHU/i.test(cur.csv_object))) {
+                        cur.csv_object = tmplCsv;
+                    }
+                });
+
                 const afterAhus = Object.keys(merged.ahu_groups || {}).length;
                 const masterVavCount = Object.values(merged.ahu_groups).reduce((s, g) => s + (g.vavs || []).length, 0);
-
-                if (afterAhus < beforeAhus) {
-                    toast('Merge error: AHU count dropped. Export aborted.');
-                    return;
-                }
 
                 downloadJsonFile(merged, 'collector_config.json');
 
                 const notes = [
-                    `Downloaded collector_config.json (full master).`,
-                    `Source: ${source}. AHUs: ${beforeAhus} → ${afterAhus}.`,
-                    `Updated from "${floorName}": ${updatedAhus.join(', ')}.`,
+                    `Downloaded collector_config.json — FULL plant master (${afterAhus} AHUs).`,
+                    `Baseline: ${source} (controller had ${liveCount}, template has ${tmplCount}).`,
+                    `Patched from "${floorName}": ${updatedAhus.join(', ')}.`,
                     `VAVs in file: ${masterVavCount}.`,
                 ];
+                if (liveCount > 0 && liveCount < tmplCount) {
+                    notes.push(`Controller master was truncated (${liveCount} AHUs) — restored AHU-03+ from full-plant template.`);
+                }
                 if (skipped) notes.push(`${skipped} unnamed marker(s) skipped.`);
                 if (orphans.length) notes.push(`Orphan VAVs: ${orphans.join(', ')}`);
-                if (beforeAhus <= updatedAhus.length) {
-                    notes.push(
-                        `Note: master only had ${beforeAhus} AHU(s). If the plant has more, restore the full master on the controller first.`
-                    );
-                }
                 toast(notes.join('\n'));
             };
 
@@ -2561,20 +2702,19 @@
                     ahu_id: m.ahu_id || '',
                     id: m.id,
                 }));
-                let { cfg: master, source } = await fetchMasterCollectorConfig();
-                let masterCount = Object.keys(master.ahu_groups || {}).length;
-                if (masterCount === 0) {
-                    toast('No master collector_config on controller — pick the full-plant master file to merge into.');
-                    const picked = await pickCollectorConfigFile();
-                    if (!picked || !Object.keys(picked.ahu_groups || {}).length) {
-                        toast('Save cancelled — need an existing master collector_config.json.');
-                        return;
-                    }
-                    master = picked;
-                    source = 'file';
-                    masterCount = Object.keys(master.ahu_groups).length;
-                }
+                const { cfg: live } = await fetchMasterCollectorConfig();
+                const resolved = resolveFullPlantMaster(live);
+                let master = resolved.master;
+                let source = resolved.source;
                 const { merged, updatedAhus } = mergeFloorIntoMasterCollector(master, collectorConfigData, allMarkers);
+                // Restore CSV1..CSV5 if floor patch wrote CSV_AHU*
+                updatedAhus.forEach((ahu) => {
+                    const tmplCsv = (FULL_PLANT_COLLECTOR_TEMPLATE.ahu_groups[ahu] || {}).csv_object;
+                    const cur = merged.ahu_groups[ahu];
+                    if (cur && tmplCsv && (!cur.csv_object || /^CSV_AHU/i.test(cur.csv_object))) {
+                        cur.csv_object = tmplCsv;
+                    }
+                });
                 const ahuCount = Object.keys(merged.ahu_groups).length;
                 const vavCount = Object.values(merged.ahu_groups).reduce((s, g) => s + (g.vavs || []).length, 0);
 

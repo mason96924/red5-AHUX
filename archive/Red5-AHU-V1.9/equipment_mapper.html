@@ -1726,12 +1726,20 @@
 
             const exportConfig = () => {
                 const schemaData = schema;
-                
-                // Check if deployment path is set
+
+                function downloadToBuffer() {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(schemaData, null, 2));
+                    const downloadAnchorNode = document.createElement('a');
+                    downloadAnchorNode.setAttribute("href", dataStr);
+                    downloadAnchorNode.setAttribute("download", "equipment_types.json");
+                    document.body.appendChild(downloadAnchorNode);
+                    downloadAnchorNode.click();
+                    downloadAnchorNode.remove();
+                }
+
+                // Always also download to the browser PC Downloads folder.
                 if (deploymentPath && deploymentPath.trim()) {
-                    // Save to server via backend API
                     const apiUrl = window.API_BASE_URL || '';
-                    
                     fetch(`${apiUrl}/api/save-equipment-schema`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1742,39 +1750,25 @@
                     })
                     .then(res => res.json())
                     .then(data => {
+                        downloadToBuffer();
                         if (data.success) {
                             // V1.9: dual-write site + configs. V2.0 demo may return virtual path.
                             const files = (data.files && data.files.length)
                                 ? data.files.join('\n')
                                 : data.file;
-                            toast(`Equipment schema saved to:\n\n${files}`);
+                            toast(`Equipment schema saved to:\n\n${files}\n\n+ downloaded to this PC (Downloads).`);
                         } else if (data.warning) {
-                            // Anonymous V2.0 demo: cleanly fall back to browser download
-                            // with a friendly message -- no scary "error" wording.
-                            toast(data.warning + '\n\nFalling back to browser download...');
-                            downloadToBuffer();
+                            toast(data.warning + '\n\nDownloaded to this PC (Downloads).');
                         } else {
                             throw new Error(data.error || 'Save failed');
                         }
                     })
                     .catch(err => {
-                        toast(`Error saving to server:\n\n${err.message}\n\nFalling back to browser download...`);
-                        // Fallback to browser download
                         downloadToBuffer();
+                        toast(`Error saving to server:\n\n${err.message}\n\nDownloaded to this PC (Downloads) instead.`);
                     });
                 } else {
-                    // No deployment path - download to browser
                     downloadToBuffer();
-                }
-                
-                function downloadToBuffer() {
-                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(schemaData, null, 2));
-                    const downloadAnchorNode = document.createElement('a');
-                    downloadAnchorNode.setAttribute("href", dataStr);
-                    downloadAnchorNode.setAttribute("download", "equipment_types.json");
-                    document.body.appendChild(downloadAnchorNode);
-                    downloadAnchorNode.click();
-                    downloadAnchorNode.remove();
                 }
             };
 
@@ -5532,25 +5526,16 @@
                             {/* END EQUIPMENT/MAP/POINTS MODE */}
                         </div>
 
-                        {/* Bottom Action Buttons - 3-button row when in Equipment mode
-                            (Save Clean Template + Save Working File + Save to Controller),
-                            single button when in Map mode.  Replaces the old 2-button
-                            row that lived under Load Schema/Asset + the original solo
-                            bottom Save-to-Controller button. */}
+                        {/* Bottom Action Buttons - Equipment mode: Clean Tpl + Controller.
+                            Map mode keeps its own 3-button row. */}
                         <div className="px-6 pb-6 mt-auto shrink-0">
                             {configMode === 'equipment' && (
-                            <div className="grid grid-cols-3 gap-1.5">
+                            <div className="grid grid-cols-2 gap-1.5">
                                 <button onClick={exportCleanJSON}
                                         title={deploymentPath ? t('save_clean_template') : t('export_clean_json')}
                                         data-testid="sb-save-clean-btn"
                                         className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-emerald-700 text-emerald-300 hover:text-emerald-200 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all">
                                     Clean Tpl
-                                </button>
-                                <button onClick={exportConfig}
-                                        title={deploymentPath ? t('save_working_file') : t('download_current')}
-                                        data-testid="sb-save-working-btn"
-                                        className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all">
-                                    Working
                                 </button>
                                 <button onClick={exportConfig}
                                         title={deploymentPath ? t('save_to_controller') : t('download_to_browser')}

@@ -39,7 +39,7 @@
 
     /* ── HVAC Core Terms ── */
     ahu_diagnostic_hub:    ['AHU Diagnostic Hub','空调机组诊断中心','空調機組診斷中心','空調機診断ハブ','공조기 진단 허브'],
-    by_delta_controls:     ['by Delta Controls','by Delta Controls','by Delta Controls','by Delta Controls','by Delta Controls'],
+    by_delta_controls:     ['By DIBT','By DIBT','By DIBT','By DIBT','By DIBT'],
     oa:                    ['OA','新风','外氣','外気','외기'],
     sa:                    ['SA','送风','送風','給気','급기'],
     ra:                    ['RA','回风','回風','還気','환기'],
@@ -62,6 +62,7 @@
     natural_ventilation:   ['Natural Ventilation','自然通风','自然通風','自然換気','자연 환기'],
     evaporative:           ['Evaporative','蒸发冷却','蒸發冷卻','蒸発冷却','증발 냉각'],
     rh_sweet_spot:         ['40-60% RH','40-60% 相对湿度','40-60% 相對濕度','40-60% 相対湿度','40-60% 상대습도'],
+
     /* ── Mixed air (MA) + mixing-box cross-checks ── */
     mixed_air:             ['Mixed Air','混合空气','混合空氣','混合空気','혼합 공기'],
     oa_fraction:           ['OA fraction','新风比例','新風比例','外気混合率','외기 비율'],
@@ -164,7 +165,10 @@
     save_json:              ['Save JSON','保存 JSON','儲存 JSON','JSON 保存','JSON 저장'],
     load_json:              ['Load JSON','加载 JSON','載入 JSON','JSON 読込','JSON 불러오기'],
     save_to_controller:     ['Save to Virtual Controller','保存到虚拟控制器','儲存至虛擬控制器','仮想コントローラに保存','가상 컨트롤러에 저장'],
+    save_to_controller_short: ['Save → Controller','保存→控制器','儲存→控制器','保存→コントローラ','저장→컨트롤러'],
     download_to_browser:    ['Download to Browser','下载到浏览器','下載到瀏覽器','ブラウザにDL','브라우저에 다운로드'],
+    export_collector_config: ['Export collector_config.json from floor markers','从平面图导出 collector_config.json','從平面圖匯出 collector_config.json','フロアから collector_config.json をエクスポート','평면도에서 collector_config.json 내보내기'],
+    export_collector_config_short: ['Export Collector','导出采集配置','匯出採集配置','Collector出力','Collector 내보내기'],
     upload_image:           ['Upload Image','上传图片','上傳圖片','画像アップロード','이미지 업로드'],
     change_image:           ['Change Image','更换图片','更換圖片','画像を変更','이미지 변경'],
     file_browser:           ['File Browser','文件浏览器','檔案瀏覽器','ファイルブラウザ','파일 브라우저'],

@@ -2155,89 +2155,114 @@
                 if (draggingWindowId === windowId) setDraggingWindowId(null);
             };
 
-            const exportMapConfig = () => {
-                // Also generate collector_config.json from floor markers
-                const generateCollectorConfig = (markers) => {
-                    const groups = {};
-                    const orphanVavs = [];
+            // Build collector_config.json from floor-plan AHU/VAV markers.
+            // Shared by Save-to-Controller and the dedicated Export button.
+            const generateCollectorConfig = (markers) => {
+                const groups = {};
+                const orphanVavs = [];
 
-                    // Group markers by floor, dedup within each floor only
-                    const byFloor = {};
-                    markers.forEach(m => {
-                        if (!m.name) return;
-                        const fi = m.floorIdx !== undefined ? m.floorIdx : -1;
-                        if (!byFloor[fi]) byFloor[fi] = { ahus: [], vavs: [] };
-                        const name = m.name.trim();
-                        if (m.type === 'ahu' && !byFloor[fi].ahus.includes(name)) byFloor[fi].ahus.push(name);
-                        if (m.type === 'vav' && !byFloor[fi].vavs.includes(name)) byFloor[fi].vavs.push(name);
-                    });
+                // Group markers by floor, dedup within each floor only
+                const byFloor = {};
+                markers.forEach(m => {
+                    if (!m.name) return;
+                    const fi = m.floorIdx !== undefined ? m.floorIdx : -1;
+                    if (!byFloor[fi]) byFloor[fi] = { ahus: [], vavs: [] };
+                    const name = m.name.trim();
+                    if (m.type === 'ahu' && !byFloor[fi].ahus.includes(name)) byFloor[fi].ahus.push(name);
+                    if (m.type === 'vav' && !byFloor[fi].vavs.includes(name)) byFloor[fi].vavs.push(name);
+                });
 
-                    const getOrientation = (name) => {
-                        const m = name.match(/[-_]([ESWN])$/i);
-                        return m ? m[1].toUpperCase() : null;
-                    };
-
-                    // Process each floor independently
-                    // VAV names are NOT globally unique — same name on different floors = different box
-                    Object.keys(byFloor).sort((a, b) => a - b).forEach(fi => {
-                        const floor = byFloor[fi];
-
-                        // Create AHU groups
-                        floor.ahus.forEach(ahuName => {
-                            if (!groups[ahuName]) {
-                                const csvObj = 'CSV_' + ahuName.replace(/[-\s]/g, '');
-                                groups[ahuName] = { csv_object: csvObj, vavs: [] };
-                            }
-                        });
-
-                        if (floor.ahus.length === 0) {
-                            floor.vavs.forEach(v => orphanVavs.push(v));
-                            return;
-                        }
-
-                        floor.vavs.forEach(v => {
-                            if (floor.ahus.length === 1) {
-                                // Single AHU on floor — all VAVs go to it
-                                groups[floor.ahus[0]].vavs.push(v);
-                            } else {
-                                // Multi-AHU floor — match by E/S/W/N orientation
-                                const vOrient = getOrientation(v);
-                                let matched = false;
-                                if (vOrient) {
-                                    for (const ahuName of floor.ahus) {
-                                        if (getOrientation(ahuName) === vOrient) {
-                                            groups[ahuName].vavs.push(v);
-                                            matched = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (!matched) {
-                                    groups[floor.ahus[0]].vavs.push(v);
-                                }
-                            }
-                        });
-                    });
-
-                    if (orphanVavs.length > 0) {
-                        console.warn('Orphaned VAVs (no AHU on their floor):', orphanVavs);
-                    }
-
-                    // Final dedup within each AHU
-                    Object.keys(groups).forEach(a => { groups[a].vavs = [...new Set(groups[a].vavs)]; });
-
-                    return {
-                        version: '1.1',
-                        interval: 5,
-                        ahu_groups: groups,
-                        dashboard_point_map: {
-                            ahu: { oa_t: 'OAT', oa_rh: 'OAH', sa_t: 'SAT', sa_rh: 'SAH' },
-                            vav: { zone_t: 't', zone_rh: 'rh' }
-                        }
-                    };
+                const getOrientation = (name) => {
+                    const m = name.match(/[-_]([ESWN])$/i);
+                    return m ? m[1].toUpperCase() : null;
                 };
 
+                // Process each floor independently
+                // VAV names are NOT globally unique — same name on different floors = different box
+                Object.keys(byFloor).sort((a, b) => a - b).forEach(fi => {
+                    const floor = byFloor[fi];
 
+                    // Create AHU groups
+                    floor.ahus.forEach(ahuName => {
+                        if (!groups[ahuName]) {
+                            const csvObj = 'CSV_' + ahuName.replace(/[-\s]/g, '');
+                            groups[ahuName] = { csv_object: csvObj, vavs: [] };
+                        }
+                    });
+
+                    if (floor.ahus.length === 0) {
+                        floor.vavs.forEach(v => orphanVavs.push(v));
+                        return;
+                    }
+
+                    floor.vavs.forEach(v => {
+                        if (floor.ahus.length === 1) {
+                            // Single AHU on floor — all VAVs go to it
+                            groups[floor.ahus[0]].vavs.push(v);
+                        } else {
+                            // Multi-AHU floor — match by E/S/W/N orientation
+                            const vOrient = getOrientation(v);
+                            let matched = false;
+                            if (vOrient) {
+                                for (const ahuName of floor.ahus) {
+                                    if (getOrientation(ahuName) === vOrient) {
+                                        groups[ahuName].vavs.push(v);
+                                        matched = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!matched) {
+                                groups[floor.ahus[0]].vavs.push(v);
+                            }
+                        }
+                    });
+                });
+
+                if (orphanVavs.length > 0) {
+                    console.warn('Orphaned VAVs (no AHU on their floor):', orphanVavs);
+                }
+
+                // Final dedup within each AHU
+                Object.keys(groups).forEach(a => { groups[a].vavs = [...new Set(groups[a].vavs)]; });
+
+                return {
+                    version: '1.1',
+                    interval: 5,
+                    mock_mode: true,
+                    ahu_groups: groups,
+                    dashboard_point_map: {
+                        ahu: { oa_t: 'OAT', oa_rh: 'OAH', sa_t: 'SAT', sa_rh: 'SAH' },
+                        vav: { zone_t: 't', zone_rh: 'rh' }
+                    }
+                };
+            };
+
+            // Download-only: collector_config.json from current floor markers
+            const exportCollectorConfig = () => {
+                if (!floorPlans.length) {
+                    toast('Add a floor plan and place AHU/VAV markers first.');
+                    return;
+                }
+                const allMarkersWithFloor = floorMarkers.map(m => ({ type: m.type, name: m.name, floorIdx: m.floorIdx }));
+                const collectorConfigData = generateCollectorConfig(allMarkersWithFloor);
+                const ahuCount = Object.keys(collectorConfigData.ahu_groups).length;
+                const vavCount = Object.values(collectorConfigData.ahu_groups).reduce((s, g) => s + g.vavs.length, 0);
+                if (ahuCount === 0) {
+                    toast('No AHU markers found — place at least one AHU on the floor plan.');
+                    return;
+                }
+                const collStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(collectorConfigData, null, 2));
+                const collAnchor = document.createElement('a');
+                collAnchor.setAttribute("href", collStr);
+                collAnchor.setAttribute("download", "collector_config.json");
+                document.body.appendChild(collAnchor);
+                collAnchor.click();
+                collAnchor.remove();
+                toast(`Downloaded collector_config.json (${ahuCount} AHUs, ${vavCount} VAVs).\nCopy to /root/data/configs/ on the controller if needed.`);
+            };
+
+            const exportMapConfig = () => {
                 // Prepare data
                 const mapConfigData = {
                     version: "1.1",
@@ -5078,9 +5103,20 @@
                             </div>
                             )}
                             {configMode === 'map' && floorPlans.length > 0 && (
-                            <button onClick={exportMapConfig} data-testid="sb-save-map-btn" className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-black text-[11px] uppercase tracking-[0.2em] rounded-xl shadow-lg active:scale-95 transition-all shadow-blue-500/20">
-                                {deploymentPath ? t('save_to_controller') : t('download_to_browser')}
-                            </button>
+                            <div className="grid grid-cols-2 gap-1.5">
+                                <button onClick={exportCollectorConfig}
+                                        title={t('export_collector_config')}
+                                        data-testid="sb-export-collector-btn"
+                                        className="py-3.5 bg-slate-800 hover:bg-slate-700 border border-cyan-700 text-cyan-300 hover:text-cyan-200 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all active:scale-95">
+                                    {t('export_collector_config_short')}
+                                </button>
+                                <button onClick={exportMapConfig}
+                                        title={deploymentPath ? t('save_to_controller') : t('download_to_browser')}
+                                        data-testid="sb-save-map-btn"
+                                        className="py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black text-[9px] uppercase tracking-wider shadow-lg active:scale-95 transition-all shadow-blue-500/20">
+                                    {deploymentPath ? t('save_to_controller_short') : t('download_to_browser')}
+                                </button>
+                            </div>
                             )}
                         </div>
                     </div>

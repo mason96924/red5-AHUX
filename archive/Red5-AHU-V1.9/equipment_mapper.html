@@ -2366,10 +2366,23 @@
                 return { merged: out, updatedAhus: updated };
             };
 
-            // Export FULL master collector_config.json:
-            // 1) user picks existing master file (full plant)
+            const downloadJsonFile = (obj, filename) => {
+                const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+            };
+
+            // Export FULL master collector_config.json (no open-file dialog):
+            // 1) load master from controller GET /api/collector-config
             // 2) patch AHUs from the current floor into that master
-            // 3) download the complete updated master (never a floor-only fragment)
+            // 3) download collector_config.json immediately
+            // Fallback: if controller has no master, then ask to pick a file once.
             const exportCollectorConfig = async () => {
                 if (!floorPlans.length) {
                     toast('Add a floor plan and place AHU/VAV markers first.');
@@ -2399,19 +2412,23 @@
                     return;
                 }
 
-                toast(
-                    `Select your MASTER collector_config.json (full plant file).\n` +
-                    `Will update: ${updatedNames.join(', ')} from "${floorName}", keep all other AHUs.`
-                );
-                const master = await pickCollectorConfigFile();
-                if (!master || !master.ahu_groups) {
-                    toast('Export cancelled — pick the full-plant master collector_config.json first.');
-                    return;
-                }
-                const beforeAhus = Object.keys(master.ahu_groups || {}).length;
+                toast(`Loading master collector_config.json…`);
+                let { cfg: master, source } = await fetchMasterCollectorConfig();
+                let beforeAhus = Object.keys(master.ahu_groups || {}).length;
+
                 if (beforeAhus === 0) {
-                    toast('That file has no ahu_groups. Pick the full master collector_config.json.');
-                    return;
+                    toast(
+                        `No master on controller.\n` +
+                        `Pick your full-plant collector_config.json once (fallback).`
+                    );
+                    const picked = await pickCollectorConfigFile();
+                    if (!picked || !Object.keys(picked.ahu_groups || {}).length) {
+                        toast('Export cancelled — controller has no master and no file was selected.');
+                        return;
+                    }
+                    master = picked;
+                    source = 'file';
+                    beforeAhus = Object.keys(master.ahu_groups).length;
                 }
 
                 const { merged, updatedAhus } = mergeFloorIntoMasterCollector(master, floorPatch, floorOnly);
@@ -2423,24 +2440,20 @@
                     return;
                 }
 
-                const collStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(merged, null, 2));
-                const collAnchor = document.createElement('a');
-                collAnchor.setAttribute("href", collStr);
-                collAnchor.setAttribute("download", "collector_config.json");
-                document.body.appendChild(collAnchor);
-                collAnchor.click();
-                collAnchor.remove();
+                downloadJsonFile(merged, 'collector_config.json');
 
                 const notes = [
-                    `Downloaded FULL master collector_config.json.`,
-                    `Master AHUs: ${beforeAhus} → ${afterAhus} (kept all).`,
+                    `Downloaded collector_config.json (full master).`,
+                    `Source: ${source}. AHUs: ${beforeAhus} → ${afterAhus}.`,
                     `Updated from "${floorName}": ${updatedAhus.join(', ')}.`,
-                    `Total VAVs in master: ${masterVavCount}.`,
+                    `VAVs in file: ${masterVavCount}.`,
                 ];
                 if (skipped) notes.push(`${skipped} unnamed marker(s) skipped.`);
                 if (orphans.length) notes.push(`Orphan VAVs: ${orphans.join(', ')}`);
-                if (afterAhus === updatedAhus.length && beforeAhus === updatedAhus.length) {
-                    notes.push(`Warning: the file you picked only had these AHUs. If the plant has more, pick the full master.`);
+                if (beforeAhus <= updatedAhus.length) {
+                    notes.push(
+                        `Note: master only had ${beforeAhus} AHU(s). If the plant has more, restore the full master on the controller first.`
+                    );
                 }
                 toast(notes.join('\n'));
             };
@@ -5359,12 +5372,12 @@
                                     </span>
                                 </button>
                                 <button onClick={exportCollectorConfig}
-                                        title={t('export_collector_config')}
+                                        title="Download full master collector_config.json (this floor AHUs updated)"
                                         data-testid="sb-export-collector-btn"
                                         className="py-3.5 bg-slate-800 hover:bg-slate-700 border border-cyan-700 text-cyan-300 hover:text-cyan-200 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all active:scale-95">
-                                    {t('export_collector_config_short')}
+                                    Export Master
                                     <span className="block text-[7px] font-bold normal-case tracking-normal opacity-70 mt-0.5">
-                                        full plant file
+                                        downloads .json
                                     </span>
                                 </button>
                                 <button onClick={exportMapConfig}

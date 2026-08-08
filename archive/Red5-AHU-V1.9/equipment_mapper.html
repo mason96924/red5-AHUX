@@ -2366,8 +2366,10 @@
                 return { merged: out, updatedAhus: updated };
             };
 
-            // Export the FULL master collector_config.json, with only the current
-            // floor's AHUs (e.g. Floor 1 → AHU-01, AHU-02) patched in.
+            // Export FULL master collector_config.json:
+            // 1) user picks existing master file (full plant)
+            // 2) patch AHUs from the current floor into that master
+            // 3) download the complete updated master (never a floor-only fragment)
             const exportCollectorConfig = async () => {
                 if (!floorPlans.length) {
                     toast('Add a floor plan and place AHU/VAV markers first.');
@@ -2397,33 +2399,29 @@
                     return;
                 }
 
-                let { cfg: master, source } = await fetchMasterCollectorConfig();
-                let masterCount = Object.keys(master.ahu_groups || {}).length;
-
-                // If the controller has no usable master, ask for the existing
-                // collector_config.json so we patch into THAT file — never export
-                // a floor-only fragment pretending to be the master.
-                if (masterCount === 0) {
-                    toast(
-                        `No master collector_config.json on the controller.\n` +
-                        `Choose your existing master file to update (${updatedNames.join(', ')} from "${floorName}").`
-                    );
-                    const picked = await pickCollectorConfigFile();
-                    if (!picked || !picked.ahu_groups || Object.keys(picked.ahu_groups).length === 0) {
-                        toast(
-                            `Export cancelled — need an existing master collector_config.json.\n` +
-                            `Pick the plant master file (with all AHUs), then Export Collector again.`
-                        );
-                        return;
-                    }
-                    master = picked;
-                    source = 'file';
-                    masterCount = Object.keys(master.ahu_groups || {}).length;
+                toast(
+                    `Select your MASTER collector_config.json (full plant file).\n` +
+                    `Will update: ${updatedNames.join(', ')} from "${floorName}", keep all other AHUs.`
+                );
+                const master = await pickCollectorConfigFile();
+                if (!master || !master.ahu_groups) {
+                    toast('Export cancelled — pick the full-plant master collector_config.json first.');
+                    return;
+                }
+                const beforeAhus = Object.keys(master.ahu_groups || {}).length;
+                if (beforeAhus === 0) {
+                    toast('That file has no ahu_groups. Pick the full master collector_config.json.');
+                    return;
                 }
 
                 const { merged, updatedAhus } = mergeFloorIntoMasterCollector(master, floorPatch, floorOnly);
                 const afterAhus = Object.keys(merged.ahu_groups || {}).length;
                 const masterVavCount = Object.values(merged.ahu_groups).reduce((s, g) => s + (g.vavs || []).length, 0);
+
+                if (afterAhus < beforeAhus) {
+                    toast('Merge error: AHU count dropped. Export aborted.');
+                    return;
+                }
 
                 const collStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(merged, null, 2));
                 const collAnchor = document.createElement('a');
@@ -2434,14 +2432,15 @@
                 collAnchor.remove();
 
                 const notes = [
-                    `Downloaded FULL master collector_config.json (${afterAhus} AHUs, ${masterVavCount} VAVs).`,
+                    `Downloaded FULL master collector_config.json.`,
+                    `Master AHUs: ${beforeAhus} → ${afterAhus} (kept all).`,
                     `Updated from "${floorName}": ${updatedAhus.join(', ')}.`,
-                    `All other AHUs unchanged. Master source: ${source}.`,
+                    `Total VAVs in master: ${masterVavCount}.`,
                 ];
-                if (skipped) notes.push(`${skipped} unnamed marker(s) on this floor were skipped.`);
-                if (orphans.length) notes.push(`Orphan VAV(s) with no AHU: ${orphans.join(', ')}`);
-                if (afterAhus === updatedAhus.length && source !== 'file') {
-                    notes.push(`Note: master only had these AHUs — if you expected more, pick a fuller master file next time.`);
+                if (skipped) notes.push(`${skipped} unnamed marker(s) skipped.`);
+                if (orphans.length) notes.push(`Orphan VAVs: ${orphans.join(', ')}`);
+                if (afterAhus === updatedAhus.length && beforeAhus === updatedAhus.length) {
+                    notes.push(`Warning: the file you picked only had these AHUs. If the plant has more, pick the full master.`);
                 }
                 toast(notes.join('\n'));
             };
@@ -2537,61 +2536,69 @@
                 toast(`Downloaded map_config.json (${floorCount} floor${floorCount === 1 ? '' : 's'}, ${markerCount} marker${markerCount === 1 ? '' : 's'}).`);
             };
 
-            const exportMapConfig = () => {
+            const exportMapConfig = async () => {
                 const { mapConfigData, imageManifest, collectorConfigData } = buildMapConfigPayload();
 
-                // Debug: show what was generated
-                const debugLines = ['Collector Config Generated:'];
-                Object.entries(collectorConfigData.ahu_groups).forEach(([ahu, grp]) => {
-                    debugLines.push(ahu + ' (' + grp.csv_object + '): ' + grp.vavs.length + ' VAVs');
-                    debugLines.push('  ' + grp.vavs.join(', '));
-                });
-                console.log(debugLines.join('\n'));
+                // Merge map-derived AHU groups into the EXISTING master — never replace
+                // the plant master with only the floors currently drawn in the mapper.
+                const allMarkers = floorMarkers.map(m => ({
+                    type: m.type,
+                    name: m.name,
+                    floorIdx: m.floorIdx,
+                    ahu_id: m.ahu_id || '',
+                    id: m.id,
+                }));
+                let { cfg: master, source } = await fetchMasterCollectorConfig();
+                let masterCount = Object.keys(master.ahu_groups || {}).length;
+                if (masterCount === 0) {
+                    toast('No master collector_config on controller — pick the full-plant master file to merge into.');
+                    const picked = await pickCollectorConfigFile();
+                    if (!picked || !Object.keys(picked.ahu_groups || {}).length) {
+                        toast('Save cancelled — need an existing master collector_config.json.');
+                        return;
+                    }
+                    master = picked;
+                    source = 'file';
+                    masterCount = Object.keys(master.ahu_groups).length;
+                }
+                const { merged, updatedAhus } = mergeFloorIntoMasterCollector(master, collectorConfigData, allMarkers);
+                const ahuCount = Object.keys(merged.ahu_groups).length;
+                const vavCount = Object.values(merged.ahu_groups).reduce((s, g) => s + (g.vavs || []).length, 0);
 
-                // Check if deployment path is set
                 if (deploymentPath && deploymentPath.trim()) {
                     const apiUrl = window.API_BASE_URL || '';
-
-                    // Save map_config + collector_config in parallel
-                    Promise.all([
-                        fetch(`${apiUrl}/api/save-config`, {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                deployment_path: deploymentPath,
-                                map_config: mapConfigData,
-                                image_manifest: imageManifest
-                            })
-                        }).then(r => r.json()),
-                        fetch(`${apiUrl}/api/collector-config`, {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(collectorConfigData)
-                        }).then(r => r.json())
-                    ])
-                    .then(([mapResult, collResult]) => {
+                    try {
+                        const [mapResult, collResult] = await Promise.all([
+                            fetch(`${apiUrl}/api/save-config`, {
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    deployment_path: deploymentPath,
+                                    map_config: mapConfigData,
+                                    image_manifest: imageManifest
+                                })
+                            }).then(r => r.json()),
+                            fetch(`${apiUrl}/api/collector-config`, {
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(merged)
+                            }).then(r => r.json())
+                        ]);
                         const msgs = [];
                         if (mapResult.success) msgs.push('map_config.json saved');
                         else msgs.push('map_config.json error: ' + (mapResult.error || 'Unknown'));
-                        if (collResult.success) msgs.push('collector_config.json saved');
+                        if (collResult.success) msgs.push('collector_config.json saved (merged into master)');
                         else msgs.push('collector_config.json error: ' + (collResult.error || 'Unknown'));
-
-                        const ahuCount = Object.keys(collectorConfigData.ahu_groups).length;
-                        const vavCount = Object.values(collectorConfigData.ahu_groups).reduce((s, g) => s + g.vavs.length, 0);
-                        msgs.push('\nCollector config: ' + ahuCount + ' AHUs, ' + vavCount + ' VAVs');
-                        Object.entries(collectorConfigData.ahu_groups).forEach(([ahu, grp]) => {
-                            msgs.push('  ' + ahu + ': ' + grp.vavs.length + ' VAVs [' + grp.vavs.join(', ') + ']');
-                        });
+                        msgs.push(`Master source: ${source}. AHUs in master: ${ahuCount} (updated: ${updatedAhus.join(', ') || 'none'}). VAVs: ${vavCount}.`);
                         toast(msgs.join('\n'));
-                    })
-                    .catch(err => {
+                    } catch (err) {
                         toast('Error saving: ' + err.message + '\n\nFalling back to browser download...');
-                        downloadToBrowser(mapConfigData, imageManifest, collectorConfigData);
-                    });
+                        downloadToBrowser(mapConfigData, imageManifest, merged);
+                    }
                 } else {
-                    downloadToBrowser(mapConfigData, imageManifest, collectorConfigData);
+                    downloadToBrowser(mapConfigData, imageManifest, merged);
                 }
             };
 
@@ -5357,7 +5364,7 @@
                                         className="py-3.5 bg-slate-800 hover:bg-slate-700 border border-cyan-700 text-cyan-300 hover:text-cyan-200 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all active:scale-95">
                                     {t('export_collector_config_short')}
                                     <span className="block text-[7px] font-bold normal-case tracking-normal opacity-70 mt-0.5">
-                                        master + {(floorPlans[currentFloorIdx]?.name) || `Floor ${currentFloorIdx + 1}`}
+                                        full plant file
                                     </span>
                                 </button>
                                 <button onClick={exportMapConfig}

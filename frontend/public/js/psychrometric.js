@@ -79,13 +79,18 @@ const buildComfortZonePoly = () => {
     return pts;
 };
 
-// Point-in-polygon (ray casting) — requires comfort zone polygon
+// Point-in-polygon (ray casting) — requires comfort zone polygon.
+// Hard T gate: Givoni CZ is built for 20–27 °C; anything colder/hotter
+// is outside regardless of polygon numerics (prevents false Comfort dots).
 const isInComfortZone = (t, w, poly) => {
+    const tt = Number(t);
+    if (!Number.isFinite(tt) || tt < 20 || tt > 27) return false;
+    if (!poly || !poly.length) return false;
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
         const xi = poly[i][0], yi = poly[i][1];
         const xj = poly[j][0], yj = poly[j][1];
-        if ((yi > w) !== (yj > w) && t < (xj - xi) * (w - yi) / (yj - yi) + xi) {
+        if ((yi > w) !== (yj > w) && tt < (xj - xi) * (w - yi) / (yj - yi) + xi) {
             inside = !inside;
         }
     }
@@ -241,14 +246,17 @@ const GIVONI_COLORS = {
     SWEET_STROKE: '#047857',  // inner sweet-spot stroke
     SWEET_FILL:   '#059669',  // inner sweet-spot polygon fill
     // Outer-tier quadrants per ASHRAE / Givoni convention.  Split by
-    // BOTH temperature (warm vs cool) AND humidity ratio (wet vs dry).
+    // BOTH temperature (warm vs cool) AND humidity (wet vs dry via RH).
     //
-    //                    W < ~9.3 g/kg (dry)   W >= ~9.3 g/kg (wet)
+    //                    RH < 50% (dry)          RH >= 50% (wet)
     //   T >= 23.5  (warm)  HOT_DRY  (red)        HOT_HUMID (orange)
-    //   T <  23.5  (cool)  COLD_DRY (deep-blue)  COOL_WET  (cyan)
+    //   T <  23.5  (cool)  COLD_DRY (deep-blue)  COOL_WET  (indigo)
+    //
+    // COOL_WET must NOT be teal/cyan — operators read teal next to
+    // emerald Comfort as "green / safe" (false positive on floor plan).
     HOT_HUMID:    '#f97316',  // C+H warm + moist  (cool + dehumidify)
     HOT_DRY:      '#ef4444',  // C+D warm + arid   (cool + humidify)
-    COOL_WET:     '#06b6d4',  // C-H cool + moist  (heat + dehumidify)
+    COOL_WET:     '#4f46e5',  // C-H cool + moist  (heat + dehumidify) — indigo, not teal
     COLD_DRY:     '#1d4ed8',  // C-D cool + arid   (heat + humidify)
     // Backward-compat aliases (older callers reference these names).
     HOT_OUTSIDE:  '#f97316',  // old name -> HOT_HUMID
@@ -306,10 +314,16 @@ const RH_WET_DRY_SPLIT = 50;   // %RH; midpoint of 40-60 comfort band
 // in lock-step across the UI.
 const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
     const _enabled = enabled !== false;  // default ON
-    const demand = getZoneDemand(t, w, comfortPoly);
-    const inCZ = demand.inCZ;
+    const tt = Number(t);
+    const rr = Number(rh);
+    const demand = getZoneDemand(tt, w, comfortPoly);
+    // Belt-and-suspenders: Comfort / Soft-trim never apply below 20 °C or
+    // above 27 °C even if a caller passes a bad polygon.
+    const inCZ = demand.inCZ && Number.isFinite(tt) && tt >= 20 && tt <= 27;
     const _ss = (_enabled && sweetSpot) ? sweetSpot : null;
-    const inSS = _ss ? (t >= 20 && t <= 27 && rh >= _ss.lo && rh <= _ss.hi) : inCZ;
+    const inSS = _ss
+        ? (tt >= 20 && tt <= 27 && Number.isFinite(rr) && rr >= _ss.lo && rr <= _ss.hi)
+        : inCZ;
 
     // Tier A — inner comfort band (CZ AND sweet-spot)
     if (inCZ && (!_ss || inSS)) {
@@ -329,7 +343,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
 
     // Tier B — outer Givoni band (CZ but outside sweet-spot)
     if (inCZ && _ss) {
-        const tooLow  = rh < _ss.lo;
+        const tooLow  = rr < _ss.lo;
         const strategy = tooLow ? 'TRIM_HUMIDIFY' : 'TRIM_DEHUMIDIFY';
         const subLabel = tooLow ? 'humidify (RH-only)' : 'dehumidify (RH-only)';
         return {
@@ -348,8 +362,8 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
     // Standard 55-2020 + 62.1-2022 conventions:
     //   warm/cool axis: T threshold = 23.5 C  (CZ centroid)
     //   wet/dry  axis: RH threshold = 50%      (midpoint of 40-60 band)
-    const hotSide = t >= 23.5;
-    const wetSide = rh >= RH_WET_DRY_SPLIT;
+    const hotSide = tt >= 23.5;
+    const wetSide = Number.isFinite(rr) ? (rr >= RH_WET_DRY_SPLIT) : false;
 
     if (hotSide && wetSide) {
         return {
@@ -360,7 +374,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
             strategy: 'COOL_DEHUMIDIFY',
             label: 'Hot/humid',
             subLabel: 'cool + dehumidify',
-            tooltip: ('Outside CZ - warm + humid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | cool + dehumidify'),
+            tooltip: ('Outside CZ - warm + humid (' + tt.toFixed(1) + ' C, ' + (Number.isFinite(rr) ? rr.toFixed(0) : '?') + '% RH) | cool + dehumidify'),
         };
     }
     if (hotSide && !wetSide) {
@@ -372,7 +386,7 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
             strategy: 'COOL_HUMIDIFY',
             label: 'Hot/dry',
             subLabel: 'cool + humidify',
-            tooltip: ('Outside CZ - warm + arid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | evaporative cool + humidify'),
+            tooltip: ('Outside CZ - warm + arid (' + tt.toFixed(1) + ' C, ' + (Number.isFinite(rr) ? rr.toFixed(0) : '?') + '% RH) | evaporative cool + humidify'),
         };
     }
     if (!hotSide && wetSide) {
@@ -380,11 +394,11 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
             tier: 'C-H',
             dotFill: GIVONI_COLORS.COOL_WET,
             dotOpacity: 1,
-            ringStroke: '#155e75',
+            ringStroke: '#312e81',
             strategy: 'HEAT_DEHUMIDIFY',
             label: 'Cool/humid',
             subLabel: 'heat + dehumidify',
-            tooltip: ('Outside CZ - cool + humid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | heat + dehumidify'),
+            tooltip: ('Outside CZ - cool + humid (' + tt.toFixed(1) + ' C, ' + (Number.isFinite(rr) ? rr.toFixed(0) : '?') + '% RH) | heat + dehumidify'),
         };
     }
     // !hotSide && !wetSide -- cool + arid (heated indoor air, winter)
@@ -396,6 +410,6 @@ const getGivoniTier = (t, w, rh, comfortPoly, sweetSpot, enabled) => {
         strategy: 'HEAT_HUMIDIFY',
         label: 'Cool/dry',
         subLabel: 'heat + humidify',
-        tooltip: ('Outside CZ - cool + arid (' + t.toFixed(1) + ' C, ' + rh.toFixed(0) + '% RH) | heat + humidify'),
+        tooltip: ('Outside CZ - cool + arid (' + tt.toFixed(1) + ' C, ' + (Number.isFinite(rr) ? rr.toFixed(0) : '?') + '% RH) | heat + humidify'),
     };
 };

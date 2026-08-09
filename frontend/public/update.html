@@ -864,6 +864,9 @@ function downloadBundle(mode) {
 }
 
 // ---------- Repair Mode (out-of-band single-file plug-in upload) ----------
+// Fallback list if /api/repair/manifest is absent (fresh / very old controller).
+// Prefer the live manifest (show_in_ui) when available so repair_manifest.json
+// and new plug-ins always appear without hand-editing this array.
 var REPAIR_FILES = [
     // -- Core plug-ins --
     {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status + Repair Mode', kind: 'plugin'},
@@ -879,6 +882,7 @@ var REPAIR_FILES = [
     {name: 'ws_bridge_service.py',      label: 'WebSocket Bridge',          desc: 'Push telemetry to live clients (needs websockets)',            kind: 'plugin'},
     {name: 'bacnet_diag_service.py',    label: 'BACnet Diagnose Service',   desc: '/api/bacnet/diagnose-config — detect name-based BACnet targets', kind: 'plugin'},
     // -- UI / static files --
+    {name: 'repair_manifest.json', label: 'repair_manifest.json', desc: 'Repair Mode allow-list + sha256 source of truth (replace this FIRST when hashes drift)', kind: 'ui'},
     {name: 'update.html',          label: 'update.html',       desc: 'This page (Repair Mode + Data Bridges UI)',       kind: 'ui'},
     {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
     {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
@@ -903,7 +907,7 @@ function _renderRepairList(){
         head.innerHTML = ''
             + '<span style="display:inline-block;padding:2px 6px;border-radius:3px;background:' + bg + ';color:' + color + ';font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">' + f.kind + '</span>'
             + '<span style="flex:1"><span style="color:#e2e8f0;font-size:12px;font-weight:700">' + f.name + '</span><span style="color:#64748b;font-size:10px;display:block;margin-top:1px">' + f.desc + '</span></span>'
-            + '<input type="file" accept=".py,.html" id="rf_' + safeId + '" style="display:none">'
+            + '<input type="file" accept=".py,.html,.md,.json,.js,.css,.txt" id="rf_' + safeId + '" style="display:none">'
             + '<button class="btn" data-act="pick" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em">Replace</button>'
             + (f.kind === 'plugin'
                 ? '<button class="btn" data-act="reload" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#312e81;color:#a5b4fc;border:1px solid #4338ca;text-transform:uppercase;letter-spacing:.05em" title="Hot-reload — re-imports the module without restarting Flask">Reload</button>'
@@ -922,6 +926,28 @@ function _renderRepairList(){
     });
     box.addEventListener('click', _onRepairClick);
     box.addEventListener('change', _onRepairFileChange);
+}
+
+function _loadRepairFilesFromManifest(done){
+    var base = (document.getElementById('serverUrl') && document.getElementById('serverUrl').value || '').replace(/\/$/, '');
+    if (!base) { if (done) done(); return; }
+    fetch(base + '/api/repair/manifest', {credentials: 'include'})
+        .then(function(r){ return r.json(); })
+        .then(function(m){
+            if (!m || m.absent || !Array.isArray(m.files)) { if (done) done(); return; }
+            var rows = m.files.filter(function(e){ return e && e.show_in_ui !== false && e.name; })
+                .map(function(e){
+                    return {
+                        name: e.name,
+                        label: e.label || e.name,
+                        desc: e.desc || '',
+                        kind: e.kind === 'plugin' ? 'plugin' : 'ui',
+                    };
+                });
+            if (rows.length) REPAIR_FILES = rows;
+            if (done) done();
+        })
+        .catch(function(){ if (done) done(); });
 }
 
 function _showFreshBadge(name, newEndpoints){
@@ -1076,7 +1102,14 @@ function _doRepairUpload(name, file){
             status.textContent = 'Network error: ' + err.message;
         });
 }
-_renderRepairList();
+_loadRepairFilesFromManifest(function(){ _renderRepairList(); });
+// Also re-render after controller URL is tested/changed (best-effort).
+(function(){
+    var btn = document.getElementById('testBtn');
+    if (btn) btn.addEventListener('click', function(){
+        setTimeout(function(){ _loadRepairFilesFromManifest(function(){ _renderRepairList(); }); }, 400);
+    });
+})();
 
 // ---------- Data Bridges UI ----------
 var BRIDGE_DEFS = [

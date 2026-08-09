@@ -137,8 +137,10 @@ function renderPsyChartSvg(ctx) {
                                     {ahuDiag.process === 'heating' ? 'HTG' : ahuDiag.process === 'cooling' ? 'CLG' : 'IDLE'}
                                 </span>
                                 <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}
-                                      title={activeSweet ? `${ahuDiag.inCZCount}/${ahuDiag.totalVavs} VAVs inside Givoni CZ AND ${activeSweet.lo}-${activeSweet.hi}% RH` : `${ahuDiag.inCZCount}/${ahuDiag.totalVavs} VAVs inside Givoni CZ`}>
-                                    {ahuDiag.comfortPct}% {activeSweet ? 'CZ' + String.fromCharCode(0x2229) + 'SS' : 'CZ'}
+                                      title={activeSweet
+                                          ? `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ AND RH ${activeSweet.lo}–${activeSweet.hi}%`
+                                          : `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ`}>
+                                    {ahuDiag.comfortPct}% ({ahuDiag.inCZCount}/{ahuDiag.totalVavs}) {activeSweet ? 'CZ∩SS' : 'CZ'}
                                 </span>
                             </div>
                         )}

@@ -129,10 +129,12 @@ function classifyMaFault(mixing, opts) {
  * tracks what the process mini-badge already shows geometrically. */
 const RED5_MA_LINE_TOL_GKG = 1.0;
 const RED5_MA_CLOSE_LINE_TOL_GKG = 0.2; /* when OA≈RA / no stable f_t */
+const RED5_MA_CHORD_FRAC_TOL = 0.08; /* |perp|/|OA–RA| — matches auto-zoom visuals */
 const RED5_MA_TEMP_LINE_TOL_C = 0.5;
 const RED5_MA_MAT_RANGE_TOL_C = 0.3;
 const RED5_MA_MIN_DT_C = 2.0;
 const RED5_MA_MIN_DW = 1.0e-4;
+const RED5_MA_DAMPER_TOL = 0.20;
 
 function red5ChordWResidualGkg(oa, ra, ma) {
     const ax = Number(oa.t), ay = Number(oa.w) * 1000;
@@ -146,11 +148,31 @@ function red5ChordWResidualGkg(oa, ra, ma) {
     return cy - (ay + t * aby);
 }
 
+function red5ChordOffFraction(oa, ra, ma) {
+    const ax = Number(oa.t), ay = Number(oa.w) * 1000;
+    const bx = Number(ra.t), by = Number(ra.w) * 1000;
+    const cx = Number(ma.t), cy = Number(ma.w) * 1000;
+    if (![ax, ay, bx, by, cx, cy].every(Number.isFinite)) return null;
+    const abx = bx - ax, aby = by - ay;
+    const ab2 = abx * abx + aby * aby;
+    if (ab2 < 1e-12) return null;
+    const cross = abx * (cy - ay) - aby * (cx - ax);
+    return Math.abs(cross) / ab2;
+}
+
+function red5ReadOadFraction(ahu) {
+    const ap = (ahu && ahu.all_points) || {};
+    const raw = ap.OAD != null ? ap.OAD : (ap.oa_damper != null ? ap.oa_damper : null);
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.min(1, n / 100));
+}
+
 function clientMaMixingFromPoints(ahu) {
     const by = {};
     (ahu && ahu.points || []).forEach((p) => { if (p && p.label) by[p.label] = p; });
     const oa = by.OA, ra = by.RA, ma = by.MA;
-    const empty = { flags: [], line_deviation_g_kg: null, damper_mismatch: null, oa_fraction_damper: null };
+    const empty = { flags: [], line_deviation_g_kg: null, damper_mismatch: null, oa_fraction_damper: null, chord_off_fraction: null };
     if (!oa || !ra || !ma) return empty;
     /* Derived MA is forced onto the chord — geometry alone cannot fault it. */
     if (ma.derived === true) return empty;
@@ -173,6 +195,7 @@ function clientMaMixingFromPoints(ahu) {
 
     let deviation = null;
     let lineTol = RED5_MA_LINE_TOL_GKG;
+    let fMeas = fT != null ? fT : fW;
     if (fT != null) {
         const f = Math.max(0, Math.min(1, fT));
         deviation = (wMa - (f * wOa + (1 - f) * wRa)) * 1000;
@@ -191,19 +214,29 @@ function clientMaMixingFromPoints(ahu) {
         && flags.indexOf('off_mixing_line') < 0) {
         flags.push('off_mixing_line');
     }
+    const frac = red5ChordOffFraction(oa, ra, ma);
+    if (frac != null && frac > RED5_MA_CHORD_FRAC_TOL
+        && flags.indexOf('off_mixing_line') < 0) {
+        flags.push('off_mixing_line');
+    }
 
     const srv = (ahu && ahu.mixing) || {};
+    let oadFrac = (typeof srv.oa_fraction_damper === 'number') ? srv.oa_fraction_damper : red5ReadOadFraction(ahu);
     let mismatch = (typeof srv.damper_mismatch === 'number') ? srv.damper_mismatch : null;
-    const oadFrac = (typeof srv.oa_fraction_damper === 'number') ? srv.oa_fraction_damper : null;
-    if (mismatch != null && mismatch > 0.20 && flags.indexOf('damper_mismatch') < 0) {
+    if (mismatch == null && oadFrac != null && fMeas != null) {
+        const fClamp = Math.max(0, Math.min(1, fMeas));
+        mismatch = Math.abs(fClamp - oadFrac);
+    }
+    if (mismatch != null && mismatch > RED5_MA_DAMPER_TOL && flags.indexOf('damper_mismatch') < 0) {
         flags.push('damper_mismatch');
     }
 
     return {
         flags,
         line_deviation_g_kg: deviation == null ? null : Math.round(deviation * 100) / 100,
-        damper_mismatch: mismatch,
+        damper_mismatch: mismatch == null ? null : Math.round(mismatch * 1000) / 1000,
         oa_fraction_damper: oadFrac,
+        chord_off_fraction: frac == null ? null : Math.round(frac * 1000) / 1000,
     };
 }
 

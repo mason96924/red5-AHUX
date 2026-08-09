@@ -126,8 +126,10 @@ const getZoneDemand = (t, w, comfortPoly) => {
 // (impossible by geometry but a safety net) won't be counted.
 const inSweetSpot = (t, rh, sweetSpot) => {
     if (!sweetSpot) return true;   // no filter -> always-in
-    if (t < 20 || t > 27) return false;
-    return rh >= sweetSpot.lo && rh <= sweetSpot.hi;
+    const tt = Number(t), rr = Number(rh);
+    if (!Number.isFinite(tt) || !Number.isFinite(rr)) return false;
+    if (tt < 20 || tt > 27) return false;
+    return rr >= sweetSpot.lo && rr <= sweetSpot.hi;
 };
 
 const getVavDiagnostic = (vav, saPoint, comfortPoly, sweetSpot) => {
@@ -159,8 +161,12 @@ const getVavDiagnostic = (vav, saPoint, comfortPoly, sweetSpot) => {
 
 // AHU-level aggregate demand diagnostic
 const getAhuDiagnostic = (ahu, comfortPoly, sweetSpot) => {
-    if (!ahu || !ahu.points || !ahu.vavs) return null;
-    const oa = ahu.points[0], sa = ahu.points[1], ra = ahu.points[2];
+    if (!ahu || !ahu.points || !ahu.vavs || !ahu.vavs.length) return null;
+    const by = {};
+    (ahu.points || []).forEach((p) => { if (p && p.label) by[p.label] = p; });
+    const oa = by.OA || ahu.points[0];
+    const sa = by.SA || ahu.points[1];
+    const ra = by.RA || ahu.points[2];
     if (!oa || !sa || !ra) return null;
 
     const vavDiags = ahu.vavs.map(v => getVavDiagnostic(v, sa, comfortPoly, sweetSpot));

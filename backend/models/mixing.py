@@ -67,6 +67,7 @@ FRACTION_TOL = 0.05   # slack on the physical 0..1 bound before flagging
 DAMPER_TOL = 0.20     # OA-fraction disagreement that raises a flag
 LINE_TOL_GKG = 1.0    # off-line distance that raises a flag, g/kg
 CLOSE_LINE_TOL_GKG = 0.2  # tighter when OA≈RA (no stable f_t)
+CHORD_FRAC_TOL = 0.08 # |perp|/|OA–RA| in (T,w g/kg); catches auto-zoom visuals
 TEMP_LINE_TOL_C = 0.5 # when OA≈RA, T residual vs humidity lever (deg C)
 MAT_RANGE_TOL_C = 0.3 # MAT outside [min(OA,RA), max(OA,RA)] (deg C)
 
@@ -123,6 +124,28 @@ def chord_w_residual_gkg(
         return cy - ay
     t = ((cx - ax) * abx + (cy - ay) * aby) / ab2
     return cy - (ay + t * aby)
+
+
+def chord_off_fraction(
+    t_oa: float, w_oa: float,
+    t_ra: float, w_ra: float,
+    t_ma: float, w_ma: float,
+) -> Optional[float]:
+    """Perpendicular distance / |OA–RA| in the (T °C, w g/kg) plane.
+
+    Absolute g/kg residuals look tiny when OA≈RA, but the process mini-badge
+    auto-zooms that cluster so the same offset reads as a clear off-chord.
+    Fraction of chord length matches that visual.
+    """
+    ax, ay = float(t_oa), float(w_oa) * 1000.0
+    bx, by = float(t_ra), float(w_ra) * 1000.0
+    cx, cy = float(t_ma), float(w_ma) * 1000.0
+    abx, aby = bx - ax, by - ay
+    ab2 = abx * abx + aby * aby
+    if ab2 < 1e-12:
+        return None
+    cross = abx * (cy - ay) - aby * (cx - ax)
+    return abs(cross) / ab2
 
 
 def enthalpy(t_c: float, w_kgkg: float) -> float:
@@ -261,6 +284,15 @@ def derive_mixed_air(
         if (
             deviation_gkg is not None
             and abs(deviation_gkg) > line_tol
+            and "off_mixing_line" not in flags
+        ):
+            flags.append("off_mixing_line")
+        # Zoom-aware: when OA≈RA the process mini auto-frames the cluster,
+        # so a sub-threshold g/kg residual still looks clearly off-chord.
+        frac = chord_off_fraction(t_oa, w_oa, t_ra, w_ra, t_ma, w_ma)
+        if (
+            frac is not None
+            and frac > CHORD_FRAC_TOL
             and "off_mixing_line" not in flags
         ):
             flags.append("off_mixing_line")

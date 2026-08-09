@@ -238,6 +238,11 @@ h1 span{color:#ef4444;font-style:italic}
   <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#422006;color:#fbbf24;border:1px solid #b45309;vertical-align:middle">Out-of-Band</span>
 </h2>
 <p class="note" style="margin-bottom:12px">Direct single-file replacement &mdash; bypasses the bundle/decrypt/extract pipeline. Use when the regular bundle upload is blocked by <code style="background:#1e293b;padding:1px 4px;border-radius:3px">Low disk headroom</code> or you need to hotfix one plug-in without re-uploading the full bundle. Each upload writes via tmp+rename so a corrupted transfer can never leave a half-written plug-in on disk.</p>
+<p class="note" style="margin-bottom:10px;font-style:normal;color:#93c5fd">If Replace fails with <b>sha256 mismatch</b>: first Replace <code style="background:#1e293b;padding:1px 4px;border-radius:3px">repair_manifest.json</code> (it is integrity-exempt), then retry the plug-in — or tick <b>Force override</b> below for a one-shot bypass.</p>
+<label style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:#fbbf24;cursor:pointer;user-select:none">
+  <input type="checkbox" id="repairForceOverride" style="accent-color:#f59e0b">
+  Force override (send <code style="background:#1e293b;padding:1px 4px;border-radius:3px">X-Force-Override: 1</code> — skips sha256 check)
+</label>
 <div id="repairList" style="display:flex;flex-direction:column;gap:6px"></div>
 <p class="note" style="margin-top:12px;font-style:normal;color:#fbbf24"><b>One-click flow:</b> click <b>Replace</b> &rarr; pick file &rarr; the new module is auto hot-reloaded into the running Flask process &mdash; no enteliWEB script-toggle needed. The standalone <b>Reload</b> button re-imports a plug-in without a fresh upload (useful after editing on disk via SCP). For changes that <i>add or remove routes</i>, a full Flask restart is still required (the live <code>app.url_map</code> only rebuilds on full process boot).</p>
 <div id="repairStatus" style="margin-top:10px;font-size:12px"></div>
@@ -1020,10 +1025,14 @@ function _doRepairUpload(name, file){
     var fd = new FormData();
     fd.append('file', file, name);
     fd.append('filename', name);
-    fetch(base + '/api/repair/upload-plugin', {method:'POST', body: fd})
+    var headers = {};
+    var forceEl = document.getElementById('repairForceOverride');
+    if (forceEl && forceEl.checked) headers['X-Force-Override'] = '1';
+    fetch(base + '/api/repair/upload-plugin', {method:'POST', body: fd, headers: headers})
         .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); })
         .then(function(rs){
             if (rs.ok && rs.j && rs.j.success){
+                if (forceEl) forceEl.checked = false; // one-shot
                 status.className = 'status-ok';
                 status.textContent = 'OK: replaced ' + (rs.j.dest || name) + ' (' + rs.j.bytes + ' bytes). ';
                 // Auto-refresh disk status after a plug-in replace

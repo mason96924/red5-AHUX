@@ -123,15 +123,30 @@
             animation: ma-pulse 2.4s ease-in-out infinite;
             cursor: help;
         }
-        .ma-wrap { position: relative; display: inline-flex; }
+        .ma-wrap { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+        .ma-fault-chip {
+            flex-shrink: 0;
+            min-width: 14px;
+            height: 14px;
+            padding: 0 3px;
+            border-radius: 3px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font: 800 9px/1 ui-monospace, Menlo, monospace;
+            color: #fff;
+            background: linear-gradient(160deg, #ef4444, #b91c1c);
+            box-shadow: 0 0 6px rgba(239,68,68,.45);
+            cursor: help;
+        }
         .ma-fault-tip {
             display: none;
             position: absolute;
-            left: calc(100% + 10px);
-            top: 50%;
-            transform: translateY(-50%);
-            width: 280px;
-            z-index: 80;
+            left: 0;
+            top: calc(100% + 6px);
+            transform: none;
+            width: min(280px, 70vw);
+            z-index: 90;
             padding: 11px 12px 12px;
             border-radius: 8px;
             background: #0b1220;
@@ -150,12 +165,12 @@
         .ma-fault-tip::before {
             content: "";
             position: absolute;
-            left: -6px;
-            top: 50%;
-            transform: translateY(-50%);
+            left: 10px;
+            top: -6px;
+            transform: none;
             border: 6px solid transparent;
-            border-right-color: rgba(239, 68, 68, 0.55);
-            border-left: 0;
+            border-bottom-color: rgba(239, 68, 68, 0.55);
+            border-top: 0;
         }
         .ma-wrap:hover .ma-fault-tip,
         .ma-wrap:focus-within .ma-fault-tip { display: block; }
@@ -593,6 +608,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=d894f011f8"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=1ec727b5b6"></script>
 </body>
 </html>

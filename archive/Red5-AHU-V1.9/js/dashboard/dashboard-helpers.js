@@ -124,8 +124,119 @@ function classifyMaFault(mixing, opts) {
     return 'H';
 }
 
-function maFaultTipModel(mixing, opts) {
-    const mx = mixing || {};
+/* Client-side off-chord / MAT-range checks — same thresholds as mixed_air.py.
+ * Used when ahu.mixing.flags is missing/stale so the sidebar glow still
+ * tracks what the process mini-badge already shows geometrically. */
+const RED5_MA_LINE_TOL_GKG = 1.0;
+const RED5_MA_CLOSE_LINE_TOL_GKG = 0.2; /* when OA≈RA / no stable f_t */
+const RED5_MA_TEMP_LINE_TOL_C = 0.5;
+const RED5_MA_MAT_RANGE_TOL_C = 0.3;
+const RED5_MA_MIN_DT_C = 2.0;
+const RED5_MA_MIN_DW = 1.0e-4;
+
+function red5ChordWResidualGkg(oa, ra, ma) {
+    const ax = Number(oa.t), ay = Number(oa.w) * 1000;
+    const bx = Number(ra.t), by = Number(ra.w) * 1000;
+    const cx = Number(ma.t), cy = Number(ma.w) * 1000;
+    if (![ax, ay, bx, by, cx, cy].every(Number.isFinite)) return null;
+    const abx = bx - ax, aby = by - ay;
+    const ab2 = abx * abx + aby * aby;
+    if (ab2 < 1e-12) return cy - ay;
+    const t = ((cx - ax) * abx + (cy - ay) * aby) / ab2;
+    return cy - (ay + t * aby);
+}
+
+function clientMaMixingFromPoints(ahu) {
+    const by = {};
+    (ahu && ahu.points || []).forEach((p) => { if (p && p.label) by[p.label] = p; });
+    const oa = by.OA, ra = by.RA, ma = by.MA;
+    const empty = { flags: [], line_deviation_g_kg: null, damper_mismatch: null, oa_fraction_damper: null };
+    if (!oa || !ra || !ma) return empty;
+    /* Derived MA is forced onto the chord — geometry alone cannot fault it. */
+    if (ma.derived === true) return empty;
+
+    const tOa = Number(oa.t), tRa = Number(ra.t), tMa = Number(ma.t);
+    const wOa = Number(oa.w), wRa = Number(ra.w), wMa = Number(ma.w);
+    if (![tOa, tRa, tMa, wOa, wRa, wMa].every(Number.isFinite)) return empty;
+
+    const flags = [];
+    const tLo = Math.min(tOa, tRa), tHi = Math.max(tOa, tRa);
+    if (tMa < tLo - RED5_MA_MAT_RANGE_TOL_C || tMa > tHi + RED5_MA_MAT_RANGE_TOL_C) {
+        flags.push('mat_outside_oa_ra');
+    }
+
+    const dT = tOa - tRa;
+    const dW = wOa - wRa;
+    let fT = null, fW = null;
+    if (Math.abs(dT) >= RED5_MA_MIN_DT_C) fT = (tMa - tRa) / dT;
+    if (Math.abs(dW) >= RED5_MA_MIN_DW) fW = (wMa - wRa) / dW;
+
+    let deviation = null;
+    let lineTol = RED5_MA_LINE_TOL_GKG;
+    if (fT != null) {
+        const f = Math.max(0, Math.min(1, fT));
+        deviation = (wMa - (f * wOa + (1 - f) * wRa)) * 1000;
+    } else {
+        lineTol = RED5_MA_CLOSE_LINE_TOL_GKG;
+        deviation = red5ChordWResidualGkg(oa, ra, ma);
+        if (fW != null) {
+            const f = Math.max(0, Math.min(1, fW));
+            const tPred = f * tOa + (1 - f) * tRa;
+            if (Math.abs(tMa - tPred) > RED5_MA_TEMP_LINE_TOL_C) {
+                flags.push('off_mixing_line');
+            }
+        }
+    }
+    if (deviation != null && Math.abs(deviation) > lineTol
+        && flags.indexOf('off_mixing_line') < 0) {
+        flags.push('off_mixing_line');
+    }
+
+    const srv = (ahu && ahu.mixing) || {};
+    let mismatch = (typeof srv.damper_mismatch === 'number') ? srv.damper_mismatch : null;
+    const oadFrac = (typeof srv.oa_fraction_damper === 'number') ? srv.oa_fraction_damper : null;
+    if (mismatch != null && mismatch > 0.20 && flags.indexOf('damper_mismatch') < 0) {
+        flags.push('damper_mismatch');
+    }
+
+    return {
+        flags,
+        line_deviation_g_kg: deviation == null ? null : Math.round(deviation * 100) / 100,
+        damper_mismatch: mismatch,
+        oa_fraction_damper: oadFrac,
+    };
+}
+
+function resolveMaMixing(ahu) {
+    const srv = (ahu && ahu.mixing) || {};
+    const cli = clientMaMixingFromPoints(ahu);
+    const flagSet = {};
+    (srv.flags || []).forEach((f) => { flagSet[f] = true; });
+    (cli.flags || []).forEach((f) => { flagSet[f] = true; });
+    const flags = Object.keys(flagSet);
+    return {
+        basis: srv.basis || (ahu && ahu.points && (ahu.points.find(p => p.label === 'MA') || {}).basis) || null,
+        oa_fraction: srv.oa_fraction,
+        oa_fraction_raw: srv.oa_fraction_raw,
+        oa_fraction_temp: srv.oa_fraction_temp,
+        oa_fraction_humidity: srv.oa_fraction_humidity,
+        oa_fraction_damper: srv.oa_fraction_damper != null ? srv.oa_fraction_damper : cli.oa_fraction_damper,
+        damper_mismatch: srv.damper_mismatch != null ? srv.damper_mismatch : cli.damper_mismatch,
+        line_deviation_g_kg: srv.line_deviation_g_kg != null ? srv.line_deviation_g_kg : cli.line_deviation_g_kg,
+        flags,
+    };
+}
+
+function maFaultTipModel(ahuOrMixing, opts) {
+    opts = opts || {};
+    let mx;
+    if (ahuOrMixing && Array.isArray(ahuOrMixing.points)) {
+        mx = resolveMaMixing(ahuOrMixing);
+    } else if (opts.ahu) {
+        mx = resolveMaMixing(Object.assign({}, opts.ahu, { mixing: ahuOrMixing || opts.ahu.mixing }));
+    } else {
+        mx = ahuOrMixing || {};
+    }
     const flags = Array.isArray(mx.flags) ? mx.flags.slice() : [];
     if (!flags.length) return null;
     const cat = classifyMaFault(mx, opts);

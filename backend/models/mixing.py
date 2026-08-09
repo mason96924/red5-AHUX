@@ -66,6 +66,7 @@ MIN_DW_KGKG = 1.0e-4  # 0.1 g/kg -- below this f_w is junk
 FRACTION_TOL = 0.05   # slack on the physical 0..1 bound before flagging
 DAMPER_TOL = 0.20     # OA-fraction disagreement that raises a flag
 LINE_TOL_GKG = 1.0    # off-line distance that raises a flag, g/kg
+CLOSE_LINE_TOL_GKG = 0.2  # tighter when OA≈RA (no stable f_t)
 TEMP_LINE_TOL_C = 0.5 # when OA≈RA, T residual vs humidity lever (deg C)
 MAT_RANGE_TOL_C = 0.3 # MAT outside [min(OA,RA), max(OA,RA)] (deg C)
 
@@ -241,10 +242,14 @@ def derive_mixed_air(
     # fall back to chord projection (and a T residual vs the humidity lever).
     deviation_gkg = None
     if basis == "measured":
+        line_tol = LINE_TOL_GKG
         if f_t is not None:
             w_pred = _clamp01(f_t) * w_oa + (1.0 - _clamp01(f_t)) * w_ra
             deviation_gkg = (w_ma - w_pred) * 1000.0
         else:
+            # OA≈RA: classical T-lever is junk — use chord projection and a
+            # tighter humidity tolerance so mild-day off-chord still flags.
+            line_tol = CLOSE_LINE_TOL_GKG
             deviation_gkg = chord_w_residual_gkg(
                 t_oa, w_oa, t_ra, w_ra, t_ma, w_ma
             )
@@ -255,7 +260,7 @@ def derive_mixed_air(
                         flags.append("off_mixing_line")
         if (
             deviation_gkg is not None
-            and abs(deviation_gkg) > LINE_TOL_GKG
+            and abs(deviation_gkg) > line_tol
             and "off_mixing_line" not in flags
         ):
             flags.append("off_mixing_line")

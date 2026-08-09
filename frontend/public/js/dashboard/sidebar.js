@@ -758,27 +758,28 @@ function renderSidebar(ctx) {
                     state only; full chart integration (per-AHU sweet-spot
                     polygons) is a follow-up. */}
                 <div className="flex items-stretch gap-2">
-                    <div className="flex-1 space-y-0.5 min-w-0 overflow-hidden">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%';
+                    <div className="flex-1 space-y-0.5 min-w-0 overflow-visible">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%';
                         const active = pointVisibility[p.label] !== false;
                         const toggleVis = (e) => { e.stopPropagation(); setPointVisibility({ ...pointVisibility, [p.label]: !active }); };
                         const _pc = (typeof red5PointColor === 'function' ? red5PointColor(p.label, p.color) : p.color);
                         const _maTip = (p.label === 'MA' && typeof maFaultTipModel === 'function')
-                            ? maFaultTipModel(ahu.mixing, { ervEnabled: !!(ervSnap && ervSnap.enabled) })
+                            ? maFaultTipModel(ahu, { ervEnabled: !!(ervSnap && ervSnap.enabled) })
                             : null;
                         const lblBtn = (
                             <button data-testid={`ahu-row-toggle-${ahu.id}-${p.label}`} onClick={toggleVis}
                                     title={_maTip
-                                        ? `MA fault ${ _maTip.cat }: ${_maTip.flagText}`
+                                        ? `MA fault ${_maTip.cat}: ${_maTip.flagText}`
                                         : (active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`)}
                                     style={{ color: _pc, background:'transparent', border:'none', padding:0, width:'1.4rem' }}
                                     className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline shrink-0 text-left ${active ? '' : 'line-through'}${_maTip ? ' ma-alert' : ''}`}>
                                 {p.label}
                             </button>
                         );
-                        return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
+                        return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'} ${_maTip ? 'relative z-30' : ''}`}>
                             {_maTip ? (
-                                <span className="ma-wrap relative inline-flex shrink-0" data-testid={`ahu-${ahu.id}-ma-fault`}>
+                                <span className="ma-wrap relative inline-flex items-center gap-0.5 shrink-0" data-testid={`ahu-${ahu.id}-ma-fault`}>
                                     {lblBtn}
+                                    <span className="ma-fault-chip" title={`Category ${_maTip.cat}`}>{_maTip.cat}</span>
                                     <div className="ma-fault-tip" role="tooltip">
                                         <div className="ma-fault-tip-top">
                                             <span className="ma-fault-cat" title={`Category ${_maTip.cat}`}>{_maTip.cat}</span>

@@ -65,9 +65,12 @@ MIN_DT_C = 2.0        # APAR temperature threshold; below this f_t is junk
 MIN_DW_KGKG = 1.0e-4  # 0.1 g/kg -- below this f_w is junk
 FRACTION_TOL = 0.05   # slack on the physical 0..1 bound before flagging
 DAMPER_TOL = 0.20     # OA-fraction disagreement that raises a flag
-LINE_TOL_GKG = 1.0    # off-line distance that raises a flag, g/kg
+LINE_TOL_GKG = 0.4    # off-line distance that raises a flag, g/kg
 CLOSE_LINE_TOL_GKG = 0.2  # tighter when OA≈RA (no stable f_t)
-CHORD_FRAC_TOL = 0.08 # |perp|/|OA–RA| in (T,w g/kg); catches auto-zoom visuals
+# |perp|/|OA–RA| in (T,w g/kg).  Process mini auto-frames the cluster, so
+# ~3–5 px of "slightly off" is only ~0.02–0.03 of chord length — 0.08 was
+# deaf to what operators see (~13 px before a flag).
+CHORD_FRAC_TOL = 0.025
 TEMP_LINE_TOL_C = 0.5 # when OA≈RA, T residual vs humidity lever (deg C)
 MAT_RANGE_TOL_C = 0.3 # MAT outside [min(OA,RA), max(OA,RA)] (deg C)
 

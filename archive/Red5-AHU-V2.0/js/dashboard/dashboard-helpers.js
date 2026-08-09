@@ -127,9 +127,10 @@ function classifyMaFault(mixing, opts) {
 /* Client-side off-chord / MAT-range checks — same thresholds as mixed_air.py.
  * Used when ahu.mixing.flags is missing/stale so the sidebar glow still
  * tracks what the process mini-badge already shows geometrically. */
-const RED5_MA_LINE_TOL_GKG = 1.0;
+const RED5_MA_LINE_TOL_GKG = 0.4;
 const RED5_MA_CLOSE_LINE_TOL_GKG = 0.2; /* when OA≈RA / no stable f_t */
-const RED5_MA_CHORD_FRAC_TOL = 0.08; /* |perp|/|OA–RA| — matches auto-zoom visuals */
+/* |perp|/|OA–RA| — ~0.025 ≈ 3–5 px “slightly off” on auto-framed process mini */
+const RED5_MA_CHORD_FRAC_TOL = 0.025;
 const RED5_MA_TEMP_LINE_TOL_C = 0.5;
 const RED5_MA_MAT_RANGE_TOL_C = 0.3;
 const RED5_MA_MIN_DT_C = 2.0;
@@ -794,6 +795,11 @@ function renderProcessMiniBadge(ctx) {
     const OA = by.OA, RA = by.RA, SA = by.SA, MA = by.MA;
     if (!OA || !RA || !SA) return null;
 
+    const _maFault = (MA && typeof maFaultTipModel === 'function')
+        ? maFaultTipModel(ahu, {})
+        : null;
+    const _maOff = !!_maFault;
+
     const rhLo = (sweetSpotRange && Number.isFinite(sweetSpotRange.lo)) ? sweetSpotRange.lo : 40;
     const rhHi = (sweetSpotRange && Number.isFinite(sweetSpotRange.hi)) ? sweetSpotRange.hi : 60;
     const drawBand = showSweetSpot !== false;
@@ -1020,7 +1026,8 @@ function renderProcessMiniBadge(ctx) {
                     </text>
                 </g>
             )}
-            <line x1={ox} y1={oy} x2={rx} y2={ry} stroke={colBand} strokeWidth="2.2"
+            <line x1={ox} y1={oy} x2={rx} y2={ry}
+                  stroke={_maOff ? '#ef4444' : colBand} strokeWidth={_maOff ? 2.8 : 2.2}
                   strokeDasharray="6 4" />
             <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
                   markerEnd={'url(#' + arrId + ')'} />
@@ -1030,9 +1037,15 @@ function renderProcessMiniBadge(ctx) {
             <circle cx={rx} cy={ry} r="6.5" fill={colRA} fillOpacity={dotOp} stroke={colRA} strokeOpacity={dotOp} strokeWidth="1.6" />
             <text x={rx + 8} y={ry + 18} fill={colRA} fillOpacity={labelOp} style={{ fill: colRA, fillOpacity: labelOp }}
                   fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">RA</text>
-            <circle cx={mx} cy={my} r="6" fill={colMA} fillOpacity={dotOp} stroke={colMARing} strokeOpacity={dotOp} strokeWidth="2.5" />
-            <text x={mx + 9} y={my - 7} fill={colMA} fillOpacity={labelOp} style={{ fill: colMA, fillOpacity: labelOp }}
-                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">MA</text>
+            <circle cx={mx} cy={my} r="6" fill={colMA} fillOpacity={dotOp}
+                    stroke={_maOff ? '#ef4444' : colMARing} strokeOpacity={dotOp}
+                    strokeWidth={_maOff ? 3.2 : 2.5} />
+            <text x={mx + 9} y={my - 7}
+                  fill={_maOff ? '#ef4444' : colMARing} fillOpacity={labelOp}
+                  style={{ fill: _maOff ? '#ef4444' : colMARing, fillOpacity: labelOp }}
+                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">
+                {_maOff ? ('MA·' + _maFault.cat) : 'MA'}
+            </text>
             <circle cx={sx} cy={sy} r="6.5" fill={colSA} fillOpacity={dotOp} stroke={colSA} strokeOpacity={dotOp} strokeWidth="1.6" />
             <text x={sx - 26} y={sy - 8} fill={colSA} fillOpacity={labelOp} style={{ fill: colSA, fillOpacity: labelOp }}
                   fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">SA</text>

@@ -185,25 +185,30 @@ global.initPsy3D = function(container, opts){
   function _bandLabelOf(t, rh){
     // Kept in lockstep with `dashboard-helpers.js::bandClassify` and
     // `ahu.html::_resolveBand`. Exact window match first; gap → nearest
-    // band center (never hard B5 / 100 % OA).
+    // window *edge* among T-compatible bands (never nearest-center —
+    // that mapped cool-humid OA ≈16 °C / 73 % RH onto B7).
     if (!isFinite(t) || !isFinite(rh)) return '?';
     var wins = [
-      ['B1',-50,5,0,100],['B2',5,16,0,100],['B3',15,22,0,35],['B4',18,23,32,55],
+      ['B1',-50,5,0,100],['B3',15,22,0,35],['B2',5,18,0,100],['B4',18,23,32,55],
       ['B5',22,26,40,70],['B6',25,28,45,70],['B10',28,50,80,100],['B7',26,36,45,90],
       ['B8',32,45,65,100],['B9',25,50,0,50]
     ];
-    var i, w, best='B1', bestDist=Infinity, tMid, rhMid, dist;
+    var i, w, best=null, bestDist=Infinity, tC, rhC, dist, T_MARGIN=5;
     for (i = 0; i < wins.length; i++){
       w = wins[i];
       if (t >= w[1] && t <= w[2] && rh >= w[3] && rh <= w[4]) return w[0];
     }
     for (i = 0; i < wins.length; i++){
       w = wins[i];
-      tMid = (w[1] + w[2]) / 2; rhMid = (w[3] + w[4]) / 2;
-      dist = Math.hypot(t - tMid, rh - rhMid);
+      if (t < w[1] - T_MARGIN || t > w[2] + T_MARGIN) continue;
+      // Mirror BAND_OAD: B4/B5 = 100 — never invent free-cooling from a gap.
+      if (w[0] === 'B4' || w[0] === 'B5') continue;
+      tC = Math.min(Math.max(t, w[1]), w[2]);
+      rhC = Math.min(Math.max(rh, w[3]), w[4]);
+      dist = Math.hypot(t - tC, rh - rhC);
       if (dist < bestDist){ bestDist = dist; best = w[0]; }
     }
-    return best;
+    return best || '?';
   }
   /* Walk weatherData twice -- once with raw OA, once with OA' -- to build
      a {Bn: {oa, oap}} map of hour-counts per band.  Cheap (O(N) twice,
@@ -1089,8 +1094,8 @@ global.initPsy3D = function(container, opts){
      Module-scoped so renderTimeSeries2D and buildDeltaH share the same logic. */
   var BANDS=[
     {id:'B1', oa_t:[-50,5], oa_rh:[0,100],  sa_t:21.0, sa_rh:40, oa_damper:15},
-    {id:'B2', oa_t:[5,16],  oa_rh:[0,100],  sa_t:19.5, sa_rh:35, oa_damper:15},
     {id:'B3', oa_t:[15,22], oa_rh:[0,35],   sa_t:19.0, sa_rh:45, oa_damper:30},
+    {id:'B2', oa_t:[5,18],  oa_rh:[0,100],  sa_t:19.5, sa_rh:35, oa_damper:15},
     {id:'B4', oa_t:[18,23], oa_rh:[32,55],  sa_t:20.0, sa_rh:40, oa_damper:100},
     {id:'B5', oa_t:[22,26], oa_rh:[40,70],  sa_t:23.5, sa_rh:50, oa_damper:100},
     {id:'B6', oa_t:[25,28], oa_rh:[45,70],  sa_t:25.0, sa_rh:55, oa_damper:50},

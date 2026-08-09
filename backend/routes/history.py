@@ -83,6 +83,7 @@ from simulator import (
     _resolve_band,
     _scalar_drift,
     _simulate_ahu,
+    psy_veto_oad,
 )
 from models.mixing import derive_mixed_air, rh_from_w as _rh_from_w
 from server import (
@@ -206,24 +207,17 @@ async def ahu_history(ahu_id: str,
 #   3. Lets us cap the step at a coarser cadence (60..900 s) for the
 #      3D layer without affecting the existing 1-min drill-down.
 # ---------------------------------------------------------------------------
-def _oa_damper_sp(oa_t: float) -> float:
-    """OA damper setpoint vs outside dry-bulb, in percent.
+def _oa_damper_sp(oa_t: float, oa_rh: float | None = None) -> float:
+    """OA damper setpoint vs outside conditions, in percent.
 
-    Temperature-only approximation of band_guide.csv OA_Damper_SP for demo
-    history synthesis (real sites read OAD from the controller):
-
-      T < 15          → 15 %  (B1/B2 min OA)
-      15 ≤ T < 18     → 30 %  (B3 mild-dry)
-      18 ≤ T < 26     → 100 % (B4/B5 economizer / pass-through)
-      26 ≤ T < 28     → 50 %  (B6 warm mix)
-      T ≥ 28          → 15 %  (B7+ hot / min OA)
-
-    Twin of ``_sa_ts_damper_sp`` in archive/Red5-AHU-V1.9/telemetry_service.py.
+    When RH is available, use the real band resolver (RH-aware). Temperature-
+    only fallback ignores humidity and must stay conservative (min OA) in the
+    former B3 T-only band — mapping 15-18 °C → 30 % lied for cool-humid OA.
     """
+    if oa_rh is not None and math.isfinite(oa_rh):
+        return float(_resolve_band(oa_t, oa_rh)["OA_Damper_SP"])
     if 18.0 <= oa_t < 26.0:
         return 100.0
-    if 15.0 <= oa_t < 18.0:
-        return 30.0
     if 26.0 <= oa_t < 28.0:
         return 50.0
     return 15.0
@@ -300,7 +294,9 @@ async def ahu_sa_timeseries(
         # live 60 s / 190 s beats, which a 15-minute cadence would alias into
         # noise rather than a schedule.
         phase = _AHU_PHASE(ahu_id)
-        oad = max(0.0, min(100.0, _oa_damper_sp(oa_t)
+        oad_recipe = _oa_damper_sp(oa_t, oa_rh)
+        oad_sp, _, _, _ = psy_veto_oad(oad_recipe, oa_t, oa_rh, ra_t, ra_rh)
+        oad = max(0.0, min(100.0, oad_sp
                                   + 2.0 * math.sin(ts / 3600.0 + phase)))
         _f = oad / 100.0
         mat = (_f * oa_t + (1.0 - _f) * ra_t

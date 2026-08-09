@@ -295,20 +295,20 @@ const Sparkline = ({ data, width, height, color, label }) => {
 // ====================================================================
 
 // Classify outdoor-air (T °C, RH %) → B1..B10.
-// Exact CSV windows first; gap → nearest band center (never hard B5).
-// Historically a hard B5 fallback made warm gap weather (e.g. 28.5 °C /
-// 58 % RH) advertise OA damper = 100 %, which disagreed with MAT.
-// bandClassify() exposes { id, exact } so the UI can badge NEAREST.
+// Exact CSV windows first; gap → nearest window *edge* among T-compatible
+// bands (never hard B5, never nearest-*center*).
 //
-// Closed OA windows — keep in lockstep with band_guide.csv / collector BANDS.
-// Retiled 2026-08-09 after gap audit: old windows covered ~32% of OA space and
-// nearest-center often assigned B4/B5 (100% OA) in warm gaps. New tiling keeps
-// strategy (cold/cool min-OA, mild economizer, warm mix, hot min-OA) while
-// covering ~88% of operational climate; remaining gaps use nearest (never hard B5).
+// Why edge, not center: OA 16.1 °C / 73 % RH sits 0.1 °C above B2's old
+// ceiling. Center-distance snapped to B7 ("hot and sticky") because B7's
+// RH mid matched — a total lie next to live OAT. Edge-distance stays on B2.
+// T_MARGIN also rejects bands whose dry-bulb window cannot contain OA.
+//
+// B3 (mild-dry) is listed before B2 so dry 15-18 °C stays B3 after B2's
+// ceiling moved to 18 °C (closes the cool-humid hairline gap).
 const BAND_WINDOWS = [
     { id: 'B1',  t: [-50, 5],  rh: [0, 100] },
-    { id: 'B2',  t: [5, 16],   rh: [0, 100] },
     { id: 'B3',  t: [15, 22],  rh: [0, 35] },
+    { id: 'B2',  t: [5, 18],   rh: [0, 100] },
     { id: 'B4',  t: [18, 23],  rh: [32, 55] },
     { id: 'B5',  t: [22, 26],  rh: [40, 70] },
     { id: 'B6',  t: [25, 28],  rh: [45, 70] },
@@ -319,9 +319,27 @@ const BAND_WINDOWS = [
     { id: 'B9',  t: [25, 50],  rh: [0, 50] },
 ];
 
+/** Recipe OAD % per band — keep in lockstep with band_guide.csv. */
+const BAND_OAD = {
+    B1: 15, B2: 15, B3: 30, B4: 100, B5: 100,
+    B6: 50, B7: 15, B8: 15, B9: 15, B10: 15, '?': 15,
+};
+
+/** Max °C outside a band's T window still allowed for NEAREST fallback. */
+const BAND_T_MARGIN = 5;
+
+/** Humidity ratio g/kg dry air (Magnus, P=101325 Pa). */
+const bandHumidityRatio_gkg = (t, rh) => {
+    if (!Number.isFinite(t) || !Number.isFinite(rh)) return NaN;
+    const pws = 610.94 * Math.exp((17.625 * t) / (t + 243.04));
+    const pw = (rh / 100) * pws;
+    return 0.622 * pw / (101325 - pw) * 1000;
+};
+
 /** Classify OA (T °C, RH %) → { id, exact }.
- *  Exact window match first; otherwise nearest band *center* — never a
- *  hard B5/100 %-OA fallback (that lied for warm gap weather). */
+ *  Exact window match first; otherwise nearest window edge among bands
+ *  that are T-compatible AND not economizer/pass-through (OAD < 100).
+ *  Gap fallback must never invent 100 % OA. If nothing qualifies → '?'. */
 const bandClassify = (t, rh) => {
     if (!Number.isFinite(t) || !Number.isFinite(rh)) return { id: '?', exact: false };
     for (let i = 0; i < BAND_WINDOWS.length; i++) {
@@ -330,22 +348,69 @@ const bandClassify = (t, rh) => {
             return { id: b.id, exact: true };
         }
     }
-    let best = BAND_WINDOWS[0].id;
+    let best = null;
     let bestDist = Infinity;
     for (let j = 0; j < BAND_WINDOWS.length; j++) {
         const b2 = BAND_WINDOWS[j];
-        const tMid = (b2.t[0] + b2.t[1]) / 2;
-        const rhMid = (b2.rh[0] + b2.rh[1]) / 2;
-        const dist = Math.hypot(t - tMid, rh - rhMid);
+        if ((BAND_OAD[b2.id] || 0) >= 100) continue; // never invent free-cooling from a gap
+        if (t < b2.t[0] - BAND_T_MARGIN || t > b2.t[1] + BAND_T_MARGIN) continue;
+        const tClamp = Math.min(Math.max(t, b2.t[0]), b2.t[1]);
+        const rhClamp = Math.min(Math.max(rh, b2.rh[0]), b2.rh[1]);
+        const dist = Math.hypot(t - tClamp, rh - rhClamp);
         if (dist < bestDist) {
             bestDist = dist;
             best = b2.id;
         }
     }
-    return { id: best, exact: false };
+    return { id: best || '?', exact: false };
 };
 
 const bandLabelOf = (t, rh) => bandClassify(t, rh).id;
+
+/**
+ * Operator-facing band advice. Classification alone is not enough:
+ * B4/B5 exact windows still authorize 100 % OA when OA is wetter than RA.
+ * Veto: if W_oa > W_ra + 1 g/kg, clamp advised OAD to 15 % and rewrite plan.
+ */
+const bandAdvise = (oaT, oaRh, raT, raRh) => {
+    const cls = bandClassify(oaT, oaRh);
+    const raw = bandStory(cls.id);
+    let oad = BAND_OAD[cls.id] != null ? BAND_OAD[cls.id] : 15;
+    let veto = null;
+    const wOa = bandHumidityRatio_gkg(oaT, oaRh);
+    const wRa = bandHumidityRatio_gkg(raT, raRh);
+    if (Number.isFinite(wOa) && Number.isFinite(wRa) && wOa > wRa + 1.0 && oad > 15) {
+        veto = {
+            reason: 'OA wetter than RA',
+            w_oa: wOa,
+            w_ra: wRa,
+            oad_before: oad,
+        };
+        oad = 15;
+    }
+    let weather = raw.weather;
+    let plan = raw.plan;
+    let set = raw.set.replace(/OA damper = [^|]+/, 'OA damper = ' + oad + ' %');
+    if (!cls.exact && cls.id !== '?') {
+        weather = 'OA is outside every exact band window — nearest T-compatible non-economizer recipe below. Live OA is NOT the band\'s named climate.';
+    }
+    if (veto) {
+        plan = 'PSY VETO: outdoor air carries more moisture than return air (W_oa '
+            + wOa.toFixed(1) + ' > W_ra ' + wRa.toFixed(1)
+            + ' g/kg). Keep OA damper at minimum — do not free-cool / pass-through.';
+        weather = (cls.exact ? raw.weather + ' ' : '')
+            + 'However OA is wetter than RA, so the 100 % OA recipe is blocked.';
+    }
+    return {
+        id: cls.id,
+        exact: cls.exact,
+        oad,
+        veto,
+        weather,
+        plan,
+        set,
+    };
+};
 
 // Tailwind classes for the band-status chip.  Cool side blue, mid
 // bands emerald (comfort), hot side red/orange.  `?` is amber +
@@ -378,7 +443,7 @@ const bandStory = (b) => {
             set:     'SA = 21.0 deg C @ 40 % RH   |   OA damper = 15 % (minimum)'
         };
         case 'B2': return {
-            weather: 'Cool outside (5-16 deg C, any humidity). Think spring or fall.',
+            weather: 'Cool outside (5-18 deg C, any humidity). Think spring or fall.',
             plan:    'Bring in just enough outside air. Gentle heating.',
             set:     'SA = 19.5 deg C @ 35 % RH   |   OA damper = 15 %'
         };
@@ -404,13 +469,13 @@ const bandStory = (b) => {
         };
         case 'B7': return {
             weather: 'Outside is hot and sticky (26-36 deg C, 45-90 % RH). Typical summer.',
-            plan:    'Close the damper. Run the AC hard to cool AND pull moisture out.',
-            set:     'SA = 12.0 deg C @ 95 % RH   |   OA damper = 15 %'
+            plan:    'Close the damper. Subcool on the coil, then reheat to the delivery SA.',
+            set:     'SA = 23.0 deg C @ 47 % RH (coil 12 deg C)   |   OA damper = 15 %'
         };
         case 'B8': return {
             weather: 'Very hot and very humid outside (32-45 deg C, over 65 % RH). Heat wave.',
-            plan:    'Lock outside air out. Push cooling and dehumidifying to the max.',
-            set:     'SA = 13.0 deg C @ 95 % RH   |   OA damper = 15 %'
+            plan:    'Lock outside air out. Max cool + subcool dehumidify, then reheat.',
+            set:     'SA = 22.0 deg C @ 54 % RH (coil 13 deg C)   |   OA damper = 15 %'
         };
         case 'B9': return {
             weather: 'Warm-to-hot but dry outside (over 25 deg C, under 50 % RH).',
@@ -419,8 +484,8 @@ const bandStory = (b) => {
         };
         case 'B10': return {
             weather: 'Tropical outside (over 28 deg C, over 80 % RH). Air feels like soup.',
-            plan:    'Close the damper tight. Cool aggressively and squeeze moisture out.',
-            set:     'SA = 11.0 deg C @ 95 % RH   |   OA damper = 15 %'
+            plan:    'Close the damper tight. Extreme subcool dehumidify, then reheat.',
+            set:     'SA = 22.0 deg C @ 47 % RH (coil 11 deg C)   |   OA damper = 15 %'
         };
         default:   return {  // '?' -- sensor offline / NaN
             weather: 'Outside conditions do not match any of the 10 pre-tuned bands.',

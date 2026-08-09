@@ -130,26 +130,89 @@ def _demo_oa_state(now_ts: float) -> dict:
             "w": round(_humidity_ratio(t, rh), 5)}
 
 
+def _humidity_ratio_gkg(t_c: float, rh: float) -> float:
+    """Humidity ratio in g/kg — display/veto units (1000 × kg/kg)."""
+    return _humidity_ratio(t_c, rh) * 1000.0
+
+
+def psy_veto_oad(oad: float, oa_t: float, oa_rh: float,
+                 ra_t: float | None = None, ra_rh: float | None = None,
+                 min_oad: float = 15.0, margin_gkg: float = 1.0):
+    """Clamp OAD when outdoor air is wetter than return air.
+
+    Same contract as frontend ``bandAdvise`` / collector ``psy_veto_oad``:
+    if W_oa > W_ra + 1 g/kg and recipe OAD > min, force min_oad.
+    Returns ``(oad, vetoed, w_oa, w_ra)``.
+    """
+    try:
+        oad_f = float(oad)
+    except (TypeError, ValueError):
+        return 15.0, False, None, None
+    if ra_t is None or ra_rh is None:
+        return oad_f, False, None, None
+    try:
+        w_oa = _humidity_ratio_gkg(float(oa_t), float(oa_rh))
+        w_ra = _humidity_ratio_gkg(float(ra_t), float(ra_rh))
+    except (TypeError, ValueError):
+        return oad_f, False, None, None
+    if w_oa > w_ra + margin_gkg and oad_f > min_oad:
+        return float(min_oad), True, w_oa, w_ra
+    return oad_f, False, w_oa, w_ra
+
+
 def _resolve_band(oa_t: float, oa_rh: float) -> dict:
-    """Exact CSV window match, else nearest band center — never hard B5."""
+    """Exact CSV window match, else nearest window edge among T-compatible bands.
+
+    Never hard-B5. Never nearest-center (that mapped cool-humid OA ≈16 °C /
+    73 % RH onto B7 "hot and sticky"). T_MARGIN rejects bands whose dry-bulb
+    window cannot contain OA. If nothing is compatible, return a synthetic
+    SAFE row (min OA) rather than inventing a climate story.
+    """
     rows = _load_csv("band_guide.csv")
-    for r in rows:
+    # Prefer B3 before B2 when both could match after B2 ceiling rises —
+    # CSV row order may still be B1..B10 numeric; enforce dry-mild first.
+    order = {r["Band"]: i for i, r in enumerate(rows)}
+    prefer = ["B1", "B3", "B2", "B4", "B5", "B6", "B10", "B7", "B8", "B9"]
+    ordered = sorted(rows, key=lambda r: prefer.index(r["Band"])
+                     if r["Band"] in prefer else 100 + order.get(r["Band"], 0))
+
+    for r in ordered:
         lo_t = float(r["OA_T_Lo"])
         hi_t = float(r["OA_T_Hi"])
         lo_h = float(r["OA_RH_Lo"])
         hi_h = float(r["OA_RH_Hi"])
         if lo_t <= oa_t <= hi_t and lo_h <= oa_rh <= hi_h:
             return r
-    best = rows[0]
+
+    t_margin = 5.0
+    best = None
     best_dist = float("inf")
-    for r in rows:
-        t_mid = (float(r["OA_T_Lo"]) + float(r["OA_T_Hi"])) / 2.0
-        rh_mid = (float(r["OA_RH_Lo"]) + float(r["OA_RH_Hi"])) / 2.0
-        dist = ((oa_t - t_mid) ** 2 + (oa_rh - rh_mid) ** 2) ** 0.5
+    for r in ordered:
+        lo_t = float(r["OA_T_Lo"])
+        hi_t = float(r["OA_T_Hi"])
+        lo_h = float(r["OA_RH_Lo"])
+        hi_h = float(r["OA_RH_Hi"])
+        # Gap fallback must never invent free-cooling / pass-through.
+        if float(r["OA_Damper_SP"]) >= 100.0:
+            continue
+        if oa_t < lo_t - t_margin or oa_t > hi_t + t_margin:
+            continue
+        t_c = min(max(oa_t, lo_t), hi_t)
+        rh_c = min(max(oa_rh, lo_h), hi_h)
+        dist = ((oa_t - t_c) ** 2 + (oa_rh - rh_c) ** 2) ** 0.5
         if dist < best_dist:
             best_dist = dist
             best = r
-    return best
+    if best is not None:
+        return best
+    # SAFE fallback — copy B2 recipe shape but label clearly if present.
+    for r in rows:
+        if r["Band"] == "B2":
+            safe = dict(r)
+            safe["Band"] = "?"
+            safe["Band_Name"] = "SAFE"
+            return safe
+    return rows[0]
 
 
 def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
@@ -271,9 +334,12 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
     # Fan speed: 55% baseline + 10% per band offset, clamped to [40, 95]
     safp = max(40.0, min(95.0, 55.0 + (band_id - 5) * 4.0))
     eafp = max(40.0, min(95.0, safp - 5.0))
-    # Damper positions: driven by band's OA_Damper_SP plus a tiny drift
-    oad  = float(band["OA_Damper_SP"]) + 2.0 * math.sin(time.time() / 60.0)
-    oad  = max(0.0, min(100.0, oad))
+    # Damper positions: band recipe, then PSY VETO vs return-air moisture.
+    _oad_recipe = float(band["OA_Damper_SP"])
+    oad_sp, oad_veto, w_oa_gkg, w_ra_gkg = psy_veto_oad(
+        _oad_recipe, oa["t"], oa["rh"], ra_t, ra_rh)
+    oad = oad_sp + 2.0 * math.sin(time.time() / 60.0)
+    oad = max(0.0, min(100.0, oad))
     rad  = 100.0 - oad                                    # return damper inverse
     # Coil valve positions: heating if cold OA, cooling if warm OA
     hcv = max(0.0, min(100.0, (18.0 - oa["t"]) * 6.0))
@@ -356,11 +422,14 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
             "id": band["Band"],
             "sa_t_sp": float(band["SA_T_Delivery"]),
             "sa_rh_sp": float(band["SA_RH_Delivery"]),
-            "oa_damper_sp": float(band["OA_Damper_SP"]),
+            "oa_damper_sp": float(oad_sp),
             "cc_mode": band["CC_Mode"],
             "hc_mode": band["HC_Mode"],
             "hum_mode": band["HUM_Mode"],
             "oa_source": "demo",
+            "psy_veto": bool(oad_veto),
+            "w_oa_gkg": None if w_oa_gkg is None else round(w_oa_gkg, 2),
+            "w_ra_gkg": None if w_ra_gkg is None else round(w_ra_gkg, 2),
         },
     }
 

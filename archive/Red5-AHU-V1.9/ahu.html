@@ -623,25 +623,33 @@
   }
   // Decide which band an AHU is operating in by comparing OA conditions
   // against each band's (OA_T, OA_RH) range. Exact match first; on a gap
-  // use nearest band center — never hard-fall to B5 (that advertised
-  // 100 % OA for warm weather outside every window).
+  // use nearest window *edge* among T-compatible bands — never
+  // nearest-center (that advertised B7 "hot and sticky" for cool OA).
   function _resolveBand(oa_t, oa_rh){
     if(!_bandCache || oa_t == null || oa_rh == null) return null;
-    var i, b, best = null, bestDist = Infinity, tMid, rhMid, dist;
-    for(i = 0; i < _bandCache.length; i++){
-      b = _bandCache[i];
+    var i, b, best = null, bestDist = Infinity, tC, rhC, dist;
+    var T_MARGIN = 5;
+    var prefer = {B1:0,B3:1,B2:2,B4:3,B5:4,B6:5,B10:6,B7:7,B8:8,B9:9};
+    var rows = _bandCache.slice().sort(function(a,c){
+      var pa = prefer[a.Band]; if(pa == null) pa = 100;
+      var pc = prefer[c.Band]; if(pc == null) pc = 100;
+      return pa - pc;
+    });
+    for(i = 0; i < rows.length; i++){
+      b = rows[i];
       if(oa_t >= b.OA_T_Lo && oa_t <= b.OA_T_Hi && oa_rh >= b.OA_RH_Lo && oa_rh <= b.OA_RH_Hi){
         return b.Band;
       }
     }
-    for(i = 0; i < _bandCache.length; i++){
-      b = _bandCache[i];
-      tMid = (Number(b.OA_T_Lo) + Number(b.OA_T_Hi)) / 2;
-      rhMid = (Number(b.OA_RH_Lo) + Number(b.OA_RH_Hi)) / 2;
-      dist = Math.hypot(oa_t - tMid, oa_rh - rhMid);
+    for(i = 0; i < rows.length; i++){
+      b = rows[i];
+      if(oa_t < Number(b.OA_T_Lo) - T_MARGIN || oa_t > Number(b.OA_T_Hi) + T_MARGIN) continue;
+      tC = Math.min(Math.max(oa_t, Number(b.OA_T_Lo)), Number(b.OA_T_Hi));
+      rhC = Math.min(Math.max(oa_rh, Number(b.OA_RH_Lo)), Number(b.OA_RH_Hi));
+      dist = Math.hypot(oa_t - tC, oa_rh - rhC);
       if(dist < bestDist){ bestDist = dist; best = b.Band; }
     }
-    return best;
+    return best || '?';
   }
   function renderBandTable(){
     if(!_bandCache) return;

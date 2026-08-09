@@ -709,13 +709,22 @@ function renderSidebar(ctx) {
                         operator can correlate sidebar row colour with
                         floor-plan colour without opening the chart. */}
                     {(() => {
+                        const ap = ahu.all_points;
                         const oa = ahu.points && ahu.points[0];
-                        const cls = oa ? bandClassify(Number(oa.t), Number(oa.rh)) : { id: '?', exact: false };
+                        const oaTnum = (ap && Number.isFinite(Number(ap.OAT))) ? Number(ap.OAT)
+                            : (oa ? Number(oa.t) : NaN);
+                        const oaRnum = (ap && Number.isFinite(Number(ap.OAH))) ? Number(ap.OAH)
+                            : (oa ? Number(oa.rh) : NaN);
+                        const cls = (Number.isFinite(oaTnum) && Number.isFinite(oaRnum))
+                            ? bandClassify(oaTnum, oaRnum)
+                            : { id: '?', exact: false };
                         const ab = ahu.active_band;
-                        const band = (ab && ab.id) ? ab.id : cls.id;
+                        // Live OA classify wins — active_band can lag or use a
+                        // broken nearest and paint the wrong climate story.
+                        const band = cls.id;
                         const tintCls = bandTint(band);
-                        const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' deg C' : '--';
-                        const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
+                        const tipT = Number.isFinite(oaTnum) ? oaTnum.toFixed(1) + ' deg C' : '--';
+                        const tipR = Number.isFinite(oaRnum) ? oaRnum.toFixed(0) + ' % RH' : '--';
                         const story = bandStory(band);
                         const header = (band === '?')
                             ? 'BAND ?  -- SAFE-MODE'
@@ -727,7 +736,10 @@ function renderSidebar(ctx) {
                                   + 'What the AHU does:\n'
                                   + '  ' + story.plan + '\n\n'
                                   + 'Setpoints:\n'
-                                  + '  ' + story.set;
+                                  + '  ' + story.set
+                                  + ((ab && ab.id && ab.id !== band)
+                                      ? ('\n\nTelemetry active_band=' + ab.id + ' (MISMATCH)')
+                                      : '');
                         return (
                             <span data-testid={`ahu-band-${ahu.id}`}
                                   title={tip}

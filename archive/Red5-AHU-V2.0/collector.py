@@ -446,8 +446,8 @@ def generate_mock_csv_for_group(ahu_name, ahu_point_defs, vav_entries):
 
 BANDS = [
     {'id': 'B1',  'oa_t': (-50, 5),  'oa_rh': (0, 100),  'sa_t': 21.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'AGGRESSIVE', 'hum': 'HUMIDIFY'},
-    {'id': 'B2',  'oa_t': (5, 16),   'oa_rh': (0, 100),  'sa_t': 19.5, 'sa_rh': 35, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'MODERATE',   'hum': 'COND_HUM'},
     {'id': 'B3',  'oa_t': (15, 22),  'oa_rh': (0, 35),   'sa_t': 19.0, 'sa_rh': 45, 'reheat_t': None,  'oa_damper': 30,  'cc': 'OFF',        'hc': 'OFF',        'hum': 'HUMIDIFY'},
+    {'id': 'B2',  'oa_t': (5, 18),   'oa_rh': (0, 100),  'sa_t': 19.5, 'sa_rh': 35, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'MODERATE',   'hum': 'COND_HUM'},
     {'id': 'B4',  'oa_t': (18, 23),  'oa_rh': (32, 55),  'sa_t': 20.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 100, 'cc': 'OFF',        'hc': 'OFF',        'hum': 'OFF'},
     {'id': 'B5',  'oa_t': (22, 26),  'oa_rh': (40, 70),  'sa_t': 23.5, 'sa_rh': 50, 'reheat_t': None,  'oa_damper': 100, 'cc': 'OFF',        'hc': 'OFF',        'hum': 'OFF'},
     {'id': 'B6',  'oa_t': (25, 28),  'oa_rh': (45, 70),  'sa_t': 25.0, 'sa_rh': 55, 'reheat_t': None,  'oa_damper': 50,  'cc': 'LIGHT',      'hc': 'OFF',        'hum': 'ACCEPT'},
@@ -458,9 +458,45 @@ BANDS = [
 ]
 
 
+def _humidity_ratio_gkg(t_c, rh):
+    """Humidity ratio in g/kg dry air (Magnus, P=101.325 kPa)."""
+    t_c = float(t_c)
+    rh = float(rh)
+    p_ws = 0.6108 * math.exp((17.27 * t_c) / (t_c + 237.3))
+    p_w = (rh / 100.0) * p_ws
+    denom = 101.325 - p_w
+    if denom <= 0.1:
+        return 31.0
+    return 622.0 * p_w / denom
+
+
+def psy_veto_oad(oad, oa_t, oa_rh, ra_t=None, ra_rh=None, min_oad=15.0, margin_gkg=1.0):
+    """Clamp OAD when outdoor air is wetter than return air.
+
+    Same contract as frontend bandAdvise PSY VETO: if W_oa > W_ra + 1 g/kg
+    and the recipe wants more than min OA, force min_oad. Without RA, no
+    veto (cannot evaluate moisture). Returns (oad, vetoed, w_oa, w_ra).
+    """
+    try:
+        oad = float(oad)
+    except (TypeError, ValueError):
+        return 15.0, False, None, None
+    if ra_t is None or ra_rh is None:
+        return oad, False, None, None
+    try:
+        w_oa = _humidity_ratio_gkg(oa_t, oa_rh)
+        w_ra = _humidity_ratio_gkg(ra_t, ra_rh)
+    except (TypeError, ValueError):
+        return oad, False, None, None
+    if w_oa > w_ra + margin_gkg and oad > min_oad:
+        return float(min_oad), True, w_oa, w_ra
+    return oad, False, w_oa, w_ra
+
+
 def classify_band(oa_t, oa_rh):
     """Classify current OA conditions into B1-B10.
-    Exact boundary match first, then nearest band center as fallback.
+    Exact boundary match first, then nearest window edge among T-compatible
+    bands (never nearest-center — that mapped cool-humid OA to B7).
     """
     for band in BANDS:
         t_lo, t_hi = band['oa_t']
@@ -468,25 +504,41 @@ def classify_band(oa_t, oa_rh):
         if t_lo <= oa_t <= t_hi and rh_lo <= oa_rh <= rh_hi:
             return band
 
-    best = BANDS[4]
+    t_margin = 5.0
+    best = None
     best_dist = float('inf')
     for band in BANDS:
-        t_mid = (band['oa_t'][0] + band['oa_t'][1]) / 2.0
-        rh_mid = (band['oa_rh'][0] + band['oa_rh'][1]) / 2.0
-        dist = ((oa_t - t_mid) ** 2 + (oa_rh - rh_mid) ** 2) ** 0.5
+        if band['oa_damper'] >= 100:
+            continue
+        t_lo, t_hi = band['oa_t']
+        rh_lo, rh_hi = band['oa_rh']
+        if oa_t < t_lo - t_margin or oa_t > t_hi + t_margin:
+            continue
+        t_c = min(max(oa_t, t_lo), t_hi)
+        rh_c = min(max(oa_rh, rh_lo), rh_hi)
+        dist = ((oa_t - t_c) ** 2 + (oa_rh - rh_c) ** 2) ** 0.5
         if dist < best_dist:
             best_dist = dist
             best = band
-    return best
+    return best if best is not None else BANDS[2]  # B2 cool / min OA
 
 
-def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries):
+def write_band_setpoints(csv_object, band, ahu_point_defs, vav_entries,
+                         oa_t=None, oa_rh=None, ra_t=None, ra_rh=None):
     """Write the active band's control setpoints back to the AHU's CSV object.
     Only writes to RW positions - read-only positions are left empty.
+
+    PSY VETO: when live OA is wetter than RA (W_oa > W_ra + 1 g/kg), the
+    written OAD is forced to 15 % even if the band recipe says 50/100.
     """
+    oad, vetoed, w_oa, w_ra = psy_veto_oad(
+        band['oa_damper'], oa_t, oa_rh, ra_t, ra_rh)
+    if vetoed:
+        log('PSY VETO OAD: band {} recipe {}% -> {}% (W_oa={:.1f} > W_ra={:.1f} g/kg)'.format(
+            band.get('id'), band['oa_damper'], oad, w_oa, w_ra))
     write_dict = {
         'SATSP': band['sa_t'],
-        'OAD': band['oa_damper'],
+        'OAD': oad,
     }
     reheat_t = band.get('reheat_t')
     if reheat_t is not None:
@@ -733,20 +785,30 @@ def collect_all(ahu_groups, mock_mode=False):
 
                 try:
                     band = classify_band(float(oa_t_val), float(oa_rh_val))
+                    ra_t_val = entry['points'].get('RAT')
+                    ra_rh_val = entry['points'].get('RAH')
+                    oad_sp, vetoed, w_oa, w_ra = psy_veto_oad(
+                        band['oa_damper'], oa_t_val, oa_rh_val, ra_t_val, ra_rh_val)
                     entry['active_band'] = {
                         'id': band['id'],
                         'sa_t_sp': band['sa_t'],
                         'sa_rh_sp': band['sa_rh'],
                         'reheat_t': band.get('reheat_t'),
-                        'oa_damper_sp': band['oa_damper'],
+                        'oa_damper_sp': oad_sp,
                         'cc_mode': band['cc'],
                         'hc_mode': band['hc'],
                         'hum_mode': band['hum'],
                         'oa_source': _oa_source,
+                        'psy_veto': bool(vetoed),
+                        'w_oa_gkg': None if w_oa is None else round(w_oa, 2),
+                        'w_ra_gkg': None if w_ra is None else round(w_ra, 2),
                     }
                     # Only push setpoints when OA is real (don't override live control with simulated OA)
                     if _oa_source == 'live':
-                        write_band_setpoints(csv_obj, band, ahu_point_defs, vav_entries)
+                        write_band_setpoints(
+                            csv_obj, band, ahu_point_defs, vav_entries,
+                            oa_t=oa_t_val, oa_rh=oa_rh_val,
+                            ra_t=ra_t_val, ra_rh=ra_rh_val)
                     # Always push the active band's description so operators see it
                     write_band_guide_to_description(csv_obj, band)
                 except Exception as _be:

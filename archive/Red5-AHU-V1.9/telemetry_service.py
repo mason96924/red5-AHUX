@@ -1215,26 +1215,14 @@ def ahu_history(ahu_id):
 def _sa_ts_damper_sp(oa_t):
     """OA damper setpoint vs outside temperature, in percent.
 
-    A reduction of the ``OA_Damper_SP`` column of configs/band_guide.csv to a
-    pure function of dry-bulb.  The FastAPI build reads that CSV directly, but
-    this module has no band-table access, and parsing it per request to place a
-    synthetic MA point would be a poor trade.  What matters for the drawing is
-    the shape, and the shape is the whole point: wide open across the
-    economizer / pass-through window, back to a minimum-OA position once the
-    outside air stops being useful.
+    Temperature-only approximation of band_guide.csv. Conservative: the old
+    15–18 °C → 30 % (B3 mild-dry) mapping ignored RH and lied for cool-humid
+    OA. Without RH, stay at min OA outside the economizer dry-bulb window.
 
-    Ranges follow the retiled table: B3 mild-dry 30, B4/B5 economizer
-    / pass-through 100 (18–26 °C), B6 warm-mod 50 (26–28 °C), minimum 15
-    elsewhere.
-
-    Twin of ``_oa_damper_sp`` in backend/routes/history.py; keep the two in
-    step or the same window will draw differently on a controller and on the
-    Linux demo.
+    Twin of ``_oa_damper_sp`` in backend/routes/history.py.
     """
     if 18.0 <= oa_t < 26.0:
         return 100.0
-    if 15.0 <= oa_t < 18.0:
-        return 30.0
     if 26.0 <= oa_t < 28.0:
         return 50.0
     return 15.0
@@ -1293,7 +1281,14 @@ def ahu_sa_timeseries(ahu_id):
         try:
             from mixed_air import derive_mixed_air, rh_from_w  # noqa: PLC0415
             phase = (sum(ord(c) for c in str(ahu_id)) % 100) / 100.0 * 6.283
-            oad = max(0.0, min(100.0, _sa_ts_damper_sp(float(oa['t']))
+            oad_recipe = _sa_ts_damper_sp(float(oa['t']))
+            try:
+                from collector import psy_veto_oad as _psy_veto_oad  # noqa: PLC0415
+                oad_sp, _, _, _ = _psy_veto_oad(
+                    oad_recipe, float(oa['t']), float(oa['rh']), ra_t, ra_rh)
+            except Exception:
+                oad_sp = oad_recipe
+            oad = max(0.0, min(100.0, oad_sp
                                       + 2.0 * math.sin(ts / 3600.0 + phase)))
             f = oad / 100.0
             mat = (f * float(oa['t']) + (1.0 - f) * ra_t

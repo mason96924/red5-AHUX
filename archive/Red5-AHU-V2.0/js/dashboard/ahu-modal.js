@@ -363,24 +363,38 @@ function renderAhuEquipmentModal(ctx) {
                                             zone so it doesn't cover the AHU components but
                                             stays in the operator's line of sight. */}
                                         {(() => {
-                                            const oa = targetAhu && targetAhu.points && targetAhu.points[0];
-                                            const cls = oa ? bandClassify(Number(oa.t), Number(oa.rh)) : { id: '?', exact: false };
+                                            // Band guide: live OAT/OAH + psychrometric veto vs RA.
+                                            // Never trust stale active_band for the climate story.
+                                            const ap = targetAhu && targetAhu.all_points;
+                                            const pts = targetAhu && targetAhu.points;
+                                            const oaPt = pts && pts[0];
+                                            const raPt = pts && pts.find(p => p && (p.label === 'RA' || p.label === 'Return'));
+                                            const oaTnum = (ap && Number.isFinite(Number(ap.OAT)))
+                                                ? Number(ap.OAT)
+                                                : (oaPt ? Number(oaPt.t) : NaN);
+                                            const oaRnum = (ap && Number.isFinite(Number(ap.OAH)))
+                                                ? Number(ap.OAH)
+                                                : (oaPt ? Number(oaPt.rh) : NaN);
+                                            const raTnum = (ap && Number.isFinite(Number(ap.RAT)))
+                                                ? Number(ap.RAT)
+                                                : (raPt ? Number(raPt.t) : NaN);
+                                            const raRnum = (ap && Number.isFinite(Number(ap.RAH)))
+                                                ? Number(ap.RAH)
+                                                : (raPt ? Number(raPt.rh) : NaN);
+                                            const adv = (Number.isFinite(oaTnum) && Number.isFinite(oaRnum))
+                                                ? bandAdvise(oaTnum, oaRnum, raTnum, raRnum)
+                                                : { id: '?', exact: false, oad: 15, veto: null,
+                                                    weather: bandStory('?').weather,
+                                                    plan: bandStory('?').plan,
+                                                    set: bandStory('?').set };
                                             const ab = targetAhu && targetAhu.active_band;
-                                            // Prefer telemetry active_band when present so modal advice
-                                            // matches what the collector classified / wrote.
-                                            const band = (ab && ab.id) ? ab.id : cls.id;
-                                            const exact = !!cls.exact;
-                                            const disagree = !!(ab && ab.id && cls.id && ab.id !== cls.id);
-                                            const story = bandStory(band);
-                                            const oaT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' \u00B0C' : '--';
-                                            const oaR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
+                                            const band = adv.id;
+                                            const exact = !!adv.exact;
+                                            const disagree = !!(ab && ab.id && adv.id && ab.id !== adv.id);
+                                            const oaT = Number.isFinite(oaTnum) ? oaTnum.toFixed(1) + ' \u00B0C' : '--';
+                                            const oaR = Number.isFinite(oaRnum) ? oaRnum.toFixed(0) + ' % RH' : '--';
                                             const badgeCls = bandTint(band);
-                                            const oadSp = (ab && ab.oa_damper_sp != null && Number.isFinite(Number(ab.oa_damper_sp)))
-                                                ? Number(ab.oa_damper_sp)
-                                                : null;
-                                            const setLine = (oadSp != null)
-                                                ? story.set.replace(/OA damper = [^|]+/, 'OA damper = ' + oadSp + ' %')
-                                                : story.set;
+                                            const setLine = adv.set;
                                             const panelBg = dk
                                                 ? 'bg-slate-900/30 border-slate-500/40 text-slate-100'
                                                 : 'bg-white/35 border-slate-400/40 text-slate-900';
@@ -394,13 +408,19 @@ function renderAhuEquipmentModal(ctx) {
                                                         </span>
                                                         {!exact && band !== '?' && (
                                                             <span className="shrink-0 px-1 py-0.5 rounded border border-amber-500/60 text-amber-300 bg-amber-500/15 leading-none font-black tracking-wider font-mono text-[7px]"
-                                                                  title="OA is outside every band window — nearest band center used (not a solid hit)">
+                                                                  title="OA is outside every band window — nearest T-compatible non-economizer edge used">
                                                                 NEAREST
+                                                            </span>
+                                                        )}
+                                                        {adv.veto && (
+                                                            <span className="shrink-0 px-1 py-0.5 rounded border border-fuchsia-500/60 text-fuchsia-300 bg-fuchsia-500/15 leading-none font-black tracking-wider font-mono text-[7px]"
+                                                                  title={`W_oa ${adv.veto.w_oa.toFixed(1)} > W_ra ${adv.veto.w_ra.toFixed(1)} g/kg — economizer blocked`}>
+                                                                PSY VETO
                                                             </span>
                                                         )}
                                                         {disagree && (
                                                             <span className="shrink-0 px-1 py-0.5 rounded border border-rose-500/60 text-rose-300 bg-rose-500/15 leading-none font-black tracking-wider font-mono text-[7px]"
-                                                                  title={`Telemetry active_band=${ab.id} vs UI classify=${cls.id}`}>
+                                                                  title={`Telemetry active_band=${ab.id} vs live OA classify=${adv.id}`}>
                                                                 MISMATCH
                                                             </span>
                                                         )}
@@ -410,11 +430,11 @@ function renderAhuEquipmentModal(ctx) {
                                                     </div>
                                                     <div className="mb-1">
                                                         <div className="text-[7px] uppercase font-bold opacity-60 tracking-wider">Outside</div>
-                                                        <div>{story.weather}</div>
+                                                        <div>{adv.weather}</div>
                                                     </div>
                                                     <div className="mb-1">
                                                         <div className="text-[7px] uppercase font-bold opacity-60 tracking-wider">What the AHU does</div>
-                                                        <div>{story.plan}</div>
+                                                        <div>{adv.plan}</div>
                                                     </div>
                                                     <div>
                                                         <div className="text-[7px] uppercase font-bold opacity-60 tracking-wider">Setpoints</div>
@@ -727,11 +747,21 @@ function renderAhuEquipmentModal(ctx) {
                                         {/* High-contrast text (dark blue / pale blue) so the BAND identifier
                                             reads cleanly off the amber background in both light & dark modes.
                                             The earlier amber-on-amber palette washed out under glare. */}
-                                        {targetAhu?.active_band && (
+                                        {targetAhu && (() => {
+                                            const _ap = targetAhu.all_points;
+                                            const _oa = targetAhu.points && targetAhu.points[0];
+                                            const _t = (_ap && Number.isFinite(Number(_ap.OAT))) ? Number(_ap.OAT) : (_oa ? Number(_oa.t) : NaN);
+                                            const _rh = (_ap && Number.isFinite(Number(_ap.OAH))) ? Number(_ap.OAH) : (_oa ? Number(_oa.rh) : NaN);
+                                            const _id = (Number.isFinite(_t) && Number.isFinite(_rh))
+                                                ? bandClassify(_t, _rh).id
+                                                : (targetAhu.active_band && targetAhu.active_band.id);
+                                            if (!_id) return null;
+                                            return (
                                             <div className={`absolute top-[3%] left-[42%] px-3 py-1 rounded-full border shadow z-30 ${dk?'bg-amber-400 border-amber-500':'bg-amber-100 border-amber-400'}`}>
-                                                <span className={`text-[11px] font-black tracking-wide ${dk?'text-blue-950':'text-blue-900'}`}>BAND {targetAhu.active_band.id}</span>
+                                                <span className={`text-[11px] font-black tracking-wide ${dk?'text-blue-950':'text-blue-900'}`}>BAND {_id}</span>
                                             </div>
-                                        )}
+                                            );
+                                        })()}
                                         </div>
                                         </div>
                                         )}

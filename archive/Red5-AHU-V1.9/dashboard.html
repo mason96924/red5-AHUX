@@ -130,6 +130,20 @@
             cursor: help;
         }
         .ma-wrap { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+        /* Lift the open wrap above sibling AHU rows while tip is shown. */
+        .ma-wrap:hover,
+        .ma-wrap:focus-within,
+        .ma-wrap.tip-pinned { z-index: 2147483000; }
+        /* Sidebar is z-20 / z-[80]; raise it while an MA tip is open so the
+           popover can paint over the psy chart and other main-pane chrome. */
+        [data-testid^="left-sidebar"]:has(.ma-wrap:hover),
+        [data-testid^="left-sidebar"]:has(.ma-wrap:focus-within),
+        [data-testid^="left-sidebar"]:has(.ma-wrap.tip-pinned),
+        [data-testid="left-sidebar-popped"]:has(.ma-wrap:hover),
+        [data-testid="left-sidebar-popped"]:has(.ma-wrap:focus-within),
+        [data-testid="left-sidebar-popped"]:has(.ma-wrap.tip-pinned) {
+            z-index: 2147483000 !important;
+        }
         .ma-fault-chip {
             flex-shrink: 0;
             min-width: 14px;
@@ -145,14 +159,17 @@
             box-shadow: 0 0 6px rgba(239,68,68,.45);
             cursor: help;
         }
+        /* Fixed + JS placement: escapes sidebar overflow-hidden / overflow-y
+           clipping and sits above the chart while focused. Drag the header
+           to reposition while the tip stays open. */
         .ma-fault-tip {
             display: none;
-            position: absolute;
+            position: fixed;
             left: 0;
-            top: calc(100% + 6px);
+            top: 0;
             transform: none;
             width: min(280px, 70vw);
-            z-index: 90;
+            z-index: 2147483000;
             padding: 11px 12px 12px;
             border-radius: 8px;
             background: #0b1220;
@@ -163,7 +180,7 @@
                 0 0 18px rgba(239, 68, 68, 0.2);
             color: #e2e8f0;
             font: 600 11px/1.4 ui-sans-serif, system-ui, sans-serif;
-            pointer-events: none;
+            pointer-events: auto;
             text-align: left;
             text-transform: none;
             letter-spacing: normal;
@@ -179,13 +196,31 @@
             border-top: 0;
         }
         .ma-wrap:hover .ma-fault-tip,
-        .ma-wrap:focus-within .ma-fault-tip { display: block; }
+        .ma-wrap:focus-within .ma-fault-tip,
+        .ma-wrap.tip-pinned .ma-fault-tip,
+        .ma-fault-tip.is-dragging { display: block; }
         .ma-fault-tip-top {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 8px;
+            margin: -4px -4px 8px;
+            padding: 4px;
+            border-radius: 6px;
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
         }
+        .ma-fault-tip-top:active,
+        .ma-fault-tip.is-dragging .ma-fault-tip-top { cursor: grabbing; }
+        .ma-fault-tip-top::after {
+            content: "drag";
+            margin-left: auto;
+            font: 700 8px/1 ui-monospace, Menlo, monospace;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+
         .ma-fault-cat {
             flex-shrink: 0;
             width: 28px;
@@ -606,7 +641,142 @@
             setInterval(refresh, 30000);
         })();
     </script>
-    <div id="root" style="min-height:100vh;background:#0f172a;color:#94a3b8;font-family:ui-monospace,monospace;font-size:13px;padding:24px;">
+        <script>
+        /* Pin MA fault tip to the viewport (escape sidebar overflow) and
+           allow dragging the tip header while it stays open/focused. */
+        (function () {
+            var drag = null; /* { tip, wrap, ox, oy } */
+
+            function clampTip(tip, left, top) {
+                var w = tip.offsetWidth || 280;
+                var h = tip.offsetHeight || 120;
+                left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+                top = Math.max(8, Math.min(top, window.innerHeight - h - 8));
+                tip.style.left = left + 'px';
+                tip.style.top = top + 'px';
+            }
+
+            function placeTip(wrap, force) {
+                if (!wrap) return;
+                var tip = wrap.querySelector('.ma-fault-tip');
+                if (!tip) return;
+                if (!force && (tip.dataset.userMoved === '1' || tip.classList.contains('is-dragging'))) return;
+                var r = wrap.getBoundingClientRect();
+                var w = tip.offsetWidth || 280;
+                var h = tip.offsetHeight || 0;
+                var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+                var top = r.bottom + 6;
+                if (h && top + h > window.innerHeight - 8 && r.top - h - 6 > 8) {
+                    top = r.top - h - 6;
+                }
+                tip.style.left = left + 'px';
+                tip.style.top = top + 'px';
+            }
+
+            function unpinAllExcept(keep) {
+                document.querySelectorAll('.ma-wrap.tip-pinned').forEach(function (el) {
+                    if (el !== keep) el.classList.remove('tip-pinned');
+                });
+            }
+
+            function activeWrap() {
+                return document.querySelector('.ma-wrap.tip-pinned, .ma-wrap:hover, .ma-wrap:focus-within');
+            }
+
+            function refresh() {
+                if (drag) return;
+                var w = activeWrap();
+                if (w) placeTip(w, false);
+            }
+
+            document.addEventListener('mouseover', function (e) {
+                var w = e.target && e.target.closest && e.target.closest('.ma-wrap');
+                if (!w || drag) return;
+                if (w.querySelector('.ma-fault-tip') && w.querySelector('.ma-fault-tip').dataset.userMoved !== '1') {
+                    placeTip(w, true);
+                }
+            });
+
+            document.addEventListener('focusin', function (e) {
+                var w = e.target && e.target.closest && e.target.closest('.ma-wrap');
+                if (!w || drag) return;
+                unpinAllExcept(w);
+                w.classList.add('tip-pinned');
+                var tip = w.querySelector('.ma-fault-tip');
+                placeTip(w, !(tip && tip.dataset.userMoved === '1'));
+            });
+
+            document.addEventListener('mousedown', function (e) {
+                if (e.button !== 0) return;
+                var handle = e.target && e.target.closest && e.target.closest('.ma-fault-tip-top');
+                if (!handle) {
+                    /* click outside closes a pinned tip */
+                    if (!e.target.closest('.ma-fault-tip') && !e.target.closest('.ma-wrap')) {
+                        document.querySelectorAll('.ma-wrap.tip-pinned').forEach(function (el) {
+                            el.classList.remove('tip-pinned');
+                            var t = el.querySelector('.ma-fault-tip');
+                            if (t) delete t.dataset.userMoved;
+                        });
+                    }
+                    return;
+                }
+                var tip = handle.closest('.ma-fault-tip');
+                var wrap = tip && tip.closest('.ma-wrap');
+                if (!tip || !wrap) return;
+                e.preventDefault();
+                e.stopPropagation();
+                unpinAllExcept(wrap);
+                wrap.classList.add('tip-pinned');
+                tip.classList.add('is-dragging');
+                tip.dataset.userMoved = '1';
+                var rect = tip.getBoundingClientRect();
+                drag = { tip: tip, wrap: wrap, ox: e.clientX - rect.left, oy: e.clientY - rect.top };
+                try { tip.setPointerCapture && tip.setPointerCapture(e.pointerId); } catch (_) {}
+            });
+
+            document.addEventListener('mousemove', function (e) {
+                if (!drag) return;
+                e.preventDefault();
+                clampTip(drag.tip, e.clientX - drag.ox, e.clientY - drag.oy);
+            });
+
+            function endDrag() {
+                if (!drag) return;
+                drag.tip.classList.remove('is-dragging');
+                drag = null;
+            }
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('pointerup', endDrag);
+            document.addEventListener('pointercancel', endDrag);
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                document.querySelectorAll('.ma-wrap.tip-pinned').forEach(function (el) {
+                    el.classList.remove('tip-pinned');
+                    var t = el.querySelector('.ma-fault-tip');
+                    if (t) {
+                        delete t.dataset.userMoved;
+                        t.classList.remove('is-dragging');
+                    }
+                });
+                drag = null;
+            });
+
+            /* Leaving a non-pinned wrap resets snap-to-anchor for next open. */
+            document.addEventListener('mouseout', function (e) {
+                var w = e.target && e.target.closest && e.target.closest('.ma-wrap');
+                if (!w || w.classList.contains('tip-pinned') || drag) return;
+                var rel = e.relatedTarget;
+                if (rel && w.contains(rel)) return;
+                var t = w.querySelector('.ma-fault-tip');
+                if (t) delete t.dataset.userMoved;
+            });
+
+            window.addEventListener('scroll', refresh, true);
+            window.addEventListener('resize', refresh);
+        })();
+    </script>
+<div id="root" style="min-height:100vh;background:#0f172a;color:#94a3b8;font-family:ui-monospace,monospace;font-size:13px;padding:24px;">
         <p id="boot-fallback">Loading dashboard&hellip;</p>
     </div>
     <!-- Always-visible build proof (HTML only — no JS). If this corner

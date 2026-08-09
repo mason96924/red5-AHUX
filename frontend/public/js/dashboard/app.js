@@ -764,6 +764,64 @@
             const [vavModalPopupHost, setVavModalPopupHost] = useState(null);
             const [floorPlanPopupWin,  setFloorPlanPopupWin]  = useState(null);
             const [floorPlanPopupHost, setFloorPlanPopupHost] = useState(null);
+            /* VAV Terminal Hub — same POP OUT / FLOAT (PiP) pattern as the
+               AHU/VAV/Floor-Plan modals, plus an in-page float shell when
+               Document PiP is unavailable. */
+            const [vavHubPopupWin,  setVavHubPopupWin]  = useState(null);
+            const [vavHubPopupHost, setVavHubPopupHost] = useState(null);
+            const [vavHubFloating, setVavHubFloating] = useState(false);
+            const [vavHubFloatPos, setVavHubFloatPos] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.vavHubFloatPos')); if (v && typeof v.x === 'number') return v; } catch (e) {}
+                return { x: 80, y: 80 };
+            });
+            const [vavHubFloatSize, setVavHubFloatSize] = useState(() => {
+                try { const v = JSON.parse(localStorage.getItem('red5.vavHubFloatSize')); if (v && typeof v.w === 'number') return v; } catch (e) {}
+                return { w: 640, h: 420 };
+            });
+            const vavHubDragRef = useRef({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 });
+            const vavHubResizeRef = useRef({ active: false, startX: 0, startY: 0, baseW: 0, baseH: 0 });
+            const onVavHubTitleMouseDown = useCallback((e) => {
+                if (e.target.closest('[data-no-drag]')) return;
+                e.preventDefault();
+                vavHubDragRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseX: vavHubFloatPos.x, baseY: vavHubFloatPos.y };
+                const onMove = (mv) => {
+                    if (!vavHubDragRef.current.active) return;
+                    const nx = Math.max(0, Math.min(window.innerWidth - 80,
+                        vavHubDragRef.current.baseX + (mv.clientX - vavHubDragRef.current.startX)));
+                    const ny = Math.max(0, Math.min(window.innerHeight - 40,
+                        vavHubDragRef.current.baseY + (mv.clientY - vavHubDragRef.current.startY)));
+                    setVavHubFloatPos({ x: nx, y: ny });
+                };
+                const onUp = () => {
+                    vavHubDragRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setVavHubFloatPos(p => { try { localStorage.setItem('red5.vavHubFloatPos', JSON.stringify(p)); } catch (e) {} return p; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [vavHubFloatPos]);
+            const onVavHubResizeMouseDown = useCallback((e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                vavHubResizeRef.current = { active: true, startX: e.clientX, startY: e.clientY, baseW: vavHubFloatSize.w, baseH: vavHubFloatSize.h };
+                const onMove = (mv) => {
+                    if (!vavHubResizeRef.current.active) return;
+                    const nw = Math.max(360, Math.min(window.innerWidth - 40,
+                        vavHubResizeRef.current.baseW + (mv.clientX - vavHubResizeRef.current.startX)));
+                    const nh = Math.max(240, Math.min(window.innerHeight - 40,
+                        vavHubResizeRef.current.baseH + (mv.clientY - vavHubResizeRef.current.startY)));
+                    setVavHubFloatSize({ w: nw, h: nh });
+                };
+                const onUp = () => {
+                    vavHubResizeRef.current.active = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    setVavHubFloatSize(s => { try { localStorage.setItem('red5.vavHubFloatSize', JSON.stringify(s)); } catch (e) {} return s; });
+                };
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }, [vavHubFloatSize]);
             useEffect(() => {
                 if (!showAhuModalFor || !ahuBodyRef.current) return;
                 const el = ahuBodyRef.current;
@@ -944,13 +1002,13 @@
             // Close every popup when the parent tab is about to unload.
             useEffect(() => {
                 const onUnload = () => {
-                    [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin].forEach(w => {
+                    [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin, vavHubPopupWin].forEach(w => {
                         if (w && !w.closed) { try { w.close(); } catch (e) {} }
                     });
                 };
                 window.addEventListener('beforeunload', onUnload);
                 return () => window.removeEventListener('beforeunload', onUnload);
-            }, [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin]);
+            }, [ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin, vavHubPopupWin]);
 
             // Auto-close the popup when its underlying modal toggles off.
             useEffect(() => {
@@ -1112,7 +1170,38 @@
             const floatPipFloorPlanModal = useCallback(() => openPipFor('floor_plan', 'Red5 Floor Plan', floorPlanPopupWin, [setFloorPlanPopupWin, setFloorPlanPopupHost], floorPlanModalSize, [
                 [ahuModalPopupWin, setAhuModalPopupWin, setAhuModalPopupHost],
                 [vavModalPopupWin, setVavModalPopupWin, setVavModalPopupHost],
-            ]), [openPipFor, floorPlanPopupWin, floorPlanModalSize, ahuModalPopupWin, vavModalPopupWin]);
+                [vavHubPopupWin, setVavHubPopupWin, setVavHubPopupHost],
+            ]), [openPipFor, floorPlanPopupWin, floorPlanModalSize, ahuModalPopupWin, vavModalPopupWin, vavHubPopupWin]);
+
+            const popOutVavHub = useCallback(() => {
+                setVavHubFloating(false);
+                openPopupFor('vav_hub', 'Red5 VAV Terminal Hub (popped out)', vavHubPopupWin, [setVavHubPopupWin, setVavHubPopupHost], vavHubFloatSize, [
+                    [ahuModalPopupWin, setAhuModalPopupWin, setAhuModalPopupHost],
+                    [vavModalPopupWin, setVavModalPopupWin, setVavModalPopupHost],
+                    [floorPlanPopupWin, setFloorPlanPopupWin, setFloorPlanPopupHost],
+                ].filter(e => e[0] && e[0].__red5IsPip));
+            }, [openPopupFor, vavHubPopupWin, vavHubFloatSize, ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin]);
+
+            const floatVavHub = useCallback(() => {
+                /* Prefer Document PiP when available; otherwise detach the
+                   hub into an in-page floating shell (same document). */
+                if (typeof red5PipSupported === 'function' && red5PipSupported()) {
+                    setVavHubFloating(false);
+                    openPipFor('vav_hub', 'Red5 VAV Terminal Hub', vavHubPopupWin, [setVavHubPopupWin, setVavHubPopupHost], vavHubFloatSize, [
+                        [ahuModalPopupWin, setAhuModalPopupWin, setAhuModalPopupHost],
+                        [vavModalPopupWin, setVavModalPopupWin, setVavModalPopupHost],
+                        [floorPlanPopupWin, setFloorPlanPopupWin, setFloorPlanPopupHost],
+                    ]);
+                    return;
+                }
+                if (vavHubPopupWin && !vavHubPopupWin.closed) {
+                    try { vavHubPopupWin.close(); } catch (e) {}
+                    setVavHubPopupWin(null);
+                    setVavHubPopupHost(null);
+                }
+                setVavHubFloating(true);
+            }, [openPipFor, vavHubPopupWin, vavHubFloatSize, ahuModalPopupWin, vavModalPopupWin, floorPlanPopupWin]);
+
             const [floorPlanOffset, setFloorPlanOffset] = useState({ x: 100, y: 50 });
 
             /* Sun-Path Phase A integration (Dashboard). Tracks live sun-state
@@ -2725,7 +2814,7 @@
                          data-testid="weather3d-view" />
                     <div className="flex flex-col flex-1 overflow-hidden" style={activeView !== 'chart' ? {display:'none'} : {}}>
                     {/* Psychrometric Chart -- extracted to psy-chart-svg.js (L.28) */}
-                    {renderPsyChartSvg({ width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t })}
+                    {renderPsyChartSvg({ width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t, vavHubPopupWin, vavHubPopupHost, vavHubFloating, setVavHubFloating, vavHubFloatPos, vavHubFloatSize, popOutVavHub, floatVavHub, onVavHubTitleMouseDown, onVavHubResizeMouseDown })}
 
                     
                     {/* YEARLY WEATHER STRIP */}

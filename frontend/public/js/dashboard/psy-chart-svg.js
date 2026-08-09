@@ -21,7 +21,7 @@
  * ------------------------------------------------------------------ */
 
 function renderPsyChartSvg(ctx) {
-    const { width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t } = ctx;
+    const { width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t, vavHubPopupWin, vavHubPopupHost, vavHubFloating, setVavHubFloating, vavHubFloatPos, vavHubFloatSize, popOutVavHub, floatVavHub, onVavHubTitleMouseDown, onVavHubResizeMouseDown } = ctx;
 
     /* ----------------------------------------------------------------
      * Process legs.  With MA present every drawn segment corresponds to
@@ -111,43 +111,85 @@ function renderPsyChartSvg(ctx) {
         Removing the card declutters the chart and avoids two parallel
         controls for the same state. */}
 
-    {/* VAV Terminal Table */}
-    {selectedAhuId && ahuData.find(a => a.id === selectedAhuId) && (
-        <div className={`absolute z-50 w-[620px] select-none shadow-2xl ${theme==='dark'?'shadow-black/80':'shadow-slate-300/80'}`} style={{ top: `${safe(vavTableOffset.y)}px`, left: `${safe(vavTableOffset.x)}px` }}>
-            <div className={`${ui.vavHub} backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 shadow-black`}>
-                {(() => {
-                    const currentAhu = ahuData.find(a => a.id === selectedAhuId);
-                    const oaP = currentAhu?.points?.find(p => p.label === 'OA');
-                    const saP = currentAhu?.points?.find(p => p.label === 'SA');
-                    // Active sweet-spot filter narrows the CZ% to the
-                    // intersection of (CZ polygon) AND (operator-defined
-                    // RH band) when both overlay toggles are on.  Off-state
-                    // falls back to the looser CZ-only count so the figure
-                    // stays consistent with what the operator sees.
-                    const activeSweet = (showGivoni && showSweetSpot) ? { lo: sweetSpotRange.lo, hi: sweetSpotRange.hi } : null;
-                    const ahuDiag = getAhuDiagnostic(currentAhu, comfortZonePoly, activeSweet);
-                    return (
-                        <React.Fragment>
-                <div className={`p-4 ${theme==='dark'?'bg-indigo-600/10 border-indigo-500/20':'bg-indigo-50 border-indigo-200'} border-b cursor-grab active:cursor-grabbing font-black shadow-black`} onMouseDown={(e) => { setIsVavDragging(true); setDragStart({ x: e.clientX - vavTableOffset.x, y: e.clientY - vavTableOffset.y }); }}>
-                    <div className="flex justify-between items-center">
+    {/* VAV Terminal Table — docked on chart, in-page float, or POP OUT / PiP */}
+    {selectedAhuId && ahuData.find(a => a.id === selectedAhuId) && (() => {
+        const currentAhu = ahuData.find(a => a.id === selectedAhuId);
+        const saP = currentAhu?.points?.find(p => p.label === 'SA');
+        const activeSweet = (showGivoni && showSweetSpot) ? { lo: sweetSpotRange.lo, hi: sweetSpotRange.hi } : null;
+        const ahuDiag = getAhuDiagnostic(currentAhu, comfortZonePoly, activeSweet);
+        const hubIsPopped = !!(vavHubPopupWin && vavHubPopupHost);
+        const hubIsPip = !!(hubIsPopped && vavHubPopupWin.__red5IsPip);
+        const hubIsFloatPage = !!(vavHubFloating && !hubIsPopped);
+        const hubDetached = hubIsPopped || hubIsFloatPage;
+        const pipOk = typeof red5PipSupported === 'function' && red5PipSupported();
+
+        const hubChromeBtns = (
+            <div className="flex items-center gap-1" data-no-drag onMouseDown={(e) => e.stopPropagation()}>
+                <button
+                    type="button"
+                    data-testid="popout-vav-hub-btn"
+                    data-no-drag
+                    onClick={() => {
+                        if (hubIsPopped && !hubIsPip) {
+                            try { vavHubPopupWin.close(); } catch (e) {}
+                        } else if (typeof popOutVavHub === 'function') {
+                            popOutVavHub();
+                        }
+                    }}
+                    title={hubIsPopped && !hubIsPip ? 'Re-attach VAV hub to the chart' : 'Pop out into a browser window'}
+                    className={`px-1.5 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${hubIsPopped && !hubIsPip ? 'bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-cyan-500 hover:text-cyan-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-cyan-500 hover:text-cyan-600')}`}
+                >{hubIsPopped && !hubIsPip ? '\u21A9 ATTACH' : '\u2197 POP OUT'}</button>
+                {(pipOk || !hubIsPopped) && (
+                    <button
+                        type="button"
+                        data-testid="float-vav-hub-btn"
+                        data-no-drag
+                        onClick={() => {
+                            if (hubIsPip) {
+                                try { vavHubPopupWin.close(); } catch (e) {}
+                            } else if (hubIsFloatPage) {
+                                setVavHubFloating(false);
+                            } else if (typeof floatVavHub === 'function') {
+                                floatVavHub();
+                            }
+                        }}
+                        title={hubIsPip || hubIsFloatPage ? 'Re-attach float box to the chart' : (pipOk ? 'Float as a minimal always-on-top box (Chrome/Edge PiP)' : 'Float as an in-page panel')}
+                        className={`px-1.5 py-0.5 border rounded text-[8px] font-black uppercase tracking-wider transition-all ${(hubIsPip || hubIsFloatPage) ? 'bg-violet-700 border-violet-400 text-slate-100 hover:bg-violet-600' : (theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700 hover:border-violet-500 hover:text-violet-300' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-violet-500 hover:text-violet-600')}`}
+                    >{(hubIsPip || hubIsFloatPage) ? '\u21A9 ATTACH' : '\u25A3 FLOAT'}</button>
+                )}
+            </div>
+        );
+
+        const hubPanel = (
+            <div className={`${ui.vavHub} backdrop-blur-xl border border-indigo-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden ${hubDetached ? 'h-full rounded-none border-0' : 'animate-in zoom-in-95 duration-200'} shadow-black`} data-testid="vav-terminal-hub">
+                <div
+                    className={`p-4 ${theme==='dark'?'bg-indigo-600/10 border-indigo-500/20':'bg-indigo-50 border-indigo-200'} border-b font-black shadow-black ${hubIsFloatPage ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}`}
+                    onMouseDown={(e) => {
+                        if (hubDetached) return;
+                        if (e.target.closest('[data-no-drag]')) return;
+                        setIsVavDragging(true);
+                        setDragStart({ x: e.clientX - vavTableOffset.x, y: e.clientY - vavTableOffset.y });
+                    }}
+                >
+                    <div className="flex justify-between items-center gap-2">
                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400 font-mono shadow-black">{t('vav_terminal_hub')}</h3>
-                        {ahuDiag && (
-                            <div className="flex items-center gap-3">
-                                <span className={`text-[9px] font-black uppercase tracking-wider ${ahuDiag.process === 'heating' ? 'text-orange-400' : ahuDiag.process === 'cooling' ? 'text-cyan-400' : 'text-emerald-400'}`}>
-                                    {ahuDiag.process === 'heating' ? 'HTG' : ahuDiag.process === 'cooling' ? 'CLG' : 'IDLE'}
-                                </span>
-                                <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}
-                                      title={activeSweet
-                                          ? `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ AND RH ${activeSweet.lo}–${activeSweet.hi}%`
-                                          : `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ`}>
-                                    {ahuDiag.comfortPct}% ({ahuDiag.inCZCount}/{ahuDiag.totalVavs}) {activeSweet ? 'CZ∩SS' : 'CZ'}
-                                </span>
-                            </div>
-                        )}
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                            {ahuDiag && (
+                                <div className="flex items-center gap-3">
+                                    <span className={`text-[9px] font-black uppercase tracking-wider ${ahuDiag.process === 'heating' ? 'text-orange-400' : ahuDiag.process === 'cooling' ? 'text-cyan-400' : 'text-emerald-400'}`}>
+                                        {ahuDiag.process === 'heating' ? 'HTG' : ahuDiag.process === 'cooling' ? 'CLG' : 'IDLE'}
+                                    </span>
+                                    <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}
+                                          title={activeSweet
+                                              ? `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ AND RH ${activeSweet.lo}–${activeSweet.hi}%`
+                                              : `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ`}>
+                                        {ahuDiag.comfortPct}% ({ahuDiag.inCZCount}/{ahuDiag.totalVavs}) {activeSweet ? 'CZ∩SS' : 'CZ'}
+                                    </span>
+                                </div>
+                            )}
+                            {hubChromeBtns}
+                        </div>
                     </div>
-                    {/* Comfort-tier legend (A/B/C+/C-) — moved here from the sidebar so the
-                        operator sees the CZ tier colour code right next to the VAV table that
-                        uses those colours.  Only rendered while the Givoni overlay is on. */}
                     {renderGivoniTierLegend({ showGivoni, theme })}
                     {ahuDiag && ahuDiag.recommendations.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
@@ -157,28 +199,14 @@ function renderPsyChartSvg(ctx) {
                         </div>
                     )}
                 </div>
-                <div className={`max-h-[280px] overflow-y-auto custom-scrollbar p-2 bg-opacity-20 font-mono text-[11px] ${ui.text}`}>
+                <div className={`${hubDetached ? 'flex-1 min-h-0' : 'max-h-[280px]'} overflow-y-auto custom-scrollbar p-2 bg-opacity-20 font-mono text-[11px] ${ui.text}`}>
                     <table className="w-full text-left border-separate border-spacing-y-1">
                         <thead><tr className={`text-[9px] font-black uppercase text-slate-400`}><th className="w-5">CZ</th><th>ID</th><th>Temp</th><th>RH%</th><th>h</th><th>Dh(SA)</th><th>Dist</th><th>Demand</th><th className="text-center font-black">Lock</th></tr></thead>
                         <tbody className="opacity-90">
                             {currentAhu.vavs && currentAhu.vavs.map(v => {
                                 const saH = saP ? getH(saP.t, saP.w) : 0;
                                 const diffH = v.h - saH;
-                                // Pass the SAME activeSweet filter as the AHU-level
-                                // diagnostic so the row's status and the badge's
-                                // CZ% stay in sync: a VAV that's "in CZ but not
-                                // sweet" will downgrade from optimal/comfort to
-                                // warning here too, matching the badge count.
                                 const diag = getVavDiagnostic(v, saP, comfortZonePoly, activeSweet);
-                                // Givoni-aware tier classification.  Single resolver in
-                                // psychrometric.js owns BOTH the dot colour (auto-derived
-                                // from the same hex tokens the chart polygons use) AND the
-                                // control-strategy hint shown in the tooltip + chart
-                                // callout, so visual + recommendation stay in lock-step.
-                                //   Tier A -> SWEET_FILL    + HOLD setpoints
-                                //   Tier B -> CZ_STROKE     + Soft trim humidify/dehumidify
-                                //   Tier C+ -> HOT_OUTSIDE  + mech cool / dehumidify
-                                //   Tier C- -> COLD_OUTSIDE + mech heat / humidify
                                 const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
                                 const gv = getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, _gvSweet, showGivoni);
                                 const statusStyle = {
@@ -205,12 +233,92 @@ function renderPsyChartSvg(ctx) {
                         </tbody>
                     </table>
                 </div>
-                        </React.Fragment>
-                    );
-                })()}
             </div>
-        </div>
-    )}
+        );
+
+        const docked = !hubDetached ? (
+            <div className={`absolute z-50 w-[620px] select-none shadow-2xl ${theme==='dark'?'shadow-black/80':'shadow-slate-300/80'}`} style={{ top: `${safe(vavTableOffset.y)}px`, left: `${safe(vavTableOffset.x)}px` }}>
+                {hubPanel}
+            </div>
+        ) : (
+            <button
+                type="button"
+                data-testid="vav-hub-attach-chip"
+                onClick={() => {
+                    if (hubIsPopped) { try { vavHubPopupWin.close(); } catch (e) {} }
+                    setVavHubFloating(false);
+                }}
+                className={`absolute z-50 top-4 right-4 px-2 py-1 rounded-lg border text-[9px] font-black uppercase tracking-wider ${theme==='dark' ? 'bg-slate-900/90 border-indigo-500/40 text-indigo-300 hover:bg-indigo-900/40' : 'bg-white/95 border-indigo-300 text-indigo-700 hover:bg-indigo-50'}`}
+                title="VAV Terminal Hub is detached — click to bring it back"
+            >{'\u21A9'} VAV Hub {hubIsPip ? 'PiP' : hubIsPopped ? 'window' : 'float'} · click to attach</button>
+        );
+
+        const portals = [];
+        if (hubIsPopped && vavHubPopupHost) {
+            portals.push(ReactDOM.createPortal(
+                <div className="h-full w-full flex flex-col overflow-hidden" data-testid="vav-hub-popped-host">{hubPanel}</div>,
+                vavHubPopupHost
+            ));
+        }
+        if (hubIsFloatPage) {
+            portals.push(ReactDOM.createPortal(
+                <div
+                    className={`fixed z-[90] rounded-xl shadow-2xl overflow-hidden ${theme==='dark' ? 'border border-indigo-500/40 bg-slate-900' : 'border border-slate-300 bg-white'}`}
+                    style={{
+                        left: (vavHubFloatPos && vavHubFloatPos.x) + 'px',
+                        top: (vavHubFloatPos && vavHubFloatPos.y) + 'px',
+                        width: (vavHubFloatSize && vavHubFloatSize.w) + 'px',
+                        height: (vavHubFloatSize && vavHubFloatSize.h) + 'px',
+                    }}
+                    data-testid="vav-hub-floating-shell"
+                >
+                    <div
+                        onMouseDown={onVavHubTitleMouseDown}
+                        className={`cursor-grab active:cursor-grabbing flex items-center justify-between px-3 py-1.5 border-b ${theme==='dark' ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}
+                        data-testid="vav-hub-floating-titlebar"
+                    >
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${theme==='dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                            {'\u2725 VAV Hub \u2014 drag to move'}
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <button
+                                data-no-drag
+                                data-testid="vav-hub-floating-to-window"
+                                onClick={popOutVavHub}
+                                className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border transition-all ${theme==='dark' ? 'bg-slate-700 border-slate-500 text-slate-200 hover:bg-cyan-700 hover:border-cyan-400' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-cyan-100 hover:border-cyan-400'}`}
+                                title="Send the VAV hub to a separate browser window"
+                            >{'\u29C9 To Window'}</button>
+                            <button
+                                data-no-drag
+                                data-testid="vav-hub-floating-attach"
+                                onClick={() => setVavHubFloating(false)}
+                                className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border bg-emerald-700 border-emerald-400 text-slate-100 hover:bg-emerald-600 transition-all"
+                                title="Re-attach VAV hub to the chart"
+                            >{'\u21A9 Attach'}</button>
+                        </div>
+                    </div>
+                    <div className="flex flex-col overflow-hidden" style={{ height: 'calc(100% - 30px)' }}>
+                        {hubPanel}
+                    </div>
+                    <div
+                        onMouseDown={onVavHubResizeMouseDown}
+                        title="Drag to resize"
+                        data-testid="vav-hub-floating-resize"
+                        className={`absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize z-[91] ${theme==='dark' ? 'bg-indigo-500/40 hover:bg-indigo-500/80' : 'bg-indigo-300 hover:bg-indigo-500'}`}
+                        style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}
+                    />
+                </div>,
+                document.body
+            ));
+        }
+
+        return (
+            <React.Fragment>
+                {docked}
+                {portals}
+            </React.Fragment>
+        );
+    })()}
 
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} className={`w-full h-full cursor-crosshair transition-all duration-500 shadow-black shadow-black`}>
         <defs>

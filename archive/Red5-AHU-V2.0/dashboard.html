@@ -107,6 +107,7 @@
         .trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
         @keyframes fadeGlow { 0%{opacity:0.4} 50%{opacity:1} 100%{opacity:0.4} }
         .anim-glow { animation: fadeGlow 2s ease-in-out infinite; }
+        /* MA fault glow + category popup (sidebar AHU badge) */
         @keyframes ma-pulse {
             0%, 100% { box-shadow: 0 0 0 1px rgba(239,68,68,.35), 0 0 6px 1px rgba(239,68,68,.45), 0 0 10px 1px rgba(239,68,68,.2); }
             50%      { box-shadow: 0 0 0 1px rgba(239,68,68,.55), 0 0 8px 2px rgba(239,68,68,.65), 0 0 14px 2px rgba(239,68,68,.3); }
@@ -213,7 +214,6 @@
             text-transform: uppercase;
             color: #64748b;
         }
-
         .ma-fault-cat {
             flex-shrink: 0;
             width: 28px;
@@ -265,7 +265,6 @@
             color: #fecaca;
             font-weight: 700;
         }
-
         /* MetricBar peripheral-vision cue (Phase L.44, 2026-06-27).
            Fires ONCE for 600 ms when a pill enters / leaves an "alarming"
            bucket (|delta| >= 3 kJ/kg).  Runs on the wrapper div whose
@@ -363,7 +362,9 @@
         }
         /* Hide embedder-irrelevant chrome inside the modal */
         body.iframe-modal-mode [data-testid='popout-ahu-modal-btn'],
-        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'] { display: none !important; }
+        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'],
+        body.iframe-modal-mode [data-testid='popout-vav-hub-btn'],
+        body.iframe-modal-mode [data-testid='float-vav-hub-btn'] { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > h3 > span:last-child,
         body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > div:last-child > button:last-child,
@@ -634,7 +635,7 @@
             setInterval(refresh, 30000);
         })();
     </script>
-        <script>
+    <script>
         /* Pin MA fault tip to the viewport (escape sidebar overflow) and
            allow dragging the tip header while it stays open/focused. */
         (function () {
@@ -769,7 +770,7 @@
             window.addEventListener('resize', refresh);
         })();
     </script>
-<div id="root"></div>
+    <div id="root"></div>
     <!-- Pre-compiled offline by /app/frontend/src/dashboard/build.sh —
          contains the verbatim concatenation of (in order):
             psychrometric.js, dashboard-components.js, schema-config.js,
@@ -778,6 +779,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=406733c998"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=09418efc4e"></script>
 </body>
 </html>

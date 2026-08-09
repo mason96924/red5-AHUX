@@ -362,7 +362,9 @@
         }
         /* Hide embedder-irrelevant chrome inside the modal */
         body.iframe-modal-mode [data-testid='popout-ahu-modal-btn'],
-        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'] { display: none !important; }
+        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'],
+        body.iframe-modal-mode [data-testid='popout-vav-hub-btn'],
+        body.iframe-modal-mode [data-testid='float-vav-hub-btn'] { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > h3 > span:last-child,
         body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > div:last-child > button:last-child,
@@ -777,6 +779,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=406733c998"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=09418efc4e"></script>
 </body>
 </html>

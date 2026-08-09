@@ -107,6 +107,115 @@
         .trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
         @keyframes fadeGlow { 0%{opacity:0.4} 50%{opacity:1} 100%{opacity:0.4} }
         .anim-glow { animation: fadeGlow 2s ease-in-out infinite; }
+        @keyframes ma-pulse {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(239,68,68,.35), 0 0 6px 1px rgba(239,68,68,.45), 0 0 10px 1px rgba(239,68,68,.2); }
+            50%      { box-shadow: 0 0 0 1px rgba(239,68,68,.55), 0 0 8px 2px rgba(239,68,68,.65), 0 0 14px 2px rgba(239,68,68,.3); }
+        }
+        button.ma-alert {
+            outline: 1px solid rgba(239, 68, 68, 0.85);
+            outline-offset: 1px;
+            border-radius: 2px;
+            box-shadow:
+                0 0 0 1px rgba(239, 68, 68, 0.35),
+                0 0 6px 1px rgba(239, 68, 68, 0.55),
+                0 0 12px 2px rgba(239, 68, 68, 0.25);
+            animation: ma-pulse 2.4s ease-in-out infinite;
+            cursor: help;
+        }
+        .ma-wrap { position: relative; display: inline-flex; }
+        .ma-fault-tip {
+            display: none;
+            position: absolute;
+            left: calc(100% + 10px);
+            top: 50%;
+            transform: translateY(-50%);
+            width: 280px;
+            z-index: 80;
+            padding: 11px 12px 12px;
+            border-radius: 8px;
+            background: #0b1220;
+            border: 1px solid rgba(239, 68, 68, 0.55);
+            box-shadow:
+                0 0 0 1px rgba(239, 68, 68, 0.2),
+                0 12px 28px rgba(0,0,0,.55),
+                0 0 18px rgba(239, 68, 68, 0.2);
+            color: #e2e8f0;
+            font: 600 11px/1.4 ui-sans-serif, system-ui, sans-serif;
+            pointer-events: none;
+            text-align: left;
+            text-transform: none;
+            letter-spacing: normal;
+        }
+        .ma-fault-tip::before {
+            content: "";
+            position: absolute;
+            left: -6px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 6px solid transparent;
+            border-right-color: rgba(239, 68, 68, 0.55);
+            border-left: 0;
+        }
+        .ma-wrap:hover .ma-fault-tip,
+        .ma-wrap:focus-within .ma-fault-tip { display: block; }
+        .ma-fault-tip-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .ma-fault-cat {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font: 800 14px/1 ui-monospace, Menlo, monospace;
+            color: #fff;
+            background: linear-gradient(160deg, #ef4444, #b91c1c);
+            box-shadow: 0 0 10px rgba(239,68,68,.45);
+        }
+        .ma-fault-flags {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(239,68,68,.15);
+            border: 1px solid rgba(239,68,68,.4);
+            color: #fecaca;
+            font: 700 8px/1.2 ui-monospace, Menlo, monospace;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .ma-fault-k {
+            display: block;
+            font: 700 9px/1 ui-monospace, Menlo, monospace;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #f87171;
+            margin: 0 0 3px;
+        }
+        .ma-fault-v {
+            display: block;
+            color: #f1f5f9;
+            margin: 0 0 9px;
+            font-weight: 600;
+        }
+        .ma-fault-needs-explain {
+            margin-top: 2px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(248,113,113,.25);
+            color: #cbd5e1;
+            font-weight: 500;
+            font-size: 10.5px;
+            line-height: 1.45;
+        }
+        .ma-fault-needs-explain strong {
+            color: #fecaca;
+            font-weight: 700;
+        }
+
         /* MetricBar peripheral-vision cue (Phase L.44, 2026-06-27).
            Fires ONCE for 600 ms when a pill enters / leaves an "alarming"
            bucket (|delta| >= 3 kJ/kg).  Runs on the wrapper div whose
@@ -484,6 +593,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=022247a0cc"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=544b82fb42"></script>
 </body>
 </html>

@@ -57,8 +57,8 @@ from __future__ import annotations
 import math
 from typing import Optional, Tuple
 
-# Amber -- distinct from OA blue (#3b82f6), SA green (#10b981), RA rose
-# (#f43f5e) at both chart scales and in the sidebar toggle list.
+# Amber -- distinct from OA navy (#1e3a8a), SA green (#10b981), RA blue
+# (#2563eb) at both chart scales and in the sidebar toggle list.
 MA_COLOR = "#f59e0b"
 
 MIN_DT_C = 2.0        # APAR temperature threshold; below this f_t is junk
@@ -66,6 +66,8 @@ MIN_DW_KGKG = 1.0e-4  # 0.1 g/kg -- below this f_w is junk
 FRACTION_TOL = 0.05   # slack on the physical 0..1 bound before flagging
 DAMPER_TOL = 0.20     # OA-fraction disagreement that raises a flag
 LINE_TOL_GKG = 1.0    # off-line distance that raises a flag, g/kg
+TEMP_LINE_TOL_C = 0.5 # when OA≈RA, T residual vs humidity lever (deg C)
+MAT_RANGE_TOL_C = 0.3 # MAT outside [min(OA,RA), max(OA,RA)] (deg C)
 
 
 def humidity_ratio(t_c: float, rh: float) -> float:
@@ -98,6 +100,28 @@ def rh_from_w(t_c: float, w_kgkg: float) -> float:
     w = w_kgkg * 1000.0
     p_w = 101.325 * w / (621.945 + w)
     return max(0.0, min(100.0, 100.0 * p_w / p_ws))
+
+
+def chord_w_residual_gkg(
+    t_oa: float, w_oa: float,
+    t_ra: float, w_ra: float,
+    t_ma: float, w_ma: float,
+) -> float:
+    """Humidity residual (g/kg) of MA vs the infinite OA–RA mixing line.
+
+    Projects MA onto the chord in the (T °C, w g/kg) plane and returns the
+    w-component of that residual.  Works when ΔT is too small for a stable
+    temperature lever — the usual OA≈RA case on mild days.
+    """
+    ax, ay = float(t_oa), float(w_oa) * 1000.0
+    bx, by = float(t_ra), float(w_ra) * 1000.0
+    cx, cy = float(t_ma), float(w_ma) * 1000.0
+    abx, aby = bx - ax, by - ay
+    ab2 = abx * abx + aby * aby
+    if ab2 < 1e-12:
+        return cy - ay
+    t = ((cx - ax) * abx + (cy - ay) * aby) / ab2
+    return cy - (ay + t * aby)
 
 
 def enthalpy(t_c: float, w_kgkg: float) -> float:
@@ -195,6 +219,15 @@ def derive_mixed_air(
     if f is not None and (f < -FRACTION_TOL or f > 1.0 + FRACTION_TOL):
         flags.append("mat_outside_oa_ra")
 
+    # Direct T-range check (independent of the ΔT ≥ 2 °C floor used for f_t).
+    # When OA≈RA the fraction is ill-conditioned, but MAT hotter/colder than
+    # both parents is still a physical impossibility for simple mixing.
+    if mat is not None:
+        t_lo, t_hi = min(t_oa, t_ra), max(t_oa, t_ra)
+        if mat < t_lo - MAT_RANGE_TOL_C or mat > t_hi + MAT_RANGE_TOL_C:
+            if "mat_outside_oa_ra" not in flags:
+                flags.append("mat_outside_oa_ra")
+
     # Derived fraction vs what the damper was told to do.  Only meaningful
     # when the fraction came from a measurement, not from the damper itself.
     mismatch = None
@@ -204,11 +237,27 @@ def derive_mixed_air(
             flags.append("damper_mismatch")
 
     # With both MA channels wired the off-line distance becomes real.
+    # Prefer the classical T-lever w residual; when ΔT is too small for f_t,
+    # fall back to chord projection (and a T residual vs the humidity lever).
     deviation_gkg = None
-    if basis == "measured" and f_t is not None:
-        w_pred = _clamp01(f_t) * w_oa + (1.0 - _clamp01(f_t)) * w_ra
-        deviation_gkg = (w_ma - w_pred) * 1000.0
-        if abs(deviation_gkg) > LINE_TOL_GKG:
+    if basis == "measured":
+        if f_t is not None:
+            w_pred = _clamp01(f_t) * w_oa + (1.0 - _clamp01(f_t)) * w_ra
+            deviation_gkg = (w_ma - w_pred) * 1000.0
+        else:
+            deviation_gkg = chord_w_residual_gkg(
+                t_oa, w_oa, t_ra, w_ra, t_ma, w_ma
+            )
+            if f_w is not None:
+                t_pred = _clamp01(f_w) * t_oa + (1.0 - _clamp01(f_w)) * t_ra
+                if abs(t_ma - t_pred) > TEMP_LINE_TOL_C:
+                    if "off_mixing_line" not in flags:
+                        flags.append("off_mixing_line")
+        if (
+            deviation_gkg is not None
+            and abs(deviation_gkg) > LINE_TOL_GKG
+            and "off_mixing_line" not in flags
+        ):
             flags.append("off_mixing_line")
 
     ma_point = {

@@ -761,20 +761,43 @@ function renderSidebar(ctx) {
                     <div className="flex-1 space-y-0.5 min-w-0 overflow-hidden">{ahu.points?.map(p => { const pt = Number(p.t); const prh = Number(p.rh); const tTxt = Number.isFinite(pt) ? pt.toFixed(1) + '°' : '--'; const rhTxt = Number.isFinite(prh) ? prh.toFixed(0) + '%' : '--%';
                         const active = pointVisibility[p.label] !== false;
                         const toggleVis = (e) => { e.stopPropagation(); setPointVisibility({ ...pointVisibility, [p.label]: !active }); };
-                        return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
+                        const _pc = (typeof red5PointColor === 'function' ? red5PointColor(p.label, p.color) : p.color);
+                        const _maTip = (p.label === 'MA' && typeof maFaultTipModel === 'function')
+                            ? maFaultTipModel(ahu.mixing, { ervEnabled: !!(ervSnap && ervSnap.enabled) })
+                            : null;
+                        const lblBtn = (
                             <button data-testid={`ahu-row-toggle-${ahu.id}-${p.label}`} onClick={toggleVis}
-                                    title={active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`}
-                                    style={{ color: p.color, background:'transparent', border:'none', padding:0, width:'1.4rem' }}
-                                    className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline shrink-0 text-left ${active ? '' : 'line-through'}`}>
+                                    title={_maTip
+                                        ? `MA fault ${ _maTip.cat }: ${_maTip.flagText}`
+                                        : (active ? `Hide ${p.label} marker on chart` : `Show ${p.label} marker on chart`)}
+                                    style={{ color: _pc, background:'transparent', border:'none', padding:0, width:'1.4rem' }}
+                                    className={`font-black uppercase tracking-tighter shadow-black cursor-pointer hover:underline shrink-0 text-left ${active ? '' : 'line-through'}${_maTip ? ' ma-alert' : ''}`}>
                                 {p.label}
                             </button>
-                            {/* Per-point inline strip dropped the enthalpy
-                                value (Phase L.43, 2026-06-27) — it was
-                                eating ~35 px and colliding with the
-                                preset card at FULL + the pills at SLIM.
-                                The enthalpy is still available on the
-                                pill (top label) and via the chart, so
-                                no information is actually lost. */}
+                        );
+                        return ( <div key={p.label} className={`flex items-center gap-2 font-mono text-[9px] border-b ${theme==='dark'?'border-white/5':'border-black/5'} last:border-0 py-0.5 transition-opacity ${active ? 'opacity-90' : 'opacity-40'}`}>
+                            {_maTip ? (
+                                <span className="ma-wrap relative inline-flex shrink-0" data-testid={`ahu-${ahu.id}-ma-fault`}>
+                                    {lblBtn}
+                                    <div className="ma-fault-tip" role="tooltip">
+                                        <div className="ma-fault-tip-top">
+                                            <span className="ma-fault-cat" title={`Category ${_maTip.cat}`}>{_maTip.cat}</span>
+                                            <span className="ma-fault-flags">{_maTip.flagText}</span>
+                                        </div>
+                                        <span className="ma-fault-k">Pattern</span>
+                                        <span className="ma-fault-v">{_maTip.pattern}</span>
+                                        <span className="ma-fault-k">Points to</span>
+                                        <span className="ma-fault-v">{_maTip.points}</span>
+                                        <span className="ma-fault-k">Why</span>
+                                        <span className="ma-fault-v">{_maTip.why}</span>
+                                        <span className="ma-fault-k">Needs</span>
+                                        <span className="ma-fault-v">{_maTip.needs}</span>
+                                        <div className="ma-fault-needs-explain">
+                                            <strong>Needs means:</strong> {_maTip.needsExplain}
+                                        </div>
+                                    </div>
+                                </span>
+                            ) : lblBtn}
                             <span className={`${ui.text} font-bold font-mono tracking-tighter whitespace-nowrap`}>{tTxt} / {rhTxt}</span>
                         </div> );
                     })}</div>

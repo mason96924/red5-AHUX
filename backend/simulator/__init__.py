@@ -397,11 +397,11 @@ def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,
 
     _points = [
         {"label": "OA", "t": oa["t"], "rh": oa["rh"],
-         "w": oa["w"], "color": "#3b82f6"},
+         "w": oa["w"], "color": "#1e3a8a"},
         {"label": "SA", "t": round(sa_t, 2), "rh": round(sa_rh, 1),
          "w": round(_humidity_ratio(sa_t, sa_rh), 5), "color": "#10b981"},
         {"label": "RA", "t": round(ra_t, 2), "rh": round(ra_rh, 1),
-         "w": round(_humidity_ratio(ra_t, ra_rh), 5), "color": "#f43f5e"},
+         "w": round(_humidity_ratio(ra_t, ra_rh), 5), "color": "#2563eb"},
     ]
     # MA goes last -- positional points[0..2] accesses elsewhere must keep
     # resolving to OA / SA / RA.

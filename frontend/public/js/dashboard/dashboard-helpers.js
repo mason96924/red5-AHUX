@@ -24,6 +24,125 @@
  *     deps via props).
  */
 
+/* Canonical OA/RA/SA/MA colours for sidebar labels + main psy-chart dots.
+ * OA navy matches the process mini-badge; RA is blue (was rose). */
+const RED5_POINT_COLORS = {
+    OA: '#1e3a8a',
+    RA: '#2563eb',
+    SA: '#10b981',
+    MA: '#f59e0b',
+};
+const RED5_POINT_DOT_OPACITY = 0.8; /* 20% transparent on the main chart */
+function red5PointColor(label, fallback) {
+    return RED5_POINT_COLORS[label] || fallback || '#94a3b8';
+}
+
+/* MA fault categories A–H (ma_off_chord_diagnostics.html). Rank from
+ * ahu.mixing.flags + damper/OAD context for the sidebar glow popup. */
+const MA_FAULT_CATALOG = {
+    A: {
+        pattern: 'Off-chord + small damper_mismatch',
+        points: 'Sensor / probe (MAT or MAH)',
+        why: 'Mix fraction matches OAD; moisture does not match T-lever',
+        needs: 'MAT+MAH, OAD',
+        needsExplain: 'MAT alone cannot prove off-chord (W is forced onto the line). You need MAH for independent humidity, and OAD to show the mix ratio still matches the damper — so the fault is the sensor, not economizer.',
+    },
+    B: {
+        pattern: 'Off-chord + large damper_mismatch',
+        points: 'Economizer / damper / leakage / stratification',
+        why: 'Commanded OA% ≠ actual mix fraction',
+        needs: 'MAT, OAD (± MAH)',
+        needsExplain: 'Compare temperature-derived OA fraction from MAT to commanded OAD. Large disagreement ⇒ damper/leak/stratification. MAH strengthens the case but is not required to flag a damper mismatch.',
+    },
+    C: {
+        pattern: 'MAT outside OA–RA range (f < 0 or > 1)',
+        points: 'Sensor bias or stratification',
+        why: 'MAT outside OA–RA temperature range (APAR Rule 10 family)',
+        needs: 'MAT, OA, RA',
+        needsExplain: 'A simple mixing box cannot produce MAT hotter or colder than both parents. Confirm the three temperatures; stratification at a single-point MAT is the most common false positive.',
+    },
+    D: {
+        pattern: 'Off-chord wetter than mix; OAD ≈ minimum',
+        points: 'Unmeasured moisture / EA path / duct leak',
+        why: 'Extra water mass not explained by OA–RA mix',
+        needs: 'MAT + MAH',
+        needsExplain: 'Extra water mass only shows when MA humidity is measured (MAT+MAH). Without MAH you cannot see “wetter than the chord.”',
+    },
+    E: {
+        pattern: 'Plotted OA ≠ air entering the mixing box',
+        points: 'ERV / HRV',
+        why: 'Wheel moves OA toward RA in h (and sometimes w) before mixing',
+        needs: 'EA T/RH, wheel enable, or OA-after-ERV',
+        needsExplain: 'Prove the wheel is active and compare exhaust air (or OA after the wheel) to free-stream OA — without those points, ERV looks like a random sensor fault.',
+    },
+    F: {
+        pattern: 'Off-chord only when wheel ON; gone when OFF',
+        points: 'ERV / HRV',
+        why: 'Controlled A/B confirms transfer, not sensor',
+        needs: 'Wheel status + same sensors',
+        needsExplain: 'Toggle the wheel and watch the chord residual. If the fault tracks wheel enable, it is ERV transfer — not a failed MAT/MAH.',
+    },
+    G: {
+        pattern: 'Off-chord mainly at high OAD / economizer high',
+        points: 'Economizer leakage / nonlinear damper / bypass',
+        why: 'Mixing imperfect at extreme positions',
+        needs: 'OAD + MAT(+MAH)',
+        needsExplain: 'A healthy economizer moves MA along the chord. Off-chord at high OAD points to leakage, bypass, or stratification — not “economizer on” by itself.',
+    },
+    H: {
+        pattern: 'Persistent bias independent of OAD & wheel',
+        points: 'Sensor drift (OA, RA, or MA)',
+        why: 'Not explained by process mode',
+        needs: 'Cross-check / handheld',
+        needsExplain: 'When flags persist across OAD and ERV modes, verify OA/RA/MA with a handheld or sibling sensor before chasing dampers.',
+    },
+};
+
+function classifyMaFault(mixing, opts) {
+    const mx = mixing || {};
+    const flags = Array.isArray(mx.flags) ? mx.flags : [];
+    if (!flags.length) return null;
+    const off = flags.indexOf('off_mixing_line') >= 0;
+    const outside = flags.indexOf('mat_outside_oa_ra') >= 0;
+    const dampMis = flags.indexOf('damper_mismatch') >= 0;
+    const oad = (typeof mx.oa_fraction_damper === 'number') ? mx.oa_fraction_damper : null;
+    const mismatch = (typeof mx.damper_mismatch === 'number') ? mx.damper_mismatch : null;
+    const dev = (typeof mx.line_deviation_g_kg === 'number') ? mx.line_deviation_g_kg : null;
+    const ervOn = !!(opts && opts.ervEnabled);
+
+    if (outside) return 'C';
+    if (off && ervOn) return 'E';
+    if (off && dampMis) return 'B';
+    if (off && oad != null && oad <= 0.15 && dev != null && dev > 0) return 'D';
+    if (off && oad != null && oad >= 0.70) return 'G';
+    if (off && (mismatch == null || mismatch <= 0.20)) return 'A';
+    if (off) return 'H';
+    if (dampMis) return 'B';
+    if (flags.indexOf('oa_ra_temp_too_close') >= 0) return null;
+    return 'H';
+}
+
+function maFaultTipModel(mixing, opts) {
+    const mx = mixing || {};
+    const flags = Array.isArray(mx.flags) ? mx.flags.slice() : [];
+    if (!flags.length) return null;
+    const cat = classifyMaFault(mx, opts);
+    if (!cat) return null;
+    const info = MA_FAULT_CATALOG[cat] || MA_FAULT_CATALOG.H;
+    return {
+        cat,
+        flags,
+        flagText: flags.join(' · '),
+        pattern: info.pattern,
+        points: info.points,
+        why: info.why,
+        needs: info.needs,
+        needsExplain: info.needsExplain,
+        lineDev: mx.line_deviation_g_kg,
+        mismatch: mx.damper_mismatch,
+    };
+}
+
 // ====================================================================
 // Cross-modal pop-out helper.
 // ----------------------------------------------------------------------
@@ -673,8 +792,8 @@ function renderProcessMiniBadge(ctx) {
     const my = MA ? yOf(MA.w) : (oy + ry) / 2;
 
     /* Fixed point colours (do not inherit / wash from dark parent). */
-    const colOA = '#1e3a8a';     /* darker blue — outdoor */
-    const colRA = '#e11d48';     /* pinkish red — return */
+    const colOA = RED5_POINT_COLORS.OA; /* navy — outdoor */
+    const colRA = RED5_POINT_COLORS.RA; /* blue — return (was rose) */
     const colSA = '#065f46';     /* darker green — supply */
     const colMA = '#0f172a';     /* black — mixed */
     const colMARing = '#eab308'; /* yellow ring around MA */

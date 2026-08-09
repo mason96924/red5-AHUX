@@ -353,7 +353,14 @@ function renderAhuEquipmentModal(ctx) {
                                         </div>
                                     </div>
 
-                                    <div ref={ahuBodyRef} className={`red5-graphic-zone relative w-full flex-1 ${dk ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
+                                    <div ref={ahuBodyRef} className={`red5-graphic-zone relative w-full flex-1 ${dk ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}
+                                         onMouseDown={(e) => {
+                                             /* Click outside collapses the band-guide focus zoom. */
+                                             const guide = e.currentTarget.querySelector('[data-testid^="ahu-modal-band-"]');
+                                             if (guide && document.activeElement === guide && !guide.contains(e.target)) {
+                                                 guide.blur();
+                                             }
+                                         }}>
                                         {/* Band-status overlay (Phase L.44, 2026-06-27).
                                             Permanently visible transparent panel showing
                                             the current B1-B10 classification of this
@@ -361,7 +368,8 @@ function renderAhuEquipmentModal(ctx) {
                                             description of what the AHU should be doing.
                                             Pinned to the top-right of the equipment graphic
                                             zone so it doesn't cover the AHU components but
-                                            stays in the operator's line of sight. */}
+                                            stays in the operator's line of sight.
+                                            Click focuses → 2× for reading; blur / click-outside → original size. */}
                                         {(() => {
                                             // Band guide: live OAT/OAH + psychrometric veto vs RA.
                                             // Never trust stale active_band for the climate story.
@@ -400,8 +408,31 @@ function renderAhuEquipmentModal(ctx) {
                                                 : 'bg-white/35 border-slate-400/40 text-slate-900';
                                             return (
                                                 <div data-testid={`ahu-modal-band-${showAhuModalFor}`}
-                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border backdrop-blur-lg shadow-md max-w-[260px] ${panelBg}`}
-                                                     style={{fontSize: '9px', lineHeight: 1.4}}>
+                                                     tabIndex={0}
+                                                     title="Click to enlarge · click away to shrink"
+                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border backdrop-blur-lg shadow-md max-w-[260px] cursor-pointer outline-none focus:border-sky-400 focus:shadow-lg ${panelBg}`}
+                                                     style={{
+                                                         fontSize: '9px',
+                                                         lineHeight: 1.4,
+                                                         transformOrigin: 'top right',
+                                                         transform: 'scale(1)',
+                                                         transition: 'transform 160ms ease-out',
+                                                     }}
+                                                     onMouseDown={(e) => e.stopPropagation()}
+                                                     onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         e.currentTarget.focus();
+                                                     }}
+                                                     onFocus={(e) => {
+                                                         e.currentTarget.style.transform = 'scale(2)';
+                                                         e.currentTarget.style.zIndex = '55';
+                                                     }}
+                                                     onBlur={(e) => {
+                                                         if (e.currentTarget.contains(e.relatedTarget)) return;
+                                                         e.currentTarget.style.transform = 'scale(1)';
+                                                         e.currentTarget.style.zIndex = '40';
+                                                     }}
+                                                >
                                                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                                         <span className={`shrink-0 px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono text-[8px] ${badgeCls}`}>
                                                             {band}

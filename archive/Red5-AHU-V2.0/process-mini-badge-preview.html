@@ -24,8 +24,8 @@ detect missing tags.  Do NOT remove. -->
     color:#64748b;flex:1}
   .zoom-lab{font:700 9px/1 ui-monospace,Menlo,monospace;color:#64748b;display:flex;align-items:center;gap:6px}
   .zoom-lab input{width:72px;accent-color:#1e3a8a;cursor:pointer}
-  #chart{display:block;cursor:zoom-in;touch-action:none}
-  #chart.has-lens{cursor:grab}
+  #chart{display:block;cursor:crosshair;touch-action:none}
+  #chart.is-zoomed{cursor:grab}
   .hint{font:400 8px/1.3 ui-monospace,Menlo,monospace;color:#94a3b8;padding:4px 4px 0}
   .vals{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;padding:6px 4px 2px;
     font:700 11px/1.25 ui-monospace,Menlo,monospace}
@@ -64,11 +64,11 @@ detect missing tags.  Do NOT remove. -->
 (function () {
   var VW = 440, VH = 248, L = 40, R = 18, TOP = 20, BOT = 30;
   var gw = VW - L - R, gh = VH - TOP - BOT;
-  var lensR = 93;
-  var lastLens = { cx: 248, cy: 148 };
-  var lens = null;
+  var lastFocus = { cx: 248, cy: 148 };
+  var focus = null;
   var zoom = 1;
   var dragging = false;
+  var drag = null;
 
   function wSat(t) {
     if (typeof getW === 'function') return getW(t, 100);
@@ -181,36 +181,28 @@ detect missing tags.  Do NOT remove. -->
       '<text x="14" y="'+(TOP+gh/2)+'" fill="#475569" font-size="12" font-weight="700" text-anchor="middle" transform="rotate(-90,14,'+(TOP+gh/2)+')" font-family="system-ui">Moisture in the air  →</text>';
   }
 
-  function lensSvg() {
-    if (!lens || zoom <= 1.001) return '';
-    var cx = lens.cx, cy = lens.cy, z = zoom;
-    return '' +
-      '<defs>' +
-        '<clipPath id="magClip"><circle cx="'+cx+'" cy="'+cy+'" r="'+lensR+'"/></clipPath>' +
-        '<filter id="magSh" x="-20%" y="-20%" width="140%" height="140%">' +
-          '<feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0f172a" flood-opacity="0.28"/>' +
-        '</filter>' +
-      '</defs>' +
-      '<circle cx="'+cx+'" cy="'+cy+'" r="'+(lensR+1.5)+'" fill="none" stroke="#0f172a" stroke-opacity="0.12" stroke-width="10"/>' +
-      '<g clip-path="url(#magClip)">' +
-        '<g transform="translate('+cx+' '+cy+') scale('+z+') translate('+(-cx)+' '+(-cy)+')">' + chartInner() + '</g>' +
-      '</g>' +
-      '<circle cx="'+cx+'" cy="'+cy+'" r="'+lensR+'" fill="none" stroke="#e2e8f0" stroke-width="5" filter="url(#magSh)"/>' +
-      '<circle cx="'+cx+'" cy="'+cy+'" r="'+lensR+'" fill="none" stroke="#0f172a" stroke-width="1.6"/>' +
-      '<circle cx="'+cx+'" cy="'+cy+'" r="'+(lensR-3)+'" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="1.2"/>' +
-      '<line x1="'+(cx+lensR*0.72)+'" y1="'+(cy+lensR*0.72)+'" x2="'+(cx+lensR*1.15)+'" y2="'+(cy+lensR*1.15)+'" stroke="#0f172a" stroke-width="4" stroke-linecap="round"/>' +
-      '<line x1="'+(cx+lensR*0.72)+'" y1="'+(cy+lensR*0.72)+'" x2="'+(cx+lensR*1.15)+'" y2="'+(cy+lensR*1.15)+'" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>';
+  function viewBoxAttrs() {
+    var magOn = focus && zoom > 1.001;
+    if (!magOn) return '0 0 ' + VW + ' ' + VH;
+    var vbW = VW / zoom, vbH = VH / zoom;
+    var vbX = focus.cx - vbW / 2;
+    var vbY = focus.cy - vbH / 2;
+    vbX = Math.max(-VW * 0.15, Math.min(VW - vbW + VW * 0.15, vbX));
+    vbY = Math.max(-VH * 0.15, Math.min(VH - vbH + VH * 0.15, vbY));
+    return vbX + ' ' + vbY + ' ' + vbW + ' ' + vbH;
   }
 
   function render() {
     var svg = document.getElementById('chart');
+    var magOn = !!(focus && zoom > 1.001);
+    svg.setAttribute('viewBox', viewBoxAttrs());
     svg.innerHTML =
       '<defs><marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#065f46"/></marker></defs>' +
-      chartInner() + lensSvg();
-    svg.classList.toggle('has-lens', !!(lens && zoom > 1.001));
+      chartInner();
+    svg.classList.toggle('is-zoomed', magOn);
     document.getElementById('zoomLbl').textContent = zoom <= 1.001 ? 'Off' : (zoom.toFixed(1) + '×');
-    document.getElementById('hint').textContent = (lens && zoom > 1.001)
-      ? 'Drag lens · scroll/slider zoom · left=Off · double-click clears'
+    document.getElementById('hint').textContent = magOn
+      ? 'Drag to pan · scroll/slider zoom · left=Off · double-click clears'
       : 'Slider left = Off · click plot or raise zoom to magnify';
   }
 
@@ -229,17 +221,17 @@ detect missing tags.  Do NOT remove. -->
 
   var svg = document.getElementById('chart');
   svg.addEventListener('click', function (e) {
-    if (dragging) return;
+    if (dragging || (drag && drag.moved)) { drag = null; return; }
     if (e.detail >= 2) {
-      if (lens) lastLens = lens;
-      lens = null;
+      if (focus) lastFocus = focus;
+      focus = null;
       zoom = 1;
       document.getElementById('zoom').value = '1';
       render();
       return;
     }
-    lens = svgLocal(e);
-    if (lens) lastLens = lens;
+    focus = svgLocal(e);
+    if (focus) lastFocus = focus;
     if (zoom <= 1.001) {
       zoom = 2.2;
       document.getElementById('zoom').value = String(zoom);
@@ -251,34 +243,40 @@ detect missing tags.  Do NOT remove. -->
     zoom = Math.max(1, Math.min(4.5, zoom + (e.deltaY < 0 ? 0.15 : -0.15)));
     document.getElementById('zoom').value = String(zoom);
     if (zoom <= 1.001) {
-      if (lens) lastLens = lens;
-      lens = null;
-    } else if (!lens) {
-      lens = svgLocal(e) || lastLens;
-      lastLens = lens;
+      if (focus) lastFocus = focus;
+      focus = null;
+    } else if (!focus) {
+      focus = svgLocal(e) || lastFocus;
+      lastFocus = focus;
     }
     render();
   }, { passive: false });
   svg.addEventListener('mousedown', function (e) {
-    if (!lens || zoom <= 1.001 || e.button !== 0) return;
-    var loc = svgLocal(e); if (!loc) return;
-    var dx = loc.cx - lens.cx, dy = loc.cy - lens.cy;
-    if (dx * dx + dy * dy <= lensR * lensR) dragging = true;
+    if (!focus || zoom <= 1.001 || e.button !== 0) return;
+    drag = { x: e.clientX, y: e.clientY, cx: focus.cx, cy: focus.cy, moved: false };
+    dragging = true;
   });
   window.addEventListener('mousemove', function (e) {
-    if (!dragging) return;
-    lens = svgLocal(e);
-    if (lens) lastLens = lens;
+    if (!dragging || !drag || !focus) return;
+    var vbW = VW / zoom, vbH = VH / zoom;
+    var dx = (e.clientX - drag.x) * (vbW / VW);
+    var dy = (e.clientY - drag.y) * (vbH / VH);
+    if (Math.abs(dx) + Math.abs(dy) > 0.5) drag.moved = true;
+    focus = {
+      cx: Math.max(8, Math.min(VW - 8, drag.cx - dx)),
+      cy: Math.max(8, Math.min(VH - 8, drag.cy - dy))
+    };
+    lastFocus = focus;
     render();
   });
   window.addEventListener('mouseup', function () { dragging = false; });
   document.getElementById('zoom').addEventListener('input', function (e) {
     zoom = Number(e.target.value);
     if (zoom <= 1.001) {
-      if (lens) lastLens = lens;
-      lens = null;
-    } else if (!lens) {
-      lens = lastLens;
+      if (focus) lastFocus = focus;
+      focus = null;
+    } else if (!focus) {
+      focus = lastFocus;
     }
     render();
   });

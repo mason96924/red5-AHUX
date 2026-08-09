@@ -504,8 +504,9 @@ const bandStory = (b) => {
  *   OA darker blue · RA pinkish-red · SA darker green · MA black with yellow ring.
  *   State dots/rings 20% transparent (opacity 0.80), including MA yellow ring.
  *   OA/RA/MA/SA labels 10% transparent (opacity 0.90).
- * Click the plot to drop a magnifying glass (center = click); drag to move;
- * slider / wheel adjusts zoom (leftmost = Off). Double-click clears the lens.
+ * Click the plot to pick a focus point; slider / wheel zooms that section
+ * (leftmost = Off). Double-click resets. No magnifying-glass chrome —
+ * the plot itself enlarges around the selected point.
  * MUST be invoked on every App render (even with ahu=null) so its React
  * hooks stay at a stable call index — gating the call behind selectedAhuId
  * caused "React Rendering Crash Prevented" (hooks count flip).
@@ -514,12 +515,12 @@ const bandStory = (b) => {
 function renderProcessMiniBadge(ctx) {
     /* Hooks first — this helper is invoked during App render like a component. */
     const VW = 440, VH = 248;
-    const [lens, setLens] = React.useState(null); /* { cx, cy } in SVG user units */
-    const [lastLens, setLastLens] = React.useState({ cx: VW * 0.56, cy: VH * 0.60 });
-    const [zoom, setZoom] = React.useState(2.2); /* 1.0 = Off */
+    const [focus, setFocus] = React.useState(null); /* { cx, cy } in SVG user units */
+    const [lastFocus, setLastFocus] = React.useState({ cx: VW * 0.56, cy: VH * 0.60 });
+    const [zoom, setZoom] = React.useState(1.0); /* 1.0 = Off */
     const [dragging, setDragging] = React.useState(false);
-    const lensR = 93; /* 1.5× prior 62 px radius */
-    const magOn = zoom > 1.001 && !!lens;
+    const dragRef = React.useRef(null);
+    const magOn = zoom > 1.001 && !!focus;
 
     const { ahu, theme, sweetSpotRange, showSweetSpot } = ctx || {};
     if (!ahu || !ahu.points) return null;
@@ -696,7 +697,6 @@ function renderProcessMiniBadge(ctx) {
         ? yOf((_getW(tBandLabel, rhLo) + _getW(tBandLabel, rhHi)) / 2) + 4
         : (TOP + gh * 0.55);
 
-    const clipId = 'pmini-clip-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
     const svgToLocal = (svgEl, clientX, clientY) => {
         try {
             const pt = svgEl.createSVGPoint();
@@ -710,6 +710,16 @@ function renderProcessMiniBadge(ctx) {
             };
         } catch (_) { return null; }
     };
+
+    /* Zoom the plot itself around the focus (no circular loupe overlay). */
+    const vbW = magOn ? VW / zoom : VW;
+    const vbH = magOn ? VH / zoom : VH;
+    let vbX = magOn ? focus.cx - vbW / 2 : 0;
+    let vbY = magOn ? focus.cy - vbH / 2 : 0;
+    if (magOn) {
+        vbX = Math.max(-VW * 0.15, Math.min(VW - vbW + VW * 0.15, vbX));
+        vbY = Math.max(-VH * 0.15, Math.min(VH - vbH + VH * 0.15, vbY));
+    }
 
     const chartLayers = (
         <g>
@@ -797,7 +807,7 @@ function renderProcessMiniBadge(ctx) {
                         {drawBand ? ` · ${rhLo}–${rhHi}% RH` : ''}
                     </div>
                     <label className="shrink-0 inline-flex items-center gap-1 font-mono text-[9px] font-bold"
-                           title="Magnifier zoom — slide fully left to turn off"
+                           title="Zoom selected section — slide fully left to turn off"
                            onMouseDown={(e) => e.stopPropagation()}>
                         <span style={{ color: '#64748b' }}>{zoom <= 1.001 ? 'Off' : (zoom.toFixed(1) + '\u00D7')}</span>
                         <input type="range" min="1" max="4.5" step="0.1" value={zoom}
@@ -806,30 +816,33 @@ function renderProcessMiniBadge(ctx) {
                                    const z = Number(e.target.value);
                                    setZoom(z);
                                    if (z <= 1.001) {
-                                       if (lens) setLastLens(lens);
-                                       setLens(null);
-                                   } else if (!lens) {
-                                       setLens(lastLens);
+                                       if (focus) setLastFocus(focus);
+                                       setFocus(null);
+                                   } else if (!focus) {
+                                       setFocus(lastFocus);
                                    }
                                }}
                                style={{ width: 72, accentColor: '#1e3a8a', cursor: 'pointer' }} />
                     </label>
                 </div>
-                <svg viewBox={`0 0 ${VW} ${VH}`} width={VW} height={VH} aria-hidden="true"
+                <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} width={VW} height={VH} aria-hidden="true"
                      data-testid="process-mini-svg"
-                     style={{ color: '#0f172a', display: 'block', cursor: magOn ? 'grab' : 'zoom-in', touchAction: 'none' }}
+                     style={{ color: '#0f172a', display: 'block', cursor: magOn ? 'grab' : 'crosshair', touchAction: 'none' }}
                      onClick={(e) => {
-                         if (dragging) return;
+                         if (dragging || (dragRef.current && dragRef.current.moved)) {
+                             dragRef.current = null;
+                             return;
+                         }
                          if (e.detail >= 2) {
-                             if (lens) setLastLens(lens);
-                             setLens(null);
+                             if (focus) setLastFocus(focus);
+                             setFocus(null);
                              setZoom(1);
                              return;
                          }
                          const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
                          if (!loc) return;
-                         setLens(loc);
-                         setLastLens(loc);
+                         setFocus(loc);
+                         setLastFocus(loc);
                          if (zoom <= 1.001) setZoom(2.2);
                      }}
                      onWheel={(e) => {
@@ -839,13 +852,13 @@ function renderProcessMiniBadge(ctx) {
                          setZoom((z) => {
                              const next = Math.max(1, Math.min(4.5, z + (dy < 0 ? 0.15 : -0.15)));
                              if (next <= 1.001) {
-                                 setLens((cur) => { if (cur) setLastLens(cur); return null; });
+                                 setFocus((cur) => { if (cur) setLastFocus(cur); return null; });
                              } else {
-                                 setLens((cur) => {
+                                 setFocus((cur) => {
                                      if (cur) return cur;
                                      const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
-                                     const place = loc || lastLens;
-                                     setLastLens(place);
+                                     const place = loc || lastFocus;
+                                     setLastFocus(place);
                                      return place;
                                  });
                              }
@@ -855,18 +868,31 @@ function renderProcessMiniBadge(ctx) {
                      onMouseDown={(e) => {
                          e.stopPropagation();
                          if (!magOn || e.button !== 0) return;
-                         const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
-                         if (!loc) return;
-                         const dx = loc.cx - lens.cx, dy = loc.cy - lens.cy;
-                         if (dx * dx + dy * dy <= lensR * lensR) setDragging(true);
+                         dragRef.current = {
+                             x: e.clientX,
+                             y: e.clientY,
+                             cx: focus.cx,
+                             cy: focus.cy,
+                             moved: false,
+                         };
+                         setDragging(true);
                      }}
                      onMouseMove={(e) => {
-                         if (!dragging) return;
-                         const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
-                         if (loc) { setLens(loc); setLastLens(loc); }
+                         if (!dragging || !dragRef.current || !focus) return;
+                         const sx = vbW / VW;
+                         const sy = vbH / VH;
+                         const dx = (e.clientX - dragRef.current.x) * sx;
+                         const dy = (e.clientY - dragRef.current.y) * sy;
+                         if (Math.abs(dx) + Math.abs(dy) > 0.5) dragRef.current.moved = true;
+                         const next = {
+                             cx: Math.max(8, Math.min(VW - 8, dragRef.current.cx - dx)),
+                             cy: Math.max(8, Math.min(VH - 8, dragRef.current.cy - dy)),
+                         };
+                         setFocus(next);
+                         setLastFocus(next);
                      }}
-                     onMouseUp={() => setDragging(false)}
-                     onMouseLeave={() => setDragging(false)}
+                     onMouseUp={() => { setDragging(false); }}
+                     onMouseLeave={() => { setDragging(false); dragRef.current = null; }}
                 >
                     <defs>
                         <marker id={arrId} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
@@ -874,42 +900,10 @@ function renderProcessMiniBadge(ctx) {
                         </marker>
                     </defs>
                     {chartLayers}
-                    {magOn && (
-                        <g data-testid="process-mini-lens" style={{ pointerEvents: 'none' }}>
-                            <defs>
-                                <clipPath id={clipId}>
-                                    <circle cx={lens.cx} cy={lens.cy} r={lensR} />
-                                </clipPath>
-                                <filter id={clipId + '-sh'} x="-20%" y="-20%" width="140%" height="140%">
-                                    <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#0f172a" floodOpacity="0.28" />
-                                </filter>
-                            </defs>
-                            <circle cx={lens.cx} cy={lens.cy} r={lensR + 1.5}
-                                    fill="none" stroke="#0f172a" strokeOpacity="0.12" strokeWidth="10" />
-                            <g clipPath={'url(#' + clipId + ')'}>
-                                <g transform={`translate(${lens.cx} ${lens.cy}) scale(${zoom}) translate(${-lens.cx} ${-lens.cy})`}>
-                                    {chartLayers}
-                                </g>
-                            </g>
-                            <circle cx={lens.cx} cy={lens.cy} r={lensR}
-                                    fill="none" stroke="#e2e8f0" strokeWidth="5"
-                                    filter={'url(#' + clipId + '-sh)'} />
-                            <circle cx={lens.cx} cy={lens.cy} r={lensR}
-                                    fill="none" stroke="#0f172a" strokeWidth="1.6" />
-                            <circle cx={lens.cx} cy={lens.cy} r={lensR - 3}
-                                    fill="none" stroke="#ffffff" strokeOpacity="0.55" strokeWidth="1.2" />
-                            <line x1={lens.cx + lensR * 0.72} y1={lens.cy + lensR * 0.72}
-                                  x2={lens.cx + lensR * 1.15} y2={lens.cy + lensR * 1.15}
-                                  stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-                            <line x1={lens.cx + lensR * 0.72} y1={lens.cy + lensR * 0.72}
-                                  x2={lens.cx + lensR * 1.15} y2={lens.cy + lensR * 1.15}
-                                  stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" />
-                        </g>
-                    )}
                 </svg>
                 <div className="px-1 pt-1 text-[8px] font-mono" style={{ color: '#94a3b8' }}>
                     {magOn
-                        ? 'Drag lens · scroll/slider zoom · left=Off · double-click clears'
+                        ? 'Drag to pan · scroll/slider zoom · left=Off · double-click clears'
                         : 'Slider left = Off · click plot or raise zoom to magnify'}
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1 font-mono text-[11px] font-extrabold leading-tight">

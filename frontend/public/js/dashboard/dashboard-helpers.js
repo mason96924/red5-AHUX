@@ -25,15 +25,17 @@
  */
 
 /* Canonical OA/RA/SA/MA colours for sidebar labels + main psy-chart dots.
- * MA fill/ring are separate: black disc + yellow outer ring on the chart. */
+ * MA fill/ring are separate: black disc + yellow outer ring on the chart.
+ * MA label text uses a darker gold so it stays readable on dark sidebar
+ * cards and on the light process-mini card. */
 const RED5_POINT_COLORS = {
     OA: '#3b82f6', /* bluish — outdoor */
     RA: '#f43f5e', /* pinkish red — return */
     SA: '#10b981', /* green — supply */
-    MA: '#eab308', /* yellow — label / ring identity */
+    MA: '#a16207', /* darkish yellow / gold — MA font (both themes) */
 };
 const RED5_MA_FILL = '#0f172a';   /* black disc */
-const RED5_MA_RING = '#eab308';   /* yellow outer ring */
+const RED5_MA_RING = '#eab308';   /* bright yellow outer ring on chart dots */
 const RED5_POINT_DOT_OPACITY = 0.8; /* 20% transparent on the main chart */
 function red5PointColor(label, fallback) {
     return RED5_POINT_COLORS[label] || fallback || '#94a3b8';
@@ -948,7 +950,8 @@ function renderProcessMiniBadge(ctx) {
     const colRA = RED5_POINT_COLORS.RA; /* pinkish red — return */
     const colSA = RED5_POINT_COLORS.SA; /* green — supply */
     const colMA = (typeof RED5_MA_FILL === 'string' ? RED5_MA_FILL : '#0f172a');
-    const colMARing = (typeof RED5_MA_RING === 'string' ? RED5_MA_RING : RED5_POINT_COLORS.MA);
+    const colMARing = (typeof RED5_MA_RING === 'string' ? RED5_MA_RING : '#eab308');
+    const colMALabel = RED5_POINT_COLORS.MA; /* darkish yellow — readable on light + dark */
     const dotOp = 0.80;          /* 20% transparent fill + ring (incl. MA yellow) */
     const labelOp = 0.90;        /* 10% transparent OA/RA/MA/SA labels */
     const colBand = '#047857';  /* overview green for RH band + mix line only */
@@ -1041,8 +1044,8 @@ function renderProcessMiniBadge(ctx) {
                     stroke={_maOff ? '#ef4444' : colMARing} strokeOpacity={dotOp}
                     strokeWidth={_maOff ? 3.2 : 2.5} />
             <text x={mx + 9} y={my - 7}
-                  fill={_maOff ? '#ef4444' : colMARing} fillOpacity={labelOp}
-                  style={{ fill: _maOff ? '#ef4444' : colMARing, fillOpacity: labelOp }}
+                  fill={_maOff ? '#ef4444' : colMALabel} fillOpacity={labelOp}
+                  style={{ fill: _maOff ? '#ef4444' : colMALabel, fillOpacity: labelOp }}
                   fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">
                 {_maOff ? ('MA·' + _maFault.cat) : 'MA'}
             </text>
@@ -1187,7 +1190,7 @@ function renderProcessMiniBadge(ctx) {
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1 font-mono text-[11px] font-extrabold leading-tight">
                     <div style={{ color: colOA }}>OA {fmt(OA)}</div>
                     <div style={{ color: colRA }}>RA {fmt(RA)}</div>
-                    <div style={{ color: colMARing }}>MA {MA ? fmt(MA) : '—'}</div>
+                    <div style={{ color: colMALabel }}>MA {MA ? fmt(MA) : '—'}</div>
                     <div style={{ color: colSA }}>SA {fmt(SA)}</div>
                 </div>
             </div>

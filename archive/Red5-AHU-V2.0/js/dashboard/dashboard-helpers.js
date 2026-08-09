@@ -294,54 +294,58 @@ const Sparkline = ({ data, width, height, color, label }) => {
 // 1065-1076).  Keep in sync if either side is retuned.
 // ====================================================================
 
-// Classify an outdoor-air (T deg C, RH %) sample to one of B1..B10 or
-// '?' (no match).  Rules are evaluated top-to-bottom -- first match
-// wins -- so overlapping windows (e.g. B4 vs B5) are resolved by the
-// order here, not by mutual exclusion.
-// Classify an outdoor-air (T deg C, RH %) sample to one of B1..B10 or
-// '?' (no match).
+// Classify outdoor-air (T °C, RH %) → B1..B10.
+// Exact CSV windows first; gap → nearest band center (never hard B5).
+// Historically a hard B5 fallback made warm gap weather (e.g. 28.5 °C /
+// 58 % RH) advertise OA damper = 100 %, which disagreed with MAT.
+// bandClassify() exposes { id, exact } so the UI can badge NEAREST.
 //
-// Historically these rules were hand-typed with strict `<` inequalities
-// and returned '?' whenever no window matched -- but that disagreed
-// with the CSV band-guide the detail page (`ahu.html`) loads from
-// `/api/band-guide`, which uses closed `[lo, hi]` intervals and falls
-// back to B5 (PASS-THROUGH) on any miss.  The result was the sidebar
-// showing '?' while the detail page showed a valid band for the same
-// OA sample -- reported by operators on 2026-07-01.
-//
-// This function now mirrors the CSV verbatim (see
-// `frontend/public/AHU-01-E_band_guide.csv`), first-match-wins in the
-// same top-to-bottom order the CSV lists, with the B5 fallback so the
-// two surfaces never disagree.  Only genuinely-bad (`NaN`) T/RH still
-// yields '?' -- that's the operator's "sensor offline" signal, not
-// "no recipe for this weather".
-const bandLabelOf = (t, rh) => {
-    if (!Number.isFinite(t) || !Number.isFinite(rh)) return '?';
-    // B1  COLD-DRY      T ∈ [-50, 5],  RH ∈ [0, 30]
-    if (t >= -50 && t <=  5 && rh >=  0 && rh <=  30) return 'B1';
-    // B2  COLD-MOD      T ∈ [5, 15],   RH ∈ [30, 60]
-    if (t >=   5 && t <= 15 && rh >= 30 && rh <=  60) return 'B2';
-    // B3  COOL-DRY      T ∈ [15, 20],  RH ∈ [0, 30]
-    if (t >=  15 && t <= 20 && rh >=  0 && rh <=  30) return 'B3';
-    // B4  ECONOMIZER    T ∈ [18, 22],  RH ∈ [30, 50]
-    if (t >=  18 && t <= 22 && rh >= 30 && rh <=  50) return 'B4';
-    // B5  PASS-THROUGH  T ∈ [22, 25],  RH ∈ [40, 60]
-    if (t >=  22 && t <= 25 && rh >= 40 && rh <=  60) return 'B5';
-    // B6  WARM-MOD      T ∈ [25, 27],  RH ∈ [50, 70]
-    if (t >=  25 && t <= 27 && rh >= 50 && rh <=  70) return 'B6';
-    // B7  WARM-HUM      T ∈ [27, 32],  RH ∈ [60, 80]
-    if (t >=  27 && t <= 32 && rh >= 60 && rh <=  80) return 'B7';
-    // B8  HOT-HUM       T ∈ [32, 38],  RH ∈ [70, 100]
-    if (t >=  32 && t <= 38 && rh >= 70 && rh <= 100) return 'B8';
-    // B9  HOT-DRY       T ∈ [35, 50],  RH ∈ [0, 30]
-    if (t >=  35 && t <= 50 && rh >=  0 && rh <=  30) return 'B9';
-    // B10 EXTREME-HUM   T ∈ [30, 50],  RH ∈ [85, 100]
-    if (t >=  30 && t <= 50 && rh >= 85 && rh <= 100) return 'B10';
-    // Fallback: mirrors backend / `ahu.html::_resolveBand`'s B5 exit --
-    // valid OA that falls into a gap between windows still gets a
-    // sensible operator answer instead of the misleading '?' chip.
-    return 'B5';
+// Closed OA windows — keep in lockstep with band_guide.csv / collector BANDS.
+// Retiled 2026-08-09 after gap audit: old windows covered ~32% of OA space and
+// nearest-center often assigned B4/B5 (100% OA) in warm gaps. New tiling keeps
+// strategy (cold/cool min-OA, mild economizer, warm mix, hot min-OA) while
+// covering ~88% of operational climate; remaining gaps use nearest (never hard B5).
+const BAND_WINDOWS = [
+    { id: 'B1',  t: [-50, 5],  rh: [0, 100] },
+    { id: 'B2',  t: [5, 16],   rh: [0, 100] },
+    { id: 'B3',  t: [15, 22],  rh: [0, 35] },
+    { id: 'B4',  t: [18, 23],  rh: [32, 55] },
+    { id: 'B5',  t: [22, 26],  rh: [40, 70] },
+    { id: 'B6',  t: [25, 28],  rh: [45, 70] },
+    // B10 before B7/B8 so extreme-humid wins over warm-hum on overlap.
+    { id: 'B10', t: [28, 50],  rh: [80, 100] },
+    { id: 'B7',  t: [26, 36],  rh: [45, 90] },
+    { id: 'B8',  t: [32, 45],  rh: [65, 100] },
+    { id: 'B9',  t: [25, 50],  rh: [0, 50] },
+];
+
+/** Classify OA (T °C, RH %) → { id, exact }.
+ *  Exact window match first; otherwise nearest band *center* — never a
+ *  hard B5/100 %-OA fallback (that lied for warm gap weather). */
+const bandClassify = (t, rh) => {
+    if (!Number.isFinite(t) || !Number.isFinite(rh)) return { id: '?', exact: false };
+    for (let i = 0; i < BAND_WINDOWS.length; i++) {
+        const b = BAND_WINDOWS[i];
+        if (t >= b.t[0] && t <= b.t[1] && rh >= b.rh[0] && rh <= b.rh[1]) {
+            return { id: b.id, exact: true };
+        }
+    }
+    let best = BAND_WINDOWS[0].id;
+    let bestDist = Infinity;
+    for (let j = 0; j < BAND_WINDOWS.length; j++) {
+        const b2 = BAND_WINDOWS[j];
+        const tMid = (b2.t[0] + b2.t[1]) / 2;
+        const rhMid = (b2.rh[0] + b2.rh[1]) / 2;
+        const dist = Math.hypot(t - tMid, rh - rhMid);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = b2.id;
+        }
+    }
+    return { id: best, exact: false };
 };
+
+const bandLabelOf = (t, rh) => bandClassify(t, rh).id;
 
 // Tailwind classes for the band-status chip.  Cool side blue, mid
 // bands emerald (comfort), hot side red/orange.  `?` is amber +
@@ -369,56 +373,56 @@ const bandTint = (b) => {
 const bandStory = (b) => {
     switch (b) {
         case 'B1': return {
-            weather: 'Freezing and dry outside (under 5 deg C, under 30 % RH). Think winter morning.',
+            weather: 'Freezing outside (under 5 deg C, any humidity). Think winter morning.',
             plan:    'Keep most outside air OUT. Heat the supply air to ~21 deg C and add a little moisture.',
             set:     'SA = 21.0 deg C @ 40 % RH   |   OA damper = 15 % (minimum)'
         };
         case 'B2': return {
-            weather: 'Cool and comfortable outside (5-15 deg C, 30-60 % RH). Think spring or fall.',
+            weather: 'Cool outside (5-16 deg C, any humidity). Think spring or fall.',
             plan:    'Bring in just enough outside air. Gentle heating.',
             set:     'SA = 19.5 deg C @ 35 % RH   |   OA damper = 15 %'
         };
         case 'B3': return {
-            weather: 'Mild but very dry outside (15-20 deg C, under 30 % RH). Think dry mild day.',
+            weather: 'Mild but dry outside (15-22 deg C, under 35 % RH). Think dry mild day.',
             plan:    'Open the damper a little to use the cool outside air. Add some moisture.',
             set:     'SA = 19.0 deg C @ 45 % RH   |   OA damper = 30 %'
         };
         case 'B4': return {
-            weather: 'Outside air is almost perfect (18-22 deg C, 30-50 % RH).',
+            weather: 'Outside air is almost perfect (18-23 deg C, 32-55 % RH).',
             plan:    'Open the damper WIDE and let the outside air do the cooling for free.',
             set:     'SA = 20.0 deg C @ 40 % RH   |   OA damper = 100 % (free cooling)'
         };
         case 'B5': return {
-            weather: 'Outside feels exactly like a comfortable room (22-25 deg C, 40-60 % RH).',
+            weather: 'Outside feels like a comfortable room (22-26 deg C, 40-70 % RH).',
             plan:    'Blow outside air straight in. Almost no work for the AHU.',
             set:     'SA = 23.5 deg C @ 50 % RH   |   OA damper = 100 % (free cooling)'
         };
         case 'B6': return {
-            weather: 'Outside is warm and a bit humid (25-27 deg C, 50-70 % RH).',
+            weather: 'Outside is warm and a bit humid (25-28 deg C, 45-70 % RH).',
             plan:    'Mix some outside air with return air. Light cooling.',
             set:     'SA = 25.0 deg C @ 55 % RH   |   OA damper = 50 %'
         };
         case 'B7': return {
-            weather: 'Outside is hot and sticky (27-32 deg C, 60-80 % RH). Typical summer.',
+            weather: 'Outside is hot and sticky (26-36 deg C, 45-90 % RH). Typical summer.',
             plan:    'Close the damper. Run the AC hard to cool AND pull moisture out.',
             set:     'SA = 12.0 deg C @ 95 % RH   |   OA damper = 15 %'
         };
         case 'B8': return {
-            weather: 'Very hot and very humid outside (32-38 deg C, over 70 % RH). Heat wave.',
+            weather: 'Very hot and very humid outside (32-45 deg C, over 65 % RH). Heat wave.',
             plan:    'Lock outside air out. Push cooling and dehumidifying to the max.',
             set:     'SA = 13.0 deg C @ 95 % RH   |   OA damper = 15 %'
         };
         case 'B9': return {
-            weather: 'Very hot but bone dry outside (over 35 deg C, under 30 % RH). Desert.',
+            weather: 'Warm-to-hot but dry outside (over 25 deg C, under 50 % RH).',
             plan:    'Cool the air down -- do not waste energy removing humidity that is not there.',
             set:     'SA = 15.0 deg C @ 40 % RH   |   OA damper = 15 %'
         };
         case 'B10': return {
-            weather: 'Tropical outside (over 30 deg C, over 85 % RH). Air feels like soup.',
+            weather: 'Tropical outside (over 28 deg C, over 80 % RH). Air feels like soup.',
             plan:    'Close the damper tight. Cool aggressively and squeeze moisture out.',
             set:     'SA = 11.0 deg C @ 95 % RH   |   OA damper = 15 %'
         };
-        default:   return {  // '?' -- outside all 10 bands
+        default:   return {  // '?' -- sensor offline / NaN
             weather: 'Outside conditions do not match any of the 10 pre-tuned bands.',
             plan:    'AHU should run in SAFE-MODE: ASHRAE 55 Cat A defaults until weather moves back into a band.',
             set:     'SA = 21.0 deg C @ 50 % RH   |   OA damper = minimum for indoor air quality   |   economizer ON when outside is cooler than inside'

@@ -183,23 +183,27 @@ global.initPsy3D = function(container, opts){
      the per-band hour-count delta strip so we can compute the histogram
      without duplicating the rules inside a render path. */
   function _bandLabelOf(t, rh){
-    // Kept in lockstep with `dashboard-helpers.js::bandLabelOf` and
-    // `ahu.html::_resolveBand`.  All three surfaces use the same
-    // CSV-derived closed intervals + B5 fallback (fixed 2026-07-01
-    // after operators saw sidebar chips showing '?' while the
-    // per-AHU detail page showed a band for the same OA sample).
-    if (!isFinite(t) || !isFinite(rh))                    return '?';
-    if (t >= -50 && t <=  5 && rh >=  0 && rh <=  30)     return 'B1';
-    if (t >=   5 && t <= 15 && rh >= 30 && rh <=  60)     return 'B2';
-    if (t >=  15 && t <= 20 && rh >=  0 && rh <=  30)     return 'B3';
-    if (t >=  18 && t <= 22 && rh >= 30 && rh <=  50)     return 'B4';
-    if (t >=  22 && t <= 25 && rh >= 40 && rh <=  60)     return 'B5';
-    if (t >=  25 && t <= 27 && rh >= 50 && rh <=  70)     return 'B6';
-    if (t >=  27 && t <= 32 && rh >= 60 && rh <=  80)     return 'B7';
-    if (t >=  32 && t <= 38 && rh >= 70 && rh <= 100)     return 'B8';
-    if (t >=  35 && t <= 50 && rh >=  0 && rh <=  30)     return 'B9';
-    if (t >=  30 && t <= 50 && rh >= 85 && rh <= 100)     return 'B10';
-    return 'B5';
+    // Kept in lockstep with `dashboard-helpers.js::bandClassify` and
+    // `ahu.html::_resolveBand`. Exact window match first; gap → nearest
+    // band center (never hard B5 / 100 % OA).
+    if (!isFinite(t) || !isFinite(rh)) return '?';
+    var wins = [
+      ['B1',-50,5,0,100],['B2',5,16,0,100],['B3',15,22,0,35],['B4',18,23,32,55],
+      ['B5',22,26,40,70],['B6',25,28,45,70],['B10',28,50,80,100],['B7',26,36,45,90],
+      ['B8',32,45,65,100],['B9',25,50,0,50]
+    ];
+    var i, w, best='B1', bestDist=Infinity, tMid, rhMid, dist;
+    for (i = 0; i < wins.length; i++){
+      w = wins[i];
+      if (t >= w[1] && t <= w[2] && rh >= w[3] && rh <= w[4]) return w[0];
+    }
+    for (i = 0; i < wins.length; i++){
+      w = wins[i];
+      tMid = (w[1] + w[2]) / 2; rhMid = (w[3] + w[4]) / 2;
+      dist = Math.hypot(t - tMid, rh - rhMid);
+      if (dist < bestDist){ bestDist = dist; best = w[0]; }
+    }
+    return best;
   }
   /* Walk weatherData twice -- once with raw OA, once with OA' -- to build
      a {Bn: {oa, oap}} map of hour-counts per band.  Cheap (O(N) twice,
@@ -1084,16 +1088,16 @@ global.initPsy3D = function(container, opts){
   /* Givoni-style band table — must mirror collector.py BANDS verbatim.
      Module-scoped so renderTimeSeries2D and buildDeltaH share the same logic. */
   var BANDS=[
-    {id:'B1', oa_t:[-50,5], oa_rh:[0,30],   sa_t:21.0, sa_rh:40, oa_damper:15},
-    {id:'B2', oa_t:[5,15],  oa_rh:[30,60],  sa_t:19.5, sa_rh:35, oa_damper:15},
-    {id:'B3', oa_t:[15,20], oa_rh:[0,30],   sa_t:19.0, sa_rh:45, oa_damper:30},
-    {id:'B4', oa_t:[18,22], oa_rh:[30,50],  sa_t:20.0, sa_rh:40, oa_damper:100},
-    {id:'B5', oa_t:[22,25], oa_rh:[40,60],  sa_t:23.5, sa_rh:50, oa_damper:100},
-    {id:'B6', oa_t:[25,27], oa_rh:[50,70],  sa_t:25.0, sa_rh:55, oa_damper:50},
-    {id:'B10',oa_t:[30,50], oa_rh:[85,100], sa_t:11.0, sa_rh:95, oa_damper:15},
-    {id:'B7', oa_t:[27,32], oa_rh:[60,80],  sa_t:12.0, sa_rh:95, oa_damper:15},
-    {id:'B8', oa_t:[32,38], oa_rh:[70,100], sa_t:13.0, sa_rh:95, oa_damper:15},
-    {id:'B9', oa_t:[35,50], oa_rh:[0,30],   sa_t:15.0, sa_rh:40, oa_damper:15}
+    {id:'B1', oa_t:[-50,5], oa_rh:[0,100],  sa_t:21.0, sa_rh:40, oa_damper:15},
+    {id:'B2', oa_t:[5,16],  oa_rh:[0,100],  sa_t:19.5, sa_rh:35, oa_damper:15},
+    {id:'B3', oa_t:[15,22], oa_rh:[0,35],   sa_t:19.0, sa_rh:45, oa_damper:30},
+    {id:'B4', oa_t:[18,23], oa_rh:[32,55],  sa_t:20.0, sa_rh:40, oa_damper:100},
+    {id:'B5', oa_t:[22,26], oa_rh:[40,70],  sa_t:23.5, sa_rh:50, oa_damper:100},
+    {id:'B6', oa_t:[25,28], oa_rh:[45,70],  sa_t:25.0, sa_rh:55, oa_damper:50},
+    {id:'B10',oa_t:[28,50], oa_rh:[80,100], sa_t:11.0, sa_rh:95, oa_damper:15},
+    {id:'B7', oa_t:[26,36], oa_rh:[45,90],  sa_t:12.0, sa_rh:95, oa_damper:15},
+    {id:'B8', oa_t:[32,45], oa_rh:[65,100], sa_t:13.0, sa_rh:95, oa_damper:15},
+    {id:'B9', oa_t:[25,50], oa_rh:[0,50],   sa_t:15.0, sa_rh:40, oa_damper:15}
   ];
   /* Cold-blue → hot-orange ramp ordered by band thermal severity.  Module-
      scoped so the boxed legend, transition markers, and (future) tooltip

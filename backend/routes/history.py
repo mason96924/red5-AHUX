@@ -209,21 +209,22 @@ async def ahu_history(ahu_id: str,
 def _oa_damper_sp(oa_t: float) -> float:
     """OA damper setpoint vs outside dry-bulb, in percent.
 
-    The ``OA_Damper_SP`` column of band_guide.csv reduced to a function of
-    temperature: 30 at B3 COOL-DRY, 100 across B4 ECONOMIZER and
-    B5 PASS-THROUGH, 50 at B6 WARM-MOD, and a 15 percent minimum-OA position
-    everywhere else.  Used only to synthesise a plausible damper history for
-    the demo -- a real deployment reads OAD off the controller.
+    Temperature-only approximation of band_guide.csv OA_Damper_SP for demo
+    history synthesis (real sites read OAD from the controller):
 
-    Twin of ``_sa_ts_damper_sp`` in archive/Red5-AHU-V1.9/telemetry_service.py;
-    keep the two in step or the same window will draw differently on a
-    controller and on the Linux demo.
+      T < 15          → 15 %  (B1/B2 min OA)
+      15 ≤ T < 18     → 30 %  (B3 mild-dry)
+      18 ≤ T < 26     → 100 % (B4/B5 economizer / pass-through)
+      26 ≤ T < 28     → 50 %  (B6 warm mix)
+      T ≥ 28          → 15 %  (B7+ hot / min OA)
+
+    Twin of ``_sa_ts_damper_sp`` in archive/Red5-AHU-V1.9/telemetry_service.py.
     """
-    if 18.0 <= oa_t < 25.0:
+    if 18.0 <= oa_t < 26.0:
         return 100.0
     if 15.0 <= oa_t < 18.0:
         return 30.0
-    if 25.0 <= oa_t < 27.0:
+    if 26.0 <= oa_t < 28.0:
         return 50.0
     return 15.0
 

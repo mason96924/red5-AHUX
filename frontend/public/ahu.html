@@ -622,18 +622,26 @@
     }
   }
   // Decide which band an AHU is operating in by comparing OA conditions
-  // against each band's (OA_T, OA_RH) range. Mirrors backend `_resolve_band`,
-  // which defaults to B5 (PASS-THROUGH) when the OA condition falls in a gap
-  // between band ranges (the CSV does not tile the full OA plane).
+  // against each band's (OA_T, OA_RH) range. Exact match first; on a gap
+  // use nearest band center — never hard-fall to B5 (that advertised
+  // 100 % OA for warm weather outside every window).
   function _resolveBand(oa_t, oa_rh){
     if(!_bandCache || oa_t == null || oa_rh == null) return null;
-    for(var i = 0; i < _bandCache.length; i++){
-      var b = _bandCache[i];
+    var i, b, best = null, bestDist = Infinity, tMid, rhMid, dist;
+    for(i = 0; i < _bandCache.length; i++){
+      b = _bandCache[i];
       if(oa_t >= b.OA_T_Lo && oa_t <= b.OA_T_Hi && oa_rh >= b.OA_RH_Lo && oa_rh <= b.OA_RH_Hi){
         return b.Band;
       }
     }
-    return 'B5';   // backend fallback -- keeps the UI honest with the runtime
+    for(i = 0; i < _bandCache.length; i++){
+      b = _bandCache[i];
+      tMid = (Number(b.OA_T_Lo) + Number(b.OA_T_Hi)) / 2;
+      rhMid = (Number(b.OA_RH_Lo) + Number(b.OA_RH_Hi)) / 2;
+      dist = Math.hypot(oa_t - tMid, oa_rh - rhMid);
+      if(dist < bestDist){ bestDist = dist; best = b.Band; }
+    }
+    return best;
   }
   function renderBandTable(){
     if(!_bandCache) return;

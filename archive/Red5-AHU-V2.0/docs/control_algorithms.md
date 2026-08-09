@@ -918,7 +918,7 @@ Safety:
 
 ---
 
-#### BAND 2: COLD-MODERATE (OA_T 5-15 deg C, OA_RH 30-60%)
+#### BAND 2: COOL (OA_T 5-16 deg C, OA_RH 0-100%)
 
 ```
 Dominant load:     Sensible heating (moderate)
@@ -949,7 +949,7 @@ PI Loop Actions (Layer 2):
 
 ---
 
-#### BAND 3: COOL-DRY (OA_T 15-20 deg C, OA_RH < 30%)
+#### BAND 3: MILD-DRY (OA_T 15-22 deg C, OA_RH 0-35%)
 
 ```
 Dominant load:     LATENT (too dry) — temperature is close to CZ
@@ -984,7 +984,7 @@ WHY THIS BAND IS OPTIMAL FOR RH CONTROL:
 
 ---
 
-#### BAND 4: COMFORT EDGE LOW (OA_T 18-22 deg C, OA_RH 30-50%)
+#### BAND 4: ECONOMIZER (OA_T 18-23 deg C, OA_RH 32-55%)
 
 ```
 Dominant load:     NONE or minimal — conditions near CZ lower boundary
@@ -1018,7 +1018,7 @@ ENERGY NOTE:
 
 ---
 
-#### BAND 5: COMFORT CORE (OA_T 22-25 deg C, OA_RH 40-60%)
+#### BAND 5: COMFORT CORE (OA_T 22-26 deg C, OA_RH 40-70%)
 
 ```
 Dominant load:     ZERO — OA is inside the comfort zone
@@ -1045,7 +1045,7 @@ ENERGY NOTE:
 
 ---
 
-#### BAND 6: COMFORT EDGE HIGH (OA_T 25-27 deg C, OA_RH 50-70%)
+#### BAND 6: COMFORT EDGE HIGH (OA_T 25-28 deg C, OA_RH 45-70%)
 
 ```
 Dominant load:     Latent (humidity rising toward CZ upper boundary)
@@ -1083,7 +1083,7 @@ NO-DEHUMIDIFIER NOTE:
 
 ---
 
-#### BAND 7: WARM-HUMID (OA_T 27-32 deg C, OA_RH 60-80%)
+#### BAND 7: WARM-HUMID (OA_T 26-36 deg C, OA_RH 45-90%)
 
 ```
 Dominant load:     Latent dominant + moderate sensible
@@ -1137,7 +1137,7 @@ ENERGY WARNING:
 
 ---
 
-#### BAND 8: HOT-HUMID (OA_T 32-38 deg C, OA_RH > 70%)
+#### BAND 8: HOT-HUMID (OA_T 32-45 deg C, OA_RH 65-100%)
 
 ```
 Dominant load:     BOTH sensible and latent — maximum energy demand
@@ -1174,7 +1174,7 @@ CRITICAL NOTES:
 
 ---
 
-#### BAND 9: HOT-DRY (OA_T > 35 deg C, OA_RH < 30%)
+#### BAND 9: HOT-DRY (OA_T 25-50 deg C, OA_RH 0-50%)
 
 ```
 Dominant load:     Sensible cooling (large delta-T, low moisture)
@@ -1326,13 +1326,13 @@ EVERY 60 SECONDS:
 | Band | OA Condition     | SA_T | SA_W/RH | OA Damp  | HUM_MODE   | delta-H  | CONTROL_TAG            |
 +------+------------------+------+---------+----------+------------+----------+------------------------+
 |  1   | T<5, RH<30       |20-22 | 40%RH   | MIN      | HUMIDIFY   | LARGE    | HEATING + HUMIDIFY     |
-|  2   | T:5-15, RH:30-60 |18-21 | OA/35%  | MIN      | COND HUM   | MOD-LRG  | HEATING (+/-HUM)       |
-|  3   | T:15-20, RH<30   |OA+1  | 45%RH   | MIN+15   | HUMIDIFY   | LOW      | RH PRIORITY-HUMIDIFY   |
-|  4   | T:18-22, RH:30-50| OA   | OA      | 100%     | OFF        | ~0       | ECONOMIZER             |
-|  5   | T:22-25, RH:40-60| OA   | OA      | 100%     | OFF        | 0        | PASS-THROUGH           |
-|  6   | T:25-27, RH:50-70|OA-1  | 55%RH   | 70-MIN   | ACCEPT/RED | LOW      | RH PRIORITY-OA RED     |
-|  7   | T:27-32, RH:60-80|12-24 | RA/9g   | MIN      | SUB+REHEAT | MOD      | CC SUBCOOL or RA DIL   |
-|  8   | T:32-38, RH>70   | 13   | 9g/kg   | MIN      | SUB+REHEAT | LARGE    | MAX COOL + SUBCOOL     |
+|  2   | T:5-16, RH:0-100 |18-21 | OA/35%  | MIN      | COND HUM   | MOD-LRG  | HEATING (+/-HUM)       |
+|  3   | T:15-22, RH:0-35   |OA+1  | 45%RH   | MIN+15   | HUMIDIFY   | LOW      | RH PRIORITY-HUMIDIFY   |
+|  4   | T:18-23, RH:32-55| OA   | OA      | 100%     | OFF        | ~0       | ECONOMIZER             |
+|  5   | T:22-26, RH:40-70| OA   | OA      | 100%     | OFF        | 0        | PASS-THROUGH           |
+|  6   | T:25-28, RH:45-70|OA-1  | 55%RH   | 70-MIN   | ACCEPT/RED | LOW      | RH PRIORITY-OA RED     |
+|  7   | T:26-36, RH:45-90|12-24 | RA/9g   | MIN      | SUB+REHEAT | MOD      | CC SUBCOOL or RA DIL   |
+|  8   | T:32-45, RH:65-100   | 13   | 9g/kg   | MIN      | SUB+REHEAT | LARGE    | MAX COOL + SUBCOOL     |
 |  9   | T>35, RH<30      | 15   | OA(+hum)| MIN      | OFF/HUM    | LARGE    | COOLING ONLY           |
 | 10   | T>30, RH>85      |11-22 | 8-MIX g | MIN      | SUB+REHEAT | LARGE    | EXTREME HUMID          |
 +------+------------------+------+---------+----------+------------+----------+------------------------+

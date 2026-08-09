@@ -1223,21 +1223,19 @@ def _sa_ts_damper_sp(oa_t):
     economizer / pass-through window, back to a minimum-OA position once the
     outside air stops being useful.
 
-    Ranges follow the table's bands: B3 COOL-DRY 30, B4 ECONOMIZER and
-    B5 PASS-THROUGH 100, B6 WARM-MOD 50, minimum 15 elsewhere.
+    Ranges follow the retiled table: B3 mild-dry 30, B4/B5 economizer
+    / pass-through 100 (18–26 °C), B6 warm-mod 50 (26–28 °C), minimum 15
+    elsewhere.
 
     Twin of ``_oa_damper_sp`` in backend/routes/history.py; keep the two in
     step or the same window will draw differently on a controller and on the
-    Linux demo.  Note the FastAPI side deliberately does NOT read the CSV
-    either: it matches on temperature and humidity together, and the demo OA
-    box only overlaps PASS-THROUGH, so every hour would come back 100 percent
-    open and the mixing leg would vanish.
+    Linux demo.
     """
-    if 18.0 <= oa_t < 25.0:
+    if 18.0 <= oa_t < 26.0:
         return 100.0
     if 15.0 <= oa_t < 18.0:
         return 30.0
-    if 25.0 <= oa_t < 27.0:
+    if 26.0 <= oa_t < 28.0:
         return 50.0
     return 15.0
 

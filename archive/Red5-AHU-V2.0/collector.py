@@ -445,16 +445,16 @@ def generate_mock_csv_for_group(ahu_name, ahu_point_defs, vav_entries):
 # ===== Band Classification =====
 
 BANDS = [
-    {'id': 'B1',  'oa_t': (-50, 5),  'oa_rh': (0, 30),   'sa_t': 21.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'AGGRESSIVE', 'hum': 'HUMIDIFY'},
-    {'id': 'B2',  'oa_t': (5, 15),   'oa_rh': (30, 60),   'sa_t': 19.5, 'sa_rh': 35, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'MODERATE',   'hum': 'COND_HUM'},
-    {'id': 'B3',  'oa_t': (15, 20),  'oa_rh': (0, 30),    'sa_t': 19.0, 'sa_rh': 45, 'reheat_t': None,  'oa_damper': 30,  'cc': 'OFF',        'hc': 'OFF',        'hum': 'HUMIDIFY'},
-    {'id': 'B4',  'oa_t': (18, 22),  'oa_rh': (30, 50),   'sa_t': 20.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 100, 'cc': 'OFF',        'hc': 'OFF',        'hum': 'OFF'},
-    {'id': 'B5',  'oa_t': (22, 25),  'oa_rh': (40, 60),   'sa_t': 23.5, 'sa_rh': 50, 'reheat_t': None,  'oa_damper': 100, 'cc': 'OFF',        'hc': 'OFF',        'hum': 'OFF'},
-    {'id': 'B6',  'oa_t': (25, 27),  'oa_rh': (50, 70),   'sa_t': 25.0, 'sa_rh': 55, 'reheat_t': None,  'oa_damper': 50,  'cc': 'LIGHT',      'hc': 'OFF',        'hum': 'ACCEPT'},
-    {'id': 'B10', 'oa_t': (30, 50),  'oa_rh': (85, 100),  'sa_t': 11.0, 'sa_rh': 95, 'reheat_t': 22.0,  'oa_damper': 15,  'cc': 'MAXIMUM',    'hc': 'REHEAT',     'hum': 'SUBCOOL_REHEAT'},
-    {'id': 'B7',  'oa_t': (27, 32),  'oa_rh': (60, 80),   'sa_t': 12.0, 'sa_rh': 95, 'reheat_t': 23.0,  'oa_damper': 15,  'cc': 'AGGRESSIVE', 'hc': 'REHEAT',     'hum': 'SUBCOOL_REHEAT'},
-    {'id': 'B8',  'oa_t': (32, 38),  'oa_rh': (70, 100),  'sa_t': 13.0, 'sa_rh': 95, 'reheat_t': 22.0,  'oa_damper': 15,  'cc': 'MAXIMUM',    'hc': 'REHEAT',     'hum': 'SUBCOOL_REHEAT'},
-    {'id': 'B9',  'oa_t': (35, 50),  'oa_rh': (0, 30),    'sa_t': 15.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 15,  'cc': 'AGGRESSIVE', 'hc': 'OFF',        'hum': 'OFF'},
+    {'id': 'B1',  'oa_t': (-50, 5),  'oa_rh': (0, 100),  'sa_t': 21.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'AGGRESSIVE', 'hum': 'HUMIDIFY'},
+    {'id': 'B2',  'oa_t': (5, 16),   'oa_rh': (0, 100),  'sa_t': 19.5, 'sa_rh': 35, 'reheat_t': None,  'oa_damper': 15,  'cc': 'OFF',        'hc': 'MODERATE',   'hum': 'COND_HUM'},
+    {'id': 'B3',  'oa_t': (15, 22),  'oa_rh': (0, 35),   'sa_t': 19.0, 'sa_rh': 45, 'reheat_t': None,  'oa_damper': 30,  'cc': 'OFF',        'hc': 'OFF',        'hum': 'HUMIDIFY'},
+    {'id': 'B4',  'oa_t': (18, 23),  'oa_rh': (32, 55),  'sa_t': 20.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 100, 'cc': 'OFF',        'hc': 'OFF',        'hum': 'OFF'},
+    {'id': 'B5',  'oa_t': (22, 26),  'oa_rh': (40, 70),  'sa_t': 23.5, 'sa_rh': 50, 'reheat_t': None,  'oa_damper': 100, 'cc': 'OFF',        'hc': 'OFF',        'hum': 'OFF'},
+    {'id': 'B6',  'oa_t': (25, 28),  'oa_rh': (45, 70),  'sa_t': 25.0, 'sa_rh': 55, 'reheat_t': None,  'oa_damper': 50,  'cc': 'LIGHT',      'hc': 'OFF',        'hum': 'ACCEPT'},
+    {'id': 'B10', 'oa_t': (28, 50),  'oa_rh': (80, 100), 'sa_t': 11.0, 'sa_rh': 95, 'reheat_t': 22.0,  'oa_damper': 15,  'cc': 'MAXIMUM',    'hc': 'REHEAT',     'hum': 'SUBCOOL_REHEAT'},
+    {'id': 'B7',  'oa_t': (26, 36),  'oa_rh': (45, 90),  'sa_t': 12.0, 'sa_rh': 95, 'reheat_t': 23.0,  'oa_damper': 15,  'cc': 'AGGRESSIVE', 'hc': 'REHEAT',     'hum': 'SUBCOOL_REHEAT'},
+    {'id': 'B8',  'oa_t': (32, 45),  'oa_rh': (65, 100), 'sa_t': 13.0, 'sa_rh': 95, 'reheat_t': 22.0,  'oa_damper': 15,  'cc': 'MAXIMUM',    'hc': 'REHEAT',     'hum': 'SUBCOOL_REHEAT'},
+    {'id': 'B9',  'oa_t': (25, 50),  'oa_rh': (0, 50),   'sa_t': 15.0, 'sa_rh': 40, 'reheat_t': None,  'oa_damper': 15,  'cc': 'AGGRESSIVE', 'hc': 'OFF',        'hum': 'OFF'},
 ]
 
 

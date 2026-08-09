@@ -922,7 +922,7 @@ Safety:
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 2: <!--FROZEN-->COLD<!--/FROZEN-->-<!--FROZEN-->MODERATE<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 5-15 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 30-60%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 2: <!--FROZEN-->COLD<!--/FROZEN-->-<!--FROZEN-->MODERATE<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 5-16 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 0-100%)
 
 ```
 Dominant load:     Sensible heating (moderate)
@@ -953,7 +953,7 @@ PI Loop Actions (Layer 2):
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 3: <!--FROZEN-->COOL<!--/FROZEN-->-<!--FROZEN-->DRY<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 15-20 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> < 30%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 3: <!--FROZEN-->COOL<!--/FROZEN-->-<!--FROZEN-->DRY<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 15-22 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 0-35%)
 
 ```
 Dominant load:     LATENT (too dry) — temperature is close to CZ
@@ -988,7 +988,7 @@ WHY THIS BAND IS OPTIMAL FOR RH CONTROL:
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 4: <!--FROZEN-->COMFORT<!--/FROZEN--> <!--FROZEN-->EDGE<!--/FROZEN--> <!--FROZEN-->LOW<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 18-22 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 30-50%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 4: <!--FROZEN-->COMFORT<!--/FROZEN--> <!--FROZEN-->EDGE<!--/FROZEN--> <!--FROZEN-->LOW<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 18-23 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 32-55%)
 
 ```
 Dominant load:     NONE or minimal — conditions near CZ lower boundary
@@ -1022,7 +1022,7 @@ ENERGY NOTE:
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 5: <!--FROZEN-->COMFORT<!--/FROZEN--> <!--FROZEN-->CORE<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 22-25 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 40-60%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 5: <!--FROZEN-->COMFORT<!--/FROZEN--> <!--FROZEN-->CORE<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 22-26 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 40-70%)
 
 ```
 Dominant load:     ZERO — OA is inside the comfort zone
@@ -1049,7 +1049,7 @@ ENERGY NOTE:
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 6: <!--FROZEN-->COMFORT<!--/FROZEN--> <!--FROZEN-->EDGE<!--/FROZEN--> <!--FROZEN-->HIGH<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 25-27 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 50-70%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 6: <!--FROZEN-->COMFORT<!--/FROZEN--> <!--FROZEN-->EDGE<!--/FROZEN--> <!--FROZEN-->HIGH<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 25-28 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 45-70%)
 
 ```
 Dominant load:     Latent (humidity rising toward CZ upper boundary)
@@ -1087,7 +1087,7 @@ NO-DEHUMIDIFIER NOTE:
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 7: <!--FROZEN-->WARM<!--/FROZEN-->-<!--FROZEN-->HUMID<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 27-32 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 60-80%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 7: <!--FROZEN-->WARM<!--/FROZEN-->-<!--FROZEN-->HUMID<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 26-36 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 45-90%)
 
 ```
 Dominant load:     Latent dominant + moderate sensible
@@ -1141,7 +1141,7 @@ ENERGY WARNING:
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 8: <!--FROZEN-->HOT<!--/FROZEN-->-<!--FROZEN-->HUMID<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 32-38 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> > 70%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 8: <!--FROZEN-->HOT<!--/FROZEN-->-<!--FROZEN-->HUMID<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 32-45 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 65-100%)
 
 ```
 Dominant load:     BOTH sensible and latent — maximum energy demand
@@ -1178,7 +1178,7 @@ CRITICAL NOTES:
 
 ---
 
-#### <!--FROZEN-->BAND<!--/FROZEN--> 9: <!--FROZEN-->HOT<!--/FROZEN-->-<!--FROZEN-->DRY<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> > 35 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> < 30%)
+#### <!--FROZEN-->BAND<!--/FROZEN--> 9: <!--FROZEN-->HOT<!--/FROZEN-->-<!--FROZEN-->DRY<!--/FROZEN--> (<!--FROZEN-->OA_T<!--/FROZEN--> 25-50 deg C, <!--FROZEN-->OA_RH<!--/FROZEN--> 0-50%)
 
 ```
 Dominant load:     Sensible cooling (large delta-T, low moisture)
@@ -1330,13 +1330,13 @@ EVERY 60 SECONDS:
 | Band | OA Condition     | SA_T | SA_W/RH | OA Damp  | HUM_MODE   | delta-H  | CONTROL_TAG            |
 +------+------------------+------+---------+----------+------------+----------+------------------------+
 |  1   | T<5, RH<30       |20-22 | 40%RH   | MIN      | HUMIDIFY   | LARGE    | HEATING + HUMIDIFY     |
-|  2   | T:5-15, RH:30-60 |18-21 | OA/35%  | MIN      | COND HUM   | MOD-LRG  | HEATING (+/-HUM)       |
-|  3   | T:15-20, RH<30   |OA+1  | 45%RH   | MIN+15   | HUMIDIFY   | LOW      | RH PRIORITY-HUMIDIFY   |
-|  4   | T:18-22, RH:30-50| OA   | OA      | 100%     | OFF        | ~0       | ECONOMIZER             |
-|  5   | T:22-25, RH:40-60| OA   | OA      | 100%     | OFF        | 0        | PASS-THROUGH           |
-|  6   | T:25-27, RH:50-70|OA-1  | 55%RH   | 70-MIN   | ACCEPT/RED | LOW      | RH PRIORITY-OA RED     |
-|  7   | T:27-32, RH:60-80|12-24 | RA/9g   | MIN      | SUB+REHEAT | MOD      | CC SUBCOOL or RA DIL   |
-|  8   | T:32-38, RH>70   | 13   | 9g/kg   | MIN      | SUB+REHEAT | LARGE    | MAX COOL + SUBCOOL     |
+|  2   | T:5-16, RH:0-100 |18-21 | OA/35%  | MIN      | COND HUM   | MOD-LRG  | HEATING (+/-HUM)       |
+|  3   | T:15-22, RH:0-35   |OA+1  | 45%RH   | MIN+15   | HUMIDIFY   | LOW      | RH PRIORITY-HUMIDIFY   |
+|  4   | T:18-23, RH:32-55| OA   | OA      | 100%     | OFF        | ~0       | ECONOMIZER             |
+|  5   | T:22-26, RH:40-70| OA   | OA      | 100%     | OFF        | 0        | PASS-THROUGH           |
+|  6   | T:25-28, RH:45-70|OA-1  | 55%RH   | 70-MIN   | ACCEPT/RED | LOW      | RH PRIORITY-OA RED     |
+|  7   | T:26-36, RH:45-90|12-24 | RA/9g   | MIN      | SUB+REHEAT | MOD      | CC SUBCOOL or RA DIL   |
+|  8   | T:32-45, RH:65-100   | 13   | 9g/kg   | MIN      | SUB+REHEAT | LARGE    | MAX COOL + SUBCOOL     |
 |  9   | T>35, RH<30      | 15   | OA(+hum)| MIN      | OFF/HUM    | LARGE    | COOLING ONLY           |
 | 10   | T>30, RH>85      |11-22 | 8-MIX g | MIN      | SUB+REHEAT | LARGE    | EXTREME HUMID          |
 +------+------------------+------+---------+----------+------------+----------+------------------------+

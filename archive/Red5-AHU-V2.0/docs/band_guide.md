@@ -30,16 +30,16 @@ weather and meet it halfway.
 
 | Band | When active (OA T / RH)        | SA target          | OA damper | Climate mood          |
 |------|--------------------------------|--------------------|----------:|-----------------------|
-| B1   | −50…5 °C / 0–30 %              | 21.0 °C / 40 % RH  |     15 %  | very cold & dry       |
-| B2   | 5–15 °C / 30–60 %              | 19.5 °C / 35 % RH  |     15 %  | cool & dry            |
-| B3   | 15–20 °C / 0–30 %              | 19.0 °C / 45 % RH  |     30 %  | mild & dry            |
-| B4 ⭐ | 18–22 °C / 30–50 %             | 20.0 °C / 40 % RH  |    100 %  | mild — **economizer** |
-| B5   | 22–25 °C / 40–60 %             | 23.5 °C / 50 % RH  |    100 %  | warm — economizer     |
-| B6   | 25–27 °C / 50–70 %             | 25.0 °C / 55 % RH  |     50 %  | warmer (mix 50/50)    |
-| B7   | 27–32 °C / 60–80 %             | 12.0 °C / 95 % RH  |     15 %  | hot & humid           |
-| B8   | 32–38 °C / 70–100 %            | 13.0 °C / 95 % RH  |     15 %  | hot & very humid      |
-| B9   | 35–50 °C / 0–30 %              | 15.0 °C / 40 % RH  |     15 %  | hot & dry             |
-| B10  | 30–50 °C / 85–100 %            | 11.0 °C / 95 % RH  |     15 %  | extreme hot & humid   |
+| B1   | −50…5 °C / 0–100 %             | 21.0 °C / 40 % RH  |     15 %  | cold (any RH)         |
+| B2   | 5–16 °C / 0–100 %              | 19.5 °C / 35 % RH  |     15 %  | cool (any RH)         |
+| B3   | 15–22 °C / 0–35 %              | 19.0 °C / 45 % RH  |     30 %  | mild & dry            |
+| B4 ⭐ | 18–23 °C / 32–55 %             | 20.0 °C / 40 % RH  |    100 %  | mild — **economizer** |
+| B5   | 22–26 °C / 40–70 %             | 23.5 °C / 50 % RH  |    100 %  | warm — economizer     |
+| B6   | 25–28 °C / 45–70 %             | 25.0 °C / 55 % RH  |     50 %  | warmer (mix 50/50)    |
+| B7   | 26–36 °C / 45–90 %             | 12.0 °C / 95 % RH  |     15 %  | hot & humid           |
+| B8   | 32–45 °C / 65–100 %            | 13.0 °C / 95 % RH  |     15 %  | hot & very humid      |
+| B9   | 25–50 °C / 0–50 %              | 15.0 °C / 40 % RH  |     15 %  | hot & dry             |
+| B10  | 28–50 °C / 80–100 %            | 11.0 °C / 95 % RH  |     15 %  | extreme hot & humid   |
 
 ⭐ B4 = the magic "free cooling" band. All coils OFF, 100 % outside air.
 
@@ -52,7 +52,7 @@ component does.
 
 ### 🧊 Cold bands
 
-#### B1 — Very cold & dry  *(OA: −50…5 °C, 0–30 % RH)*
+#### B1 — Very cold & dry  *(OA: −50…5 °C, 0–100 % RH)*
 - **SA:** 21.0 °C / 40 % RH | **OA damper:** 15 %
 - Cooling coil: **OFF**
 - Heating coil: **HIGH** — biggest annual lift
@@ -62,7 +62,7 @@ Why: pull in only the legal-minimum fresh air; recirculate warm/humid
 return air. Heating coil does the heavy work; humidifier replaces winter
 dryness.
 
-#### B2 — Cool & dry  *(OA: 5–15 °C, 30–60 % RH)*
+#### B2 — Cool & dry  *(OA: 5–16 °C, 0–100 % RH)*
 - **SA:** 19.5 °C / 35 % RH | **OA damper:** 15 %
 - Cooling: OFF — Heating: low–medium modulating — Humidifier: light
 
@@ -72,14 +72,14 @@ Why: same min-OA logic as B1, milder lift.
 
 ### 🌤️ Mild bands (economizer sweet spot)
 
-#### B3 — Mild & dry  *(OA: 15–20 °C, 0–30 % RH)*
+#### B3 — Mild & dry  *(OA: 15–22 °C, 0–35 % RH)*
 - **SA:** 19.0 °C / 45 % RH | **OA damper:** 30 %
 - Cooling: OFF — Heating: trim only — Humidifier: ON (dry OA)
 
 Why: OA already near SA — barely any coil work; humidifier compensates
 for low OA moisture.
 
-#### B4 — Mild & moderate humidity  *(OA: 18–22 °C, 30–50 % RH)* ⭐
+#### B4 — Mild & moderate humidity  *(OA: 18–23 °C, 32–55 % RH)* ⭐
 - **SA:** 20.0 °C / 40 % RH | **OA damper:** **100 %**
 - All coils: **OFF** — Humidifier: OFF
 - RA damper: **closed** | Exhaust damper: **open**
@@ -96,14 +96,14 @@ straight outside air. Chiller + boiler both off → biggest savings.
 > RH 30-60 %).  See `📘 ASHRAE 55 Reference` for the underlying PMV/PPD
 > reasoning.
 
-#### B5 — Warm & medium humidity  *(OA: 22–25 °C, 40–60 % RH)*
+#### B5 — Warm & medium humidity  *(OA: 22–26 °C, 40–70 % RH)*
 - **SA:** 23.5 °C / 50 % RH | **OA damper:** **100 %**
 - Cooling coil: light trim only — Heating: OFF — Humidifier: OFF
 
 Why: still in economizer range — 100 % OA cheaper than mechanical
 cooling with recirculation. Coil does final small trim.
 
-#### B6 — Warmer  *(OA: 25–27 °C, 50–70 % RH)*
+#### B6 — Warmer  *(OA: 25–28 °C, 45–70 % RH)*
 - **SA:** 25.0 °C / 55 % RH | **OA damper:** 50 %
 - Cooling coil: medium modulating — Heating: OFF — Humidifier: OFF
 
@@ -114,7 +114,7 @@ coil load.
 
 ### ☀️ Hot bands
 
-#### B7 — Hot & humid  *(OA: 27–32 °C, 60–80 % RH)*
+#### B7 — Hot & humid  *(OA: 26–36 °C, 45–90 % RH)*
 - **SA:** 12.0 °C / 95 % RH | **OA damper:** 15 %
 - Cooling coil: **HIGH** + dehumidification — Heating: OFF (or reheat
   trim) — Humidifier: OFF
@@ -123,13 +123,13 @@ Why: pull in legal minimum hot/humid OA; coil drags air down across the
 saturation curve to wring out moisture. SA leaves coil near-saturation.
 Reheat coil may bump sensible temperature back up to comfort.
 
-#### B8 — Hot & very humid  *(OA: 32–38 °C, 70–100 % RH)*
+#### B8 — Hot & very humid  *(OA: 32–45 °C, 65–100 % RH)*
 - **SA:** 13.0 °C / 95 % RH | **OA damper:** 15 %
 - Cooling coil: **MAX** — Heating: optional reheat — Humidifier: OFF
 
 Why: same strategy as B7, scaled up. Most coil-heavy band of the year.
 
-#### B9 — Hot & DRY  *(OA: 35–50 °C, 0–30 % RH)*
+#### B9 — Hot & DRY  *(OA: 25–50 °C, 0–50 % RH)*
 - **SA:** 15.0 °C / 40 % RH | **OA damper:** 15 %
 - Cooling coil: heavy **sensible-only** (dry coil) — Heating: OFF —
   Humidifier: OFF (an indirect evaporative pre-cooler can slash load)
@@ -137,7 +137,7 @@ Why: same strategy as B7, scaled up. Most coil-heavy band of the year.
 Why: hot but dry → no dehumidification needed. Coil only sheds sensible
 heat. Arid-climate retrofits should add evaporative pre-cooling.
 
-#### B10 — Extreme hot & humid (monsoon)  *(OA: 30–50 °C, 85–100 % RH)*
+#### B10 — Extreme hot & humid (monsoon)  *(OA: 28–50 °C, 80–100 % RH)*
 - **SA:** 11.0 °C / 95 % RH | **OA damper:** 15 %
 - Cooling coil: **ABSOLUTE MAX** — Heating: likely as reheat —
   Humidifier: OFF

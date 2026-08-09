@@ -131,6 +131,7 @@ def _demo_oa_state(now_ts: float) -> dict:
 
 
 def _resolve_band(oa_t: float, oa_rh: float) -> dict:
+    """Exact CSV window match, else nearest band center — never hard B5."""
     rows = _load_csv("band_guide.csv")
     for r in rows:
         lo_t = float(r["OA_T_Lo"])
@@ -139,7 +140,16 @@ def _resolve_band(oa_t: float, oa_rh: float) -> dict:
         hi_h = float(r["OA_RH_Hi"])
         if lo_t <= oa_t <= hi_t and lo_h <= oa_rh <= hi_h:
             return r
-    return rows[4]  # PASS-THROUGH default
+    best = rows[0]
+    best_dist = float("inf")
+    for r in rows:
+        t_mid = (float(r["OA_T_Lo"]) + float(r["OA_T_Hi"])) / 2.0
+        rh_mid = (float(r["OA_RH_Lo"]) + float(r["OA_RH_Hi"])) / 2.0
+        dist = ((oa_t - t_mid) ** 2 + (oa_rh - rh_mid) ** 2) ** 0.5
+        if dist < best_dist:
+            best_dist = dist
+            best = r
+    return best
 
 
 def _simulate_ahu(ahu_id: str, oa: dict, band: dict, color: str,

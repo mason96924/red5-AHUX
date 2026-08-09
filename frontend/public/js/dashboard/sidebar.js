@@ -710,18 +710,16 @@ function renderSidebar(ctx) {
                         floor-plan colour without opening the chart. */}
                     {(() => {
                         const oa = ahu.points && ahu.points[0];
-                        const band = oa ? bandLabelOf(Number(oa.t), Number(oa.rh)) : '?';
+                        const cls = oa ? bandClassify(Number(oa.t), Number(oa.rh)) : { id: '?', exact: false };
+                        const ab = ahu.active_band;
+                        const band = (ab && ab.id) ? ab.id : cls.id;
                         const tintCls = bandTint(band);
                         const tipT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' deg C' : '--';
                         const tipR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
                         const story = bandStory(band);
                         const header = (band === '?')
                             ? 'BAND ?  -- SAFE-MODE'
-                            : 'BAND ' + band;
-                        // Tooltip is rendered via the native `title`
-                        // attribute, so we stick to plain ASCII and \n.
-                        // 4 short blocks: header, current OA, weather
-                        // description, what the AHU does, and the setpoints.
+                            : ('BAND ' + band + (cls.exact ? '' : '  (NEAREST — OA outside all windows)'));
                         const tip = header + '\n'
                                   + '------------------------\n'
                                   + 'Current OA:  ' + tipT + ' / ' + tipR + '\n\n'
@@ -733,8 +731,8 @@ function renderSidebar(ctx) {
                         return (
                             <span data-testid={`ahu-band-${ahu.id}`}
                                   title={tip}
-                                  className={`ml-auto shrink-0 text-[8px] px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono ${tintCls}`}>
-                                {band}
+                                  className={`ml-auto shrink-0 text-[8px] px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono ${tintCls}${!cls.exact && band !== '?' ? ' ring-1 ring-amber-400/50' : ''}`}>
+                                {band}{!cls.exact && band !== '?' ? '~' : ''}
                             </span>
                         );
                     })()}

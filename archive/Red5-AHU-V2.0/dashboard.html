@@ -21,7 +21,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
          js/dashboard/* are now pre-compiled offline into the single bundle
-         /api/assets/dashboard.compiled.js?v=5a73070ef4 (built via /app/frontend/src/dashboard/build.sh).
+         /api/assets/dashboard.compiled.js?v=9ccff1e775 (built via /app/frontend/src/dashboard/build.sh).
          Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
@@ -34,7 +34,7 @@
     <script src="js/i18n.js?v=2026-08-05c"></script>
     <script src="js/toast.js?v=2026-06-20a"></script>
     <script src="js/docs_index.js?v=2026-06-20a"></script>
-    <script src="js/audit_log.js?v=2026-06-27a"></script>
+    <script src="js/audit_log.js?v=2026-07-15a"></script>
     <script src="js/g36_timeline.js?v=2026-06-20a"></script>
     <script src="js/qrcode.min.js?v=2026-02-21a"></script>
     <script>
@@ -330,7 +330,7 @@
             style="display: none; background:#fbbf24; color:#0f172a;
             border: none; border-radius: 4px; padding: 4px 8px;
             font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
-            font-size: 9px; cursor: pointer;">Sign in with Google</button>
+            font-size: 9px; cursor: pointer;">Sign in</button>
         <button id="v2-auth-logout" data-testid="dashboard-logout-btn"
             style="display: none; background: transparent; color: #94a3b8;
             border: 1px solid #334155; border-radius: 4px; padding: 3px 7px;
@@ -372,28 +372,27 @@
             banner.addEventListener('mouseenter', function(){ _hovered = true;  applyLabel(); });
             banner.addEventListener('mouseleave', function(){ _hovered = false; applyLabel(); });
             btnIn.addEventListener('click', function () {
-                try { localStorage.setItem('r5_post_login_redirect', '/dashboard.html'); } catch (e) {}
-                var redirectUrl = window.location.origin + '/dashboard.html';
-                window.location.href = 'https://auth.emergentagent.com/?redirect=' + encodeURIComponent(redirectUrl);
+                window.location.href = '/';
             });
             btnOut.addEventListener('click', function () {
-                fetch(apiUrl + '/api/auth/logout', { method: 'POST', credentials: 'include' })
-                    .finally(function () { window.location.reload(); });
+                fetch(apiUrl + '/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+                    .finally(function () { window.location.href = '/'; });
             });
-            fetch(apiUrl + '/api/auth/me', { credentials: 'include' })
+            fetch(apiUrl + '/api/auth/whoami', { credentials: 'same-origin' })
                 .then(function (r) { return r.ok ? r.json() : null; })
                 .then(function (me) {
-                    if (me && me.email) {
-                        var first = (me.email.split('@')[0] || '').split('.')[0];
-                        _shortLabel = first ? first.toUpperCase() : 'OK';
-                        _fullLabel  = 'Signed in: ' + me.email;
+                    var role = (me && me.role) || 'viewer';
+                    var user = (me && me.username) || '';
+                    if (role === 'editor' || role === 'admin') {
+                        _shortLabel = user ? user.toUpperCase() : role.toUpperCase();
+                        _fullLabel  = 'Signed in: ' + (user ? user + ' (' + role + ')' : role);
                         dot.style.background = '#10b981';
                         dot.style.boxShadow = '0 0 6px rgba(16,185,129,.6), 0 0 0 2px rgba(15,23,42,0.6)';
                         state.style.color = '#a3e635';
                         btnOut.dataset.allowed = '1';
                         window.__v2_signed_in = true;
-                        window.__v2_is_admin  = !!me.is_admin;
-                        window.__v2_user_email = me.email;
+                        window.__v2_is_admin  = (role === 'admin');
+                        window.__v2_user_email = user || null;
                     } else {
                         _shortLabel = 'GUEST';
                         _fullLabel  = 'Anonymous (preview only)';
@@ -406,7 +405,7 @@
                     }
                     /* Let interested UI islands react to the auth resolve
                        so admin-only chips (Audit Log) can mount as soon as
-                       the GET /api/auth/me round-trip completes, without
+                       the GET /api/auth/whoami round-trip completes, without
                        having to poll. */
                     try { window.dispatchEvent(new CustomEvent('red5-auth-resolved',
                             { detail: { signedIn: window.__v2_signed_in,
@@ -420,6 +419,8 @@
                     dot.style.background = '#f87171';
                     state.style.color = '#f87171';
                     btnIn.dataset.allowed = '1';
+                    try { window.dispatchEvent(new CustomEvent('red5-auth-resolved',
+                            { detail: { signedIn: false, isAdmin: false, email: null } })); } catch(_) {}
                     applyLabel();
                 });
         })();
@@ -483,6 +484,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=bfce008967"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=9ccff1e775"></script>
 </body>
 </html>

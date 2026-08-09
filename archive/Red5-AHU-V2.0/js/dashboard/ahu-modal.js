@@ -364,26 +364,46 @@ function renderAhuEquipmentModal(ctx) {
                                             stays in the operator's line of sight. */}
                                         {(() => {
                                             const oa = targetAhu && targetAhu.points && targetAhu.points[0];
-                                            const band = oa ? bandLabelOf(Number(oa.t), Number(oa.rh)) : '?';
+                                            const cls = oa ? bandClassify(Number(oa.t), Number(oa.rh)) : { id: '?', exact: false };
+                                            const ab = targetAhu && targetAhu.active_band;
+                                            // Prefer telemetry active_band when present so modal advice
+                                            // matches what the collector classified / wrote.
+                                            const band = (ab && ab.id) ? ab.id : cls.id;
+                                            const exact = !!cls.exact;
+                                            const disagree = !!(ab && ab.id && cls.id && ab.id !== cls.id);
                                             const story = bandStory(band);
                                             const oaT = oa && Number.isFinite(Number(oa.t)) ? Number(oa.t).toFixed(1) + ' \u00B0C' : '--';
                                             const oaR = oa && Number.isFinite(Number(oa.rh)) ? Number(oa.rh).toFixed(0) + ' % RH' : '--';
                                             const badgeCls = bandTint(band);
-                                            // Lower opacity than v1 so the equipment
-                                            // graphic underneath stays clearly visible.
-                                            // Heavier backdrop-blur compensates for the
-                                            // lower alpha so the text remains readable.
+                                            const oadSp = (ab && ab.oa_damper_sp != null && Number.isFinite(Number(ab.oa_damper_sp)))
+                                                ? Number(ab.oa_damper_sp)
+                                                : null;
+                                            const setLine = (oadSp != null)
+                                                ? story.set.replace(/OA damper = [^|]+/, 'OA damper = ' + oadSp + ' %')
+                                                : story.set;
                                             const panelBg = dk
                                                 ? 'bg-slate-900/30 border-slate-500/40 text-slate-100'
                                                 : 'bg-white/35 border-slate-400/40 text-slate-900';
                                             return (
                                                 <div data-testid={`ahu-modal-band-${showAhuModalFor}`}
-                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border backdrop-blur-lg shadow-md max-w-[240px] ${panelBg}`}
+                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border backdrop-blur-lg shadow-md max-w-[260px] ${panelBg}`}
                                                      style={{fontSize: '9px', lineHeight: 1.4}}>
-                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                                                         <span className={`shrink-0 px-1 py-0.5 rounded border leading-none font-black tracking-wider font-mono text-[8px] ${badgeCls}`}>
                                                             {band}
                                                         </span>
+                                                        {!exact && band !== '?' && (
+                                                            <span className="shrink-0 px-1 py-0.5 rounded border border-amber-500/60 text-amber-300 bg-amber-500/15 leading-none font-black tracking-wider font-mono text-[7px]"
+                                                                  title="OA is outside every band window — nearest band center used (not a solid hit)">
+                                                                NEAREST
+                                                            </span>
+                                                        )}
+                                                        {disagree && (
+                                                            <span className="shrink-0 px-1 py-0.5 rounded border border-rose-500/60 text-rose-300 bg-rose-500/15 leading-none font-black tracking-wider font-mono text-[7px]"
+                                                                  title={`Telemetry active_band=${ab.id} vs UI classify=${cls.id}`}>
+                                                                MISMATCH
+                                                            </span>
+                                                        )}
                                                         <span className="font-bold uppercase tracking-[0.12em] text-[7px] opacity-70">
                                                             OA-band &middot; {oaT} / {oaR}
                                                         </span>
@@ -398,7 +418,7 @@ function renderAhuEquipmentModal(ctx) {
                                                     </div>
                                                     <div>
                                                         <div className="text-[7px] uppercase font-bold opacity-60 tracking-wider">Setpoints</div>
-                                                        <div className="font-mono text-[8px]">{story.set}</div>
+                                                        <div className="font-mono text-[8px]">{setLine}</div>
                                                     </div>
                                                 </div>
                                             );

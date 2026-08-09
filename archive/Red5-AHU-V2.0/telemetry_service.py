@@ -420,9 +420,9 @@ def api_data():
                 "id": ahu_name, "procColor": proc_colors[color_idx % len(proc_colors)],
                 "source": "live" if live_mode else "simulator",
                 "points": [
-                    {"label": "OA", "t": oa_t, "rh": oa_rh, "w": _oa_w, "color": "#1e3a8a"},
+                    {"label": "OA", "t": oa_t, "rh": oa_rh, "w": _oa_w, "color": "#3b82f6"},
                     {"label": "SA", "t": sa_t, "rh": sa_rh, "w": _sa_w, "color": "#10b981"},
-                    {"label": "RA", "t": ra_t, "rh": ra_rh, "w": _ra_w, "color": "#2563eb"},
+                    {"label": "RA", "t": ra_t, "rh": ra_rh, "w": _ra_w, "color": "#f43f5e"},
                 ],
                 "all_points": pts, "vavs": vav_list
             }
@@ -491,9 +491,9 @@ def _sim_fallback_from_config(collector_config):
             "id": ahu_id, "procColor": proc_colors[color_idx % len(proc_colors)],
             "source": "simulator_fallback",
             "points": [
-                {"label": "OA", "t": oa_t, "rh": oa_rh, "w": get_w(oa_t, oa_rh), "color": "#1e3a8a"},
+                {"label": "OA", "t": oa_t, "rh": oa_rh, "w": get_w(oa_t, oa_rh), "color": "#3b82f6"},
                 {"label": "SA", "t": sa_t, "rh": sa_rh, "w": get_w(sa_t, sa_rh), "color": "#10b981"},
-                {"label": "RA", "t": ra_t, "rh": ra_rh, "w": get_w(ra_t, ra_rh), "color": "#2563eb"},
+                {"label": "RA", "t": ra_t, "rh": ra_rh, "w": get_w(ra_t, ra_rh), "color": "#f43f5e"},
             ],
             "all_points": dict(_sim_overrides.get(ahu_id, {})),
             "vavs": vav_list
@@ -558,9 +558,9 @@ def _mock_14_ahus():
             "id": ahu_id, "procColor": data["procColor"],
             "source": "mock",
             "points": [
-                {"label": "OA", "t": oa_t, "rh": oa_rh, "w": get_w(oa_t, oa_rh), "color": "#1e3a8a"},
+                {"label": "OA", "t": oa_t, "rh": oa_rh, "w": get_w(oa_t, oa_rh), "color": "#3b82f6"},
                 {"label": "SA", "t": sa_t, "rh": sa_rh, "w": get_w(sa_t, sa_rh), "color": "#10b981"},
-                {"label": "RA", "t": ra_t, "rh": ra_rh, "w": get_w(ra_t, ra_rh), "color": "#2563eb"},
+                {"label": "RA", "t": ra_t, "rh": ra_rh, "w": get_w(ra_t, ra_rh), "color": "#f43f5e"},
             ],
             "vavs": vav_list
         }

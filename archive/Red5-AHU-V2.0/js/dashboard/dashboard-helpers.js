@@ -25,13 +25,15 @@
  */
 
 /* Canonical OA/RA/SA/MA colours for sidebar labels + main psy-chart dots.
- * OA navy matches the process mini-badge; RA is blue (was rose). */
+ * MA fill/ring are separate: black disc + yellow outer ring on the chart. */
 const RED5_POINT_COLORS = {
-    OA: '#1e3a8a',
-    RA: '#2563eb',
-    SA: '#10b981',
-    MA: '#f59e0b',
+    OA: '#3b82f6', /* bluish — outdoor */
+    RA: '#f43f5e', /* pinkish red — return */
+    SA: '#10b981', /* green — supply */
+    MA: '#eab308', /* yellow — label / ring identity */
 };
+const RED5_MA_FILL = '#0f172a';   /* black disc */
+const RED5_MA_RING = '#eab308';   /* yellow outer ring */
 const RED5_POINT_DOT_OPACITY = 0.8; /* 20% transparent on the main chart */
 function red5PointColor(label, fallback) {
     return RED5_POINT_COLORS[label] || fallback || '#94a3b8';
@@ -792,11 +794,11 @@ function renderProcessMiniBadge(ctx) {
     const my = MA ? yOf(MA.w) : (oy + ry) / 2;
 
     /* Fixed point colours (do not inherit / wash from dark parent). */
-    const colOA = RED5_POINT_COLORS.OA; /* navy — outdoor */
-    const colRA = RED5_POINT_COLORS.RA; /* blue — return (was rose) */
-    const colSA = '#065f46';     /* darker green — supply */
-    const colMA = '#0f172a';     /* black — mixed */
-    const colMARing = '#eab308'; /* yellow ring around MA */
+    const colOA = RED5_POINT_COLORS.OA; /* bluish — outdoor */
+    const colRA = RED5_POINT_COLORS.RA; /* pinkish red — return */
+    const colSA = RED5_POINT_COLORS.SA; /* green — supply */
+    const colMA = (typeof RED5_MA_FILL === 'string' ? RED5_MA_FILL : '#0f172a');
+    const colMARing = (typeof RED5_MA_RING === 'string' ? RED5_MA_RING : RED5_POINT_COLORS.MA);
     const dotOp = 0.80;          /* 20% transparent fill + ring (incl. MA yellow) */
     const labelOp = 0.90;        /* 10% transparent OA/RA/MA/SA labels */
     const colBand = '#047857';  /* overview green for RH band + mix line only */
@@ -1028,7 +1030,7 @@ function renderProcessMiniBadge(ctx) {
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1 font-mono text-[11px] font-extrabold leading-tight">
                     <div style={{ color: colOA }}>OA {fmt(OA)}</div>
                     <div style={{ color: colRA }}>RA {fmt(RA)}</div>
-                    <div style={{ color: colMA }}>MA {MA ? fmt(MA) : '—'}</div>
+                    <div style={{ color: colMARing }}>MA {MA ? fmt(MA) : '—'}</div>
                     <div style={{ color: colSA }}>SA {fmt(SA)}</div>
                 </div>
             </div>

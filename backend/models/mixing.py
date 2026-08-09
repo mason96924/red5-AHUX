@@ -57,9 +57,9 @@ from __future__ import annotations
 import math
 from typing import Optional, Tuple
 
-# Amber -- distinct from OA navy (#1e3a8a), SA green (#10b981), RA blue
-# (#2563eb) at both chart scales and in the sidebar toggle list.
-MA_COLOR = "#f59e0b"
+# Amber ring identity -- chart MA is black fill + yellow ring; OA blue
+# (#3b82f6), SA green (#10b981), RA rose (#f43f5e).
+MA_COLOR = "#eab308"
 
 MIN_DT_C = 2.0        # APAR temperature threshold; below this f_t is junk
 MIN_DW_KGKG = 1.0e-4  # 0.1 g/kg -- below this f_w is junk

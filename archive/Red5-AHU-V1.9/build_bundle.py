@@ -105,7 +105,7 @@ SUBDIR_TREES = [
     'docs',                     # 2026-05-27: docs/ now mirrored from V2.0 (inline-help md, runbooks)
 ]
 
-# Everything in this skip-list (relative to repo root) is excluded even if
+# Everything in this skip-list (relative to archive root) is excluded even if
 # it lives inside one of SUBDIR_TREES.
 SKIP_PATTERNS = (
     '__pycache__',
@@ -115,10 +115,31 @@ SKIP_PATTERNS = (
     'conftest.py',
 )
 
+# Site-authored / runtime configs: extract already PRESERVES these when present
+# on the controller, but shipping them still inflates the spool + the old
+# finalize headroom check (largest uncompressed member).  A ~1.7 MB
+# equipment_types.json made ~4.5 MB-free controllers refuse a 2.6 MB upload
+# after the spool landed.  Fresh controllers get schema via Setup / Load
+# Schema / Controller button — not via every SP* zip.
+SKIP_EXACT = {
+    'configs/equipment_types.json',
+    'configs/map_config.json',
+    'configs/collector_config.json',
+    'configs/image_files_manifest.json',
+    'equipment_types.json',
+}
+
 
 def should_skip(rel_path):
+    rel = rel_path.replace('\\', '/')
+    if rel in SKIP_EXACT:
+        return True
+    # Weather year caches (e.g. configs/weather_47.60_-122.30_2020.json)
+    base = os.path.basename(rel)
+    if base.startswith('weather_') and base.endswith('.json'):
+        return True
     for pat in SKIP_PATTERNS:
-        if pat in rel_path:
+        if pat in rel:
             return True
     return False
 

@@ -266,7 +266,7 @@ function _renderDiskMeter(payload, statusMsg){
             '<b>' + (c.uploads_files_removed || 0) + '</b> stale upload spool file(s) (' + _fmtBytes(c.uploads_bytes_freed || 0) + ')</div>';
     }
     body.innerHTML = html + '<p class="note" style="margin:0;font-style:normal">Pre-flight thresholds: ' +
-        '<b>~bundle size + 1 MB</b> free + <b>400 inodes</b>. Below those the controller refuses uploads (HTTP 507) so a partial deploy never corrupts the install.</p>';
+        '<b>~bundle size + 1 MB</b> free to <i>receive</i> the upload, then only the <b>net extract growth</b> (overwrites reclaim space; site configs already on disk are skipped) + <b>400 inodes</b> to finalize. Below those the controller refuses (HTTP 507) so a partial deploy never corrupts the install.</p>';
     if (statusMsg) {
         statusEl.className = tier === 'crit' ? 'status-err' : (tier === 'warn' ? 'status-info' : 'status-ok');
         statusEl.textContent = statusMsg;

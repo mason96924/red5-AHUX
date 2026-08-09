@@ -1,92 +1,93 @@
-"""Sanity test: bundle-upload finalize headroom math now uses
-   max(1 MB, largest_zip_member + 256 KB), not max(5 MB, zip_size * 2).
+"""Finalize headroom uses extract-growth (overwrite reclaim + site-preserve),
+not max(1 MB, largest_member + 256 KB).
 
-   We feed a tiny zip containing one ~1.6 MB file; with mock free-space
-   barely above 1.85 MB the finalize MUST succeed.  With the OLD math,
-   the same disk would have rejected it (needed 5 MB).
+Reproduces the operator failure mode: ~4.5 MB free → upload 2.65 MB spool →
+~1.7 MB free left → old math refused because equipment_types.json (~1.7 MB)
+dominated largest_member even when site-preserve would skip writing it.
 """
-import os, sys, io, tempfile, contextlib, zipfile, shutil
+import os, sys, tempfile, zipfile, shutil, types
+
+# Controllers have Flask; local mac checkout may not. Stub for unit test.
+if 'flask' not in sys.modules:
+    _flask = types.ModuleType('flask')
+    class _J: pass
+    _flask.jsonify = lambda *a, **k: None
+    _flask.request = _J()
+    _flask.Response = object
+    _flask.send_from_directory = lambda *a, **k: None
+    _flask.make_response = lambda *a, **k: None
+    sys.modules['flask'] = _flask
 
 td = tempfile.mkdtemp(prefix="red5_headroom_")
 os.makedirs(td + "/scripts", exist_ok=True)
-os.makedirs(td + "/data", exist_ok=True)
 os.makedirs(td + "/data/pgpy", exist_ok=True)
+os.makedirs(td + "/data/configs", exist_ok=True)
+os.makedirs(td + "/data/_uploads", exist_ok=True)
 
-sys.path.insert(0, '/app/archive/Red5-AHU-V1.9')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['RED5_DISABLE_BG_THREADS'] = '1'
 
-src = open('/app/archive/Red5-AHU-V1.9/app.py').read()
-src = src.replace("/root/data", td + "/data").replace("/root/scripts", td + "/scripts")
-src = src.replace("app.run(host=HOST, port=PORT, threaded=True, debug=False)", "pass")
-ns = {'__name__': '__test__', '__file__': '/app/archive/Red5-AHU-V1.9/app.py'}
-with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-    exec(compile(src, '/tmp/fakeapp_headroom.py', 'exec'), ns)
-app = ns['app']
-
 import upload_service as us
+
+us.DATA_ROOT = td + "/data"
+us.SCRIPTS_ROOT = td + "/scripts"
+us.PLUGINS_ROOT = td + "/data/pgpy"
+us.ALLOWED_EXTENSIONS = {
+    '.py', '.html', '.js', '.css', '.json', '.md', '.svg', '.png', '.jpg',
+    '.jpeg', '.gif', '.woff', '.woff2', '.ttf', '.map', '.txt', '.csv',
+}
+us.UPLOADS_SCRATCH_DIR = td + "/data/_uploads"
 
 PASSED = []; FAILED = []
 def t(name, ok, info=''):
     (PASSED if ok else FAILED).append((name, info))
     print(('PASS ' if ok else 'FAIL '), name, '-', info if not ok else '')
 
-# Build a small in-memory zip with one ~1.6 MB member.
-big_member = b'x' * (1_600_000)
-zip_path = td + "/data/_uploads/test.zip"
-os.makedirs(os.path.dirname(zip_path), exist_ok=True)
+# Zip: huge site-preserve member + small real payload.
+big = b'E' * 1_700_000
+small = b'<html>dashboard</html>'
+zip_path = td + "/data/_uploads/inbound_test.bin"
 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_STORED) as zf:
-    zf.writestr('configs/equipment_types.json', big_member)
-    zf.writestr('dashboard.html', b'<html>hi</html>')
-zsize = os.path.getsize(zip_path)
-t('1a. test zip built', zsize > 1_500_000, str(zsize))
+    zf.writestr('configs/equipment_types.json', big)
+    zf.writestr('dashboard.html', small)
 
-# Mock _check_free_space to report 4.8 MB free / 11.8k inodes (operator's
-# observed reality on the controller).
+# Site already has equipment_types — preserve skip.
+open(td + "/data/configs/equipment_types.json", 'wb').write(big)
+
+need, mx = us._estimate_extract_min_bytes(zip_path)
+t('1a. preserved largest member does not dominate need',
+  need <= 256 * 1024 + 64 * 1024,
+  'need=%s max_growth=%s' % (need, mx))
+t('1b. max_growth is dashboard-sized (or 0 if somehow present)',
+  mx <= max(len(small), 1024),
+  'max_growth=%s' % mx)
+
+# Mock free space at the post-spool reality (~1.7 MB).
 calls = []
-def fake_check_free_space(path, min_bytes=10*1024*1024, min_inodes=200):
-    free_b, free_i = 4_800_000, 11800
-    calls.append({'min_bytes': min_bytes, 'free_b': free_b, 'free_i': free_i})
+def fake_check(path, min_bytes=10*1024*1024, min_inodes=200):
+    free_b, free_i = 1_700_000, 12000
+    calls.append({'min_bytes': min_bytes, 'free_b': free_b})
     return (free_b >= min_bytes and free_i >= min_inodes), free_b, free_i
-us._check_free_space = fake_check_free_space
+us._check_free_space = fake_check
+us._purge_pycache = lambda roots=None: (0, 0)
+us._purge_uploads_scratch = lambda max_age_sec=300: (0, 0)
+us._auto_reload_extracted_services = lambda extracted: []
 
-# Call the finalize helper directly.
-body, code = us._finalize_bundle_from_disk(zip_path, password='test')
-t('2a. finalize returns 200', code == 200, str(code) + ' / ' + str(body)[:200])
-t('2b. extraction succeeded', bool(body.get('success')), str(body)[:200])
-t('2c. min_need <= 2 MB (new math)',
-  calls[0]['min_bytes'] <= 2 * 1024 * 1024,
-  'min_bytes=' + str(calls[0]['min_bytes']))
-t('2d. min_need >= 1.85 MB (max_member + 256KB)',
-  calls[0]['min_bytes'] >= 1_856_256,
-  'min_bytes=' + str(calls[0]['min_bytes']))
+body, code = us._finalize_bundle_from_disk(zip_path, password='x')
+t('2a. finalize succeeds with 1.7 MB free (operator case)', code == 200,
+  str(code) + ' ' + str(body)[:180])
+t('2b. required min_bytes was well under 1.7 MB',
+  calls and calls[0]['min_bytes'] <= 1_700_000,
+  'min_bytes=' + str(calls[0]['min_bytes'] if calls else None))
+t('2c. dashboard.html extracted',
+  any(e.get('file') == 'dashboard.html' for e in (body.get('extracted') or [])),
+  str(body.get('extracted'))[:200])
 
-# Confirm OLD math (max(5MB, zip_size * 2)) would have FAILED the same disk.
-old_min_need = max(5 * 1024 * 1024, zsize * 2)
-t('3a. old formula would have refused this deploy',
-  old_min_need > 4_800_000,
-  'old_min_need=' + str(old_min_need))
-
-# Confirm chunk-upload pre-flight uses tighter formula too.
-us._check_free_space = fake_check_free_space  # (re-bind defensively)
-calls.clear()
-with app.test_client() as c:
-    # First chunk
-    payload = b'a' * 100  # tiny
-    r = c.post('/api/upload-bundle-chunk',
-               data=payload,
-               headers={
-                   'Content-Type': 'application/octet-stream',
-                   'X-Upload-Id': 'red5-test-headroom',
-                   'X-Chunk-Index': '0',
-                   'X-Total-Chunks': '1',
-                   'X-Total-Size': str(zsize),
-               })
-    j = r.get_json() or {}
-    t('4a. chunk pre-flight OK with 4.8 MB free for 1.6 MB upload',
-      r.status_code == 200, str(r.status_code) + ' / ' + str(j))
-    t('4b. chunk pre-flight need <= total_size + 1 MB + slack',
-      calls and calls[0]['min_bytes'] <= zsize + 1_100_000,
-      'need=' + str(calls[0]['min_bytes']) if calls else 'no call')
+# Old formula would have refused.
+old_need = max(1 * 1024 * 1024, 1_700_000 + 256 * 1024)
+t('3a. old largest-member formula would refuse 1.7 MB free',
+  old_need > 1_700_000,
+  'old_need=' + str(old_need))
 
 print()
 print('SUMMARY:', len(PASSED), 'passed,', len(FAILED), 'failed')

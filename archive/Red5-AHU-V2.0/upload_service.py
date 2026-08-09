@@ -108,6 +108,100 @@ def _check_free_space(path, min_bytes=10 * 1024 * 1024, min_inodes=200):
     return (free_bytes >= min_bytes and free_inodes >= min_inodes), free_bytes, free_inodes
 
 
+# Site-authored configs: never clobber on bundle update (same set as
+# _extract_zip_streaming).  Kept module-level so headroom math and extract
+# cannot drift apart.
+_SITE_CONFIG_PRESERVE = {
+    'configs/equipment_types.json',
+    'configs/map_config.json',
+    'configs/collector_config.json',
+    'configs/image_files_manifest.json',
+    'equipment_types.json',
+}
+
+
+def _estimate_extract_min_bytes(zip_path):
+    """Peak *additional* free bytes needed to extract ``zip_path`` while the
+    zip itself stays on disk.
+
+    Matches ``_extract_zip_streaming`` routing / skip rules.  ``open(dest,'wb')``
+    truncates first (reclaims the old file) then writes the new bytes, so the
+    per-member need is ``max(0, new_size - old_size)``.  We simulate the
+    sequence to find the minimum initial free that never goes negative.
+
+    Why not ``max(1 MB, largest_member + 256 KB)``: that counted
+    ``configs/equipment_types.json`` (~1.7 MB) even when site-preserve skips
+    it, and ignored that overwrites reclaim the old file.  Controllers with
+    ~4.5 MB free could upload a 2.65 MB spool (leaving ~1.7 MB) and then be
+    refused at finalize for a member that would never be written.
+    """
+    if not zipfile.is_zipfile(zip_path):
+        return 256 * 1024, 0
+    deltas = []  # (need_before, net_delta) per writable member
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            for entry in zf.namelist():
+                if entry.endswith('/') or '__MACOSX' in entry or entry.startswith('.'):
+                    continue
+                if '..' in entry:
+                    continue
+                clean_name = entry.lstrip('/')
+                if clean_name.startswith('red5_auth/'):
+                    continue  # tiny; ignore for headroom
+                if clean_name.startswith('scripts/'):
+                    target_root = SCRIPTS_ROOT
+                    clean_name = clean_name[len('scripts/'):]
+                else:
+                    target_root = DATA_ROOT
+                _, ext = os.path.splitext(clean_name)
+                base_name = os.path.basename(clean_name)
+                if (base_name.startswith('test_')
+                    or base_name == 'conftest.py'
+                    or '/tests/' in '/' + clean_name + '/'
+                    or '/__pycache__/' in '/' + clean_name + '/'
+                    or ext.lower() == '.pyc'
+                    or base_name == 'app.py'):
+                    continue
+                if ext.lower() == '.py':
+                    target_root = PLUGINS_ROOT
+                    clean_name = os.path.basename(clean_name)
+                if ext.lower() == '.json' and not clean_name.startswith('configs/'):
+                    clean_name = 'configs/' + os.path.basename(clean_name)
+                if ALLOWED_EXTENSIONS is not None and ext.lower() not in ALLOWED_EXTENSIONS:
+                    continue
+                try:
+                    new_sz = zf.getinfo(entry).file_size
+                except KeyError:
+                    continue
+                dest_path = os.path.normpath(os.path.join(target_root, clean_name))
+                if clean_name in _SITE_CONFIG_PRESERVE and os.path.isfile(dest_path):
+                    continue
+                try:
+                    old_sz = os.path.getsize(dest_path) if os.path.isfile(dest_path) else 0
+                except OSError:
+                    old_sz = 0
+                need_before = max(0, new_sz - old_sz)
+                net_delta = new_sz - old_sz
+                deltas.append((need_before, net_delta))
+    except (zipfile.BadZipFile, OSError):
+        return 256 * 1024, 0
+
+    # Minimum initial free so sequential truncate+write never stalls.
+    free = 0
+    pad = 0
+    max_need_before = 0
+    for need_before, net_delta in deltas:
+        if need_before > max_need_before:
+            max_need_before = need_before
+        if free < need_before:
+            pad += need_before - free
+            free = need_before
+        free -= net_delta
+    # 256 KB floor + 64 KB slack for mkdir / inode tables / zip central dir.
+    min_need = max(256 * 1024, pad + 64 * 1024)
+    return min_need, max_need_before
+
+
 def _purge_pycache(roots=None):
     """Walk the given roots and recursively rmtree every __pycache__ dir.
     Returns (dirs_removed, bytes_freed).
@@ -410,12 +504,6 @@ def _extract_zip_streaming(zip_path):
 
             # Site-authored configs: never clobber on bundle update. Fresh
             # controllers (file missing) still get the bundled defaults.
-            _SITE_CONFIG_PRESERVE = {
-                'configs/equipment_types.json',
-                'configs/map_config.json',
-                'configs/collector_config.json',
-                'configs/image_files_manifest.json',
-            }
             if clean_name in _SITE_CONFIG_PRESERVE and os.path.isfile(dest_path):
                 skipped.append({
                     'file': clean_name,
@@ -500,21 +588,10 @@ def _finalize_bundle_from_disk(spool_path, password):
         if not zipfile.is_zipfile(zip_path):
             return {'success': False, 'error': 'File is not a valid zip archive (after decryption).'}, 400
 
-        # Pre-flight: refuse the deploy if free space is dangerously low.
-        # Headroom calibrated to the ACTUAL extraction worst case rather
-        # than a blanket 2x zip-size: _extract_zip_streaming() writes
-        # entries one at a time via zf.open() so peak additional disk
-        # use is bounded by the LARGEST single member (existing files
-        # are overwritten in place; extraction does not duplicate the
-        # whole zip).  Plus a 256 KB safety margin and a 1 MB floor so
-        # tiny bundles still get a sane minimum.
-        try:
-            with zipfile.ZipFile(zip_path, 'r') as _zf_probe:
-                _max_member = max((_i.file_size for _i in _zf_probe.infolist()),
-                                  default=0)
-        except (zipfile.BadZipFile, OSError):
-            _max_member = 0
-        _min_need = max(1 * 1024 * 1024, _max_member + 256 * 1024)
+        # Pre-flight: refuse the deploy if free space cannot cover the
+        # real extract growth (overwrite reclaim + site-preserve skips).
+        # See _estimate_extract_min_bytes.  Keep 400 free inodes.
+        _min_need, _max_growth = _estimate_extract_min_bytes(zip_path)
         ok, free_bytes, free_inodes = _check_free_space(DATA_ROOT,
                                                        min_bytes=_min_need,
                                                        min_inodes=400)
@@ -530,7 +607,7 @@ def _finalize_bundle_from_disk(spool_path, password):
                     'free_bytes': free_bytes,
                     'free_inodes': free_inodes,
                     'required_bytes': _min_need,
-                    'largest_member': _max_member,
+                    'largest_growth': _max_growth,
                 }, 507
 
         extracted, skipped, errors = _extract_zip_streaming(zip_path)

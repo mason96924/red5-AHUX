@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<title>焓濕圖 — HVAC 的核心圖表，也是多數 BMS 缺少的工具</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#475569; --faint:#64748b; --line:#e2e8f0;
+    --accent:#1d4ed8; --green:#047857; --amber:#b45309; --page:#f8fafc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#334155;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","PingFang TC","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans CJK SC","Noto Sans CJK TC","Noto Sans CJK JP","Noto Sans CJK KR","Microsoft YaHei","Malgun Gothic",Helvetica,Arial,sans-serif;color:var(--ink)}
+  .slide{position:relative;width:13.333in;height:7.5in;background:var(--page);
+    overflow:hidden;margin:18px auto;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  .bar{position:absolute;top:0;left:0;right:0;height:.16in;background:var(--accent)}
+  .kick{position:absolute;left:.7in;top:.42in;font-size:15px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .title{position:absolute;left:.7in;top:.74in;font-size:33px;font-weight:800;letter-spacing:-.01em;color:var(--ink);max-width:12in}
+  .lead{position:absolute;left:.7in;top:1.5in;width:11.9in;font-size:16.5px;color:var(--muted);line-height:1.45}
+  .dark{background:#0b1224;color:#fff}
+  /* title slide */
+  .t-brand{position:absolute;left:.9in;top:1.85in;font-size:64px;font-weight:800;color:#fff;line-height:1.05;max-width:11.5in}
+  .t-sub{position:absolute;left:.92in;top:3.5in;font-size:27px;color:#93c5fd;max-width:11.5in;line-height:1.3}
+  .t-desc{position:absolute;left:.92in;top:4.75in;font-size:18px;color:#cbd5e1;max-width:11.2in;line-height:1.5}
+  .t-tags{position:absolute;left:.9in;top:6.15in;display:flex;gap:14px}
+  .t-tag{background:#1e293b;border:1px solid #334155;color:#93c5fd;font-size:14px;font-weight:700;border-radius:999px;padding:9px 20px}
+  /* 3-card row */
+  .cards{position:absolute;left:.7in;display:flex;gap:.25in}
+  .goal{width:3.9in;background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.32in .34in}
+  .goal .edge{position:absolute;left:0;top:0;width:.14in;height:100%;border-radius:12px 0 0 12px}
+  .goal h3{font-size:19px;margin-bottom:11px}
+  .goal p{font-size:15px;color:var(--muted);line-height:1.45}
+  .catch{position:absolute;left:.7in;width:12.4in;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:15px 22px}
+  .catch .t{font-size:15px;font-weight:800;color:var(--amber);margin-bottom:5px}
+  .catch p{font-size:15.5px;color:var(--ink);line-height:1.45}
+  /* 4-card grid */
+  .hg{position:absolute;left:.7in;display:grid;grid-template-columns:5.85in 5.85in;gap:.22in}
+  .hcard{background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.24in .3in .24in .38in}
+  .hcard .edge{position:absolute;left:0;top:0;width:.13in;height:100%}
+  .hcard h4{font-size:17px;margin-bottom:7px}
+  .hcard p{font-size:14.5px;color:var(--muted);line-height:1.42}
+  /* 6-card reasons grid */
+  .rg{position:absolute;left:.7in;top:2.0in;display:grid;grid-template-columns:repeat(3,3.9in);gap:.2in}
+  .rcard{height:2.02in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative;padding:.26in .28in}
+  .rcard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
+  .rcard h4{font-size:16px;margin:7px 0 8px}
+  .rcard p{font-size:13.2px;color:var(--muted);line-height:1.4}
+  /* rulebook rows */
+  .rows{position:absolute;left:.7in;top:2.15in;width:12.4in}
+  .row{display:flex;align-items:stretch;height:1.02in;margin-bottom:.12in;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .row .code{width:2.5in;display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;font-weight:800}
+  .row .nick{width:2.2in;display:flex;align-items:center;padding-left:.3in;font-size:17px;font-weight:800}
+  .row .q{flex:1;display:flex;align-items:center;padding-left:.2in;font-size:16px;color:var(--muted)}
+  /* venn */
+  .venn{position:absolute;left:.5in;top:1.9in;width:8.4in;height:5.2in}
+  .circle{position:absolute;width:3.05in;height:3.05in;border-radius:50%;mix-blend-mode:multiply;border:2px solid}
+  .c-comfort{left:1.55in;top:1.05in;background:rgba(180,83,9,.30);border-color:var(--amber)}
+  .c-fresh{left:3.6in;top:1.05in;background:rgba(4,120,87,.30);border-color:var(--green)}
+  .c-energy{left:2.55in;top:2.35in;background:rgba(29,78,216,.30);border-color:var(--accent)}
+  .v-lab{position:absolute;font-size:14px;font-weight:800;text-align:center;line-height:1.25}
+  .vcenter{position:absolute;left:2.95in;top:2.55in;width:2.2in;text-align:center;font-size:17px;font-weight:800;color:var(--ink)}
+  .explain{position:absolute;right:.55in;top:2.0in;width:3.35in;height:3.4in;background:#fff;border:1px solid var(--line);border-radius:12px;padding:.28in}
+  .explain h3{color:var(--accent);font-size:17px;margin-bottom:10px}
+  .explain p{font-size:14.5px;color:var(--muted);line-height:1.5}
+  .ref{position:absolute;right:.55in;top:5.55in;width:3.35in;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:.2in .28in;font-size:13.5px;color:var(--green);font-weight:600}
+  .oneline{position:absolute;left:.7in;top:6.7in;width:11.9in;text-align:center;font-size:15px;font-weight:800;color:var(--accent)}
+  /* chart slide */
+  .chartwrap{position:absolute;left:.55in;top:1.95in}
+  .cnotes{position:absolute;left:7.35in;top:2.05in;width:5.3in}
+  .cnotes h3{color:var(--accent);font-size:17px;margin-bottom:12px}
+  .cnote{display:flex;gap:11px;margin-bottom:13px}
+  .cnote .n{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .cnote p{font-size:14.5px;color:var(--muted);line-height:1.45}
+  .legend{position:absolute;left:7.35in;top:6.35in;width:5.3in;font-size:13px;color:var(--faint);line-height:1.5}
+  /* chart slide — reading-guide cards */
+  .legend2{position:absolute;left:.55in;top:5.92in;width:5.7in;font-size:12.5px;
+    color:var(--faint);line-height:1.5}
+  .ngrid{position:absolute;left:6.45in;top:2.0in;display:grid;
+    grid-template-columns:repeat(2,3.0in);gap:.15in}
+  .ncard{height:1.5in;background:#fff;border:1px solid var(--line);
+    border-radius:11px;padding:.2in .22in;position:relative}
+  .ncard .num{position:absolute;left:.22in;top:.19in;width:19px;height:19px;
+    border-radius:50%;background:var(--accent);color:#fff;font-size:11px;
+    font-weight:800;display:flex;align-items:center;justify-content:center}
+  .ncard h5{font-size:13.5px;margin:1px 0 6px 26px;line-height:1.2}
+  .ncard p{font-size:12.3px;color:var(--muted);line-height:1.38}
+  /* overlay slide */
+  .hub{position:absolute;left:4.75in;top:2.1in;width:3.85in;height:4.0in;
+    background:#fff;border:2px solid var(--accent);border-radius:14px;
+    text-align:center;padding:.22in .2in}
+  .hub h3{font-size:17px;color:var(--accent)}
+  .hub .sub{font-size:12.5px;color:var(--faint);margin-top:4px}
+  .hub .cap{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
+  .ocard{position:absolute;width:3.7in;height:1.9in;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:.22in .26in;
+    overflow:hidden}
+  .ocard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
+  .ocard h4{font-size:15.5px;margin:7px 0 6px}
+  .ocard p{font-size:12.8px;color:var(--muted);line-height:1.4}
+  .arw{position:absolute}
+  /* comparison table */
+  .ctable{position:absolute;left:.7in;top:2.05in;width:12.4in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .ctable table{width:100%;border-collapse:collapse}
+  .ctable th,.ctable td{padding:12px 16px;font-size:14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  .ctable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);background:#f8fafc}
+  .ctable td:first-child{font-weight:700;color:var(--ink);width:2.9in}
+  .ctable td.trad{color:var(--muted);width:4.6in}
+  .ctable td.psy{color:var(--green);font-weight:600}
+  .ctable tr:nth-child(even) td{background:#fafcff}
+  /* savings slide */
+  .bandh{position:absolute;top:1.90in;width:5.85in}
+  .bandh h5{font-size:14.5px;font-weight:800;margin-bottom:3px}
+  .bandh p{font-size:11.6px;color:var(--faint);line-height:1.3}
+  .srow{position:absolute;top:2.44in;display:grid;
+    grid-template-columns:repeat(2,2.79in);gap:.27in}
+  .scard{height:1.95in;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:.24in .2in .2in;position:relative;overflow:hidden}
+  .scard .top{position:absolute;left:0;top:0;width:100%;height:.09in}
+  .scard .big{font-size:33px;font-weight:800;line-height:1}
+  .scard .lab{font-size:11.4px;color:var(--ink);font-weight:700;margin-top:7px;
+    line-height:1.28}
+  .scard .src{font-size:9.6px;color:var(--faint);margin-top:6px;line-height:1.28}
+  .scard .attr{font-size:9.6px;margin-top:6px;line-height:1.28;padding-left:6px;
+    border-left:2px solid var(--line);color:var(--muted)}
+  .triple{display:flex;gap:.15in;align-items:flex-end}
+  .triple b{font-size:24px;font-weight:800;line-height:1;display:block}
+  .triple span{font-size:9.2px;color:var(--faint);text-transform:uppercase;
+    letter-spacing:.04em}
+  .tag{position:absolute;right:.16in;top:.24in;font-size:8.8px;font-weight:800;
+    text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;
+    border-radius:99px;background:#fef3c7;color:#92400e}
+  .p2{position:absolute;top:4.50in;width:5.85in;height:1.95in;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:.2in .28in}
+  .p2 h4{font-size:15px;margin-bottom:7px}
+  .p2 p{font-size:11.4px;color:var(--muted);line-height:1.33;margin-bottom:5px}
+  .foot{position:absolute;left:.7in;top:6.6in;width:11.93in;text-align:center;
+    font-size:15px;font-weight:700;color:var(--accent);line-height:1.35}
+  /* closing */
+  .close-h{position:absolute;left:1in;top:2.4in;width:11.3in;text-align:center;font-size:44px;font-weight:800;color:#fff}
+  .close-p{position:absolute;left:1.4in;top:3.9in;width:10.5in;text-align:center;font-size:19px;color:#cbd5e1;line-height:1.55}
+  .close-n{position:absolute;left:2in;top:5.6in;width:9.3in;text-align:center;font-size:15.5px;color:#93c5fd;line-height:1.5;font-style:italic}
+  @page{size:13.333in 7.5in;margin:0}
+  @media print{
+    html,body{background:#fff}
+    .slide{margin:0;box-shadow:none;page-break-after:always}
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 TITLE -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="t-brand">焓濕圖</div>
+  <div class="t-sub">HVAC 的核心圖表 —— 也是多數建築管理系統缺少的工具</div>
+  <div class="t-desc">為何設備設計師離不開它、傳統 BMS 為何從未採用它，以及這張圖如何同時回應 ASHRAE 55、62.1、90.1 與 Guideline 36。</div>
+  <div class="t-tags"><span class="t-tag">濕空氣狀態</span><span class="t-tag">設計工具</span><span class="t-tag">符合 ASHRAE</span><span class="t-tag">即時控制</span></div>
+</section>
+
+<!-- 2 WHO USES IT / WHAT EQUIPMENT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">從這裡開始</div>
+  <div class="title">誰在用這張圖 —— 用在什麼設備上</div>
+  <div class="lead">在建築物進入控制之前，必須先選定處理空氣的設備。這些人每天都活在焓濕圖上。</div>
+  <div class="cards" style="top:2.35in">
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--accent)"></div>
+      <h3 style="color:var(--accent)">他們是誰</h3>
+      <p>「HVAC 設備設計師」是負責選型與定容量空調設備的機械工程師：</p>
+      <p style="margin-top:9px">• 製造商應用工程師<br>• 顧問／設計工程師<br>• 證明系統可運作的調試驗收工程師</p>
+    </div>
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--green)"></div>
+      <h3 style="color:var(--green)">「HVAC 設備」指什麼</h3>
+      <p>真正改變空氣狀態的機器：</p>
+      <p style="margin-top:9px">• 空調箱 (AHUs) 及其加熱／冷卻盤管<br>• 混合與經濟器風閥<br>• 加濕器與除濕機<br>• 能量回收轉輪 (ERV / HRV)<br>• 冰水主機與 DX 系統、風機、VAV 末端</p>
+    </div>
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--amber)"></div>
+      <h3 style="color:var(--amber)">他們必須決定什麼</h3>
+      <p>• 需要多少製冷或制熱<br>• 其中有多少冷卻是在去除<b>水氣</b>而非熱量<br>• 盤管必須多大<br>• 要混入多少外氣<br>• 是否會結露或盤管結凍</p>
+    </div>
+  </div>
+  <div class="catch" style="top:6.25in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">上述每一項決策，都是焓濕圖上的一個點或一條線。因此空調設計真正發生的地方是這張圖 —— 而不是設備型錄。</p>
+  </div>
+</section>
+
+<!-- 3 WHY DESIGNERS RELY ON IT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">它為何存在</div>
+  <div class="title">為何設計師離不開它</div>
+  <div class="lead">空調並不只是「把空氣變冷」。它是把<b>濕空氣</b>從一個狀態移到另一個狀態 —— 而焓濕圖就是空氣所有可能狀態的地圖。</div>
+  <div class="hg" style="top:2.4in">
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">每一個過程都是一條線</h4>
+      <p>冷卻、加熱、加濕、除濕與混合，各自以特有的方向移動空氣。畫出那條線，就描述了該過程。</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">容量來自圖表</h4>
+      <p>線段兩端的能量含量（焓）乘以風量，就是盤管必須提供的 kW。設備就是這樣定容量的。</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">顯熱與潛熱</h4>
+      <p>這張圖把降低溫度的冷卻與去除水分的冷卻分開。兩者特性不同，必須分別定容量。</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--ink)"></div>
+      <h4>物理極限一目了然</h4>
+      <p>那條曲線邊界是 100% 濕度 —— 空氣無法越過它。它顯示結露從何處開始，以及盤管會在何處結凍。</p></div>
+  </div>
+</section>
+
+<!-- 4 HOW TO READ IT (SVG chart) -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">如何判讀</div>
+  <div class="title">一個點就是空氣的狀態</div>
+  <div class="chartwrap">
+    <svg viewBox="0 0 600 400" style="width:5.7in;height:3.8in">
+      <rect x="0" y="0" width="600" height="400" fill="#ffffff" stroke="#e2e8f0"/>
+      <!-- grid -->
+      <g stroke="#eef2f7" stroke-width="1">
+        <line x1="122" y1="40" x2="122" y2="350"/><line x1="185" y1="40" x2="185" y2="350"/>
+        <line x1="247" y1="40" x2="247" y2="350"/><line x1="310" y1="40" x2="310" y2="350"/>
+        <line x1="372" y1="40" x2="372" y2="350"/><line x1="435" y1="40" x2="435" y2="350"/>
+        <line x1="497" y1="40" x2="497" y2="350"/>
+        <line x1="60" y1="288" x2="560" y2="288"/><line x1="60" y1="226" x2="560" y2="226"/>
+        <line x1="60" y1="164" x2="560" y2="164"/><line x1="60" y1="102" x2="560" y2="102"/>
+      </g>
+      <!-- axes -->
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- lines of equal total energy (constant enthalpy), clipped at saturation -->
+      <g stroke="#7c3aed" opacity=".8">
+        <line x1="215" y1="256.6" x2="495" y2="349.6" stroke-width="1.3" stroke-dasharray="2 4"/>
+        <line x1="381.2" y1="133.7" x2="560" y2="193" stroke-width="1.3" stroke-dasharray="2 4"/>
+        <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke-width="1.8" stroke-dasharray="7 4"/>
+      </g>
+      <text x="265" y="215" font-size="10.5" font-weight="700" fill="#7c3aed" text-anchor="end">等能量（焓）</text>
+      <!-- saturation curve (100% RH) -->
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+      <text x="462" y="60" font-size="12" font-weight="700" fill="#1d4ed8">100% RH</text>
+      <text x="462" y="76" font-size="11" fill="#64748b">（飽和）</text>
+      <!-- comfort zone -->
+      <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.16)" stroke="#b45309"
+            stroke-width="1.6" stroke-dasharray="5 3" rx="4"/>
+      <text x="347" y="309" font-size="11.5" font-weight="700" fill="#b45309" text-anchor="middle">舒適區 (ASHRAE 55)</text>
+      <!-- mixing line OA-RA -->
+      <line x1="472" y1="164" x2="360" y2="254" stroke="#047857" stroke-width="2" stroke-dasharray="6 4"/>
+      <!-- coil process MA -> SA -->
+      <line x1="394" y1="227" x2="222" y2="259" stroke="#1d4ed8" stroke-width="2.5"/>
+      <polygon points="222,259 233,253 233,265" fill="#1d4ed8"/>
+      <!-- state points -->
+      <g>
+        <circle cx="472" cy="164" r="6" fill="#b45309"/><text x="482" y="160" font-size="13" font-weight="800" fill="#b45309">OA</text>
+        <circle cx="360" cy="254" r="6" fill="#047857"/><text x="368" y="272" font-size="13" font-weight="800" fill="#047857">RA</text>
+        <circle cx="394" cy="227" r="6" fill="#0f172a"/><text x="402" y="222" font-size="13" font-weight="800" fill="#0f172a">MA</text>
+        <circle cx="222" cy="259" r="6" fill="#1d4ed8"/><text x="196" y="252" font-size="13" font-weight="800" fill="#1d4ed8">SA</text>
+      </g>
+      <!-- axis captions -->
+      <text x="300" y="378" font-size="12.5" font-weight="700" fill="#475569" text-anchor="middle">乾球溫度  →</text>
+      <text x="20" y="200" font-size="12.5" font-weight="700" fill="#475569"
+            transform="rotate(-90 20 200)" text-anchor="middle">空氣中的水氣  →</text>
+    </svg>
+  </div>
+  <div class="legend2"><b>OA</b> 外氣 &nbsp;·&nbsp; <b>RA</b> 回風 &nbsp;·&nbsp; <b>MA</b> 進入盤管的混合風 &nbsp;·&nbsp; <b>SA</b> 送至房間的送風。虛線綠 = 混合；實線藍 = 冷卻盤管。<b style="color:#7c3aed">紫色斜線</b>是等總能量線：此處外氣為 79 kJ/kg，回風為 48，因此遠高於 RA 的線，調節成本更高 —— 今日沒有免費冷卻。</div>
+  <div class="ngrid">
+    <div class="ncard"><div class="num">1</div><h5 style="color:var(--accent)">兩軸鎖定一切</h5>
+      <p>橫軸是溫度；縱軸是空氣實際攜帶的水重量。鎖定兩者，空氣狀態就鎖定了 —— 相對濕度、露點、濕球與能量含量，都由那一個點決定。</p></div>
+    <div class="ncard"><div class="num">2</div><h5 style="color:var(--accent)">曲線是硬性極限</h5>
+      <p>它標示 100% 濕度 —— 空氣永遠無法位於其上。把點推到曲線上，水就會析出：那就是露點、濕盤管、起霧的窗戶。</p></div>
+    <div class="ncard"><div class="num">3</div><h5 style="color:var(--green)">混合是一條直線</h5>
+      <p>外氣與回風混合後的點，必須落在連接兩者的線上。它在線上的位置就是比例：距 RA 三分之一，代表三分之一外氣。</p></div>
+    <div class="ncard"><div class="num">4</div><h5 style="color:var(--accent)">盤管把點往下、往左拉</h5>
+      <p>向左去除溫度（顯熱）；向下去除水分（潛熱）。MA→SA 的斜率就是兩者的分配 —— 而定盤管容量，本質上就是定這個分配。</p></div>
+    <div class="ncard"><div class="num">5</div><h5 style="color:var(--amber)">舒適是一個區域</h5>
+      <p>可接受的溫度與濕度範圍直接畫在圖上。必須選定送風，使房間落在那個方框內 —— 而不只是溫度正確。</p></div>
+    <div class="ncard"><div class="num">6</div><h5 style="color:var(--ink)">故障會以錯誤的幾何顯現</h5>
+      <p>若混合風的點不在外氣與回風連線上，就有東西在說謊 —— 卡住的風閥或漂移的感測器。圖像能抓住警報限值抓不到的問題。</p></div>
+  </div>
+</section>
+
+<!-- 5 WORKED EXAMPLE — THE FREE-COOLING DECISION -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">演算範例</div>
+  <div class="title">何時外氣是免費的？</div>
+  <div class="chartwrap" style="top:1.95in">
+    <svg viewBox="0 0 600 400" style="width:5.7in;height:3.8in">
+      <rect x="0" y="0" width="600" height="400" fill="#ffffff" stroke="#e2e8f0"/>
+      <!-- decision regions -->
+      <polygon points="271.2,224.5 247,240 185,271 122,294 60,311 60,350 360,350 360,253.9"
+               fill="rgba(4,120,87,.13)"/>
+      <polygon points="271.2,224.5 310,198.1 360,153.6 360,253.9" fill="rgba(225,29,72,.16)"/>
+      <polygon points="360,253.9 360,350 560,350 560,320.3" fill="rgba(180,83,9,.16)"/>
+      <polygon points="360,253.9 360,153.6 372,142 435,69 454,40 560,40 560,320.3"
+               fill="rgba(100,116,139,.10)"/>
+      <!-- axes -->
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- the two competing lines -->
+      <line x1="360" y1="153.6" x2="360" y2="350" stroke="#334155" stroke-width="1.8" stroke-dasharray="5 4"/>
+      <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke="#7c3aed" stroke-width="2.4"/>
+      <!-- saturation -->
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+      <!-- points -->
+      <circle cx="360" cy="253.9" r="6.5" fill="#047857"/>
+      <text x="366" y="272" font-size="12.5" font-weight="800" fill="#047857">RA 48</text>
+      <circle cx="335" cy="195.4" r="6.5" fill="#e11d48"/>
+      <text x="288" y="188" font-size="12.5" font-weight="800" fill="#e11d48">A 60</text>
+      <circle cx="410" cy="325.9" r="6.5" fill="#b45309"/>
+      <text x="420" y="331" font-size="12.5" font-weight="800" fill="#b45309">B 34</text>
+      <circle cx="472" cy="164" r="5.5" fill="#64748b"/>
+      <text x="481" y="160" font-size="11.5" font-weight="700" fill="#64748b">OA 79</text>
+      <!-- region + line labels -->
+      <text x="130" y="332" font-size="12" font-weight="800" fill="#047857">免費冷卻</text>
+      <text x="130" y="346" font-size="10.5" fill="#047857">兩種方法一致</text>
+      <text x="455" y="105" font-size="11.5" font-weight="700" fill="#64748b">高溫高濕 —</text>
+      <text x="455" y="119" font-size="11.5" font-weight="700" fill="#64748b">最小 OA</text>
+      <text x="145" y="215" font-size="10.5" font-weight="700" fill="#7c3aed">與 RA 等能量</text>
+      <text x="366" y="178" font-size="10.5" font-weight="700" fill="#334155">僅乾球</text>
+    </svg>
+  </div>
+  <div class="legend2" style="top:5.88in">數字為總能量，單位 kJ/kg。<b>RA</b> 24 °C / 50% RH = 48 &nbsp;·&nbsp; <b>A</b> 22 °C / 90% RH = 60 &nbsp;·&nbsp; <b>B</b> 28 °C / 10% RH = 34 &nbsp;·&nbsp; <b>OA</b> 33 °C / 18 g/kg = 79（前一頁的外氣）。</div>
+  <div class="cnotes" style="left:6.45in;top:2.0in;width:6.18in">
+    <h3>兩條線，四種結果</h3>
+    <div class="cnote"><div class="n" style="background:#047857">1</div><p><b>紫色線的左下方</b> —— 外氣能量低於回風。打開經濟器，讓機械冷卻退場。</p></div>
+    <div class="cnote"><div class="n" style="background:#64748b">2</div><p><b>右上方</b> —— 外氣是負荷，不是資源。關到 62.1 要求的最小通風量，讓盤管做事。</p></div>
+    <div class="cnote"><div class="n" style="background:#e11d48">A</div><p><b>涼但悶濕。</b> 22 °C 比回風低 2°，乾球經濟器會打開 —— 但它帶有 60 kJ/kg，對上 48。你剛把潛熱負荷引進來，還得讓盤管再擠出去。</p></div>
+    <div class="cnote"><div class="n" style="background:#b45309">B</div><p><b>暖但乾燥。</b> 28 °C 乾球會讓它關閉，但 34 kJ/kg 遠低於回風。能量說該用它 —— 不過當負荷主要是顯熱時，乾球高限仍會守住這個角落。</p></div>
+    <div class="cnote"><div class="n" style="background:#7c3aed">=</div><p><b>在線上</b> 兩股氣流能量中性，因此選擇落到濕度與風機功率。程序在此加入死區，避免風閥震盪。</p></div>
+  </div>
+  <div class="catch" style="top:6.35in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">乾球感測器只能畫出<b>垂直</b>線；焓濕圖畫出<b>斜線</b>。兩個陰影楔形正是它們意見不合之處 —— 也是能量悄悄流失之處。</p>
+  </div>
+</section>
+
+<!-- 6 WHY TRADITIONAL BMS DOESN'T USE IT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">落差</div>
+  <div class="title">為何傳統 BMS 從未採用這張圖</div>
+  <div class="rg">
+    <div class="rcard"><div class="top" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">控制以單一數值思考</h4>
+      <p>BMS 由各個迴路組成，每個迴路只監看<b>一個</b>值 —— 溫度或壓力。狀態點需要兩個讀值一起判斷；傳統控制沒有二維空氣狀態的概念。</p></div>
+    <div class="rcard"><div class="top" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">感測器常常不在</h4>
+      <p>你需要同一位置的溫度<b>與</b>濕度。許多機組在外氣、混合與回風只量乾球 —— 額外的濕度感測器代表額外成本、配線與校正漂移。</p></div>
+    <div class="rcard"><div class="top" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">計算成本太高</h4>
+      <p>含濕量與能量含量是非線性的，且依賴大氣壓力。舊型控制器記憶體極少且無浮點運算，因此焓濕計算乾脆被省略。</p></div>
+    <div class="rcard"><div class="top" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">圖形畫不出來</h4>
+      <p>早期前端只畫簡單設備示意圖與時間趨勢。帶曲線與疊加的即時圖需要真正的繪圖能力 —— 於是這張圖一直留在設計活頁夾裡的靜態頁。</p></div>
+    <div class="rcard"><div class="top" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">設計與運轉是兩個世界</h4>
+      <p>這張圖離線用一次來選設備。交給控制承包商的是設定值清單 —— 不是背後的物理。交接時推理就遺失了。</p></div>
+    <div class="rcard"><div class="top" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">較簡單的做法被允許</h4>
+      <p>法規允許僅乾球的經濟器切換，因此設計避開了過去不可靠的濕度感測。較容易且合規的路徑，悄悄成了預設。</p></div>
+  </div>
+  <div class="catch" style="top:6.35in">
+    <div class="t">後果</div>
+    <p>操作員最後要用分開的一維趨勢線，去診斷一個<b>二維</b>問題 —— 熱量<i>與</i>水氣。資訊在那裡；圖像卻不在。</p>
+  </div>
+</section>
+
+<!-- 6 RULEBOOKS -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">規範手冊</div>
+  <div class="title">四份 ASHRAE 標準，各用一句話</div>
+  <div class="rows">
+    <div class="row"><div class="code" style="background:var(--amber)">ASHRAE 55</div><div class="nick" style="color:var(--amber)">舒適</div><div class="q">人們會感到舒適嗎？</div></div>
+    <div class="row"><div class="code" style="background:var(--green)">ASHRAE 62.1</div><div class="nick" style="color:var(--green)">新鮮空氣</div><div class="q">外氣是否足以維持健康？</div></div>
+    <div class="row"><div class="code" style="background:var(--accent)">ASHRAE 90.1</div><div class="nick" style="color:var(--accent)">能源</div><div class="q">我們是否在不浪費能源的情況下做到？</div></div>
+    <div class="row"><div class="code" style="background:var(--ink)">Guideline 36</div><div class="nick" style="color:var(--ink)">裁判</div><div class="q">設備應如何運轉才能同時達成三者？</div></div>
+  </div>
+  <div class="catch" style="top:6.85in;padding:11px 22px">
+    <p style="font-size:15px">舒適與新鮮空氣推向<b>更多</b>空調處理；能源推向<b>更少</b>。Guideline 36 是平息這場爭論的規範手冊。</p>
+  </div>
+</section>
+
+<!-- 7 ONE SHEET, FOUR OVERLAYS -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">核心概念</div>
+  <div class="title">一張圖 —— 每本規範都畫在上面</div>
+
+  <div class="hub">
+    <h3>焓濕圖</h3>
+    <div class="sub">溫度 × 水氣 —— 唯二的兩軸</div>
+    <svg viewBox="0 0 600 400" style="width:3.35in;height:2.23in;margin-top:6px">
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="2"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="2"/>
+      <g stroke="#7c3aed" opacity=".85">
+        <line x1="215" y1="256.6" x2="495" y2="349.6" stroke-width="2" stroke-dasharray="3 5"/>
+        <line x1="381.2" y1="133.7" x2="560" y2="193" stroke-width="2" stroke-dasharray="3 5"/>
+        <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke-width="2.6" stroke-dasharray="9 5"/>
+      </g>
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="3"/>
+      <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.18)"
+            stroke="#b45309" stroke-width="2" stroke-dasharray="6 4" rx="4"/>
+      <line x1="472" y1="164" x2="360" y2="254" stroke="#047857" stroke-width="3"
+            stroke-dasharray="7 5"/>
+      <line x1="394" y1="227" x2="222" y2="259" stroke="#1d4ed8" stroke-width="3.5"/>
+      <circle cx="472" cy="164" r="8" fill="#b45309"/>
+      <circle cx="360" cy="254" r="8" fill="#047857"/>
+      <circle cx="394" cy="227" r="8" fill="#0f172a"/>
+      <circle cx="222" cy="259" r="8" fill="#1d4ed8"/>
+    </svg>
+    <div class="cap">周圍的每一項要求，都變成畫在<b>同一對軸</b>上的形狀。</div>
+  </div>
+
+  <div class="ocard" style="left:.7in;top:2.1in"><div class="top" style="background:var(--amber)"></div>
+    <h4 style="color:var(--amber)">ASHRAE 55 畫出一個區域</h4>
+    <p>舒適區：居住者可接受的溫度與濕度帶。標準的整個空氣側，變成你必須讓房間落入的區域。</p></div>
+
+  <div class="ocard" style="left:8.93in;top:2.1in"><div class="top" style="background:var(--green)"></div>
+    <h4 style="color:var(--green)">ASHRAE 62.1 畫出線上的一點</h4>
+    <p>所需的外氣比例，精確決定混合風的點必須落在回風與外氣連線上的何處。</p></div>
+
+  <div class="ocard" style="left:.7in;top:4.2in"><div class="top" style="background:var(--accent)"></div>
+    <h4 style="color:var(--accent)">ASHRAE 90.1 畫出一個方向</h4>
+    <p>紫色斜線是等能量線。外氣落在哪一側，決定它是否為較便宜的來源，以及點可以推多遠才開始浪費能源。</p>
+    <p style="margin-top:5px;font-size:11.5px;color:var(--faint)"><i>僅空氣側 —— 風機功率與冰水主機效率在圖外。</i></p></div>
+
+  <div class="ocard" style="left:8.93in;top:4.2in"><div class="top" style="background:var(--ink)"></div>
+    <h4>Guideline 36 畫出路徑</h4>
+    <p>控制程序就是點一整天行走的路線 —— 經濟器、盤管、設定值復位 —— 從外氣一路到房間。</p></div>
+
+  <svg class="arw" style="left:4.42in;top:2.95in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:4.42in;top:5.05in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:2.95in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:5.05in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+
+  <div class="catch" style="top:6.3in">
+    <div class="t">請用正確方向理解</div>
+    <p>這張圖不是四份標準碰巧重疊留下的小交集。它是它們共同繪製其上的<b>共用底圖</b> —— 一個區域、一條線、一個方向與一條路徑，共用同一對軸。四者都滿足時，形狀自然契合。</p>
+  </div>
+</section>
+
+<!-- 8 ONE DOT ANSWERS ALL FOUR -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">如何滿足每一項</div>
+  <div class="title">圖上一個點回答每一個問題</div>
+  <div class="hg" style="top:2.15in">
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--amber)"></div><h4 style="color:var(--amber)">55 — 舒適</h4><p>舒適區直接畫在圖上。房間的點是否在可接受的溫度／濕度帶內 —— 若不在，偏離哪個方向？</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--green)"></div><h4 style="color:var(--green)">62.1 — 新鮮空氣</h4><p>混合風的點必須落在回風與外氣連線上。它在線上的位置<i>就是</i>外氣比例。</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--accent)"></div><h4 style="color:var(--accent)">90.1 — 能源</h4><p>等能量線揭示免費冷卻：當外氣能量低於回風時，經濟器可在無需機械冷卻下承擔負荷。</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--ink)"></div><h4>G36 — 控制程序</h4><p>可視證明：控制程序把點落在舒適區內、正確的新鮮空氣線上，並沿著最低能量路徑前進。</p></div>
+  </div>
+  <div class="oneline">一句話：標出空氣「現在」在哪，看出它「必須」在哪、如何到達，以及是否以最低能量做到。</div>
+</section>
+
+<!-- 9 COMPARISON -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">差異</div>
+  <div class="title">趨勢型 BMS 與具備焓濕圖能力的 BMS</div>
+  <div class="ctable">
+    <table>
+      <tr><th>所問問題</th><th>趨勢型 BMS（現況）</th><th>具備焓濕圖能力的 BMS</th></tr>
+      <tr><td>操作員看到什麼</td><td class="trad">多條分開的趨勢線，一次讀一條</td><td class="psy">一張顯示空氣實際狀態的圖</td></tr>
+      <tr><td>外氣混合是否正確？</td><td class="trad">由風閥指令推斷</td><td class="psy">混合風的點必須落在外氣–回風線上</td></tr>
+      <tr><td>現在能否免費冷卻？</td><td class="trad">通常只看溫度，因此悶濕偏涼與乾燥偏暖的時段會誤判</td><td class="psy">依空氣真實能量含量判定</td></tr>
+      <tr><td>濕度控制</td><td class="trad">獨立迴路，常與冷卻迴路互相打架</td><td class="psy">熱量與水氣作為單一狀態處理</td></tr>
+      <tr><td>找出故障</td><td class="trad">各點的警報限值</td><td class="psy">過程線的形狀暴露盤管、風閥與感測器故障</td></tr>
+      <tr><td>證明符合標準</td><td class="trad">人工檢查，通常事後為之</td><td class="psy">舒適、通風與能源即時一併判定</td></tr>
+    </table>
+  </div>
+  <div class="catch" style="top:6.35in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">除了氣流上的濕度感測，這些都不需要新的現場設備。差異在於軟體如何運用建築物已經在量測的讀值。</p>
+  </div>
+</section>
+
+<!-- 11 WHAT IS IT WORTH -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">已發表的證據</div>
+  <div class="title">值多少 —— 功勞算誰的？</div>
+
+  <div class="bandh" style="left:.7in">
+    <h5 style="color:var(--accent)">良好空氣側控制值多少</h5>
+    <p>這是獎賞，而且屬於控制程序。圖本身不產生這些節省 —— 它讓節省可被驗證。</p>
+  </div>
+  <div class="bandh" style="left:6.78in">
+    <h5 style="color:var(--green)">圖本身貢獻什麼</h5>
+    <p>可視性：溫度趨勢所隱藏的錯失時數與損壞部件。</p>
+  </div>
+
+  <div class="srow" style="left:.7in">
+    <div class="scard"><div class="top" style="background:var(--accent)"></div>
+      <div class="big" style="color:var(--accent)">31%</div>
+      <div class="lab">Guideline 36 控制程序相對於既有做法的平均 HVAC 節省</div>
+      <div class="src">Berkeley Lab, Spawn of EnergyPlus, 中型辦公室, 2022</div>
+      <div class="attr">主要來自靜壓復位、區域最小風量與時程。只有經濟器與 SAT 邏輯落在圖上。</div></div>
+    <div class="scard"><div class="top" style="background:#7c3aed"></div>
+      <div class="triple" style="color:#7c3aed">
+        <div><b>41%</b><span>制熱</span></div>
+        <div><b>20%</b><span>製冷</span></div>
+        <div><b>18%</b><span>過渡季</span></div>
+      </div>
+      <div class="lab">由上位設定值復位帶來的季節性節省</div>
+      <div class="src">PNNL 大型辦公室模擬器, Chicago, 2024</div>
+      <div class="attr">空氣側與機房側合計 —— 冰水與熱水復位完全在圖外。</div></div>
+  </div>
+
+  <div class="srow" style="left:6.78in">
+    <div class="scard"><div class="top" style="background:var(--green)"></div>
+      <div class="big" style="color:var(--green)">9%</div>
+      <div class="lab">故障偵測的整棟建築節省中位數，範圍 1–28%</div>
+      <div class="src">Berkeley Lab Smart Energy Analytics Campaign, 6,500 棟建築</div>
+      <div class="attr">標準 AHU 規則集（NIST <b>APAR</b>，28 項質量與能量平衡測試）就是這張圖幾何的代數形式。涵蓋所有 FDD，因此應視為上限。</div></div>
+    <div class="scard"><div class="top" style="background:var(--amber)"></div>
+      <div class="tag">不是節省</div>
+      <div class="big" style="color:var(--amber)">64%</div>
+      <div class="lab">現場發現故障的經濟器比例</div>
+      <div class="src">New Buildings Institute；更廣泛調查平均 58%</div>
+      <div class="attr">機會規模，不是報酬率：免費冷卻資產有多常已經壞了。圖是讓你察覺的方法。</div></div>
+  </div>
+
+  <div class="p2" style="left:.7in">
+    <h4 style="color:var(--green)">節省實際從何而來</h4>
+    <p>• 免費冷卻時數被<b>把握</b>而非錯失，因為決策依能量而非僅依溫度。</p>
+    <p>• 外氣以 62.1 要求的量交付 —— 而非悄悄變成兩倍。</p>
+    <p>• 送風復位跟隨負荷，而非全年固定一個設定值。</p>
+    <p>• 盤管、風閥與感測器故障在數日內被發現，而非等到下一季客訴。</p>
+  </div>
+
+  <div class="p2" style="left:6.78in">
+    <h4 style="color:var(--amber)">誠實解讀這些數字</h4>
+    <p>• 來自模擬與現場研究的措施層級結果 —— 不是任何單一建築物的保證。</p>
+    <p>• 它們重疊且不可相加；左對與右對把許多相同能源算了兩次。</p>
+    <p>• 最大節省來自最差的起始狀態。</p>
+    <p>• 焓切換<b>並非</b>自動更好 —— Taylor &amp; Cheng (2010) 發現一旦濕度感測器漂移，固定乾球往往勝出，因此才有 90.1-2013 的精度限制。</p>
+  </div>
+
+  <div class="foot">圖本身不節省任何東西。它讓機會可見、故障顯而易見 —— 節省由據此行動的控制程序入帳。</div>
+</section>
+
+<!-- 12 CLOSING -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="close-h">一張圖。四本規範。</div>
+  <div class="close-p">焓濕圖不是僅供設計的產物。把它帶進建築物的控制，能把匿名設定值還原為可見的物理 —— 並把舒適、空氣品質與能源放進操作員一眼就能讀懂的單一畫面。</div>
+  <div class="close-n">即時繪製它所需的運算能力多年來已是尋常。讓這張圖進不了控制室的，是習慣與缺少濕度感測器 —— 不是物理，也不再是技術。</div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Cache-control: psy_3d.html and friends have no compiled bundle to ?v=-stamp, so the HTML itself must opt-out of browser caching. Without this, PROD users see stale UI after every deploy until they hard-refresh.  Sentinel data-cache-policy attribute is used by scripts/inject_no_cache_meta.py and deploy.sh preflight to detect missing tags.  Do NOT remove. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VAV modal + psych chart — layout mockup</title>
+<style>
+  :root {
+    --bg: #020617;
+    --panel: #0f172a;
+    --border: #1e293b;
+    --muted: #64748b;
+    --sa: #22d3ee;
+    --vst: #a78bfa;
+    --zone: #34d399;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: #020617;
+    color: #e2e8f0;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: 24px 16px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .eyebrow { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: 18px; font-weight: 900; font-style: italic; }
+  h1 span { color: #ef4444; }
+  .sub { font-size: 12px; color: #94a3b8; text-align: center; max-width: 760px; line-height: 1.45; }
+
+  /* Backdrop like dashboard behind modal */
+  .stage {
+    width: min(1280px, 100%);
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid #1e293b;
+    background:
+      radial-gradient(800px 400px at 30% 20%, #0f172a 0%, #020617 70%);
+    padding: 28px 20px 36px;
+    min-height: 620px;
+  }
+  .stage::before {
+    content: "MAIN PSYCH CHART (dimmed)";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: #334155;
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    pointer-events: none;
+  }
+
+  /* VAV modal shell — matches vav-modal.js chrome */
+  .modal {
+    position: relative;
+    z-index: 2;
+    margin: 0 auto;
+    width: min(1180px, 100%);
+    height: min(720px, 86vh);
+    background: #0f172a;
+    border: 2px solid #334155;
+    border-radius: 12px;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.65);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: #020617;
+    border-bottom: 1px solid #1e293b;
+    cursor: grab;
+    flex-shrink: 0;
+  }
+  .modal-head .title {
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.14em;
+    color: #cbd5e1;
+  }
+  .modal-head .title .type { font-weight: 400; color: #64748b; font-size: 10px; margin-left: 8px; }
+  .modal-head .actions { display: flex; gap: 8px; align-items: center; }
+  .modal-head button {
+    font: inherit;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid #475569;
+    background: #1e293b;
+    color: #cbd5e1;
+    cursor: default;
+  }
+  .modal-head .x { border: none; background: transparent; color: #94a3b8; font-size: 16px; padding: 0 4px; }
+
+  .modal-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 0;
+  }
+  @media (max-width: 900px) {
+    .modal-body { grid-template-columns: 1fr; grid-template-rows: 42% 58%; }
+    .modal { height: min(900px, 92vh); }
+  }
+
+  /* Left: VAV graphic zone (light grey like production) */
+  .graphic-zone {
+    background: #d0d4d8;
+    border-right: 1px solid #334155;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+  }
+  .graphic-canvas {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    position: relative;
+  }
+  .vav-box {
+    width: min(92%, 420px);
+    aspect-ratio: 16 / 10;
+    background: linear-gradient(160deg, #e8ecef 0%, #b8bec6 100%);
+    border: 2px solid #64748b;
+    border-radius: 6px;
+    position: relative;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.18);
+  }
+  .vav-box .badge {
+    position: absolute;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(15,23,42,0.92);
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    white-space: nowrap;
+  }
+  .vav-box .duct {
+    position: absolute;
+    left: 8%;
+    top: 38%;
+    width: 28%;
+    height: 18%;
+    border: 2px solid #475569;
+    background: #94a3b8;
+    border-radius: 2px;
+  }
+  .vav-box .box-body {
+    position: absolute;
+    left: 32%;
+    top: 22%;
+    width: 42%;
+    height: 52%;
+    border: 2px solid #334155;
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+  .vav-box .outlet {
+    position: absolute;
+    right: 8%;
+    top: 36%;
+    width: 22%;
+    height: 22%;
+    border: 2px dashed #64748b;
+    background: #e2e8f0;
+  }
+  .vav-box .lbl { position: absolute; inset: 0; display: grid; place-items: center; color: #475569; font-size: 11px; font-weight: 800; letter-spacing: 0.16em; pointer-events: none; }
+  .graphic-foot {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    background: #0f172a;
+    border-top: 1px solid #1e293b;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    font-size: 10px;
+    color: #94a3b8;
+  }
+  .graphic-foot b { color: #e2e8f0; }
+
+  /* Right: psych panel */
+  .psy-zone {
+    background: #020617;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+  .psy-head {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border-bottom: 1px solid #1e293b;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .psy-head h2 {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #a5b4fc;
+    font-weight: 900;
+  }
+  .psy-head .meta { font-size: 9px; color: #64748b; }
+  .chips {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px 0;
+  }
+  .chip {
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    min-width: 72px;
+  }
+  .chip .k { display: block; font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+  .chip .v { font-size: 11px; font-weight: 800; }
+  .chip .v.sa { color: var(--sa); }
+  .chip .v.vst { color: var(--vst); }
+  .chip .v.zone { color: var(--zone); }
+  .chart-wrap {
+    flex: 1;
+    min-height: 0;
+    padding: 4px 8px 8px;
+  }
+  svg.psy { width: 100%; height: 100%; display: block; }
+  .legend {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 0 12px 10px;
+    font-size: 9px;
+    color: #64748b;
+  }
+  .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
+
+  .note { width: min(1180px, 100%); font-size: 11px; color: #64748b; line-height: 1.5; }
+  .note b { color: #94a3b8; }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Layout mockup · red5-ahu VAV equipment modal</p>
+  <h1><span>RED5</span> VAV MODAL · GRAPHIC + PSY</h1>
+  <p class="sub">Click VAV label → existing modal. Left = VAV diagram (as today). Right = abridged zone-delivery psych chart (SA → VST → Zone) with AHU RH band.</p>
+
+  <div class="stage">
+    <div class="modal" role="dialog" aria-label="VAV-03 diagram">
+      <div class="modal-head">
+        <div class="title">VAV-03 DIAGRAM <span class="type">Type 01: Single Duct · B3 SA 14.2°C</span></div>
+        <div class="actions">
+          <button type="button">QR</button>
+          <button type="button">Pop out</button>
+          <button type="button" class="x" aria-label="Close">×</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <section class="graphic-zone">
+          <div class="graphic-canvas">
+            <div class="vav-box">
+              <div class="duct"></div>
+              <div class="box-body"></div>
+              <div class="outlet"></div>
+              <div class="lbl">VAV GRAPHIC</div>
+              <span class="badge" style="left:10%;top:12%;">DPR 62%</span>
+              <span class="badge" style="left:58%;top:14%;color:#a7f3d0;border-color:#047857;">ZSP 23.0°C</span>
+              <span class="badge" style="left:12%;top:72%;color:#22d3ee;border-color:#0891b2;">SA 13.5°C</span>
+              <span class="badge" style="right:10%;top:68%;left:auto;color:#a78bfa;border-color:#7c3aed;">VST 15.8°C</span>
+              <span class="badge" style="right:12%;top:18%;left:auto;color:#34d399;border-color:#059669;">ZONE 24.2°C</span>
+            </div>
+          </div>
+          <div class="graphic-foot">
+            <span>Zone <b>24.2°C · 48% RH</b></span>
+            <span>OCC <b>ON</b></span>
+            <span>AFM <b>AUTO</b></span>
+            <span>Parent <b>AHU-01</b></span>
+          </div>
+        </section>
+
+        <section class="psy-zone">
+          <div class="psy-head">
+            <h2>Zone delivery · vs AHU SA</h2>
+            <span class="meta">12–26°C · 0–16 g/kg · RH band 40–60%</span>
+          </div>
+          <div class="chips" id="chips"></div>
+          <div class="chart-wrap">
+            <svg class="psy" id="psy" viewBox="0 0 640 420" preserveAspectRatio="xMidYMid meet" role="img" aria-label="VAV psychrometric chart"></svg>
+          </div>
+          <div class="legend">
+            <span><i style="background:#22d3ee"></i>SA</span>
+            <span><i style="background:#a78bfa"></i>VST</span>
+            <span><i style="background:#34d399"></i>Zone</span>
+            <span>CZ + AHU RH band</span>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Proposed layout:</b> same modal chrome as today; body becomes a 2-column grid.
+    Below ~900px width the chart stacks under the graphic. Chart uses the same psych geometry as the main dashboard, clipped to a terminal window.
+  </p>
+
+<script>
+const P_ATM = 101.325;
+const safe = (v) => (typeof v === 'number' && Number.isFinite(v)) ? v : 0;
+function getPsat(T) {
+  const TK = safe(T) + 273.15;
+  if (TK <= 173.15) return 0.0001;
+  let lp;
+  if (TK < 273.15) {
+    const c = [-5.6745359e3, 6.3925247, -9.677843e-3, 6.2215701e-7, 2.0747825e-9, -9.484024e-13, 4.1635019];
+    lp = c[0]/TK + c[1] + c[2]*TK + c[3]*Math.pow(TK,2) + c[4]*Math.pow(TK,3) + c[5]*Math.pow(TK,4) + c[6]*Math.log(TK);
+  } else {
+    const c = [-5.8002206e3, 1.3914993, -4.8640239e-2, 4.1764768e-5, -1.4452093e-8, 6.5459673];
+    lp = c[0]/TK + c[1] + c[2]*TK + c[3]*Math.pow(TK,2) + c[4]*Math.pow(TK,3) + c[5]*Math.log(TK);
+  }
+  return safe(Math.exp(lp) / 1000);
+}
+function getW(T, RH) {
+  const ps = getPsat(T);
+  const pw = (safe(RH) / 100) * ps;
+  return safe((0.621945 * pw) / (P_ATM - pw));
+}
+function getH(T, W) { return safe(1.006 * T + W * (2501 + 1.86 * T)); }
+function getRH(T, W) {
+  const ps = getPsat(T);
+  const pv = (W * P_ATM) / (0.621945 + W);
+  return safe(Math.min(100, Math.max(0, 100 * pv / ps)));
+}
+function buildComfortZonePoly() {
+  const pts = [];
+  for (let t = 20; t <= 25; t += 0.5) pts.push([t, getW(t, 80)]);
+  pts.push([27, getW(27, 50)], [27, getW(27, 20)]);
+  for (let t = 27; t >= 20; t -= 0.5) pts.push([t, getW(t, 20)]);
+  return pts;
+}
+function buildSweetPoly(lo, hi) {
+  const top = [], bot = [];
+  for (let tt = 20; tt <= 27; tt += 0.5) top.push([tt, getW(tt, hi)]);
+  for (let tt = 27; tt >= 20; tt -= 0.5) bot.push([tt, getW(tt, lo)]);
+  return [...top, ...bot];
+}
+
+const T_MIN = 12, T_MAX = 26, W_MAX = 16, rhLo = 40, rhHi = 60;
+const saT = 13.5, saRh = 90, vstT = 15.8, zoneT = 24.2, zoneRh = 48;
+const saW = getW(saT, saRh), zoneW = getW(zoneT, zoneRh);
+const pts = {
+  sa:   { t: saT,  w: saW,  label: 'SA' },
+  vst:  { t: vstT, w: saW,  label: 'VST' },
+  zone: { t: zoneT, w: zoneW, label: 'ZONE' },
+};
+
+const pad = { left: 48, right: 44, top: 22, bottom: 40 };
+const VW = 640, VH = 420;
+const gridW = VW - pad.left - pad.right;
+const gridH = VH - pad.top - pad.bottom;
+const x = (t) => pad.left + ((t - T_MIN) / (T_MAX - T_MIN)) * gridW;
+const y = (w) => (pad.top + gridH) - (w / (W_MAX / 1000)) * gridH;
+
+const svg = document.getElementById('psy');
+const NS = 'http://www.w3.org/2000/svg';
+const el = (parent, name, attrs = {}, text) => {
+  const n = document.createElementNS(NS, name);
+  Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v));
+  if (text != null) n.textContent = text;
+  parent.appendChild(n);
+  return n;
+};
+
+el(svg, 'rect', { x: pad.left, y: pad.top, width: gridW, height: gridH, fill: '#020617', stroke: '#1e293b' });
+const defs = el(svg, 'defs');
+const clip = el(defs, 'clipPath', { id: 'plotClip' });
+el(clip, 'rect', { x: pad.left, y: pad.top, width: gridW, height: gridH });
+const g = el(svg, 'g', { 'clip-path': 'url(#plotClip)' });
+
+for (let t = 12; t <= 26; t += 2) {
+  el(g, 'line', { x1: x(t), y1: pad.top, x2: x(t), y2: pad.top + gridH, stroke: '#1e293b', 'stroke-width': 1 });
+  el(svg, 'text', { x: x(t), y: pad.top + gridH + 16, fill: '#64748b', 'font-size': 10, 'text-anchor': 'middle' }, String(t));
+}
+for (let wg = 0; wg <= W_MAX; wg += 2) {
+  el(g, 'line', { x1: pad.left, y1: y(wg/1000), x2: pad.left + gridW, y2: y(wg/1000), stroke: '#1e293b', 'stroke-width': 1 });
+  el(svg, 'text', { x: pad.left - 6, y: y(wg/1000) + 3, fill: '#64748b', 'font-size': 10, 'text-anchor': 'end' }, String(wg));
+}
+
+[20, 40, 60, 80, 100].forEach((rh) => {
+  const segs = [];
+  for (let t = T_MIN; t <= T_MAX + 1e-9; t += 0.25) {
+    const w = getW(t, rh);
+    if (w < 0 || w > W_MAX / 1000 + 0.002) { if (segs.length) segs.push(null); continue; }
+    segs.push(`${x(t).toFixed(1)},${y(w).toFixed(1)}`);
+  }
+  let cur = [];
+  const flush = () => {
+    if (cur.length > 1) el(g, 'path', {
+      d: 'M ' + cur.join(' L '), fill: 'none',
+      stroke: rh === 100 ? '#94a3b8' : '#334155',
+      'stroke-width': rh === 100 ? 2 : 1,
+    });
+    cur = [];
+  };
+  segs.forEach((p) => { if (p == null) flush(); else cur.push(p); });
+  flush();
+  let lt = T_MAX - 0.6;
+  while (getW(lt, rh) > W_MAX/1000 - 0.0005 && lt > T_MIN) lt -= 0.5;
+  const lw = getW(lt, rh);
+  if (lw >= 0 && lw <= W_MAX/1000) {
+    el(g, 'text', { x: x(lt), y: y(lw) - 3, fill: rh === 100 ? '#cbd5e1' : '#64748b', 'font-size': 9 },
+      rh === 100 ? '100%' : (rh + '%'));
+  }
+});
+
+for (let h = 30; h <= 70; h += 10) {
+  const segs = [];
+  for (let t = T_MIN; t <= T_MAX; t += 0.5) {
+    const w = (h - 1.006 * t) / (2501 + 1.86 * t);
+    if (w < 0 || w > W_MAX/1000 || w > getW(t, 100) + 0.0002) continue;
+    segs.push(`${x(t).toFixed(1)},${y(w).toFixed(1)}`);
+  }
+  if (segs.length > 1) el(g, 'path', { d: 'M ' + segs.join(' L '), fill: 'none', stroke: '#3f3f1a', 'stroke-width': 1, opacity: 0.5 });
+}
+
+const cz = buildComfortZonePoly();
+const mapP = (arr) => arr.map(([t, w]) =>
+  `${x(Math.min(T_MAX, Math.max(T_MIN, t))).toFixed(1)},${y(Math.min(W_MAX/1000, Math.max(0, w))).toFixed(1)}`);
+const czPts = mapP(cz);
+const czClip = el(defs, 'clipPath', { id: 'czClip' });
+el(czClip, 'polygon', { points: czPts.join(' ') });
+el(g, 'polygon', { points: czPts.join(' '), fill: '#10b981', 'fill-opacity': 0.14, stroke: '#10b981', 'stroke-width': 1.2 });
+el(g, 'polygon', {
+  points: mapP(buildSweetPoly(rhLo, rhHi)).join(' '),
+  'clip-path': 'url(#czClip)',
+  fill: '#059669', 'fill-opacity': 0.34,
+  stroke: '#34d399', 'stroke-width': 0.9, 'stroke-dasharray': '3,2',
+});
+el(g, 'text', {
+  x: x(23.5), y: y(getW(23.5, 50)),
+  fill: '#a7f3d0', 'font-size': 9, 'font-weight': 900, 'text-anchor': 'middle',
+}, 'AHU-01 · 40–60% RH');
+
+const path = [pts.sa, pts.vst, pts.zone];
+el(g, 'path', {
+  d: 'M ' + path.map(p => `${x(p.t).toFixed(1)},${y(p.w).toFixed(1)}`).join(' L '),
+  fill: 'none', stroke: '#6366f1', 'stroke-width': 2.4, 'stroke-linecap': 'round',
+});
+el(g, 'line', {
+  x1: x(pts.sa.t), y1: y(pts.sa.w), x2: x(pts.zone.t), y2: y(pts.zone.w),
+  stroke: '#475569', 'stroke-width': 1, 'stroke-dasharray': '4 3',
+});
+const colors = { SA: '#22d3ee', VST: '#a78bfa', ZONE: '#34d399' };
+path.forEach((p) => {
+  el(g, 'circle', { cx: x(p.t), cy: y(p.w), r: p.label === 'ZONE' ? 7 : 6, fill: colors[p.label], stroke: '#f8fafc', 'stroke-width': 1.8 });
+  el(g, 'text', { x: x(p.t), y: y(p.w) - 12, fill: colors[p.label], 'font-size': 11, 'font-weight': 900, 'text-anchor': 'middle' }, p.label);
+});
+
+el(svg, 'text', { x: pad.left + gridW/2, y: VH - 8, fill: '#64748b', 'font-size': 9, 'text-anchor': 'middle', 'letter-spacing': '0.12em' }, 'DRY BULB (°C)');
+el(svg, 'text', {
+  x: 14, y: pad.top + gridH/2, fill: '#64748b', 'font-size': 9, 'text-anchor': 'middle',
+  transform: `rotate(-90 14 ${pad.top + gridH/2})`, 'letter-spacing': '0.12em',
+}, 'W (g/kg)');
+
+const dT = zoneT - saT, dW = (zoneW - saW) * 1000, dH = getH(zoneT, zoneW) - getH(saT, saW);
+document.getElementById('chips').innerHTML = `
+  <div class="chip"><span class="k">SA</span><span class="v sa">${saT.toFixed(1)}°C</span></div>
+  <div class="chip"><span class="k">VST</span><span class="v vst">${vstT.toFixed(1)}°C</span></div>
+  <div class="chip"><span class="k">Zone</span><span class="v zone">${zoneT.toFixed(1)}°C · ${zoneRh}%</span></div>
+  <div class="chip"><span class="k">RH band</span><span class="v" style="color:#6ee7b7">${rhLo}–${rhHi}%</span></div>
+  <div class="chip"><span class="k">Status</span><span class="v" style="color:#34d399;font-size:10px">IN CZ+BAND</span></div>
+  <div class="chip"><span class="k">Δh</span><span class="v">+${dH.toFixed(1)} kJ/kg</span></div>
+  <div class="chip"><span class="k">ΔT</span><span class="v">+${dT.toFixed(1)}°C</span></div>
+  <div class="chip"><span class="k">ΔW</span><span class="v">+${dW.toFixed(1)} g/kg</span></div>
+`;
+</script>
+</body>
+</html>

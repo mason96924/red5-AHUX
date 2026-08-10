@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RED5 — Plant Energy Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0c1424;
+    --panel: rgba(12, 20, 36, 0.82);
+    --line: rgba(148, 163, 184, 0.2);
+    --txt: #e8eef7;
+    --muted: #94a3b8;
+    --dim: #64748b;
+    --brand: #f1f5f9;
+    --accent: #38bdf8;
+    --tower: #fb923c;
+    --tower-deep: #9a3412;
+    --chw: #38bdf8;
+    --chw-deep: #075985;
+    --cw: #f97316;
+    --air: #34d399;
+    --air-deep: #065f46;
+    --paid: #fbbf24;
+    --paid-deep: #92400e;
+    --ok: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    color: var(--txt);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    background:
+      radial-gradient(1100px 640px at 10% -8%, rgba(56,189,248,.12), transparent 55%),
+      radial-gradient(900px 560px at 90% 0%, rgba(251,146,60,.10), transparent 50%),
+      radial-gradient(700px 480px at 55% 110%, rgba(52,211,153,.08), transparent 45%),
+      linear-gradient(168deg, var(--bg1), var(--bg0) 60%);
+  }
+  .wrap {
+    max-width: 1320px; margin: 0 auto;
+    padding: 22px 24px 40px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  /* Hero */
+  .hero {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+  .brand {
+    margin: 0;
+    font-family: Oswald, sans-serif;
+    font-weight: 700;
+    font-size: clamp(40px, 7vw, 72px);
+    line-height: .9;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .brand small {
+    display: block; margin-top: 8px;
+    font-size: .26em; letter-spacing: .32em; color: var(--accent); font-weight: 600;
+  }
+  .hero-right { text-align: right; max-width: 380px; }
+  .hero-right h1 {
+    margin: 0 0 6px;
+    font-family: Oswald, sans-serif;
+    font-size: 22px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600;
+  }
+  .hero-right p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .live {
+    display: inline-flex; align-items: center; gap: 7px; margin-top: 10px;
+    font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+  }
+  .live i {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ok);
+    box-shadow: 0 0 10px var(--ok); animation: blink 2.2s ease-in-out infinite;
+  }
+  @keyframes blink { 50% { opacity: .35; } }
+
+  /* —— Balance book (easy) —— */
+  .book {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--panel);
+    padding: 16px 18px 14px;
+    backdrop-filter: blur(10px);
+  }
+  .book-title {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .book-title h2 {
+    margin: 0;
+    font-family: Oswald, sans-serif;
+    font-size: 18px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600;
+  }
+  .book-title .hint { font-size: 11px; color: var(--muted); max-width: 520px; line-height: 1.4; }
+  .book-eq {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+    gap: 10px;
+    align-items: stretch;
+  }
+  @media (max-width: 900px) {
+    .book-eq { grid-template-columns: 1fr; }
+    .book-op { display: none; }
+  }
+  .book-cell {
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    padding: 12px 14px;
+    background: rgba(2, 6, 14, .45);
+    position: relative;
+    overflow: hidden;
+  }
+  .book-cell::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: var(--tone);
+  }
+  .book-cell .role {
+    font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--tone); font-weight: 700;
+  }
+  .book-cell .name { margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .book-cell .val {
+    margin-top: 8px;
+    font-family: Oswald, sans-serif;
+    font-size: 30px; font-weight: 600; letter-spacing: .02em;
+  }
+  .book-cell .val small { font-size: 13px; color: var(--muted); margin-left: 3px; }
+  .book-cell .note { margin-top: 4px; font-size: 10px; color: var(--dim); line-height: 1.35; }
+  .book-cell.delivered { --tone: var(--chw); }
+  .book-cell.paid { --tone: var(--paid); border-color: rgba(251,191,36,.35); box-shadow: 0 0 24px rgba(251,191,36,.08); }
+  .book-cell.rejected { --tone: var(--tower); }
+  .book-cell.check { --tone: var(--ok); }
+  .book-op {
+    display: flex; align-items: center; justify-content: center;
+    font-family: Oswald, sans-serif; font-size: 28px; color: var(--dim); font-weight: 600;
+  }
+  .book-foot {
+    margin-top: 12px;
+    display: flex; gap: 16px; flex-wrap: wrap;
+    font-size: 11px; color: var(--muted);
+  }
+  .book-foot b { color: var(--txt); }
+  .book-foot .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: rgba(0,0,0,.25);
+  }
+  .book-foot .pill.ok { border-color: rgba(34,197,94,.4); color: #86efac; }
+  .book-foot .pill.warn { border-color: rgba(245,158,11,.4); color: #fcd34d; }
+
+  /* —— Equipment stage —— */
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr 36px 1.2fr 36px 1fr;
+    gap: 0;
+    align-items: stretch;
+  }
+  @media (max-width: 980px) {
+    .stage { grid-template-columns: 1fr; gap: 16px; }
+    .pipe { display: none; }
+  }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: var(--panel);
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+    transition: transform .2s, border-color .2s, box-shadow .2s;
+  }
+  .card.clickable { cursor: pointer; }
+  .card.clickable:hover {
+    transform: translateY(-2px);
+    border-color: rgba(56,189,248,.4);
+    box-shadow: 0 16px 36px rgba(0,0,0,.35);
+  }
+  .card.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .card-head {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  }
+  .card-head h3 {
+    margin: 0;
+    font-family: Oswald, sans-serif;
+    font-size: 20px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  }
+  .badge {
+    font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
+    padding: 4px 8px; border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--ink) 50%, transparent);
+    color: var(--ink);
+  }
+  .card.tower { --ink: var(--tower); }
+  .card.chiller { --ink: var(--chw); }
+  .card.ahu { --ink: var(--air); }
+  .card-sub { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
+
+  /* Equipment frame: image + centered gauges */
+  .equip {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(148,163,184,.15);
+    background: #050a12;
+    aspect-ratio: 1 / 1.05;
+    min-height: 260px;
+  }
+  .card.chiller .equip { aspect-ratio: 1.15 / 1; min-height: 280px; }
+  .equip-art {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    opacity: .92;
+  }
+  .equip-art svg { width: 100%; height: 100%; display: block; }
+
+  /* Level gauges centered on equipment */
+  .gauges {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center; gap: 18px;
+    z-index: 2;
+    pointer-events: none;
+    padding: 12px;
+  }
+  .gauge {
+    width: 78px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .card.chiller .gauge { width: 72px; }
+  .gauge-label {
+    font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+    color: #fff; text-shadow: 0 1px 6px #000;
+    background: rgba(0,0,0,.45);
+    padding: 3px 7px; border-radius: 6px;
+  }
+  .tube {
+    position: relative;
+    width: 52px; height: 150px;
+    border-radius: 26px;
+    border: 2px solid rgba(255,255,255,.35);
+    background: rgba(0,0,0,.55);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,.5),
+      0 10px 24px rgba(0,0,0,.45),
+      inset 0 0 20px rgba(0,0,0,.35);
+    overflow: hidden;
+  }
+  .card.chiller .tube { width: 46px; height: 140px; }
+  .tube-fill {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: var(--level, 50%);
+    background: linear-gradient(180deg,
+      color-mix(in srgb, var(--fill) 90%, #fff) 0%,
+      var(--fill) 35%,
+      var(--fill-deep) 100%);
+    transition: height 1s cubic-bezier(.22,.8,.24,1);
+  }
+  .tube-fill::before {
+    content: "";
+    position: absolute; left: -30%; right: -30%; top: -8px; height: 18px;
+    background: radial-gradient(ellipse, rgba(255,255,255,.45), transparent 70%);
+    animation: wave 2.6s ease-in-out infinite;
+  }
+  @keyframes wave {
+    0%,100% { transform: translateX(-6%); }
+    50% { transform: translateX(6%); }
+  }
+  .tube-gloss {
+    position: absolute; left: 8px; top: 10px; bottom: 10px; width: 8px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255,255,255,.35), transparent);
+    pointer-events: none;
+  }
+  .gauge-val {
+    font-family: Oswald, sans-serif;
+    font-size: 18px; font-weight: 600;
+    color: #fff; text-shadow: 0 2px 8px #000;
+  }
+  .gauge-val small { font-size: 10px; opacity: .85; margin-left: 1px; }
+
+  .meta {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .chip {
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 7px 9px; background: rgba(0,0,0,.28);
+  }
+  .chip .k { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .chip .v { margin-top: 2px; font-size: 12px; }
+  .cta {
+    font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink);
+  }
+  .cta::after { content: " →"; }
+
+  .pipe {
+    display: flex; align-items: center; justify-content: center; position: relative;
+  }
+  .pipe svg { width: 100%; height: 70px; overflow: visible; }
+  .pipe path { fill: none; stroke: rgba(148,163,184,.25); stroke-width: 3; stroke-linecap: round; }
+  .pipe .flow {
+    fill: none; stroke: var(--flow); stroke-width: 3; stroke-linecap: round;
+    stroke-dasharray: 7 12; animation: dash 1s linear infinite;
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--flow) 70%, transparent));
+  }
+  @keyframes dash { to { stroke-dashoffset: -38; } }
+  .pipe .tag {
+    position: absolute; top: calc(50% + 24px);
+    font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+  }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px 16px;
+    font-size: 11px; color: var(--muted);
+  }
+  .legend span::before {
+    content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+    margin-right: 6px; vertical-align: -1px; background: var(--c);
+  }
+  .foot {
+    display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    font-size: 11px; color: var(--dim);
+  }
+  .foot a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <p class="brand">RED5<small>Plant Energy Hub</small></p>
+    <div class="hero-right">
+      <h1>Energy balance book</h1>
+      <p>Section tanks show heat <b style="color:#e2e8f0">moved</b> at each stage. The gold number is what you <b style="color:#fbbf24">pay</b> (electricity). Do not add the tanks together.</p>
+      <div class="live"><i></i> Demo · animated levels</div>
+    </div>
+  </header>
+
+  <!-- Balance book -->
+  <section class="book" aria-label="Plant energy balance book">
+    <div class="book-title">
+      <h2>Balance book</h2>
+      <div class="hint">Same heat moves through the plant. Only electricity is purchased. Check: Rejected ≈ Delivered + Paid.</div>
+    </div>
+    <div class="book-eq">
+      <div class="book-cell delivered">
+        <div class="role">1 · Delivered</div>
+        <div class="name">Cooling to the building</div>
+        <div class="val" id="bk-delivered">1260<small>kW</small></div>
+        <div class="note">CHW / AHU coil load — useful cooling, not the bill</div>
+      </div>
+      <div class="book-op">+</div>
+      <div class="book-cell paid">
+        <div class="role">2 · Paid</div>
+        <div class="name">Electricity purchased</div>
+        <div class="val" id="bk-paid">268<small>kWe</small></div>
+        <div class="note">Chillers + pumps + tower fans — utility bill</div>
+      </div>
+      <div class="book-op">≈</div>
+      <div class="book-cell rejected">
+        <div class="role">3 · Rejected</div>
+        <div class="name">Heat leaving at tower</div>
+        <div class="val" id="bk-rejected">1528<small>kW</small></div>
+        <div class="note">To outdoor air — not “recovered” unless reclaim exists</div>
+      </div>
+      <div class="book-op">→</div>
+      <div class="book-cell check">
+        <div class="role">Check</div>
+        <div class="name">Books balance?</div>
+        <div class="val" id="bk-delta">0<small>kW</small></div>
+        <div class="note" id="bk-status">Delivered + Paid − Rejected</div>
+      </div>
+    </div>
+    <div class="book-foot">
+      <span class="pill ok" id="bk-pill">Balanced</span>
+      <span>COP <b id="bk-cop">4.7</b> = Delivered ÷ Paid</span>
+      <span>AHU air-side tracks delivered when flows are mapped</span>
+    </div>
+  </section>
+
+  <!-- Equipment + centered levels -->
+  <section class="stage" aria-label="Equipment energy stages">
+    <!-- Tower -->
+    <article class="card tower" id="card-tower">
+      <div class="card-head">
+        <h3>Cooling Tower</h3>
+        <span class="badge">Water side</span>
+      </div>
+      <p class="card-sub">Heat rejected to ambient. Level = reject rate vs capacity.</p>
+      <div class="equip">
+        <div class="equip-art" aria-hidden="true">
+          <!-- Generic cooling tower -->
+          <svg viewBox="0 0 320 340" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="twSteel" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#334155"/><stop offset="100%" stop-color="#0f172a"/>
+              </linearGradient>
+              <linearGradient id="twWarm" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0%" stop-color="#7c2d12" stop-opacity=".5"/>
+                <stop offset="100%" stop-color="#fb923c" stop-opacity=".15"/>
+              </linearGradient>
+            </defs>
+            <rect width="320" height="340" fill="#071018"/>
+            <ellipse cx="160" cy="300" rx="110" ry="18" fill="#020617" opacity=".8"/>
+            <!-- basin -->
+            <rect x="70" y="250" width="180" height="42" rx="6" fill="url(#twSteel)" stroke="#64748b" stroke-width="2"/>
+            <rect x="78" y="258" width="164" height="18" rx="3" fill="#0c4a6e" opacity=".55"/>
+            <!-- shell -->
+            <path d="M95 250 L108 90 Q160 55 212 90 L225 250 Z" fill="url(#twSteel)" stroke="#94a3b8" stroke-width="2"/>
+            <path d="M95 250 L108 90 Q160 55 212 90 L225 250 Z" fill="url(#twWarm)"/>
+            <!-- louvers -->
+            <path d="M118 120 H202 M114 150 H206 M110 180 H210 M106 210 H214" stroke="#475569" stroke-width="3" opacity=".7"/>
+            <!-- fan deck -->
+            <ellipse cx="160" cy="78" rx="58" ry="14" fill="#1e293b" stroke="#94a3b8" stroke-width="2"/>
+            <circle cx="160" cy="78" r="22" fill="#0f172a" stroke="#fbbf24" stroke-width="2"/>
+            <g transform="translate(160 78)">
+              <g class="fan">
+                <path d="M0 0 L0 -28 L8 -10 Z M0 0 L24 14 L6 10 Z M0 0 L-24 14 L-6 10 Z" fill="#fcd34d" opacity=".85">
+                  <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2.8s" repeatCount="indefinite"/>
+                </path>
+              </g>
+            </g>
+            <!-- plume -->
+            <path d="M145 55 Q160 20 175 55" fill="none" stroke="#94a3b8" stroke-width="2" opacity=".35">
+              <animate attributeName="opacity" values=".2;.45;.2" dur="3s" repeatCount="indefinite"/>
+            </path>
+            <text x="160" y="328" text-anchor="middle" fill="#64748b" font-size="11" font-family="IBM Plex Mono,monospace">COOLING TOWER</text>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label">Reject</div>
+            <div class="tube">
+              <div class="tube-fill" id="g-tower" style="--fill:var(--tower);--fill-deep:var(--tower-deep);--level:58%"></div>
+              <div class="tube-gloss"></div>
+            </div>
+            <div class="gauge-val" id="g-tower-v">582<small>kW</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="chip"><div class="k">CWST / CWRT</div><div class="v" id="m-tower-t">29.1° / 34.2°</div></div>
+        <div class="chip"><div class="k">Approach</div><div class="v" id="m-tower-a">3.0 K</div></div>
+      </div>
+    </article>
+
+    <div class="pipe" style="--flow: var(--tower);">
+      <svg viewBox="0 0 36 70"><path d="M2 35 H34"/><path class="flow" d="M2 35 H34"/></svg>
+      <span class="tag">CW</span>
+    </div>
+
+    <!-- Chiller -->
+    <article class="card chiller clickable" id="card-chiller" role="link" tabindex="0" aria-label="Open chiller dashboard">
+      <div class="card-head">
+        <h3>Chiller</h3>
+        <span class="badge">CHW · CW</span>
+      </div>
+      <p class="card-sub">Dual loops on one machine. Click → red5-chiller plant.</p>
+      <div class="equip">
+        <div class="equip-art" aria-hidden="true">
+          <svg viewBox="0 0 360 320" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="chSteel" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#475569"/><stop offset="100%" stop-color="#0f172a"/>
+              </linearGradient>
+            </defs>
+            <rect width="360" height="320" fill="#071018"/>
+            <!-- skid -->
+            <rect x="30" y="250" width="300" height="28" rx="4" fill="#1e293b" stroke="#64748b"/>
+            <!-- condenser shell (CW) -->
+            <rect x="48" y="70" width="120" height="70" rx="35" fill="url(#chSteel)" stroke="#fb923c" stroke-width="2.5"/>
+            <text x="108" y="110" text-anchor="middle" fill="#fdba74" font-size="12" font-family="Oswald,sans-serif" letter-spacing="2">CW</text>
+            <!-- evaporator shell (CHW) -->
+            <rect x="192" y="70" width="120" height="70" rx="35" fill="url(#chSteel)" stroke="#38bdf8" stroke-width="2.5"/>
+            <text x="252" y="110" text-anchor="middle" fill="#7dd3fc" font-size="12" font-family="Oswald,sans-serif" letter-spacing="2">CHW</text>
+            <!-- compressor -->
+            <rect x="130" y="160" width="100" height="70" rx="10" fill="#1e293b" stroke="#94a3b8" stroke-width="2"/>
+            <circle cx="180" cy="195" r="22" fill="#0f172a" stroke="#fbbf24" stroke-width="2"/>
+            <circle cx="180" cy="195" r="8" fill="#fbbf24">
+              <animate attributeName="opacity" values="1;.4;1" dur="1.6s" repeatCount="indefinite"/>
+            </circle>
+            <!-- pipes -->
+            <path d="M108 140 V160 H160" fill="none" stroke="#fb923c" stroke-width="4" opacity=".7"/>
+            <path d="M252 140 V160 H200" fill="none" stroke="#38bdf8" stroke-width="4" opacity=".7"/>
+            <path d="M180 230 V250" fill="none" stroke="#94a3b8" stroke-width="4"/>
+            <text x="180" y="300" text-anchor="middle" fill="#64748b" font-size="11" font-family="IBM Plex Mono,monospace">CHILLER</text>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label">CW</div>
+            <div class="tube">
+              <div class="tube-fill" id="g-cw" style="--fill:var(--cw);--fill-deep:var(--tower-deep);--level:70%"></div>
+              <div class="tube-gloss"></div>
+            </div>
+            <div class="gauge-val" id="g-cw-v">1.5k</div>
+          </div>
+          <div class="gauge">
+            <div class="gauge-label">CHW</div>
+            <div class="tube">
+              <div class="tube-fill" id="g-chw" style="--fill:var(--chw);--fill-deep:var(--chw-deep);--level:64%"></div>
+              <div class="tube-gloss"></div>
+            </div>
+            <div class="gauge-val" id="g-chw-v">1.3k</div>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="chip"><div class="k">CHWS / CHWR</div><div class="v" id="m-chw-t">7.0° / 12.2°</div></div>
+        <div class="chip"><div class="k">Running</div><div class="v" id="m-run">2 / 3</div></div>
+      </div>
+      <div class="cta">Open chiller dashboard</div>
+    </article>
+
+    <div class="pipe" style="--flow: var(--air);">
+      <svg viewBox="0 0 36 70"><path d="M2 35 H34"/><path class="flow" d="M2 35 H34"/></svg>
+      <span class="tag">CHW</span>
+    </div>
+
+    <!-- AHU -->
+    <article class="card ahu clickable" id="card-ahu" role="link" tabindex="0" aria-label="Open AHU dashboard">
+      <div class="card-head">
+        <h3>AHUs</h3>
+        <span class="badge">Air side</span>
+      </div>
+      <p class="card-sub">Fleet total air-side exchange. Click → red5-ahu hub.</p>
+      <div class="equip">
+        <div class="equip-art" aria-hidden="true">
+          <svg viewBox="0 0 320 340" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="ahuBody" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#334155"/><stop offset="100%" stop-color="#0f172a"/>
+              </linearGradient>
+            </defs>
+            <rect width="320" height="340" fill="#071018"/>
+            <!-- casing -->
+            <rect x="40" y="80" width="240" height="160" rx="12" fill="url(#ahuBody)" stroke="#34d399" stroke-width="2.5"/>
+            <!-- sections -->
+            <line x1="100" y1="80" x2="100" y2="240" stroke="#475569" stroke-width="2"/>
+            <line x1="160" y1="80" x2="160" y2="240" stroke="#475569" stroke-width="2"/>
+            <line x1="220" y1="80" x2="220" y2="240" stroke="#475569" stroke-width="2"/>
+            <!-- filter / coil / fan labels -->
+            <text x="70" y="165" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="Oswald,sans-serif">OA</text>
+            <rect x="118" y="110" width="28" height="100" rx="3" fill="#0e7490" opacity=".7" stroke="#67e8f9"/>
+            <text x="132" y="165" text-anchor="middle" fill="#ecfeff" font-size="9" font-family="Oswald,sans-serif">COIL</text>
+            <circle cx="190" cy="160" r="28" fill="#022c22" stroke="#34d399" stroke-width="2"/>
+            <g transform="translate(190 160)">
+              <path d="M0-18 L5-4 L0 0 L-5-4 Z M0 18 L5 4 L0 0 L-5 4 Z M-18 0 L-4 5 L0 0 L-4-5 Z M18 0 L4 5 L0 0 L4-5 Z" fill="#6ee7b7">
+                <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2.2s" repeatCount="indefinite"/>
+              </path>
+            </g>
+            <text x="250" y="165" text-anchor="middle" fill="#86efac" font-size="10" font-family="Oswald,sans-serif">SA</text>
+            <!-- ducts -->
+            <rect x="10" y="130" width="30" height="60" rx="4" fill="#1e293b" stroke="#64748b"/>
+            <rect x="280" y="130" width="30" height="60" rx="4" fill="#1e293b" stroke="#34d399"/>
+            <text x="160" y="300" text-anchor="middle" fill="#64748b" font-size="11" font-family="IBM Plex Mono,monospace">AHU FLEET</text>
+          </svg>
+        </div>
+        <div class="gauges">
+          <div class="gauge">
+            <div class="gauge-label">Σ Exchange</div>
+            <div class="tube">
+              <div class="tube-fill" id="g-ahu" style="--fill:var(--air);--fill-deep:var(--air-deep);--level:55%"></div>
+              <div class="tube-gloss"></div>
+            </div>
+            <div class="gauge-val" id="g-ahu-v">1.1k</div>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="chip"><div class="k">AHUs online</div><div class="v" id="m-ahu-n">8 / 8</div></div>
+        <div class="chip"><div class="k">Mean |Δh|</div><div class="v" id="m-ahu-dh">12.1 kJ/kg</div></div>
+      </div>
+      <div class="cta">Open AHU dashboard</div>
+    </article>
+  </section>
+
+  <div class="legend">
+    <span style="--c:var(--chw)">Delivered (thermal)</span>
+    <span style="--c:var(--paid)">Paid (electric)</span>
+    <span style="--c:var(--tower)">Rejected (thermal)</span>
+    <span style="--c:var(--air)">AHU air-side (tracks delivered)</span>
+  </div>
+
+  <footer class="foot">
+    <span>Tanks = heat moved at each stage · Gold book cell = what you pay</span>
+    <span>
+      <a id="link-chiller" href="http://localhost:8010/">Chiller</a> ·
+      <a id="link-ahu" href="./dashboard.html">AHU Hub</a>
+    </span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const CHILLER_URL = params.get('chiller') || 'http://localhost:8010/';
+  const AHU_URL = params.get('ahu') || './dashboard.html';
+  document.getElementById('link-chiller').href = CHILLER_URL;
+  document.getElementById('link-ahu').href = AHU_URL;
+
+  function openUrl(url) { window.open(url, '_blank', 'noopener'); }
+  function bind(el, url) {
+    el.addEventListener('click', () => openUrl(url));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUrl(url); }
+    });
+  }
+  bind(document.getElementById('card-chiller'), CHILLER_URL);
+  bind(document.getElementById('card-ahu'), AHU_URL);
+
+  function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+  function setTube(el, pct) { el.style.setProperty('--level', clamp(pct, 8, 94).toFixed(1) + '%'); }
+  function fmt(v) {
+    if (v >= 1000) return (v / 1000).toFixed(2).replace(/\.?0+$/, '') + '<small>k</small>';
+    return Math.round(v) + '<small>kW</small>';
+  }
+
+  const t0 = performance.now();
+  function tick(now) {
+    const t = (now - t0) / 1000;
+    const delivered = 1180 + 140 * Math.sin(t * 0.17) + 35 * Math.sin(t * 0.41);
+    const cop = 4.55 + 0.35 * Math.sin(t * 0.09);
+    const paid = delivered / cop;
+    const rejected = delivered + paid; /* ideal balance */
+    const noise = 8 * Math.sin(t * 0.33);
+    const rejectedShown = rejected + noise;
+    const delta = delivered + paid - rejectedShown;
+    const ahuAir = delivered * (0.88 + 0.05 * Math.sin(t * 0.14));
+    const installed = 2100;
+
+    document.getElementById('bk-delivered').innerHTML = Math.round(delivered) + '<small>kW</small>';
+    document.getElementById('bk-paid').innerHTML = Math.round(paid) + '<small>kWe</small>';
+    document.getElementById('bk-rejected').innerHTML = Math.round(rejectedShown) + '<small>kW</small>';
+    document.getElementById('bk-delta').innerHTML = (delta >= 0 ? '+' : '') + Math.round(delta) + '<small>kW</small>';
+    document.getElementById('bk-cop').textContent = cop.toFixed(1);
+
+    const pill = document.getElementById('bk-pill');
+    const ok = Math.abs(delta) < 25;
+    pill.textContent = ok ? 'Books OK · Rejected ≈ Delivered + Paid' : 'Imbalance · check meters';
+    pill.className = 'pill ' + (ok ? 'ok' : 'warn');
+    document.getElementById('bk-status').textContent = ok
+      ? 'Heat out matches cooling + electricity in'
+      : 'Delivered + Paid − Rejected residual';
+
+    setTube(document.getElementById('g-tower'), (rejectedShown / (installed * 1.05)) * 100);
+    document.getElementById('g-tower-v').innerHTML = fmt(rejectedShown);
+
+    setTube(document.getElementById('g-cw'), (rejectedShown / (installed * 1.1)) * 100);
+    document.getElementById('g-cw-v').innerHTML = fmt(rejectedShown);
+
+    setTube(document.getElementById('g-chw'), (delivered / installed) * 100);
+    document.getElementById('g-chw-v').innerHTML = fmt(delivered);
+
+    setTube(document.getElementById('g-ahu'), (ahuAir / 2000) * 100);
+    document.getElementById('g-ahu-v').innerHTML = fmt(ahuAir);
+
+    document.getElementById('m-tower-t').textContent =
+      (28.7 + 0.5 * Math.sin(t * 0.12)).toFixed(1) + '° / ' +
+      (33.8 + 0.7 * Math.sin(t * 0.15)).toFixed(1) + '°';
+    document.getElementById('m-tower-a').textContent =
+      (2.7 + 0.45 * Math.abs(Math.sin(t * 0.2))).toFixed(1) + ' K';
+    const chws = 6.8 + 0.35 * Math.sin(t * 0.18);
+    document.getElementById('m-chw-t').textContent =
+      chws.toFixed(1) + '° / ' + (chws + 5.2).toFixed(1) + '°';
+    document.getElementById('m-ahu-dh').textContent =
+      (11.4 + 1.2 * Math.sin(t * 0.2)).toFixed(1) + ' kJ/kg';
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

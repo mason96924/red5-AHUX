@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Cache-control: psy_3d.html and friends have no compiled bundle to ?v=-stamp, so the HTML itself must opt-out of browser caching. Without this, PROD users see stale UI after every deploy until they hard-refresh.  Sentinel data-cache-policy attribute is used by scripts/inject_no_cache_meta.py and deploy.sh preflight to detect missing tags.  Do NOT remove. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VAV zone delivery psych chart — mockup</title>
+<style>
+  :root {
+    --bg: #020617;
+    --panel: #0f172a;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --sa: #22d3ee;
+    --vst: #a78bfa;
+    --zone: #34d399;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: #020617;
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: 28px 20px 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+  .eyebrow { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: 20px; font-weight: 900; font-style: italic; letter-spacing: -0.02em; }
+  h1 span { color: #ef4444; }
+  .sub { font-size: 12px; color: #94a3b8; max-width: 720px; text-align: center; line-height: 1.5; }
+
+  .shell {
+    width: min(1100px, 100%);
+    background: var(--panel);
+    border: 1px solid #334155;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: end;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #0b1224;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .field select, .field input {
+    background: #020617;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font: inherit;
+    font-size: 12px;
+    min-width: 88px;
+  }
+  .field select { min-width: 180px; }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px 0;
+  }
+  .chip {
+    min-width: 96px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #020617;
+    border: 1px solid var(--border);
+  }
+  .chip .k { display: block; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .chip .v { font-size: 14px; font-weight: 800; }
+  .chip .v.sa { color: var(--sa); }
+  .chip .v.vst { color: var(--vst); }
+  .chip .v.zone { color: var(--zone); }
+
+  .chart-wrap { padding: 8px 12px 8px; }
+  svg.psy { width: 100%; height: auto; display: block; background: #020617; border-radius: 8px; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    padding: 0 16px 14px;
+    font-size: 10px; color: #94a3b8;
+  }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .note {
+    width: min(1100px, 100%);
+    font-size: 11px; color: var(--muted); line-height: 1.55;
+  }
+  .note b { color: #94a3b8; }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Mockup · same psych geometry as red5-ahu · narrower selectable window</p>
+  <h1><span>RED5</span> VAV ZONE DELIVERY</h1>
+  <p class="sub">Real ASHRAE T–W chart (saturation curve + RH isopleths + enthalpy lines), clipped to a terminal window. Points: AHU SA → VST → Zone.</p>
+
+  <div class="shell">
+    <div class="toolbar">
+      <div class="field">
+        <label>Window preset</label>
+        <select id="preset">
+          <option value="terminal" selected>Terminal · 12–26°C · 0–16 g/kg</option>
+          <option value="comfort">Comfort · 16–30°C · 0–18 g/kg</option>
+          <option value="sa-zone">SA→Zone fit · auto</option>
+          <option value="full">Full chart · 0–40°C · 0–30 g/kg</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="field"><label>T min °C</label><input id="tMin" type="number" step="1" value="12"></div>
+      <div class="field"><label>T max °C</label><input id="tMax" type="number" step="1" value="26"></div>
+      <div class="field"><label>W max g/kg</label><input id="wMax" type="number" step="1" value="16"></div>
+      <div class="field">
+        <label>Demo points</label>
+        <select id="scenario">
+          <option value="cooling" selected>Cooling season</option>
+          <option value="reheat">Reheat + load</option>
+          <option value="humid">Humid zone</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>AHU RH band</label>
+        <select id="rhBandPreset">
+          <option value="40-60" selected>40–60% (ASHRAE default)</option>
+          <option value="45-55">45–55% (tight)</option>
+          <option value="30-60">30–60% (wide)</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="field"><label>RH lo %</label><input id="rhLo" type="number" min="0" max="100" step="1" value="40"></div>
+      <div class="field"><label>RH hi %</label><input id="rhHi" type="number" min="0" max="100" step="1" value="60"></div>
+      <div class="field">
+        <label>Show RH band</label>
+        <select id="showRhBand">
+          <option value="1" selected>On</option>
+          <option value="0">Off</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="chips" id="chips"></div>
+    <div class="chart-wrap">
+      <svg class="psy" id="psy" viewBox="0 0 900 560" role="img" aria-label="Psychrometric chart"></svg>
+    </div>
+    <div class="legend">
+      <span><i style="background:#22d3ee"></i>AHU SA</span>
+      <span><i style="background:#a78bfa"></i>VAV VST</span>
+      <span><i style="background:#34d399"></i>Zone</span>
+      <span>light green = Givoni CZ</span>
+      <span>darker emerald = AHU RH band (sweet-spot), clipped to CZ</span>
+      <span>grey curves = RH · gold = enthalpy</span>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Same shape as the main chart:</b> X = dry-bulb, Y = humidity ratio, saturation curve, RH isopleths,
+    enthalpy lines, comfort polygon. The <b>AHU RH band</b> (sidebar sweet-spot / venue preset, default 40–60%)
+    is drawn as the darker emerald strip inside CZ — same geometry as the AHU chart — so VAV “in CZ” metrics
+    can AND with the band. Viewport is narrower (selectable). VST uses AHU SA humidity ratio when discharge RH is unknown.
+  </p>
+
+<script>
+/* ---- Psych engine (same formulas as frontend/public/js/psychrometric.js) ---- */
+const P_ATM = 101.325;
+const safe = (v) => (typeof v === 'number' && Number.isFinite(v)) ? v : 0;
+
+function getPsat(T) {
+  const TK = safe(T) + 273.15;
+  if (TK <= 173.15) return 0.0001;
+  let lp;
+  if (TK < 273.15) {
+    const c = [-5.6745359e3, 6.3925247, -9.677843e-3, 6.2215701e-7, 2.0747825e-9, -9.484024e-13, 4.1635019];
+    lp = c[0]/TK + c[1] + c[2]*TK + c[3]*Math.pow(TK,2) + c[4]*Math.pow(TK,3) + c[5]*Math.pow(TK,4) + c[6]*Math.log(TK);
+  } else {
+    const c = [-5.8002206e3, 1.3914993, -4.8640239e-2, 4.1764768e-5, -1.4452093e-8, 6.5459673];
+    lp = c[0]/TK + c[1] + c[2]*TK + c[3]*Math.pow(TK,2) + c[4]*Math.pow(TK,3) + c[5]*Math.log(TK);
+  }
+  return safe(Math.exp(lp) / 1000);
+}
+function getW(T, RH) {
+  const ps = getPsat(T);
+  const pw = (safe(RH) / 100) * ps;
+  return safe((0.621945 * pw) / (P_ATM - pw));
+}
+function getH(T, W) { return safe(1.006 * T + W * (2501 + 1.86 * T)); }
+function getRH(T, W) {
+  const ps = getPsat(T);
+  const pv = (W * P_ATM) / (0.621945 + W);
+  return safe(Math.min(100, Math.max(0, 100 * pv / ps)));
+}
+
+function buildComfortZonePoly() {
+  const pts = [];
+  for (let t = 20; t <= 25; t += 0.5) pts.push([t, getW(t, 80)]);
+  pts.push([27, getW(27, 50)]);
+  pts.push([27, getW(27, 20)]);
+  for (let t = 27; t >= 20; t -= 0.5) pts.push([t, getW(t, 20)]);
+  return pts;
+}
+
+/* Same as app.js buildSweetPoly — RH band strip across the CZ T span. */
+function buildSweetPoly(lo, hi) {
+  const top = [], bot = [];
+  for (let tt = 20; tt <= 27; tt += 0.5) top.push([tt, getW(tt, hi)]);
+  for (let tt = 27; tt >= 20; tt -= 0.5) bot.push([tt, getW(tt, lo)]);
+  return [...top, ...bot];
+}
+
+function inSweetSpot(t, rh, lo, hi) {
+  return rh >= lo && rh <= hi;
+}
+
+/* ---- Demo scenarios ---- */
+const SCENARIOS = {
+  cooling: {
+    sa:  { t: 13.5, rh: 90 },
+    vst: { t: 15.8 },          // const-w from SA
+    zone:{ t: 24.2, rh: 48 },
+  },
+  reheat: {
+    sa:  { t: 13.0, rh: 92 },
+    vst: { t: 18.5 },
+    zone:{ t: 22.8, rh: 45 },
+  },
+  humid: {
+    sa:  { t: 14.0, rh: 88 },
+    vst: { t: 15.5 },
+    zone:{ t: 25.5, rh: 62 },
+  },
+};
+
+const PRESETS = {
+  terminal: { tMin: 12, tMax: 26, wMax: 16 },
+  comfort:  { tMin: 16, tMax: 30, wMax: 18 },
+  full:     { tMin: 0,  tMax: 40, wMax: 30 },
+};
+
+function resolvePoints(key) {
+  const s = SCENARIOS[key];
+  const saW = getW(s.sa.t, s.sa.rh);
+  const zoneW = getW(s.zone.t, s.zone.rh);
+  return {
+    sa:   { t: s.sa.t,   w: saW,   rh: s.sa.rh,   h: getH(s.sa.t, saW),   label: 'SA' },
+    vst:  { t: s.vst.t,  w: saW,   rh: getRH(s.vst.t, saW), h: getH(s.vst.t, saW), label: 'VST' },
+    zone: { t: s.zone.t, w: zoneW, rh: s.zone.rh, h: getH(s.zone.t, zoneW), label: 'ZONE' },
+  };
+}
+
+function autoFitRange(pts) {
+  const ts = [pts.sa.t, pts.vst.t, pts.zone.t];
+  const ws = [pts.sa.w, pts.vst.w, pts.zone.w].map(w => w * 1000);
+  const tMin = Math.floor(Math.min(...ts) - 2);
+  const tMax = Math.ceil(Math.max(...ts) + 2);
+  const wMax = Math.ceil(Math.max(...ws) + 2);
+  return { tMin, tMax, wMax: Math.max(8, wMax) };
+}
+
+/* ---- Drawing ---- */
+const pad = { left: 72, right: 70, top: 36, bottom: 56 };
+const gridW = 900 - pad.left - pad.right;
+const gridH = 560 - pad.top - pad.bottom;
+
+function syncRhBandFromPreset() {
+  const p = document.getElementById('rhBandPreset').value;
+  if (p === 'custom') return;
+  const [lo, hi] = p.split('-').map(Number);
+  document.getElementById('rhLo').value = lo;
+  document.getElementById('rhHi').value = hi;
+}
+
+function draw() {
+  const preset = document.getElementById('preset').value;
+  const scenario = document.getElementById('scenario').value;
+  const pts = resolvePoints(scenario);
+
+  syncRhBandFromPreset();
+  let rhLo = +document.getElementById('rhLo').value;
+  let rhHi = +document.getElementById('rhHi').value;
+  if (!(rhHi > rhLo)) { rhLo = 40; rhHi = 60; }
+  const showRhBand = document.getElementById('showRhBand').value === '1';
+
+  let tMin = +document.getElementById('tMin').value;
+  let tMax = +document.getElementById('tMax').value;
+  let wMaxG = +document.getElementById('wMax').value;
+
+  if (preset === 'sa-zone') {
+    const fit = autoFitRange(pts);
+    tMin = fit.tMin; tMax = fit.tMax; wMaxG = fit.wMax;
+    document.getElementById('tMin').value = tMin;
+    document.getElementById('tMax').value = tMax;
+    document.getElementById('wMax').value = wMaxG;
+  } else if (preset !== 'custom' && PRESETS[preset]) {
+    ({ tMin, tMax, wMax: wMaxG } = PRESETS[preset]);
+    document.getElementById('tMin').value = tMin;
+    document.getElementById('tMax').value = tMax;
+    document.getElementById('wMax').value = wMaxG;
+  }
+
+  if (!(tMax > tMin)) tMax = tMin + 10;
+  if (!(wMaxG > 0)) wMaxG = 16;
+  const W_MAX = wMaxG; // g/kg, same convention as app.js
+  const T_MIN = tMin, T_MAX = tMax;
+
+  const x = (t) => pad.left + ((t - T_MIN) / (T_MAX - T_MIN)) * gridW;
+  const y = (w) => (pad.top + gridH) - (w / (W_MAX / 1000)) * gridH;
+
+  const svg = document.getElementById('psy');
+  const NS = 'http://www.w3.org/2000/svg';
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const el = (name, attrs = {}, text) => {
+    const n = document.createElementNS(NS, name);
+    Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v));
+    if (text != null) n.textContent = text;
+    svg.appendChild(n);
+    return n;
+  };
+
+  // frame
+  el('rect', { x: pad.left, y: pad.top, width: gridW, height: gridH, fill: '#020617', stroke: '#1e293b' });
+
+  // clip to chart area
+  const defs = el('defs');
+  const clip = document.createElementNS(NS, 'clipPath');
+  clip.setAttribute('id', 'plotClip');
+  const clipRect = document.createElementNS(NS, 'rect');
+  clipRect.setAttribute('x', pad.left);
+  clipRect.setAttribute('y', pad.top);
+  clipRect.setAttribute('width', gridW);
+  clipRect.setAttribute('height', gridH);
+  clip.appendChild(clipRect);
+  defs.appendChild(clip);
+  const gPlot = document.createElementNS(NS, 'g');
+  gPlot.setAttribute('clip-path', 'url(#plotClip)');
+  svg.appendChild(gPlot);
+
+  const add = (parent, name, attrs = {}, text) => {
+    const n = document.createElementNS(NS, name);
+    Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v));
+    if (text != null) n.textContent = text;
+    parent.appendChild(n);
+    return n;
+  };
+
+  // dry-bulb verticals
+  const tStep = (T_MAX - T_MIN) > 24 ? 5 : (T_MAX - T_MIN) > 12 ? 2 : 1;
+  for (let t = Math.ceil(T_MIN / tStep) * tStep; t <= T_MAX + 1e-9; t += tStep) {
+    add(gPlot, 'line', {
+      x1: x(t), y1: pad.top, x2: x(t), y2: pad.top + gridH,
+      stroke: '#1e293b', 'stroke-width': 1,
+    });
+    el('text', {
+      x: x(t), y: pad.top + gridH + 18,
+      fill: '#64748b', 'font-size': 11, 'text-anchor': 'middle',
+    }, String(t));
+  }
+
+  // humidity-ratio horizontals (g/kg)
+  const wStep = W_MAX > 20 ? 5 : (W_MAX > 10 ? 2 : 1);
+  for (let wg = 0; wg <= W_MAX + 1e-9; wg += wStep) {
+    const yy = y(wg / 1000);
+    add(gPlot, 'line', {
+      x1: pad.left, y1: yy, x2: pad.left + gridW, y2: yy,
+      stroke: '#1e293b', 'stroke-width': 1,
+    });
+    el('text', {
+      x: pad.left - 10, y: yy + 4,
+      fill: '#64748b', 'font-size': 11, 'text-anchor': 'end',
+    }, String(wg));
+  }
+
+  // RH isopleths (incl. saturation)
+  const rhList = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  rhList.forEach((rh) => {
+    const parts = [];
+    for (let t = T_MIN; t <= T_MAX + 1e-9; t += 0.25) {
+      const w = getW(t, rh);
+      if (w < 0 || w > W_MAX / 1000 + 0.002) {
+        if (parts.length) { parts.push(null); }
+        continue;
+      }
+      parts.push(`${x(t).toFixed(2)},${y(w).toFixed(2)}`);
+    }
+    // split on nulls
+    let seg = [];
+    const flush = () => {
+      if (seg.length > 1) {
+        add(gPlot, 'path', {
+          d: 'M ' + seg.join(' L '),
+          fill: 'none',
+          stroke: rh === 100 ? '#94a3b8' : '#334155',
+          'stroke-width': rh === 100 ? 2.2 : (rh % 20 === 0 ? 1.2 : 0.7),
+          opacity: rh === 100 ? 1 : 0.95,
+        });
+      }
+      seg = [];
+    };
+    parts.forEach((p) => { if (p == null) flush(); else seg.push(p); });
+    flush();
+
+    // RH label near right or along curve
+    let labelT = T_MAX - 0.8;
+    while (getW(labelT, rh) > (W_MAX / 1000 - 0.0005) && labelT > T_MIN) labelT -= 0.5;
+    const lw = getW(labelT, rh);
+    if (lw >= 0 && lw <= W_MAX / 1000 && labelT >= T_MIN && labelT <= T_MAX) {
+      add(gPlot, 'text', {
+        x: x(labelT), y: y(lw) - 4,
+        fill: rh === 100 ? '#cbd5e1' : '#64748b',
+        'font-size': 10, 'font-weight': rh === 100 ? 700 : 400,
+      }, rh === 100 ? '100% RH' : (rh % 20 === 0 ? rh + '%' : ''));
+    }
+  });
+
+  // enthalpy diagonals (kJ/kg)
+  const hMin = getH(T_MIN, 0);
+  const hMax = getH(T_MAX, W_MAX / 1000);
+  const hStep = 10;
+  for (let h = Math.ceil(hMin / hStep) * hStep; h <= hMax; h += hStep) {
+    // line of constant h: W = (h - 1.006 T) / (2501 + 1.86 T)
+    const segs = [];
+    for (let t = T_MIN; t <= T_MAX + 1e-9; t += 0.5) {
+      const den = 2501 + 1.86 * t;
+      const w = (h - 1.006 * t) / den;
+      if (w < 0 || w > W_MAX / 1000) continue;
+      if (w > getW(t, 100) + 0.0002) continue; // above saturation — skip
+      segs.push(`${x(t).toFixed(2)},${y(w).toFixed(2)}`);
+    }
+    if (segs.length > 1) {
+      add(gPlot, 'path', {
+        d: 'M ' + segs.join(' L '),
+        fill: 'none', stroke: '#3f3f1a', 'stroke-width': 1, opacity: 0.55,
+      });
+    }
+  }
+
+  // Comfort zone + AHU RH band (sweet-spot), same as app.js Givoni overlay
+  const cz = buildComfortZonePoly();
+  const mapPoly = (arr) => arr.map(([t, w]) => {
+    const tc = Math.min(T_MAX, Math.max(T_MIN, t));
+    const wc = Math.min(W_MAX / 1000, Math.max(0, w));
+    return `${x(tc).toFixed(2)},${y(wc).toFixed(2)}`;
+  });
+  const czPts = mapPoly(cz);
+  if (czPts.length > 2) {
+    // Clip path for RH band ∩ CZ (pixel-perfect slanted CZ ceiling)
+    const cp = document.createElementNS(NS, 'clipPath');
+    cp.setAttribute('id', 'czClip');
+    const cpPoly = document.createElementNS(NS, 'polygon');
+    cpPoly.setAttribute('points', czPts.join(' '));
+    cp.appendChild(cpPoly);
+    defs.appendChild(cp);
+
+    add(gPlot, 'polygon', {
+      points: czPts.join(' '),
+      fill: '#10b981', 'fill-opacity': 0.14,
+      stroke: '#10b981', 'stroke-width': 1.4,
+    });
+
+    if (showRhBand) {
+      const sweet = buildSweetPoly(rhLo, rhHi);
+      const sweetPts = mapPoly(sweet);
+      add(gPlot, 'polygon', {
+        points: sweetPts.join(' '),
+        'clip-path': 'url(#czClip)',
+        fill: '#059669', 'fill-opacity': 0.34,
+        stroke: '#34d399', 'stroke-width': 1,
+        'stroke-dasharray': '3,2',
+      });
+      const labelT = Math.min(T_MAX - 0.5, Math.max(T_MIN + 0.5, 23.5));
+      const midRh = (rhLo + rhHi) / 2;
+      add(gPlot, 'text', {
+        x: x(labelT),
+        y: y(getW(labelT, midRh)),
+        fill: '#a7f3d0', 'font-size': 10, 'font-weight': 900,
+        'text-anchor': 'middle',
+        'letter-spacing': '0.08em',
+      }, `AHU-01 · ${rhLo}–${rhHi}% RH`);
+    }
+
+    add(gPlot, 'text', {
+      x: x(Math.min(T_MAX - 1, Math.max(T_MIN + 1, 21.2))),
+      y: y(getW(21.2, 32)),
+      fill: '#10b981', 'font-size': 10, 'font-weight': 900,
+      'text-anchor': 'middle',
+    }, 'COMFORT');
+  }
+
+  // Process legs
+  const pathPts = [pts.sa, pts.vst, pts.zone];
+  add(gPlot, 'path', {
+    d: 'M ' + pathPts.map(p => `${x(p.t).toFixed(2)},${y(p.w).toFixed(2)}`).join(' L '),
+    fill: 'none', stroke: '#6366f1', 'stroke-width': 2.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+  });
+  // SA→Zone dashed enthalpy chord
+  add(gPlot, 'line', {
+    x1: x(pts.sa.t), y1: y(pts.sa.w),
+    x2: x(pts.zone.t), y2: y(pts.zone.w),
+    stroke: '#475569', 'stroke-width': 1, 'stroke-dasharray': '5 4',
+  });
+
+  const colors = { SA: '#22d3ee', VST: '#a78bfa', ZONE: '#34d399' };
+  pathPts.forEach((p) => {
+    add(gPlot, 'circle', {
+      cx: x(p.t), cy: y(p.w), r: p.label === 'ZONE' ? 8 : 7,
+      fill: colors[p.label], stroke: '#f8fafc', 'stroke-width': 2,
+    });
+    add(gPlot, 'text', {
+      x: x(p.t), y: y(p.w) - 14,
+      fill: colors[p.label], 'font-size': 12, 'font-weight': 900,
+      'text-anchor': 'middle',
+    }, p.label);
+    add(gPlot, 'text', {
+      x: x(p.t), y: y(p.w) + 22,
+      fill: '#94a3b8', 'font-size': 10, 'text-anchor': 'middle',
+    }, p.t.toFixed(1) + '°C');
+  });
+
+  // axis titles
+  el('text', {
+    x: pad.left + gridW / 2, y: 548,
+    fill: '#64748b', 'font-size': 11, 'text-anchor': 'middle',
+    'letter-spacing': '0.14em',
+  }, 'DRY BULB TEMPERATURE (°C)');
+  el('text', {
+    x: 18, y: pad.top + gridH / 2,
+    fill: '#64748b', 'font-size': 11, 'text-anchor': 'middle',
+    transform: `rotate(-90 18 ${pad.top + gridH / 2})`,
+    'letter-spacing': '0.14em',
+  }, 'HUMIDITY RATIO (g/kg DA)');
+
+  // chips — zone “in band” uses same AND as getVavDiagnostic(sweetSpot)
+  const dT = pts.zone.t - pts.sa.t;
+  const dW = (pts.zone.w - pts.sa.w) * 1000;
+  const dH = pts.zone.h - pts.sa.h;
+  const dVst = pts.vst.t - pts.sa.t;
+  const zoneInBand = inSweetSpot(pts.zone.t, pts.zone.rh, rhLo, rhHi);
+  // Rough CZ check via polygon (same T/W bounds as Givoni strip)
+  const zoneInCz = (pts.zone.t >= 20 && pts.zone.t <= 27 &&
+    pts.zone.rh >= 20 && pts.zone.rh <= (pts.zone.t <= 25 ? 80 : 50));
+  const zoneStatus = (zoneInCz && zoneInBand) ? 'IN CZ+BAND' : (zoneInCz ? 'IN CZ · OUT BAND' : 'OUT CZ');
+  const statusColor = (zoneInCz && zoneInBand) ? '#34d399' : (zoneInCz ? '#fbbf24' : '#f87171');
+
+  document.getElementById('chips').innerHTML = `
+    <div class="chip"><span class="k">AHU SA</span><span class="v sa">${pts.sa.t.toFixed(1)}°C · ${(pts.sa.w*1000).toFixed(1)} g/kg</span></div>
+    <div class="chip"><span class="k">VST</span><span class="v vst">${pts.vst.t.toFixed(1)}°C · ${(pts.vst.w*1000).toFixed(1)} g/kg</span></div>
+    <div class="chip"><span class="k">Zone</span><span class="v zone">${pts.zone.t.toFixed(1)}°C · ${pts.zone.rh}% RH</span></div>
+    <div class="chip"><span class="k">AHU RH band</span><span class="v" style="color:#6ee7b7">${rhLo}–${rhHi}%</span></div>
+    <div class="chip"><span class="k">Zone status</span><span class="v" style="color:${statusColor};font-size:12px">${zoneStatus}</span></div>
+    <div class="chip"><span class="k">ΔT zone−SA</span><span class="v">${dT >= 0 ? '+' : ''}${dT.toFixed(1)}°C</span></div>
+    <div class="chip"><span class="k">ΔW zone−SA</span><span class="v">${dW >= 0 ? '+' : ''}${dW.toFixed(1)} g/kg</span></div>
+    <div class="chip"><span class="k">Δh vs SA</span><span class="v">${dH >= 0 ? '+' : ''}${dH.toFixed(1)} kJ/kg</span></div>
+    <div class="chip"><span class="k">VST−SAT</span><span class="v vst">${dVst >= 0 ? '+' : ''}${dVst.toFixed(1)}°C</span></div>
+    <div class="chip"><span class="k">Window</span><span class="v" style="font-size:12px">${T_MIN}–${T_MAX}°C · 0–${W_MAX} g/kg</span></div>
+  `;
+}
+
+['preset', 'scenario', 'tMin', 'tMax', 'wMax', 'rhBandPreset', 'rhLo', 'rhHi', 'showRhBand'].forEach((id) => {
+  document.getElementById(id).addEventListener('change', () => {
+    if (id === 'tMin' || id === 'tMax' || id === 'wMax') {
+      document.getElementById('preset').value = 'custom';
+    }
+    if (id === 'rhLo' || id === 'rhHi') {
+      document.getElementById('rhBandPreset').value = 'custom';
+    }
+    draw();
+  });
+  document.getElementById(id).addEventListener('input', () => {
+    if (id === 'tMin' || id === 'tMax' || id === 'wMax') document.getElementById('preset').value = 'custom';
+    if (id === 'rhLo' || id === 'rhHi') document.getElementById('rhBandPreset').value = 'custom';
+    draw();
+  });
+});
+
+draw();
+</script>
+</body>
+</html>

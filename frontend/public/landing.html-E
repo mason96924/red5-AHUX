@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Cache-control: psy_3d.html and friends have no compiled bundle to ?v=-stamp, so the HTML itself must opt-out of browser caching. Without this, PROD users see stale UI after every deploy until they hard-refresh.  Sentinel data-cache-policy attribute is used by scripts/inject_no_cache_meta.py and deploy.sh preflight to detect missing tags.  Do NOT remove. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building Diagnostic Command Center</title>
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=3477e7bead">
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
+    <script src="/api/assets/js/i18n.js"></script>
+    <link rel="stylesheet" href="/api/assets/landing.css" id="app-css">
+    <script>
+        if(!window.t){
+            var _p=['/api/assets/js/i18n.js','/assets/js/i18n.js','/js/i18n.js'];
+            (function tryNext(i){if(i>=_p.length||window.t)return;var s=document.createElement('script');s.src=_p[i];s.onerror=function(){tryNext(i+1);};document.head.appendChild(s);})(0);
+        }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const t = window.t || (k => k);
+        const { useState, useEffect } = React;
+
+        // Production settings hub (pentagon setup walk).  ?force=1 always
+        // shows the hub even if the operator previously clicked Open Dashboard.
+        const SETTINGS_PAGE = '/setup.html?force=1';
+
+        const authFetch = (path, opts = {}) => fetch(path, {
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            ...opts,
+        });
+
+        const goToSettings = () => {
+            window.location.href = SETTINGS_PAGE;
+        };
+
+        const App = () => {
+            const lang = window.useLang ? window.useLang() : 'en';
+            const [i18nReady, setI18nReady] = useState(!!window.LangSelector);
+            const [view, setView] = useState('checking');
+            const [usernameInput, setUsernameInput] = useState('');
+            const [passwordInput, setPasswordInput] = useState('');
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                if (window.LangSelector) { setI18nReady(true); return; }
+                const iv = setInterval(() => { if (window.LangSelector) { setI18nReady(true); clearInterval(iv); } }, 200);
+                return () => clearInterval(iv);
+            }, []);
+
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('auth') === 'config') {
+                    setError('Sign in with your registered username and password. Contact your administrator if you need an account.');
+                }
+            }, []);
+
+            useEffect(() => {
+                authFetch('/api/auth/whoami')
+                    .then(r => r.json())
+                    .then(d => {
+                        const r = d.role || 'viewer';
+                        if (r === 'editor' || r === 'admin') {
+                            sessionStorage.setItem('engineerAuthenticated', 'true');
+                            goToSettings();
+                            return;
+                        }
+                        sessionStorage.removeItem('engineerAuthenticated');
+                        setView('login');
+                    })
+                    .catch(() => setView('login'));
+            }, []);
+
+            const handleAuth = async () => {
+                const u = usernameInput.trim();
+                const p = passwordInput;
+                if (!u || !p) return;
+                setError('');
+                try {
+                    const r = await authFetch('/api/auth/login', {
+                        method: 'POST',
+                        body: JSON.stringify({ username: u, password: p }),
+                    });
+                    const d = await r.json();
+                    if (!d.ok) {
+                        setError('Invalid username or password. If you are not registered, ask your administrator for an account.');
+                        setTimeout(() => setError(''), 4000);
+                        return;
+                    }
+                    sessionStorage.setItem('engineerAuthenticated', 'true');
+                    setPasswordInput('');
+                    goToSettings();
+                } catch (e) {
+                    setError('Sign in failed.');
+                    setTimeout(() => setError(''), 2500);
+                }
+            };
+
+            const handleSkip = () => {
+                // Viewers: operate the dashboard without signing in.
+                window.location.href = '/dashboard.html';
+            };
+
+            if (view === 'checking') {
+                return (
+                    <div className="flex h-screen items-center justify-center bg-slate-950">
+                        <p className="text-slate-500 text-sm font-mono">Loading&hellip;</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex h-screen items-center justify-center bg-slate-950">
+                    <div style={{position:'absolute',top:'16px',right:'16px'}}>{i18nReady && window.LangSelector && <LangSelector />}</div>
+                    <div className="w-full max-w-sm mx-4 animate-fade-up">
+                        <div className="text-center mb-8">
+                            <h1 className="text-3xl font-black italic uppercase tracking-tight mb-2">
+                                <span className="text-red-500">Red5</span> <span className="text-white">Studio</span>
+                            </h1>
+                            <p className="text-slate-500 text-sm mb-1">{t('by_delta_controls')}</p>
+                            <p className="text-slate-600 text-xs font-mono">{t('building_diag_cmd_center')}</p>
+                        </div>
+
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+                            <p className="text-slate-400 text-xs text-center mb-4">
+                                Sign in to open Settings. Viewers can skip to the dashboard.
+                            </p>
+
+                            <input
+                                type="text"
+                                value={usernameInput}
+                                onChange={e => { setUsernameInput(e.target.value); setError(''); }}
+                                placeholder="Username"
+                                autoComplete="username"
+                                autoFocus
+                                className="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-lg p-3 text-white text-sm font-mono outline-none transition-all mb-3"
+                            />
+
+                            <input
+                                type="password"
+                                value={passwordInput}
+                                onChange={e => { setPasswordInput(e.target.value); setError(''); }}
+                                onKeyDown={e => e.key === 'Enter' && handleAuth()}
+                                placeholder={t('enter_password')}
+                                autoComplete="current-password"
+                                className="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-lg p-3 text-white text-sm font-mono outline-none transition-all mb-3"
+                            />
+
+                            {error && <p className="text-red-400 text-xs text-center mb-3 font-mono">{error}</p>}
+
+                            <button
+                                onClick={handleAuth}
+                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-black uppercase tracking-widest text-xs transition-all mb-3"
+                            >
+                                {t('unlock')}
+                            </button>
+
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="flex-1 h-px bg-slate-800"></div>
+                                <span className="text-slate-600 text-[10px] uppercase tracking-widest">{t('or_')}</span>
+                                <div className="flex-1 h-px bg-slate-800"></div>
+                            </div>
+
+                            <button
+                                onClick={handleSkip}
+                                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg font-bold uppercase tracking-widest text-xs transition-all"
+                            >
+                                {t('skip_to_dashboard')}
+                            </button>
+                        </div>
+
+                        <p className="text-slate-700 text-[10px] font-mono text-center mt-6">v31.39 | Equipment Points Mapper v12.10</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

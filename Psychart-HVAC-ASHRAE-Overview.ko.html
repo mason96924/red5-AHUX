@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>습공기선도 — HVAC의 핵심 선도이자 대부분의 BMS에 빠진 도구</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#475569; --faint:#64748b; --line:#e2e8f0;
+    --accent:#1d4ed8; --green:#047857; --amber:#b45309; --page:#f8fafc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#334155;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","PingFang TC","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans CJK SC","Noto Sans CJK TC","Noto Sans CJK JP","Noto Sans CJK KR","Microsoft YaHei","Malgun Gothic",Helvetica,Arial,sans-serif;color:var(--ink)}
+  .slide{position:relative;width:13.333in;height:7.5in;background:var(--page);
+    overflow:hidden;margin:18px auto;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+  .bar{position:absolute;top:0;left:0;right:0;height:.16in;background:var(--accent)}
+  .kick{position:absolute;left:.7in;top:.42in;font-size:15px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .title{position:absolute;left:.7in;top:.74in;font-size:33px;font-weight:800;letter-spacing:-.01em;color:var(--ink);max-width:12in}
+  .lead{position:absolute;left:.7in;top:1.5in;width:11.9in;font-size:16.5px;color:var(--muted);line-height:1.45}
+  .dark{background:#0b1224;color:#fff}
+  /* title slide */
+  .t-brand{position:absolute;left:.9in;top:1.85in;font-size:64px;font-weight:800;color:#fff;line-height:1.05;max-width:11.5in}
+  .t-sub{position:absolute;left:.92in;top:3.5in;font-size:27px;color:#93c5fd;max-width:11.5in;line-height:1.3}
+  .t-desc{position:absolute;left:.92in;top:4.75in;font-size:18px;color:#cbd5e1;max-width:11.2in;line-height:1.5}
+  .t-tags{position:absolute;left:.9in;top:6.15in;display:flex;gap:14px}
+  .t-tag{background:#1e293b;border:1px solid #334155;color:#93c5fd;font-size:14px;font-weight:700;border-radius:999px;padding:9px 20px}
+  /* 3-card row */
+  .cards{position:absolute;left:.7in;display:flex;gap:.25in}
+  .goal{width:3.9in;background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.32in .34in}
+  .goal .edge{position:absolute;left:0;top:0;width:.14in;height:100%;border-radius:12px 0 0 12px}
+  .goal h3{font-size:19px;margin-bottom:11px}
+  .goal p{font-size:15px;color:var(--muted);line-height:1.45}
+  .catch{position:absolute;left:.7in;width:12.4in;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:15px 22px}
+  .catch .t{font-size:15px;font-weight:800;color:var(--amber);margin-bottom:5px}
+  .catch p{font-size:15.5px;color:var(--ink);line-height:1.45}
+  /* 4-card grid */
+  .hg{position:absolute;left:.7in;display:grid;grid-template-columns:5.85in 5.85in;gap:.22in}
+  .hcard{background:#fff;border:1px solid var(--line);border-radius:12px;position:relative;padding:.24in .3in .24in .38in}
+  .hcard .edge{position:absolute;left:0;top:0;width:.13in;height:100%}
+  .hcard h4{font-size:17px;margin-bottom:7px}
+  .hcard p{font-size:14.5px;color:var(--muted);line-height:1.42}
+  /* 6-card reasons grid */
+  .rg{position:absolute;left:.7in;top:2.0in;display:grid;grid-template-columns:repeat(3,3.9in);gap:.2in}
+  .rcard{height:2.02in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative;padding:.26in .28in}
+  .rcard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
+  .rcard h4{font-size:16px;margin:7px 0 8px}
+  .rcard p{font-size:13.2px;color:var(--muted);line-height:1.4}
+  /* rulebook rows */
+  .rows{position:absolute;left:.7in;top:2.15in;width:12.4in}
+  .row{display:flex;align-items:stretch;height:1.02in;margin-bottom:.12in;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .row .code{width:2.5in;display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;font-weight:800}
+  .row .nick{width:2.2in;display:flex;align-items:center;padding-left:.3in;font-size:17px;font-weight:800}
+  .row .q{flex:1;display:flex;align-items:center;padding-left:.2in;font-size:16px;color:var(--muted)}
+  /* venn */
+  .venn{position:absolute;left:.5in;top:1.9in;width:8.4in;height:5.2in}
+  .circle{position:absolute;width:3.05in;height:3.05in;border-radius:50%;mix-blend-mode:multiply;border:2px solid}
+  .c-comfort{left:1.55in;top:1.05in;background:rgba(180,83,9,.30);border-color:var(--amber)}
+  .c-fresh{left:3.6in;top:1.05in;background:rgba(4,120,87,.30);border-color:var(--green)}
+  .c-energy{left:2.55in;top:2.35in;background:rgba(29,78,216,.30);border-color:var(--accent)}
+  .v-lab{position:absolute;font-size:14px;font-weight:800;text-align:center;line-height:1.25}
+  .vcenter{position:absolute;left:2.95in;top:2.55in;width:2.2in;text-align:center;font-size:17px;font-weight:800;color:var(--ink)}
+  .explain{position:absolute;right:.55in;top:2.0in;width:3.35in;height:3.4in;background:#fff;border:1px solid var(--line);border-radius:12px;padding:.28in}
+  .explain h3{color:var(--accent);font-size:17px;margin-bottom:10px}
+  .explain p{font-size:14.5px;color:var(--muted);line-height:1.5}
+  .ref{position:absolute;right:.55in;top:5.55in;width:3.35in;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:.2in .28in;font-size:13.5px;color:var(--green);font-weight:600}
+  .oneline{position:absolute;left:.7in;top:6.7in;width:11.9in;text-align:center;font-size:15px;font-weight:800;color:var(--accent)}
+  /* chart slide */
+  .chartwrap{position:absolute;left:.55in;top:1.95in}
+  .cnotes{position:absolute;left:7.35in;top:2.05in;width:5.3in}
+  .cnotes h3{color:var(--accent);font-size:17px;margin-bottom:12px}
+  .cnote{display:flex;gap:11px;margin-bottom:13px}
+  .cnote .n{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .cnote p{font-size:14.5px;color:var(--muted);line-height:1.45}
+  .legend{position:absolute;left:7.35in;top:6.35in;width:5.3in;font-size:13px;color:var(--faint);line-height:1.5}
+  /* chart slide — reading-guide cards */
+  .legend2{position:absolute;left:.55in;top:5.92in;width:5.7in;font-size:12.5px;
+    color:var(--faint);line-height:1.5}
+  .ngrid{position:absolute;left:6.45in;top:2.0in;display:grid;
+    grid-template-columns:repeat(2,3.0in);gap:.15in}
+  .ncard{height:1.5in;background:#fff;border:1px solid var(--line);
+    border-radius:11px;padding:.2in .22in;position:relative}
+  .ncard .num{position:absolute;left:.22in;top:.19in;width:19px;height:19px;
+    border-radius:50%;background:var(--accent);color:#fff;font-size:11px;
+    font-weight:800;display:flex;align-items:center;justify-content:center}
+  .ncard h5{font-size:13.5px;margin:1px 0 6px 26px;line-height:1.2}
+  .ncard p{font-size:12.3px;color:var(--muted);line-height:1.38}
+  /* overlay slide */
+  .hub{position:absolute;left:4.75in;top:2.1in;width:3.85in;height:4.0in;
+    background:#fff;border:2px solid var(--accent);border-radius:14px;
+    text-align:center;padding:.22in .2in}
+  .hub h3{font-size:17px;color:var(--accent)}
+  .hub .sub{font-size:12.5px;color:var(--faint);margin-top:4px}
+  .hub .cap{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
+  .ocard{position:absolute;width:3.7in;height:1.9in;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:.22in .26in;
+    overflow:hidden}
+  .ocard .top{position:absolute;left:0;top:0;width:100%;height:.1in}
+  .ocard h4{font-size:15.5px;margin:7px 0 6px}
+  .ocard p{font-size:12.8px;color:var(--muted);line-height:1.4}
+  .arw{position:absolute}
+  /* comparison table */
+  .ctable{position:absolute;left:.7in;top:2.05in;width:12.4in;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .ctable table{width:100%;border-collapse:collapse}
+  .ctable th,.ctable td{padding:12px 16px;font-size:14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  .ctable th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);background:#f8fafc}
+  .ctable td:first-child{font-weight:700;color:var(--ink);width:2.9in}
+  .ctable td.trad{color:var(--muted);width:4.6in}
+  .ctable td.psy{color:var(--green);font-weight:600}
+  .ctable tr:nth-child(even) td{background:#fafcff}
+  /* savings slide */
+  .bandh{position:absolute;top:1.90in;width:5.85in}
+  .bandh h5{font-size:14.5px;font-weight:800;margin-bottom:3px}
+  .bandh p{font-size:11.6px;color:var(--faint);line-height:1.3}
+  .srow{position:absolute;top:2.44in;display:grid;
+    grid-template-columns:repeat(2,2.79in);gap:.27in}
+  .scard{height:1.95in;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:.24in .2in .2in;position:relative;overflow:hidden}
+  .scard .top{position:absolute;left:0;top:0;width:100%;height:.09in}
+  .scard .big{font-size:33px;font-weight:800;line-height:1}
+  .scard .lab{font-size:11.4px;color:var(--ink);font-weight:700;margin-top:7px;
+    line-height:1.28}
+  .scard .src{font-size:9.6px;color:var(--faint);margin-top:6px;line-height:1.28}
+  .scard .attr{font-size:9.6px;margin-top:6px;line-height:1.28;padding-left:6px;
+    border-left:2px solid var(--line);color:var(--muted)}
+  .triple{display:flex;gap:.15in;align-items:flex-end}
+  .triple b{font-size:24px;font-weight:800;line-height:1;display:block}
+  .triple span{font-size:9.2px;color:var(--faint);text-transform:uppercase;
+    letter-spacing:.04em}
+  .tag{position:absolute;right:.16in;top:.24in;font-size:8.8px;font-weight:800;
+    text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;
+    border-radius:99px;background:#fef3c7;color:#92400e}
+  .p2{position:absolute;top:4.50in;width:5.85in;height:1.95in;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:.2in .28in}
+  .p2 h4{font-size:15px;margin-bottom:7px}
+  .p2 p{font-size:11.4px;color:var(--muted);line-height:1.33;margin-bottom:5px}
+  .foot{position:absolute;left:.7in;top:6.6in;width:11.93in;text-align:center;
+    font-size:15px;font-weight:700;color:var(--accent);line-height:1.35}
+  /* closing */
+  .close-h{position:absolute;left:1in;top:2.4in;width:11.3in;text-align:center;font-size:44px;font-weight:800;color:#fff}
+  .close-p{position:absolute;left:1.4in;top:3.9in;width:10.5in;text-align:center;font-size:19px;color:#cbd5e1;line-height:1.55}
+  .close-n{position:absolute;left:2in;top:5.6in;width:9.3in;text-align:center;font-size:15.5px;color:#93c5fd;line-height:1.5;font-style:italic}
+  @page{size:13.333in 7.5in;margin:0}
+  @media print{
+    html,body{background:#fff}
+    .slide{margin:0;box-shadow:none;page-break-after:always}
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 TITLE -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="t-brand">습공기선도</div>
+  <div class="t-sub">HVAC의 핵심 선도 — 그리고 대부분의 건물관리시스템(BMS)에 빠진 도구</div>
+  <div class="t-desc">설비 설계자가 이것 없이는 일할 수 없는 이유, 전통적인 BMS가 채택하지 못한 이유, 그리고 이 하나의 선도가 ASHRAE 55, 62.1, 90.1과 Guideline 36을 동시에 어떻게 답하는지.</div>
+  <div class="t-tags"><span class="t-tag">습공기 상태</span><span class="t-tag">설계 도구</span><span class="t-tag">ASHRAE 정합</span><span class="t-tag">실시간 제어</span></div>
+</section>
+
+<!-- 2 WHO USES IT / WHAT EQUIPMENT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">여기서 시작</div>
+  <div class="title">누가 이 선도를 쓰는가 — 그리고 어떤 설비에</div>
+  <div class="lead">건물이 제어되기 훨씬 전에, 누군가 그 공기를 조절할 기계를 선택해야 합니다. 그 사람들은 습공기선도 위에서 일합니다.</div>
+  <div class="cards" style="top:2.35in">
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--accent)"></div>
+      <h3 style="color:var(--accent)">그들은 누구인가</h3>
+      <p>"HVAC 설비 설계자"는 공조 설비를 선정하고 용량을 산정하는 기계 엔지니어입니다:</p>
+      <p style="margin-top:9px">• 제조사 응용 엔지니어<br>• 컨설팅 / 설계 엔지니어<br>• 성능을 입증하는 시운전 엔지니어</p>
+    </div>
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--green)"></div>
+      <h3 style="color:var(--green)">"HVAC 설비"가 의미하는 것</h3>
+      <p>실제로 공기를 변화시키는 기계:</p>
+      <p style="margin-top:9px">• 공조기(AHUs)와 그 가열 / 냉각 코일<br>• 혼합 &amp; 이코노마이저 댐퍼<br>• 가습기와 제습기<br>• 열회수 휠(ERV / HRV)<br>• 칠러와 DX 시스템, 팬, VAV 터미널</p>
+    </div>
+    <div class="goal" style="height:3.5in"><div class="edge" style="background:var(--amber)"></div>
+      <h3 style="color:var(--amber)">그들이 결정해야 할 것</h3>
+      <p>• 얼마나 많은 냉각 또는 난방이 필요한가<br>• 그 냉각 중 열이 아니라 <b>수분</b>을 제거하는 양은 얼마인가<br>• 코일은 얼마나 커야 하는가<br>• 외기를 얼마나 혼합할 것인가<br>• 응축 또는 코일 동결이 발생할 것인가</p>
+    </div>
+  </div>
+  <div class="catch" style="top:6.25in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">그 결정 하나하나가 습공기선도 위의 점이나 선입니다. 그래서 설비 카탈로그가 아니라 이 선도 위에서 공조 설계가 실제로 이루어집니다.</p>
+  </div>
+</section>
+
+<!-- 3 WHY DESIGNERS RELY ON IT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">왜 존재하는가</div>
+  <div class="title">설계자가 이것 없이는 일할 수 없는 이유</div>
+  <div class="lead">공조는 단순히 "공기를 차갑게 만드는 것"이 아닙니다. <b>습공기</b>를 한 상태에서 다른 상태로 옮기는 것이며 — 습공기선도는 공기가 있을 수 있는 모든 상태의 지도입니다.</div>
+  <div class="hg" style="top:2.4in">
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">모든 과정은 선이다</h4>
+      <p>냉각, 가열, 가습, 제습, 혼합은 각각 고유한 방향으로 공기를 이동합니다. 선을 그리면 그 과정을 설명한 것입니다.</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">용량은 선도에서 나온다</h4>
+      <p>선 양 끝의 에너지 함량(엔탈피)에 풍량을 곱하면 코일이 공급해야 할 kW가 됩니다. 이렇게 설비 용량을 산정합니다.</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">현열 대 잠열</h4>
+      <p>선도는 온도를 낮추는 냉각과 수분을 제거하는 냉각을 구분합니다. 둘은 다르게 거동하므로 각각 별도로 용량을 산정해야 합니다.</p></div>
+    <div class="hcard" style="height:1.95in"><div class="edge" style="background:var(--ink)"></div>
+      <h4>물리적 한계가 보인다</h4>
+      <p>곡선 경계는 100% 습도입니다 — 공기는 그 너머로 갈 수 없습니다. 응축이 시작되는 곳과 코일이 동결되는 곳을 보여줍니다.</p></div>
+  </div>
+</section>
+
+<!-- 4 HOW TO READ IT (SVG chart) -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">읽는 방법</div>
+  <div class="title">하나의 점이 공기의 상태다</div>
+  <div class="chartwrap">
+    <svg viewBox="0 0 600 400" style="width:5.7in;height:3.8in">
+      <rect x="0" y="0" width="600" height="400" fill="#ffffff" stroke="#e2e8f0"/>
+      <!-- grid -->
+      <g stroke="#eef2f7" stroke-width="1">
+        <line x1="122" y1="40" x2="122" y2="350"/><line x1="185" y1="40" x2="185" y2="350"/>
+        <line x1="247" y1="40" x2="247" y2="350"/><line x1="310" y1="40" x2="310" y2="350"/>
+        <line x1="372" y1="40" x2="372" y2="350"/><line x1="435" y1="40" x2="435" y2="350"/>
+        <line x1="497" y1="40" x2="497" y2="350"/>
+        <line x1="60" y1="288" x2="560" y2="288"/><line x1="60" y1="226" x2="560" y2="226"/>
+        <line x1="60" y1="164" x2="560" y2="164"/><line x1="60" y1="102" x2="560" y2="102"/>
+      </g>
+      <!-- axes -->
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- lines of equal total energy (constant enthalpy), clipped at saturation -->
+      <g stroke="#7c3aed" opacity=".8">
+        <line x1="215" y1="256.6" x2="495" y2="349.6" stroke-width="1.3" stroke-dasharray="2 4"/>
+        <line x1="381.2" y1="133.7" x2="560" y2="193" stroke-width="1.3" stroke-dasharray="2 4"/>
+        <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke-width="1.8" stroke-dasharray="7 4"/>
+      </g>
+      <text x="265" y="215" font-size="10.5" font-weight="700" fill="#7c3aed" text-anchor="end">등에너지 (엔탈피)</text>
+      <!-- saturation curve (100% RH) -->
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+      <text x="462" y="60" font-size="12" font-weight="700" fill="#1d4ed8">100% RH</text>
+      <text x="462" y="76" font-size="11" fill="#64748b">(포화)</text>
+      <!-- comfort zone -->
+      <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.16)" stroke="#b45309"
+            stroke-width="1.6" stroke-dasharray="5 3" rx="4"/>
+      <text x="347" y="309" font-size="11.5" font-weight="700" fill="#b45309" text-anchor="middle">쾌적 영역 (ASHRAE 55)</text>
+      <!-- mixing line OA-RA -->
+      <line x1="472" y1="164" x2="360" y2="254" stroke="#047857" stroke-width="2" stroke-dasharray="6 4"/>
+      <!-- coil process MA -> SA -->
+      <line x1="394" y1="227" x2="222" y2="259" stroke="#1d4ed8" stroke-width="2.5"/>
+      <polygon points="222,259 233,253 233,265" fill="#1d4ed8"/>
+      <!-- state points -->
+      <g>
+        <circle cx="472" cy="164" r="6" fill="#b45309"/><text x="482" y="160" font-size="13" font-weight="800" fill="#b45309">OA</text>
+        <circle cx="360" cy="254" r="6" fill="#047857"/><text x="368" y="272" font-size="13" font-weight="800" fill="#047857">RA</text>
+        <circle cx="394" cy="227" r="6" fill="#0f172a"/><text x="402" y="222" font-size="13" font-weight="800" fill="#0f172a">MA</text>
+        <circle cx="222" cy="259" r="6" fill="#1d4ed8"/><text x="196" y="252" font-size="13" font-weight="800" fill="#1d4ed8">SA</text>
+      </g>
+      <!-- axis captions -->
+      <text x="300" y="378" font-size="12.5" font-weight="700" fill="#475569" text-anchor="middle">건구온도  →</text>
+      <text x="20" y="200" font-size="12.5" font-weight="700" fill="#475569"
+            transform="rotate(-90 20 200)" text-anchor="middle">공기 중 수분  →</text>
+    </svg>
+  </div>
+  <div class="legend2"><b>OA</b> 외기 &nbsp;·&nbsp; <b>RA</b> 환기 &nbsp;·&nbsp; <b>MA</b> 코일로 들어가는 혼합공기 &nbsp;·&nbsp; <b>SA</b> 실내로 공급되는 급기. 녹색 점선 = 혼합; 파란 실선 = 냉각 코일. <b style="color:#7c3aed">보라 대각선</b>은 등총에너지 선: 여기서 외기는 79 kJ/kg로 환기의 48보다 높아 RA 선 위에 있고 조화 비용이 더 듭니다 — 오늘은 프리쿨링 없음.</div>
+  <div class="ngrid">
+    <div class="ncard"><div class="num">1</div><h5 style="color:var(--accent)">두 축이 모든 것을 고정한다</h5>
+      <p>가로축은 온도, 세로축은 공기가 운반하는 실제 수분량입니다. 둘을 고정하면 공기 상태가 고정됩니다 — 상대습도, 노점, 습구, 에너지 함량이 모두 그 한 점에서 따라옵니다.</p></div>
+    <div class="ncard"><div class="num">2</div><h5 style="color:var(--accent)">곡선은 절대 한계다</h5>
+      <p>100% 습도를 표시합니다 — 공기는 그 위에 있을 수 없습니다. 점을 곡선까지 밀어 올리면 물이 나옵니다: 그것이 노점, 젖은 코일, 김 서린 창입니다.</p></div>
+    <div class="ncard"><div class="num">3</div><h5 style="color:var(--green)">혼합은 직선이다</h5>
+      <p>외기와 환기는 둘을 잇는 선 위의 한 점으로 섞입니다. 그 위치의 거리가 비율입니다: RA에서 1/3 지점이면 외기 1/3입니다.</p></div>
+    <div class="ncard"><div class="num">4</div><h5 style="color:var(--accent)">코일은 왼쪽 아래로 당긴다</h5>
+      <p>왼쪽은 온도(현열)를, 아래는 수분(잠열)을 제거합니다. MA→SA의 기울기가 그 분할이며 — 그 분할이 곧 코일 용량 산정의 의미입니다.</p></div>
+    <div class="ncard"><div class="num">5</div><h5 style="color:var(--amber)">쾌적은 영역이다</h5>
+      <p>허용 가능한 온·습도 범위가 선도 위에 바로 그려집니다. 급기는 실내가 그 상자 안에 들어오도록 선택되어야 합니다 — 단지 올바른 온도만이 아닙니다.</p></div>
+    <div class="ncard"><div class="num">6</div><h5 style="color:var(--ink)">고장은 잘못된 기하로 드러난다</h5>
+      <p>혼합공기 점이 외기와 환기 사이 선 위에 있지 않으면, 무언가가 거짓입니다 — 고착된 댐퍼나 드리프트된 센서. 그림이 경보 한계가 놓치는 것을 잡아냅니다.</p></div>
+  </div>
+</section>
+
+<!-- 5 WORKED EXAMPLE — THE FREE-COOLING DECISION -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">계산 예제</div>
+  <div class="title">외기는 언제 공짜인가?</div>
+  <div class="chartwrap" style="top:1.95in">
+    <svg viewBox="0 0 600 400" style="width:5.7in;height:3.8in">
+      <rect x="0" y="0" width="600" height="400" fill="#ffffff" stroke="#e2e8f0"/>
+      <!-- decision regions -->
+      <polygon points="271.2,224.5 247,240 185,271 122,294 60,311 60,350 360,350 360,253.9"
+               fill="rgba(4,120,87,.13)"/>
+      <polygon points="271.2,224.5 310,198.1 360,153.6 360,253.9" fill="rgba(225,29,72,.16)"/>
+      <polygon points="360,253.9 360,350 560,350 560,320.3" fill="rgba(180,83,9,.16)"/>
+      <polygon points="360,253.9 360,153.6 372,142 435,69 454,40 560,40 560,320.3"
+               fill="rgba(100,116,139,.10)"/>
+      <!-- axes -->
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="1.5"/>
+      <!-- the two competing lines -->
+      <line x1="360" y1="153.6" x2="360" y2="350" stroke="#334155" stroke-width="1.8" stroke-dasharray="5 4"/>
+      <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke="#7c3aed" stroke-width="2.4"/>
+      <!-- saturation -->
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="2.5"/>
+      <!-- points -->
+      <circle cx="360" cy="253.9" r="6.5" fill="#047857"/>
+      <text x="366" y="272" font-size="12.5" font-weight="800" fill="#047857">RA 48</text>
+      <circle cx="335" cy="195.4" r="6.5" fill="#e11d48"/>
+      <text x="288" y="188" font-size="12.5" font-weight="800" fill="#e11d48">A 60</text>
+      <circle cx="410" cy="325.9" r="6.5" fill="#b45309"/>
+      <text x="420" y="331" font-size="12.5" font-weight="800" fill="#b45309">B 34</text>
+      <circle cx="472" cy="164" r="5.5" fill="#64748b"/>
+      <text x="481" y="160" font-size="11.5" font-weight="700" fill="#64748b">OA 79</text>
+      <!-- region + line labels -->
+      <text x="130" y="332" font-size="12" font-weight="800" fill="#047857">프리쿨링</text>
+      <text x="130" y="346" font-size="10.5" fill="#047857">두 방법 모두 동의</text>
+      <text x="455" y="105" font-size="11.5" font-weight="700" fill="#64748b">고온 다습 —</text>
+      <text x="455" y="119" font-size="11.5" font-weight="700" fill="#64748b">최소 OA</text>
+      <text x="145" y="215" font-size="10.5" font-weight="700" fill="#7c3aed">RA와 등에너지</text>
+      <text x="366" y="178" font-size="10.5" font-weight="700" fill="#334155">건구온도만</text>
+    </svg>
+  </div>
+  <div class="legend2" style="top:5.88in">숫자는 총에너지(kJ/kg)입니다. <b>RA</b> 24 °C / 50% RH = 48 &nbsp;·&nbsp; <b>A</b> 22 °C / 90% RH = 60 &nbsp;·&nbsp; <b>B</b> 28 °C / 10% RH = 34 &nbsp;·&nbsp; <b>OA</b> 33 °C / 18 g/kg = 79 (이전 슬라이드의 외기).</div>
+  <div class="cnotes" style="left:6.45in;top:2.0in;width:6.18in">
+    <h3>두 선, 네 가지 결과</h3>
+    <div class="cnote"><div class="n" style="background:#047857">1</div><p><b>보라선 왼쪽 아래</b> — 외기가 환기보다 에너지가 적습니다. 이코노마이저를 열고 기계 냉각을 줄이십시오.</p></div>
+    <div class="cnote"><div class="n" style="background:#64748b">2</div><p><b>오른쪽 위</b> — 외기는 자원이 아니라 부하입니다. 62.1이 요구하는 최소 환기량까지 닫고 코일에 일을 맡기십시오.</p></div>
+    <div class="cnote"><div class="n" style="background:#e11d48">A</div><p><b>시원하지만 후텁지근.</b> 22 °C로 환기보다 2° 낮아 건구 이코노마이저는 열리지만 — 에너지는 48 대비 60 kJ/kg입니다. 코일이 다시 짜내야 할 잠열 부하를 들여온 것입니다.</p></div>
+    <div class="cnote"><div class="n" style="background:#b45309">B</div><p><b>따뜻하지만 건조.</b> 28 °C 건구는 닫아 두지만, 34 kJ/kg는 환기보다 훨씬 낮습니다. 에너지는 쓰라고 합니다 — 다만 부하가 대부분 현열일 때 건구 상한은 이 코너를 여전히 지킵니다.</p></div>
+    <div class="cnote"><div class="n" style="background:#7c3aed">=</div><p><b>선 위</b>에서는 두 기류가 에너지 중립이므로, 선택은 습도와 팬 동력으로 넘어갑니다. 시퀀스는 댐퍼 헌팅을 막기 위해 여기에 데드밴드를 둡니다.</p></div>
+  </div>
+  <div class="catch" style="top:6.35in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">건구 센서는 <b>수직</b>선만 그릴 수 있고, 선도는 <b>대각선</b>을 그립니다. 두 음영 쐐기가 바로 둘이 어긋나는 곳 — 그리고 에너지가 조용히 낭비되는 곳입니다.</p>
+  </div>
+</section>
+
+<!-- 6 WHY TRADITIONAL BMS DOESN'T USE IT -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">간극</div>
+  <div class="title">전통적인 BMS가 선도를 채택하지 못한 이유</div>
+  <div class="rg">
+    <div class="rcard"><div class="top" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">제어는 단일 숫자로 생각한다</h4>
+      <p>BMS는 각각 <b>하나</b>의 값 — 온도, 압력 — 을 감시하는 루프로 조립됩니다. 상태점은 두 측정값을 함께 판단해야 하는데, 고전 제어에는 2차원 공기 상태 개념이 없었습니다.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">센서가 없는 경우가 많다</h4>
+      <p>같은 위치에서 온도와 습도가 <b>모두</b> 필요합니다. 많은 유닛은 외기·혼합·환기에서 건구만 측정합니다 — 추가 습도 센서는 비용, 배선, 교정 드리프트를 더합니다.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">수학이 너무 비쌌다</h4>
+      <p>수분량과 에너지량은 비선형이며 기압에 의존합니다. 구형 컨트롤러는 메모리가 거의 없고 부동소수점 연산이 없어, 습공기 계산은 그냥 빠졌습니다.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--accent)"></div>
+      <h4 style="color:var(--accent)">그래픽이 그릴 수 없었다</h4>
+      <p>초기 프론트엔드는 단순 설비 계통도와 시계열 트렌드만 그렸습니다. 곡선과 오버레이가 있는 실시간 선도는 실제 렌더링이 필요해 — 선도는 설계 바인더의 정적 페이지로 남았습니다.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--green)"></div>
+      <h4 style="color:var(--green)">설계와 운영은 별개의 세계다</h4>
+      <p>선도는 설비 선정을 위해 오프라인으로 한 번 쓰입니다. 제어 시공사에 넘겨지는 것은 설정값 목록이지 — 그 뒤의 물리가 아닙니다. 논리는 인수인계에서 사라집니다.</p></div>
+    <div class="rcard"><div class="top" style="background:var(--amber)"></div>
+      <h4 style="color:var(--amber)">더 단순한 선택이 허용되었다</h4>
+      <p>코드가 건구만으로 이코노마이저 전환을 허용하므로, 설계는 역사적으로 신뢰성이 낮았던 습도 감지를 피했습니다. 쉽고 적합한 경로가 조용히 기본값이 되었습니다.</p></div>
+  </div>
+  <div class="catch" style="top:6.35in">
+    <div class="t">그 결과</div>
+    <p>운영자는 결국 <b>2차원</b> 문제 — 열 <i>그리고</i> 수분 — 를 서로 떨어진 1차원 트렌드 선을 보며 진단하게 됩니다. 정보는 있지만, 그림은 없습니다.</p>
+  </div>
+</section>
+
+<!-- 6 RULEBOOKS -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">규칙집</div>
+  <div class="title">네 가지 ASHRAE 표준, 각 한 줄로</div>
+  <div class="rows">
+    <div class="row"><div class="code" style="background:var(--amber)">ASHRAE 55</div><div class="nick" style="color:var(--amber)">쾌적</div><div class="q">사람들이 쾌적하게 느낄까?</div></div>
+    <div class="row"><div class="code" style="background:var(--green)">ASHRAE 62.1</div><div class="nick" style="color:var(--green)">신선 외기</div><div class="q">건강을 유지할 외기가 충분한가?</div></div>
+    <div class="row"><div class="code" style="background:var(--accent)">ASHRAE 90.1</div><div class="nick" style="color:var(--accent)">에너지</div><div class="q">에너지를 낭비하지 않고 하고 있는가?</div></div>
+    <div class="row"><div class="code" style="background:var(--ink)">Guideline 36</div><div class="nick" style="color:var(--ink)">중재자</div><div class="q">세 가지를 모두 맞추려면 설비를 어떻게 운전해야 하는가?</div></div>
+  </div>
+  <div class="catch" style="top:6.85in;padding:11px 22px">
+    <p style="font-size:15px">쾌적과 신선 외기는 <b>더 많은</b> 조화를, 에너지는 <b>더 적은</b> 조화를 밀고 갑니다. Guideline 36이 그 논쟁을 정리하는 규칙집입니다.</p>
+  </div>
+</section>
+
+<!-- 7 ONE SHEET, FOUR OVERLAYS -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">핵심 아이디어</div>
+  <div class="title">한 장의 용지 — 모든 규칙집이 그 위에 그린다</div>
+
+  <div class="hub">
+    <h3>습공기선도</h3>
+    <div class="sub">온도 × 수분 — 단 두 축</div>
+    <svg viewBox="0 0 600 400" style="width:3.35in;height:2.23in;margin-top:6px">
+      <line x1="60" y1="350" x2="560" y2="350" stroke="#94a3b8" stroke-width="2"/>
+      <line x1="60" y1="40" x2="60" y2="350" stroke="#94a3b8" stroke-width="2"/>
+      <g stroke="#7c3aed" opacity=".85">
+        <line x1="215" y1="256.6" x2="495" y2="349.6" stroke-width="2" stroke-dasharray="3 5"/>
+        <line x1="381.2" y1="133.7" x2="560" y2="193" stroke-width="2" stroke-dasharray="3 5"/>
+        <line x1="271.2" y1="224.5" x2="560" y2="320.3" stroke-width="2.6" stroke-dasharray="9 5"/>
+      </g>
+      <polyline points="60,311 122,294 185,271 247,240 310,198 372,142 435,69 454,40"
+                fill="none" stroke="#1d4ed8" stroke-width="3"/>
+      <rect x="310" y="226" width="75" height="62" fill="rgba(180,83,9,.18)"
+            stroke="#b45309" stroke-width="2" stroke-dasharray="6 4" rx="4"/>
+      <line x1="472" y1="164" x2="360" y2="254" stroke="#047857" stroke-width="3"
+            stroke-dasharray="7 5"/>
+      <line x1="394" y1="227" x2="222" y2="259" stroke="#1d4ed8" stroke-width="3.5"/>
+      <circle cx="472" cy="164" r="8" fill="#b45309"/>
+      <circle cx="360" cy="254" r="8" fill="#047857"/>
+      <circle cx="394" cy="227" r="8" fill="#0f172a"/>
+      <circle cx="222" cy="259" r="8" fill="#1d4ed8"/>
+    </svg>
+    <div class="cap">주변의 모든 요구사항이 <b>이 같은 축</b> 위의 도형이 됩니다.</div>
+  </div>
+
+  <div class="ocard" style="left:.7in;top:2.1in"><div class="top" style="background:var(--amber)"></div>
+    <h4 style="color:var(--amber)">ASHRAE 55는 영역을 그린다</h4>
+    <p>쾌적 영역: 재실자가 수용하는 온·습도 대역. 표준의 공기측 전체가 실내를 그 안에 안착시켜야 할 영역이 됩니다.</p></div>
+
+  <div class="ocard" style="left:8.93in;top:2.1in"><div class="top" style="background:var(--green)"></div>
+    <h4 style="color:var(--green)">ASHRAE 62.1은 선 위의 점을 그린다</h4>
+    <p>요구 외기 비율이 혼합공기 점이 환기와 외기 사이 선 어디에 있어야 하는지를 정확히 고정합니다.</p></div>
+
+  <div class="ocard" style="left:.7in;top:4.2in"><div class="top" style="background:var(--accent)"></div>
+    <h4 style="color:var(--accent)">ASHRAE 90.1은 방향을 그린다</h4>
+    <p>보라 대각선은 등에너지 선입니다. 외기가 어느 쪽에 떨어지느냐가 더 싼 공급원인지, 그리고 에너지가 낭비되기 전에 점을 얼마나 밀 수 있는지를 결정합니다.</p>
+    <p style="margin-top:5px;font-size:11.5px;color:var(--faint)"><i>공기측만 — 팬 동력과 칠러 효율은 선도 밖에 있습니다.</i></p></div>
+
+  <div class="ocard" style="left:8.93in;top:4.2in"><div class="top" style="background:var(--ink)"></div>
+    <h4>Guideline 36은 경로를 그린다</h4>
+    <p>시퀀스는 점이 하루 동안 이동하는 경로입니다 — 이코노마이저, 코일, 설정값 리셋 — 외기에서 실내까지.</p></div>
+
+  <svg class="arw" style="left:4.42in;top:2.95in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:4.42in;top:5.05in" width="34" height="20"><line x1="0" y1="10" x2="24" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="34,10 22,4 22,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:2.95in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+  <svg class="arw" style="left:8.61in;top:5.05in" width="34" height="20"><line x1="10" y1="10" x2="34" y2="10" stroke="#94a3b8" stroke-width="2"/><polygon points="0,10 12,4 12,16" fill="#94a3b8"/></svg>
+
+  <div class="catch" style="top:6.3in">
+    <div class="t">올바른 방향으로 읽으십시오</div>
+    <p>선도는 네 표준이 우연히 일치하는 작은 겹침이 아닙니다. 모두가 그려지는 <b>공통 용지</b>입니다 — 영역, 선, 방향, 경로가 한 쌍의 축을 공유합니다. 넷을 모두 만족하면 도형들이 그냥 맞아떨어집니다.</p>
+  </div>
+</section>
+
+<!-- 8 ONE DOT ANSWERS ALL FOUR -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">각각을 어떻게 만족하는가</div>
+  <div class="title">선도 위 한 점이 모든 질문에 답한다</div>
+  <div class="hg" style="top:2.15in">
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--amber)"></div><h4 style="color:var(--amber)">55 — 쾌적</h4><p>쾌적 영역이 선도 위에 바로 그려집니다. 실내 점이 허용 온·습도 대역 안에 있는가 — 아니면 어느 쪽으로 벗어났는가?</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--green)"></div><h4 style="color:var(--green)">62.1 — 신선 외기</h4><p>혼합공기 점은 환기와 외기 사이 선 위에 있어야 합니다. 그 선 위의 위치가 곧 외기 비율입니다.</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--accent)"></div><h4 style="color:var(--accent)">90.1 — 에너지</h4><p>등에너지 선이 프리쿨링을 드러냅니다: 외기가 환기보다 에너지가 적으면, 이코노마이저가 기계 냉각 없이 부하를 감당할 수 있습니다.</p></div>
+    <div class="hcard" style="height:1.9in"><div class="edge" style="background:var(--ink)"></div><h4>G36 — 시퀀스</h4><p>시퀀스가 점을 쾌적 영역 안, 올바른 외기 선 위, 최저 에너지 경로로 안착시킨다는 가시적 증거.</p></div>
+  </div>
+  <div class="oneline">한 문장으로: 공기가 어디에 있는지 그리고, 어디에 있어야 하는지, 어떻게 가는지, 최소 에너지로 가는지를 보십시오.</div>
+</section>
+
+<!-- 9 COMPARISON -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">차이점</div>
+  <div class="title">트렌드 기반 BMS 대 습공기 인식 BMS</div>
+  <div class="ctable">
+    <table>
+      <tr><th>묻는 질문</th><th>트렌드 기반 BMS (현재)</th><th>습공기 인식 BMS</th></tr>
+      <tr><td>운영자가 보는 것</td><td class="trad">서로 떨어진 여러 트렌드 선, 하나씩 읽음</td><td class="psy">공기의 실제 상태를 보여주는 한 장의 그림</td></tr>
+      <tr><td>외기 혼합이 올바른가?</td><td class="trad">댐퍼 지령에서 추론</td><td class="psy">혼합공기 점은 외기–환기 선 위에 있어야 함</td></tr>
+      <tr><td>지금 프리쿨링할 수 있는가?</td><td class="trad">보통 온도만으로, 습하고 시원한 시간과 건조하고 따뜻한 시간을 오판</td><td class="psy">공기의 실제 에너지 함량으로 결정</td></tr>
+      <tr><td>습도 제어</td><td class="trad">별도 루프, 종종 냉각 루프와 충돌</td><td class="psy">열과 수분을 하나의 상태로 처리</td></tr>
+      <tr><td>고장 탐지</td><td class="trad">개별 점에 대한 경보 한계</td><td class="psy">과정 선의 형태가 코일·댐퍼·센서 고장을 드러냄</td></tr>
+      <tr><td>표준 입증</td><td class="trad">수동 확인, 보통 사후</td><td class="psy">쾌적·환기·에너지를 실시간으로 함께 판단</td></tr>
+    </table>
+  </div>
+  <div class="catch" style="top:6.35in;background:#eff6ff;border-color:#bfdbfe">
+    <p style="font-size:15.5px">기류에 습도 감지 이상을 넘는 새 현장 설비는 필요 없습니다. 차이는 건물이 이미 수집하는 측정값으로 소프트웨어가 무엇을 하느냐입니다.</p>
+  </div>
+</section>
+
+<!-- 11 WHAT IS IT WORTH -->
+<section class="slide">
+  <div class="bar"></div><div class="kick">공개된 근거</div>
+  <div class="title">얼마나 가치가 있는가 — 그리고 누구의 공인가?</div>
+
+  <div class="bandh" style="left:.7in">
+    <h5 style="color:var(--accent)">좋은 공기측 제어의 가치</h5>
+    <p>그 성과는 시퀀스의 몫입니다. 선도가 이 절감을 만들어내는 것이 아니라 — 검증 가능하게 만듭니다.</p>
+  </div>
+  <div class="bandh" style="left:6.78in">
+    <h5 style="color:var(--green)">선도 자체가 기여하는 것</h5>
+    <p>가시성: 온도 트렌드가 숨기는 놓친 시간과 고장 부위.</p>
+  </div>
+
+  <div class="srow" style="left:.7in">
+    <div class="scard"><div class="top" style="background:var(--accent)"></div>
+      <div class="big" style="color:var(--accent)">31%</div>
+      <div class="lab">기존 관행 대비 Guideline 36 시퀀스의 평균 HVAC 절감</div>
+      <div class="src">Berkeley Lab, Spawn of EnergyPlus, 중형 오피스, 2022</div>
+      <div class="attr">대부분 정압 리셋, 존 최소 풍량, 스케줄링. 선도에 해당하는 것은 이코노마이저와 SAT 로직뿐입니다.</div></div>
+    <div class="scard"><div class="top" style="background:#7c3aed"></div>
+      <div class="triple" style="color:#7c3aed">
+        <div><b>41%</b><span>난방</span></div>
+        <div><b>20%</b><span>냉각</span></div>
+        <div><b>18%</b><span>중간기</span></div>
+      </div>
+      <div class="lab">상위 설정값 리셋에 의한 계절별 절감</div>
+      <div class="src">PNNL 대형 오피스 에뮬레이터, Chicago, 2024</div>
+      <div class="attr">공기측과 플랜트측 합산 — 냉수·온수 리셋은 선도 완전히 밖에 있습니다.</div></div>
+  </div>
+
+  <div class="srow" style="left:6.78in">
+    <div class="scard"><div class="top" style="background:var(--green)"></div>
+      <div class="big" style="color:var(--green)">9%</div>
+      <div class="lab">고장 탐지에 의한 건물 전체 중앙값 절감, 범위 1–28%</div>
+      <div class="src">Berkeley Lab Smart Energy Analytics Campaign, 6,500개 건물</div>
+      <div class="attr">표준 AHU 규칙 세트(NIST <b>APAR</b>, 질량·에너지 수지 시험 28개)는 이 선도의 기하를 대수로 옮긴 것입니다. 모든 FDD를 포함하므로 상한으로 읽으십시오.</div></div>
+    <div class="scard"><div class="top" style="background:var(--amber)"></div>
+      <div class="tag">절감이 아님</div>
+      <div class="big" style="color:var(--amber)">64%</div>
+      <div class="lab">현장에서 고장으로 발견된 이코노마이저 비율</div>
+      <div class="src">New Buildings Institute; 더 넓은 조사 평균 58%</div>
+      <div class="attr">기회 규모이지 수익이 아님: 프리쿨링 자산이 이미 고장난 빈도. 선도가 알아차리는 방법입니다.</div></div>
+  </div>
+
+  <div class="p2" style="left:.7in">
+    <h4 style="color:var(--green)">절감이 실제로 나오는 곳</h4>
+    <p>• 온도만이 아니라 에너지로 결정하기 때문에, 놓치지 않고 <b>취한</b> 프리쿨링 시간.</p>
+    <p>• 62.1이 요구하는 비율로 공급되는 외기 — 조용히 두 배가 아님.</p>
+    <p>• 연중 고정 설정값 대신 부하를 따르는 급기 리셋.</p>
+    <p>• 다음 계절 민원 때가 아니라 며칠 안에 잡히는 코일·댐퍼·센서 고장.</p>
+  </div>
+
+  <div class="p2" style="left:6.78in">
+    <h4 style="color:var(--amber)">이 숫자를 정직하게 읽으십시오</h4>
+    <p>• 시뮬레이션과 현장 연구의 조치 수준 결과 — 개별 건물에 대한 보장이 아님.</p>
+    <p>• 겹치며 합산할 수 없음; 왼쪽 쌍과 오른쪽 쌍이 같은 에너지의 상당 부분을 두 번 셉니다.</p>
+    <p>• 가장 큰 절감은 최악의 출발점에서 나옵니다.</p>
+    <p>• 엔탈피 전환이 자동으로 더 나은 것은 <b>아님</b> — Taylor &amp; Cheng (2010)은 습도 센서가 드리프트하면 고정 건구가 종종 이긴다고 밝혔고, 그래서 90.1-2013의 정확도 제한이 있습니다.</p>
+  </div>
+
+  <div class="foot">선도 자체는 아무것도 절감하지 않습니다. 기회를 보이게 하고 고장을 분명하게 할 뿐입니다 — 절감은 그에 따라 동작하는 시퀀스가 기록합니다.</div>
+</section>
+
+<!-- 12 CLOSING -->
+<section class="slide dark">
+  <div class="bar"></div>
+  <div class="close-h">하나의 선도. 네 권의 규칙집.</div>
+  <div class="close-p">습공기선도는 설계 전용 산출물이 아닙니다. 건물 제어에 넣으면 익명의 설정값이 다시 보이는 물리로 바뀌고 — 쾌적, 공기질, 에너지를 운영자가 한눈에 읽을 수 있는 한 장의 그림으로 만듭니다.</div>
+  <div class="close-n">실시간으로 그릴 컴퓨팅 능력은 수년째 평범한 수준입니다. 선도를 제어실 밖으로 둔 것은 습관과 빠진 습도 센서입니다 — 물리가 아니고, 더 이상 기술도 아닙니다.</div>
+</section>
+
+</body>
+</html>

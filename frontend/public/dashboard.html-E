@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Cache-control: psy_3d.html and friends have no compiled bundle to ?v=-stamp, so the HTML itself must opt-out of browser caching. Without this, PROD users see stale UI after every deploy until they hard-refresh.  Sentinel data-cache-policy attribute is used by scripts/inject_no_cache_meta.py and deploy.sh preflight to detect missing tags.  Do NOT remove. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AHU Diagnostic HUB v31.39</title>
+    <script>
+        // =====================================================
+        // BACKEND API CONFIGURATION
+        // Auto-detects when served by the controller's Flask backend.
+        // Override example: window.API_BASE_URL = "http://192.168.1.167:5001";
+        // =====================================================
+        window.API_BASE_URL = window.location.origin;
+    </script>
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=efa85a8330">
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
+         js/dashboard/* are now pre-compiled offline into the single bundle
+         /api/assets/dashboard.compiled.js?v=5a73070ef4 (built via /app/frontend/src/dashboard/build.sh).
+         Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
+    <!-- Cache-busting version stamp on the local helper scripts.  Browsers
+         cache `.js` files aggressively (often days to weeks) which has
+         repeatedly bitten us: an operator pulls a fresh `dashboard.html`
+         and `js/i18n.js`, the HTML reloads with the new code, but the
+         browser keeps serving the OLD i18n table from disk cache.
+         The bumped query string forces a refetch when any of these files
+         change.  Bump the date stamp on a per-deploy basis whenever any
+         of `js/*.js` changes -- it's just a string the server ignores. -->
+    <script src="js/i18n.js?v=2026-08-05c"></script>
+    <script src="js/toast.js?v=2026-06-20a"></script>
+    <script src="js/docs_index.js?v=2026-06-20a"></script>
+    <script src="js/audit_log.js?v=2026-07-15a"></script>
+    <script src="js/g36_timeline.js?v=2026-06-20a"></script>
+    <script src="js/qrcode.min.js?v=2026-02-21a"></script>
+    <script>
+        /* Robust i18n fallback: try alternative paths if primary load failed */
+        if(!window.t){
+            var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
+            (function tryNext(i){
+                if(i>=_p.length||window.t)return;
+                var s=document.createElement('script');s.src=_p[i];
+                s.onload=function(){};s.onerror=function(){tryNext(i+1);};
+                document.head.appendChild(s);
+            })(0);
+        }
+    </script>
+    <script>
+        // Cache-busting query string. Changes once per page load so even if a
+        // pre-existing browser cached `js/dynamics-animation.js` against the
+        // old (cache-permissive) headers, the very next reload pulls fresh.
+        window.__BUST__ = '?v=' + Date.now();
+        // Load dynamics animation as plain JS (not via Babel)
+        (function() {
+            var s = document.createElement('script');
+            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/dynamics-animation.js' : '/assets/js/dynamics-animation.js';
+            s.src = base + window.__BUST__;
+            document.head.appendChild(s);
+        })();
+        // Load 3D weather strip engine
+        (function() {
+            var s = document.createElement('script');
+            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/psy-3d-engine.js' : '/assets/js/psy-3d-engine.js';
+            s.src = base + window.__BUST__;
+            document.head.appendChild(s);
+        })();
+        // Preload Three.js so 3D Weather tab opens instantly
+        (function() {
+            var s1 = document.createElement('script');
+            s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+            s1.onload = function() {
+                var s2 = document.createElement('script');
+                s2.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js';
+                document.head.appendChild(s2);
+            };
+            document.head.appendChild(s1);
+        })();
+    </script>
+    <style>
+        .preserve-3d { transform-style: preserve-3d; }
+        @keyframes fan-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .anim-spin { transform-origin: center; transform-box: fill-box; animation-name: fan-rotate; animation-timing-function: linear; animation-iteration-count: infinite; }
+        .anim-spin-center { transform-origin: 50px 50px; animation-name: fan-rotate; animation-timing-function: linear; animation-iteration-count: infinite; }
+        @keyframes dash-flow { from { stroke-dashoffset: 28; } to { stroke-dashoffset: 0; } }
+        .animate-airflow { stroke-dasharray: 14, 14; animation: dash-flow linear infinite; }
+        @keyframes pulse-alarm { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .anim-alarm { animation: pulse-alarm 0.8s ease-in-out infinite; }
+        @keyframes cloud-drift {
+            0% { transform: scale(var(--base-scale)) translateZ(var(--z-pos)) translateX(-8px); opacity: var(--base-op); }
+            50% { transform: scale(calc(var(--base-scale) * 1.03)) translateZ(calc(var(--z-pos) + 6px)) translateX(8px); opacity: 1; }
+            100% { transform: scale(var(--base-scale)) translateZ(var(--z-pos)) translateX(-8px); opacity: var(--base-op); }
+        }
+        .animate-puffy-cloud { animation: cloud-drift 6s ease-in-out infinite; }
+        @keyframes trace-green {
+            0% { filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.4)) drop-shadow(0 0 10px rgba(16, 185, 129, 0.2)); }
+            100% { filter: drop-shadow(0 0 15px rgba(16, 185, 129, 0.8)) drop-shadow(0 0 30px rgba(16, 185, 129, 0.6)); }
+        }
+        .trace-run { animation: trace-green 1.5s ease-in-out infinite alternate; }
+        @keyframes trace-red {
+            0% { filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.5)); }
+            100% { filter: drop-shadow(0 0 20px rgba(239, 68, 68, 1)) drop-shadow(0 0 40px rgba(239, 68, 68, 0.6)); }
+        }
+        .trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
+        @keyframes fadeGlow { 0%{opacity:0.4} 50%{opacity:1} 100%{opacity:0.4} }
+        .anim-glow { animation: fadeGlow 2s ease-in-out infinite; }
+        /* MetricBar peripheral-vision cue (Phase L.44, 2026-06-27).
+           Fires ONCE for 600 ms when a pill enters / leaves an "alarming"
+           bucket (|delta| >= 3 kJ/kg).  Runs on the wrapper div whose
+           React `key` flips between calm / alarm-up / alarm-dn, so React
+           remounts the node and the CSS animation replays naturally —
+           no JS timers, no setInterval, no extra renders. */
+        @keyframes red5-pill-pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.65), inset 0 0 0 0 rgba(255,255,255,0); }
+            40%  { box-shadow: 0 0 14px 5px rgba(99, 102, 241, 0.85), inset 0 0 6px 0 rgba(255,255,255,0.25); }
+            100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0),    inset 0 0 0 0 rgba(255,255,255,0); }
+        }
+        .red5-pill-pulse { animation: red5-pill-pulse 600ms ease-out 1; }
+        .rw-input { background:transparent; border:none; outline:none; width:50px; text-align:right; font-family:monospace; font-weight:900; font-size:11px; padding:0; }
+        .rw-input:hover { background:rgba(6,182,212,0.1); border-radius:3px; }
+        .rw-input:focus { background:rgba(6,182,212,0.2); border-radius:3px; box-shadow:0 0 0 1px rgba(6,182,212,0.5); }
+        .rw-slider { position:relative; width:36px; height:18px; border-radius:9px; cursor:pointer; transition:background 0.25s; display:inline-block; vertical-align:middle; }
+        /* Strip browser-native spinner arrows — RW pills use explicit −/+ buttons instead */
+        .no-spinner::-webkit-outer-spin-button,
+        .no-spinner::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+        .no-spinner { -moz-appearance:textfield; appearance:textfield; }
+        .rw-slider-off { background:#475569; }
+        .rw-slider-on { background:#22c55e; }
+        .rw-slider-knob { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:white; box-shadow:0 1px 3px rgba(0,0,0,0.3); transition:left 0.25s; }
+        .rw-slider-off .rw-slider-knob { left:2px; }
+        .rw-slider-on .rw-slider-knob { left:20px; }
+        /* Dark-mode DIM compensation for graphic zones.
+           When the dashboard root applies `filter: brightness(N)` for the
+           operator's dark-mode DIM slider (range 1.5..3.0), every photo /
+           3D render asset gets over-brightened and washes out — the VAV
+           box, AHU duct, CP2000 VFD photos, floor plan, etc. all look
+           ghostly compared to the light-mode reference.
+           We expose `--red5-dim` on the root container alongside the
+           brightness filter; this rule applies the multiplicative inverse
+           on the WHOLE graphic-zone composite (background + opacity +
+           mixBlendMode + img), so the final pixel output matches the
+           light-mode pixel output exactly — not just the raw <img> source.
+           Applying to a wrapping container (rather than to <img> alone) is
+           critical for the floor plan, which uses opacity-60 + multiply
+           blend with a light bg; opacity/blend modes composite BEFORE the
+           parent's filter, so correcting only the img leaves the blended
+           background pixels still doubled-bright → washed out.
+           CSS filters compose multiplicatively, so brightness(2.0) *
+           brightness(1/2.0) = brightness(1.0).  When --red5-dim is unset
+           (light mode), the calc evaluates to brightness(1) — a no-op. */
+        .red5-graphic-zone { filter: brightness(calc(1 / var(--red5-dim, 1))); }
+
+        /* ── IFRAME MODAL-ONLY MODE ──
+           Activated by ?iframe=1 URL param.  Used by mobile_mockup.html (and
+           any other embedder) to display only the AHU/VAV equipment modal as
+           iframe content.  We hide *everything* inside the React root with
+           `visibility:hidden`, then re-enable the modal subtree only.  This is
+           more robust than `display:none` on the chrome because React renders
+           modals as deep descendants — not direct root children — so we can't
+           rely on shallow selectors. */
+        body.iframe-modal-mode { overflow: hidden; background: #d0d4d8 !important; }
+        body.iframe-modal-mode #v2-auth-banner { display: none !important; }
+        /* Hide body-direct portals (G36 timeline strip, toast host, etc) */
+        body.iframe-modal-mode > *:not(#root):not(script):not(style):not(svg) { display: none !important; }
+        /* Hide the whole React tree visually — the modals will be promoted
+           to the document root via position:fixed (escapes any stacking
+           context #root might create from transform/opacity rules). */
+        body.iframe-modal-mode #root > * { visibility: hidden !important; }
+        /* Re-show the equipment modals.  AHU modal lives at z-[130], VAV at
+           z-[120] (verified in dashboard.html lines 4358 + 5194).  Promote
+           BOTH to a very high z-index so a chart-rendered canvas or any
+           other rogue element can never paint over them. */
+        body.iframe-modal-mode [class*='z-[120]'],
+        body.iframe-modal-mode [class*='z-[130]'] {
+            visibility: visible !important;
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 2147483000 !important;
+        }
+        body.iframe-modal-mode [class*='z-[120]'] *,
+        body.iframe-modal-mode [class*='z-[130]'] * { visibility: visible !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div,
+        body.iframe-modal-mode [class*='z-[130]'] > div {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            border-radius: 0 !important;
+            resize: none !important;
+        }
+        body.iframe-modal-mode [class*='z-[120]'] *,
+        body.iframe-modal-mode [class*='z-[130]'] * { visibility: visible !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div,
+        body.iframe-modal-mode [class*='z-[130]'] > div {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            border-radius: 0 !important;
+            resize: none !important;
+        }
+        /* Hide embedder-irrelevant chrome inside the modal */
+        body.iframe-modal-mode [data-testid='popout-ahu-modal-btn'],
+        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'] { display: none !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > h3 > span:last-child,
+        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
+        body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > div:last-child > button:last-child,
+        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > div:last-child > button:last-child { display: none !important; }
+        /* Hide the QR button in iframe mode too (embedder owns the share UX) */
+        body.iframe-modal-mode [data-testid='qr-phone-preview-btn'] { display: none !important; }
+
+        /* ── QR-CODE PHONE PREVIEW OVERLAY ──
+           Triggered from the QR button in any equipment modal's title bar.
+           Shows a self-contained QR code that points operators' phones at
+           `/mobile_mockup.html#/ahu/<id>` (or `#/vav/<id>`) so they can
+           scan-and-go without typing the URL.  Rendered as table-cells via
+           qrcode-generator's `createSvgTag` so we never hit a canvas
+           dependency; styled here for the dashboard's dark/light themes. */
+        #r5-qr-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(2, 6, 23, 0.78); backdrop-filter: blur(12px); display: none; align-items: center; justify-content: center; padding: 24px; }
+        #r5-qr-overlay.show { display: flex; }
+        #r5-qr-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 26px 28px 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); max-width: 320px; width: 100%; }
+        #r5-qr-card h3 { color: #facc15; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
+        #r5-qr-card p { color: #94a3b8; font-family: ui-monospace, monospace; font-size: 10px; line-height: 1.55; margin-bottom: 14px; }
+        #r5-qr-canvas { background: #fff; padding: 14px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+        #r5-qr-canvas svg { width: 100%; height: auto; display: block; }
+        #r5-qr-url { margin-top: 12px; padding: 8px 10px; background: #050912; border: 1px solid #1e293b; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 10px; color: #cbd5e1; word-break: break-all; text-align: center; }
+        #r5-qr-actions { display: flex; gap: 8px; margin-top: 14px; }
+        #r5-qr-actions button { flex: 1; padding: 8px 10px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 9px; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; transition: all 180ms ease; border: 1px solid #1e293b; }
+        #r5-qr-copy { background: #1e293b; color: #cbd5e1; }
+        #r5-qr-copy:hover { border-color: #06b6d4; color: #67e8f9; }
+        #r5-qr-close { background: #facc15; color: #0b1220; border-color: #facc15; }
+        #r5-qr-close:hover { background: #fde047; }
+    </style>
+</head>
+<body>
+    <!-- QR Phone-Preview overlay — one shared instance, hidden by default.
+         Surfaced from each equipment modal's title-bar QR button.  Pure
+         vanilla DOM (no React) so it works inside the existing modal stack
+         without prop-drilling.  Closed on backdrop click / Escape / Close. -->
+    <div id="r5-qr-overlay" role="dialog" aria-modal="true" aria-label="Phone preview QR code" data-testid="qr-phone-overlay">
+      <div id="r5-qr-card" onclick="event.stopPropagation()">
+        <h3 id="r5-qr-title">Phone Preview</h3>
+        <p id="r5-qr-subtitle">Scan with your phone to open the mobile view in this equipment.</p>
+        <div id="r5-qr-canvas"></div>
+        <div id="r5-qr-url" data-testid="qr-phone-url"></div>
+        <div id="r5-qr-actions">
+          <button id="r5-qr-copy" type="button" data-testid="qr-phone-copy-btn">Copy URL</button>
+          <button id="r5-qr-close" type="button" data-testid="qr-phone-close-btn">Close</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Self-contained QR launcher.  Called from React modal buttons via
+      // window.openQrPhonePreview('ahu' | 'vav', id).  Same-origin URL so a
+      // phone scanning the code only needs to be on the same LAN as the
+      // dashboard host — no DNS or cert fiddling required.
+      (function () {
+        var overlay = document.getElementById('r5-qr-overlay');
+        var canvas  = document.getElementById('r5-qr-canvas');
+        var urlEl   = document.getElementById('r5-qr-url');
+        var title   = document.getElementById('r5-qr-title');
+        var copyBtn = document.getElementById('r5-qr-copy');
+        var closeBtn= document.getElementById('r5-qr-close');
+
+        function buildUrl(kind, id) {
+          return window.location.origin + '/mobile_mockup.html#/' + kind + '/' + encodeURIComponent(id);
+        }
+        function render(kind, id) {
+          var url = buildUrl(kind, id);
+          title.textContent = (kind === 'ahu' ? 'AHU' : 'VAV') + ' \u00B7 ' + id + ' \u00B7 Phone Preview';
+          urlEl.textContent = url;
+          if (typeof qrcode === 'undefined') {
+            canvas.innerHTML = '<div style="padding:18px;font-family:ui-monospace,monospace;font-size:10px;color:#475569">QR library failed to load.</div>';
+            return;
+          }
+          var qr = qrcode(0, 'M');
+          qr.addData(url);
+          qr.make();
+          canvas.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+        }
+        window.openQrPhonePreview = function (kind, id) {
+          render(kind, id);
+          overlay.classList.add('show');
+        };
+        function close() { overlay.classList.remove('show'); }
+        closeBtn.addEventListener('click', close);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.classList.contains('show')) close(); });
+        copyBtn.addEventListener('click', async function () {
+          try {
+            await navigator.clipboard.writeText(urlEl.textContent || '');
+            var orig = copyBtn.textContent;
+            copyBtn.textContent = 'Copied!';
+            setTimeout(function () { copyBtn.textContent = orig; }, 1400);
+          } catch (e) {
+            copyBtn.textContent = 'Copy failed';
+            setTimeout(function () { copyBtn.textContent = 'Copy URL'; }, 1400);
+          }
+        });
+      })();
+    </script>
+    <!-- V2.0 Phase 2a/c: auth banner identical to equipment_mapper.html's so
+         operators see their sign-in state and can persist clamps/locations
+         from the live dashboard.  Collapsed pill by default so it doesn't
+         cover the dashboard's top-right controls (theme toggle, etc.);
+         expands on hover/focus to reveal email + Logout. -->
+    <div id="v2-auth-banner" style="position:fixed;top:6px;right:6px;z-index:99999;
+        font-family: 'Inter', system-ui, sans-serif; font-size: 11px;
+        padding: 3px 7px; display: none; align-items: center; gap: 6px;
+        background: rgba(15,23,42,0.78); border-radius: 999px;
+        border: 1px solid rgba(51,65,85,0.6);
+        color: #e2e8f0; opacity: 0.55;
+        transition: opacity .18s, padding .18s, background .18s, border-radius .18s;
+        cursor: default;" data-testid="dashboard-auth-banner"
+        onmouseenter="this.style.opacity='1';this.style.padding='6px 10px';this.style.background='rgba(15,23,42,0.95)';this.style.borderRadius='8px';"
+        onmouseleave="this.style.opacity='0.55';this.style.padding='3px 7px';this.style.background='rgba(15,23,42,0.78)';this.style.borderRadius='999px';">
+        <span id="v2-auth-dot" aria-hidden="true" style="width:8px;height:8px;border-radius:50%;background:#64748b;flex-shrink:0;box-shadow:0 0 0 2px rgba(15,23,42,0.6)"></span>
+        <span id="v2-weather-dot" aria-hidden="true"
+            title="Weather source: checking..."
+            data-testid="dashboard-weather-source-dot"
+            style="width:6px;height:6px;border-radius:50%;background:#475569;flex-shrink:0;
+                   box-shadow:0 0 0 1px rgba(15,23,42,0.6); cursor:help;"></span>
+        <span id="v2-auth-state" style="font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px;
+            color: #94a3b8; white-space: nowrap;" data-testid="dashboard-auth-state">checking...</span>
+        <button id="v2-auth-signin" data-testid="dashboard-signin-btn"
+            style="display: none; background:#fbbf24; color:#0f172a;
+            border: none; border-radius: 4px; padding: 4px 8px;
+            font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
+            font-size: 9px; cursor: pointer;">Sign in</button>
+        <button id="v2-auth-logout" data-testid="dashboard-logout-btn"
+            style="display: none; background: transparent; color: #94a3b8;
+            border: 1px solid #334155; border-radius: 4px; padding: 3px 7px;
+            font-size: 9px; cursor: pointer; text-transform: uppercase;
+            letter-spacing: 0.08em;">Logout</button>
+        <a id="v2-back-to-learn" href="/learn.html" data-testid="dashboard-back-to-learn"
+            title="Back to Comfort Decoded (public site)"
+            style="display: none; color: #22d3ee; text-decoration: none;
+            border: 1px solid rgba(34,211,238,.55); border-radius: 4px;
+            padding: 3px 7px; font-size: 9px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            white-space: nowrap; cursor: pointer;">&#8629; Comfort Decoded</a>
+    </div>
+    <script>
+        (function () {
+            var apiUrl = window.API_BASE_URL || window.location.origin;
+            var banner = document.getElementById('v2-auth-banner');
+            var dot    = document.getElementById('v2-auth-dot');
+            var state  = document.getElementById('v2-auth-state');
+            var btnIn  = document.getElementById('v2-auth-signin');
+            var btnOut = document.getElementById('v2-auth-logout');
+            var lnkLearn = document.getElementById('v2-back-to-learn');
+            banner.style.display = 'flex';
+            // Track hover so we can show the full email when expanded and a
+            // short label when collapsed — avoids the pill obscuring the
+            // dashboard buttons sitting underneath it in the top-right.
+            var _shortLabel = 'checking...';
+            var _fullLabel  = 'checking...';
+            var _hovered = false;
+            function applyLabel(){
+              state.textContent = _hovered ? _fullLabel : _shortLabel;
+              // Hide the inline Sign-in / Logout button in collapsed state so
+              // the pill stays tiny — they reveal on hover.
+              if (btnIn.dataset.allowed === '1')  btnIn.style.display  = _hovered ? 'inline-block' : 'none';
+              if (btnOut.dataset.allowed === '1') btnOut.style.display = _hovered ? 'inline-block' : 'none';
+              // Back-to-Learn link always available, hidden until hover.
+              lnkLearn.style.display = _hovered ? 'inline-block' : 'none';
+            }
+            banner.addEventListener('mouseenter', function(){ _hovered = true;  applyLabel(); });
+            banner.addEventListener('mouseleave', function(){ _hovered = false; applyLabel(); });
+            btnIn.addEventListener('click', function () {
+                window.location.href = '/';
+            });
+            btnOut.addEventListener('click', function () {
+                fetch(apiUrl + '/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+                    .finally(function () { window.location.href = '/'; });
+            });
+            fetch(apiUrl + '/api/auth/whoami', { credentials: 'same-origin' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (me) {
+                    var role = (me && me.role) || 'viewer';
+                    var user = (me && me.username) || '';
+                    if (role === 'editor' || role === 'admin') {
+                        _shortLabel = user ? user.toUpperCase() : role.toUpperCase();
+                        _fullLabel  = 'Signed in: ' + (user ? user + ' (' + role + ')' : role);
+                        dot.style.background = '#10b981';
+                        dot.style.boxShadow = '0 0 6px rgba(16,185,129,.6), 0 0 0 2px rgba(15,23,42,0.6)';
+                        state.style.color = '#a3e635';
+                        btnOut.dataset.allowed = '1';
+                        window.__v2_signed_in = true;
+                        window.__v2_is_admin  = (role === 'admin');
+                        window.__v2_user_email = user || null;
+                    } else {
+                        _shortLabel = 'GUEST';
+                        _fullLabel  = 'Anonymous (preview only)';
+                        dot.style.background = '#fbbf24';
+                        dot.style.boxShadow = '0 0 6px rgba(251,191,36,.5), 0 0 0 2px rgba(15,23,42,0.6)';
+                        state.style.color = '#fbbf24';
+                        btnIn.dataset.allowed = '1';
+                        window.__v2_signed_in = false;
+                        window.__v2_is_admin  = false;
+                    }
+                    /* Let interested UI islands react to the auth resolve
+                       so admin-only chips (Audit Log) can mount as soon as
+                       the GET /api/auth/whoami round-trip completes, without
+                       having to poll. */
+                    try { window.dispatchEvent(new CustomEvent('red5-auth-resolved',
+                            { detail: { signedIn: window.__v2_signed_in,
+                                        isAdmin: window.__v2_is_admin,
+                                        email: window.__v2_user_email || null } })); } catch(_) {}
+                    applyLabel();
+                })
+                .catch(function () {
+                    _shortLabel = 'ERR';
+                    _fullLabel  = 'Auth check failed';
+                    dot.style.background = '#f87171';
+                    state.style.color = '#f87171';
+                    btnIn.dataset.allowed = '1';
+                    try { window.dispatchEvent(new CustomEvent('red5-auth-resolved',
+                            { detail: { signedIn: false, isAdmin: false, email: null } })); } catch(_) {}
+                    applyLabel();
+                });
+        })();
+    </script>
+    <script>
+        // ---------------------------------------------------------------
+        // Weather-source health dot
+        // ---------------------------------------------------------------
+        // Renders a small colored dot inside the auth pill that mirrors
+        // /api/weather-health.  Lets the operator see which weather
+        // upstream is currently serving the dashboard's psy_3d page
+        // without having to open DevTools:
+        //   emerald = open-meteo (primary, free, no key)
+        //   cyan    = weatherapi.com (fallback, ≤ 7-day window)
+        //   amber   = nasa-power (last-resort, slower)
+        //   red     = all three failed
+        //   slate   = no /api/weather-proxy call observed yet
+        // Polls every 30 s so toggling weather presets in psy_3d.html
+        // reflects in the dashboard pill within roughly half a minute.
+        (function () {
+            var apiUrl = window.API_BASE_URL || window.location.origin;
+            var wdot   = document.getElementById('v2-weather-dot');
+            if (!wdot) return;
+            var PALETTE = {
+                'open-meteo':     { color: '#10b981', glow: 'rgba(16,185,129,.55)',  label: 'Open-Meteo (primary)' },
+                'weatherapi.com': { color: '#06b6d4', glow: 'rgba(6,182,212,.55)',   label: 'WeatherAPI.com (fallback)' },
+                'nasa-power':     { color: '#fbbf24', glow: 'rgba(251,191,36,.55)',  label: 'NASA POWER (last-resort)' },
+                'error':          { color: '#f87171', glow: 'rgba(248,113,113,.55)', label: 'All weather sources failed' }
+            };
+            function refresh() {
+                fetch(apiUrl + '/api/weather-health', { credentials: 'include' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (d) {
+                        if (!d) return;
+                        var src = d.source || '';
+                        var p   = PALETTE[src];
+                        if (p) {
+                            wdot.style.background = p.color;
+                            wdot.style.boxShadow  = '0 0 4px ' + p.glow + ', 0 0 0 1px rgba(15,23,42,0.6)';
+                            wdot.title = 'Weather source: ' + p.label +
+                                         (d.updated_at ? ' (updated ' + d.updated_at + ')' : '') +
+                                         (d.detail ? '\n' + d.detail : '');
+                        } else {
+                            wdot.style.background = '#475569';
+                            wdot.style.boxShadow  = '0 0 0 1px rgba(15,23,42,0.6)';
+                            wdot.title = 'Weather source: idle (no /api/weather-proxy call yet)';
+                        }
+                    })
+                    .catch(function () { /* offline -> leave slate */ });
+            }
+            refresh();
+            setInterval(refresh, 30000);
+        })();
+    </script>
+    <div id="root"></div>
+    <!-- Pre-compiled offline by /app/frontend/src/dashboard/build.sh —
+         contains the verbatim concatenation of (in order):
+            psychrometric.js, dashboard-components.js, schema-config.js,
+            preview-components.js, sun-path.js, plus all 16 modules under
+            js/dashboard/*.js.
+         Whenever any of those source files changes, re-run the build
+         script BEFORE shipping or the dashboard will run stale code.
+         The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
+    <script src="/api/assets/dashboard.compiled.js?v=a7e7877520"></script>
+</body>
+</html>

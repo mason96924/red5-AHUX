@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Psy chart — short symbols + values (preview)</title>
+<style>
+  :root {
+    --page: #0b1224;
+    --panel: #111827;
+    --ink: #e2e8f0;
+    --muted: #94a3b8;
+    --faint: #64748b;
+    --line: #334155;
+    --grid: #1e293b;
+    --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #020617;
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    min-height: 100vh;
+    padding: 28px;
+  }
+  h1 {
+    font-size: 13px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin-bottom: 10px;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 18px;
+    max-width: 960px;
+    line-height: 1.5;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px 16px;
+    max-width: 980px;
+  }
+  .chart {
+    position: relative;
+    height: 400px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background:
+      linear-gradient(to right, transparent 59px, var(--grid) 59px),
+      linear-gradient(to top, transparent 39px, var(--grid) 39px),
+      #0a1020;
+    background-size: calc(100% / 8) calc(100% / 6), calc(100% / 8) calc(100% / 6), auto;
+    overflow: hidden;
+  }
+  .chart svg { width: 100%; height: 100%; display: block; }
+  .y-label {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%) rotate(-90deg);
+    transform-origin: center;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-style: italic;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .axis-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 14px;
+    margin-top: 14px;
+    padding: 0 2px 2px;
+    min-height: 40px;
+  }
+  .x-label {
+    justify-self: center;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .28em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-style: italic;
+  }
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    height: 26px;
+    padding: 0 9px 0 7px;
+    border-radius: 999px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+  }
+  .badge .tick {
+    width: 3px;
+    height: 12px;
+    border-radius: 2px;
+    background: transparent;
+    flex: 0 0 auto;
+    align-self: center;
+  }
+  .badge .sym {
+    font-weight: 900;
+    letter-spacing: .04em;
+    color: inherit;
+  }
+  .badge .val {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #cbd5e1;
+  }
+  .badge .unit {
+    font-size: 8px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: .02em;
+  }
+  .badge.on {
+    color: #f8fafc;
+    border-color: color-mix(in srgb, var(--c) 60%, #475569);
+    background: color-mix(in srgb, var(--c) 14%, #0f172a);
+  }
+  .badge.on .tick { background: var(--c); }
+  .badge.on .sym { color: var(--c); }
+  .badge.on .val { color: #f1f5f9; }
+  .badge.on .unit { color: color-mix(in srgb, var(--c) 55%, #94a3b8); }
+
+  .callout {
+    margin-top: 14px;
+    padding: 11px 13px;
+    border-radius: 8px;
+    border: 1px solid #1e3a5f;
+    background: #0b1a2e;
+    color: #93c5fd;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .key {
+    margin-top: 18px;
+    max-width: 980px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .key div {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: #0f172a;
+  }
+  .key b { color: #e2e8f0; }
+</style>
+</head>
+<body>
+  <h1>Preview — short symbols + values</h1>
+  <p class="note">
+    Far-right chips under the chart. Format: <b>symbol · value · unit</b>.
+    Example state pinned at mixed air (MA ≈ 26.7 °C, 11.9 g/kg). Active: enthalpy + wet bulb.
+  </p>
+
+  <div class="panel">
+    <div class="chart">
+      <div class="y-label">Humidity ratio (g/kg)</div>
+      <svg viewBox="0 0 900 400" aria-hidden="true">
+        <line x1="60" y1="345" x2="820" y2="345" stroke="#64748b" stroke-width="1.5"/>
+        <line x1="60" y1="35" x2="60" y2="345" stroke="#64748b" stroke-width="1.5"/>
+        <path d="M60,305 C140,285 220,235 320,165 C420,90 520,50 620,35"
+              fill="none" stroke="#3b82f6" stroke-width="2.5"/>
+        <rect x="430" y="195" width="110" height="70" fill="rgba(180,83,9,.15)"
+              stroke="#b45309" stroke-dasharray="5 3" rx="4"/>
+        <line x1="700" y1="110" x2="520" y2="235" stroke="#047857" stroke-width="2" stroke-dasharray="6 4"/>
+        <line x1="560" y1="205" x2="280" y2="250" stroke="#60a5fa" stroke-width="2.5"/>
+        <line x1="180" y1="285" x2="780" y2="125" stroke="#f472b6" stroke-width="1.4" stroke-dasharray="7 4" opacity=".85"/>
+        <line x1="240" y1="315" x2="640" y2="80" stroke="#2dd4bf" stroke-width="1.2" stroke-dasharray="3 5" opacity=".7"/>
+        <circle cx="700" cy="110" r="6" fill="#b45309"/><text x="712" y="106" fill="#b45309" font-size="12" font-weight="800">OA</text>
+        <circle cx="520" cy="235" r="6" fill="#047857"/><text x="530" y="253" fill="#047857" font-size="12" font-weight="800">RA</text>
+        <circle cx="560" cy="205" r="6" fill="#e2e8f0"/><text x="570" y="199" fill="#e2e8f0" font-size="12" font-weight="800">MA</text>
+        <circle cx="280" cy="250" r="6" fill="#60a5fa"/><text x="250" y="243" fill="#60a5fa" font-size="12" font-weight="800">SA</text>
+      </svg>
+    </div>
+
+    <div class="axis-row">
+      <div class="x-label">Dry bulb temp (°C)</div>
+      <div class="badges" aria-label="Psychrometric property chips">
+        <span class="badge" style="--c:#a3e635" title="Absolute humidity / humidity ratio">
+          <i class="tick"></i><span class="sym">W</span><span class="val">11.9</span><span class="unit">g/kg</span>
+        </span>
+        <span class="badge" style="--c:#a78bfa" title="Vapor pressure">
+          <i class="tick"></i><span class="sym">Pv</span><span class="val">1.91</span><span class="unit">kPa</span>
+        </span>
+        <span class="badge" style="--c:#fb7185" title="Specific volume (air volume)">
+          <i class="tick"></i><span class="sym">v</span><span class="val">0.868</span><span class="unit">m³/kg</span>
+        </span>
+        <span class="badge on" style="--c:#f472b6" title="Enthalpy">
+          <i class="tick"></i><span class="sym">h</span><span class="val">57.1</span><span class="unit">kJ/kg</span>
+        </span>
+        <span class="badge" style="--c:#fbbf24" title="Dew point">
+          <i class="tick"></i><span class="sym">Tdp</span><span class="val">16.8</span><span class="unit">°C</span>
+        </span>
+        <span class="badge on" style="--c:#2dd4bf" title="Wet bulb">
+          <i class="tick"></i><span class="sym">Twb</span><span class="val">19.4</span><span class="unit">°C</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="callout">
+      Short symbols + live values at the selected/locked point (here: MA).
+      Active chips tint the symbol and keep the value bright.
+    </div>
+  </div>
+
+  <div class="key">
+    <div><b>W</b> abs humidity · g/kg</div>
+    <div><b>Pv</b> vapor pressure · kPa</div>
+    <div><b>v</b> specific volume · m³/kg</div>
+    <div><b>h</b> enthalpy · kJ/kg</div>
+    <div><b>Tdp</b> dew point · °C</div>
+    <div><b>Twb</b> wet bulb · °C</div>
+  </div>
+</body>
+</html>

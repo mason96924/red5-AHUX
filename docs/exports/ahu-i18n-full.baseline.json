@@ -1,0 +1,3498 @@
+{
+  "docs_root": "/Users/jinkim/red5/red5-ahu/frontend/public/docs",
+  "bases": [
+    "ashrae_55_reference",
+    "ashrae_90_1_reference",
+    "ashrae_g36_reference",
+    "band_guide",
+    "control_algorithms",
+    "control_strategy_insight",
+    "data_bridges_guide",
+    "data_exchange_diagram",
+    "erv_band_shift_insight",
+    "g36_reset",
+    "opt_sa_insight",
+    "psychrometric_design_workflow"
+  ],
+  "catalog": [
+    {
+      "doc": "ashrae_55_reference",
+      "en_bytes": 8292,
+      "sections_en": 13,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/ashrae_55_reference.md",
+        "zh-CN": "frontend/public/docs/ashrae_55_reference.zh-CN.md",
+        "zh-TW": "frontend/public/docs/ashrae_55_reference.zh-TW.md",
+        "ja": "frontend/public/docs/ashrae_55_reference.ja.md",
+        "ko": "frontend/public/docs/ashrae_55_reference.ko.md"
+      }
+    },
+    {
+      "doc": "ashrae_90_1_reference",
+      "en_bytes": 8236,
+      "sections_en": 17,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/ashrae_90_1_reference.md",
+        "zh-CN": "frontend/public/docs/ashrae_90_1_reference.zh-CN.md",
+        "zh-TW": "frontend/public/docs/ashrae_90_1_reference.zh-TW.md",
+        "ja": "frontend/public/docs/ashrae_90_1_reference.ja.md",
+        "ko": "frontend/public/docs/ashrae_90_1_reference.ko.md"
+      }
+    },
+    {
+      "doc": "ashrae_g36_reference",
+      "en_bytes": 10136,
+      "sections_en": 21,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/ashrae_g36_reference.md",
+        "zh-CN": "frontend/public/docs/ashrae_g36_reference.zh-CN.md",
+        "zh-TW": "frontend/public/docs/ashrae_g36_reference.zh-TW.md",
+        "ja": "frontend/public/docs/ashrae_g36_reference.ja.md",
+        "ko": "frontend/public/docs/ashrae_g36_reference.ko.md"
+      }
+    },
+    {
+      "doc": "band_guide",
+      "en_bytes": 7707,
+      "sections_en": 21,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/band_guide.md",
+        "zh-CN": "frontend/public/docs/band_guide.zh-CN.md",
+        "zh-TW": "frontend/public/docs/band_guide.zh-TW.md",
+        "ja": "frontend/public/docs/band_guide.ja.md",
+        "ko": "frontend/public/docs/band_guide.ko.md"
+      }
+    },
+    {
+      "doc": "control_algorithms",
+      "en_bytes": 53098,
+      "sections_en": 55,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/control_algorithms.md",
+        "zh-CN": "frontend/public/docs/control_algorithms.zh-CN.md",
+        "zh-TW": "frontend/public/docs/control_algorithms.zh-TW.md",
+        "ja": "frontend/public/docs/control_algorithms.ja.md",
+        "ko": "frontend/public/docs/control_algorithms.ko.md"
+      }
+    },
+    {
+      "doc": "control_strategy_insight",
+      "en_bytes": 12189,
+      "sections_en": 15,
+      "aligned": false,
+      "paths": {
+        "en": "frontend/public/docs/control_strategy_insight.md",
+        "zh-CN": "frontend/public/docs/control_strategy_insight.zh-CN.md",
+        "zh-TW": "frontend/public/docs/control_strategy_insight.zh-TW.md",
+        "ja": "frontend/public/docs/control_strategy_insight.ja.md",
+        "ko": "frontend/public/docs/control_strategy_insight.ko.md"
+      }
+    },
+    {
+      "doc": "data_bridges_guide",
+      "en_bytes": 7280,
+      "sections_en": 8,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/data_bridges_guide.md",
+        "zh-CN": "frontend/public/docs/data_bridges_guide.zh-CN.md",
+        "zh-TW": "frontend/public/docs/data_bridges_guide.zh-TW.md",
+        "ja": "frontend/public/docs/data_bridges_guide.ja.md",
+        "ko": "frontend/public/docs/data_bridges_guide.ko.md"
+      }
+    },
+    {
+      "doc": "data_exchange_diagram",
+      "en_bytes": 8825,
+      "sections_en": 6,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/data_exchange_diagram.md",
+        "zh-CN": "frontend/public/docs/data_exchange_diagram.zh-CN.md",
+        "zh-TW": "frontend/public/docs/data_exchange_diagram.zh-TW.md",
+        "ja": "frontend/public/docs/data_exchange_diagram.ja.md",
+        "ko": "frontend/public/docs/data_exchange_diagram.ko.md"
+      }
+    },
+    {
+      "doc": "erv_band_shift_insight",
+      "en_bytes": 6875,
+      "sections_en": 12,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/erv_band_shift_insight.md",
+        "zh-CN": "frontend/public/docs/erv_band_shift_insight.zh-CN.md",
+        "zh-TW": "frontend/public/docs/erv_band_shift_insight.zh-TW.md",
+        "ja": "frontend/public/docs/erv_band_shift_insight.ja.md",
+        "ko": "frontend/public/docs/erv_band_shift_insight.ko.md"
+      }
+    },
+    {
+      "doc": "g36_reset",
+      "en_bytes": 18369,
+      "sections_en": 17,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/g36_reset.md",
+        "zh-CN": "frontend/public/docs/g36_reset.zh-CN.md",
+        "zh-TW": "frontend/public/docs/g36_reset.zh-TW.md",
+        "ja": "frontend/public/docs/g36_reset.ja.md",
+        "ko": "frontend/public/docs/g36_reset.ko.md"
+      }
+    },
+    {
+      "doc": "opt_sa_insight",
+      "en_bytes": 10224,
+      "sections_en": 12,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/opt_sa_insight.md",
+        "zh-CN": "frontend/public/docs/opt_sa_insight.zh-CN.md",
+        "zh-TW": "frontend/public/docs/opt_sa_insight.zh-TW.md",
+        "ja": "frontend/public/docs/opt_sa_insight.ja.md",
+        "ko": "frontend/public/docs/opt_sa_insight.ko.md"
+      }
+    },
+    {
+      "doc": "psychrometric_design_workflow",
+      "en_bytes": 11078,
+      "sections_en": 22,
+      "aligned": true,
+      "paths": {
+        "en": "frontend/public/docs/psychrometric_design_workflow.md",
+        "zh-CN": "frontend/public/docs/psychrometric_design_workflow.zh-CN.md",
+        "zh-TW": "frontend/public/docs/psychrometric_design_workflow.zh-TW.md",
+        "ja": "frontend/public/docs/psychrometric_design_workflow.ja.md",
+        "ko": "frontend/public/docs/psychrometric_design_workflow.ko.md"
+      }
+    }
+  ],
+  "ui_keys": [
+    {
+      "section": "Common / Shared",
+      "key": "dashboard",
+      "en": "Dashboard",
+      "zh-CN": "仪表盘",
+      "zh-TW": "儀表板",
+      "ja": "ダッシュボード",
+      "ko": "대시보드"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "configuration",
+      "en": "Configuration",
+      "zh-CN": "配置工具",
+      "zh-TW": "配置工具",
+      "ja": "設定ツール",
+      "ko": "구성 도구"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "save",
+      "en": "Save",
+      "zh-CN": "保存",
+      "zh-TW": "儲存",
+      "ja": "保存",
+      "ko": "저장"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "cancel",
+      "en": "Cancel",
+      "zh-CN": "取消",
+      "zh-TW": "取消",
+      "ja": "キャンセル",
+      "ko": "취소"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "delete_",
+      "en": "Delete",
+      "zh-CN": "删除",
+      "zh-TW": "刪除",
+      "ja": "削除",
+      "ko": "삭제"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "upload",
+      "en": "Upload",
+      "zh-CN": "上传",
+      "zh-TW": "上傳",
+      "ja": "アップロード",
+      "ko": "업로드"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "download",
+      "en": "Download",
+      "zh-CN": "下载",
+      "zh-TW": "下載",
+      "ja": "ダウンロード",
+      "ko": "다운로드"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "export_",
+      "en": "Export",
+      "zh-CN": "导出",
+      "zh-TW": "匯出",
+      "ja": "エクスポート",
+      "ko": "내보내기"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "import_",
+      "en": "Import",
+      "zh-CN": "导入",
+      "zh-TW": "匯入",
+      "ja": "インポート",
+      "ko": "가져오기"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "settings",
+      "en": "Settings",
+      "zh-CN": "设置",
+      "zh-TW": "設定",
+      "ja": "設定",
+      "ko": "설정"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "loading",
+      "en": "Loading...",
+      "zh-CN": "加载中...",
+      "zh-TW": "載入中...",
+      "ja": "読み込み中...",
+      "ko": "로딩 중..."
+    },
+    {
+      "section": "Common / Shared",
+      "key": "search",
+      "en": "Search",
+      "zh-CN": "搜索",
+      "zh-TW": "搜尋",
+      "ja": "検索",
+      "ko": "검색"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "close",
+      "en": "Close",
+      "zh-CN": "关闭",
+      "zh-TW": "關閉",
+      "ja": "閉じる",
+      "ko": "닫기"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "confirm",
+      "en": "Confirm",
+      "zh-CN": "确认",
+      "zh-TW": "確認",
+      "ja": "確認",
+      "ko": "확인"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "reload",
+      "en": "Reload",
+      "zh-CN": "重新加载",
+      "zh-TW": "重新載入",
+      "ja": "再読み込み",
+      "ko": "새로고침"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "or_",
+      "en": "or",
+      "zh-CN": "或",
+      "zh-TW": "或",
+      "ja": "または",
+      "ko": "또는"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "yes",
+      "en": "Yes",
+      "zh-CN": "是",
+      "zh-TW": "是",
+      "ja": "はい",
+      "ko": "예"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "no_",
+      "en": "No",
+      "zh-CN": "否",
+      "zh-TW": "否",
+      "ja": "いいえ",
+      "ko": "아니요"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "back",
+      "en": "Back",
+      "zh-CN": "返回",
+      "zh-TW": "返回",
+      "ja": "戻る",
+      "ko": "뒤로"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "next",
+      "en": "Next",
+      "zh-CN": "下一步",
+      "zh-TW": "下一步",
+      "ja": "次へ",
+      "ko": "다음"
+    },
+    {
+      "section": "Common / Shared",
+      "key": "config",
+      "en": "Config",
+      "zh-CN": "设置",
+      "zh-TW": "設定",
+      "ja": "設定",
+      "ko": "설정"
+    },
+    {
+      "section": "HVAC Core Terms",
+      "key": "ahu_diagnostic_hub",
+      "en": "AHU Diagnostic Hub",
+      "zh-CN": "空调机组诊断中心",
+      "zh-TW": "空調機組診斷中心",
+      "ja": "空調機診断ハブ",
+      "ko": "공조기 진단 허브"
+    },
+    {
+      "section": "HVAC Core Terms",
+      "key": "by_delta_controls",
+      "en": "By DIBT",
+      "zh-CN": "By DIBT",
+      "zh-TW": "By DIBT",
+      "ja": "By DIBT",
+      "ko": "By DIBT"
+    },
+    {
+      "section": "HVAC Core Terms",
+      "key": "oa",
+      "en": "OA",
+      "zh-CN": "新风",
+      "zh-TW": "外氣",
+      "ja": "外気",
+      "ko": "외기"
+    },
+    {
+      "section": "HVAC Core Terms",
+      "key": "sa",
+      "en": "SA",
+      "zh-CN": "送风",
+      "zh-TW": "送風",
+      "ja": "給気",
+      "ko": "급기"
+    },
+    {
+      "section": "HVAC Core Terms",
+      "key": "ra",
+      "en": "RA",
+      "zh-CN": "回风",
+      "zh-TW": "回風",
+      "ja": "還気",
+      "ko": "환기"
+    },
+    {
+      "section": "HVAC Core Terms",
+      "key": "comfort",
+      "en": "Comfort",
+      "zh-CN": "舒适区",
+      "zh-TW": "舒適區",
+      "ja": "快適域",
+      "ko": "적정구역"
+    },
+    {
+      "section": "HVAC Core Terms",
+      "key": "comfort_zone",
+      "en": "Comfort Zone",
+      "zh-CN": "舒适区",
+      "zh-TW": "舒適區",
+      "ja": "快適域",
+      "ko": "적정구역"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "psych_tab",
+      "en": "Psych",
+      "zh-CN": "空气线图",
+      "zh-TW": "空氣線圖",
+      "ja": "空気線図",
+      "ko": "공기선도"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "psychrometric_chart",
+      "en": "Psychrometric Chart",
+      "zh-CN": "空气线图",
+      "zh-TW": "空氣線圖",
+      "ja": "空気線図",
+      "ko": "공기선도"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "psy_weather_strip",
+      "en": "Psychrometric Weather Strip",
+      "zh-CN": "空气线图天气数据",
+      "zh-TW": "空氣線圖天氣資料",
+      "ja": "空気線図気象データ",
+      "ko": "공기선도 날씨 데이터"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "dry_bulb_temp",
+      "en": "Dry Bulb Temp",
+      "zh-CN": "干球温度",
+      "zh-TW": "乾球溫度",
+      "ja": "乾球温度",
+      "ko": "건구 온도"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "humidity_ratio",
+      "en": "Humidity Ratio",
+      "zh-CN": "含湿量",
+      "zh-TW": "含濕量",
+      "ja": "絶対湿度",
+      "ko": "절대 습도"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "dew_point",
+      "en": "Dew Point",
+      "zh-CN": "露点",
+      "zh-TW": "露點",
+      "ja": "露点",
+      "ko": "노점"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "saturation",
+      "en": "Saturation",
+      "zh-CN": "饱和凝结",
+      "zh-TW": "飽和凝結",
+      "ja": "飽和凝結",
+      "ko": "포화응축"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "saturation_line",
+      "en": "Saturation Line",
+      "zh-CN": "饱和线",
+      "zh-TW": "飽和線",
+      "ja": "飽和線",
+      "ko": "포화선"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "saturation_point",
+      "en": "Saturation Point",
+      "zh-CN": "饱和点",
+      "zh-TW": "飽和點",
+      "ja": "飽和点",
+      "ko": "포화점"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "enthalpy",
+      "en": "Enthalpy",
+      "zh-CN": "焓值",
+      "zh-TW": "焓值",
+      "ja": "エンタルピー",
+      "ko": "엔탈피"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "latent",
+      "en": "Latent",
+      "zh-CN": "潜热",
+      "zh-TW": "潛熱",
+      "ja": "潜熱",
+      "ko": "잠열"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "sensible",
+      "en": "Sensible",
+      "zh-CN": "显热",
+      "zh-TW": "顯熱",
+      "ja": "顕熱",
+      "ko": "현열"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "natural_ventilation",
+      "en": "Natural Ventilation",
+      "zh-CN": "自然通风",
+      "zh-TW": "自然通風",
+      "ja": "自然換気",
+      "ko": "자연 환기"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "evaporative",
+      "en": "Evaporative",
+      "zh-CN": "蒸发冷却",
+      "zh-TW": "蒸發冷卻",
+      "ja": "蒸発冷却",
+      "ko": "증발 냉각"
+    },
+    {
+      "section": "Psychrometric / Chart Terms",
+      "key": "rh_sweet_spot",
+      "en": "40-60% RH",
+      "zh-CN": "40-60% 相对湿度",
+      "zh-TW": "40-60% 相對濕度",
+      "ja": "40-60% 相対湿度",
+      "ko": "40-60% 상대습도"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "mixed_air",
+      "en": "Mixed Air",
+      "zh-CN": "混合空气",
+      "zh-TW": "混合空氣",
+      "ja": "混合空気",
+      "ko": "혼합 공기"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "oa_fraction",
+      "en": "OA fraction",
+      "zh-CN": "新风比例",
+      "zh-TW": "新風比例",
+      "ja": "外気混合率",
+      "ko": "외기 비율"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "oa_damper",
+      "en": "OA damper",
+      "zh-CN": "新风风阀",
+      "zh-TW": "新風風閥",
+      "ja": "外気ダンパ",
+      "ko": "외기 댐퍼"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "off_line",
+      "en": "Off mixing line",
+      "zh-CN": "偏离混合线",
+      "zh-TW": "偏離混合線",
+      "ja": "混合線からの偏差",
+      "ko": "혼합선 이탈"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_basis_measured",
+      "en": "measured (MAT + MAH)",
+      "zh-CN": "实测 (MAT + MAH)",
+      "zh-TW": "實測 (MAT + MAH)",
+      "ja": "実測 (MAT + MAH)",
+      "ko": "실측 (MAT + MAH)"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_basis_mat",
+      "en": "derived from MAT",
+      "zh-CN": "由 MAT 推算",
+      "zh-TW": "由 MAT 推算",
+      "ja": "MAT から推算",
+      "ko": "MAT 기반 추정"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_basis_mat_damper",
+      "en": "MAT + damper (OA≈RA)",
+      "zh-CN": "MAT + 风阀 (OA≈RA)",
+      "zh-TW": "MAT + 風閥 (OA≈RA)",
+      "ja": "MAT + ダンパ (OA≈RA)",
+      "ko": "MAT + 댐퍼 (OA≈RA)"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_basis_damper",
+      "en": "damper only — computed, not measured",
+      "zh-CN": "仅风阀 — 计算值，非实测",
+      "zh-TW": "僅風閥 — 計算值，非實測",
+      "ja": "ダンパのみ — 計算値、実測ではない",
+      "ko": "댐퍼만 — 계산값, 실측 아님"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_flag_mat_outside_oa_ra",
+      "en": "MAT outside OA–RA range — sensor or stratification",
+      "zh-CN": "MAT 超出 OA–RA 范围 — 传感器或气流分层",
+      "zh-TW": "MAT 超出 OA–RA 範圍 — 感測器或氣流分層",
+      "ja": "MAT が OA–RA 範囲外 — センサまたは層状化",
+      "ko": "MAT가 OA–RA 범위 밖 — 센서 또는 성층화"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_flag_damper_mismatch",
+      "en": "Damper disagrees with measured mix",
+      "zh-CN": "风阀指令与实测混合不一致",
+      "zh-TW": "風閥指令與實測混合不一致",
+      "ja": "ダンパ指令と実測混合が不一致",
+      "ko": "댐퍼 지령과 실측 혼합 불일치"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_flag_off_mixing_line",
+      "en": "MA off the mixing line",
+      "zh-CN": "MA 偏离混合线",
+      "zh-TW": "MA 偏離混合線",
+      "ja": "MA が混合線から外れている",
+      "ko": "MA가 혼합선에서 벗어남"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "ma_flag_oa_ra_temp_too_close",
+      "en": "OA≈RA — fraction taken from damper",
+      "zh-CN": "OA≈RA — 比例取自风阀",
+      "zh-TW": "OA≈RA — 比例取自風閥",
+      "ja": "OA≈RA — 比率はダンパから",
+      "ko": "OA≈RA — 비율은 댐퍼 기준"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_mixing",
+      "en": "Mixing (OA→MA)",
+      "zh-CN": "混合 (OA→MA)",
+      "zh-TW": "混合 (OA→MA)",
+      "ja": "混合 (OA→MA)",
+      "ko": "혼합 (OA→MA)"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_coil",
+      "en": "Coil (MA→SA)",
+      "zh-CN": "盘管 (MA→SA)",
+      "zh-TW": "盤管 (MA→SA)",
+      "ja": "コイル (MA→SA)",
+      "ko": "코일 (MA→SA)"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_exchange",
+      "en": "Exchange (OA→SA)",
+      "zh-CN": "焓变 (OA→SA)",
+      "zh-TW": "焓變 (OA→SA)",
+      "ja": "エンタルピ変化 (OA→SA)",
+      "ko": "엔탈피 변화 (OA→SA)"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_absorption",
+      "en": "Absorption (SA→RA)",
+      "zh-CN": "吸热 (SA→RA)",
+      "zh-TW": "吸熱 (SA→RA)",
+      "ja": "吸熱 (SA→RA)",
+      "ko": "흡수 (SA→RA)"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_free_dilution",
+      "en": "free dilution by the dampers",
+      "zh-CN": "风阀带来的免费稀释",
+      "zh-TW": "風閥帶來的免費稀釋",
+      "ja": "ダンパによる無償の希釈",
+      "ko": "댐퍼에 의한 무상 희석"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_coil_duty",
+      "en": "what the coil actually paid for",
+      "zh-CN": "盘管实际承担的负荷",
+      "zh-TW": "盤管實際承擔的負荷",
+      "ja": "コイルが実際に負担した熱量",
+      "ko": "코일이 실제로 부담한 열량"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_room_load",
+      "en": "load the room added back",
+      "zh-CN": "房间回加的负荷",
+      "zh-TW": "房間回加的負荷",
+      "ja": "室が加えた負荷",
+      "ko": "실내가 더한 부하"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_mix_plus_coil",
+      "en": "mixing + coil",
+      "zh-CN": "混合 + 盘管",
+      "zh-TW": "混合 + 盤管",
+      "ja": "混合 + コイル",
+      "ko": "혼합 + 코일"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_basis_mat",
+      "en": "MA from MAT — humidity inferred from the mixing line, not measured",
+      "zh-CN": "MA 来自 MAT — 含湿量按混合线推算，非实测",
+      "zh-TW": "MA 來自 MAT — 含濕量按混合線推算，非實測",
+      "ja": "MA は MAT — 絶対湿度は混合線から推算、実測ではない",
+      "ko": "MA는 MAT 기반 — 절대습도는 혼합선에서 추정, 실측 아님"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_basis_mat_damper",
+      "en": "MA from MAT — humidity inferred from the damper (OA≈RA)",
+      "zh-CN": "MA 来自 MAT — 含湿量按风阀推算 (OA≈RA)",
+      "zh-TW": "MA 來自 MAT — 含濕量按風閥推算 (OA≈RA)",
+      "ja": "MA は MAT — 絶対湿度はダンパから推算 (OA≈RA)",
+      "ko": "MA는 MAT 기반 — 절대습도는 댐퍼로 추정 (OA≈RA)"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "pill_basis_damper",
+      "en": "MA modelled from the damper command — this split is not measured",
+      "zh-CN": "MA 由风阀指令建模 — 此拆分非实测",
+      "zh-TW": "MA 由風閥指令建模 — 此拆分非實測",
+      "ja": "MA はダンパ指令からのモデル値 — この内訳は実測ではない",
+      "ko": "MA는 댐퍼 지령 기반 모델값 — 이 분리는 실측 아님"
+    },
+    {
+      "section": "Mixed air (MA) + mixing-box cross-checks",
+      "key": "layer_mix_coil",
+      "en": "Mix / Coil",
+      "zh-CN": "混合/盘管",
+      "zh-TW": "混合/盤管",
+      "ja": "混合/コイル",
+      "ko": "혼합/코일"
+    },
+    {
+      "section": "Setpoints",
+      "key": "t_setpoint",
+      "en": "T Setpoint",
+      "zh-CN": "温度设定点",
+      "zh-TW": "溫度設定點",
+      "ja": "温度設定値",
+      "ko": "온도 설정점"
+    },
+    {
+      "section": "Setpoints",
+      "key": "w_setpoint",
+      "en": "W Setpoint",
+      "zh-CN": "含湿量设定点",
+      "zh-TW": "含濕量設定點",
+      "ja": "絶対湿度設定値",
+      "ko": "절대습도 설정점"
+    },
+    {
+      "section": "Setpoints",
+      "key": "rh_setpoint",
+      "en": "RH Setpoint",
+      "zh-CN": "相对湿度设定点",
+      "zh-TW": "相對濕度設定點",
+      "ja": "相対湿度設定値",
+      "ko": "비교습도 설정점"
+    },
+    {
+      "section": "Seasons",
+      "key": "spring",
+      "en": "Spring",
+      "zh-CN": "春季",
+      "zh-TW": "春季",
+      "ja": "春",
+      "ko": "봄"
+    },
+    {
+      "section": "Seasons",
+      "key": "summer",
+      "en": "Summer",
+      "zh-CN": "夏季",
+      "zh-TW": "夏季",
+      "ja": "夏",
+      "ko": "여름"
+    },
+    {
+      "section": "Seasons",
+      "key": "autumn",
+      "en": "Autumn",
+      "zh-CN": "秋季",
+      "zh-TW": "秋季",
+      "ja": "秋",
+      "ko": "가을"
+    },
+    {
+      "section": "Seasons",
+      "key": "winter",
+      "en": "Winter",
+      "zh-CN": "冬季",
+      "zh-TW": "冬季",
+      "ja": "冬",
+      "ko": "겨울"
+    },
+    {
+      "section": "Seasons",
+      "key": "seasonal",
+      "en": "Seasonal",
+      "zh-CN": "季节",
+      "zh-TW": "季節",
+      "ja": "季節",
+      "ko": "계절"
+    },
+    {
+      "section": "Landing Page",
+      "key": "building_diag_cmd_center",
+      "en": "Building Diagnostic Command Center",
+      "zh-CN": "建筑诊断指挥中心",
+      "zh-TW": "建築診斷指揮中心",
+      "ja": "ビル診断コマンドセンター",
+      "ko": "빌딩 진단 커맨드 센터"
+    },
+    {
+      "section": "Landing Page",
+      "key": "dashboard_desc",
+      "en": "AHU Diagnostic HUB with real-time psychrometric chart, VAV terminals, and floor plan mapping",
+      "zh-CN": "空调机组诊断中心，含实时空气线图、VAV 终端和平面图映射",
+      "zh-TW": "空調機組診斷中心，含即時空氣線圖、VAV 終端和平面圖映射",
+      "ja": "空調機診断ハブ：リアルタイム空気線図、VAVターミナル、フロアプランマッピング",
+      "ko": "공조기 진단 허브: 실시간 공기선도, VAV 터미널, 평면도 매핑"
+    },
+    {
+      "section": "Landing Page",
+      "key": "config_desc",
+      "en": "Equipment Schema Mapper, Points Editor, Floor Plan Alignment, and 3D asset management",
+      "zh-CN": "设备模式映射器、点位编辑器、平面图对齐和 3D 资产管理",
+      "zh-TW": "設備模式映射器、點位編輯器、平面圖對齊和 3D 資產管理",
+      "ja": "機器スキーママッパー、ポイントエディタ、フロアプラン配置、3D アセット管理",
+      "ko": "장비 스키마 매퍼, 포인트 편집기, 평면도 정렬, 3D 자산 관리"
+    },
+    {
+      "section": "Landing Page",
+      "key": "set_pw_prompt",
+      "en": "Set a password to access configuration tools",
+      "zh-CN": "设置密码以访问配置工具",
+      "zh-TW": "設定密碼以存取配置工具",
+      "ja": "設定ツールにアクセスするためのパスワードを設定",
+      "ko": "구성 도구 접근을 위한 비밀번호 설정"
+    },
+    {
+      "section": "Landing Page",
+      "key": "enter_pw_prompt",
+      "en": "Enter password for full access",
+      "zh-CN": "输入密码以完全访问",
+      "zh-TW": "輸入密碼以完全存取",
+      "ja": "フルアクセスのためのパスワードを入力",
+      "ko": "전체 접근을 위한 비밀번호 입력"
+    },
+    {
+      "section": "Landing Page",
+      "key": "set_your_password",
+      "en": "Set your password",
+      "zh-CN": "设置密码",
+      "zh-TW": "設定密碼",
+      "ja": "パスワードを設定",
+      "ko": "비밀번호 설정"
+    },
+    {
+      "section": "Landing Page",
+      "key": "enter_password",
+      "en": "Enter password",
+      "zh-CN": "输入密码",
+      "zh-TW": "輸入密碼",
+      "ja": "パスワードを入力",
+      "ko": "비밀번호 입력"
+    },
+    {
+      "section": "Landing Page",
+      "key": "incorrect_password",
+      "en": "Incorrect password",
+      "zh-CN": "密码错误",
+      "zh-TW": "密碼錯誤",
+      "ja": "パスワードが正しくありません",
+      "ko": "비밀번호가 올바르지 않습니다"
+    },
+    {
+      "section": "Landing Page",
+      "key": "set_password_enter",
+      "en": "Set Password & Enter",
+      "zh-CN": "设置密码并进入",
+      "zh-TW": "設定密碼並進入",
+      "ja": "パスワード設定して入場",
+      "ko": "비밀번호 설정 후 입장"
+    },
+    {
+      "section": "Landing Page",
+      "key": "unlock",
+      "en": "Unlock",
+      "zh-CN": "解锁",
+      "zh-TW": "解鎖",
+      "ja": "ロック解除",
+      "ko": "잠금 해제"
+    },
+    {
+      "section": "Landing Page",
+      "key": "skip_to_dashboard",
+      "en": "Skip to Dashboard",
+      "zh-CN": "跳至仪表盘",
+      "zh-TW": "跳至儀表板",
+      "ja": "ダッシュボードへ",
+      "ko": "대시보드로 이동"
+    },
+    {
+      "section": "Dashboard",
+      "key": "diagnostics_console",
+      "en": "Diagnostics Console",
+      "zh-CN": "诊断控制台",
+      "zh-TW": "診斷控制台",
+      "ja": "診断コンソール",
+      "ko": "진단 콘솔"
+    },
+    {
+      "section": "Dashboard",
+      "key": "diag",
+      "en": "Diag",
+      "zh-CN": "诊断",
+      "zh-TW": "診斷",
+      "ja": "診断",
+      "ko": "진단"
+    },
+    {
+      "section": "Dashboard",
+      "key": "dynam_tab",
+      "en": "Dynam",
+      "zh-CN": "动态",
+      "zh-TW": "動態",
+      "ja": "動態",
+      "ko": "동적"
+    },
+    {
+      "section": "Dashboard",
+      "key": "dynamics_animation",
+      "en": "Dynamics Animation",
+      "zh-CN": "动态动画",
+      "zh-TW": "動態動畫",
+      "ja": "動態アニメーション",
+      "ko": "동적 애니메이션"
+    },
+    {
+      "section": "Dashboard",
+      "key": "weather_3d",
+      "en": "3D Weather Strip",
+      "zh-CN": "3D 天气条",
+      "zh-TW": "3D 天氣條",
+      "ja": "3D 気象ストリップ",
+      "ko": "3D 날씨 스트립"
+    },
+    {
+      "section": "Dashboard",
+      "key": "weather_3d_short",
+      "en": "3D Wx",
+      "zh-CN": "3D 天气",
+      "zh-TW": "3D 天氣",
+      "ja": "3D 気象",
+      "ko": "3D 날씨"
+    },
+    {
+      "section": "Dashboard",
+      "key": "axis_settings",
+      "en": "Axis Settings",
+      "zh-CN": "坐标轴设置",
+      "zh-TW": "座標軸設定",
+      "ja": "軸設定",
+      "ko": "축 설정"
+    },
+    {
+      "section": "Dashboard",
+      "key": "min_temp",
+      "en": "Min Temp",
+      "zh-CN": "最低温度",
+      "zh-TW": "最低溫度",
+      "ja": "最低温度",
+      "ko": "최저 온도"
+    },
+    {
+      "section": "Dashboard",
+      "key": "max_temp",
+      "en": "Max Temp",
+      "zh-CN": "最高温度",
+      "zh-TW": "最高溫度",
+      "ja": "最高温度",
+      "ko": "최고 온도"
+    },
+    {
+      "section": "Dashboard",
+      "key": "weather",
+      "en": "Weather",
+      "zh-CN": "天气",
+      "zh-TW": "天氣",
+      "ja": "天気",
+      "ko": "날씨"
+    },
+    {
+      "section": "Dashboard",
+      "key": "set_location",
+      "en": "Set Location",
+      "zh-CN": "设置位置",
+      "zh-TW": "設定位置",
+      "ja": "位置を設定",
+      "ko": "위치 설정"
+    },
+    {
+      "section": "Dashboard",
+      "key": "location_name",
+      "en": "Location Name",
+      "zh-CN": "位置名称",
+      "zh-TW": "位置名稱",
+      "ja": "地点名",
+      "ko": "장소 이름"
+    },
+    {
+      "section": "Dashboard",
+      "key": "fetch_weather_data",
+      "en": "Fetch Weather Data",
+      "zh-CN": "获取天气数据",
+      "zh-TW": "獲取天氣資料",
+      "ja": "気象データ取得",
+      "ko": "실데이터 가져오기"
+    },
+    {
+      "section": "Dashboard",
+      "key": "tomorrow",
+      "en": "Tomorrow",
+      "zh-CN": "明天",
+      "zh-TW": "明天",
+      "ja": "明日",
+      "ko": "내일"
+    },
+    {
+      "section": "Dashboard",
+      "key": "diagnostic",
+      "en": "Diagnostic",
+      "zh-CN": "诊断",
+      "zh-TW": "診斷",
+      "ja": "診断",
+      "ko": "진단"
+    },
+    {
+      "section": "Dashboard",
+      "key": "vav_terminal_hub",
+      "en": "VAV Terminal HUB",
+      "zh-CN": "VAV 终端中心",
+      "zh-TW": "VAV 終端中心",
+      "ja": "VAV ターミナルハブ",
+      "ko": "VAV 터미널 허브"
+    },
+    {
+      "section": "Dashboard",
+      "key": "trends",
+      "en": "Trends",
+      "zh-CN": "趋势",
+      "zh-TW": "趨勢",
+      "ja": "トレンド",
+      "ko": "트렌드"
+    },
+    {
+      "section": "Dashboard",
+      "key": "trends_select_ahu",
+      "en": "Trends (select AHU)",
+      "zh-CN": "趋势（选择 AHU）",
+      "zh-TW": "趨勢（選擇 AHU）",
+      "ja": "トレンド（AHU を選択）",
+      "ko": "트렌드 (AHU 선택)"
+    },
+    {
+      "section": "Dashboard",
+      "key": "floor_plan",
+      "en": "Floor Plan",
+      "zh-CN": "平面图",
+      "zh-TW": "平面圖",
+      "ja": "フロアプラン",
+      "ko": "평면도"
+    },
+    {
+      "section": "Dashboard",
+      "key": "click_map_vavs",
+      "en": "Click to map VAVs on Floor Plan",
+      "zh-CN": "点击在平面图上映射 VAV",
+      "zh-TW": "點擊在平面圖上映射 VAV",
+      "ja": "フロアプランで VAV をマッピング",
+      "ko": "평면도에서 VAV 매핑 클릭"
+    },
+    {
+      "section": "Dashboard",
+      "key": "latitude",
+      "en": "Latitude",
+      "zh-CN": "纬度",
+      "zh-TW": "緯度",
+      "ja": "緯度",
+      "ko": "위도"
+    },
+    {
+      "section": "Dashboard",
+      "key": "longitude",
+      "en": "Longitude",
+      "zh-CN": "经度",
+      "zh-TW": "經度",
+      "ja": "経度",
+      "ko": "경도"
+    },
+    {
+      "section": "Dashboard",
+      "key": "telemetry_status",
+      "en": "Telemetry Status",
+      "zh-CN": "遥测状态",
+      "zh-TW": "遙測狀態",
+      "ja": "テレメトリ状態",
+      "ko": "텔레메트리 상태"
+    },
+    {
+      "section": "Dashboard",
+      "key": "no_data",
+      "en": "No data",
+      "zh-CN": "无数据",
+      "zh-TW": "無資料",
+      "ja": "データなし",
+      "ko": "데이터 없음"
+    },
+    {
+      "section": "Dashboard",
+      "key": "live",
+      "en": "Live",
+      "zh-CN": "实时",
+      "zh-TW": "即時",
+      "ja": "ライブ",
+      "ko": "실시간"
+    },
+    {
+      "section": "Dashboard",
+      "key": "offline",
+      "en": "Offline",
+      "zh-CN": "离线",
+      "zh-TW": "離線",
+      "ja": "オフライン",
+      "ko": "오프라인"
+    },
+    {
+      "section": "Dashboard",
+      "key": "asset_search",
+      "en": "Asset Search",
+      "zh-CN": "资产搜索",
+      "zh-TW": "資產搜尋",
+      "ja": "資産検索",
+      "ko": "자산 검색"
+    },
+    {
+      "section": "Dashboard",
+      "key": "toggle_givoni",
+      "en": "Givoni Engine",
+      "zh-CN": "Givoni 引擎",
+      "zh-TW": "Givoni 引擎",
+      "ja": "Givoni エンジン",
+      "ko": "Givoni 엔진"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "equipment_config_tool",
+      "en": "Equipment Configuration Tool",
+      "zh-CN": "设备配置工具",
+      "zh-TW": "設備配置工具",
+      "ja": "機器設定ツール",
+      "ko": "장비 구성 도구"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "sensors",
+      "en": "Sensors",
+      "zh-CN": "传感器",
+      "zh-TW": "感測器",
+      "ja": "センサー",
+      "ko": "센서"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "aligners",
+      "en": "Aligners",
+      "zh-CN": "对齐器",
+      "zh-TW": "對齊器",
+      "ja": "アライナー",
+      "ko": "얼라이너"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "points_editor",
+      "en": "Points Editor",
+      "zh-CN": "点位编辑器",
+      "zh-TW": "點位編輯器",
+      "ja": "ポイントエディタ",
+      "ko": "포인트 편집기"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "equipment_category",
+      "en": "Equipment Category",
+      "zh-CN": "设备类别",
+      "zh-TW": "設備類別",
+      "ja": "機器カテゴリ",
+      "ko": "장비 카테고리"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "add_point",
+      "en": "Add Point",
+      "zh-CN": "添加点位",
+      "zh-TW": "新增點位",
+      "ja": "ポイント追加",
+      "ko": "포인트 추가"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "add_row",
+      "en": "Add Row",
+      "zh-CN": "添加行",
+      "zh-TW": "新增行",
+      "ja": "行を追加",
+      "ko": "행 추가"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "delete_row",
+      "en": "Delete Row",
+      "zh-CN": "删除行",
+      "zh-TW": "刪除行",
+      "ja": "行を削除",
+      "ko": "행 삭제"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "duplicate",
+      "en": "Duplicate",
+      "zh-CN": "复制",
+      "zh-TW": "複製",
+      "ja": "複製",
+      "ko": "복제"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "new_aligner",
+      "en": "New Aligner",
+      "zh-CN": "新建对齐器",
+      "zh-TW": "新增對齊器",
+      "ja": "新規アライナー",
+      "ko": "새 얼라이너"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "save_json",
+      "en": "Save JSON",
+      "zh-CN": "保存 JSON",
+      "zh-TW": "儲存 JSON",
+      "ja": "JSON 保存",
+      "ko": "JSON 저장"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "load_json",
+      "en": "Load JSON",
+      "zh-CN": "加载 JSON",
+      "zh-TW": "載入 JSON",
+      "ja": "JSON 読込",
+      "ko": "JSON 불러오기"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "save_to_controller",
+      "en": "Save to Virtual Controller",
+      "zh-CN": "保存到虚拟控制器",
+      "zh-TW": "儲存至虛擬控制器",
+      "ja": "仮想コントローラに保存",
+      "ko": "가상 컨트롤러에 저장"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "save_to_controller_short",
+      "en": "Save → Controller",
+      "zh-CN": "保存→控制器",
+      "zh-TW": "儲存→控制器",
+      "ja": "保存→コントローラ",
+      "ko": "저장→컨트롤러"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "download_to_browser",
+      "en": "Download to Browser",
+      "zh-CN": "下载到浏览器",
+      "zh-TW": "下載到瀏覽器",
+      "ja": "ブラウザにDL",
+      "ko": "브라우저에 다운로드"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "export_map_config",
+      "en": "Export map_config.json (all floors)",
+      "zh-CN": "导出 map_config.json（全部楼层）",
+      "zh-TW": "匯出 map_config.json（全部樓層）",
+      "ja": "map_config.json をエクスポート（全フロア）",
+      "ko": "map_config.json 내보내기（전체 층）"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "export_map_config_short",
+      "en": "Export Map",
+      "zh-CN": "导出平面图",
+      "zh-TW": "匯出平面圖",
+      "ja": "Map出力",
+      "ko": "Map 내보내기"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "export_collector_config",
+      "en": "Pick master collector_config.json, update this floor AHUs, download full master",
+      "zh-CN": "选择主 collector_config.json，更新本楼层 AHU 后下载完整主文件",
+      "zh-TW": "選擇主 collector_config.json，更新本樓層 AHU 後下載完整主檔",
+      "ja": "マスター collector_config.json を選び、このフロアのAHUを更新して全体をDL",
+      "ko": "master collector_config.json 선택 → 현재 층 AHU 갱신 → 전체 다운로드"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "export_collector_config_short",
+      "en": "Export Master",
+      "zh-CN": "导出主配置",
+      "zh-TW": "匯出主配置",
+      "ja": "Master出力",
+      "ko": "Master 내보내기"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "upload_image",
+      "en": "Upload Image",
+      "zh-CN": "上传图片",
+      "zh-TW": "上傳圖片",
+      "ja": "画像アップロード",
+      "ko": "이미지 업로드"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "change_image",
+      "en": "Change Image",
+      "zh-CN": "更换图片",
+      "zh-TW": "更換圖片",
+      "ja": "画像を変更",
+      "ko": "이미지 변경"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "file_browser",
+      "en": "File Browser",
+      "zh-CN": "文件浏览器",
+      "zh-TW": "檔案瀏覽器",
+      "ja": "ファイルブラウザ",
+      "ko": "파일 브라우저"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "json_editor",
+      "en": "JSON Editor Mode",
+      "zh-CN": "JSON 编辑模式",
+      "zh-TW": "JSON 編輯模式",
+      "ja": "JSON エディタモード",
+      "ko": "JSON 편집기 모드"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "table_view",
+      "en": "Table View Mode",
+      "zh-CN": "表格视图模式",
+      "zh-TW": "表格檢視模式",
+      "ja": "テーブル表示モード",
+      "ko": "테이블 뷰 모드"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "import_csv",
+      "en": "Import CSV",
+      "zh-CN": "导入 CSV",
+      "zh-TW": "匯入 CSV",
+      "ja": "CSV インポート",
+      "ko": "CSV 가져오기"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "export_csv",
+      "en": "Export CSV",
+      "zh-CN": "导出 CSV",
+      "zh-TW": "匯出 CSV",
+      "ja": "CSV エクスポート",
+      "ko": "CSV 내보내기"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "reload_system",
+      "en": "Reload System",
+      "zh-CN": "重载系统",
+      "zh-TW": "重新載入系統",
+      "ja": "システム再読込",
+      "ko": "시스템 새로고침"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "system_crash_prevented",
+      "en": "System Render Crash Prevented",
+      "zh-CN": "系统渲染崩溃已阻止",
+      "zh-TW": "系統渲染崩潰已阻止",
+      "ja": "システムレンダリングクラッシュを防止",
+      "ko": "시스템 렌더 크래시 방지됨"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "save_clean_template",
+      "en": "Save Clean Template",
+      "zh-CN": "保存干净模板",
+      "zh-TW": "儲存乾淨範本",
+      "ja": "クリーンテンプレート保存",
+      "ko": "클린 템플릿 저장"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "export_clean_json",
+      "en": "Export Clean JSON",
+      "zh-CN": "导出干净 JSON",
+      "zh-TW": "匯出乾淨 JSON",
+      "ja": "クリーン JSON エクスポート",
+      "ko": "클린 JSON 내보내기"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "save_working_file",
+      "en": "Save Working File",
+      "zh-CN": "保存工作文件",
+      "zh-TW": "儲存工作檔案",
+      "ja": "作業ファイル保存",
+      "ko": "작업 파일 저장"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "download_current",
+      "en": "Download Current",
+      "zh-CN": "下载当前文件",
+      "zh-TW": "下載目前檔案",
+      "ja": "現在のファイルをDL",
+      "ko": "현재 파일 다운로드"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "add_floor",
+      "en": "Add Floor",
+      "zh-CN": "添加楼层",
+      "zh-TW": "新增樓層",
+      "ja": "フロア追加",
+      "ko": "층 추가"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "delete_floor",
+      "en": "Delete Floor",
+      "zh-CN": "删除楼层",
+      "zh-TW": "刪除樓層",
+      "ja": "フロア削除",
+      "ko": "층 삭제"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "add_marker",
+      "en": "Add Marker",
+      "zh-CN": "添加标记",
+      "zh-TW": "新增標記",
+      "ja": "マーカー追加",
+      "ko": "마커 추가"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "delete_marker",
+      "en": "Delete Marker",
+      "zh-CN": "删除标记",
+      "zh-TW": "刪除標記",
+      "ja": "マーカー削除",
+      "ko": "마커 삭제"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "equipment_types",
+      "en": "Equipment Types",
+      "zh-CN": "设备类型",
+      "zh-TW": "設備類型",
+      "ja": "機器タイプ",
+      "ko": "장비 유형"
+    },
+    {
+      "section": "Equipment Mapper",
+      "key": "simulator",
+      "en": "Simulator",
+      "zh-CN": "模拟器",
+      "zh-TW": "模擬器",
+      "ja": "シミュレータ",
+      "ko": "시뮬레이터"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "control_algorithm",
+      "en": "Control Algorithm",
+      "zh-CN": "控制算法",
+      "zh-TW": "控制演算法",
+      "ja": "制御アルゴリズム",
+      "ko": "제어 알고리즘"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "seasonal_weather_anim",
+      "en": "Seasonal Weather Animation",
+      "zh-CN": "季节性天气动画",
+      "zh-TW": "季節性天氣動畫",
+      "ja": "季節天気アニメーション",
+      "ko": "계절별 날씨 애니메이션"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "heating",
+      "en": "Heating",
+      "zh-CN": "加热",
+      "zh-TW": "加熱",
+      "ja": "暖房",
+      "ko": "난방"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "cooling",
+      "en": "Cooling",
+      "zh-CN": "冷却",
+      "zh-TW": "冷卻",
+      "ja": "冷房",
+      "ko": "냉방"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "cool_dehumid",
+      "en": "Cool + Dehumid",
+      "zh-CN": "冷却+除湿",
+      "zh-TW": "冷卻+除濕",
+      "ja": "冷房+除湿",
+      "ko": "냉방+제습"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "heat_humid",
+      "en": "Heat + Humid",
+      "zh-CN": "加热+加湿",
+      "zh-TW": "加熱+加濕",
+      "ja": "暖房+加湿",
+      "ko": "난방+가습"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "dehumid",
+      "en": "Dehumid",
+      "zh-CN": "除湿",
+      "zh-TW": "除濕",
+      "ja": "除湿",
+      "ko": "제습"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "humidify",
+      "en": "Humidify",
+      "zh-CN": "加湿",
+      "zh-TW": "加濕",
+      "ja": "加湿",
+      "ko": "가습"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "economizer",
+      "en": "Economizer",
+      "zh-CN": "经济器",
+      "zh-TW": "經濟器",
+      "ja": "エコノマイザ",
+      "ko": "이코노마이저"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "steady",
+      "en": "Steady",
+      "zh-CN": "稳态",
+      "zh-TW": "穩態",
+      "ja": "定常",
+      "ko": "안정"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "occupants",
+      "en": "Occupants",
+      "zh-CN": "在室人员",
+      "zh-TW": "在室人員",
+      "ja": "在室人数",
+      "ko": "재실 인원수"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "pause",
+      "en": "Pause",
+      "zh-CN": "暂停",
+      "zh-TW": "暫停",
+      "ja": "一時停止",
+      "ko": "일시정지"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "play",
+      "en": "Play",
+      "zh-CN": "播放",
+      "zh-TW": "播放",
+      "ja": "再生",
+      "ko": "재생"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "light_theme",
+      "en": "Light",
+      "zh-CN": "浅色",
+      "zh-TW": "淺色",
+      "ja": "ライト",
+      "ko": "라이트"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "dark_theme",
+      "en": "Dark",
+      "zh-CN": "深色",
+      "zh-TW": "深色",
+      "ja": "ダーク",
+      "ko": "다크"
+    },
+    {
+      "section": "Psy Dynamics",
+      "key": "controller",
+      "en": "Controller",
+      "zh-CN": "控制器",
+      "zh-TW": "控制器",
+      "ja": "コントローラ",
+      "ko": "컨트롤러"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "cumulative_energy_time",
+      "en": "Cumulative Energy × Time  +  OA Tracking",
+      "zh-CN": "累计能量 × 时间  +  外气追踪",
+      "zh-TW": "累計能量 × 時間  +  外氣追蹤",
+      "ja": "累積エネルギー × 時間  +  外気追跡",
+      "ko": "누적 에너지 × 시간  +  외기 추적"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "monthly_energy_sites",
+      "en": "Monthly Air-Side Energy × Sites",
+      "zh-CN": "月度空气侧能量 × 站点",
+      "zh-TW": "月度空氣側能量 × 站點",
+      "ja": "月別エアサイドエネルギー × サイト",
+      "ko": "월별 공기측 에너지 × 사이트"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "humidity_time_scatter",
+      "en": "Humidity × Time (scatter)",
+      "zh-CN": "湿度 × 时间 (散点图)",
+      "zh-TW": "濕度 × 時間 (散點圖)",
+      "ja": "湿度 × 時間 (散布図)",
+      "ko": "습도 × 시간 (산점도)"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "no_weather_data",
+      "en": "No weather data — click FETCH WEATHER DATA to load",
+      "zh-CN": "无天气数据 — 点击 FETCH WEATHER DATA 加载",
+      "zh-TW": "無天氣資料 — 點擊 FETCH WEATHER DATA 載入",
+      "ja": "気象データなし — FETCH WEATHER DATA をクリックして読み込み",
+      "ko": "날씨 데이터 없음 — FETCH WEATHER DATA 클릭하여 로드"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "no_weather_loaded",
+      "en": "No weather data loaded",
+      "zh-CN": "未加载天气数据",
+      "zh-TW": "未載入天氣資料",
+      "ja": "気象データ未読込",
+      "ko": "날씨 데이터 미로드"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "oa_temp_axis",
+      "en": "OA Temperature (°C)",
+      "zh-CN": "外气温度 (°C)",
+      "zh-TW": "外氣溫度 (°C)",
+      "ja": "外気温度 (°C)",
+      "ko": "외기온도 (°C)"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "cum_dh_axis",
+      "en": "Cumulative Δh (kJ/kg)",
+      "zh-CN": "累计 Δh (kJ/kg)",
+      "zh-TW": "累計 Δh (kJ/kg)",
+      "ja": "累積 Δh (kJ/kg)",
+      "ko": "누적 Δh (kJ/kg)"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "humidity_ratio_axis",
+      "en": "Humidity ratio (g/kg)",
+      "zh-CN": "含湿量 (g/kg)",
+      "zh-TW": "含濕量 (g/kg)",
+      "ja": "絶対湿度 (g/kg)",
+      "ko": "절대습도 (g/kg)"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "time_season_axis",
+      "en": "Time (Season)",
+      "zh-CN": "时间 (季节)",
+      "zh-TW": "時間 (季節)",
+      "ja": "時間 (季節)",
+      "ko": "시간 (계절)"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "fetch_weather_data",
+      "en": "Fetch weather data",
+      "zh-CN": "获取天气数据",
+      "zh-TW": "獲取天氣資料",
+      "ja": "気象データ取得",
+      "ko": "날씨 데이터 가져오기"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "fetching_dots",
+      "en": "Fetching...",
+      "zh-CN": "获取中...",
+      "zh-TW": "獲取中...",
+      "ja": "取得中...",
+      "ko": "가져오는 중..."
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "invalid_coords",
+      "en": "Invalid coords",
+      "zh-CN": "坐标无效",
+      "zh-TW": "座標無效",
+      "ja": "座標が無効",
+      "ko": "잘못된 좌표"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "set_dates",
+      "en": "Set dates",
+      "zh-CN": "请设置日期",
+      "zh-TW": "請設定日期",
+      "ja": "日付を設定",
+      "ko": "날짜 설정"
+    },
+    {
+      "section": "Chart common (T×Time + Monthly × Sites)",
+      "key": "from_gt_to",
+      "en": "From > To",
+      "zh-CN": "起始 > 结束",
+      "zh-TW": "起始 > 結束",
+      "ja": "開始 > 終了",
+      "ko": "시작 > 종료"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "fixed_sa_band_damper",
+      "en": "Fixed-SA + band damper",
+      "zh-CN": "固定送风 + 段位风阀",
+      "zh-TW": "固定送風 + 段位風閥",
+      "ja": "固定SA + バンドダンパ",
+      "ko": "고정 SA + 밴드 댐퍼"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "dyn_reset",
+      "en": "Dyn-Reset",
+      "zh-CN": "动态复位",
+      "zh-TW": "動態復位",
+      "ja": "動的リセット",
+      "ko": "동적 리셋"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "band_b1_b10",
+      "en": "B1-B10",
+      "zh-CN": "B1-B10",
+      "zh-TW": "B1-B10",
+      "ja": "B1-B10",
+      "ko": "B1-B10"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "band_b1_b10_dyn",
+      "en": "B1-B10 + Dyn-Reset",
+      "zh-CN": "B1-B10 + 动态复位",
+      "zh-TW": "B1-B10 + 動態復位",
+      "ja": "B1-B10 + 動的リセット",
+      "ko": "B1-B10 + 동적 리셋"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "opt_sa",
+      "en": "Opt-SA",
+      "zh-CN": "最优送风",
+      "zh-TW": "最優送風",
+      "ja": "最適SA",
+      "ko": "최적 SA"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "opt_sa_cum",
+      "en": "Opt-SA cum",
+      "zh-CN": "最优送风 累计",
+      "zh-TW": "最優送風 累計",
+      "ja": "最適SA 累積",
+      "ko": "최적 SA 누적"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "oa_intake_band_damper",
+      "en": "OA Intake (band damper)",
+      "zh-CN": "外气引入 (段位风阀)",
+      "zh-TW": "外氣引入 (段位風閥)",
+      "ja": "外気導入 (バンドダンパ)",
+      "ko": "외기 도입 (밴드 댐퍼)"
+    },
+    {
+      "section": "Strategy labels (kept terse so legend stays compact)",
+      "key": "saved",
+      "en": "SAVED",
+      "zh-CN": "已保存",
+      "zh-TW": "已儲存",
+      "ja": "保存済み",
+      "ko": "저장됨"
+    },
+    {
+      "section": "Legend Mode buttons + summary banner",
+      "key": "legend_mode",
+      "en": "Legend mode:",
+      "zh-CN": "图例模式:",
+      "zh-TW": "圖例模式:",
+      "ja": "凡例モード:",
+      "ko": "범례 모드:"
+    },
+    {
+      "section": "Legend Mode buttons + summary banner",
+      "key": "mode_a_comfort",
+      "en": "A: Comfort hours",
+      "zh-CN": "A: 舒适时数",
+      "zh-TW": "A: 舒適時數",
+      "ja": "A: 快適時間",
+      "ko": "A: 쾌적 시간"
+    },
+    {
+      "section": "Legend Mode buttons + summary banner",
+      "key": "mode_b_sens_lat",
+      "en": "B: Sens / Lat",
+      "zh-CN": "B: 显热/潜热",
+      "zh-TW": "B: 顯熱/潛熱",
+      "ja": "B: 顕熱/潜熱",
+      "ko": "B: 현열/잠열"
+    },
+    {
+      "section": "Legend Mode buttons + summary banner",
+      "key": "mode_c_tradeoff",
+      "en": "C: Trade-off",
+      "zh-CN": "C: 权衡",
+      "zh-TW": "C: 權衡",
+      "ja": "C: トレードオフ",
+      "ko": "C: 트레이드오프"
+    },
+    {
+      "section": "Legend Mode buttons + summary banner",
+      "key": "mode_d_cost",
+      "en": "$: Cost / yr",
+      "zh-CN": "$: 年成本",
+      "zh-TW": "$: 年成本",
+      "ja": "$: 年間コスト",
+      "ko": "$: 연간 비용"
+    },
+    {
+      "section": "Legend Mode buttons + summary banner",
+      "key": "mode_label_prefix",
+      "en": "MODE",
+      "zh-CN": "模式",
+      "zh-TW": "模式",
+      "ja": "モード",
+      "ko": "모드"
+    },
+    {
+      "section": "Mode banner labels",
+      "key": "mode_a_full",
+      "en": "A: COMFORT HOURS",
+      "zh-CN": "A: 舒适时数",
+      "zh-TW": "A: 舒適時數",
+      "ja": "A: 快適時間",
+      "ko": "A: 쾌적 시간"
+    },
+    {
+      "section": "Mode banner labels",
+      "key": "mode_b_full",
+      "en": "B: SENS / LAT",
+      "zh-CN": "B: 显热/潜热",
+      "zh-TW": "B: 顯熱/潛熱",
+      "ja": "B: 顕熱/潜熱",
+      "ko": "B: 현열/잠열"
+    },
+    {
+      "section": "Mode banner labels",
+      "key": "mode_c_full",
+      "en": "C: TRADE-OFF",
+      "zh-CN": "C: 权衡",
+      "zh-TW": "C: 權衡",
+      "ja": "C: トレードオフ",
+      "ko": "C: 트레이드오프"
+    },
+    {
+      "section": "Mode banner labels",
+      "key": "mode_d_full",
+      "en": "$ : COST / yr",
+      "zh-CN": "$ : 年成本",
+      "zh-TW": "$ : 年成本",
+      "ja": "$ : 年間コスト",
+      "ko": "$ : 연간 비용"
+    },
+    {
+      "section": "Cost model panel",
+      "key": "cost_model_title",
+      "en": "Cost Model -- plug your numbers",
+      "zh-CN": "成本模型 -- 输入您的数据",
+      "zh-TW": "成本模型 -- 輸入您的數據",
+      "ja": "コストモデル -- 数値を入力",
+      "ko": "비용 모델 -- 숫자 입력"
+    },
+    {
+      "section": "Cost model panel",
+      "key": "cost_airflow",
+      "en": "Airflow",
+      "zh-CN": "风量",
+      "zh-TW": "風量",
+      "ja": "風量",
+      "ko": "풍량"
+    },
+    {
+      "section": "Cost model panel",
+      "key": "cost_utility_rate",
+      "en": "Utility rate",
+      "zh-CN": "电费率",
+      "zh-TW": "電費率",
+      "ja": "電気料金",
+      "ko": "전기 요금"
+    },
+    {
+      "section": "Cost model panel",
+      "key": "cost_cooling_cop",
+      "en": "Cooling COP",
+      "zh-CN": "制冷 COP",
+      "zh-TW": "製冷 COP",
+      "ja": "冷房 COP",
+      "ko": "냉방 COP"
+    },
+    {
+      "section": "Cost model panel",
+      "key": "cost_heating_eff",
+      "en": "Heating eff.",
+      "zh-CN": "制热效率",
+      "zh-TW": "製熱效率",
+      "ja": "暖房効率",
+      "ko": "난방 효율"
+    },
+    {
+      "section": "Cost model panel",
+      "key": "cost_violation_rate",
+      "en": "Violation rate",
+      "zh-CN": "违反成本",
+      "zh-TW": "違反成本",
+      "ja": "違反コスト",
+      "ko": "위반 비용"
+    },
+    {
+      "section": "OA / Comfort caveat",
+      "key": "no_humidity_caveat",
+      "en": "NO humidity (latent) control -- may meet kJ/kg target while violating zone RH / comfort.  NOT RECOMMENDED FOR DEPLOYMENT.",
+      "zh-CN": "无湿度（潜热）控制 -- 可能达到 kJ/kg 目标但违反区域湿度/舒适性。不建议部署。",
+      "zh-TW": "無濕度（潛熱）控制 -- 可能達到 kJ/kg 目標但違反區域濕度/舒適性。不建議部署。",
+      "ja": "湿度（潜熱）制御なし -- kJ/kg 目標を達成してもゾーン RH / 快適性違反の可能性。展開非推奨。",
+      "ko": "습도(잠열) 제어 없음 -- kJ/kg 목표는 충족해도 구역 RH/쾌적성 위반 가능. 배포 권장하지 않음."
+    },
+    {
+      "section": "OA / Comfort caveat",
+      "key": "no_latent_short",
+      "en": "NO latent (RH) control -- not for deployment",
+      "zh-CN": "无潜热（RH）控制 -- 不可部署",
+      "zh-TW": "無潛熱（RH）控制 -- 不可部署",
+      "ja": "潜熱（RH）制御なし -- 展開不可",
+      "ko": "잠열(RH) 제어 없음 -- 배포 불가"
+    },
+    {
+      "section": "OA / Comfort caveat",
+      "key": "oa_damper",
+      "en": "OA damper",
+      "zh-CN": "外气风阀",
+      "zh-TW": "外氣風閥",
+      "ja": "外気ダンパ",
+      "ko": "외기 댐퍼"
+    },
+    {
+      "section": "OA / Comfort caveat",
+      "key": "oa_intake_short",
+      "en": "OA Intake",
+      "zh-CN": "外气引入",
+      "zh-TW": "外氣引入",
+      "ja": "外気導入",
+      "ko": "외기 도입"
+    },
+    {
+      "section": "OA / Comfort caveat",
+      "key": "avg_oa_label",
+      "en": "Avg OA",
+      "zh-CN": "平均外气",
+      "zh-TW": "平均外氣",
+      "ja": "平均外気",
+      "ko": "평균 외기"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "sa_setpoint_legend",
+      "en": "SA T",
+      "zh-CN": "送风温度",
+      "zh-TW": "送風溫度",
+      "ja": "給気温度",
+      "ko": "급기 온도"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "heating",
+      "en": "Heating",
+      "zh-CN": "加热",
+      "zh-TW": "加熱",
+      "ja": "暖房",
+      "ko": "난방"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "cooling",
+      "en": "Cooling",
+      "zh-CN": "制冷",
+      "zh-TW": "製冷",
+      "ja": "冷房",
+      "ko": "냉방"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "total_label",
+      "en": "Total",
+      "zh-CN": "合计",
+      "zh-TW": "合計",
+      "ja": "合計",
+      "ko": "합계"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "oa_temp_legend",
+      "en": "OA temp",
+      "zh-CN": "外气温度",
+      "zh-TW": "外氣溫度",
+      "ja": "外気温度",
+      "ko": "외기온도"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "vav_zones_in_cz",
+      "en": "VAV ZONES IN CZ",
+      "zh-CN": "VAV 区域在舒适区",
+      "zh-TW": "VAV 區域在舒適區",
+      "ja": "VAVゾーンが快適域内",
+      "ko": "VAV 구역 적정구역 내"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "ahu_diagnostic_hub_v",
+      "en": "AHU Diagnostic HUB",
+      "zh-CN": "空调机组诊断中心",
+      "zh-TW": "空調機組診斷中心",
+      "ja": "空調機診断ハブ",
+      "ko": "공조기 진단 허브"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "real_time_diag_hub",
+      "en": "Real-time Diagnostic Hub",
+      "zh-CN": "实时诊断中心",
+      "zh-TW": "即時診斷中心",
+      "ja": "リアルタイム診断ハブ",
+      "ko": "실시간 진단 허브"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "mechanical_cooling",
+      "en": "Mechanical Cooling",
+      "zh-CN": "机械制冷",
+      "zh-TW": "機械製冷",
+      "ja": "機械冷房",
+      "ko": "기계 냉방"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "mass_cooling",
+      "en": "Mass Cooling",
+      "zh-CN": "质量制冷",
+      "zh-TW": "質量製冷",
+      "ja": "蓄熱冷房",
+      "ko": "대량 냉방"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "reload_now",
+      "en": "Reload Now",
+      "zh-CN": "立即重新加载",
+      "zh-TW": "立即重新載入",
+      "ja": "今すぐ再読み込み",
+      "ko": "지금 새로고침"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "drag_to_resize",
+      "en": "Drag to resize",
+      "zh-CN": "拖动以调整大小",
+      "zh-TW": "拖動以調整大小",
+      "ja": "ドラッグでサイズ変更",
+      "ko": "드래그하여 크기 조정"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "collector_configuration",
+      "en": "Collector Configuration",
+      "zh-CN": "采集器配置",
+      "zh-TW": "採集器配置",
+      "ja": "コレクター設定",
+      "ko": "콜렉터 구성"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "click_to_map_vavs",
+      "en": "Click to map VAVs on Floor Plan",
+      "zh-CN": "点击在平面图上映射 VAV",
+      "zh-TW": "點擊在平面圖上映射 VAV",
+      "ja": "フロアプランで VAV をマップ",
+      "ko": "평면도에서 VAV 매핑하려면 클릭"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "view_diagram",
+      "en": "View Diagram",
+      "zh-CN": "查看示意图",
+      "zh-TW": "查看示意圖",
+      "ja": "図面表示",
+      "ko": "다이어그램 보기"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "yearly_weather_dist",
+      "en": "Yearly Weather Distribution",
+      "zh-CN": "年度气候分布",
+      "zh-TW": "年度氣候分佈",
+      "ja": "年間気象分布",
+      "ko": "연간 기후 분포"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "no_data_for_period",
+      "en": "No data for this period",
+      "zh-CN": "此时段无数据",
+      "zh-TW": "此時段無資料",
+      "ja": "期間データなし",
+      "ko": "이 기간 데이터 없음"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "reset_zoom",
+      "en": "RESET ZOOM",
+      "zh-CN": "重置缩放",
+      "zh-TW": "重置縮放",
+      "ja": "ズームをリセット",
+      "ko": "확대/축소 재설정"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "no_weather_loaded",
+      "en": "No weather data loaded",
+      "zh-CN": "未加载天气数据",
+      "zh-TW": "未載入天氣資料",
+      "ja": "気象データ未読込",
+      "ko": "날씨 데이터 미적재"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "weather_location",
+      "en": "Weather Location",
+      "zh-CN": "天气位置",
+      "zh-TW": "天氣位置",
+      "ja": "気象位置",
+      "ko": "날씨 위치"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "current_location",
+      "en": "Current Location",
+      "zh-CN": "当前位置",
+      "zh-TW": "當前位置",
+      "ja": "現在地",
+      "ko": "현재 위치"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "no_saved_locations",
+      "en": "No saved locations",
+      "zh-CN": "无已保存位置",
+      "zh-TW": "無已儲存位置",
+      "ja": "保存済み位置なし",
+      "ko": "저장된 위치 없음"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "location_name_ph",
+      "en": "Location name",
+      "zh-CN": "位置名称",
+      "zh-TW": "位置名稱",
+      "ja": "位置名",
+      "ko": "위치 이름"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "vav_image_missing",
+      "en": "VAV IMAGE MISSING",
+      "zh-CN": "VAV 图像缺失",
+      "zh-TW": "VAV 影像缺失",
+      "ja": "VAV画像なし",
+      "ko": "VAV 이미지 누락"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "ahu_image_missing",
+      "en": "AHU IMAGE MISSING",
+      "zh-CN": "AHU 图像缺失",
+      "zh-TW": "AHU 影像缺失",
+      "ja": "AHU画像なし",
+      "ko": "AHU 이미지 누락"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "loading_configuration",
+      "en": "Loading configuration...",
+      "zh-CN": "加载配置中...",
+      "zh-TW": "載入配置中...",
+      "ja": "設定読み込み中...",
+      "ko": "구성 로딩 중..."
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "no_vavs_assigned",
+      "en": "No VAVs assigned",
+      "zh-CN": "未分配 VAV",
+      "zh-TW": "未指派 VAV",
+      "ja": "VAV 未割当",
+      "ko": "VAV 미할당"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "add_vav_name_ph",
+      "en": "Add VAV name",
+      "zh-CN": "添加 VAV 名称",
+      "zh-TW": "新增 VAV 名稱",
+      "ja": "VAV 名追加",
+      "ko": "VAV 이름 추가"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "csv_object_label",
+      "en": "CSV Object:",
+      "zh-CN": "CSV 对象:",
+      "zh-TW": "CSV 物件:",
+      "ja": "CSV オブジェクト:",
+      "ko": "CSV 객체:"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "add_new_ahu_group",
+      "en": "Add New AHU Group",
+      "zh-CN": "添加新 AHU 组",
+      "zh-TW": "新增 AHU 群組",
+      "ja": "新規 AHU グループ追加",
+      "ko": "새 AHU 그룹 추가"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "ahu_name_ph",
+      "en": "AHU name (e.g. AHU-03-W)",
+      "zh-CN": "AHU 名称 (例: AHU-03-W)",
+      "zh-TW": "AHU 名稱 (例: AHU-03-W)",
+      "ja": "AHU 名 (例: AHU-03-W)",
+      "ko": "AHU 이름 (예: AHU-03-W)"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "csv_object_ph",
+      "en": "CSV object",
+      "zh-CN": "CSV 对象",
+      "zh-TW": "CSV 物件",
+      "ja": "CSV オブジェクト",
+      "ko": "CSV 객체"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "loading_equip_types",
+      "en": "Loading equipment types...",
+      "zh-CN": "加载设备类型中...",
+      "zh-TW": "載入設備類型中...",
+      "ja": "機器タイプ読み込み中...",
+      "ko": "장비 유형 로딩 중..."
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "data_source_mode",
+      "en": "Data Source Mode",
+      "zh-CN": "数据源模式",
+      "zh-TW": "資料來源模式",
+      "ja": "データソースモード",
+      "ko": "데이터 소스 모드"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "dashboard_point_map",
+      "en": "Dashboard Point Map",
+      "zh-CN": "仪表盘点位映射",
+      "zh-TW": "儀表板點位映射",
+      "ja": "ダッシュボード点マップ",
+      "ko": "대시보드 포인트 맵"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "config_password",
+      "en": "Config Password",
+      "zh-CN": "配置密码",
+      "zh-TW": "配置密碼",
+      "ja": "設定パスワード",
+      "ko": "구성 비밀번호"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "enter_password_ph",
+      "en": "Enter password",
+      "zh-CN": "输入密码",
+      "zh-TW": "輸入密碼",
+      "ja": "パスワード入力",
+      "ko": "비밀번호 입력"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "react_crash_prevented",
+      "en": "React Rendering Crash Prevented",
+      "zh-CN": "已阻止 React 渲染崩溃",
+      "zh-TW": "已阻止 React 渲染崩潰",
+      "ja": "React レンダリング クラッシュを防止",
+      "ko": "React 렌더링 충돌 방지됨"
+    },
+    {
+      "section": "T×Time annotations",
+      "key": "react_crash_msg",
+      "en": "System caught the following error instead of a black screen:",
+      "zh-CN": "系统捕获以下错误而非黑屏:",
+      "zh-TW": "系統捕獲以下錯誤而非黑屏:",
+      "ja": "黒画面の代わりに以下のエラーを捕捉:",
+      "ko": "검은 화면 대신 다음 오류를 포착:"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "fleet",
+      "en": "FLEET",
+      "zh-CN": "机组列表",
+      "zh-TW": "機組列表",
+      "ja": "設備一覧",
+      "ko": "설비 목록"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "connecting_ellipsis",
+      "en": "connecting…",
+      "zh-CN": "连接中…",
+      "zh-TW": "連線中…",
+      "ja": "接続中…",
+      "ko": "연결 중…"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "per_ahu_performance",
+      "en": "Per-AHU Performance",
+      "zh-CN": "单机组性能",
+      "zh-TW": "單機組性能",
+      "ja": "空調機別性能",
+      "ko": "공조기별 성능"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "g36_mode",
+      "en": "G36 Mode",
+      "zh-CN": "G36 模式",
+      "zh-TW": "G36 模式",
+      "ja": "G36 モード",
+      "ko": "G36 모드"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "cooling_requests",
+      "en": "Cooling Requests",
+      "zh-CN": "制冷请求",
+      "zh-TW": "製冷請求",
+      "ja": "冷房要求",
+      "ko": "냉방 요청"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "heating_requests",
+      "en": "Heating Requests",
+      "zh-CN": "制热请求",
+      "zh-TW": "製熱請求",
+      "ja": "暖房要求",
+      "ko": "난방 요청"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "pressure_requests",
+      "en": "Pressure Requests",
+      "zh-CN": "压力请求",
+      "zh-TW": "壓力請求",
+      "ja": "圧力要求",
+      "ko": "압력 요청"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "from_vav_zones",
+      "en": "from VAV zones",
+      "zh-CN": "来自 VAV 区域",
+      "zh-TW": "來自 VAV 區域",
+      "ja": "VAV ゾーンから",
+      "ko": "VAV 구역에서"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "duct_static",
+      "en": "duct static",
+      "zh-CN": "风管静压",
+      "zh-TW": "風管靜壓",
+      "ja": "ダクト静圧",
+      "ko": "덕트 정압"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "uptime_24h",
+      "en": "Uptime · 24h",
+      "zh-CN": "运行时间 · 24h",
+      "zh-TW": "運行時間 · 24h",
+      "ja": "稼働時間 · 24h",
+      "ko": "가동 시간 · 24h"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "non_fault_mode_time",
+      "en": "non-fault mode time",
+      "zh-CN": "非故障模式时间",
+      "zh-TW": "非故障模式時間",
+      "ja": "非故障モード時間",
+      "ko": "비고장 모드 시간"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "mode_hours_today",
+      "en": "Mode Hours · Today",
+      "zh-CN": "模式时长 · 今日",
+      "zh-TW": "模式時長 · 今日",
+      "ja": "モード時間 · 本日",
+      "ko": "모드 시간 · 오늘"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "cz_compliance",
+      "en": "CZ Compliance",
+      "zh-CN": "舒适区达标",
+      "zh-TW": "舒適區達標",
+      "ja": "快適域適合",
+      "ko": "쾌적역 준수"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "zones_inside_range",
+      "en": "zones inside 21–24 °C",
+      "zh-CN": "21–24 °C 内区域",
+      "zh-TW": "21–24 °C 內區域",
+      "ja": "21–24 °C 内のゾーン",
+      "ko": "21–24 °C 이내 구역"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "zones_online",
+      "en": "Zones Online",
+      "zh-CN": "在线区域",
+      "zh-TW": "在線區域",
+      "ja": "オンライン区域",
+      "ko": "온라인 구역"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "supply_air_temp",
+      "en": "Supply Air Temp",
+      "zh-CN": "送风温度",
+      "zh-TW": "送風溫度",
+      "ja": "給気温度",
+      "ko": "급기 온도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "supply_air_rh",
+      "en": "Supply Air RH",
+      "zh-CN": "送风湿度",
+      "zh-TW": "送風濕度",
+      "ja": "給気湿度",
+      "ko": "급기 습도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "sat_reset_tr",
+      "en": "SAT Reset (Trim&Respond)",
+      "zh-CN": "送风温度重置(增减响应)",
+      "zh-TW": "送風溫度重置(增減響應)",
+      "ja": "給気温度リセット(トリム&レスポンス)",
+      "ko": "급기온도 재설정(트림&리스폰드)"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "dsp_reset_tr",
+      "en": "DSP Reset (Trim&Respond)",
+      "zh-CN": "静压重置(增减响应)",
+      "zh-TW": "靜壓重置(增減響應)",
+      "ja": "静圧リセット(トリム&レスポンス)",
+      "ko": "정압 재설정(트림&리스폰드)"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "deg_c_target",
+      "en": "°C target",
+      "zh-CN": "°C 目标",
+      "zh-TW": "°C 目標",
+      "ja": "°C 目標",
+      "ko": "°C 목표"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "pa_target",
+      "en": "Pa target",
+      "zh-CN": "Pa 目标",
+      "zh-TW": "Pa 目標",
+      "ja": "Pa 目標",
+      "ko": "Pa 목표"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "time_range",
+      "en": "Time Range",
+      "zh-CN": "时间范围",
+      "zh-TW": "時間範圍",
+      "ja": "期間",
+      "ko": "시간 범위"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "custom_label",
+      "en": "Custom:",
+      "zh-CN": "自定义:",
+      "zh-TW": "自訂:",
+      "ja": "カスタム:",
+      "ko": "사용자 지정:"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "apply_btn",
+      "en": "APPLY",
+      "zh-CN": "应用",
+      "zh-TW": "套用",
+      "ja": "適用",
+      "ko": "적용"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "minutes_ph",
+      "en": "minutes",
+      "zh-CN": "分钟",
+      "zh-TW": "分鐘",
+      "ja": "分",
+      "ko": "분"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "chart_sa_temp",
+      "en": "Supply Air Temperature (°C)",
+      "zh-CN": "送风温度 (°C)",
+      "zh-TW": "送風溫度 (°C)",
+      "ja": "給気温度 (°C)",
+      "ko": "급기 온도 (°C)"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "chart_sa_rh",
+      "en": "Supply Air Relative Humidity (%)",
+      "zh-CN": "送风相对湿度 (%)",
+      "zh-TW": "送風相對濕度 (%)",
+      "ja": "給気相対湿度 (%)",
+      "ko": "급기 상대습도 (%)"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "chart_airflow",
+      "en": "Airflow (% of design)",
+      "zh-CN": "风量 (设计百分比)",
+      "zh-TW": "風量 (設計百分比)",
+      "ja": "風量 (設計比 %)",
+      "ko": "풍량 (설계 %)"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "chart_ra_temp",
+      "en": "Return Air Temperature (°C)",
+      "zh-CN": "回风温度 (°C)",
+      "zh-TW": "回風溫度 (°C)",
+      "ja": "還気温度 (°C)",
+      "ko": "환기 온도 (°C)"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "operating_mode_timeline",
+      "en": "Operating Mode Timeline · 24h",
+      "zh-CN": "运行模式时间轴 · 24h",
+      "zh-TW": "運行模式時間軸 · 24h",
+      "ja": "運転モードタイムライン · 24h",
+      "ko": "운전 모드 타임라인 · 24h"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "occupied",
+      "en": "Occupied",
+      "zh-CN": "占用",
+      "zh-TW": "佔用",
+      "ja": "在室",
+      "ko": "재실"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "warmup_cooldown",
+      "en": "Warmup/Cooldown",
+      "zh-CN": "预热/预冷",
+      "zh-TW": "預熱/預冷",
+      "ja": "暖機/冷却",
+      "ko": "예열/예냉"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "setback_unoccupied",
+      "en": "Setback/Unoccupied",
+      "zh-CN": "回退/无人",
+      "zh-TW": "回退/無人",
+      "ja": "セットバック/不在",
+      "ko": "셋백/비재실"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "freeze_protect",
+      "en": "Freeze-Protect",
+      "zh-CN": "防冻保护",
+      "zh-TW": "防凍保護",
+      "ja": "凍結防止",
+      "ko": "동결 방지"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "fault",
+      "en": "Fault",
+      "zh-CN": "故障",
+      "zh-TW": "故障",
+      "ja": "故障",
+      "ko": "고장"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "vav_zones",
+      "en": "VAV Zones",
+      "zh-CN": "VAV 区域",
+      "zh-TW": "VAV 區域",
+      "ja": "VAV ゾーン",
+      "ko": "VAV 구역"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "served_by_this_ahu",
+      "en": "Served by this AHU",
+      "zh-CN": "由此空调机组服务",
+      "zh-TW": "由此空調機組服務",
+      "ja": "この空調機が担当",
+      "ko": "이 공조기가 담당"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "zone",
+      "en": "Zone",
+      "zh-CN": "区域",
+      "zh-TW": "區域",
+      "ja": "ゾーン",
+      "ko": "구역"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "temp",
+      "en": "Temp",
+      "zh-CN": "温度",
+      "zh-TW": "溫度",
+      "ja": "温度",
+      "ko": "온도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "rh",
+      "en": "RH",
+      "zh-CN": "湿度",
+      "zh-TW": "濕度",
+      "ja": "湿度",
+      "ko": "습도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "setpoint",
+      "en": "Setpoint",
+      "zh-CN": "设定点",
+      "zh-TW": "設定點",
+      "ja": "設定値",
+      "ko": "설정값"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "damper",
+      "en": "Damper",
+      "zh-CN": "风阀",
+      "zh-TW": "風閥",
+      "ja": "ダンパー",
+      "ko": "댐퍼"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "sup_temp",
+      "en": "Sup Temp",
+      "zh-CN": "送风温度",
+      "zh-TW": "送風溫度",
+      "ja": "給気温度",
+      "ko": "급기 온도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "airflow",
+      "en": "Airflow",
+      "zh-CN": "风量",
+      "zh-TW": "風量",
+      "ja": "風量",
+      "ko": "풍량"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "state",
+      "en": "State",
+      "zh-CN": "状态",
+      "zh-TW": "狀態",
+      "ja": "状態",
+      "ko": "상태"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "loading_ellipsis",
+      "en": "Loading…",
+      "zh-CN": "加载中…",
+      "zh-TW": "載入中…",
+      "ja": "読み込み中…",
+      "ko": "로딩 중…"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "band_matrix_title",
+      "en": "10-Band Strategy Matrix · Current Band",
+      "zh-CN": "10 段策略矩阵 · 当前段",
+      "zh-TW": "10 段策略矩陣 · 當前段",
+      "ja": "10 バンド戦略マトリクス · 現在バンド",
+      "ko": "10 밴드 전략 매트릭스 · 현재 밴드"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "band",
+      "en": "Band",
+      "zh-CN": "段",
+      "zh-TW": "段",
+      "ja": "バンド",
+      "ko": "밴드"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "name",
+      "en": "Name",
+      "zh-CN": "名称",
+      "zh-TW": "名稱",
+      "ja": "名称",
+      "ko": "이름"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "oa_temp",
+      "en": "OA Temp",
+      "zh-CN": "新风温度",
+      "zh-TW": "外氣溫度",
+      "ja": "外気温度",
+      "ko": "외기 온도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "oa_rh",
+      "en": "OA RH",
+      "zh-CN": "新风湿度",
+      "zh-TW": "外氣濕度",
+      "ja": "外気湿度",
+      "ko": "외기 습도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "sa_t_deliv",
+      "en": "SA T Deliv",
+      "zh-CN": "送风送出温度",
+      "zh-TW": "送風送出溫度",
+      "ja": "給気供給温度",
+      "ko": "급기 공급온도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "sa_rh",
+      "en": "SA RH",
+      "zh-CN": "送风湿度",
+      "zh-TW": "送風濕度",
+      "ja": "給気湿度",
+      "ko": "급기 습도"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "sa_w_gkg",
+      "en": "SA W g/kg",
+      "zh-CN": "送风含湿量 g/kg",
+      "zh-TW": "送風含濕量 g/kg",
+      "ja": "給気絶対湿度 g/kg",
+      "ko": "급기 절대습도 g/kg"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "oa_damper",
+      "en": "OA Damper",
+      "zh-CN": "新风阀",
+      "zh-TW": "外氣風閥",
+      "ja": "外気ダンパー",
+      "ko": "외기 댐퍼"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "cc_coil",
+      "en": "CC",
+      "zh-CN": "冷盘",
+      "zh-TW": "冷盤",
+      "ja": "冷却コイル",
+      "ko": "냉각코일"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "hc_coil",
+      "en": "HC",
+      "zh-CN": "热盘",
+      "zh-TW": "熱盤",
+      "ja": "加熱コイル",
+      "ko": "가열코일"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "hum_short",
+      "en": "HUM",
+      "zh-CN": "加湿",
+      "zh-TW": "加濕",
+      "ja": "加湿",
+      "ko": "가습"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "control_tag",
+      "en": "Control Tag",
+      "zh-CN": "控制标签",
+      "zh-TW": "控制標籤",
+      "ja": "制御タグ",
+      "ko": "제어 태그"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "energy",
+      "en": "Energy",
+      "zh-CN": "能耗",
+      "zh-TW": "能耗",
+      "ja": "エネルギー",
+      "ko": "에너지"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "loading_bands",
+      "en": "Loading bands…",
+      "zh-CN": "加载段中…",
+      "zh-TW": "載入段中…",
+      "ja": "バンド読み込み中…",
+      "ko": "밴드 로딩 중…"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "audit_log_title",
+      "en": "Audit Log · Setpoint & Control Changes",
+      "zh-CN": "审计日志 · 设定点与控制变更",
+      "zh-TW": "稽核日誌 · 設定點與控制變更",
+      "ja": "監査ログ · 設定値と制御変更",
+      "ko": "감사 로그 · 설정값 및 제어 변경"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "when",
+      "en": "When",
+      "zh-CN": "时间",
+      "zh-TW": "時間",
+      "ja": "日時",
+      "ko": "시각"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "action",
+      "en": "Action",
+      "zh-CN": "操作",
+      "zh-TW": "操作",
+      "ja": "操作",
+      "ko": "작업"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "user",
+      "en": "User",
+      "zh-CN": "用户",
+      "zh-TW": "使用者",
+      "ja": "ユーザー",
+      "ko": "사용자"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "before_after",
+      "en": "Before → After",
+      "zh-CN": "变更前 → 变更后",
+      "zh-TW": "變更前 → 變更後",
+      "ja": "変更前 → 変更後",
+      "ko": "변경 전 → 변경 후"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "floor_plan_placement",
+      "en": "Floor-Plan Placement",
+      "zh-CN": "平面图布置",
+      "zh-TW": "平面圖佈置",
+      "ja": "フロアプラン配置",
+      "ko": "평면도 배치"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "no_vav_zones_reported",
+      "en": "No VAV zones reported for this AHU",
+      "zh-CN": "此空调机组无 VAV 区域",
+      "zh-TW": "此空調機組無 VAV 區域",
+      "ja": "この空調機に VAV ゾーンなし",
+      "ko": "이 공조기에 VAV 구역 없음"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "no_data_since_midnight",
+      "en": "No data since midnight",
+      "zh-CN": "午夜以来无数据",
+      "zh-TW": "午夜以來無資料",
+      "ja": "深夜以降データなし",
+      "ko": "자정 이후 데이터 없음"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "no_history_yet",
+      "en": "No history yet",
+      "zh-CN": "暂无历史记录",
+      "zh-TW": "暫無歷史記錄",
+      "ja": "履歴なし",
+      "ko": "기록 없음"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "ahu_not_found",
+      "en": "AHU not found",
+      "zh-CN": "未找到空调机组",
+      "zh-TW": "未找到空調機組",
+      "ja": "空調機が見つかりません",
+      "ko": "공조기를 찾을 수 없음"
+    },
+    {
+      "section": "AHU detail page (ahu.html)",
+      "key": "admin_signin_required",
+      "en": "admin sign-in required",
+      "zh-CN": "需要管理员登录",
+      "zh-TW": "需要管理員登入",
+      "ja": "管理者ログインが必要",
+      "ko": "관리자 로그인 필요"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_subtitle",
+      "en": "Configure once. Skip any step you don\\u2019t need.",
+      "zh-CN": "一次配置完成。可跳过不需要的步骤。",
+      "zh-TW": "一次設定完成。可跳過不需要的步驟。",
+      "ja": "一度設定すれば完了。不要な手順はスキップ可。",
+      "ko": "한 번만 설정하세요. 필요 없는 단계는 건너뛰세요."
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_skip_all",
+      "en": "Skip all \\u2192",
+      "zh-CN": "全部跳过 \\u2192",
+      "zh-TW": "全部跳過 \\u2192",
+      "ja": "すべてスキップ \\u2192",
+      "ko": "모두 건너뛰기 \\u2192"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_done",
+      "en": "Done",
+      "zh-CN": "完成",
+      "zh-TW": "完成",
+      "ja": "完了",
+      "ko": "완료"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_open_dashboard",
+      "en": "Open Dashboard \\u2192",
+      "zh-CN": "打开仪表盘 \\u2192",
+      "zh-TW": "開啟儀表板 \\u2192",
+      "ja": "ダッシュボードを開く \\u2192",
+      "ko": "대시보드 열기 \\u2192"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_foot_start",
+      "en": "\\u2191 Pick a setting to start, or skip all and go straight to the dashboard.",
+      "zh-CN": "\\u2191 选择一项设置开始，或全部跳过直接进入仪表盘。",
+      "zh-TW": "\\u2191 選擇一項設定開始，或全部跳過直接進入儀表板。",
+      "ja": "\\u2191 設定を選んで開始、またはすべてスキップしてダッシュボードへ。",
+      "ko": "\\u2191 설정을 선택해 시작하거나 모두 건너뛰고 대시보드로 이동하세요."
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_foot_all_done",
+      "en": "\\u2713 All steps configured.  Ready when you are.",
+      "zh-CN": "\\u2713 所有步骤已配置完成，随时可开始。",
+      "zh-TW": "\\u2713 所有步驟已設定完成，隨時可開始。",
+      "ja": "\\u2713 すべての手順が完了しました。準備OKです。",
+      "ko": "\\u2713 모든 단계가 설정되었습니다. 준비 완료."
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_steps_remaining",
+      "en": "step(s) remaining (optional).",
+      "zh-CN": "个步骤待完成（可选）。",
+      "zh-TW": "個步驟待完成（可選）。",
+      "ja": "手順が残っています（任意）。",
+      "ko": "단계 남음 (선택 사항)."
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_psy",
+      "en": "Psy Chart",
+      "zh-CN": "空气线图",
+      "zh-TW": "空氣線圖",
+      "ja": "空気線図",
+      "ko": "공기선도"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_psy_sub",
+      "en": "Givoni \\u00b7 RH range \\u00b7 axis",
+      "zh-CN": "吉沃尼 \\u00b7 湿度范围 \\u00b7 坐标轴",
+      "zh-TW": "吉沃尼 \\u00b7 濕度範圍 \\u00b7 座標軸",
+      "ja": "ギボーニ \\u00b7 RH範囲 \\u00b7 軸",
+      "ko": "기보니 \\u00b7 습도 범위 \\u00b7 축"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_location",
+      "en": "Location",
+      "zh-CN": "位置",
+      "zh-TW": "位置",
+      "ja": "位置",
+      "ko": "위치"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_location_sub",
+      "en": "City \\u00b7 lat / long",
+      "zh-CN": "城市 \\u00b7 纬度 / 经度",
+      "zh-TW": "城市 \\u00b7 緯度 / 經度",
+      "ja": "都市 \\u00b7 緯度 / 経度",
+      "ko": "도시 \\u00b7 위도 / 경도"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_language",
+      "en": "Language",
+      "zh-CN": "语言",
+      "zh-TW": "語言",
+      "ja": "言語",
+      "ko": "언어"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_language_sub",
+      "en": "EN \\u00b7 CS \\u00b7 CT \\u00b7 JP \\u00b7 KO \\u00b7 \\u2026",
+      "zh-CN": "EN \\u00b7 CS \\u00b7 CT \\u00b7 JP \\u00b7 KO \\u00b7 \\u2026",
+      "zh-TW": "EN \\u00b7 CS \\u00b7 CT \\u00b7 JP \\u00b7 KO \\u00b7 \\u2026",
+      "ja": "EN \\u00b7 CS \\u00b7 CT \\u00b7 JP \\u00b7 KO \\u00b7 \\u2026",
+      "ko": "EN \\u00b7 CS \\u00b7 CT \\u00b7 JP \\u00b7 KO \\u00b7 \\u2026"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_plugin",
+      "en": "Plug-in",
+      "zh-CN": "插件",
+      "zh-TW": "外掛",
+      "ja": "プラグイン",
+      "ko": "플러그인"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_plugin_sub",
+      "en": "List \\u00b7 upload \\u00b7 modify",
+      "zh-CN": "列表 \\u00b7 上传 \\u00b7 修改",
+      "zh-TW": "列表 \\u00b7 上傳 \\u00b7 修改",
+      "ja": "一覧 \\u00b7 アップロード \\u00b7 変更",
+      "ko": "목록 \\u00b7 업로드 \\u00b7 수정"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_repair",
+      "en": "Update & Repair",
+      "zh-CN": "更新与修复",
+      "zh-TW": "更新與修復",
+      "ja": "更新と修復",
+      "ko": "업데이트 및 복구"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_step_repair_sub",
+      "en": "Plug-in flash \\u00b7 controller OTA",
+      "zh-CN": "插件刷写 \\u00b7 控制器 OTA",
+      "zh-TW": "外掛燒錄 \\u00b7 控制器 OTA",
+      "ja": "プラグイン書込 \\u00b7 コントローラOTA",
+      "ko": "플러그인 플래시 \\u00b7 컨트롤러 OTA"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_full_page",
+      "en": "Full page",
+      "zh-CN": "整页",
+      "zh-TW": "整頁",
+      "ja": "全画面",
+      "ko": "전체 페이지"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_popup",
+      "en": "Popup",
+      "zh-CN": "弹窗",
+      "zh-TW": "彈窗",
+      "ja": "ポップアップ",
+      "ko": "팝업"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_configured",
+      "en": "Configured",
+      "zh-CN": "已配置",
+      "zh-TW": "已設定",
+      "ja": "設定済み",
+      "ko": "설정됨"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_back_to_setup",
+      "en": "\\u2190 Back to setup",
+      "zh-CN": "\\u2190 返回设置",
+      "zh-TW": "\\u2190 返回設定",
+      "ja": "\\u2190 設定に戻る",
+      "ko": "\\u2190 설정으로 돌아가기"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_save_return",
+      "en": "Save & return \\u2713",
+      "zh-CN": "保存并返回 \\u2713",
+      "zh-TW": "儲存並返回 \\u2713",
+      "ja": "保存して戻る \\u2713",
+      "ko": "저장 후 돌아가기 \\u2713"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_psy_chart_setting",
+      "en": "Psy Chart Setting",
+      "zh-CN": "空气线图设置",
+      "zh-TW": "空氣線圖設定",
+      "ja": "空気線図設定",
+      "ko": "공기선도 설정"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_display_mode",
+      "en": "Display Mode",
+      "zh-CN": "显示模式",
+      "zh-TW": "顯示模式",
+      "ja": "表示モード",
+      "ko": "표시 모드"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_dim_dark",
+      "en": "\\ud83c\\udf19  Dim / Dark",
+      "zh-CN": "\\ud83c\\udf19  暗色",
+      "zh-TW": "\\ud83c\\udf19  暗色",
+      "ja": "\\ud83c\\udf19  ダーク",
+      "ko": "\\ud83c\\udf19  어둡게"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_light_mode",
+      "en": "\\u2600  Light",
+      "zh-CN": "\\u2600  亮色",
+      "zh-TW": "\\u2600  亮色",
+      "ja": "\\u2600  ライト",
+      "ko": "\\u2600  밝게"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_dim_brightness",
+      "en": "Dim brightness",
+      "zh-CN": "暗色亮度",
+      "zh-TW": "暗色亮度",
+      "ja": "暗さの明るさ",
+      "ko": "어둡기 밝기"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_givoni_engine",
+      "en": "Givoni Engine",
+      "zh-CN": "吉沃尼引擎",
+      "zh-TW": "吉沃尼引擎",
+      "ja": "ギボーニエンジン",
+      "ko": "기보니 엔진"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_givoni_on",
+      "en": "Givoni ON",
+      "zh-CN": "吉沃尼 开",
+      "zh-TW": "吉沃尼 開",
+      "ja": "ギボーニ ON",
+      "ko": "기보니 켜짐"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_givoni_off",
+      "en": "Givoni OFF",
+      "zh-CN": "吉沃尼 关",
+      "zh-TW": "吉沃尼 關",
+      "ja": "ギボーニ OFF",
+      "ko": "기보니 꺼짐"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_rh_sweet_spot",
+      "en": "RH Sweet-Spot Range",
+      "zh-CN": "湿度舒适区范围",
+      "zh-TW": "濕度舒適區範圍",
+      "ja": "RH快適範囲",
+      "ko": "습도 최적 범위"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_venue_preset",
+      "en": "Venue preset",
+      "zh-CN": "场所预设",
+      "zh-TW": "場所預設",
+      "ja": "施設プリセット",
+      "ko": "장소 프리셋"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_temp_axis_range",
+      "en": "Temperature Axis Range",
+      "zh-CN": "温度坐标轴范围",
+      "zh-TW": "溫度座標軸範圍",
+      "ja": "温度軸範囲",
+      "ko": "온도 축 범위"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_language_setting",
+      "en": "Language Setting",
+      "zh-CN": "语言设置",
+      "zh-TW": "語言設定",
+      "ja": "言語設定",
+      "ko": "언어 설정"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_language_sub",
+      "en": "Pick your default interface language",
+      "zh-CN": "选择默认界面语言",
+      "zh-TW": "選擇預設介面語言",
+      "ja": "既定の表示言語を選択",
+      "ko": "기본 인터페이스 언어 선택"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_location_setting",
+      "en": "Location Setting",
+      "zh-CN": "位置设置",
+      "zh-TW": "位置設定",
+      "ja": "位置設定",
+      "ko": "위치 설정"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_location_sub",
+      "en": "Click the map, drag the pin, or use your device",
+      "zh-CN": "点击地图、拖动图钉或使用设备定位",
+      "zh-TW": "點擊地圖、拖動圖釘或使用裝置定位",
+      "ja": "地図クリック、ピンをドラッグ、または端末を使用",
+      "ko": "지도 클릭, 핀 드래그 또는 기기 위치 사용"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_plugin_setting",
+      "en": "Plug-in Setting",
+      "zh-CN": "插件设置",
+      "zh-TW": "外掛設定",
+      "ja": "プラグイン設定",
+      "ko": "플러그인 설정"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_plugin_sub",
+      "en": "Enable, upload or modify plug-ins",
+      "zh-CN": "启用、上传或修改插件",
+      "zh-TW": "啟用、上傳或修改外掛",
+      "ja": "プラグインの有効化・アップロード・変更",
+      "ko": "플러그인 활성화, 업로드 또는 수정"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_enabled",
+      "en": "Enabled",
+      "zh-CN": "已启用",
+      "zh-TW": "已啟用",
+      "ja": "有効",
+      "ko": "활성화"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_disabled",
+      "en": "Disabled",
+      "zh-CN": "已禁用",
+      "zh-TW": "已停用",
+      "ja": "無効",
+      "ko": "비활성화"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_configure_dd",
+      "en": "Configure \\u25be",
+      "zh-CN": "配置 \\u25be",
+      "zh-TW": "設定 \\u25be",
+      "ja": "設定 \\u25be",
+      "ko": "구성 \\u25be"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_close_up",
+      "en": "Close \\u25b4",
+      "zh-CN": "收起 \\u25b4",
+      "zh-TW": "收起 \\u25b4",
+      "ja": "閉じる \\u25b4",
+      "ko": "닫기 \\u25b4"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_reset_defaults",
+      "en": "Reset defaults",
+      "zh-CN": "恢复默认",
+      "zh-TW": "還原預設",
+      "ja": "既定値に戻す",
+      "ko": "기본값 복원"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_latitude",
+      "en": "Latitude",
+      "zh-CN": "纬度",
+      "zh-TW": "緯度",
+      "ja": "緯度",
+      "ko": "위도"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_longitude",
+      "en": "Longitude",
+      "zh-CN": "经度",
+      "zh-TW": "經度",
+      "ja": "経度",
+      "ko": "경도"
+    },
+    {
+      "section": "Setup Walk (setup.html / setup_walk.jsx)",
+      "key": "sw_quick_jumps",
+      "en": "Quick jumps",
+      "zh-CN": "快速跳转",
+      "zh-TW": "快速跳轉",
+      "ja": "クイックジャンプ",
+      "ko": "빠른 이동"
+    }
+  ]
+}

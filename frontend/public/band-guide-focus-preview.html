@@ -50,18 +50,24 @@
     max-width: 260px; padding: 6px 10px; border-radius: 8px;
     border: 1px solid rgba(100,116,139,.4);
     background: rgba(255,255,255,.35); backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     box-shadow: 0 6px 18px rgba(15,23,42,.12);
     color: #0f172a; font-size: 9px; line-height: 1.4;
     cursor: pointer; outline: none;
     transform-origin: top right;
-    transform: scale(1);
-    transition: transform 160ms ease-out, border-color 160ms ease-out, box-shadow 160ms ease-out;
+    zoom: 1;
   }
   .band.is-large {
     z-index: 55;
     border-color: #38bdf8;
     box-shadow: 0 10px 28px rgba(15,23,42,.22);
-    transform: scale(2);
+    /* Mac Retina: avoid transform:scale + backdrop-filter (double paint). */
+    zoom: 2;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255,255,255,.92);
+    max-height: 42vh;
+    overflow-y: auto;
   }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
   .badge {
@@ -123,17 +129,10 @@
   var hint = document.getElementById('hint');
   function setLarge(on) {
     band.classList.toggle('is-large', !!on);
-    if (on) {
-      band.style.transform = 'scale(2)';
-      band.style.zIndex = '55';
-      state.textContent = 'State: focused · 2×';
-      hint.textContent = 'Click graphic / Esc → shrink';
-    } else {
-      band.style.transform = 'scale(1)';
-      band.style.zIndex = '40';
-      state.textContent = 'State: default size';
-      hint.textContent = 'Click band guide → 2×';
-    }
+    /* Class owns transform (scale 1 or 2 only) — do not also write inline
+       scale, which can fight CSS and look like a second enlarge. */
+    state.textContent = on ? 'State: focused · 2×' : 'State: default size';
+    hint.textContent = on ? 'Click graphic / Esc → shrink' : 'Click band guide → 2×';
   }
   band.addEventListener('focus', function () { setLarge(true); });
   band.addEventListener('blur', function (e) {

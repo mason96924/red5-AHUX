@@ -748,6 +748,10 @@
                 return fallback;
             };
             const [showAhuModalFor, setShowAhuModalFor] = useState(null);
+            /* Band-guide 2× reading zoom. CSS zoom (not transform:scale) —
+               Mac Retina + backdrop-filter was painting ~2× then ~4×. */
+            const [ahuBandGuideZoomed, setAhuBandGuideZoomed] = useState(false);
+            useEffect(() => { setAhuBandGuideZoomed(false); }, [showAhuModalFor]);
             const [_forceApTick, _setForceApTick] = useState(0);
             const [ahuModalSize, setAhuModalSize] = useState(() => _loadSize(_LS_AHU_SIZE, { w: 1600, h: 900 }));
             const ahuOuterRef = useRef(null);
@@ -2900,6 +2904,7 @@
                     {/* AHU SCADA Overlay Modal */}
                     {showAhuModalFor && renderAhuEquipmentModal({
                         API_URL, _setForceApTick,
+                        ahuBandGuideZoomed, setAhuBandGuideZoomed,
                         ahuBodyRef, ahuData, ahuImage, ahuImgDims, ahuImgRef,
                         ahuModalOffset, ahuModalPopupHost, ahuModalPopupWin, ahuModalSize,
                         ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal, floatPipAhuModal,

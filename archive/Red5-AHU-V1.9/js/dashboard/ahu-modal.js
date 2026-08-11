@@ -17,11 +17,12 @@
  *   and DevTools visibility.
  *
  * Ctx props expected (23):
- *   API_URL, _setForceApTick, ahuBodyRef, ahuData, ahuImage, ahuImgDims,
- *   ahuImgRef, ahuModalOffset, ahuModalPopupHost, ahuModalPopupWin,
- *   ahuModalSize, ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig,
- *   popOutAhuModal, floatPipAhuModal, setAhuData, setAhuImgDims, setDragStart,
- *   setIsAhuModalDragging, setShowAhuModalFor, showAhuModalFor, theme
+ *   API_URL, _setForceApTick, ahuBandGuideZoomed, setAhuBandGuideZoomed,
+ *   ahuBodyRef, ahuData, ahuImage, ahuImgDims, ahuImgRef, ahuModalOffset,
+ *   ahuModalPopupHost, ahuModalPopupWin, ahuModalSize, ahuOuterRef,
+ *   ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal, floatPipAhuModal,
+ *   setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
+ *   setShowAhuModalFor, showAhuModalFor, theme
  *
  * LOCALS — declared inside the body, NOT passed via ctx (would cause
  * "already declared" errors):
@@ -32,6 +33,7 @@
 function renderAhuEquipmentModal(ctx) {
     const {
         API_URL, _setForceApTick,
+        ahuBandGuideZoomed, setAhuBandGuideZoomed,
         ahuBodyRef, ahuData, ahuImage, ahuImgDims, ahuImgRef,
         ahuModalOffset, ahuModalPopupHost, ahuModalPopupWin, ahuModalSize,
         ahuOuterRef, ahuTypeImages,
@@ -41,6 +43,7 @@ function renderAhuEquipmentModal(ctx) {
         setShowAhuModalFor, showAhuModalFor,
         theme,
     } = ctx;
+    const bandGuideZoomed = !!ahuBandGuideZoomed;
                         const targetAhu = ahuData.find(a => a.id === showAhuModalFor) || ahuData[0];
                         const oaPoint = targetAhu?.points?.find(p => p.label === 'OA');
                         const saPoint = targetAhu?.points?.find(p => p.label === 'SA');
@@ -357,9 +360,10 @@ function renderAhuEquipmentModal(ctx) {
                                          onMouseDown={(e) => {
                                              /* Click outside collapses the band-guide focus zoom. */
                                              const guide = e.currentTarget.querySelector('[data-testid^="ahu-modal-band-"]');
-                                             if (guide && document.activeElement === guide && !guide.contains(e.target)) {
-                                                 guide.blur();
-                                             }
+                                             if (!guide || guide.contains(e.target)) return;
+                                             const active = (guide.ownerDocument && guide.ownerDocument.activeElement) || null;
+                                             if (active === guide) guide.blur();
+                                             if (typeof setAhuBandGuideZoomed === 'function') setAhuBandGuideZoomed(false);
                                          }}>
                                         {/* Band-status overlay (Phase L.44, 2026-06-27).
                                             Permanently visible transparent panel showing
@@ -369,7 +373,10 @@ function renderAhuEquipmentModal(ctx) {
                                             Pinned to the top-right of the equipment graphic
                                             zone so it doesn't cover the AHU components but
                                             stays in the operator's line of sight.
-                                            Click focuses → 2× for reading; blur / click-outside → original size. */}
+                                            Click focuses → 2× for reading; blur / click-outside → original size.
+                                            Mac-only oversize: WebKit/Blink on Retina often double-paints
+                                            backdrop-filter + transform:scale. Enlarge with CSS zoom and
+                                            drop blur while focused instead. */}
                                         {(() => {
                                             // Band guide: live OAT/OAH + psychrometric veto vs RA.
                                             // Never trust stale active_band for the climate story.
@@ -408,29 +415,37 @@ function renderAhuEquipmentModal(ctx) {
                                                 : 'bg-white/35 border-slate-400/40 text-slate-900';
                                             return (
                                                 <div data-testid={`ahu-modal-band-${showAhuModalFor}`}
+                                                     key={`ahu-modal-band-${showAhuModalFor}`}
                                                      tabIndex={0}
                                                      title="Click to enlarge · click away to shrink"
-                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border backdrop-blur-lg shadow-md max-w-[260px] cursor-pointer outline-none focus:border-sky-400 focus:shadow-lg ${panelBg}`}
+                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border shadow-md max-w-[260px] cursor-pointer outline-none focus:border-sky-400 focus:shadow-lg ${bandGuideZoomed ? '' : 'backdrop-blur-lg'} ${panelBg}`}
                                                      style={{
                                                          fontSize: '9px',
                                                          lineHeight: 1.4,
+                                                         /* CSS zoom (not transform:scale): scales badges/text
+                                                            without the Mac Retina backdrop-filter double paint. */
+                                                         zoom: bandGuideZoomed ? 2 : 1,
+                                                         zIndex: bandGuideZoomed ? 55 : 40,
+                                                         maxHeight: bandGuideZoomed ? '42vh' : undefined,
+                                                         overflowY: bandGuideZoomed ? 'auto' : undefined,
+                                                         /* Solid enough while zoomed so we can drop blur. */
+                                                         backgroundColor: bandGuideZoomed
+                                                             ? (dk ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.92)')
+                                                             : undefined,
                                                          transformOrigin: 'top right',
-                                                         transform: 'scale(1)',
-                                                         transition: 'transform 160ms ease-out',
                                                      }}
                                                      onMouseDown={(e) => e.stopPropagation()}
                                                      onClick={(e) => {
                                                          e.stopPropagation();
                                                          e.currentTarget.focus();
+                                                         if (typeof setAhuBandGuideZoomed === 'function') setAhuBandGuideZoomed(true);
                                                      }}
-                                                     onFocus={(e) => {
-                                                         e.currentTarget.style.transform = 'scale(2)';
-                                                         e.currentTarget.style.zIndex = '55';
+                                                     onFocus={() => {
+                                                         if (typeof setAhuBandGuideZoomed === 'function') setAhuBandGuideZoomed(true);
                                                      }}
                                                      onBlur={(e) => {
                                                          if (e.currentTarget.contains(e.relatedTarget)) return;
-                                                         e.currentTarget.style.transform = 'scale(1)';
-                                                         e.currentTarget.style.zIndex = '40';
+                                                         if (typeof setAhuBandGuideZoomed === 'function') setAhuBandGuideZoomed(false);
                                                      }}
                                                 >
                                                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">

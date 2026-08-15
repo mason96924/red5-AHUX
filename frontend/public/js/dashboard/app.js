@@ -2074,9 +2074,7 @@
             // Live floor-plan: set ONE window's open % (0–100) → blind_level 0–1 closed.
             // Match by window id when present, else by index so each bar stays independent.
             // Updates shafts immediately and debounces POST /api/save-config.
-            const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct, windowIndex) => {
-                const open = Math.max(0, Math.min(100, Number(openPct) || 0)) / 100;
-                const blind = 1 - open;
+            const patchFloorWindow = useCallback((floorId, windowId, fields, windowIndex) => {
                 setMapConfig(prev => {
                     if (!prev || !Array.isArray(prev.floors)) return prev;
                     let changed = false;
@@ -2090,9 +2088,8 @@
                                 match = i === windowIndex;
                             }
                             if (!match) return w;
-                            if (Math.abs((w.blind_level || 0) - blind) < 1e-6) return w;
                             changed = true;
-                            return Object.assign({}, w, { blind_level: blind });
+                            return Object.assign({}, w, fields || {});
                         });
                         return changed ? Object.assign({}, f, { windows }) : f;
                     });
@@ -2108,12 +2105,17 @@
                             body: JSON.stringify({ map_config: next, image_manifest: {} }),
                         }).then(r => r.json()).then(j => {
                             if (j && (j.success || j.ok || j.persisted)) return;
-                            if (window.toast) window.toast((j && j.error) || 'Blind save needs sign-in / write access.', 'info');
+                            if (window.toast) window.toast((j && j.error) || 'Window save needs sign-in / write access.', 'info');
                         }).catch(() => {});
                     }, 450);
                     return next;
                 });
             }, []);
+
+            const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct, windowIndex) => {
+                const open = Math.max(0, Math.min(100, Number(openPct) || 0)) / 100;
+                patchFloorWindow(floorId, windowId, { blind_level: 1 - open }, windowIndex);
+            }, [patchFloorWindow]);
 
             const ahuMetrics = useMemo(() => {
                 if (!selectedAhuId) return { exchange: 0, absorption: 0 };
@@ -2894,7 +2896,7 @@
                         buildingFacingOffset,
                         floorWindowsPanelOpen, setFloorWindowsPanelOpen,
                         selectedFloorWindowId, setSelectedFloorWindowId,
-                        setFloorWindowOpenPct,
+                        setFloorWindowOpenPct, patchFloorWindow,
                         comfortZonePoly,
                         showGivoni, showSweetSpot, sweetSpotRange,
                         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal, floatPipFloorPlanModal,

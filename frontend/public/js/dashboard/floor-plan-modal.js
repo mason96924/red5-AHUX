@@ -148,7 +148,7 @@ function renderFloorPlanModal(ctx) {
         buildingFacingOffset,
         floorWindowsPanelOpen, setFloorWindowsPanelOpen,
         selectedFloorWindowId, setSelectedFloorWindowId,
-        setFloorWindowOpenPct,
+        setFloorWindowOpenPct, patchFloorWindow,
         comfortZonePoly,
         showGivoni, showSweetSpot, sweetSpotRange,
         // Helpers + look-up tables
@@ -231,16 +231,14 @@ const floorModalTree = (
                                 style={{ maxWidth: 'calc(min(1400px, 95vw) - 20px)', maxHeight: 'calc(min(850px, 90vh) - 90px)', mixBlendMode: 'multiply' }}
                                 alt={floorData.floor.name}
                             />
-                            {/* Sun-Path Phase A: compass + directional ray overlay.
-                                Compass lives in the top-right corner of the floor plan
-                                image.  Ray overlay washes a warm gradient across the
-                                plan from the sun's incoming direction.  Both only
-                                visible when the Sun-Path toggle is ON. */}
-                            {window.SunCompass && (
-                                <window.SunCompass
+                            {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
+                            {window.ElcSunPathLive && (
+                                <window.ElcSunPathLive
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
                                     theme={theme}
+                                    northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
+                                    orientation={floorData.floor.orientation}
                                     onChange={(s) => setSunState(s)}
                                 />
                             )}
@@ -299,8 +297,8 @@ const floorModalTree = (
                                     </div>
                                 );
                             })}
-                            {/* Individual blind control — draggable Closed ↔ Open pill */}
-                            {floorWindowsPanelOpen && (() => {
+                            {/* Window graphic modal — all ELC options in AHU diagram chrome */}
+                            {floorWindowsPanelOpen && typeof renderWindowGraphicModal === 'function' && (() => {
                                 const wins = floorData.floor.windows || [];
                                 let wi = wins.findIndex((w, i) => {
                                     const wid = w.id != null ? w.id : ('idx-' + i);
@@ -309,23 +307,20 @@ const floorModalTree = (
                                 if (wi < 0 && wins.length) wi = 0;
                                 const w = wi >= 0 ? wins[wi] : null;
                                 if (!w) return null;
-                                const wid = w.id != null ? w.id : ('idx-' + wi);
                                 const floorKey = floorData.floor.id || floorData.floor.name || 'floor';
-                                const openPct = Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
-                                return (
-                                    <LiveBlindControlPill
-                                        key={'live-blind-pill-' + wid}
-                                        theme={theme}
-                                        wi={wi}
-                                        wid={wid}
-                                        w={w}
-                                        floorKey={floorKey}
-                                        openPct={openPct}
-                                        setFloorWindowOpenPct={setFloorWindowOpenPct}
-                                        setFloorWindowsPanelOpen={setFloorWindowsPanelOpen}
-                                        setSelectedFloorWindowId={setSelectedFloorWindowId}
-                                    />
-                                );
+                                return renderWindowGraphicModal({
+                                    theme,
+                                    window: w,
+                                    windowIndex: wi,
+                                    modalOffset: { x: 16, y: 16 },
+                                    onClose: () => {
+                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
+                                        if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
+                                    },
+                                    onChange: (next) => {
+                                        if (patchFloorWindow) patchFloorWindow(floorKey, next.id, next, wi);
+                                    },
+                                });
                             })()}
                             {/* INLINE zIndex (not Tailwind): must sit ABOVE SunRayOverlay
                                 (zIndex:5) and BuildingShadow (zIndex:6).  Map_config path
@@ -487,11 +482,9 @@ const floorModalTree = (
                             ) : (
                                 <div className="absolute inset-0 blueprint-grid opacity-30 pointer-events-none z-0"></div>
                             )}
-                            {/* Sun-Path Phase A: compass + ray overlay in the fallback
-                                layout.  Lets users exercise sun-path even without a
-                                real map_config.json uploaded. */}
-                            {window.SunCompass && (
-                                <window.SunCompass
+                            {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
+                            {window.ElcSunPathLive && (
+                                <window.ElcSunPathLive
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
                                     theme={theme}

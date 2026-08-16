@@ -99,7 +99,7 @@
         - Custom sensor groups
         - All Equipment Schema Mapper features
     -->
-    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=efa85a8330">
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=d1c51e8ee9">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
@@ -5646,6 +5646,17 @@
                                                                    }}/>
                                                             <span className="font-mono text-[9px] text-sky-300 w-9 text-right">{openPct}%</span>
                                                         </div>
+                                                        <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
+                                                            <span className="text-[8px] text-slate-500 w-10 shrink-0">Type</span>
+                                                            {window.WindowBlindTypeSelect ? (
+                                                                <window.WindowBlindTypeSelect
+                                                                    theme="dark"
+                                                                    value={w.blind_type}
+                                                                    testId={`mapper-list-type-${w.id}`}
+                                                                    onChange={(bt) => setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_type: bt } : x))}
+                                                                />
+                                                            ) : null}
+                                                        </div>
                                                     </div>
                                                 );
                                             })
@@ -6231,6 +6242,23 @@
                                                 </div>
                                             );
                                         })}
+                                        {selectedWindowId && window.WindowBlindsPopout && (() => {
+                                            const wins = floorWindows.filter(x => x.floorIdx === currentFloorIdx);
+                                            const w = wins.find(x => x.id === selectedWindowId);
+                                            if (!w) return null;
+                                            return (
+                                                <window.WindowBlindsPopout
+                                                    theme="dark"
+                                                    w={w}
+                                                    windowIndex={wins.findIndex(x => x.id === w.id)}
+                                                    layoutMode={true}
+                                                    onChange={(fields) => setFloorWindows(prev => prev.map(x => x.id === w.id ? Object.assign({}, x, fields) : x))}
+                                                    onClose={() => setSelectedWindowId(null)}
+                                                    onTrace={(id) => startWindowTrace({ windowId: id })}
+                                                    onDelete={(id) => deleteWindow(id)}
+                                                />
+                                            );
+                                        })()}
                                         
                                         {/* Floor Markers */}
                                         {floorMarkers.filter(m => m.floorIdx === currentFloorIdx).map(marker => {
@@ -7141,6 +7169,17 @@
                                                        }}/>
                                                 <span className="font-mono text-[10px] text-sky-300 w-9 text-right">{openPct}%</span>
                                             </div>
+                                            <div className="flex items-center gap-1.5 mt-1.5">
+                                                <span className="text-[9px] text-slate-500 w-11 shrink-0">Type →</span>
+                                                {window.WindowBlindTypeSelect ? (
+                                                    <window.WindowBlindTypeSelect
+                                                        theme="dark"
+                                                        value={w.blind_type}
+                                                        testId={`wp-type-${w.id}`}
+                                                        onChange={(bt) => setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_type: bt } : x))}
+                                                    />
+                                                ) : null}
+                                            </div>
                                             <div className="text-[8px] text-slate-600 mt-1">0% closed · 100% fully open (sun in)</div>
                                         </div>
                                     );
@@ -7216,7 +7255,8 @@
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
                 '/assets/js/sun-path.js',
-                '/assets/js/elc-sun-path-overlay.js'
+                '/assets/js/elc-sun-path-overlay.js',
+                '/assets/js/window-blinds-popout.js'
             ];
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {

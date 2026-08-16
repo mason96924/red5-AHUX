@@ -16,99 +16,8 @@
  * (modulo a single block of dedent) so behaviour stays unchanged.
  * ------------------------------------------------------------------ */
 
-/** Draggable per-window blind 0–100% pill (Closed ↔ Open). */
-function LiveBlindControlPill(props) {
-    const {
-        theme, wi, wid, w, floorKey, openPct,
-        setFloorWindowOpenPct, setFloorWindowsPanelOpen, setSelectedFloorWindowId,
-    } = props;
-    const placeAbove = (Number(w.y) || 50) > 22;
-    const storageKey = 'red5.liveBlindPillPos.' + String(wid);
-    const [pos, setPos] = React.useState(() => {
-        try {
-            const p = JSON.parse(localStorage.getItem(storageKey) || 'null');
-            if (p && typeof p.x === 'number' && typeof p.y === 'number') return p;
-        } catch (_) {}
-        return { x: 0, y: 0 };
-    });
-    const [drag, setDrag] = React.useState(null);
-    const posRef = React.useRef(pos);
-    posRef.current = pos;
-
-    React.useEffect(() => {
-        if (!drag) return undefined;
-        const onMove = (e) => {
-            setPos({
-                x: drag.baseX + (e.clientX - drag.startX),
-                y: drag.baseY + (e.clientY - drag.startY),
-            });
-        };
-        const onUp = () => {
-            setDrag(null);
-            try { localStorage.setItem(storageKey, JSON.stringify(posRef.current)); } catch (_) {}
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-        return () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-    }, [drag, storageKey]);
-
-    const baseTx = placeAbove ? '-50%' : '-50%';
-    const baseTy = placeAbove ? 'calc(-100% - 16px)' : '16px';
-
-    return (
-        <div
-            data-testid="live-window-individual-control"
-            className={`absolute z-[55] w-[220px] rounded-md border shadow-2xl pointer-events-auto ${
-                theme === 'dark' ? 'bg-slate-950/95 border-amber-500/70 text-slate-200' : 'bg-white/95 border-amber-400 text-slate-800'
-            }`}
-            style={{
-                left: `${w.x}%`,
-                top: `${w.y}%`,
-                transform: `translate(${baseTx}, ${baseTy}) translate(${pos.x}px, ${pos.y}px)`,
-                cursor: drag ? 'grabbing' : 'grab',
-                userSelect: 'none',
-                touchAction: 'none',
-            }}
-            onMouseDown={(e) => {
-                if (e.button !== 0) return;
-                const t = e.target;
-                if (t && t.closest && (t.closest('button') || t.closest('input'))) return;
-                e.stopPropagation();
-                e.preventDefault();
-                setDrag({ startX: e.clientX, startY: e.clientY, baseX: pos.x, baseY: pos.y });
-            }}
-            title="Drag to move · this window’s blind only"
-        >
-            <div className={`flex items-center justify-between px-2 py-1.5 border-b text-[9px] uppercase tracking-widest ${
-                theme === 'dark' ? 'border-slate-700 text-amber-300' : 'border-slate-200 text-amber-700'
-            }`}>
-                <span>W{wi + 1} · Blind</span>
-                <button type="button" className="text-sm px-1 opacity-60 hover:opacity-100 cursor-pointer"
-                        onClick={() => {
-                            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
-                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
-                        }}>×</button>
-            </div>
-            <div className="px-2 py-2">
-                <div className="flex items-center gap-1.5">
-                    <span className="text-[8px] opacity-60 w-10 shrink-0">Closed</span>
-                    <input type="range" min="0" max="100" step="1" value={openPct}
-                           className="flex-1 min-w-0 accent-amber-400 cursor-pointer"
-                           data-testid={`live-window-open-${wid}`}
-                           onChange={(e) => {
-                               const v = parseInt(e.target.value, 10) || 0;
-                               if (setFloorWindowOpenPct) setFloorWindowOpenPct(floorKey, w.id, v, wi);
-                           }}/>
-                    <span className="text-[8px] opacity-60 w-8 shrink-0 text-right">Open</span>
-                    <span className="font-mono text-[10px] text-amber-400 w-9 text-right">{openPct}%</span>
-                </div>
-                <div className="text-[8px] opacity-50 mt-1">This window only · 0% closed · 100% open</div>
-            </div>
-        </div>
-    );
+function isTracedFloorWindow(w) {
+    return !!(w && Array.isArray(w.vertices) && w.vertices.length >= 3);
 }
 
 /** Amber VAV/AHU ring: sun exposure × blind open of windows lighting this marker. */
@@ -258,8 +167,9 @@ const floorModalTree = (
                                     showRooms={true}
                                 />
                             )}
-                            {/* Live window bars — click to set blinds; no amber halo on the glass */}
+                            {/* Live windows — 2.5D bars and 2D traced glass. Click pops Open + Type. */}
                             {(floorData.floor.windows || []).map((w, wi) => {
+                                if (isTracedFloorWindow(w)) return null;
                                 const wid = w.id != null ? w.id : ('idx-' + wi);
                                 const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
                                 const open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
@@ -268,7 +178,7 @@ const floorModalTree = (
                                     <div
                                         key={wid}
                                         data-testid={`live-window-${wid}`}
-                                        title={`W${wi + 1} · blind ${Math.round(open * 100)}% open — click to set`}
+                                        title={`W${wi + 1} · ${(w.blind_type || 'roller')} · ${Math.round(open * 100)}% open — click to set`}
                                         onMouseDown={(e) => {
                                             e.stopPropagation();
                                             if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
@@ -297,30 +207,55 @@ const floorModalTree = (
                                     </div>
                                 );
                             })}
-                            {/* Window graphic modal — all ELC options in AHU diagram chrome */}
-                            {floorWindowsPanelOpen && typeof renderWindowGraphicModal === 'function' && (() => {
+                            <svg className="absolute inset-0 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none"
+                                 style={{width:'100%', height:'100%', zIndex: 36}}>
+                                {(floorData.floor.windows || []).map((w, wi) => {
+                                    if (!isTracedFloorWindow(w)) return null;
+                                    const wid = w.id != null ? w.id : ('idx-' + wi);
+                                    const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
+                                    return (
+                                        <polygon
+                                            key={wid}
+                                            data-testid={`live-window-${wid}`}
+                                            points={w.vertices.map(v => `${v[0]},${v[1]}`).join(' ')}
+                                            fill={sel ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)'}
+                                            stroke={sel ? '#fbbf24' : '#7dd3fc'}
+                                            strokeWidth={sel ? 0.55 : 0.35}
+                                            style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
+                                                if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
+                                            }}
+                                        />
+                                    );
+                                })}
+                            </svg>
+                            {selectedFloorWindowId && (typeof WindowBlindsPopout === 'function' || window.WindowBlindsPopout) && (() => {
                                 const wins = floorData.floor.windows || [];
                                 let wi = wins.findIndex((w, i) => {
                                     const wid = w.id != null ? w.id : ('idx-' + i);
                                     return selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
                                 });
-                                if (wi < 0 && wins.length) wi = 0;
-                                const w = wi >= 0 ? wins[wi] : null;
-                                if (!w) return null;
+                                if (wi < 0) return null;
+                                const w = wins[wi];
                                 const floorKey = floorData.floor.id || floorData.floor.name || 'floor';
-                                return renderWindowGraphicModal({
-                                    theme,
-                                    window: w,
-                                    windowIndex: wi,
-                                    modalOffset: { x: 16, y: 16 },
-                                    onClose: () => {
-                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
-                                        if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
-                                    },
-                                    onChange: (next) => {
-                                        if (patchFloorWindow) patchFloorWindow(floorKey, next.id, next, wi);
-                                    },
-                                });
+                                const Pop = typeof WindowBlindsPopout === 'function' ? WindowBlindsPopout : window.WindowBlindsPopout;
+                                return (
+                                    <Pop
+                                        theme={theme}
+                                        w={w}
+                                        windowIndex={wi}
+                                        layoutMode={false}
+                                        onChange={(fields) => {
+                                            if (patchFloorWindow) patchFloorWindow(floorKey, w.id, fields, wi);
+                                        }}
+                                        onClose={() => {
+                                            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
+                                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
+                                        }}
+                                    />
+                                );
                             })()}
                             {/* INLINE zIndex (not Tailwind): must sit ABOVE SunRayOverlay
                                 (zIndex:5) and BuildingShadow (zIndex:6).  Map_config path

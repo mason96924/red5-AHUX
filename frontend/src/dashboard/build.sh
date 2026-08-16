@@ -18,10 +18,11 @@
 #   bash /app/frontend/src/dashboard/build.sh
 
 set -euo pipefail
-cd "$(dirname "$0")/../.."             # → /app/frontend
+cd "$(dirname "$0")/../.."             # → frontend/
 
-PUB=/app/frontend/public
-SRC=/app/frontend/src/dashboard
+ROOT="$(pwd)"
+PUB="$ROOT/public"
+SRC="$ROOT/src/dashboard"
 CFG="$SRC/babel.config.json"
 # Deterministic temp filename (was `mktemp` -- the random suffix leaked into
 # the inline source map and made byte-identical rebuilds impossible).
@@ -41,6 +42,7 @@ MODULES=(
     "$PUB/js/dashboard/vav-modal.js"
     "$PUB/js/dashboard/ahu-modal.js"
     "$PUB/js/dashboard/window-graphic-modal.js"
+    "$PUB/js/window-blinds-popout.js"
     "$PUB/js/dashboard/band-clamp-modal.js"
     "$PUB/js/dashboard/weather-settings-modal.js"
     "$PUB/js/dashboard/weather-strip-panel.js"
@@ -74,7 +76,16 @@ done
 #   (no --source-maps) -- inline source maps roughly DOUBLE the bundle
 #                         and are useless on the controller (no devtools).
 # Result: 2.1 MB -> ~380 KB, comfortably under tight flash quotas.
-node_modules/.bin/babel \
+# Babel CLI: local install, else sibling red5-ahu checkout.
+if [ -x "$ROOT/node_modules/.bin/babel" ]; then
+    BABEL="$ROOT/node_modules/.bin/babel"
+elif [ -x "$ROOT/../../red5-ahu/frontend/node_modules/.bin/babel" ]; then
+    BABEL="$ROOT/../../red5-ahu/frontend/node_modules/.bin/babel"
+else
+    echo "ERROR: @babel/cli not found. yarn install in frontend/ or set BABEL=." >&2
+    exit 1
+fi
+"$BABEL" \
     --config-file "$CFG" \
     --no-babelrc \
     --minified \
@@ -88,16 +99,27 @@ rm -f "$TMP"
 # Route the bundle through /api/assets/ -- V1.9 + V2.0 both serve this path
 # from /root/data/ and /app/frontend/public/ respectively, so the shared
 # dashboard.html works on either backend with zero divergence.
-HASH=$(md5sum "$DST" | cut -c1-10)
+if command -v md5sum >/dev/null 2>&1; then
+    HASH=$(md5sum "$DST" | cut -c1-10)
+else
+    HASH=$(md5 -q "$DST" | cut -c1-10)
+fi
+sed_inplace() {
+    if sed --version >/dev/null 2>&1; then
+        sed -i "$@"
+    else
+        sed -i '' "$@"
+    fi
+}
 # V2.0 / shared: rewrite the simple <script src="...dashboard.compiled.js?v=...">
 # tag.  IMPORTANT: do NOT run this regex against V1.9's multi-path boot loader
 # strings that end in `?v=' + HASH` — that produced broken
 # `?v=<stamp>?v=' + HASH` URLs and left the controller stuck on a stale
 # cached bundle (sun-path hour sim looked broken on V1.9 only).
-sed -i -E "s|src=\"(/api)?/(assets/)?dashboard\.compiled\.js(\?v=[a-f0-9]+)?\"|src=\"/api/assets/dashboard.compiled.js?v=$HASH\"|g" "$PUB/dashboard.html"
+sed_inplace -E "s|src=\"(/api)?/(assets/)?dashboard\.compiled.js(\?v=[a-f0-9]+)?\"|src=\"/api/assets/dashboard.compiled.js?v=$HASH\"|g" "$PUB/dashboard.html"
 # V1.9 boot loader (if present in this tree or archives): bump var HASH only.
 if grep -q "var HASH = '" "$PUB/dashboard.html" 2>/dev/null; then
-    sed -i -E "s|var HASH = '[a-f0-9]+'|var HASH = '$HASH'|g" "$PUB/dashboard.html"
+    sed_inplace -E "s|var HASH = '[a-f0-9]+'|var HASH = '$HASH'|g" "$PUB/dashboard.html"
 fi
 echo "Cache-bust dashboard.html → /api/assets/dashboard.compiled.js?v=$HASH"
 
@@ -119,25 +141,34 @@ TW_CFG="$SRC/tailwind.config.cjs"
 TW_IN="$SRC/tailwind.input.css"
 TW_OUT="$PUB/dashboard.tailwind.css"
 if [ -f "$TW_CFG" ] && [ -f "$TW_IN" ]; then
-    node_modules/.bin/tailwindcss \
-        -c "$TW_CFG" \
-        -i "$TW_IN" \
-        -o "$TW_OUT" \
-        --minify 2>&1 | grep -vE '^(Browserslist|  npx |  Why |Rebuilding|Done in|$)' || true
-
-    TW_HASH=$(md5sum "$TW_OUT" | cut -c1-10)
-    # Rewrite every HTML shell that loads Tailwind: swap the CDN script
-    # for a static <link>.  Idempotent -- already-static links are just
-    # cache-bust-updated each run.
-    for HTML in dashboard.html setup.html landing.html equipment_mapper.html sun_preview.html update.html; do
-        TARGET="$PUB/$HTML"
-        [ -f "$TARGET" ] || continue
-        # Replace the CDN <script> with a static <link> (first pass only).
-        sed -i -E 's|<script src="https://cdn\.tailwindcss\.com"></script>|<link rel="stylesheet" href="/api/assets/dashboard.tailwind.css">|g' "$TARGET"
-        # Update / inject the ?v= cache-bust on the static link.
-        sed -i -E "s|/api/assets/dashboard\.tailwind\.css(\?v=[a-f0-9]+)?|/api/assets/dashboard.tailwind.css?v=$TW_HASH|g" "$TARGET"
-    done
-    echo "Built $TW_OUT  ($(wc -c < "$TW_OUT" | awk '{printf "%.1f KB", $1/1024}'))   cache-bust v=$TW_HASH"
+    if [ -x "$ROOT/node_modules/.bin/tailwindcss" ]; then
+        TW="$ROOT/node_modules/.bin/tailwindcss"
+    elif [ -x "$ROOT/../../red5-ahu/frontend/node_modules/.bin/tailwindcss" ]; then
+        TW="$ROOT/../../red5-ahu/frontend/node_modules/.bin/tailwindcss"
+    else
+        TW=""
+    fi
+    if [ -n "$TW" ]; then
+        "$TW" \
+            -c "$TW_CFG" \
+            -i "$TW_IN" \
+            -o "$TW_OUT" \
+            --minify 2>&1 | grep -vE '^(Browserslist|  npx |  Why |Rebuilding|Done in|$)' || true
+        if command -v md5sum >/dev/null 2>&1; then
+            TW_HASH=$(md5sum "$TW_OUT" | cut -c1-10)
+        else
+            TW_HASH=$(md5 -q "$TW_OUT" | cut -c1-10)
+        fi
+        for HTML in dashboard.html setup.html landing.html equipment_mapper.html sun_preview.html update.html; do
+            TARGET="$PUB/$HTML"
+            [ -f "$TARGET" ] || continue
+            sed_inplace -E 's|<script src="https://cdn\.tailwindcss\.com"></script>|<link rel="stylesheet" href="/api/assets/dashboard.tailwind.css">|g' "$TARGET"
+            sed_inplace -E "s|/api/assets/dashboard\.tailwind\.css(\?v=[a-f0-9]+)?|/api/assets/dashboard.tailwind.css?v=$TW_HASH|g" "$TARGET"
+        done
+        echo "Built $TW_OUT  ($(wc -c < "$TW_OUT" | awk '{printf "%.1f KB", $1/1024}'))   cache-bust v=$TW_HASH"
+    else
+        echo "WARN: tailwindcss CLI not found -- CSS rebuild skipped"
+    fi
 else
     echo "WARN: Tailwind extract config / input missing ($TW_CFG / $TW_IN) -- CSS rebuild skipped"
 fi

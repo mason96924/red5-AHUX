@@ -1,38 +1,18 @@
 /* eslint-disable */
-// ---------------------------------------------------------------------------
-// Dedicated Tailwind config for the V1.9 / V2.0 legacy dashboard bundle.
-//
-// Why this exists (instead of using /app/frontend/tailwind.config.js):
-//   The CRA-side config is theme-extended with shadcn/ui CSS-variable
-//   colours (hsl(var(--background)) etc.) that none of the legacy HTML
-//   files load.  Pulling that config in here would emit shadcn variants
-//   we never use AND would not scan the dashboard's compiled bundle.
-//
-// What this scans:
-//   - The compiled dashboard bundle (so JSX class strings are covered).
-//   - Every HTML / JS file under /app/frontend/public/ that drives the
-//     legacy dashboard, the Setup Walk, the Repair Mode UI, etc.
-//
-// Output:
-//   /app/frontend/public/dashboard.tailwind.css   (~30-40 KB gzipped)
-//   replaces the ~200 KB cdn.tailwindcss.com runtime JIT.
-// ---------------------------------------------------------------------------
+const path = require('path');
+const pub = path.join(__dirname, '../../public');
+
 module.exports = {
     content: [
-        // Legacy multi-page HTML shells.
-        '/app/frontend/public/dashboard.html',
-        '/app/frontend/public/setup.html',
-        '/app/frontend/public/landing.html',
-        '/app/frontend/public/equipment_mapper.html',
-        '/app/frontend/public/sun_preview.html',
-        '/app/frontend/public/update.html',
-        // React JSX sources (pre-Babel) and the compiled bundle.  The
-        // compiled bundle is the SAFETY NET: even if a class is built
-        // up at runtime via string concat, the minified output will
-        // still surface the substring for Tailwind's scanner.
-        '/app/frontend/public/js/**/*.js',
-        '/app/frontend/public/dashboard.compiled.js',
-        '/app/frontend/public/setup_walk.compiled.js',
+        path.join(pub, 'dashboard.html'),
+        path.join(pub, 'setup.html'),
+        path.join(pub, 'landing.html'),
+        path.join(pub, 'equipment_mapper.html'),
+        path.join(pub, 'sun_preview.html'),
+        path.join(pub, 'update.html'),
+        path.join(pub, 'js/**/*.js'),
+        path.join(pub, 'dashboard.compiled.js'),
+        path.join(pub, 'setup_walk.compiled.js'),
     ],
     theme: {
         extend: {

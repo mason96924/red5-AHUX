@@ -203,19 +203,27 @@ window.red5ExposureRingStyle = function(score){
 
 /* Blind open / in-shaft factor (0..1) for a marker at plan % coords.
    MUST use the same light-travel vector as WindowsSunshaftOverlay
-   (lx=-sin(az), ly=cos(az)).  Closed blinds → 0; open + in beam → up to 1. */
+   (ELC marker-frame −towardSun).  Closed blinds → 0; open + in beam → up to 1. */
 window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
   opts = opts || {};
   if (!windows || !windows.length) return 1;
   if (!sun || !sun.is_day) return 0;
   var rooms = opts.rooms || null;
-  var northOffsetDeg = opts.northOffsetDeg || 0;
-  var az = ((sun.azimuth || 0) + northOffsetDeg) % 360;
-  if (az < 0) az += 360;
-  var rad = az * Math.PI / 180;
-  /* Same inbound travel as WindowsSunshaftOverlay — NOT the exposure-score vector. */
-  var lx = -Math.sin(rad);
-  var ly =  Math.cos(rad);
+  var travel = window.red5PlanSunVectors
+    ? window.red5PlanSunVectors(sun.azimuth, opts.orientation, opts.northOffsetDeg)
+    : null;
+  var lx = travel ? travel.lx : (function () {
+    var az = ((sun.azimuth || 0) + (opts.northOffsetDeg || 0)) % 360;
+    if (az < 0) az += 360;
+    var rad = az * Math.PI / 180;
+    return -Math.sin(rad);
+  })();
+  var ly = travel ? travel.ly : (function () {
+    var az = ((sun.azimuth || 0) + (opts.northOffsetDeg || 0)) % 360;
+    if (az < 0) az += 360;
+    var rad = az * Math.PI / 180;
+    return Math.cos(rad);
+  })();
   var elev = Math.max(0, sun.elevation || 0);
   var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
   var centerX = 50, centerY = 50;
@@ -558,6 +566,60 @@ window.red5FacingToNorthOffset = function(facing, lat){
   /* Keep in -180..180 for nicer diffs */
 };
 
+/* ELC floor.html _planCardinalBasis: S→N and W→E from placed markers.
+   Glow travel is NOT “plan-up = north”; it is −towardSun in this frame. */
+window.red5PlanCardinalBasis = function(orientation){
+  var o = orientation || {};
+  function unit(a, b) {
+    if (!a || !b) return null;
+    var ax = (a.x != null && a.x !== '') ? Number(a.x) : Number(a.x_m);
+    var ay = (a.y != null && a.y !== '') ? Number(a.y) : Number(a.y_m);
+    var bx = (b.x != null && b.x !== '') ? Number(b.x) : Number(b.x_m);
+    var by = (b.y != null && b.y !== '') ? Number(b.y) : Number(b.y_m);
+    if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) return null;
+    var dx = bx - ax, dy = by - ay;
+    var len = Math.hypot(dx, dy);
+    if (len < 1e-6) return null;
+    return [dx / len, dy / len];
+  }
+  var ns = unit(o.south, o.north);
+  var we = unit(o.west, o.east);
+  if (!ns && !we) return null;
+  if (!ns && we) ns = [we[1], -we[0]];
+  if (!we && ns) we = [-ns[1], ns[0]];
+  var nx = ns[0], ny = ns[1], ex = we[0], ey = we[1];
+  var dot = ex * nx + ey * ny;
+  var ex2 = ex - dot * nx, ey2 = ey - dot * ny;
+  var el = Math.hypot(ex2, ey2);
+  if (el < 0.2) { ex2 = -ny; ey2 = nx; el = 1; }
+  else { ex2 /= el; ey2 /= el; }
+  if (ex2 * ex + ey2 * ey < 0) { ex2 = -ex2; ey2 = -ey2; }
+  return { nx: nx, ny: ny, ex: ex2, ey: ey2 };
+};
+
+/* Same mapping as ELC _ambientSunState: toward-sun in the marker frame,
+   then light travel = opposite.  azDeg is geographic (0=N, 90=E). */
+window.red5PlanSunVectors = function(azDeg, orientation, northOffsetDeg){
+  var az = ((Number(azDeg) || 0) % 360 + 360) % 360;
+  var basis = window.red5PlanCardinalBasis(orientation);
+  var sx, sy;
+  if (basis) {
+    var ar = az * Math.PI / 180;
+    var c = Math.cos(ar), s = Math.sin(ar);
+    sx = basis.nx * c + basis.ex * s;
+    sy = basis.ny * c + basis.ey * s;
+  } else {
+    var off = Number(northOffsetDeg) || 0;
+    var ar2 = ((az + off) % 360) * Math.PI / 180;
+    if (ar2 < 0) ar2 += 2 * Math.PI;
+    sx = Math.sin(ar2);
+    sy = -Math.cos(ar2);
+  }
+  var sl = Math.hypot(sx, sy) || 1;
+  sx /= sl; sy /= sl;
+  return { sx: sx, sy: sy, lx: -sx, ly: -sy, basis: basis };
+};
+
 /* ---------- WINDOWS + SUNSHAFT OVERLAY (ELC volumetric) -------------- */
 /* Soft air volume + floor wash.  Lateral feathers dissolve the sides so
    the beam reads as volume, not a flat ribbon.  Blinds (0..1 closed)
@@ -567,12 +629,21 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var rooms = props.rooms || [];
   var sun = props.sun;
   if (!sun || !sun.is_day || !wins.length) return null;
-  var northOff = props.northOffsetDeg || 0;
-  var az = ((sun.azimuth || 0) + northOff) % 360;
-  if (az < 0) az += 360;
-  var azRad = az * Math.PI / 180;
-  var lx0 = -Math.sin(azRad);
-  var ly0 =  Math.cos(azRad);
+  var travel = window.red5PlanSunVectors
+    ? window.red5PlanSunVectors(sun.azimuth, props.orientation, props.northOffsetDeg)
+    : null;
+  var lx0 = travel ? travel.lx : (function () {
+    var northOff = props.northOffsetDeg || 0;
+    var az = ((sun.azimuth || 0) + northOff) % 360;
+    if (az < 0) az += 360;
+    return -Math.sin(az * Math.PI / 180);
+  })();
+  var ly0 = travel ? travel.ly : (function () {
+    var northOff = props.northOffsetDeg || 0;
+    var az = ((sun.azimuth || 0) + northOff) % 360;
+    if (az < 0) az += 360;
+    return Math.cos(az * Math.PI / 180);
+  })();
   var elev = Math.max(0, sun.elevation || 0);
   var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
   var cloud = (typeof props.cloudCover === 'number') ? Math.max(0, Math.min(100, props.cloudCover)) : 0;
@@ -885,10 +956,11 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
 
 window.SunRayOverlay = function SunRayOverlay(props){
   if (!props.sun || !props.sun.is_day) return null;
-  var az = (props.sun.azimuth + (props.northOffsetDeg || 0)) % 360;
-  var radR = az * Math.PI / 180;
-  var gx = 50 + 60 * Math.sin(radR);
-  var gy = 50 - 60 * Math.cos(radR);
+  var travel = window.red5PlanSunVectors
+    ? window.red5PlanSunVectors(props.sun.azimuth, props.orientation, props.northOffsetDeg)
+    : null;
+  var gx = 50 + 60 * (travel ? travel.sx : Math.sin(((props.sun.azimuth + (props.northOffsetDeg || 0)) % 360) * Math.PI / 180));
+  var gy = 50 + 60 * (travel ? travel.sy : -Math.cos(((props.sun.azimuth + (props.northOffsetDeg || 0)) % 360) * Math.PI / 180));
   /* Theme-aware ray palette.  Light mode needs MORE saturation and
      greater opacity so the wash reads against near-white floor plans
      (dark mode gets a softer amber that survives on deep backgrounds). */

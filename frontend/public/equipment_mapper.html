@@ -6116,6 +6116,7 @@
                                             reach markers at zIndex 10+.  Only visible when overlay on. */}
                                         {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
                                             <window.SunRayOverlay sun={sunState.sun} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}
+                                                orientation={floorOrientations[currentFloorIdx]}
                                                 rooms={floorRooms.filter(r => r.floorIdx === currentFloorIdx)} />
                                         )}
                                         {sunState && sunState.enabled && sunState.sun && window.WindowsSunshaftOverlay && (
@@ -6124,6 +6125,7 @@
                                                 rooms={floorRooms.filter(r => r.floorIdx === currentFloorIdx)}
                                                 sun={sunState.sun}
                                                 cloudCover={sunState.cloudCover}
+                                                orientation={floorOrientations[currentFloorIdx]}
                                                 showBars={false}
                                                 showRooms={false}
                                             />
@@ -6352,7 +6354,7 @@
                                                 const floorRms = floorRooms.filter(r => r.floorIdx === currentFloorIdx);
                                                 if (floorWins.length) {
                                                     const score = window.red5SunBlindScore
-                                                        ? window.red5SunBlindScore(marker.x, marker.y, sunState.sun, floorWins, { rooms: floorRms })
+                                                        ? window.red5SunBlindScore(marker.x, marker.y, sunState.sun, floorWins, { rooms: floorRms, orientation: floorOrientations[currentFloorIdx] })
                                                         : 0;
                                                     exposureRing = window.red5ExposureColor ? window.red5ExposureColor(score) : null;
                                                 }
@@ -7270,7 +7272,7 @@
                 '/assets/js/image-picker.js',
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
-                '/assets/js/sun-path.js?v=sunshaft-gap1',
+                '/assets/js/sun-path.js?v=sunshaft-rose1',
                 '/assets/js/elc-sun-path-overlay.js?v=sunshaft-tod1',
                 '/assets/js/window-blinds-popout.js'
             ];

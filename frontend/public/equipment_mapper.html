@@ -348,8 +348,9 @@
             const [selectedRoomId, setSelectedRoomId] = useState(null);
             const [obstructionTraceMode, setObstructionTraceMode] = useState(null);
             const [floorObstructions, setFloorObstructions] = useState([]); // {id,floorIdx,name,vertices}
-            const [nsMode, setNsMode] = useState(null); // null | 'n'|'s'|'w'|'e'
+            const [nsMode, setNsMode] = useState(null); // null | 'n'|'s'|'w'|'e'|'edit'
             const [floorOrientations, setFloorOrientations] = useState({}); // { [floorIdx]: {north,south,west,east} }
+            const [draggingNsKey, setDraggingNsKey] = useState(null); // null | 'north'|'south'|'west'|'east'
             const [showPsychroChart, setShowPsychroChart] = useState(false);
             const [psychroChartData, setPsychroChartData] = useState(null);
             const [draggingFloorMarker, setDraggingFloorMarker] = useState(null);
@@ -712,6 +713,7 @@
                     setIsPanning(false);
                     setDraggingFloorMarker(null);
                     setDraggingWindowId(null);
+                    setDraggingNsKey(null);
                     if (draggingTarget !== null) {
                         setTimeout(() => { setDraggingTarget(null); isDraggingMode.current = null; }, 50);
                     }
@@ -2030,7 +2032,7 @@
                     return false;
                 };
 
-                if (nsMode) {
+                if (nsMode && nsMode !== 'edit') {
                     e.stopPropagation();
                     const key = nsMode === 'n' ? 'north' : nsMode === 's' ? 'south' : nsMode === 'w' ? 'west' : 'east';
                     setFloorOrientations(prev => {
@@ -2040,10 +2042,10 @@
                     });
                     const order = ['n', 's', 'w', 'e'];
                     const i = order.indexOf(nsMode);
-                    setNsMode(i >= 0 && i < order.length - 1 ? order[i + 1] : null);
+                    setNsMode(i >= 0 && i < order.length - 1 ? order[i + 1] : 'edit');
                     toast(i < order.length - 1
-                        ? `Placed ${key.toUpperCase()} — now click ${order[i + 1].toUpperCase()}`
-                        : 'N/S/W/E markers placed — Sun Path aligns to this rose.');
+                        ? `Placed ${key.toUpperCase()} — now click ${order[i + 1].toUpperCase()} on the plan`
+                        : 'N/S/W/E set — drag the letters on the floor to align Sun Path.');
                     return;
                 }
 
@@ -2159,9 +2161,21 @@
                 setDraggingFloorMarker(markerId);
             };
 
+            const handleNsMarkerDragStart = (e, key) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (windowMode || roomMode || windowTraceMode || obstructionTraceMode) return;
+                if (nsMode && nsMode !== 'edit') return;
+                setDraggingFloorMarker(null);
+                setDraggingWindowId(null);
+                setPanMode(false);
+                setNsMode('edit');
+                setDraggingNsKey(key);
+            };
+
             const handleWindowDragStart = (e, windowId) => {
                 e.stopPropagation();
-                if (windowMode || roomMode || windowTraceMode || obstructionTraceMode || nsMode) return;
+                if (windowMode || roomMode || windowTraceMode || obstructionTraceMode || (nsMode && nsMode !== 'edit')) return;
                 setDraggingFloorMarker(null);
                 setSelectedWindowId(windowId);
                 setWindowsPanelOpen(true);
@@ -2293,11 +2307,20 @@
             };
 
             const startNsMarkers = () => {
+                const o = floorOrientations[currentFloorIdx] || {};
+                const complete = !!(o.north && o.south && o.west && o.east);
                 const was = !!nsMode;
                 clearAllTraceModes();
+                setPanMode(false);
                 if (was) return;
-                setNsMode('n');
-                toast('N/S/W/E: click North, then South, West, East. Esc cancels.');
+                if (complete) {
+                    setNsMode('edit');
+                    toast('Drag N / S / W / E on the floor image to align Sun Path. Esc finishes.');
+                    return;
+                }
+                const next = !o.north ? 'n' : !o.south ? 's' : !o.west ? 'w' : 'e';
+                setNsMode(next);
+                toast('Click ' + next.toUpperCase() + ' on the floor image, then South, West, East.');
             };
 
             useEffect(() => {
@@ -2330,7 +2353,7 @@
             }, [roomMode, windowTraceMode, obstructionTraceMode, nsMode, windowMode, floorRooms, floorWindows, floorObstructions, currentFloorIdx]);
 
             const handleFloorMarkerDrag = (e) => {
-                if ((!draggingFloorMarker && !draggingWindowId) || !floorCanvasRef.current) return;
+                if ((!draggingFloorMarker && !draggingWindowId && !draggingNsKey) || !floorCanvasRef.current) return;
                 
                 const rect = floorCanvasRef.current.getBoundingClientRect();
                 const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
@@ -2345,6 +2368,13 @@
                     setFloorWindows(prev => prev.map(w =>
                         w.id === draggingWindowId ? { ...w, x: xPct, y: yPct } : w
                     ));
+                }
+                if (draggingNsKey) {
+                    setFloorOrientations(prev => {
+                        const cur = Object.assign({}, prev[currentFloorIdx] || {});
+                        cur[draggingNsKey] = { x: xPct, y: yPct };
+                        return Object.assign({}, prev, { [currentFloorIdx]: cur });
+                    });
                 }
             };
 
@@ -3953,7 +3983,15 @@
                                     });
                                 });
                                 if (floor.orientation && typeof floor.orientation === 'object') {
-                                    orients[idx] = floor.orientation;
+                                    const o = {};
+                                    ['north', 'south', 'west', 'east'].forEach(k => {
+                                        const p = floor.orientation[k];
+                                        if (!p) return;
+                                        const x = p.x != null ? Number(p.x) : Number(p.x_m);
+                                        const y = p.y != null ? Number(p.y) : Number(p.y_m);
+                                        if (Number.isFinite(x) && Number.isFinite(y)) o[k] = { x, y };
+                                    });
+                                    if (Object.keys(o).length) orients[idx] = o;
                                 }
                             });
                             setFloorObstructions(allObs);
@@ -5354,7 +5392,9 @@
                                                 onClick={startNsMarkers}
                                                 className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${nsMode ? 'bg-cyan-600 text-white' : 'bg-slate-800 border border-cyan-500/50 text-cyan-300 hover:bg-cyan-900/20'}`}
                                             >
-                                                {nsMode ? ('Click ' + nsMode.toUpperCase() + '…') : 'N/S/W/E'}
+                                                {nsMode && nsMode !== 'edit'
+                                                    ? ('Click ' + nsMode.toUpperCase() + '…')
+                                                    : ((floorOrientations[currentFloorIdx] || {}).north ? 'Edit N/S/W/E' : 'N/S/W/E')}
                                             </button>
                                         </div>
                                         {draggedMarkerType && (
@@ -5379,9 +5419,14 @@
                                                 Trace concrete — click corners, then close the polygon
                                             </div>
                                         )}
-                                        {nsMode && (
+                                        {nsMode && nsMode !== 'edit' && (
                                             <div className="text-[9px] text-cyan-300 font-bold text-center mb-2 animate-pulse">
-                                                Click the {nsMode.toUpperCase()} marker on the plan
+                                                Click {nsMode.toUpperCase()} on the floor image
+                                            </div>
+                                        )}
+                                        {nsMode === 'edit' && (
+                                            <div className="text-[9px] text-cyan-300/90 font-bold text-center mb-2">
+                                                Drag N / S / W / E on the plan — Sun Path follows
                                             </div>
                                         )}
                                         {roomMode && (
@@ -5877,7 +5922,7 @@
                         onWheel={handleWheel} 
                         onMouseDown={handleCanvasMouseDown} 
                         onMouseMove={activeTarget.type === 'floor_plan' ? handleFloorMarkerDrag : handleCanvasMouseMove}
-                        onMouseUp={() => {setIsPanning(false); setDraggingTarget(null); setDraggingFloorMarker(null); setDraggingWindowId(null); isDraggingMode.current = null;}}
+                        onMouseUp={() => {setIsPanning(false); setDraggingTarget(null); setDraggingFloorMarker(null); setDraggingWindowId(null); setDraggingNsKey(null); isDraggingMode.current = null;}}
                     >
                         <div className="absolute top-4 left-4 z-50 flex gap-2">
                             <button 
@@ -5890,6 +5935,30 @@
                             <div className="bg-slate-900/90 text-white text-[10px] font-black uppercase px-3 py-2 border border-slate-700 shadow-lg backdrop-blur flex items-center rounded-xl pointer-events-none">
                                 Zoom: {Math.round(view.scale * 100)}%
                             </div>
+                            {activeTarget.type === 'floor_plan' && floorPlans.length > 0 && (
+                                <button
+                                    type="button"
+                                    data-testid="floor-ns-hud-btn"
+                                    onClick={startNsMarkers}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg backdrop-blur border-2 transition-all ${
+                                        nsMode
+                                            ? 'bg-cyan-500 text-slate-900 border-cyan-200'
+                                            : 'bg-slate-900/90 text-cyan-300 border-cyan-500/60 hover:bg-cyan-900/40'
+                                    }`}
+                                    title="Place or drag N/S/W/E on the floor image so Sun Path matches the plan"
+                                >
+                                    {nsMode && nsMode !== 'edit'
+                                        ? ('Place ' + nsMode.toUpperCase())
+                                        : ((floorOrientations[currentFloorIdx] || {}).north && (floorOrientations[currentFloorIdx] || {}).south
+                                            ? 'N/S · W/E'
+                                            : 'Set N/S/W/E')}
+                                </button>
+                            )}
+                            {activeTarget.type === 'floor_plan' && nsMode && nsMode !== 'edit' && (
+                                <div className="bg-cyan-500/90 text-slate-900 text-[10px] font-black uppercase px-3 py-2 border border-cyan-200 shadow-lg backdrop-blur flex items-center rounded-xl animate-pulse">
+                                    Click {nsMode.toUpperCase()} on the floor image
+                                </div>
+                            )}
                             {activeTarget.type === 'floor_plan' && draggedMarkerType && (
                                 <div className="bg-amber-500/90 text-black text-[10px] font-black uppercase px-3 py-2 border border-amber-300 shadow-lg backdrop-blur flex items-center rounded-xl animate-pulse">
                                     Click to place {draggedMarkerType.toUpperCase()}
@@ -5925,8 +5994,8 @@
                                         }}
                                         style={{ 
                                             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, 
-                                            transition: isPanning || draggingFloorMarker || draggingWindowId ? 'none' : 'transform 0.15s ease-out',
-                                            cursor: (draggedMarkerType || windowMode || roomMode || windowTraceMode || obstructionTraceMode || nsMode) ? 'crosshair' : (draggingWindowId ? 'grabbing' : 'default')
+                                            transition: isPanning || draggingFloorMarker || draggingWindowId || draggingNsKey ? 'none' : 'transform 0.15s ease-out',
+                                            cursor: draggingNsKey ? 'grabbing' : ((draggedMarkerType || windowMode || roomMode || windowTraceMode || obstructionTraceMode || (nsMode && nsMode !== 'edit')) ? 'crosshair' : (draggingWindowId ? 'grabbing' : 'default'))
                                         }}
                                         className="relative inline-block border-2 border-slate-700 shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-slate-900 max-w-full max-h-full pointer-events-auto"
                                     >
@@ -6049,19 +6118,61 @@
                                                 />
                                             ))}
                                         </svg>
-                                        {(floorOrientations[currentFloorIdx] ? ['north','south','west','east'] : []).map(k => {
-                                            const p = floorOrientations[currentFloorIdx][k];
-                                            if (!p) return null;
-                                            const letter = k === 'north' ? 'N' : k === 'south' ? 'S' : k === 'west' ? 'W' : 'E';
+                                        {(() => {
+                                            const o = floorOrientations[currentFloorIdx] || {};
+                                            const nsLine = o.north && o.south;
+                                            const weLine = o.west && o.east;
+                                            const canDragNs = !windowMode && !roomMode && !windowTraceMode && !obstructionTraceMode && (!nsMode || nsMode === 'edit');
                                             return (
-                                                <div key={'ns-'+k} className="absolute pointer-events-none z-20"
-                                                     style={{ left: `${p.x}%`, top: `${p.y}%`, transform: 'translate(-50%,-50%)' }}>
-                                                    <div className="w-5 h-5 rounded-full bg-cyan-500/90 text-slate-900 text-[10px] font-black flex items-center justify-center border border-cyan-200">
-                                                        {letter}
-                                                    </div>
-                                                </div>
+                                                <>
+                                                    {(nsLine || weLine) && (
+                                                        <svg className="absolute inset-0 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none"
+                                                             style={{width:'100%', height:'100%', zIndex: 19}}
+                                                             data-testid="floor-ns-axes">
+                                                            {nsLine && (
+                                                                <line x1={o.south.x} y1={o.south.y} x2={o.north.x} y2={o.north.y}
+                                                                      stroke="#22d3ee" strokeWidth="0.45" strokeDasharray="1.6 1.1" />
+                                                            )}
+                                                            {weLine && (
+                                                                <line x1={o.west.x} y1={o.west.y} x2={o.east.x} y2={o.east.y}
+                                                                      stroke="#fbbf24" strokeWidth="0.45" strokeDasharray="1.6 1.1" />
+                                                            )}
+                                                        </svg>
+                                                    )}
+                                                    {['north','south','west','east'].map(k => {
+                                                        const p = o[k];
+                                                        if (!p) return null;
+                                                        const letter = k === 'north' ? 'N' : k === 'south' ? 'S' : k === 'west' ? 'W' : 'E';
+                                                        const ns = (k === 'north' || k === 'south');
+                                                        const grabbing = draggingNsKey === k;
+                                                        return (
+                                                            <div key={'ns-'+k}
+                                                                 data-testid={'floor-ns-marker-'+k}
+                                                                 title={canDragNs ? ('Drag ' + letter + ' to align Sun Path') : ('Place remaining N/S/W/E first')}
+                                                                 onMouseDown={(e) => handleNsMarkerDragStart(e, k)}
+                                                                 onClick={(e) => e.stopPropagation()}
+                                                                 className="absolute z-[21]"
+                                                                 style={{
+                                                                     left: `${p.x}%`,
+                                                                     top: `${p.y}%`,
+                                                                     transform: 'translate(-50%,-50%)',
+                                                                     cursor: canDragNs ? (grabbing ? 'grabbing' : 'grab') : 'default',
+                                                                     pointerEvents: 'auto',
+                                                                     touchAction: 'none',
+                                                                 }}>
+                                                                <div className={`w-7 h-7 rounded-full text-[11px] font-black flex items-center justify-center border-2 shadow-lg ${
+                                                                    ns
+                                                                        ? 'bg-cyan-400 text-slate-900 border-cyan-100'
+                                                                        : 'bg-amber-400 text-slate-900 border-amber-100'
+                                                                } ${grabbing ? 'scale-110' : ''}`}>
+                                                                    {letter}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </>
                                             );
-                                        })}
+                                        })()}
                                         {/* Interactive window bars — drag to move; click selects.
                                             Overlay shafts (above) are paint-only when sun is on. */}
                                         {floorWindows.filter(w => w.floorIdx === currentFloorIdx).map(w => {

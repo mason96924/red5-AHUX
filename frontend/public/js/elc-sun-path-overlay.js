@@ -79,19 +79,32 @@
     return { el, az };
   }
 
-  function orientationUnit(a, b) {
-    if (!a || !b) return null;
-    const dx = (Number(b.x) || 0) - (Number(a.x) || 0);
-    const dy = (Number(b.y) || 0) - (Number(a.y) || 0);
+  function markerXY(p) {
+    if (!p || typeof p !== 'object') return null;
+    const x = (p.x != null && p.x !== '') ? Number(p.x)
+      : (p.x_m != null ? Number(p.x_m) : NaN);
+    const y = (p.y != null && p.y !== '') ? Number(p.y)
+      : (p.y_m != null ? Number(p.y_m) : NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: x, y: y };
+  }
+
+  function orientationUnit(a, b, W, H) {
+    const pa = markerXY(a), pb = markerXY(b);
+    if (!pa || !pb) return null;
+    const w = (W > 0) ? W : 100;
+    const h = (H > 0) ? H : 100;
+    const dx = (pb.x - pa.x) / 100 * w;
+    const dy = (pb.y - pa.y) / 100 * h;
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) return null;
     return [dx / len, dy / len];
   }
 
-  function planRoseAxes(orientation, northOffsetDeg) {
+  function planRoseAxes(orientation, northOffsetDeg, W, H) {
     const o = orientation || {};
-    let ns = orientationUnit(o.south, o.north);
-    let we = orientationUnit(o.west, o.east);
+    let ns = orientationUnit(o.south, o.north, W, H);
+    let we = orientationUnit(o.west, o.east, W, H);
     if (ns || we) {
       if (!ns && we) ns = [we[1], -we[0]];
       if (!we && ns) we = [-ns[1], ns[0]];
@@ -104,15 +117,16 @@
   }
 
   function lineIntersect(a, b, c, d) {
-    const rx = (Number(b.x) || 0) - (Number(a.x) || 0);
-    const ry = (Number(b.y) || 0) - (Number(a.y) || 0);
-    const sx = (Number(d.x) || 0) - (Number(c.x) || 0);
-    const sy = (Number(d.y) || 0) - (Number(c.y) || 0);
+    const pa = markerXY(a), pb = markerXY(b), pc = markerXY(c), pd = markerXY(d);
+    if (!pa || !pb || !pc || !pd) return null;
+    const rx = pb.x - pa.x;
+    const ry = pb.y - pa.y;
+    const sx = pd.x - pc.x;
+    const sy = pd.y - pc.y;
     const den = rx * sy - ry * sx;
     if (Math.abs(den) < 1e-9) return null;
-    const t = (((Number(c.x) || 0) - (Number(a.x) || 0)) * sy
-      - ((Number(c.y) || 0) - (Number(a.y) || 0)) * sx) / den;
-    return { x: (Number(a.x) || 0) + t * rx, y: (Number(a.y) || 0) + t * ry };
+    const t = ((pc.x - pa.x) * sy - (pc.y - pa.y) * sx) / den;
+    return { x: pa.x + t * rx, y: pa.y + t * ry };
   }
 
   const ephCache = { key: '', data: null };
@@ -291,7 +305,7 @@
     const latDeg = Number(opts.lat);
     const lonDeg = Number(opts.lon);
     if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg)) return null;
-    const rose = planRoseAxes(opts.orientation, opts.northOffsetDeg);
+    const rose = planRoseAxes(opts.orientation, opts.northOffsetDeg, W, H);
     const nx = rose.nx, ny = rose.ny;
     let cx = W / 2, cy = H / 2;
     const o = opts.orientation || {};
@@ -491,6 +505,12 @@
     const sun = props.sun;
     const orientation = props.orientation;
     const northOffsetDeg = props.northOffsetDeg;
+    const oKey = orientation
+      ? ['north', 'south', 'west', 'east'].map(function (k) {
+          const p = orientation[k];
+          return p ? (k + ':' + p.x + ',' + p.y) : (k + ':');
+        }).join('|')
+      : '';
 
     React.useEffect(function () {
       const canvas = canvasRef.current;
@@ -525,7 +545,7 @@
       return function () { if (ro) ro.disconnect(); };
     }, [enabled, lat, lon, adj.size, adj.rot, adj.look, adj.tilt,
         hour, doy, sun && sun.azimuth, sun && sun.elevation,
-        orientation, northOffsetDeg]);
+        orientation, oKey, northOffsetDeg]);
 
     if (!enabled) return null;
     return React.createElement('div', {

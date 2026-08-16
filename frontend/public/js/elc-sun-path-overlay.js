@@ -203,25 +203,9 @@
       if (d === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
     }
     ctx.closePath();
-    ctx.fillStyle = 'rgba(80, 140, 190, 0.10)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(120, 180, 220, 0.55)';
-    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(120, 180, 220, 0.40)';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
-
-    ctx.setLineDash([3, 4]);
-    [30, 60].forEach(function (elDeg) {
-      ctx.beginPath();
-      for (let d = 0; d <= 360; d += 4) {
-        const q = skyTo(d * Math.PI / 180, elDeg * Math.PI / 180);
-        if (d === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = 'rgba(150,200,230,0.28)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    });
-    ctx.setLineDash([]);
 
     const nEnd = ground(0);
     const sEnd = ground(Math.PI);
@@ -271,7 +255,7 @@
     patches.forEach(function (p) {
       const q = p.pts.map(project);
       const back = p.ndot < 0;
-      const a = back ? 0.12 + 0.14 * Math.min(1, -p.ndot) : 0.22 + 0.34 * Math.min(1, p.ndot);
+      const a = back ? 0.32 + 0.22 * Math.min(1, -p.ndot) : 0.42 + 0.36 * Math.min(1, p.ndot);
       ctx.beginPath();
       ctx.moveTo(q[0].x, q[0].y);
       ctx.lineTo(q[1].x, q[1].y);
@@ -386,14 +370,34 @@
     const angFloorN = Math.atan2(ny, nx);
     const rot2 = angFloorN - angN;
     const cr = Math.cos(rot2), sr = Math.sin(rot2);
-    function project(p) {
+    function rotXY(p) {
       const c = lookAt(tiltPt(p));
       const vx = c.sx, vy = -c.sy;
       return {
-        x: cx + (vx * cr - vy * sr) * R,
-        y: cy + (vx * sr + vy * cr) * R,
+        x: vx * cr - vy * sr,
+        y: vx * sr + vy * cr,
         depth: c.depth
       };
+    }
+    const nxy = rotXY(sph(0, 0));
+    const exy = rotXY(sph(Math.PI / 2, 0));
+    const eastCross = nxy.x * exy.y - nxy.y * exy.x;
+    const mornSun = solarAltAz(lat, doy, 8, lonDeg);
+    const mornEl = Math.max(mornSun.el, 0.02);
+    const mxy = rotXY(sph(mornSun.az, mornEl));
+    const mornCross = nxy.x * mxy.y - nxy.y * mxy.x;
+    const flipE = (eastCross !== 0 && mornCross * eastCross < 0) ? -1 : 1;
+    function project(p) {
+      const r = rotXY(p);
+      let x = r.x, y = r.y;
+      if (flipE < 0) {
+        const nlen = Math.hypot(nxy.x, nxy.y) || 1;
+        const ux = nxy.x / nlen, uy = nxy.y / nlen;
+        const along = x * ux + y * uy;
+        x = along * ux - (x - along * ux);
+        y = along * uy - (y - along * uy);
+      }
+      return { x: cx + x * R, y: cy + y * R, depth: r.depth };
     }
     function skyTo(az, el) { return project(sph(az, el)); }
     function ground(az) { return skyTo(az, 0); }
@@ -406,7 +410,7 @@
       (adj.look || 0).toFixed(2), (adj.tilt || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
-      Math.round(W), Math.round(H), Number(dpr).toFixed(2)
+      Math.round(W), Math.round(H), Number(dpr).toFixed(2), String(flipE)
     ].join('|');
     if (!layerCache.canvas || layerCache.key !== layerKey) {
       const off = layerCache.canvas || document.createElement('canvas');
@@ -452,11 +456,15 @@
       const q = skyTo(p.az, p.el);
       ctx.beginPath(); ctx.arc(q.x, q.y, 2.2, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(220, 40, 32, 0.95)'; ctx.fill();
+      const dx = q.x - cx, dy = q.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const lx = q.x + dx / len * 10;
+      const ly = q.y + dy / len * 10;
       ctx.fillStyle = 'rgba(220, 40, 32, 0.95)';
       ctx.font = 'bold 12px ui-sans-serif, system-ui';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(String(hr).padStart(2, '0'), q.x, q.y - 4);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(hr).padStart(2, '0'), lx, ly);
     });
 
     const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m);
@@ -574,7 +582,7 @@
     return React.createElement('div', {
       ref: wrapRef,
       className: 'absolute inset-0 pointer-events-none',
-      style: { zIndex: 38 },
+      style: { zIndex: 85 },
       'data-testid': 'elc-sun-path-overlay'
     }, React.createElement('canvas', {
       ref: canvasRef,
@@ -604,7 +612,7 @@
     return React.createElement('div', {
       className: props.compact
         ? 'relative z-10 pointer-events-auto'
-        : 'absolute z-40 left-2 bottom-2 pointer-events-auto',
+        : 'absolute z-[95] left-2 bottom-2 pointer-events-auto',
       'data-testid': 'elc-sun-path-controls',
       style: { maxWidth: 420 }
     },

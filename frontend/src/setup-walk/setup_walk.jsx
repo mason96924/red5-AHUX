@@ -44,11 +44,21 @@ function App() {
     const [psyCfg, setPsyCfg]         = useState({ givoni:true, rhPreset:'office', rhLo:30, rhHi:60, tLo:-15, tHi:50, theme:'dark', darkLevel:2.0 });
     const [locCfg, setLocCfg]         = useState(() => {
         let facing = 'auto';
+        let loc = { siteName:'My Building', city:'Toronto, ON', lat:43.6532, lon:-79.3832, buildingFacing: facing, elevation_m: '' };
         try {
             const v = localStorage.getItem('red5.building_facing');
-            if (v && ['auto','N','NE','E','SE','S','SW','W','NW'].indexOf(v) >= 0) facing = v;
+            if (v && ['auto','N','NE','E','SE','S','SW','W','NW'].indexOf(v) >= 0) loc.buildingFacing = v;
+            const wl = JSON.parse(localStorage.getItem('weatherLocation'));
+            if (wl && typeof wl.lat === 'number' && typeof wl.lon === 'number') {
+                loc.lat = wl.lat;
+                loc.lon = wl.lon;
+                loc.siteName = wl.name || loc.siteName;
+                loc.city = wl.name || loc.city;
+                const e = wl.elevation_m != null ? wl.elevation_m : wl.asl;
+                if (Number.isFinite(Number(e))) loc.elevation_m = Math.round(Number(e));
+            }
         } catch (e) {}
-        return { siteName:'My Building', city:'Toronto, ON', lat:43.6532, lon:-79.3832, buildingFacing: facing };
+        return loc;
     });
     const [langCfg, setLangCfg]       = useState(() => {
         /* Lazy init from the same localStorage key the dashboard reads, so
@@ -810,9 +820,32 @@ function _normalizeLocs(arr) {
         const key = lat.toFixed(4) + ',' + lon.toFixed(4);
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ name, lat, lon });
+        const elev = l.elevation_m != null ? l.elevation_m : l.asl;
+        const row = { name, lat, lon };
+        if (Number.isFinite(Number(elev))) row.elevation_m = Number(elev);
+        out.push(row);
     }
     return out;
+}
+
+async function lookupElevationM(lat, lng) {
+    try {
+        const url = 'https://api.open-meteo.com/v1/elevation?latitude='
+            + encodeURIComponent(lat) + '&longitude=' + encodeURIComponent(lng);
+        const r = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!r.ok) return null;
+        const j = await r.json();
+        const e = Array.isArray(j.elevation) ? j.elevation[0] : j.elevation;
+        return Number.isFinite(Number(e)) ? Number(e) : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function locElevationM(loc) {
+    if (!loc) return null;
+    const e = loc.elevation_m != null ? loc.elevation_m : loc.asl;
+    return Number.isFinite(Number(e)) ? Number(e) : null;
 }
 
 function LocationModal({ cfg, setCfg, onClose, onSave }) {
@@ -866,10 +899,39 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                     setCfg(c => ({ ...c, buildingFacing: facing }));
                     try { localStorage.setItem('red5.building_facing', facing); } catch (e) {}
                 }
+                const active = (j.active && typeof j.active.lat === 'number') ? j.active
+                    : (j.default && typeof j.default.lat === 'number' ? j.default : null);
+                const elev = locElevationM(active);
+                if (elev != null) {
+                    setCfg(c => {
+                        if (Math.abs(c.lat - active.lat) > 1e-3 || Math.abs(c.lon - active.lon) > 1e-3) return c;
+                        if (c.elevation_m !== '' && c.elevation_m != null && Number.isFinite(Number(c.elevation_m))) return c;
+                        return { ...c, elevation_m: Math.round(elev) };
+                    });
+                }
             } catch (e) { /* offline -> localStorage value already in state */ }
         })();
         return () => { cancelled = true; };
     }, []);
+
+    React.useEffect(() => {
+        const lat = Number(cfg.lat), lon = Number(cfg.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
+        const missing = cfg.elevation_m === '' || cfg.elevation_m == null || !Number.isFinite(Number(cfg.elevation_m));
+        if (!missing) return undefined;
+        let cancelled = false;
+        const t = setTimeout(async () => {
+            const elev = await lookupElevationM(lat, lon);
+            if (cancelled || elev == null) return;
+            setCfg(c => {
+                if (Number(c.lat) !== lat || Number(c.lon) !== lon) return c;
+                const stillMissing = c.elevation_m === '' || c.elevation_m == null || !Number.isFinite(Number(c.elevation_m));
+                if (!stillMissing) return c;
+                return { ...c, elevation_m: Math.round(elev) };
+            });
+        }, 400);
+        return () => { cancelled = true; clearTimeout(t); };
+    }, [cfg.lat, cfg.lon]);
 
     /* ----- saved-locations dropdown open/close state.
      * Native <datalist> hides its chevron in most browsers (especially in
@@ -899,7 +961,11 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
         if (hit) {
             const lat = Math.round(hit.lat * 10000) / 10000;
             const lon = Math.round(hit.lon * 10000) / 10000;
-            setCfg(c => ({...c, siteName:newName, lat, lon, city:newName}));
+            const elev = locElevationM(hit);
+            setCfg(c => ({
+                ...c, siteName:newName, lat, lon, city:newName,
+                elevation_m: elev != null ? Math.round(elev) : '',
+            }));
             if (mapRef.current) mapRef.current.setView([lat, lon], 11);
         }
     };
@@ -993,7 +1059,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
     const pickSearchHit = (hit) => {
         const lat = Math.round(+hit.lat * 10000) / 10000;
         const lon = Math.round(+hit.lon * 10000) / 10000;
-        setCfg(c => ({...c, lat, lon, city:hit.display_name}));
+        setCfg(c => ({...c, lat, lon, city:hit.display_name, elevation_m: ''}));
         if (mapRef.current) mapRef.current.setView([lat, lon], hit.type === 'city' ? 11 : 15);
         setSearchOpen(false);
         setSearchQ('');
@@ -1031,7 +1097,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
 
         const applyLatLon = (lat, lon) => {
             const r = (n) => Math.round(n * 10000) / 10000;
-            setCfg(c => ({...c, lat:r(lat), lon:r(lon)}));
+            setCfg(c => ({...c, lat:r(lat), lon:r(lon), elevation_m: ''}));
             reverseGeocode(r(lat), r(lon));
         };
         marker.on('dragend', () => {
@@ -1077,7 +1143,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
             (pos) => {
                 const lat = Math.round(pos.coords.latitude  * 10000) / 10000;
                 const lon = Math.round(pos.coords.longitude * 10000) / 10000;
-                setCfg(c => ({...c, lat, lon}));
+                setCfg(c => ({...c, lat, lon, elevation_m: ''}));
                 if (mapRef.current) mapRef.current.setView([lat, lon], 11);
                 reverseGeocode(lat, lon);
                 setGeoState(null);
@@ -1114,6 +1180,8 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
     const [saveMsg, setSaveMsg] = React.useState(null);
     const persistAndSave = async () => {
         const loc = { lat: cfg.lat, lon: cfg.lon, name: cfg.siteName || cfg.city };
+        const elev = Number(cfg.elevation_m);
+        if (Number.isFinite(elev)) loc.elevation_m = Math.round(elev);
 
         // De-dup the existing saved list by lat/lon (same key the dashboard
         // uses) and put the new pick at the top.  Cap at 20 to match the
@@ -1404,23 +1472,26 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                     </div>
 
                     <div>
-                        <div className="field-label mb-1.5">ASPECT — Building facing</div>
-                        <select className="field-input" data-testid="loc-building-facing"
-                                value={cfg.buildingFacing || 'auto'}
-                                onChange={(e)=>setCfg({...cfg, buildingFacing: e.target.value})}
-                                title="Compass direction the main façade faces outward">
-                            <option value="auto">Auto (by hemisphere)</option>
-                            <option value="N">N — North</option>
-                            <option value="NE">NE — Northeast</option>
-                            <option value="E">E — East</option>
-                            <option value="SE">SE — Southeast</option>
-                            <option value="S">S — South</option>
-                            <option value="SW">SW — Southwest</option>
-                            <option value="W">W — West</option>
-                            <option value="NW">NW — Northwest</option>
-                        </select>
+                        <div className="field-label mb-1.5">Elevation (m ASL)</div>
+                        <div className="flex gap-2 items-center">
+                            <input className="field-input flex-1 min-w-0" type="number" step="1"
+                                   data-testid="loc-elevation-asl"
+                                   value={cfg.elevation_m === '' || cfg.elevation_m == null ? '' : cfg.elevation_m}
+                                   onChange={(e)=>setCfg({...cfg, elevation_m: e.target.value === '' ? '' : +e.target.value})}
+                                   title="Metres above mean sea level from terrain DEM for the site lat/lng (not GPS altitude)"/>
+                            <button type="button"
+                                    data-testid="loc-lookup-asl"
+                                    onClick={async () => {
+                                        const elev = await lookupElevationM(cfg.lat, cfg.lon);
+                                        if (elev == null) return;
+                                        setCfg(c => ({...c, elevation_m: Math.round(elev)}));
+                                    }}
+                                    className="shrink-0 px-2.5 py-2 rounded-lg border border-slate-600 bg-slate-800 text-[10px] font-black uppercase tracking-widest text-amber-200 hover:border-amber-400">
+                                Lookup ASL
+                            </button>
+                        </div>
                         <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
-                            NH default → South · SH default → North. Used for sun-path / window glow orientation.
+                            ASL comes from a terrain DEM for the lat/lng (not browser GPS). Building aspect (N/S) is set on the floor plan.
                         </p>
                     </div>
 
@@ -1464,7 +1535,7 @@ function LocationModal({ cfg, setCfg, onClose, onSave }) {
                             ].map(j => (
                                 <button key={j.name}
                                         onClick={() => {
-                                            setCfg(c => ({...c, lat:j.lat, lon:j.lon, city:j.name}));
+                                            setCfg(c => ({...c, lat:j.lat, lon:j.lon, city:j.name, elevation_m: ''}));
                                             if (mapRef.current) mapRef.current.setView([j.lat, j.lon], j.z);
                                         }}
                                         className="text-left px-2.5 py-1.5 rounded-md bg-slate-800/70 border border-slate-700 text-[11px] font-bold text-slate-300 hover:bg-slate-700 hover:border-amber-500/40 transition-all">

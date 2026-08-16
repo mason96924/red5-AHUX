@@ -6310,23 +6310,6 @@
                                                 </div>
                                             );
                                         })}
-                                        {selectedWindowId && window.WindowBlindsPopout && (() => {
-                                            const wins = floorWindows.filter(x => x.floorIdx === currentFloorIdx);
-                                            const w = wins.find(x => x.id === selectedWindowId);
-                                            if (!w) return null;
-                                            return (
-                                                <window.WindowBlindsPopout
-                                                    theme="dark"
-                                                    w={w}
-                                                    windowIndex={wins.findIndex(x => x.id === w.id)}
-                                                    layoutMode={true}
-                                                    onChange={(fields) => setFloorWindows(prev => prev.map(x => x.id === w.id ? Object.assign({}, x, fields) : x))}
-                                                    onClose={() => setSelectedWindowId(null)}
-                                                    onTrace={(id) => startWindowTrace({ windowId: id })}
-                                                    onDelete={(id) => deleteWindow(id)}
-                                                />
-                                            );
-                                        })()}
                                         
                                         {/* Floor Markers */}
                                         {floorMarkers.filter(m => m.floorIdx === currentFloorIdx).map(marker => {

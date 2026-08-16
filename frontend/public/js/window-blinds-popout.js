@@ -1,8 +1,7 @@
 /* ------------------------------------------------------------------
- * window-blinds-popout.js — ELC-style selected-window config.
- * Pops next to the clicked window. Layout (mapper) and operator
- * (dashboard floor plan) share Open % + blind type; layout also
- * gets name / trace / delete.
+ * window-blinds-popout.js — blinds UI for floor windows.
+ * Operator (dashboard floor plan) pops Open % + type next to the
+ * clicked window. Mapper config uses the Windows list / panel instead.
  * ------------------------------------------------------------------ */
 
 function red5NormalizeBlindType(t) {

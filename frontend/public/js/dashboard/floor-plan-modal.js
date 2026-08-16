@@ -142,6 +142,14 @@ const floorModalTree = (
                                 style={{ maxWidth: 'calc(min(1400px, 95vw) - 20px)', maxHeight: 'calc(min(850px, 90vh) - 90px)', mixBlendMode: 'multiply' }}
                                 alt={floorData.floor.name}
                             />
+                            {window.ElcFloorDarkenVeil && (
+                                <window.ElcFloorDarkenVeil
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                />
+                            )}
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (
                                 <window.ElcSunPathLive
@@ -442,6 +450,16 @@ const floorModalTree = (
                             })}
                             </div>
                         </div>
+                        {window.ElcFloorAmbientChromeLive && (
+                            <div className="absolute top-2 right-2 z-50 pointer-events-auto" data-testid="floor-host-top-right">
+                                <window.ElcFloorAmbientChromeLive
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                />
+                            </div>
+                        )}
                         {window.ElcDaySelectorLive && (
                             <window.ElcDaySelectorLive
                                 lat={buildingLatLon && buildingLatLon.lat}
@@ -462,6 +480,14 @@ const floorModalTree = (
                                 <img src={floorImage} className="absolute inset-0 w-full h-full object-contain z-0 opacity-40 transition-all duration-500" style={{ mixBlendMode: 'multiply' }} alt="Floor Plan" />
                             ) : (
                                 <div className="absolute inset-0 blueprint-grid opacity-30 pointer-events-none z-0"></div>
+                            )}
+                            {window.ElcFloorDarkenVeil && (
+                                <window.ElcFloorDarkenVeil
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                />
                             )}
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (
@@ -617,6 +643,16 @@ const floorModalTree = (
                                 });
                             })()}
                         </React.Fragment>
+                        {window.ElcFloorAmbientChromeLive && (
+                            <div className="absolute top-2 right-2 z-50 pointer-events-auto" data-testid="floor-host-top-right">
+                                <window.ElcFloorAmbientChromeLive
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                />
+                            </div>
+                        )}
                         {window.ElcDaySelectorLive && (
                             <window.ElcDaySelectorLive
                                 lat={buildingLatLon && buildingLatLon.lat}

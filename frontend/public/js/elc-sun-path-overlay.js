@@ -1633,9 +1633,8 @@
     return sunUiSnapshot();
   }
 
-  /* ---- AHU host: outdoor weather + lux (TOD) + Darken Auto/On/Off ----
-     Host chrome only — not painted into the graphic. Rooms / floor plan
-     do not mount this (no darken on rooms). */
+  /* ---- Floor host: outdoor weather + lux (TOD) + Darken Auto/On/Off ----
+     Host chrome only — not painted into the graphic. AHU modal does not mount this. */
   const WX_MOOD = {
     bright: { icon: '\u2600', label: 'Bright' },
     'light-cloud': { icon: '\u26C5', label: 'Light cloud' },
@@ -1652,21 +1651,21 @@
   const _ahuDarkenSubs = new Set();
   let _ahuDarkenMode = (function () {
     try {
-      const v = localStorage.getItem('ahux.ahu.darkenBg');
+      const v = localStorage.getItem('ahux.floor.darkenBg');
       if (v === 'on' || v === 'off' || v === 'auto') return v;
     } catch (_) {}
     return 'auto';
   })();
   let _ahuDarkenPctMode = (function () {
     try {
-      const m = localStorage.getItem('ahux.ahu.darkenPctMode');
+      const m = localStorage.getItem('ahux.floor.darkenPctMode');
       if (m === 'manual' || m === 'tod') return m;
     } catch (_) {}
     return 'tod';
   })();
   let _ahuDarkenPct = (function () {
     try {
-      const n = Number(localStorage.getItem('ahux.ahu.darkenPct'));
+      const n = Number(localStorage.getItem('ahux.floor.darkenPct'));
       if (Number.isFinite(n)) return Math.min(90, Math.max(30, Math.round(n)));
     } catch (_) {}
     return 90;
@@ -1685,8 +1684,8 @@
     _ahuDarkenMode = next;
     if (next === 'auto') _ahuDarkenPctMode = 'tod';
     try {
-      localStorage.setItem('ahux.ahu.darkenBg', _ahuDarkenMode);
-      localStorage.setItem('ahux.ahu.darkenPctMode', _ahuDarkenPctMode);
+      localStorage.setItem('ahux.floor.darkenBg', _ahuDarkenMode);
+      localStorage.setItem('ahux.floor.darkenPctMode', _ahuDarkenPctMode);
     } catch (_) {}
     publishAhuDarken();
   }
@@ -1702,14 +1701,14 @@
     _ahuDarkenPctMode = 'manual';
     _ahuDarkenPct = n;
     try {
-      localStorage.setItem('ahux.ahu.darkenPctMode', 'manual');
-      localStorage.setItem('ahux.ahu.darkenPct', String(n));
+      localStorage.setItem('ahux.floor.darkenPctMode', 'manual');
+      localStorage.setItem('ahux.floor.darkenPct', String(n));
     } catch (_) {}
     publishAhuDarken();
   }
   function setAhuDarkenPctTod() {
     _ahuDarkenPctMode = 'tod';
-    try { localStorage.setItem('ahux.ahu.darkenPctMode', 'tod'); } catch (_) {}
+    try { localStorage.setItem('ahux.floor.darkenPctMode', 'tod'); } catch (_) {}
     publishAhuDarken();
   }
   function useElcAhuDarken() {
@@ -1879,7 +1878,7 @@
     const ccTxt = Math.round(cc * 100) + '% cloud';
     return React.createElement('div', {
       className: 'pointer-events-auto',
-      'data-testid': 'ahu-ambient-chrome',
+      'data-testid': 'elc-floor-ambient-chrome',
       onMouseDown: function (e) { e.stopPropagation(); },
       style: { width: 248 },
     },
@@ -1889,7 +1888,7 @@
       },
         React.createElement('div', { className: 'flex items-center gap-1.5' },
           React.createElement('span', {
-            'data-testid': 'ahu-ambient-swatch',
+            'data-testid': 'elc-floor-ambient-swatch',
             style: {
               display: 'inline-block', width: 12, height: 12, borderRadius: 2,
               border: '1px solid #475569', background: hex, flexShrink: 0,
@@ -1901,7 +1900,7 @@
           }, mood.icon + ' ' + mood.label),
           React.createElement('span', {
             className: 'ml-auto font-mono text-[11px] font-black tabular-nums',
-            'data-testid': 'ahu-ambient-lux',
+            'data-testid': 'elc-floor-ambient-lux',
             style: { color: '#fbbf24' },
           }, fmtLux(lux))
         ),
@@ -1913,7 +1912,7 @@
         React.createElement('div', { className: 'flex items-center gap-1.5 flex-wrap' },
           React.createElement('button', {
             type: 'button',
-            'data-testid': 'ahu-darken-toggle',
+            'data-testid': 'elc-floor-darken-toggle',
             title: 'Tint overlay: Auto follows TOD (90%\u219230%\u219290% sunrise\u2013noon\u2013sunset). On locks a level; Off disables.',
             onClick: function () { if (props.onCycleDarken) props.onCycleDarken(); },
             className: 'px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ' +
@@ -1921,7 +1920,7 @@
           }, darkenLabel),
           React.createElement('button', {
             type: 'button',
-            'data-testid': 'ahu-darken-level-pct',
+            'data-testid': 'elc-floor-darken-level-pct',
             disabled: autoTod || !tintOn,
             title: autoTod
               ? 'Darken Auto tracks sunrise\u2192noon\u2192sunset (90%\u219230%\u219290%). Switch to Darken: On to lock a level.'
@@ -1937,7 +1936,7 @@
         tintOn && !autoTod && React.createElement('input', {
           type: 'range', min: 30, max: 90, step: 1,
           value: Number.isFinite(pct) ? pct : 90,
-          'data-testid': 'ahu-darken-level',
+          'data-testid': 'elc-floor-darken-level',
           className: 'w-full accent-emerald-400',
           style: { height: 12 },
           'aria-label': 'Background darkness percent',
@@ -1999,17 +1998,19 @@
     const sunEl = sun ? sun.elevation : 0;
     const pct = effectiveAhuDarkenPct(sunEl, lat, lon, clock.doy, timezone, elevationM);
     return React.createElement('div', {
-      'data-testid': 'ahu-darken-veil',
+      'data-testid': 'elc-floor-darken-veil',
       className: 'pointer-events-none',
       style: {
-        gridArea: '1 / 1',
-        width: '100%',
-        height: '100%',
+        position: 'absolute',
+        left: 0, top: 0, right: 0, bottom: 0,
         background: 'rgba(0,0,0,' + (pct / 100) + ')',
-        zIndex: 1,
+        zIndex: 2,
       },
     });
   };
+
+  global.ElcFloorAmbientChromeLive = global.ElcAhuAmbientChromeLive;
+  global.ElcFloorDarkenVeil = global.ElcAhuDarkenVeil;
 
   global.ElcSunPathHostChrome = function ElcSunPathHostChrome(props) {
     return global.ElcSunPathControls(Object.assign({}, props, {

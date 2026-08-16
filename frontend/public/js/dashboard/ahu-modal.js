@@ -379,8 +379,8 @@ function renderAhuEquipmentModal(ctx) {
                                             backdrop-filter + transform:scale. Enlarge with CSS zoom and
                                             drop blur while focused instead. */}
                                         {(() => {
-                                            // Host top-right: outdoor weather/lux + Darken (not part of the graphic).
-                                            // Band guide stacks under it so they do not overlap.
+                                            // Band guide: live OAT/OAH + psychrometric veto vs RA.
+                                            // Never trust stale active_band for the climate story.
                                             const ap = targetAhu && targetAhu.all_points;
                                             const pts = targetAhu && targetAhu.points;
                                             const oaPt = pts && pts[0];
@@ -414,26 +414,12 @@ function renderAhuEquipmentModal(ctx) {
                                             const panelBg = dk
                                                 ? 'bg-slate-900/30 border-slate-500/40 text-slate-100'
                                                 : 'bg-white/35 border-slate-400/40 text-slate-900';
-                                            const loc = buildingLatLon || {};
                                             return (
-                                                <div className="absolute top-2 right-2 z-40 flex flex-col items-end gap-2 pointer-events-none"
-                                                     data-testid="ahu-host-top-right"
-                                                     style={{ maxWidth: 280 }}>
-                                                    {window.ElcAhuAmbientChromeLive && (
-                                                        <div className="pointer-events-auto">
-                                                            <window.ElcAhuAmbientChromeLive
-                                                                lat={loc.lat}
-                                                                lon={loc.lon}
-                                                                elevation_m={loc.elevation_m}
-                                                                timezone={loc.timezone}
-                                                            />
-                                                        </div>
-                                                    )}
                                                 <div data-testid={`ahu-modal-band-${showAhuModalFor}`}
                                                      key={`ahu-modal-band-${showAhuModalFor}`}
                                                      tabIndex={0}
                                                      title="Click to enlarge · click away to shrink"
-                                                     className={`pointer-events-auto px-2.5 py-1.5 rounded-lg border shadow-md max-w-[260px] cursor-pointer outline-none focus:border-sky-400 focus:shadow-lg ${bandGuideZoomed ? '' : 'backdrop-blur-lg'} ${panelBg}`}
+                                                     className={`absolute top-2 right-2 z-40 px-2.5 py-1.5 rounded-lg border shadow-md max-w-[260px] cursor-pointer outline-none focus:border-sky-400 focus:shadow-lg ${bandGuideZoomed ? '' : 'backdrop-blur-lg'} ${panelBg}`}
                                                      style={{
                                                          fontSize: '9px',
                                                          lineHeight: 1.4,
@@ -502,19 +488,8 @@ function renderAhuEquipmentModal(ctx) {
                                                         <div className="font-mono text-[8px]">{setLine}</div>
                                                     </div>
                                                 </div>
-                                                </div>
                                             );
                                         })()}
-                                        {window.ElcSunPathHostChromeLive && (
-                                            <window.ElcSunPathHostChromeLive operatorAdj={true} />
-                                        )}
-                                        {window.ElcDaySelectorLive && (
-                                            <window.ElcDaySelectorLive
-                                                lat={buildingLatLon && buildingLatLon.lat}
-                                                timezone={buildingLatLon && buildingLatLon.timezone}
-                                                lon={buildingLatLon && buildingLatLon.lon}
-                                            />
-                                        )}
                                         {!currentAhuImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
                                                 <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("ahu_image_missing") : "AHU IMAGE MISSING"}</span>
@@ -539,14 +514,6 @@ function renderAhuEquipmentModal(ctx) {
                                                  className="block pointer-events-none"
                                                  style={{ gridArea: '1 / 1', maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', display: 'block' }}
                                                  onLoad={(e) => { const im = e.target; setAhuImgDims({ natW: im.naturalWidth || 1600, natH: im.naturalHeight || 700, dispW: im.offsetWidth, dispH: im.offsetHeight }); }} />
-                                            {window.ElcAhuDarkenVeil && (
-                                                <window.ElcAhuDarkenVeil
-                                                    lat={buildingLatLon && buildingLatLon.lat}
-                                                    lon={buildingLatLon && buildingLatLon.lon}
-                                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
-                                                    timezone={buildingLatLon && buildingLatLon.timezone}
-                                                />
-                                            )}
                                             <div className="relative pointer-events-none" style={{ gridArea: '1 / 1', perspective: '1500px' }}>
 
                                         {/* === SCHEMA-DRIVEN OVERLAYS (mirrors Config Tool groupedPoints renderer) === */}

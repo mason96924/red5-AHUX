@@ -202,11 +202,13 @@ window.red5ExposureRingStyle = function(score){
 };
 
 /* Blind open / in-shaft factor (0..1) for a marker at plan % coords.
-   MUST use the same light-travel vector as WindowsSunshaftOverlay
-   (ELC marker-frame −towardSun).  Closed blinds → 0; open + in beam → up to 1. */
+   Matches the painted WindowsSunshaftOverlay volume: same travel vector,
+   same throw, same shaft width.  Closed blinds → 0.  Light does not
+   cross into a different traced room.  No window on a façade → no glow
+   from that side.  Empty window list → 0 (never fake a full-sun ring). */
 window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
   opts = opts || {};
-  if (!windows || !windows.length) return 1;
+  if (!windows || !windows.length) return 0;
   if (!sun || !sun.is_day) return 0;
   var rooms = opts.rooms || null;
   var travel = window.red5PlanSunVectors
@@ -227,55 +229,79 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
   var elev = Math.max(0, sun.elevation || 0);
   var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
   var centerX = 50, centerY = 50;
+  var vavRoom = (rooms && rooms.length && window.red5FindContainingRoom)
+    ? window.red5FindContainingRoom(mxPct, myPct, rooms) : null;
+  function sameRoom(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.id != null && b.id != null && String(a.id) !== '' && String(a.id) === String(b.id)) return true;
+    if (a.name && b.name && a.name === b.name) return true;
+    return false;
+  }
   var best = 0;
   for (var i = 0; i < windows.length; i++) {
     var w = windows[i];
-    var cx = Number(w.x), cy = Number(w.y);
-    var len = Number(w.length);
-    var ang = Number(w.angle_deg) || 0;
-    if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+    var verts = (Array.isArray(w.vertices) && w.vertices.length >= 3) ? w.vertices : null;
+    var cx, cy, tx, ty, half;
+    if (verts) {
+      var bestLen = 0, x1 = 0, y1 = 0, x2 = 0, y2 = 0, k;
+      for (k = 0; k < verts.length; k++) {
+        var a = verts[k], b = verts[(k + 1) % verts.length];
+        var ax = Number(a[0]), ay = Number(a[1]), bx = Number(b[0]), by = Number(b[1]);
+        if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) continue;
+        var elen = Math.hypot(bx - ax, by - ay);
+        if (elen > bestLen) {
+          bestLen = elen; x1 = ax; y1 = ay; x2 = bx; y2 = by;
+        }
+      }
+      if (!(bestLen > 0.5)) continue;
+      cx = (x1 + x2) / 2; cy = (y1 + y2) / 2;
+      tx = (x2 - x1) / bestLen; ty = (y2 - y1) / bestLen;
+      half = bestLen / 2;
+    } else {
+      cx = Number(w.x); cy = Number(w.y);
+      var len = Number(w.length);
+      var ang = Number(w.angle_deg) || 0;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !(len > 0.5)) continue;
+      var wrad = ang * Math.PI / 180;
+      tx = Math.cos(wrad); ty = Math.sin(wrad);
+      half = len / 2;
+    }
     var open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
     if (open < 0.01) continue;
-    var openEase = Math.pow(open, 0.7);
-    var wrad = ang * Math.PI / 180;
-    var tx = Math.cos(wrad), ty = Math.sin(wrad);
     var nx = -ty, ny = tx;
     var ix = centerX - cx, iy = centerY - cy;
     if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
     if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
     var enter = nx * lx + ny * ly;
     if (enter < 0.05) continue;
-    /* Room boundary: if this window belongs to a traced room, the VAV
-       must sit inside that same polygon — no amber through walls. */
-    var room = null;
-    if (rooms && rooms.length && window.red5RoomForWindow) {
-      room = window.red5RoomForWindow(w, rooms);
-      if (room) {
-        var rVerts = room.vertices || room.points;
-        if (!window.red5PointInPolygon(mxPct, myPct, rVerts)) continue;
+    var winRoom = (rooms && rooms.length && window.red5RoomForWindow)
+      ? window.red5RoomForWindow(w, rooms) : null;
+    if (vavRoom) {
+      if (winRoom) {
+        if (!sameRoom(winRoom, vavRoom)) continue;
+      } else {
+        var sample = window.red5FindContainingRoom(cx + nx * 1.5, cy + ny * 1.5, rooms);
+        if (!sameRoom(sample, vavRoom)) continue;
       }
+    } else if (winRoom) {
+      continue;
     }
-    var dx = mxPct - cx, dy = myPct - cy;
-    /* Distance along the inbound beam (into the room). */
-    var alongDist = dx * lx + dy * ly;
-    if (alongDist < 0.4) continue;
+    var openEase = Math.pow(open, 0.7);
     var base = enter * elevF;
     var throwLen = (10 + 24 * base) * (1.0 + 1.0 * openEase);
-    if (alongDist > throwLen * 1.15) continue;
-    var half = (Number.isFinite(len) && len > 0.5 ? len : 8) / 2;
+    var visThrow = throwLen * 0.42;
+    var dx = mxPct - cx, dy = myPct - cy;
+    var alongDist = dx * lx + dy * ly;
+    if (alongDist < 0.4 || alongDist > visThrow) continue;
+    var spread = half * (0.18 + 0.28 * openEase);
+    var tAlong = Math.min(1, alongDist / throwLen);
+    var maxLat = half + tAlong * spread;
     var lat = Math.abs(dx * tx + dy * ty);
-    /* Widen with throw — same idea as shaft spread. Soft tip: ring fades
-       with depth so VAVs in the washed-out tip get weaker amber. */
-    var maxLat = half * (0.55 + 0.55 * openEase) + alongDist * 0.40;
     if (lat > maxLat) continue;
-    var latF = Math.max(0, 1 - lat / maxLat);
-    var depthF = Math.max(0.15, 1 - alongDist / throwLen);
-    /* Soft landing: beyond ~70% of throw, ring strength falls off fast. */
-    if (alongDist / throwLen > 0.70) {
-      depthF *= Math.max(0, 1 - (alongDist / throwLen - 0.70) / 0.30);
-    }
-    /* Ring intensity tracks blind open % for VAVs in this shaft. */
-    var strength = open * (0.45 + 0.55 * enter) * elevF * latF * (0.55 + 0.45 * depthF);
+    var latF = Math.max(0, 1 - lat / (maxLat || 1e-6));
+    var depthF = Math.max(0, 1 - alongDist / visThrow);
+    var strength = open * (0.45 + 0.55 * enter) * elevF * latF * (0.35 + 0.65 * depthF);
     if (strength > best) best = strength;
   }
   return Math.min(1, best);

@@ -318,7 +318,7 @@ const floorModalTree = (
                                     const ring = liveSunRingStyle(marker.x, marker.y, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms, floorData.floor.orientation);
                                     sunRing = ring.color;
                                     sunRingStyle = ring.style;
-                                    if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                    if (sunRing && window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                 }
                                 return (
                                     <div key={marker.id} className="absolute flex flex-col items-center z-30 group pointer-events-auto" style={{ left: `${marker.x}%`, top: `${marker.y}%`, transform: 'translate(-50%, -50%)' }}>
@@ -412,7 +412,7 @@ const floorModalTree = (
                                         {(() => {
                                             // Sun-Path Phase A: directional shadow for this
                                             // VAV marker pointing away from the sun.
-                                            if (!(sunState && sunState.sun && window.red5MarkerShadow)) return null;
+                                            if (!(sunRing && window.red5MarkerShadow)) return null;
                                             const sh = window.red5MarkerShadow(sunState.sun);
                                             if (!sh) return null;
                                             return (
@@ -574,7 +574,7 @@ const floorModalTree = (
                                         const ring = liveSunRingStyle(pos.left, pos.top, sunState, [], buildingFacingOffset);
                                         sunRing = ring.color;
                                         sunRingStyle = ring.style;
-                                        if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                        if (sunRing && window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                     }
                                     return (
                                         <div key={ahu.id} className="absolute flex flex-col items-center z-30 group" style={{ left: `${pos.left}%`, top: `${pos.top}%`, transform: 'translate(-50%, -50%)' }}>
@@ -613,7 +613,7 @@ const floorModalTree = (
                                         const ring = liveSunRingStyle(gp.left, gp.top, sunState, [], buildingFacingOffset);
                                         sunRing = ring.color;
                                         sunRingStyle = ring.style;
-                                        if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                        if (sunRing && window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                     }
                                     return (
                                         <div key={v.id} className="absolute flex flex-col items-center z-20 group" style={{ left: `${gp.left}%`, top: `${gp.top}%`, transform: 'translate(-50%, -50%)' }}>

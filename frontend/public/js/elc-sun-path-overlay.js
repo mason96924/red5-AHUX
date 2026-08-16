@@ -248,7 +248,7 @@
     patches.forEach(function (p) {
       const q = p.pts.map(project);
       const back = p.ndot < 0;
-      const a = back ? 0.05 + 0.08 * Math.min(1, -p.ndot) : 0.13 + 0.26 * Math.min(1, p.ndot);
+      const a = back ? 0.12 + 0.14 * Math.min(1, -p.ndot) : 0.22 + 0.34 * Math.min(1, p.ndot);
       ctx.beginPath();
       ctx.moveTo(q[0].x, q[0].y);
       ctx.lineTo(q[1].x, q[1].y);
@@ -275,11 +275,13 @@
     eph.monthSamples.forEach(function (ms) {
       const isEdge = (ms.d === eph.summerDoy || ms.d === eph.winterDoy);
       strokeDay(ms.pts,
-        isEdge ? 'rgba(255,176,32,0.95)' : 'rgba(255,196,80,0.40)',
-        isEdge ? 2.0 : 0.85);
+        isEdge ? 'rgba(255,176,32,0.98)' : 'rgba(255,196,80,0.78)',
+        isEdge ? 2.2 : 1.15);
     });
 
-    ctx.setLineDash([1.6, 3.4]);
+    ctx.save();
+    ctx.setLineDash([1.4, 4.2]);
+    ctx.lineCap = 'round';
     eph.analemmas.forEach(function (an) {
       ctx.beginPath();
       let started = false;
@@ -290,12 +292,12 @@
         if (!started) { ctx.moveTo(q.x, q.y); started = true; }
         else ctx.lineTo(q.x, q.y);
       }
-      ctx.strokeStyle = (an.hr % 3 === 0) ? 'rgba(200, 55, 48, 0.78)' : 'rgba(200, 55, 48, 0.48)';
-      ctx.lineWidth = (an.hr % 3 === 0) ? 1.15 : 0.8;
+      ctx.strokeStyle = (an.hr % 3 === 0) ? 'rgba(200, 55, 48, 0.88)' : 'rgba(200, 55, 48, 0.58)';
+      ctx.lineWidth = (an.hr % 3 === 0) ? 1.45 : 1.05;
       ctx.lineJoin = 'round';
       ctx.stroke();
     });
-    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   function paintElcSunPath(ctx, opts) {
@@ -551,7 +553,7 @@
     return React.createElement('div', {
       ref: wrapRef,
       className: 'absolute inset-0 pointer-events-none',
-      style: { zIndex: 7 },
+      style: { zIndex: 38 },
       'data-testid': 'elc-sun-path-overlay'
     }, React.createElement('canvas', {
       ref: canvasRef,

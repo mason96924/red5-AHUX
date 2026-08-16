@@ -142,7 +142,16 @@ window.red5FindContainingRoom = function(x, y, rooms){
 window.red5RoomForWindow = function(w, rooms){
   if (!w || !rooms || !rooms.length) return null;
   var cx = Number(w.x), cy = Number(w.y);
+  if (Array.isArray(w.vertices) && w.vertices.length >= 3) {
+    cx = 0; cy = 0;
+    for (var vi = 0; vi < w.vertices.length; vi++) {
+      cx += Number(w.vertices[vi][0]); cy += Number(w.vertices[vi][1]);
+    }
+    cx /= w.vertices.length; cy /= w.vertices.length;
+  }
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  var hit = window.red5FindContainingRoom(cx, cy, rooms);
+  if (hit) return hit;
   var ang = Number(w.angle_deg) || 0;
   var rad = ang * Math.PI / 180;
   var tx = Math.cos(rad), ty = Math.sin(rad);
@@ -150,10 +159,16 @@ window.red5RoomForWindow = function(w, rooms){
   var ix = 50 - cx, iy = 50 - cy;
   if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
   if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
-  /* Nudge ~1.5% of plan into the room. */
-  var sx = cx + nx * 1.5, sy = cy + ny * 1.5;
-  return window.red5FindContainingRoom(sx, sy, rooms)
-      || window.red5FindContainingRoom(cx, cy, rooms);
+  var depths = [0.8, 1.5, 3.0, 5.0];
+  for (var di = 0; di < depths.length; di++) {
+    hit = window.red5FindContainingRoom(cx + nx * depths[di], cy + ny * depths[di], rooms);
+    if (hit) return hit;
+  }
+  for (di = 0; di < depths.length; di++) {
+    hit = window.red5FindContainingRoom(cx - nx * depths[di], cy - ny * depths[di], rooms);
+    if (hit) return hit;
+  }
+  return null;
 };
 /* Blend from soft amber → bright amber as the score rises.
    Returns a CSS color string used as a ring/halo around the marker.
@@ -572,6 +587,23 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var bars = [];
   var shafts = [];
   var clipDefs = [];
+  var unionId = null;
+  if (rooms.length) {
+    unionId = 'r5-rooms-union';
+    clipDefs.push(
+      <clipPath key={unionId} id={unionId} clipPathUnits="userSpaceOnUse">
+        {rooms.map(function (rr, ri) {
+          var rv = rr && (rr.vertices || rr.points);
+          if (!rv || rv.length < 3) return null;
+          return <polygon key={'ru-'+ri} points={rv.map(function (v) { return Number(v[0]) + ',' + Number(v[1]); }).join(' ')} />;
+        })}
+      </clipPath>
+    );
+  }
+  function scaleSeg(ax, ay, bx, by, s) {
+    var mx = (ax + bx) / 2, my = (ay + by) / 2;
+    return [mx + (ax - mx) * s, my + (ay - my) * s, mx + (bx - mx) * s, my + (by - my) * s];
+  }
   for (var i = 0; i < wins.length; i++) {
     var w = wins[i];
     var cx = Number(w.x), cy = Number(w.y);
@@ -622,7 +654,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var gx0 = (x1 + x2) / 2, gy0 = (y1 + y2) / 2;
     var gx1 = (fx1 + fx2) / 2, gy1 = (fy1 + fy2) / 2;
     var gradId = 'r5-shaft-grad-' + (w.id || i);
-    var clipId = null;
+    var clipId = unionId;
     var room = (rooms.length && window.red5RoomForWindow) ? window.red5RoomForWindow(w, rooms) : null;
     var rVerts = room && (room.vertices || room.points);
     if (rVerts && rVerts.length >= 3) {
@@ -639,18 +671,32 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
                       gradientUnits="userSpaceOnUse"
                       x1={gx0} y1={gy0} x2={gx1} y2={gy1}>
         <stop offset="0%"   stopColor={'rgb('+amber+')'} stopOpacity={opCore} />
-        <stop offset="45%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.72} />
-        <stop offset="78%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.28} />
+        <stop offset="40%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.62} />
+        <stop offset="72%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.22} />
         <stop offset="100%" stopColor={'rgb('+amber+')'} stopOpacity="0" />
       </linearGradient>
     );
-    shafts.push(
-      <polygon key={'ws-'+ (w.id || i)}
-               points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}
-               fill={'url(#'+gradId+')'}
-               clipPath={clipId ? ('url(#'+clipId+')') : undefined}
-      />
-    );
+    var layers = [
+      { s: 1.70, a: 0.18 },
+      { s: 1.42, a: 0.32 },
+      { s: 1.18, a: 0.50 },
+      { s: 1.00, a: 0.82 },
+      { s: 0.84, a: 0.36 },
+    ];
+    var clipUrl = clipId ? ('url(#' + clipId + ')') : undefined;
+    for (var li = 0; li < layers.length; li++) {
+      var L = layers[li];
+      var nSeg = scaleSeg(x1, y1, x2, y2, L.s);
+      var fSeg = scaleSeg(fx1, fy1, fx2, fy2, L.s);
+      shafts.push(
+        <polygon key={'ws-'+ (w.id || i) + '-' + li}
+                 points={[nSeg[0], nSeg[1], nSeg[2], nSeg[3], fSeg[2], fSeg[3], fSeg[0], fSeg[1]].join(' ')}
+                 fill={'url(#'+gradId+')'}
+                 opacity={L.a}
+                 clipPath={clipUrl}
+        />
+      );
+    }
   }
   var showBars = props.showBars !== false;
   var roomOutlines = [];
@@ -743,6 +789,17 @@ window.SunRayOverlay = function SunRayOverlay(props){
   var stopMid = _mix(stopMidBright, stopMidDim, grey);
   var stopOut = stopMid;
   var gid = 'sunray-grad-' + Math.round(az) + '-' + Math.round(weatherFactor*100) + '-' + (isLight ? 'l' : 'd');
+  var rooms = props.rooms || [];
+  var clipId = null;
+  var clipPolys = [];
+  for (var ri = 0; ri < rooms.length; ri++) {
+    var rv = rooms[ri] && (rooms[ri].vertices || rooms[ri].points);
+    if (!rv || rv.length < 3) continue;
+    clipPolys.push(
+      <polygon key={'sr-'+ri} points={rv.map(function (v) { return Number(v[0]) + ',' + Number(v[1]); }).join(' ')} />
+    );
+  }
+  if (clipPolys.length) clipId = 'sunray-rooms-clip';
   return (
     <svg
       className="absolute inset-0 pointer-events-none"
@@ -752,13 +809,15 @@ window.SunRayOverlay = function SunRayOverlay(props){
       data-testid="sun-ray-overlay"
     >
       <defs>
+        {clipId ? <clipPath id={clipId} clipPathUnits="userSpaceOnUse">{clipPolys}</clipPath> : null}
         <radialGradient id={gid} cx={gx+'%'} cy={gy+'%'} r="85%" fx={gx+'%'} fy={gy+'%'}>
           <stop offset="0%"  stopColor={stopIn}  stopOpacity={intensity}/>
           <stop offset="40%" stopColor={stopMid} stopOpacity={intensity*0.5}/>
           <stop offset="100%" stopColor={stopOut} stopOpacity="0"/>
         </radialGradient>
       </defs>
-      <rect x="0" y="0" width="100" height="100" fill={'url(#' + gid + ')'}/>
+      <rect x="0" y="0" width="100" height="100" fill={'url(#' + gid + ')'}
+            clipPath={clipId ? ('url(#' + clipId + ')') : undefined}/>
     </svg>
   );
 };

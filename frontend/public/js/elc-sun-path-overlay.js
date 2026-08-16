@@ -573,62 +573,18 @@
       const ce = Math.cos(el), se = Math.sin(el);
       return { e: Math.sin(az) * ce, n: Math.cos(az) * ce, u: se };
     }
-    /* SH: sun transits north. NH camera sits at 137° (SE) so the south
-       vault is in front. Adding 180 to that (317° NW) shears noon off N
-       and 180°-reverses the rose. SH camera is due south (180°) so noon
-       stays on N, 06 on E, 18 on W. Never negate both e and n. */
-    const southHem = latDeg < 0;
-    const tiltRad = (-5 + (adj.tilt || 0)) * Math.PI / 180;
-    const pitchRad = (adj.pitch || 0) * Math.PI / 180;
-    const ct = Math.cos(tiltRad), st = Math.sin(tiltRad);
-    const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad);
-    function tiltPt(p) {
-      const n1 = p.n * cp - p.u * sp;
-      const u1 = p.n * sp + p.u * cp;
-      return { e: p.e * ct - u1 * st, n: n1, u: p.e * st + u1 * ct };
-    }
-    const camEl = (35 + (adj.look || 0)) * Math.PI / 180;
-    const camAz = ((southHem ? 180 : 137) + (adj.rot || 0)) * Math.PI / 180;
-    const eyeE = Math.sin(camAz) * Math.cos(camEl);
-    const eyeN = Math.cos(camAz) * Math.cos(camEl);
-    const eyeU = Math.sin(camEl);
-    const zlen = Math.hypot(eyeE, eyeN, eyeU) || 1;
-    const ze = eyeE / zlen, zn = eyeN / zlen, zu = eyeU / zlen;
-    let xe = -zn, xn = ze, xu = 0;
-    const xlen = Math.hypot(xe, xn) || 1;
-    xe /= xlen; xn /= xlen;
-    const ye = zn * xu - zu * xn;
-    const yn = zu * xe - ze * xu;
-    const yu = ze * xn - zn * xe;
-    const toCam = { e: ze, n: zn, u: zu };
-    function lookAt(p) {
-      return {
-        sx: p.e * xe + p.n * xn + p.u * xu,
-        sy: p.e * ye + p.n * yn + p.u * yu,
-        depth: p.e * ze + p.n * zn + p.u * zu
-      };
-    }
-    const nCam = lookAt(tiltPt(sph(0, 0)));
-    const angN = Math.atan2(-nCam.sy, nCam.sx);
-    const angFloorN = Math.atan2(ny, nx);
-    const rot2 = angFloorN - angN;
-    const cr = Math.cos(rot2), sr = Math.sin(rot2);
-    function projectRaw(p) {
-      const c = lookAt(tiltPt(p));
-      const vx = c.sx, vy = -c.sy;
-      return {
-        x: cx + (vx * cr - vy * sr) * R,
-        y: cy + (vx * sr + vy * cr) * R,
-        depth: c.depth
-      };
-    }
-    /* Keep N on the N marker. If the projection is left-handed, east
-       lands on west (Sydney: 11 at W, 17 at E). Flip E only — never
-       rotate 180° (that also swaps N/S and puts noon in the south). */
-    const pE = projectRaw({ e: 1, n: 0, u: 0 });
-    const ewSign = (ex * (pE.x - cx) + ey * (pE.y - cy) < 0) ? -1 : 1;
+    /* Floor-rose projection: horizon N sits on the N–S marker line,
+       E on the W–E marker line. Altitude lifts toward the top of the
+       page so the vault reads as a dome. No orbit camera — AJM-style
+       drag was rotating the rose off the markers. */
+    const h = Math.max(0.18, Math.min(1.15, 0.58 + (adj.look || 0) / 90));
+    const toCam = { e: 0, n: 0, u: 1 };
     function project(p) {
-      return projectRaw({ e: ewSign * p.e, n: p.n, u: p.u });
+      return {
+        x: cx + R * (p.e * ex + p.n * nx),
+        y: cy + R * (p.e * ey + p.n * ny) - R * p.u * h,
+        depth: p.u
+      };
     }
     function skyTo(az, el) { return project(sph(az, el)); }
     function ground(az) { return skyTo(az, 0); }
@@ -637,13 +593,11 @@
     const dpr = opts.dpr || 1;
     const layerKey = [
       eph.key,
-      (adj.size || 1).toFixed(3), (adj.rot || 0).toFixed(2),
-      (adj.look || 0).toFixed(2), (adj.tilt || 0).toFixed(2),
-      (adj.pitch || 0).toFixed(2),
+      (adj.size || 1).toFixed(3),
+      (adj.look || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
-      Math.round(W), Math.round(H), Number(dpr).toFixed(2),
-      southHem ? 'S' : 'N', String(ewSign)
+      Math.round(W), Math.round(H), Number(dpr).toFixed(2)
     ].join('|');
     if (!layerCache.canvas || layerCache.key !== layerKey) {
       const off = layerCache.canvas || document.createElement('canvas');
@@ -654,7 +608,7 @@
       const octx = off.getContext('2d');
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.clearRect(0, 0, W, H);
-      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy, southHem ? -1 : 1);
+      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy, 1);
       layerCache.key = layerKey;
       layerCache.canvas = off;
     }
@@ -766,13 +720,7 @@
     }
     ctx.fillStyle = '#96d2ff';
     ctx.beginPath(); ctx.arc(cx, cy, 2.1, 0, Math.PI * 2); ctx.fill();
-    const rim = [];
-    for (let d = 0; d < 360; d += 4) {
-      const az = d * Math.PI / 180;
-      const q = ground(az);
-      rim.push({ x: q.x, y: q.y, az: az });
-    }
-    return { cx: cx, cy: cy, R: R, rim: rim };
+    return { cx: cx, cy: cy, R: R };
   }
 
   global.red5PaintElcSunPath = paintElcSunPath;
@@ -783,9 +731,6 @@
     const React = global.React;
     const canvasRef = React.useRef(null);
     const wrapRef = React.useRef(null);
-    const geomRef = React.useRef(null);
-    const hoverRef = React.useRef(null);
-    const dragRef = React.useRef(null);
     const enabled = !!props.enabled;
     const lat = typeof props.lat === 'number' ? props.lat : 40.7128;
     const lon = typeof props.lon === 'number' ? props.lon : -74.0060;
@@ -820,7 +765,7 @@
       const ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
-      const geom = paintElcSunPath(ctx, {
+      paintElcSunPath(ctx, {
         width: W, height: H, dpr: dpr,
         lat: lat, lon: lon, hour: hour, doy: doy,
         sun: sun, adj: adj, orientation: orientation,
@@ -828,19 +773,6 @@
         timezone: timezone,
         showCardinals: showCardinals
       });
-      geomRef.current = geom;
-      const hover = hoverRef.current;
-      if (hover && geom) {
-        ctx.beginPath();
-        ctx.arc(hover.x, hover.y, 7, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(125, 211, 252, 0.95)';
-        ctx.lineWidth = 2.2;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(hover.x, hover.y, 3.2, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(253, 224, 71, 0.95)';
-        ctx.fill();
-      }
     }
 
     const paintNowRef = React.useRef(paintNow);
@@ -854,99 +786,9 @@
         ? new ResizeObserver(function () { paintNowRef.current(); }) : null;
       if (ro) ro.observe(wrap);
       return function () { if (ro) ro.disconnect(); };
-    }, [enabled, lat, lon, adj.size, adj.rot, adj.look, adj.tilt, adj.pitch,
+    }, [enabled, lat, lon, adj.size, adj.look,
         hour, doy, sun && sun.azimuth, sun && sun.elevation,
         orientation, oKey, northOffsetDeg, elevationM, timezone, showCardinals]);
-
-    React.useEffect(function () {
-      const wrap = wrapRef.current;
-      const host = wrap && wrap.parentElement;
-      if (!wrap || !host || !enabled) return undefined;
-      function local(e) {
-        const r = wrap.getBoundingClientRect();
-        return { x: e.clientX - r.left, y: e.clientY - r.top };
-      }
-      function hitDisk(x, y) {
-        const g = geomRef.current;
-        if (!g || !g.rim || !g.rim.length) return null;
-        const ang = Math.atan2(y - g.cy, x - g.cx);
-        let best = g.rim[0], bestD = 99;
-        for (let i = 0; i < g.rim.length; i++) {
-          const p = g.rim[i];
-          let d = Math.abs(Math.atan2(p.y - g.cy, p.x - g.cx) - ang);
-          if (d > Math.PI) d = 2 * Math.PI - d;
-          if (d < bestD) { bestD = d; best = p; }
-        }
-        const rHit = Math.hypot(x - g.cx, y - g.cy);
-        const rRim = Math.hypot(best.x - g.cx, best.y - g.cy) || g.R;
-        if (rHit > rRim * 1.1) return null;
-        return best;
-      }
-      function onDown(e) {
-        if (e.button != null && e.button !== 0) return;
-        const pt = local(e);
-        const hit = hitDisk(pt.x, pt.y);
-        if (!hit) return;
-        const g = geomRef.current;
-        const a = (global.red5ElcSunPath && global.red5ElcSunPath.loadAdj)
-          ? global.red5ElcSunPath.loadAdj()
-          : { rot: 0, look: 0 };
-        e.preventDefault();
-        e.stopPropagation();
-        dragRef.current = {
-          id: e.pointerId,
-          startX: pt.x,
-          startY: pt.y,
-          rot0: Number(a.rot) || 0,
-          look0: Number(a.look) || 0,
-          R: g.R || 120
-        };
-        hoverRef.current = hit;
-        host.style.cursor = 'grabbing';
-        try { host.setPointerCapture(e.pointerId); } catch (_) {}
-      }
-      function onMove(e) {
-        const pt = local(e);
-        const drag = dragRef.current;
-        if (drag && (drag.id == null || drag.id === e.pointerId)) {
-          e.preventDefault();
-          e.stopPropagation();
-          const dx = pt.x - drag.startX;
-          const dy = pt.y - drag.startY;
-          const deg = 90 / Math.max(80, drag.R);
-          const rot = drag.rot0 + dx * deg;
-          const look = Math.max(-25, Math.min(40, drag.look0 - dy * deg));
-          if (global.red5ElcSunPath && global.red5ElcSunPath.setAdj) {
-            global.red5ElcSunPath.setAdj({ rot: rot, look: look });
-          }
-          host.style.cursor = 'grabbing';
-          return;
-        }
-        const hit = hitDisk(pt.x, pt.y);
-        const was = hoverRef.current;
-        hoverRef.current = hit;
-        host.style.cursor = hit ? 'grab' : '';
-        if (hit || was) paintNowRef.current();
-      }
-      function onUp(e) {
-        if (!dragRef.current) return;
-        if (dragRef.current.id != null && e.pointerId !== dragRef.current.id) return;
-        dragRef.current = null;
-        host.style.cursor = '';
-        try { host.releasePointerCapture(e.pointerId); } catch (_) {}
-      }
-      host.addEventListener('pointerdown', onDown, true);
-      host.addEventListener('pointermove', onMove, true);
-      host.addEventListener('pointerup', onUp, true);
-      host.addEventListener('pointercancel', onUp, true);
-      return function () {
-        host.removeEventListener('pointerdown', onDown, true);
-        host.removeEventListener('pointermove', onMove, true);
-        host.removeEventListener('pointerup', onUp, true);
-        host.removeEventListener('pointercancel', onUp, true);
-        host.style.cursor = '';
-      };
-    }, [enabled]);
 
     if (!enabled) return null;
     return React.createElement('div', {
@@ -1696,8 +1538,8 @@
           enabled && React.createElement('span', { className: 'inline-flex gap-1 flex-wrap items-center' },
             btn('size-', '−', 'Smaller'),
             btn('size+', '+', 'Bigger'),
-            !props.operatorAdj && btn('lookU', '↑', 'Look up'),
-            !props.operatorAdj && btn('lookD', '↓', 'Look down'),
+            !props.operatorAdj && btn('lookU', '↑', 'Taller vault'),
+            !props.operatorAdj && btn('lookD', '↓', 'Flatter vault'),
             btn('reset', 'Reset', 'Reset view')
           )
         ),

@@ -146,41 +146,16 @@ function WindowPlanPane(props) {
 
 /**
  * First traced edge (vertices[0]→[1]) is the HEAD — same rule as red5-elc.
- * Roller / horizontal louvers stay parallel to that slope. Vertical is
- * screen-upright.
+ * Horizontal slats stay parallel to that slope. Vertical vanes follow the
+ * jambs (parallelogram), not a Euclidean 90° from the head.
  */
-function red5HeadSillAxes(verts) {
-    if (!verts || verts.length < 2) return null;
-    const pts = verts.map(v => [Number(v[0]), Number(v[1])]);
-    let sx = pts[1][0] - pts[0][0];
-    let sy = pts[1][1] - pts[0][1];
-    const slen = Math.hypot(sx, sy) || 1;
-    sx /= slen; sy /= slen;
-    let hx = -sy, hy = sx;
-    let cx = 0, cy = 0;
-    for (let i = 0; i < pts.length; i++) { cx += pts[i][0]; cy += pts[i][1]; }
-    cx /= pts.length; cy /= pts.length;
-    const headH0 = pts[0][0] * hx + pts[0][1] * hy;
-    if (cx * hx + cy * hy > headH0) { hx = -hx; hy = -hy; }
-    const dotsS = pts.map(p => p[0] * sx + p[1] * sy);
-    const dotsH = pts.map(p => p[0] * hx + p[1] * hy);
-    const sMin = Math.min.apply(null, dotsS), sMax = Math.max.apply(null, dotsS);
-    const hMin = Math.min.apply(null, dotsH), hMax = Math.max.apply(null, dotsH);
-    return {
-        sMin, sMax, hMin, hMax,
-        sSpan: Math.max(0.2, sMax - sMin),
-        hSpan: Math.max(0.2, hMax - hMin),
-        atSH: (sv, hv) => [sv * sx + hv * hx, sv * sy + hv * hy],
-        minX: Math.min.apply(null, pts.map(p => p[0])),
-        maxX: Math.max.apply(null, pts.map(p => p[0])),
-        minY: Math.min.apply(null, pts.map(p => p[1])),
-        maxY: Math.max.apply(null, pts.map(p => p[1])),
-    };
+function wpHeadSillAxes(verts) {
+    return window.red5HeadSillAxes ? window.red5HeadSillAxes(verts) : null;
 }
 
 function TracedWindowBlindMarks(props) {
     const verts = props.verts || [];
-    const axes = red5HeadSillAxes(verts);
+    const axes = wpHeadSillAxes(verts);
     if (!axes) return null;
     const open = Math.max(0, Math.min(1, Number(props.open)));
     const spec = red5BlindSpecLocal(props.type);
@@ -447,7 +422,6 @@ function WindowBlindsPopout(props) {
     );
 }
 
-window.red5HeadSillAxes = red5HeadSillAxes;
 window.WindowBlindTypeSelect = WindowBlindTypeSelect;
 window.WindowBlindPreview = WindowBlindPreview;
 window.WindowBlindMarks = WindowBlindMarks;

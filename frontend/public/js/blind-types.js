@@ -155,6 +155,77 @@
     return rects;
   }
 
+  /* First traced edge is HEAD. Second axis is the JAMB (p0→last, or p1→p2),
+     not a Euclidean perpendicular — isometric glass is a parallelogram, so
+     vertical vanes must run along the jambs or they look slanted. */
+  function headSillAxes(verts) {
+    if (!verts || verts.length < 2) return null;
+    var pts = [], i;
+    for (i = 0; i < verts.length; i++) {
+      var px = Number(verts[i][0]), py = Number(verts[i][1]);
+      if (!isFinite(px) || !isFinite(py)) continue;
+      pts.push([px, py]);
+    }
+    if (pts.length < 2) return null;
+    var p0 = pts[0], p1 = pts[1];
+    var headX = p1[0] - p0[0], headY = p1[1] - p0[1];
+    var headLen = Math.hypot(headX, headY) || 1;
+    var hx = headX / headLen, hy = headY / headLen;
+    var jambX = pts[pts.length - 1][0] - p0[0];
+    var jambY = pts[pts.length - 1][1] - p0[1];
+    var jambLen = Math.hypot(jambX, jambY);
+    if (jambLen < 0.4 || Math.abs(jambX * hx + jambY * hy) / (jambLen || 1) > 0.92) {
+      if (pts.length >= 3) {
+        jambX = pts[2][0] - p1[0];
+        jambY = pts[2][1] - p1[1];
+        jambLen = Math.hypot(jambX, jambY) || 1;
+      }
+    }
+    if (!(jambLen > 0.2)) {
+      jambX = -hy * Math.max(2, headLen * 0.28);
+      jambY = hx * Math.max(2, headLen * 0.28);
+      jambLen = Math.hypot(jambX, jambY) || 1;
+    }
+    function uv(x, y) {
+      var dx = x - p0[0], dy = y - p0[1];
+      var d = headX * jambY - headY * jambX;
+      if (Math.abs(d) < 1e-8) return [0, 0];
+      return [(dx * jambY - dy * jambX) / d, (headX * dy - headY * dx) / d];
+    }
+    var cx = 0, cy = 0;
+    for (i = 0; i < pts.length; i++) { cx += pts[i][0]; cy += pts[i][1]; }
+    cx /= pts.length; cy /= pts.length;
+    if (uv(cx, cy)[1] < 0) { jambX = -jambX; jambY = -jambY; }
+    var uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+    for (i = 0; i < pts.length; i++) {
+      var t = uv(pts[i][0], pts[i][1]);
+      if (t[0] < uMin) uMin = t[0]; if (t[0] > uMax) uMax = t[0];
+      if (t[1] < vMin) vMin = t[1]; if (t[1] > vMax) vMax = t[1];
+    }
+    if (!(uMax > uMin)) { uMin = 0; uMax = 1; }
+    if (!(vMax > vMin)) { vMin = 0; vMax = 1; }
+    var sMin = uMin * headLen, sMax = uMax * headLen;
+    var hMax = 0;
+    var hMin = -(vMax - vMin) * jambLen;
+    var jx = jambX / (jambLen || 1), jy = jambY / (jambLen || 1);
+    function atSH(s, h) {
+      var u = s / headLen;
+      var v = vMin + (hMax - h) / (jambLen || 1);
+      return [p0[0] + u * headX + v * jambX, p0[1] + u * headY + v * jambY];
+    }
+    var xs = pts.map(function (p) { return p[0]; });
+    var ys = pts.map(function (p) { return p[1]; });
+    return {
+      sMin: sMin, sMax: sMax, hMin: hMin, hMax: hMax,
+      sSpan: Math.max(0.2, sMax - sMin),
+      hSpan: Math.max(0.2, hMax - hMin),
+      sx: hx, sy: hy, hx: jx, hy: jy,
+      atSH: atSH,
+      minX: Math.min.apply(null, xs), maxX: Math.max.apply(null, xs),
+      minY: Math.min.apply(null, ys), maxY: Math.max.apply(null, ys)
+    };
+  }
+
   /* Shrink a head–sill frame to the still-open glass (plan %). */
   function openGlassFrame(fr, type, open) {
     if (!fr) return null;
@@ -163,7 +234,8 @@
     if (o < 0.01) return null;
     var out = {
       sx: fr.sx, sy: fr.sy, hx: fr.hx, hy: fr.hy,
-      sMin: fr.sMin, sMax: fr.sMax, hMin: fr.hMin, hMax: fr.hMax
+      sMin: fr.sMin, sMax: fr.sMax, hMin: fr.hMin, hMax: fr.hMax,
+      atSH: fr.atSH
     };
     if (spec.motion === 'tilt') return out;
     var sSpan = Math.max(0.2, fr.sMax - fr.sMin);
@@ -180,5 +252,6 @@
   root.red5NormalizeBlindType = normalizeBlindType;
   root.red5BlindSpec = blindSpec;
   root.red5BlindElevationRects = elevationRects;
+  root.red5HeadSillAxes = headSillAxes;
   root.red5OpenGlassFrame = openGlassFrame;
 })(typeof window !== 'undefined' ? window : this);

@@ -844,6 +844,16 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       return [n1x + dx - qx, n1y + dy - qy, n2x + dx + qx, n2y + dy + qy];
     }
     function gapFrameFromVerts(verts) {
+      if (window.red5HeadSillAxes) {
+        var ax = window.red5HeadSillAxes(verts);
+        if (ax) {
+          return {
+            sx: ax.sx, sy: ax.sy, hx: ax.hx, hy: ax.hy,
+            sMin: ax.sMin, sMax: ax.sMax, hMin: ax.hMin, hMax: ax.hMax,
+            atSH: ax.atSH
+          };
+        }
+      }
       var gp = verts.map(function (v) { return [Number(v[0]), Number(v[1])]; });
       if (gp.length < 3) return null;
       var ssx = gp[1][0] - gp[0][0], ssy = gp[1][1] - gp[0][1];
@@ -883,6 +893,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       var hSpan = Math.max(0.2, fr.hMax - fr.hMin);
       var stripeA = a0 * (0.55 + 0.45 * openEase);
       function atSH(sv, hv) {
+        if (fr.atSH) return fr.atSH(sv, hv);
         return [sv * fr.sx + hv * fr.hx, sv * fr.sy + hv * fr.hy];
       }
       var si;
@@ -925,6 +936,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
         : null;
       if (frOpen && spec.motion !== 'tilt') {
         var atOpen = function (sv, hv) {
+          if (frOpen.atSH) return frOpen.atSH(sv, hv);
           return [sv * frOpen.sx + hv * frOpen.hx, sv * frOpen.sy + hv * frOpen.hy];
         };
         near = [

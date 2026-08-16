@@ -565,6 +565,9 @@
 
     const eph = ensureEph(latDeg, lonDeg, tzHours);
     const dpr = opts.dpr || 1;
+    const parts = opts.parts || 'all';
+    const paintBand = parts === 'all' || parts === 'band';
+    const paintPointer = parts === 'all' || parts === 'pointer';
     const layerKey = [
       eph.key,
       (adj.size || 1).toFixed(3), (adj.rot || 0).toFixed(2),
@@ -573,6 +576,7 @@
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
       Math.round(W), Math.round(H), Number(dpr).toFixed(2)
     ].join('|');
+    if (paintBand) {
     if (!layerCache.canvas || layerCache.key !== layerKey) {
       const off = layerCache.canvas || document.createElement('canvas');
       const wPx = Math.max(1, Math.floor(W * dpr));
@@ -639,7 +643,9 @@
       if (eP) paintCardinalLetter(ctx, (eP.x / 100) * W, (eP.y / 100) * H, 'E', nx, ny, ex, ey, glyph, '#34d399');
       if (nP) paintNorthArrow(ctx, (nP.x / 100) * W, (nP.y / 100) * H, nx, ny, ex, ey, glyph * (32 / 28));
     }
+    }
 
+    if (paintPointer) {
     const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m, opts.timezone);
     const bandTod = solarAltAz(lat, doy, hour, lonDeg, tzHours);
     const liveEl = bandTod.el > 0 ? bandTod.el
@@ -675,8 +681,14 @@
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(bx, by);
+        ctx.strokeStyle = 'rgba(255, 252, 245, 0.9)';
+        ctx.lineWidth = 2.4;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(bx, by);
         ctx.strokeStyle = '#b91c1c';
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(tipX, tipY);
@@ -690,6 +702,7 @@
     }
     ctx.fillStyle = '#96d2ff';
     ctx.beginPath(); ctx.arc(cx, cy, 2.1, 0, Math.PI * 2); ctx.fill();
+    }
     return { cx: cx, cy: cy, R: R };
   }
 
@@ -700,6 +713,7 @@
   global.ElcSunPathOnFloor = function ElcSunPathOnFloor(props) {
     const React = global.React;
     const canvasRef = React.useRef(null);
+    const pointerRef = React.useRef(null);
     const wrapRef = React.useRef(null);
     const enabled = !!props.enabled;
     const lat = typeof props.lat === 'number' ? props.lat : 40.7128;
@@ -722,28 +736,34 @@
 
     React.useEffect(function () {
       const canvas = canvasRef.current;
+      const pointer = pointerRef.current;
       const wrap = wrapRef.current;
-      if (!canvas || !wrap || !enabled) return undefined;
+      if (!canvas || !pointer || !wrap || !enabled) return undefined;
+      function sizeCanvas(el, W, H, dpr) {
+        el.width = Math.floor(W * dpr);
+        el.height = Math.floor(H * dpr);
+        el.style.width = W + 'px';
+        el.style.height = H + 'px';
+        const ctx = el.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        return ctx;
+      }
       function paint() {
         const r = wrap.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
         const W = Math.max(1, r.width);
         const H = Math.max(1, r.height);
-        canvas.width = Math.floor(W * dpr);
-        canvas.height = Math.floor(H * dpr);
-        canvas.style.width = W + 'px';
-        canvas.style.height = H + 'px';
-        const ctx = canvas.getContext('2d');
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, W, H);
-        paintElcSunPath(ctx, {
+        const opts = {
           width: W, height: H, dpr: dpr,
           lat: lat, lon: lon, hour: hour, doy: doy,
           sun: sun, adj: adj, orientation: orientation,
           northOffsetDeg: northOffsetDeg, elevation_m: elevationM,
           timezone: timezone,
           showCardinals: showCardinals
-        });
+        };
+        paintElcSunPath(sizeCanvas(canvas, W, H, dpr), Object.assign({}, opts, { parts: 'band' }));
+        paintElcSunPath(sizeCanvas(pointer, W, H, dpr), Object.assign({}, opts, { parts: 'pointer' }));
       }
       paint();
       const ro = (typeof ResizeObserver !== 'undefined')
@@ -755,15 +775,25 @@
         orientation, oKey, northOffsetDeg, elevationM, timezone, showCardinals]);
 
     if (!enabled) return null;
-    return React.createElement('div', {
-      ref: wrapRef,
-      className: 'absolute inset-0 pointer-events-none',
-      style: { zIndex: 38 },
-      'data-testid': 'elc-sun-path-overlay'
-    }, React.createElement('canvas', {
-      ref: canvasRef,
-      style: { position: 'absolute', inset: 0, width: '100%', height: '100%' }
-    }));
+    return React.createElement(React.Fragment, null,
+      React.createElement('div', {
+        ref: wrapRef,
+        className: 'absolute inset-0 pointer-events-none',
+        style: { zIndex: 38 },
+        'data-testid': 'elc-sun-path-overlay'
+      }, React.createElement('canvas', {
+        ref: canvasRef,
+        style: { position: 'absolute', inset: 0, width: '100%', height: '100%' }
+      })),
+      React.createElement('div', {
+        className: 'absolute inset-0 pointer-events-none',
+        style: { zIndex: 52 },
+        'data-testid': 'elc-sun-path-pointer'
+      }, React.createElement('canvas', {
+        ref: pointerRef,
+        style: { position: 'absolute', inset: 0, width: '100%', height: '100%' }
+      }))
+    );
   };
 
   global.ElcSunPathControls = function ElcSunPathControls(props) {

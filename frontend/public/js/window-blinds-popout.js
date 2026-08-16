@@ -160,6 +160,112 @@ function WindowPlanPane(props) {
     );
 }
 
+/**
+ * First traced edge (vertices[0]→[1]) is the HEAD — same rule as red5-elc.
+ * Roller / horizontal louvers stay parallel to that slope. Vertical is
+ * screen-upright.
+ */
+function red5HeadSillAxes(verts) {
+    if (!verts || verts.length < 2) return null;
+    const pts = verts.map(v => [Number(v[0]), Number(v[1])]);
+    let sx = pts[1][0] - pts[0][0];
+    let sy = pts[1][1] - pts[0][1];
+    const slen = Math.hypot(sx, sy) || 1;
+    sx /= slen; sy /= slen;
+    let hx = -sy, hy = sx;
+    let cx = 0, cy = 0;
+    for (let i = 0; i < pts.length; i++) { cx += pts[i][0]; cy += pts[i][1]; }
+    cx /= pts.length; cy /= pts.length;
+    const headH0 = pts[0][0] * hx + pts[0][1] * hy;
+    if (cx * hx + cy * hy > headH0) { hx = -hx; hy = -hy; }
+    const dotsS = pts.map(p => p[0] * sx + p[1] * sy);
+    const dotsH = pts.map(p => p[0] * hx + p[1] * hy);
+    const sMin = Math.min.apply(null, dotsS), sMax = Math.max.apply(null, dotsS);
+    const hMin = Math.min.apply(null, dotsH), hMax = Math.max.apply(null, dotsH);
+    return {
+        sMin, sMax, hMin, hMax,
+        sSpan: Math.max(0.2, sMax - sMin),
+        hSpan: Math.max(0.2, hMax - hMin),
+        atSH: (sv, hv) => [sv * sx + hv * hx, sv * sy + hv * hy],
+        minX: Math.min.apply(null, pts.map(p => p[0])),
+        maxX: Math.max.apply(null, pts.map(p => p[0])),
+        minY: Math.min.apply(null, pts.map(p => p[1])),
+        maxY: Math.max.apply(null, pts.map(p => p[1])),
+    };
+}
+
+function TracedWindowBlindMarks(props) {
+    const verts = props.verts || [];
+    const axes = red5HeadSillAxes(verts);
+    if (!axes) return null;
+    const open = Math.max(0, Math.min(1, Number(props.open)));
+    const type = red5NormalizeBlindType(props.type);
+    const cover = 1 - open;
+    const sealed = open < 0.01;
+    const pad = 0.6;
+    const { sMin, sMax, hMax, hSpan, atSH, minX, maxX, minY, maxY } = axes;
+    const bandPoints = (frac) => {
+        const f = Math.min(1, Math.max(0, frac));
+        const a = atSH(sMin - pad, hMax + 0.2);
+        const b = atSH(sMax + pad, hMax + 0.2);
+        const c = atSH(sMax + pad, hMax - f * hSpan);
+        const d = atSH(sMin - pad, hMax - f * hSpan);
+        return [a, b, c, d].map(p => p[0] + ',' + p[1]).join(' ');
+    };
+    if (sealed || type === 'roller') {
+        const f = sealed ? 1 : cover;
+        if (f <= 0.001) return null;
+        return <polygon points={bandPoints(f)} fill="#1e293b" opacity={0.30 + 0.42 * f}/>;
+    }
+    if (type === 'horizontal') {
+        const n = Math.max(5, Math.round(6 + cover * 10));
+        const sw = Math.max(0.32, Math.min(1.15, hSpan / n * 0.85));
+        const lines = [];
+        for (let i = 0; i < n; i++) {
+            const u = (i + 0.5) / n;
+            if (u > cover) continue;
+            const hv = hMax - u * hSpan;
+            const a = atSH(sMin - pad, hv);
+            const b = atSH(sMax + pad, hv);
+            lines.push(
+                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
+                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
+                      opacity={0.40 + cover * 0.45}/>
+            );
+        }
+        return (
+            <g>
+                {cover > 0.7 && (
+                    <polygon points={bandPoints(cover)} fill="#1e293b" opacity={0.18 + 0.35 * cover}/>
+                )}
+                {lines}
+            </g>
+        );
+    }
+    const n = Math.max(5, Math.round(6 + cover * 10));
+    const wPx = Math.max(0.4, maxX - minX);
+    const sw = Math.max(0.28, Math.min(1.0, wPx / n * 0.75));
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+        const u = (i + 0.5) / n;
+        const x = minX + wPx * u;
+        lines.push(
+            <line key={i} x1={x} y1={minY - 0.3} x2={x} y2={maxY + 0.3}
+                  stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
+                  opacity={0.40 + cover * 0.45}/>
+        );
+    }
+    return (
+        <g>
+            {cover > 0.55 && (
+                <rect x={minX} y={minY} width={wPx} height={Math.max(0.4, maxY - minY)}
+                      fill="#1e293b" opacity={(cover - 0.55) * 0.55}/>
+            )}
+            {lines}
+        </g>
+    );
+}
+
 /** Blind marks clipped to a traced glass polygon (plan % coords). */
 function TracedWindowBlindOverlay(props) {
     const w = props.w || {};
@@ -168,10 +274,6 @@ function TracedWindowBlindOverlay(props) {
     const selected = !!props.selected;
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
     const type = red5NormalizeBlindType(w.blind_type);
-    const xs = verts.map(v => Number(v[0]));
-    const ys = verts.map(v => Number(v[1]));
-    const minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
-    const minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
     const clipId = 'wb-clip-' + String(w.id || props.clipKey || 'w');
     return (
         <g data-testid={props.testId}>
@@ -188,12 +290,7 @@ function TracedWindowBlindOverlay(props) {
                 onMouseDown={props.onMouseDown}
             />
             <g clipPath={'url(#' + clipId + ')'} style={{ pointerEvents: 'none' }}>
-                <WindowBlindMarks
-                    x={minX} y={minY}
-                    width={Math.max(0.4, maxX - minX)}
-                    height={Math.max(0.4, maxY - minY)}
-                    open={open} type={type}
-                />
+                <TracedWindowBlindMarks verts={verts} open={open} type={type}/>
             </g>
         </g>
     );
@@ -350,6 +447,7 @@ function WindowBlindsPopout(props) {
 }
 
 window.red5NormalizeBlindType = red5NormalizeBlindType;
+window.red5HeadSillAxes = red5HeadSillAxes;
 window.WindowBlindTypeSelect = WindowBlindTypeSelect;
 window.WindowBlindPreview = WindowBlindPreview;
 window.WindowBlindMarks = WindowBlindMarks;

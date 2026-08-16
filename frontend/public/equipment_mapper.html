@@ -520,9 +520,9 @@
                     setSunState(prev => prev ? Object.assign({}, prev, { enabled: false }) : { enabled: false, sun: null });
                     return;
                 }
-                const sunFn = (window.red5ElcSunPath && window.red5ElcSunPath.sunAtCivilTodForFloor)
-                    || window.red5ElcSunAtTodForFloor
-                    || window.red5ElcSunAtTod;
+                const sunFn = (window.red5ElcSunPath && window.red5ElcSunPath.sunAtCivilTod)
+                    || window.red5ElcSunAtTod
+                    || window.red5ElcSunAtTodForFloor;
                 const sun = (typeof sunFn === 'function')
                     ? sunFn(buildingLatLon.lat, buildingLatLon.lon, sunDoy, sunHour, buildingLatLon.elevation_m, buildingLatLon.timezone)
                     : (window.red5SolarPosition
@@ -7252,7 +7252,7 @@
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
                 '/assets/js/sun-path.js?v=sunshaft-rose3',
-                '/assets/js/elc-sun-path-overlay.js?v=daysel3',
+                '/assets/js/elc-sun-path-overlay.js?v=daysel4',
                 '/assets/js/window-blinds-popout.js'
             ];
             var mainSource = document.getElementById('main-source');

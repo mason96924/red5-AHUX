@@ -659,10 +659,11 @@
       if (nP) paintNorthArrow(ctx, (nP.x / 100) * W, (nP.y / 100) * H, nx, ny, ex, ey, glyph * (32 / 28));
     }
 
-    // Same paint as red5-elc floor.html _paintSunPathOverlay: orange
-    // shaft from horizon-center through the live sun on today's red path.
-    // Night TOD uses solar noon so the disc (and window glow) still match.
-    const floorSun = sunAtCivilTodForFloor(latDeg, lonDeg, doy, hour, opts.elevation_m, opts.timezone);
+    // Orange shaft from horizon-center through the selected TOD sun
+    // on today's red path.  Night / below-horizon: no pointer, no glow.
+    const floorSun = (opts.sun && Number.isFinite(Number(opts.sun.elevation)))
+      ? opts.sun
+      : sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m, opts.timezone);
     const liveEl = floorSun.elevation * Math.PI / 180;
     const liveAz = floorSun.azimuth * Math.PI / 180;
     if (liveEl > 0) {
@@ -2120,14 +2121,15 @@
     const [hostEl, setHostEl] = React.useState(null);
 
     const sun = (Number.isFinite(lat) && Number.isFinite(lon))
-      ? sunAtCivilTodForFloor(lat, lon, doy, hour, elevationM, timezone)
+      ? sunAtCivilTod(lat, lon, doy, hour, elevationM, timezone)
       : null;
 
     React.useEffect(function () {
       const payload = { enabled: !!enabled, sun: sun, hour: hour, doy: doy };
       if (props && props.onChange) props.onChange(payload);
       try { global.dispatchEvent(new CustomEvent('r5-sun-state', { detail: payload })); } catch (_) {}
-    }, [enabled, hour, doy, lat, lon, elevationM, timezone, sun && sun.azimuth, sun && sun.elevation]);
+    }, [enabled, hour, doy, lat, lon, elevationM, timezone,
+        sun && sun.azimuth, sun && sun.elevation, sun && sun.is_day]);
 
     React.useLayoutEffect(function () {
       const n = hostProbeRef.current;

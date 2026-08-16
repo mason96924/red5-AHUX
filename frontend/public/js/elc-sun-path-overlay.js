@@ -380,7 +380,8 @@
     });
   }
 
-  function drawYearMesh(ctx, project, skyTo, ground, toCam, eph, cx, cy) {
+  function drawYearMesh(ctx, project, skyTo, ground, toCam, eph, cx, cy, nsShade) {
+    const nS = (nsShade == null) ? 1 : nsShade;
     ctx.beginPath();
     for (let d = 0; d <= 360; d += 3) {
       const q = ground(d * Math.PI / 180);
@@ -431,6 +432,39 @@
     rimTick(eEnd, 'rgba(245,162,91,0.85)');
     rimTick(wEnd, 'rgba(245,162,91,0.85)');
 
+    /* Pale full vault so SH is a dome on the floor, not a back-face slice. */
+    const shell = [];
+    const elStep = 8, azStep = 10;
+    for (let el = 0; el < 90; el += elStep) {
+      for (let az = 0; az < 360; az += azStep) {
+        const a0 = az * Math.PI / 180, a1 = (az + azStep) * Math.PI / 180;
+        const e0 = el * Math.PI / 180, e1 = (el + elStep) * Math.PI / 180;
+        const pa = { e: Math.sin(a0) * Math.cos(e0), n: Math.cos(a0) * Math.cos(e0), u: Math.sin(e0) };
+        const pb = { e: Math.sin(a1) * Math.cos(e0), n: Math.cos(a1) * Math.cos(e0), u: Math.sin(e0) };
+        const pc = { e: Math.sin(a1) * Math.cos(e1), n: Math.cos(a1) * Math.cos(e1), u: Math.sin(e1) };
+        const pd = { e: Math.sin(a0) * Math.cos(e1), n: Math.cos(a0) * Math.cos(e1), u: Math.sin(e1) };
+        const me = (pa.e + pb.e + pc.e + pd.e) / 4;
+        const mn = (pa.n + pb.n + pc.n + pd.n) / 4;
+        const mu = (pa.u + pb.u + pc.u + pd.u) / 4;
+        const ndot = me * toCam.e + mn * toCam.n + mu * toCam.u;
+        shell.push({ pts: [pa, pb, pc, pd], ndot: ndot, depth: ndot });
+      }
+    }
+    shell.sort(function (p, q) { return p.depth - q.depth; });
+    shell.forEach(function (p) {
+      const q = p.pts.map(project);
+      const back = p.ndot < 0;
+      const a = back ? 0.015 + 0.03 * Math.min(1, -p.ndot) : 0.05 + 0.10 * Math.min(1, p.ndot);
+      ctx.beginPath();
+      ctx.moveTo(q[0].x, q[0].y);
+      ctx.lineTo(q[1].x, q[1].y);
+      ctx.lineTo(q[2].x, q[2].y);
+      ctx.lineTo(q[3].x, q[3].y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255, 228, 140, ' + a.toFixed(3) + ')';
+      ctx.fill();
+    });
+
     const days = eph.days, hours = eph.hours, grid = eph.grid;
     const patches = [];
     const nD = days.length, nH = hours.length;
@@ -446,8 +480,8 @@
         const mu = (sa.u + sb.u + sc.u + sd.u) / 4;
         patches.push({
           pts: [sa, sb, sc, sd],
-          ndot: me * toCam.e + mn * toCam.n + mu * toCam.u,
-          depth: me * toCam.e + mn * toCam.n + mu * toCam.u
+          ndot: me * toCam.e + mn * toCam.n * nS + mu * toCam.u,
+          depth: me * toCam.e + mn * toCam.n * nS + mu * toCam.u
         });
       }
     }
@@ -539,13 +573,18 @@
       const ce = Math.cos(el), se = Math.sin(el);
       return { e: Math.sin(az) * ce, n: Math.cos(az) * ce, u: se };
     }
+    /* SH: sun transits north. NH camera sits at 137° (SE) so the south
+       vault is in front. Adding 180 to that (317° NW) shears noon off N
+       and 180°-reverses the rose. SH camera is due south (180°) so noon
+       stays on N, 06 on E, 18 on W. Never negate both e and n. */
+    const southHem = latDeg < 0;
     const tiltRad = (-5 + (adj.tilt || 0)) * Math.PI / 180;
     const ct = Math.cos(tiltRad), st = Math.sin(tiltRad);
     function tiltPt(p) {
       return { e: p.e * ct - p.u * st, n: p.n, u: p.e * st + p.u * ct };
     }
     const camEl = (35 + (adj.look || 0)) * Math.PI / 180;
-    const camAz = (137 + (adj.rot || 0)) * Math.PI / 180;
+    const camAz = (southHem ? 180 : 137) * Math.PI / 180;
     const eyeE = Math.sin(camAz) * Math.cos(camEl);
     const eyeN = Math.cos(camAz) * Math.cos(camEl);
     const eyeU = Math.sin(camEl);
@@ -570,13 +609,29 @@
     const angFloorN = Math.atan2(ny, nx);
     const rot2 = angFloorN - angN;
     const cr = Math.cos(rot2), sr = Math.sin(rot2);
-    function project(p) {
+    function projectRaw(p) {
       const c = lookAt(tiltPt(p));
       const vx = c.sx, vy = -c.sy;
       return {
         x: cx + (vx * cr - vy * sr) * R,
         y: cy + (vx * sr + vy * cr) * R,
         depth: c.depth
+      };
+    }
+    /* Keep N on the N marker. If the projection is left-handed, east
+       lands on west (Sydney: 11 at W, 17 at E). Flip E only — never
+       rotate 180° (that also swaps N/S and puts noon in the south). */
+    const pE = projectRaw({ e: 1, n: 0, u: 0 });
+    const ewSign = (ex * (pE.x - cx) + ey * (pE.y - cy) < 0) ? -1 : 1;
+    const yaw = (Number(adj.rot) || 0) * Math.PI / 180;
+    const cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
+    function project(p) {
+      const q = projectRaw({ e: ewSign * p.e, n: p.n, u: p.u });
+      const dx = q.x - cx, dy = q.y - cy;
+      return {
+        x: cx + dx * cyaw - dy * syaw,
+        y: cy + dx * syaw + dy * cyaw,
+        depth: q.depth
       };
     }
     function skyTo(az, el) { return project(sph(az, el)); }
@@ -590,7 +645,8 @@
       (adj.look || 0).toFixed(2), (adj.tilt || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
-      Math.round(W), Math.round(H), Number(dpr).toFixed(2)
+      Math.round(W), Math.round(H), Number(dpr).toFixed(2),
+      southHem ? 'S' : 'N', String(ewSign)
     ].join('|');
     if (!layerCache.canvas || layerCache.key !== layerKey) {
       const off = layerCache.canvas || document.createElement('canvas');
@@ -601,7 +657,7 @@
       const octx = off.getContext('2d');
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.clearRect(0, 0, W, H);
-      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy);
+      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy, southHem ? -1 : 1);
       layerCache.key = layerKey;
       layerCache.canvas = off;
     }
@@ -1525,8 +1581,9 @@
           enabled && React.createElement('span', { className: 'inline-flex gap-1 flex-wrap items-center' },
             btn('size-', '−', 'Smaller'),
             btn('size+', '+', 'Bigger'),
-            !props.operatorAdj && btn('rotL', '↺', 'Rotate left'),
-            !props.operatorAdj && btn('rotR', '↻', 'Rotate right'),
+            btn('rotL', '↺', 'Spin left 15°'),
+            btn('rotR', '↻', 'Spin right 15°'),
+            btn('rot180', '180°', 'Turn the dome around 180°'),
             !props.operatorAdj && btn('lookU', '↑', 'Look up'),
             !props.operatorAdj && btn('lookD', '↓', 'Look down'),
             !props.operatorAdj && btn('tiltW', 'W↓', 'West down'),
@@ -1585,13 +1642,16 @@
     const a = Object.assign({ size: 1, rot: 0, look: 0, tilt: 0 }, adj);
     if (kind === 'size-') a.size = Math.max(0.45, +(a.size - 0.04).toFixed(3));
     if (kind === 'size+') a.size = Math.min(2.2, +(a.size + 0.04).toFixed(3));
-    if (kind === 'rotL') a.rot += 2;
-    if (kind === 'rotR') a.rot -= 2;
+    if (kind === 'rotL') a.rot += 15;
+    if (kind === 'rotR') a.rot -= 15;
+    if (kind === 'rot180') a.rot += 180;
     if (kind === 'lookU') a.look = Math.min(40, a.look + 1.2);
     if (kind === 'lookD') a.look = Math.max(-25, a.look - 1.2);
     if (kind === 'tiltW') a.tilt = Math.min(50, a.tilt + 1);
     if (kind === 'tiltE') a.tilt = Math.max(-40, a.tilt - 1);
     if (kind === 'reset') { a.size = 1; a.rot = 0; a.look = 0; a.tilt = 0; }
+    a.rot = ((a.rot % 360) + 360) % 360;
+    if (a.rot > 180) a.rot -= 360;
     saveAdj(a);
     return a;
   }

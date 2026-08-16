@@ -5696,7 +5696,7 @@
                                             />
                                         )}
                                         <p className="text-[7px] text-slate-500 text-center mt-1 px-2">
-                                            Sky-dome overlay on the plan, aligned to N/S/W/E · same as red5-elc Sun Path
+                                            ↺ ↻ spins the dome on the plan · 180° turns it around
                                         </p>
                                     </div>
                                 </>
@@ -6003,6 +6003,28 @@
                                                 ? 'Edit N/S/W/E'
                                                 : 'Set N/S/W/E'))}
                                 </button>
+                            )}
+                            {activeTarget.type === 'floor_plan' && floorPlans.length > 0 && sunPathEnabled && (
+                                <div className="flex items-center gap-1 bg-slate-900/90 border-2 border-amber-400/70 rounded-xl shadow-lg backdrop-blur px-1 py-1" data-testid="floor-sunpath-spin-hud">
+                                    <button
+                                        type="button"
+                                        title="Spin dome left 15°"
+                                        onClick={() => { const n = window.red5ElcSunPath && window.red5ElcSunPath.applyAdj && window.red5ElcSunPath.applyAdj('rotL'); if (n) setSunPathAdj(n); }}
+                                        className="w-8 h-8 rounded-lg text-amber-200 hover:bg-amber-500 hover:text-slate-900 font-black text-base"
+                                    >↺</button>
+                                    <button
+                                        type="button"
+                                        title="Turn the sun-path dome around 180°"
+                                        onClick={() => { const n = window.red5ElcSunPath && window.red5ElcSunPath.applyAdj && window.red5ElcSunPath.applyAdj('rot180'); if (n) setSunPathAdj(n); }}
+                                        className="px-3 h-8 rounded-lg bg-amber-500 text-slate-900 text-[10px] font-black uppercase tracking-widest hover:bg-amber-300"
+                                    >Turn 180°</button>
+                                    <button
+                                        type="button"
+                                        title="Spin dome right 15°"
+                                        onClick={() => { const n = window.red5ElcSunPath && window.red5ElcSunPath.applyAdj && window.red5ElcSunPath.applyAdj('rotR'); if (n) setSunPathAdj(n); }}
+                                        className="w-8 h-8 rounded-lg text-amber-200 hover:bg-amber-500 hover:text-slate-900 font-black text-base"
+                                    >↻</button>
+                                </div>
                             )}
                             {activeTarget.type === 'floor_plan' && nsMode && nsMode !== 'edit' && (
                                 <div className="bg-cyan-500/90 text-slate-900 text-[10px] font-black uppercase px-3 py-2 border border-cyan-200 shadow-lg backdrop-blur flex items-center rounded-xl animate-pulse">
@@ -7250,7 +7272,7 @@
                 '/assets/js/sizing-check.js',
                 '/assets/js/blind-types.js?v=jamb1',
                 '/assets/js/sun-path.js?v=jamb1',
-                '/assets/js/elc-sun-path-overlay.js?v=daysel5',
+                '/assets/js/elc-sun-path-overlay.js?v=turn1',
                 '/assets/js/window-blinds-popout.js?v=jamb1'
             ];
             var mainSource = document.getElementById('main-source');

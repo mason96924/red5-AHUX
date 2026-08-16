@@ -1991,22 +1991,53 @@
     const timezone = (props && props.timezone) || '';
     const clock = useElcSunClock(timezone, lon);
     const dark = useElcAhuDarken();
+    const uidRaw = (React.useId && React.useId()) || ('m' + Math.random().toString(36).slice(2, 8));
+    const maskId = 'elc-floor-darken-mask-' + String(uidRaw).replace(/[^a-zA-Z0-9_-]/g, '');
     if (dark.mode === 'off') return null;
     const sun = (Number.isFinite(lat) && Number.isFinite(lon))
       ? sunAtCivilTod(lat, lon, clock.doy, clock.hour, elevationM, timezone)
       : null;
     const sunEl = sun ? sun.elevation : 0;
     const pct = effectiveAhuDarkenPct(sunEl, lat, lon, clock.doy, timezone, elevationM);
-    return React.createElement('div', {
+    const rooms = (props && props.rooms) || [];
+    const holes = [];
+    for (let i = 0; i < rooms.length; i++) {
+      const rv = rooms[i] && (rooms[i].vertices || rooms[i].points);
+      if (!rv || rv.length < 3) continue;
+      const pts = [];
+      for (let j = 0; j < rv.length; j++) {
+        const v = rv[j];
+        const x = Array.isArray(v) ? Number(v[0]) : Number(v && v.x);
+        const y = Array.isArray(v) ? Number(v[1]) : Number(v && v.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        pts.push(x + ',' + y);
+      }
+      if (pts.length < 3) continue;
+      holes.push(React.createElement('polygon', {
+        key: 'h' + i,
+        points: pts.join(' '),
+        fill: '#000',
+      }));
+    }
+    return React.createElement('svg', {
       'data-testid': 'elc-floor-darken-veil',
-      className: 'pointer-events-none',
-      style: {
-        position: 'absolute',
-        left: 0, top: 0, right: 0, bottom: 0,
-        background: 'rgba(0,0,0,' + (pct / 100) + ')',
-        zIndex: 2,
-      },
-    });
+      className: 'pointer-events-none absolute inset-0',
+      viewBox: '0 0 100 100',
+      preserveAspectRatio: 'none',
+      style: { width: '100%', height: '100%', zIndex: 2 },
+    },
+      React.createElement('defs', null,
+        React.createElement('mask', { id: maskId, maskUnits: 'userSpaceOnUse' },
+          React.createElement('rect', { x: 0, y: 0, width: 100, height: 100, fill: '#fff' }),
+          holes
+        )
+      ),
+      React.createElement('rect', {
+        x: 0, y: 0, width: 100, height: 100,
+        fill: 'rgba(0,0,0,' + (pct / 100) + ')',
+        mask: 'url(#' + maskId + ')',
+      })
+    );
   };
 
   global.ElcFloorAmbientChromeLive = global.ElcAhuAmbientChromeLive;

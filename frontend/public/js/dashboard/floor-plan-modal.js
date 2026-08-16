@@ -148,6 +148,7 @@ const floorModalTree = (
                                     lon={buildingLatLon && buildingLatLon.lon}
                                     elevation_m={buildingLatLon && buildingLatLon.elevation_m}
                                     timezone={buildingLatLon && buildingLatLon.timezone}
+                                    rooms={floorData.floor.rooms || []}
                                 />
                             )}
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}

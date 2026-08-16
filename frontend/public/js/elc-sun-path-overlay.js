@@ -357,35 +357,16 @@
       };
     }
     const nCam = lookAt(tiltPt(sph(0, 0)));
-    const eCam = lookAt(tiltPt(sph(Math.PI / 2, 0)));
-    const pnx = nCam.sx, pny = -nCam.sy;
-    const pex = eCam.sx, pey = -eCam.sy;
-    const det = pnx * pey - pny * pex;
-    let m00, m01, m10, m11;
-    if (Math.abs(det) < 1e-8) {
-      const angN = Math.atan2(pny, pnx);
-      const angFloorN = Math.atan2(ny, nx);
-      const rot2 = angFloorN - angN;
-      const cr = Math.cos(rot2), sr = Math.sin(rot2);
-      m00 = cr * R; m01 = -sr * R;
-      m10 = sr * R; m11 = cr * R;
-    } else {
-      const inv = 1 / det;
-      const b00 = R * nx, b01 = R * ex;
-      const b10 = R * ny, b11 = R * ey;
-      const a00i = pey * inv, a01i = -pex * inv;
-      const a10i = -pny * inv, a11i = pnx * inv;
-      m00 = b00 * a00i + b01 * a10i;
-      m01 = b00 * a01i + b01 * a11i;
-      m10 = b10 * a00i + b11 * a10i;
-      m11 = b10 * a01i + b11 * a11i;
-    }
+    const angN = Math.atan2(-nCam.sy, nCam.sx);
+    const angFloorN = Math.atan2(ny, nx);
+    const rot2 = angFloorN - angN;
+    const cr = Math.cos(rot2), sr = Math.sin(rot2);
     function project(p) {
       const c = lookAt(tiltPt(p));
       const vx = c.sx, vy = -c.sy;
       return {
-        x: cx + m00 * vx + m01 * vy,
-        y: cy + m10 * vx + m11 * vy,
+        x: cx + (vx * cr - vy * sr) * R,
+        y: cy + (vx * sr + vy * cr) * R,
         depth: c.depth
       };
     }
@@ -417,7 +398,7 @@
     }
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(layerCache.canvas, 0, 0, W * dpr, H * dpr, 0, 0, W, H);
+    ctx.drawImage(layerCache.canvas, 0, 0);
     ctx.restore();
 
     function strokeDay(pts, color, width) {
@@ -551,7 +532,7 @@
           ? new Date(Date.UTC(new Date().getFullYear(), 0, doy, Math.floor(hour) - Math.round(lon / 15), Math.round((hour % 1) * 60), 0))
           : new Date();
         paintElcSunPath(ctx, {
-          width: W, height: H, dpr: 1,
+          width: W, height: H, dpr: dpr,
           lat: lat, lon: lon, date: date, hour: hour, doy: doy,
           sun: sun, adj: adj, orientation: orientation,
           northOffsetDeg: northOffsetDeg

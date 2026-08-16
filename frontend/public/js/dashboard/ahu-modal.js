@@ -42,6 +42,7 @@ function renderAhuEquipmentModal(ctx) {
         setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
         setShowAhuModalFor, showAhuModalFor,
         theme,
+        buildingLatLon,
     } = ctx;
     const bandGuideZoomed = !!ahuBandGuideZoomed;
                         const targetAhu = ahuData.find(a => a.id === showAhuModalFor) || ahuData[0];
@@ -489,6 +490,12 @@ function renderAhuEquipmentModal(ctx) {
                                                 </div>
                                             );
                                         })()}
+                                        {window.ElcDaySelectorLive && (
+                                            <window.ElcDaySelectorLive
+                                                timezone={buildingLatLon && buildingLatLon.timezone}
+                                                lon={buildingLatLon && buildingLatLon.lon}
+                                            />
+                                        )}
                                         {!currentAhuImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
                                                 <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("ahu_image_missing") : "AHU IMAGE MISSING"}</span>

@@ -2920,6 +2920,7 @@
                         ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal, floatPipAhuModal,
                         setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
                         setShowAhuModalFor, showAhuModalFor, theme,
+                        buildingLatLon,
                     })}
 
 

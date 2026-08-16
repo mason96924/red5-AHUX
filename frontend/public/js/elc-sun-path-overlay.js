@@ -788,6 +788,261 @@
     }));
   };
 
+  /* ---------- ELC day-selector (shared civil clock) ---------------- */
+  const CLOCK_EVT = 'r5-elc-sun-clock';
+  const LINE = '#2a3340';
+  const MUTED = '#6b7684';
+  const TEXT = '#d8dde4';
+  const MONO = 'ui-monospace, "SF Mono", Consolas, monospace';
+
+  function loadDayLenStep() {
+    try {
+      const s = localStorage.getItem('elc.floor.dayLenStep');
+      if (s === 'week' || s === 'month' || s === 'day') return s;
+    } catch (_) {}
+    return 'day';
+  }
+  function saveDayLenStep(s) {
+    try { localStorage.setItem('elc.floor.dayLenStep', s); } catch (_) {}
+  }
+  function daysInMonth(y, mo) {
+    return new Date(y, mo + 1, 0).getDate();
+  }
+  function civilPartsNow(timezone, lonDeg) {
+    return clockParts(new Date(), timezone);
+  }
+  function hourFromParts(p) {
+    if (!p) return 0;
+    return (Number(p.h) || 0) + (Number(p.mi) || 0) / 60 + (Number(p.se) || 0) / 3600;
+  }
+  function fmtDayLengthWhen(p) {
+    if (!p) return '—';
+    const mo = String((p.mo || 0) + 1).padStart(2, '0');
+    const da = String(p.da || 1).padStart(2, '0');
+    const hh = String(p.h || 0).padStart(2, '0');
+    const mm = String(p.mi || 0).padStart(2, '0');
+    return p.y + '-' + mo + '-' + da + '  ' + hh + ':' + mm;
+  }
+  function stepCivilDate(p, step, dir) {
+    let y = p.y, mo = p.mo, da = p.da;
+    if (step === 'month') {
+      const t = mo + dir;
+      y += Math.floor(t / 12);
+      mo = ((t % 12) + 12) % 12;
+      da = Math.min(da, daysInMonth(y, mo));
+    } else {
+      const add = (step === 'week' ? 7 : 1) * dir;
+      const shifted = new Date(y, mo, da + add);
+      y = shifted.getFullYear();
+      mo = shifted.getMonth();
+      da = shifted.getDate();
+    }
+    return {
+      y: y, mo: mo, da: da, h: p.h, mi: p.mi, se: p.se || 0,
+      doy: dayOfYearYmd(y, mo, da)
+    };
+  }
+  function stepCivilHour(p, dir) {
+    const h = (((Number(p.h) || 0) + dir) % 24 + 24) % 24;
+    return Object.assign({}, p, { h: h, doy: dayOfYearYmd(p.y, p.mo, p.da) });
+  }
+
+  let _clockFollow = true;
+  let _clockParts = null;
+  let _clockStep = loadDayLenStep();
+  let _tickTz = '';
+  let _tickLon = 0;
+  let _tickTimer = 0;
+  const _clockSubs = new Set();
+
+  function clockSnapshot() {
+    return {
+      followClock: _clockFollow,
+      parts: _clockParts,
+      step: _clockStep,
+      hour: hourFromParts(_clockParts),
+      doy: _clockParts ? _clockParts.doy : 1,
+    };
+  }
+  function publishClock() {
+    const snap = clockSnapshot();
+    _clockSubs.forEach(function (fn) { try { fn(snap); } catch (_) {} });
+    try { global.dispatchEvent(new CustomEvent(CLOCK_EVT, { detail: snap })); } catch (_) {}
+  }
+  function ensureClockParts(timezone, lonDeg) {
+    if (!_clockParts) _clockParts = civilPartsNow(timezone, lonDeg);
+    return _clockParts;
+  }
+  function setClockFollow(on, timezone, lonDeg) {
+    _clockFollow = !!on;
+    if (_clockFollow) _clockParts = civilPartsNow(timezone, lonDeg);
+    publishClock();
+  }
+  function setClockParts(parts) {
+    _clockFollow = false;
+    _clockParts = parts;
+    publishClock();
+  }
+  function setClockStep(step) {
+    _clockStep = (step === 'week' || step === 'month') ? step : 'day';
+    saveDayLenStep(_clockStep);
+    publishClock();
+  }
+  function armClockTick(timezone, lonDeg) {
+    _tickTz = timezone || '';
+    _tickLon = lonDeg;
+    if (_tickTimer) return;
+    function tick() {
+      if (!_clockFollow) return;
+      _clockParts = civilPartsNow(_tickTz, _tickLon);
+      publishClock();
+    }
+    tick();
+    _tickTimer = setInterval(tick, 15000);
+  }
+  function useElcSunClock(timezone, lonDeg) {
+    const React = global.React;
+    const [, setRev] = React.useState(0);
+    React.useEffect(function () {
+      armClockTick(timezone, lonDeg);
+      if (!_clockParts) _clockParts = civilPartsNow(timezone, lonDeg);
+      const sub = function () { setRev(function (n) { return n + 1; }); };
+      _clockSubs.add(sub);
+      return function () { _clockSubs.delete(sub); };
+    }, [timezone, lonDeg]);
+    armClockTick(timezone, lonDeg);
+    ensureClockParts(timezone, lonDeg);
+    return clockSnapshot();
+  }
+
+  function daySelBtnStyle(extra) {
+    return Object.assign({
+      background: '#1a2028',
+      border: '1px solid ' + LINE,
+      color: MUTED,
+      fontFamily: MONO,
+      fontSize: 8,
+      padding: '1px 5px',
+      borderRadius: 3,
+      lineHeight: 1.25,
+      letterSpacing: '.04em',
+      textTransform: 'uppercase',
+      cursor: 'pointer',
+    }, extra || {});
+  }
+
+  global.ElcDaySelector = function ElcDaySelector(props) {
+    const React = global.React;
+    const follow = !!props.followClock;
+    const parts = props.parts || civilPartsNow(props.timezone, props.lon);
+    const step = props.step || 'day';
+    const nowStyle = daySelBtnStyle(follow ? { borderColor: '#ffb020', color: '#ffb020' } : null);
+    return React.createElement('div', {
+      className: 'pointer-events-auto',
+      'data-testid': 'elc-day-selector',
+      onMouseDown: function (e) { e.stopPropagation(); },
+      style: Object.assign({
+        position: 'absolute',
+        right: 8,
+        bottom: 8,
+        zIndex: 50,
+        padding: '4px 4px 3px',
+        background: 'rgba(16,20,26,0.88)',
+        border: '1px solid ' + LINE,
+        borderRadius: 5,
+        backdropFilter: 'blur(4px)',
+        userSelect: 'none',
+      }, props.style || {})
+    },
+      React.createElement('div', {
+        style: { display: 'flex', alignItems: 'stretch', gap: 4 }
+      },
+        React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 } },
+          React.createElement('div', {
+            style: { display: 'flex', alignItems: 'center', gap: 2 }
+          },
+            React.createElement('button', {
+              type: 'button', 'data-testid': 'elc-day-prev', title: 'Previous',
+              style: daySelBtnStyle(),
+              onClick: function () { if (props.onPrev) props.onPrev(); }
+            }, '◀'),
+            React.createElement('select', {
+              'data-testid': 'elc-day-step', title: 'Date step',
+              value: step,
+              onChange: function (e) { if (props.onStep) props.onStep(e.target.value); },
+              style: daySelBtnStyle({ padding: '1px 2px', maxWidth: 58, color: MUTED })
+            },
+              React.createElement('option', { value: 'day' }, 'Day'),
+              React.createElement('option', { value: 'week' }, 'Week'),
+              React.createElement('option', { value: 'month' }, 'Month')
+            ),
+            React.createElement('button', {
+              type: 'button', 'data-testid': 'elc-day-next', title: 'Next',
+              style: daySelBtnStyle(),
+              onClick: function () { if (props.onNext) props.onNext(); }
+            }, '▶'),
+            React.createElement('button', {
+              type: 'button', 'data-testid': 'elc-day-now',
+              title: follow ? 'Following site time of day' : 'Return to now',
+              style: nowStyle,
+              onClick: function () { if (props.onNow) props.onNow(); }
+            }, 'Now')
+          ),
+          React.createElement('div', {
+            style: {
+              fontFamily: MONO, fontSize: 9, fontWeight: 600,
+              color: TEXT, letterSpacing: '0.02em', whiteSpace: 'nowrap',
+              display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px'
+            }
+          },
+            React.createElement('span', { 'data-testid': 'elc-day-when' }, fmtDayLengthWhen(parts)),
+            React.createElement('span', {
+              'data-testid': 'elc-day-mode',
+              style: {
+                fontSize: 8, letterSpacing: '.08em', textTransform: 'uppercase',
+                color: follow ? '#ffb020' : '#c5cad2'
+              }
+            }, follow ? 'LIVE' : 'SELECTED')
+          )
+        ),
+        React.createElement('div', {
+          style: {
+            display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+            width: 14, flex: '0 0 14px', padding: '0 0 1px'
+          }
+        },
+          React.createElement('button', {
+            type: 'button', 'data-testid': 'elc-hour-up', title: 'Earlier (−1 h)',
+            style: daySelBtnStyle({ padding: '2px 0', width: 14 }),
+            onClick: function () { if (props.onHourUp) props.onHourUp(); }
+          }, '▲'),
+          React.createElement('button', {
+            type: 'button', 'data-testid': 'elc-hour-down', title: 'Later (+1 h)',
+            style: daySelBtnStyle({ padding: '2px 0', width: 14 }),
+            onClick: function () { if (props.onHourDown) props.onHourDown(); }
+          }, '▼')
+        )
+      )
+    );
+  };
+
+  global.ElcDaySelectorLive = function ElcDaySelectorLive(props) {
+    const timezone = (props && props.timezone) || '';
+    const lon = props && props.lon;
+    const snap = useElcSunClock(timezone, lon);
+    const parts = snap.parts || civilPartsNow(timezone, lon);
+    return global.ElcDaySelector({
+      timezone: timezone, lon: lon, style: props && props.style,
+      followClock: snap.followClock, parts: parts, step: snap.step,
+      onStep: setClockStep,
+      onPrev: function () { setClockParts(stepCivilDate(ensureClockParts(timezone, lon), _clockStep, -1)); },
+      onNext: function () { setClockParts(stepCivilDate(ensureClockParts(timezone, lon), _clockStep, 1)); },
+      onNow: function () { setClockFollow(true, timezone, lon); },
+      onHourUp: function () { setClockParts(stepCivilHour(ensureClockParts(timezone, lon), -1)); },
+      onHourDown: function () { setClockParts(stepCivilHour(ensureClockParts(timezone, lon), 1)); },
+    });
+  };
+
   global.ElcSunPathControls = function ElcSunPathControls(props) {
     const React = global.React;
     const enabled = !!props.enabled;
@@ -838,7 +1093,7 @@
             btn('reset', 'Reset', 'Reset view')
           )
         ),
-        enabled && React.createElement('div', { className: 'flex items-center gap-2' },
+        enabled && !props.hideScrubbers && React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('span', { className: 'text-[8px] text-slate-400 font-black uppercase w-10' }, hhLabel),
           React.createElement('button', {
             type: 'button',
@@ -912,6 +1167,11 @@
     sunAtCivilTod: sunAtCivilTod,
     sunAtCivilTodForFloor: sunAtCivilTodForFloor,
     horizonDipDeg: horizonDipDeg,
+    clockEvent: CLOCK_EVT,
+    clockSnapshot: clockSnapshot,
+    setClockFollow: setClockFollow,
+    setClockParts: setClockParts,
+    setClockStep: setClockStep,
   };
   global.red5ElcSunAtTod = sunAtCivilTod;
   global.red5ElcSunAtTodForFloor = sunAtCivilTodForFloor;
@@ -935,25 +1195,13 @@
       try { return localStorage.getItem('elc.floor.sunPathOverlay') !== '0'; } catch (_) { return true; }
     });
     const [adj, setAdj] = React.useState(function () { return loadAdj(); });
-    const [followClock, setFollowClock] = React.useState(true);
-    const [hour, setHour] = React.useState(function () { return civilHourNow(new Date()); });
-    const [doy, setDoy] = React.useState(function () { return dayOfYear(new Date()); });
     const lat = props && props.lat;
     const lon = props && props.lon;
     const elevationM = Number(props && props.elevation_m) || 0;
     const timezone = (props && props.timezone) || '';
-
-    React.useEffect(function () {
-      if (!followClock) return undefined;
-      function tick() {
-        const n = new Date();
-        setHour(civilHourNow(n, timezone, lon));
-        setDoy(civilDoyNow(n, timezone, lon));
-      }
-      tick();
-      const id = setInterval(tick, 15000);
-      return function () { clearInterval(id); };
-    }, [followClock, timezone, lon]);
+    const clock = useElcSunClock(timezone, lon);
+    const hour = clock.hour;
+    const doy = clock.doy;
 
     const sun = (Number.isFinite(lat) && Number.isFinite(lon))
       ? sunAtCivilTodForFloor(lat, lon, doy, hour, elevationM, timezone)
@@ -966,23 +1214,28 @@
       try { global.dispatchEvent(new CustomEvent('r5-sun-state', { detail: payload })); } catch (_) {}
     }, [enabled, hour, doy, lat, lon, elevationM, timezone, sun && sun.azimuth, sun && sun.elevation]);
 
-    return React.createElement(React.Fragment, null,
-      React.createElement(global.ElcSunPathOnFloor, {
-        enabled: enabled, lat: lat, lon: lon, elevation_m: elevationM,
-        timezone: timezone,
-        sun: sun, hour: hour, doy: doy, adj: adj,
-        orientation: props && props.orientation,
-        northOffsetDeg: props && props.northOffsetDeg,
-        showCardinals: props && props.showCardinals,
-      }),
-      React.createElement(global.ElcSunPathControls, {
-        enabled: enabled, hour: hour, doy: doy, adj: adj, followClock: followClock,
+    const chrome = [];
+    chrome.push(React.createElement(global.ElcSunPathOnFloor, {
+      key: 'dome',
+      enabled: enabled, lat: lat, lon: lon, elevation_m: elevationM,
+      timezone: timezone,
+      sun: sun, hour: hour, doy: doy, adj: adj,
+      orientation: props && props.orientation,
+      northOffsetDeg: props && props.northOffsetDeg,
+      showCardinals: props && props.showCardinals,
+    }));
+    if (props && props.hostChrome) {
+      /* Date/TOD lives on the graphics host, not on the floor image. */
+    } else {
+      chrome.push(React.createElement(global.ElcSunPathControls, {
+        key: 'ctrl',
+        enabled: enabled, hour: hour, doy: doy, adj: adj, followClock: clock.followClock,
+        hideScrubbers: true,
         onToggle: setEnabled,
-        onHour: function (h) { setFollowClock(false); setHour(h); },
-        onDoy: function (d) { setFollowClock(false); setDoy(d); },
-        onNow: function () { setFollowClock(true); },
+        onNow: function () { setClockFollow(true, timezone, lon); },
         onAdjStep: function (kind) { setAdj(applyAdjStep(adj, kind)); },
-      })
-    );
+      }));
+    }
+    return React.createElement(React.Fragment, null, chrome);
   };
 })(typeof window !== 'undefined' ? window : this);

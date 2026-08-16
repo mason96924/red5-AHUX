@@ -472,6 +472,19 @@
             }, []);
 
             useEffect(() => {
+                const ev = (window.red5ElcSunPath && window.red5ElcSunPath.clockEvent) || 'r5-elc-sun-clock';
+                const onClock = (e) => {
+                    const d = e && e.detail;
+                    if (!d) return;
+                    if (typeof d.hour === 'number') setSunHour(d.hour);
+                    if (typeof d.doy === 'number') setSunDoy(d.doy);
+                    if (typeof d.followClock === 'boolean') setSunFollowClock(d.followClock);
+                };
+                window.addEventListener(ev, onClock);
+                return () => window.removeEventListener(ev, onClock);
+            }, []);
+
+            useEffect(() => {
                 if (!sunFollowClock) return undefined;
                 const tick = () => {
                     const n = new Date();
@@ -5715,15 +5728,19 @@
                                         {window.ElcSunPathToolbar && (
                                             <window.ElcSunPathToolbar
                                                 compact={true}
+                                                hideScrubbers={true}
                                                 enabled={sunPathEnabled}
                                                 hour={sunHour}
                                                 doy={sunDoy}
                                                 adj={sunPathAdj}
                                                 followClock={sunFollowClock}
                                                 onToggle={(on) => setSunPathEnabled(!!on)}
-                                                onHour={(h) => { setSunFollowClock(false); setSunHour(h); }}
-                                                onDoy={(d) => { setSunFollowClock(false); setSunDoy(d); }}
-                                                onNow={() => setSunFollowClock(true)}
+                                                onNow={() => {
+                                                    if (window.red5ElcSunPath && window.red5ElcSunPath.setClockFollow) {
+                                                        window.red5ElcSunPath.setClockFollow(true, buildingLatLon.timezone, buildingLatLon.lon);
+                                                    }
+                                                    setSunFollowClock(true);
+                                                }}
                                                 onAdj={(a) => setSunPathAdj(a)}
                                             />
                                         )}
@@ -6047,10 +6064,19 @@
                                 </div>
                             )}
                         </div>
-                        <div className="absolute bottom-4 right-4 z-50 flex gap-2">
+                        <div className="absolute bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+                            {window.ElcDaySelectorLive && (
+                                <window.ElcDaySelectorLive
+                                    timezone={buildingLatLon.timezone}
+                                    lon={buildingLatLon.lon}
+                                    style={{ position: 'relative', right: 0, bottom: 0 }}
+                                />
+                            )}
+                            <div className="flex gap-2">
                             <button onClick={() => setView(p => ({...p, scale: Math.min(10, p.scale + 0.5)}))} className="w-8 h-8 bg-slate-900/90 hover:bg-indigo-600 text-white rounded border border-slate-700 shadow-lg backdrop-blur flex items-center justify-center font-black transition-all">+</button>
                             <button onClick={() => setView(p => ({...p, scale: Math.max(0.2, p.scale - 0.5)}))} className="w-8 h-8 bg-slate-900/90 hover:bg-indigo-600 text-white rounded border border-slate-700 shadow-lg backdrop-blur flex items-center justify-center font-black transition-all">-</button>
                             <button onClick={() => setView({x:0, y:0, scale: 1})} className="px-3 bg-slate-900/90 hover:bg-rose-600 text-white text-[10px] uppercase font-black tracking-widest rounded border border-slate-700 shadow-lg backdrop-blur transition-all">Reset</button>
+                            </div>
                         </div>
                         {activeTarget.type === 'floor_plan' && !panMode && (
                             <div className="mapper-hairline" style={{ opacity: 0 }} data-testid="mapper-hairline-cursor">
@@ -7273,7 +7299,7 @@
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
                 '/assets/js/sun-path.js?v=sunshaft-rose2',
-                '/assets/js/elc-sun-path-overlay.js?v=sunshaft-tod1',
+                '/assets/js/elc-sun-path-overlay.js?v=daysel1',
                 '/assets/js/window-blinds-popout.js'
             ];
             var mainSource = document.getElementById('main-source');

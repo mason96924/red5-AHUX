@@ -123,7 +123,7 @@ const floorModalTree = (
             </div>
         </div>
         
-        <div className={`red5-graphic-zone relative bg-slate-200 overflow-hidden flex items-center justify-center`}>
+        <div className={`red5-graphic-zone relative flex-1 min-h-0 w-full bg-slate-200 overflow-hidden flex items-center justify-center`}>
             
             {(() => {
                 const floorData = getFloorForAhu(showFloorPlanForAhu);
@@ -134,6 +134,7 @@ const floorModalTree = (
                     // === MAP_CONFIG DRIVEN FLOOR PLAN ===
                     const imgSrc = `${API_URL}/api/assets/${floorData.floor.image_path}`;
                     return (
+                        <React.Fragment>
                         <div className="relative inline-block">
                             <img 
                                 src={imgSrc} 
@@ -441,6 +442,13 @@ const floorModalTree = (
                             })}
                             </div>
                         </div>
+                        {window.ElcDaySelectorLive && (
+                            <window.ElcDaySelectorLive
+                                timezone={buildingLatLon && buildingLatLon.timezone}
+                                lon={buildingLatLon && buildingLatLon.lon}
+                            />
+                        )}
+                        </React.Fragment>
                     );
                 } else {
                     // === FALLBACK: no map_config or no floor found ===
@@ -608,6 +616,12 @@ const floorModalTree = (
                                 });
                             })()}
                         </React.Fragment>
+                        {window.ElcDaySelectorLive && (
+                            <window.ElcDaySelectorLive
+                                timezone={buildingLatLon && buildingLatLon.timezone}
+                                lon={buildingLatLon && buildingLatLon.lon}
+                            />
+                        )}
                         </div>
                     );
                 }

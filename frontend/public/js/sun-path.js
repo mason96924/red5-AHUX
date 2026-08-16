@@ -260,13 +260,11 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
 
 /* Combined score for a VAV/AHU marker (plan % coords).
    With mapped windows: amber ring = in-sunshaft × blind open (matches painted shafts).
-   Without windows: fall back to plan-centroid sun exposure. */
+   With no windows: 0 — do not fake a sun-glow highlight on VAVs. */
 window.red5SunBlindScore = function(mxPct, myPct, sun, windows, opts){
   opts = opts || {};
   if (!sun || !sun.is_day) return 0;
-  if (!windows || !windows.length) {
-    return window.red5SunExposureScore(mxPct / 100, myPct / 100, sun, opts);
-  }
+  if (!windows || !windows.length) return 0;
   return window.red5WindowBlindFactor(mxPct, myPct, windows, sun, opts);
 };
 
@@ -594,6 +592,8 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var open = 1 - blind;
     /* Entering only: light travel must hit the inward face. */
     var enter = nx * lx + ny * ly;
+    var traced = Array.isArray(w.vertices) && w.vertices.length >= 3;
+    if (!traced) {
     bars.push(
       <line key={'wb-'+ (w.id || i)}
             x1={x1} y1={y1} x2={x2} y2={y2}
@@ -603,6 +603,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
             opacity={0.55 + 0.35 * open}
       />
     );
+    }
     if (enter < 0.05 || open < 0.01) continue;
     /* Open → shaft strength; closed → no sunlight through this window.
        Throw uses a soft gradient tip so the floor landing is gradual,

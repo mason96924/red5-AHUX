@@ -306,7 +306,7 @@
     const lonDeg = Number(opts.lon);
     if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg)) return null;
     const rose = planRoseAxes(opts.orientation, opts.northOffsetDeg, W, H);
-    const nx = rose.nx, ny = rose.ny;
+    const nx = rose.nx, ny = rose.ny, ex = rose.ex, ey = rose.ey;
     let cx = W / 2, cy = H / 2;
     const o = opts.orientation || {};
     if (o.north && o.south && o.west && o.east) {
@@ -357,16 +357,35 @@
       };
     }
     const nCam = lookAt(tiltPt(sph(0, 0)));
-    const angN = Math.atan2(-nCam.sy, nCam.sx);
-    const angFloorN = Math.atan2(ny, nx);
-    const rot2 = angFloorN - angN;
-    const cr = Math.cos(rot2), sr = Math.sin(rot2);
+    const eCam = lookAt(tiltPt(sph(Math.PI / 2, 0)));
+    const pnx = nCam.sx, pny = -nCam.sy;
+    const pex = eCam.sx, pey = -eCam.sy;
+    const det = pnx * pey - pny * pex;
+    let m00, m01, m10, m11;
+    if (Math.abs(det) < 1e-8) {
+      const angN = Math.atan2(pny, pnx);
+      const angFloorN = Math.atan2(ny, nx);
+      const rot2 = angFloorN - angN;
+      const cr = Math.cos(rot2), sr = Math.sin(rot2);
+      m00 = cr * R; m01 = -sr * R;
+      m10 = sr * R; m11 = cr * R;
+    } else {
+      const inv = 1 / det;
+      const b00 = R * nx, b01 = R * ex;
+      const b10 = R * ny, b11 = R * ey;
+      const a00i = pey * inv, a01i = -pex * inv;
+      const a10i = -pny * inv, a11i = pnx * inv;
+      m00 = b00 * a00i + b01 * a10i;
+      m01 = b00 * a01i + b01 * a11i;
+      m10 = b10 * a00i + b11 * a10i;
+      m11 = b10 * a01i + b11 * a11i;
+    }
     function project(p) {
       const c = lookAt(tiltPt(p));
       const vx = c.sx, vy = -c.sy;
       return {
-        x: cx + (vx * cr - vy * sr) * R,
-        y: cy + (vx * sr + vy * cr) * R,
+        x: cx + m00 * vx + m01 * vy,
+        y: cy + m10 * vx + m11 * vy,
         depth: c.depth
       };
     }
@@ -380,7 +399,7 @@
       (adj.size || 1).toFixed(3), (adj.rot || 0).toFixed(2),
       (adj.look || 0).toFixed(2), (adj.tilt || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
-      nx.toFixed(4), ny.toFixed(4),
+      nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
       Math.round(W), Math.round(H), Number(dpr).toFixed(2)
     ].join('|');
     if (!layerCache.canvas || layerCache.key !== layerKey) {

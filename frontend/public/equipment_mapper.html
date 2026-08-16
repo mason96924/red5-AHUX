@@ -330,17 +330,14 @@
             const [floorMarkers, setFloorMarkers] = useState([]); // Physical AHU/VAV instances with coordinates
             const [draggedMarkerType, setDraggedMarkerType] = useState(null); // 'ahu' or 'vav'
             const [selectedMarkerId, setSelectedMarkerId] = useState(null);
-            // ELC room/window creation: percent coords, blinds, 3D aligner, 2D aperture.
+            // ELC window creation: + Window (two-click wall bar) and Trace Window (2D glass).
             const [floorWindows, setFloorWindows] = useState([]); // {id,floorIdx,x,y,length,angle_deg,blind_level,blind_type,vertices}
-            const [windowMode, setWindowMode] = useState(null); // null | {phase:'p1'|'p2', p1:{x,y}}
-            const [windowTraceMode, setWindowTraceMode] = useState(null); // null | {windowId|null, createNew, pts:[{x,y}]}
+            const [windowMode, setWindowMode] = useState(null); // ELC + Window: two clicks on a wall
+            const [windowTraceMode, setWindowTraceMode] = useState(null); // ELC Trace Window: 2D glass polygon
+            const isTracedWindow = (w) => !!(w && Array.isArray(w.vertices) && w.vertices.length >= 3);
             const [windowsPanelOpen, setWindowsPanelOpen] = useState(false);
             const [selectedWindowId, setSelectedWindowId] = useState(null);
             const [draggingWindowId, setDraggingWindowId] = useState(null);
-            const [showWindowGraphic, setShowWindowGraphic] = useState(false);
-            const [winModalOffset, setWinModalOffset] = useState({ x: 72, y: 64 });
-            const [isWinModalDragging, setIsWinModalDragging] = useState(false);
-            const [winModalDragStart, setWinModalDragStart] = useState({ x: 0, y: 0 });
             // Room polygons (plan %) — clip sunshafts + gate VAV amber rings (ELC-style trace).
             const [floorRooms, setFloorRooms] = useState([]); // {id,floorIdx,name,vertices:[[x,y],...]}
             const [roomMode, setRoomMode] = useState(null); // null | {pts:[{x,y},...]}
@@ -452,23 +449,6 @@
                 setSunState({ enabled: true, sun: sun, hour: sunHour, doy: sunDoy });
             }, [sunPathEnabled, sunHour, sunDoy, buildingLatLon.lat, buildingLatLon.lon]);
 
-            useEffect(() => {
-                if (!isWinModalDragging) return undefined;
-                const onMove = (e) => {
-                    setWinModalOffset({
-                        x: e.clientX - winModalDragStart.x,
-                        y: e.clientY - winModalDragStart.y,
-                    });
-                };
-                const onUp = () => setIsWinModalDragging(false);
-                window.addEventListener('mousemove', onMove);
-                window.addEventListener('mouseup', onUp);
-                return () => {
-                    window.removeEventListener('mousemove', onMove);
-                    window.removeEventListener('mouseup', onUp);
-                };
-            }, [isWinModalDragging, winModalDragStart]);
-            
             // ============= POINTS EDITOR STATE =============
             const [pointsEditorView, setPointsEditorView] = useState('table'); // Default to 'table' now, not 'json'
             const [pointsJsonText, setPointsJsonText] = useState('');
@@ -2045,7 +2025,7 @@
                     setNsMode(i >= 0 && i < order.length - 1 ? order[i + 1] : 'edit');
                     toast(i < order.length - 1
                         ? `Placed ${key.toUpperCase()} — now click ${order[i + 1].toUpperCase()} on the plan`
-                        : 'N/S/W/E set — drag the letters on the floor to align Sun Path.');
+                        : 'N/S/W/E set — drag to fine-tune, then click N/S/W/E again when done.');
                     return;
                 }
 
@@ -2108,9 +2088,9 @@
                     setFloorWindows(prev => [...prev, newWin]);
                     setSelectedWindowId(newWin.id);
                     setWindowsPanelOpen(true);
-                    setShowWindowGraphic(true);
                     setWindowMode(null);
                     setDraggedMarkerType(null);
+                    toast('Window placed. Adjust blinds in ▤ Windows.');
                     return;
                 }
 
@@ -2179,7 +2159,6 @@
                 setDraggingFloorMarker(null);
                 setSelectedWindowId(windowId);
                 setWindowsPanelOpen(true);
-                setShowWindowGraphic(true);
                 setDraggingWindowId(windowId);
             };
 
@@ -2219,9 +2198,12 @@
                 const angle_deg = Math.atan2(dy, dx) * 180 / Math.PI;
                 if (windowTraceMode.windowId) {
                     setFloorWindows(prev => prev.map(w => w.id === windowTraceMode.windowId
-                        ? Object.assign({}, w, { vertices: verts, x: cx, y: cy, length, angle_deg })
+                        ? Object.assign({}, w, {
+                            vertices: verts, x: cx, y: cy, length, angle_deg,
+                            skew_x: 0, skew_y: 0, stretch_x: 1, stretch_y: 1,
+                        })
                         : w));
-                    toast('Window aperture re-traced.');
+                    toast('Window updated from trace (2D glass outline).');
                 } else {
                     const n = floorWindows.filter(w => w.floorIdx === currentFloorIdx).length;
                     const newWin = {
@@ -2240,7 +2222,6 @@
                 }
                 setWindowTraceMode(null);
                 setWindowsPanelOpen(true);
-                setShowWindowGraphic(true);
             };
 
             const commitTracedObstruction = () => {
@@ -2278,22 +2259,45 @@
                 toast('Trace room: click each corner. Click first again, double-click, or Enter to close. Esc cancels.');
             };
 
-            const startWindowTrace = (opts) => {
-                const createNew = !(opts && opts.windowId);
-                const was = !!windowTraceMode && !opts;
+            const startWindowPlace = () => {
+                const was = !!windowMode;
                 clearAllTraceModes();
-                if (was) return;
+                setPanMode(false);
+                if (was) {
+                    toast('Window mode off.');
+                    return;
+                }
+                setWindowMode({ phase: 'p1' });
+                setWindowsPanelOpen(true);
+                toast('Place a window — click two endpoints on a wall.');
+            };
+
+            const startWindowTrace = (opts) => {
+                const togglingToolbar = !opts;
+                const was = togglingToolbar && !!windowTraceMode;
+                clearAllTraceModes();
+                if (was) {
+                    toast('Window trace cancelled.');
+                    return;
+                }
+                const createNew = !!(opts && opts.createNew) || (togglingToolbar && !selectedWindowId);
+                const wid = createNew ? null : ((opts && opts.windowId) || selectedWindowId || null);
+                if (!createNew && !wid) {
+                    toast('Select exactly one window, then Trace aperture — or use Trace Window to create.');
+                    return;
+                }
                 const seed = [];
-                if (opts && opts.windowId) {
-                    const w = floorWindows.find(x => x.id === opts.windowId);
+                if (wid) {
+                    const w = floorWindows.find(x => x.id === wid);
                     if (w && Array.isArray(w.vertices)) {
                         w.vertices.forEach(p => seed.push({ x: p[0], y: p[1] }));
                     }
-                    setSelectedWindowId(opts.windowId);
+                    setSelectedWindowId(wid);
                 }
-                setWindowTraceMode({ windowId: createNew ? null : opts.windowId, createNew, pts: seed });
+                setWindowTraceMode({ windowId: wid, createNew: !wid, pts: seed });
                 setWindowsPanelOpen(true);
-                toast(createNew
+                setPanMode(false);
+                toast(!wid
                     ? 'Trace new window: click each corner. Close on first point / Enter / double-click. Esc cancels.'
                     : 'Re-trace glass: close on first point / Enter / double-click. Esc cancels.');
             };
@@ -2312,15 +2316,20 @@
                 const was = !!nsMode;
                 clearAllTraceModes();
                 setPanMode(false);
-                if (was) return;
+                if (was) {
+                    toast(complete
+                        ? 'N/S/W/E done — letters stay on the plan. Click the button to edit again.'
+                        : 'N/S/W/E cancelled.');
+                    return;
+                }
                 if (complete) {
                     setNsMode('edit');
-                    toast('Drag N / S / W / E on the floor image to align Sun Path. Esc finishes.');
+                    toast('Edit N/S/W/E — drag the letters. Click N/S/W/E again when done.');
                     return;
                 }
                 const next = !o.north ? 'n' : !o.south ? 's' : !o.west ? 'w' : 'e';
                 setNsMode(next);
-                toast('Click ' + next.toUpperCase() + ' on the floor image, then South, West, East.');
+                toast('Click ' + next.toUpperCase() + ' on the floor image, then South, West, East. Click N/S/W/E again when done.');
             };
 
             useEffect(() => {
@@ -2333,8 +2342,11 @@
                         else if (windowTraceMode) commitTracedWindow();
                         else if (obstructionTraceMode) commitTracedObstruction();
                     } else if (ev.key === 'Escape') {
+                        const finishingNs = !!nsMode;
                         clearAllTraceModes();
-                        toast('Trace cancelled.');
+                        toast(finishingNs
+                            ? 'N/S/W/E done — letters stay on the plan.'
+                            : 'Trace cancelled.');
                     } else if (ev.key === 'Backspace') {
                         if (roomMode && roomMode.pts && roomMode.pts.length) {
                             ev.preventDefault();
@@ -2891,7 +2903,9 @@
                                 damper_position: m.damper_position
                             }
                         })),
-                        windows: floorWindows.filter(w => w.floorIdx === idx).map(w => ({
+                        windows: floorWindows.filter(w => w.floorIdx === idx).map(w => {
+                            const traced = isTracedWindow(w);
+                            return {
                             id: w.id,
                             name: w.name || '',
                             x: w.x,
@@ -2902,14 +2916,13 @@
                             blind_type: w.blind_type || 'roller',
                             sill_height_m: w.sill_height_m != null ? w.sill_height_m : 1.0,
                             head_height_m: w.head_height_m != null ? w.head_height_m : 2.2,
-                            skew_x: w.skew_x != null ? w.skew_x : 0.42,
-                            skew_y: w.skew_y != null ? w.skew_y : 0,
-                            stretch_x: w.stretch_x != null ? w.stretch_x : 1,
-                            stretch_y: w.stretch_y != null ? w.stretch_y : 1,
-                            ...(Array.isArray(w.vertices) && w.vertices.length >= 3
-                                ? { vertices: w.vertices.map(v => [Number(v[0]), Number(v[1])]) }
-                                : {}),
-                        })),
+                            skew_x: traced ? 0 : (w.skew_x != null ? w.skew_x : 0.42),
+                            skew_y: traced ? 0 : (w.skew_y != null ? w.skew_y : 0),
+                            stretch_x: traced ? 1 : (w.stretch_x != null ? w.stretch_x : 1),
+                            stretch_y: traced ? 1 : (w.stretch_y != null ? w.stretch_y : 1),
+                            ...(traced ? { vertices: w.vertices.map(v => [Number(v[0]), Number(v[1])]) } : {}),
+                            };
+                        }),
                         rooms: floorRooms.filter(r => r.floorIdx === idx).map(r => ({
                             id: r.id,
                             name: r.name || 'Room',
@@ -3928,6 +3941,9 @@
                             const allWindows = [];
                             data.floors.forEach((floor, idx) => {
                                 (floor.windows || []).forEach(w => {
+                                    const verts = (Array.isArray(w.vertices) && w.vertices.length >= 3)
+                                        ? w.vertices.map(v => [Number(v[0]), Number(v[1])])
+                                        : null;
                                     allWindows.push({
                                         id: w.id || ('w_' + idx + '_' + allWindows.length),
                                         floorIdx: idx,
@@ -3938,15 +3954,13 @@
                                         blind_level: Math.min(1, Math.max(0, Number(w.blind_level) || 0)),
                                         sill_height_m: w.sill_height_m != null ? w.sill_height_m : 1.0,
                                         head_height_m: w.head_height_m != null ? w.head_height_m : 2.2,
-                                        skew_x: w.skew_x != null ? w.skew_x : 0.42,
-                                        skew_y: w.skew_y != null ? w.skew_y : 0,
-                                        stretch_x: w.stretch_x != null ? w.stretch_x : 1,
-                                        stretch_y: w.stretch_y != null ? w.stretch_y : 1,
+                                        skew_x: verts ? 0 : (w.skew_x != null ? w.skew_x : 0.42),
+                                        skew_y: verts ? 0 : (w.skew_y != null ? w.skew_y : 0),
+                                        stretch_x: verts ? 1 : (w.stretch_x != null ? w.stretch_x : 1),
+                                        stretch_y: verts ? 1 : (w.stretch_y != null ? w.stretch_y : 1),
                                         name: w.name || '',
                                         blind_type: (w.blind_type === 'horizontal' || w.blind_type === 'vertical') ? w.blind_type : 'roller',
-                                        ...(Array.isArray(w.vertices) && w.vertices.length >= 3
-                                            ? { vertices: w.vertices.map(v => [Number(v[0]), Number(v[1])]) }
-                                            : {}),
+                                        ...(verts ? { vertices: verts } : {}),
                                     });
                                 });
                             });
@@ -5333,18 +5347,10 @@
                                         <div className="flex gap-2 mb-3">
                                             <button
                                                 data-testid="mapper-place-window-btn"
-                                                onClick={() => {
-                                                    setDraggedMarkerType(null);
-                                                    setRoomMode(null);
-                                                    setWindowTraceMode(null);
-                                                    setObstructionTraceMode(null);
-                                                    setNsMode(null);
-                                                    setWindowMode(windowMode ? null : { phase: 'p1' });
-                                                    setWindowsPanelOpen(true);
-                                                }}
+                                                onClick={startWindowPlace}
                                                 className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${windowMode ? 'bg-sky-600 text-white' : 'bg-slate-800 border border-sky-500 text-sky-300 hover:bg-sky-900/30'}`}
                                             >
-                                                + Window
+                                                {windowMode ? 'Click 2nd endpoint…' : '+ Window'}
                                             </button>
                                             <button
                                                 data-testid="mapper-trace-window-btn"
@@ -5394,7 +5400,9 @@
                                             >
                                                 {nsMode && nsMode !== 'edit'
                                                     ? ('Click ' + nsMode.toUpperCase() + '…')
-                                                    : ((floorOrientations[currentFloorIdx] || {}).north ? 'Edit N/S/W/E' : 'N/S/W/E')}
+                                                    : (nsMode === 'edit'
+                                                        ? 'Done N/S/W/E'
+                                                        : ((floorOrientations[currentFloorIdx] || {}).north ? 'Edit N/S/W/E' : 'N/S/W/E'))}
                                             </button>
                                         </div>
                                         {draggedMarkerType && (
@@ -5426,7 +5434,7 @@
                                         )}
                                         {nsMode === 'edit' && (
                                             <div className="text-[9px] text-cyan-300/90 font-bold text-center mb-2">
-                                                Drag N / S / W / E on the plan — Sun Path follows
+                                                Drag N / S / W / E — click N/S/W/E again when done
                                             </div>
                                         )}
                                         {roomMode && (
@@ -5597,7 +5605,7 @@
                                         <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2 px-2">Windows on this floor</div>
                                         {floorWindows.filter(w => w.floorIdx === currentFloorIdx).length === 0 ? (
                                             <div className="text-center text-slate-600 font-mono text-[9px] py-3 px-2">
-                                                No windows yet — use ▤ Place Window, then two clicks on the plan.
+                                                No windows yet — + Window (two clicks on a wall) or Trace Window (glass outline).
                                             </div>
                                         ) : (
                                             floorWindows.filter(w => w.floorIdx === currentFloorIdx).map((w, i) => {
@@ -5606,7 +5614,7 @@
                                                 return (
                                                     <div
                                                         key={w.id}
-                                                        onClick={() => { setSelectedWindowId(sel ? null : w.id); setWindowsPanelOpen(true); setShowWindowGraphic(!sel); }}
+                                                        onClick={() => { setSelectedWindowId(sel ? null : w.id); setWindowsPanelOpen(true); }}
                                                         className={`p-2 rounded-lg border cursor-pointer transition-all ${
                                                             sel ? 'bg-slate-800 border-amber-500 shadow-lg' : 'bg-slate-900 border-slate-700 hover:border-slate-600'
                                                         }`}
@@ -5614,7 +5622,7 @@
                                                         <div className="flex items-center gap-2 mb-1.5">
                                                             <div className="w-4 h-1.5 rounded-sm bg-sky-400 shrink-0" />
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="text-[10px] font-bold text-white font-mono truncate">{w.name || ('W' + (i+1))} · {(w.length||0).toFixed(1)}% · {Math.round(w.angle_deg||0)}°</div>
+                                                                <div className="text-[10px] font-bold text-white font-mono truncate">{w.name || ('W' + (i+1))} · {isTracedWindow(w) ? '2D glass' : ((w.length||0).toFixed(1) + '% · ' + Math.round(w.angle_deg||0) + '°')}</div>
                                                             </div>
                                                             <button
                                                                 title="Delete window"
@@ -5622,6 +5630,11 @@
                                                                 className="w-6 h-6 rounded bg-red-900/40 border border-red-500/40 text-red-300 hover:bg-red-800/60 text-[12px] font-black shrink-0"
                                                             >−</button>
                                                         </div>
+                                                        <button type="button"
+                                                                className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-sky-400 hover:text-sky-200"
+                                                                onClick={(e) => { e.stopPropagation(); startWindowTrace({ windowId: w.id }); }}>
+                                                            {isTracedWindow(w) ? 'Re-trace glass' : 'Trace aperture'}
+                                                        </button>
                                                         <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                                                             <span className="text-[8px] text-slate-500 w-10 shrink-0">Open</span>
                                                             <input type="range" min="0" max="100" step="1" value={openPct}
@@ -5949,9 +5962,11 @@
                                 >
                                     {nsMode && nsMode !== 'edit'
                                         ? ('Place ' + nsMode.toUpperCase())
-                                        : ((floorOrientations[currentFloorIdx] || {}).north && (floorOrientations[currentFloorIdx] || {}).south
-                                            ? 'N/S · W/E'
-                                            : 'Set N/S/W/E')}
+                                        : (nsMode === 'edit'
+                                            ? 'Done N/S/W/E'
+                                            : ((floorOrientations[currentFloorIdx] || {}).north && (floorOrientations[currentFloorIdx] || {}).south
+                                                ? 'Edit N/S/W/E'
+                                                : 'Set N/S/W/E'))}
                                 </button>
                             )}
                             {activeTarget.type === 'floor_plan' && nsMode && nsMode !== 'edit' && (
@@ -6109,12 +6124,18 @@
                                                     ))}
                                                 </g>
                                             )}
-                                            {floorWindows.filter(w => w.floorIdx === currentFloorIdx && Array.isArray(w.vertices) && w.vertices.length >= 3).map(w => (
+                                            {floorWindows.filter(w => w.floorIdx === currentFloorIdx && isTracedWindow(w)).map(w => (
                                                 <polygon key={'wv-'+w.id}
                                                     points={w.vertices.map(v => `${v[0]},${v[1]}`).join(' ')}
                                                     fill={selectedWindowId === w.id ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)'}
                                                     stroke={selectedWindowId === w.id ? '#fbbf24' : '#7dd3fc'}
                                                     strokeWidth={selectedWindowId === w.id ? 0.55 : 0.35}
+                                                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedWindowId(w.id);
+                                                        setWindowsPanelOpen(true);
+                                                    }}
                                                 />
                                             ))}
                                         </svg>
@@ -6122,10 +6143,11 @@
                                             const o = floorOrientations[currentFloorIdx] || {};
                                             const nsLine = o.north && o.south;
                                             const weLine = o.west && o.east;
+                                            const showNsAxes = !!(draggingNsKey || nsMode);
                                             const canDragNs = !windowMode && !roomMode && !windowTraceMode && !obstructionTraceMode && (!nsMode || nsMode === 'edit');
                                             return (
                                                 <>
-                                                    {(nsLine || weLine) && (
+                                                    {(showNsAxes && (nsLine || weLine)) && (
                                                         <svg className="absolute inset-0 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none"
                                                              style={{width:'100%', height:'100%', zIndex: 19}}
                                                              data-testid="floor-ns-axes">
@@ -6173,9 +6195,8 @@
                                                 </>
                                             );
                                         })()}
-                                        {/* Interactive window bars — drag to move; click selects.
-                                            Overlay shafts (above) are paint-only when sun is on. */}
-                                        {floorWindows.filter(w => w.floorIdx === currentFloorIdx).map(w => {
+                                        {/* ELC + Window wall segments (2.5D). Traced 2D glass is the polygon only. */}
+                                        {floorWindows.filter(w => w.floorIdx === currentFloorIdx && !isTracedWindow(w)).map(w => {
                                             const sel = selectedWindowId === w.id;
                                             const open = 1 - Math.min(1, Math.max(0, w.blind_level || 0));
                                             const len = Math.max(Number(w.length) || 8, 3);
@@ -6185,7 +6206,7 @@
                                                     data-testid={`floor-window-${w.id}`}
                                                     title={`Window · open ${Math.round((1-(w.blind_level||0))*100)}% — drag to move`}
                                                     onMouseDown={(e) => handleWindowDragStart(e, w.id)}
-                                                    onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); setWindowsPanelOpen(true); setShowWindowGraphic(true); }}
+                                                    onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); setWindowsPanelOpen(true); }}
                                                     style={{
                                                         position: 'absolute',
                                                         left: `${w.x}%`,
@@ -6221,12 +6242,12 @@
                                             if (sunState && sunState.enabled && sunState.sun) {
                                                 const floorWins = floorWindows.filter(w => w.floorIdx === currentFloorIdx);
                                                 const floorRms = floorRooms.filter(r => r.floorIdx === currentFloorIdx);
-                                                const score = window.red5SunBlindScore
-                                                    ? window.red5SunBlindScore(marker.x, marker.y, sunState.sun, floorWins, { rooms: floorRms })
-                                                    : (window.red5SunExposureScore
-                                                        ? window.red5SunExposureScore(marker.x / 100, marker.y / 100, sunState.sun)
-                                                        : 0);
-                                                exposureRing = window.red5ExposureColor ? window.red5ExposureColor(score) : null;
+                                                if (floorWins.length) {
+                                                    const score = window.red5SunBlindScore
+                                                        ? window.red5SunBlindScore(marker.x, marker.y, sunState.sun, floorWins, { rooms: floorRms })
+                                                        : 0;
+                                                    exposureRing = window.red5ExposureColor ? window.red5ExposureColor(score) : null;
+                                                }
                                                 if (window.red5MarkerShadow) {
                                                     shadowGeom = window.red5MarkerShadow(sunState.sun);
                                                 }
@@ -7087,7 +7108,7 @@
                             <div className="overflow-y-auto p-2 space-y-2" style={{maxHeight:'calc(60vh - 40px)'}}>
                                 {floorWindows.filter(w => w.floorIdx === currentFloorIdx).length === 0 ? (
                                     <div className="text-[11px] text-slate-500 px-1 py-3 leading-snug">
-                                        No windows on this floor yet. Click <b className="text-sky-300">▤ Place Window</b>, then two endpoints on the plan.
+                                        No windows on this floor yet. Use <b className="text-sky-300">+ Window</b> (two clicks on a wall) or <b className="text-sky-300">Trace Window</b> (glass outline).
                                     </div>
                                 ) : floorWindows.filter(w => w.floorIdx === currentFloorIdx).map((w, i) => {
                                     const openPct = Math.round((1 - Math.min(1, Math.max(0, w.blind_level || 0))) * 100);
@@ -7095,15 +7116,20 @@
                                     return (
                                         <div key={w.id}
                                              className={`rounded border px-2 py-2 ${sel ? 'border-amber-500 bg-slate-900' : 'border-slate-700 bg-slate-950/60'}`}
-                                             onClick={() => { setSelectedWindowId(w.id); setShowWindowGraphic(true); }}>
+                                             onClick={() => setSelectedWindowId(w.id)}>
                                             <div className="flex items-center justify-between mb-1">
-                                                <span className="font-mono text-[11px] text-slate-200">W{i+1} · {(w.length||0).toFixed(1)}% · {Math.round(w.angle_deg||0)}°</span>
+                                                <span className="font-mono text-[11px] text-slate-200">{w.name || ('W'+(i+1))} · {isTracedWindow(w) ? '2D glass' : ((w.length||0).toFixed(1) + '%')}</span>
                                                 <button className="text-[10px] text-rose-400 hover:text-rose-300"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             deleteWindow(w.id);
                                                         }}>Delete</button>
                                             </div>
+                                            <button type="button"
+                                                    className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-sky-400 hover:text-sky-200"
+                                                    onClick={(e) => { e.stopPropagation(); startWindowTrace({ windowId: w.id }); }}>
+                                                {isTracedWindow(w) ? 'Re-trace glass' : 'Trace aperture'}
+                                            </button>
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[9px] text-slate-500 w-11 shrink-0" title="100% = fully open">Open →</span>
                                                 <input type="range" min="0" max="100" step="1" value={openPct}
@@ -7171,19 +7197,6 @@
                         </div>
                     )}
 
-                    {showWindowGraphic && selectedWindowId && typeof renderWindowGraphicModal === 'function' && renderWindowGraphicModal({
-                        theme: 'dark',
-                        window: floorWindows.find(w => w.id === selectedWindowId),
-                        windowIndex: floorWindows.filter(w => w.floorIdx === currentFloorIdx).findIndex(w => w.id === selectedWindowId),
-                        modalOffset: winModalOffset,
-                        onClose: () => setShowWindowGraphic(false),
-                        onChange: (next) => setFloorWindows(prev => prev.map(x => x.id === next.id ? next : x)),
-                        onDelete: (id) => { deleteWindow(id); setShowWindowGraphic(false); },
-                        onTraceAperture: (id) => { setShowWindowGraphic(false); startWindowTrace({ windowId: id }); },
-                        onClearAperture: (id) => setFloorWindows(prev => prev.map(x => x.id === id ? Object.assign({}, x, { vertices: undefined }) : x)),
-                        setIsDragging: setIsWinModalDragging,
-                        setDragStart: setWinModalDragStart,
-                    })}
                 </div>
             );
         };
@@ -7203,8 +7216,7 @@
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
                 '/assets/js/sun-path.js',
-                '/assets/js/elc-sun-path-overlay.js',
-                '/assets/js/dashboard/window-graphic-modal.js'
+                '/assets/js/elc-sun-path-overlay.js'
             ];
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {

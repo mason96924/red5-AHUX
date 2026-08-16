@@ -1029,6 +1029,69 @@
     }
     return row;
   }
+  let _dayLenDisplay = null;
+  let _dayLenPrefetchTimer = 0;
+  let _dlPrefetchYear = 0;
+  let _dlPrefetchLat = 0;
+  let _dlPrefetchLon = 0;
+  let _dlPrefetchTz = '';
+
+  function finalizeDayLenCache(year, key, days, acc) {
+    const cache = {
+      key: key, year: year, days: days, perDay: acc.perDay,
+      astro: acc.paths.astro.join(''),
+      naut: acc.paths.naut.join(''),
+      civil: acc.paths.civil.join(''),
+      day: acc.paths.day.join(''),
+    };
+    putDayLenCache(cache);
+    _dayLenDisplay = cache;
+    return cache;
+  }
+  function buildDayLenYearNow(year, latDeg, lonDeg, timezone) {
+    const key = dayLenCacheKey(year, latDeg, lonDeg, timezone);
+    const existing = getDayLenCache(key);
+    if (existing) return existing;
+    if (_dayLenBuild && _dayLenBuild.key !== key) {
+      _dayLenBuild.cancelled = true;
+      _dayLenBuild = null;
+    }
+    const latRad = (Number(latDeg) || 0) * Math.PI / 180;
+    const days = daysInYear(year);
+    const tzHours = siteTzOffsetHours(new Date(), timezone, lonDeg);
+    const acc = { perDay: [], paths: { astro: [], naut: [], civil: [], day: [] } };
+    for (let d = 1; d <= days; d++) appendDayLenDay(acc, latRad, days, d, lonDeg, tzHours);
+    return finalizeDayLenCache(year, key, days, acc);
+  }
+  function kickDayLenPrefetch(year, latDeg, lonDeg, timezone) {
+    _dlPrefetchYear = year;
+    _dlPrefetchLat = latDeg;
+    _dlPrefetchLon = lonDeg;
+    _dlPrefetchTz = timezone || '';
+    if (_dayLenPrefetchTimer) return;
+    const start = (typeof requestIdleCallback === 'function')
+      ? requestIdleCallback
+      : function (cb) { return setTimeout(cb, 80); };
+    _dayLenPrefetchTimer = start(function () {
+      _dayLenPrefetchTimer = 0;
+      if (_dayLenBuild) return;
+      const y = _dlPrefetchYear;
+      const lat = _dlPrefetchLat;
+      const lon = _dlPrefetchLon;
+      const tz = _dlPrefetchTz;
+      if (!getDayLenCache(dayLenCacheKey(y, lat, lon, tz))) {
+        scheduleDayLenBuild(y, lat, lon, tz, true);
+        return;
+      }
+      if (!getDayLenCache(dayLenCacheKey(y + 1, lat, lon, tz))) {
+        scheduleDayLenBuild(y + 1, lat, lon, tz, false);
+        return;
+      }
+      if (!getDayLenCache(dayLenCacheKey(y - 1, lat, lon, tz))) {
+        scheduleDayLenBuild(y - 1, lat, lon, tz, false);
+      }
+    });
+  }
   function scheduleDayLenBuild(year, latDeg, lonDeg, timezone, priority) {
     const key = dayLenCacheKey(year, latDeg, lonDeg, timezone);
     if (_dayLenCaches.has(key)) return;
@@ -1059,23 +1122,25 @@
         (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(chunk);
         return;
       }
-      putDayLenCache({
-        key: key, year: year, days: days, perDay: acc.perDay,
-        astro: acc.paths.astro.join(''),
-        naut: acc.paths.naut.join(''),
-        civil: acc.paths.civil.join(''),
-        day: acc.paths.day.join(''),
-      });
+      finalizeDayLenCache(year, key, days, acc);
       if (_dayLenBuild === job) _dayLenBuild = null;
+      kickDayLenPrefetch(_dlPrefetchYear || year, latDeg, lonDeg, timezone);
     };
     (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(chunk);
   }
   function ensureDayLenCache(year, latDeg, lonDeg, timezone) {
     const key = dayLenCacheKey(year, latDeg, lonDeg, timezone);
     const ready = getDayLenCache(key);
-    if (ready) return ready;
-    scheduleDayLenBuild(year, latDeg, lonDeg, timezone, true);
-    return null;
+    if (ready) {
+      _dayLenDisplay = ready;
+      kickDayLenPrefetch(year, latDeg, lonDeg, timezone);
+      return ready;
+    }
+    /* Build this year on-thread so a year step never blanks the plot.
+       Neighbors prefetch in idle chunks so the next year is already warm. */
+    const built = buildDayLenYearNow(year, latDeg, lonDeg, timezone);
+    kickDayLenPrefetch(year, latDeg, lonDeg, timezone);
+    return built || _dayLenDisplay;
   }
   function fmtHM(hour) {
     if (hour == null || !Number.isFinite(hour)) return '';
@@ -1436,9 +1501,12 @@
     return React.createElement('div', {
       className: props.compact
         ? 'relative z-10 pointer-events-auto'
-        : 'absolute z-40 left-2 bottom-2 pointer-events-auto',
+        : (props.hostPinned
+          ? 'absolute z-50 left-2 bottom-2 pointer-events-auto'
+          : 'absolute z-40 left-2 bottom-2 pointer-events-auto'),
       'data-testid': 'elc-sun-path-controls',
-      style: { maxWidth: 420 }
+      onMouseDown: function (e) { e.stopPropagation(); },
+      style: Object.assign({ maxWidth: 420 }, props.style || {})
     },
       React.createElement('div', {
         className: 'rounded-md border shadow-2xl backdrop-blur-md px-2 py-1.5 space-y-1',
@@ -1455,12 +1523,12 @@
           enabled && React.createElement('span', { className: 'inline-flex gap-1 flex-wrap items-center' },
             btn('size-', '−', 'Smaller'),
             btn('size+', '+', 'Bigger'),
-            btn('rotL', '↺', 'Rotate left'),
-            btn('rotR', '↻', 'Rotate right'),
-            btn('lookU', '↑', 'Look up'),
-            btn('lookD', '↓', 'Look down'),
-            btn('tiltW', 'W↓', 'West down'),
-            btn('tiltE', 'E↓', 'East down'),
+            !props.operatorAdj && btn('rotL', '↺', 'Rotate left'),
+            !props.operatorAdj && btn('rotR', '↻', 'Rotate right'),
+            !props.operatorAdj && btn('lookU', '↑', 'Look up'),
+            !props.operatorAdj && btn('lookD', '↓', 'Look down'),
+            !props.operatorAdj && btn('tiltW', 'W↓', 'West down'),
+            !props.operatorAdj && btn('tiltE', 'E↓', 'East down'),
             btn('reset', 'Reset', 'Reset view')
           )
         ),
@@ -1526,6 +1594,65 @@
     return a;
   }
 
+  const SUN_UI_EVT = 'r5-elc-sun-ui';
+  const _sunUiSubs = new Set();
+  let _sunEnabled = (function () {
+    try { return localStorage.getItem('elc.floor.sunPathOverlay') !== '0'; } catch (_) { return true; }
+  })();
+  let _sunAdjLive = null;
+  function getSunAdjLive() {
+    if (!_sunAdjLive) _sunAdjLive = loadAdj();
+    return _sunAdjLive;
+  }
+  function sunUiSnapshot() {
+    return { enabled: _sunEnabled, adj: getSunAdjLive() };
+  }
+  function publishSunUi() {
+    const snap = sunUiSnapshot();
+    _sunUiSubs.forEach(function (fn) { try { fn(snap); } catch (_) {} });
+    try { global.dispatchEvent(new CustomEvent(SUN_UI_EVT, { detail: snap })); } catch (_) {}
+  }
+  function setSunPathEnabledShared(on) {
+    _sunEnabled = !!on;
+    try { localStorage.setItem('elc.floor.sunPathOverlay', _sunEnabled ? '1' : '0'); } catch (_) {}
+    publishSunUi();
+  }
+  function applySunAdjShared(kind) {
+    _sunAdjLive = applyAdjStep(getSunAdjLive(), kind);
+    publishSunUi();
+    return _sunAdjLive;
+  }
+  function useElcSunUi() {
+    const React = global.React;
+    const [, setRev] = React.useState(0);
+    React.useEffect(function () {
+      const sub = function () { setRev(function (n) { return n + 1; }); };
+      _sunUiSubs.add(sub);
+      return function () { _sunUiSubs.delete(sub); };
+    }, []);
+    return sunUiSnapshot();
+  }
+
+  global.ElcSunPathHostChrome = function ElcSunPathHostChrome(props) {
+    return global.ElcSunPathControls(Object.assign({}, props, {
+      hostPinned: true,
+      operatorAdj: props.operatorAdj !== false,
+      hideScrubbers: true,
+    }));
+  };
+
+  global.ElcSunPathHostChromeLive = function ElcSunPathHostChromeLive(props) {
+    const ui = useElcSunUi();
+    return global.ElcSunPathHostChrome({
+      enabled: ui.enabled,
+      adj: ui.adj,
+      operatorAdj: props && props.operatorAdj,
+      style: props && props.style,
+      onToggle: setSunPathEnabledShared,
+      onAdjStep: applySunAdjShared,
+    });
+  };
+
   global.red5ElcSunPath = {
     paint: global.red5PaintElcSunPath,
     loadAdj: loadAdj,
@@ -1543,6 +1670,9 @@
     setClockFollow: setClockFollow,
     setClockParts: setClockParts,
     setClockStep: setClockStep,
+    setEnabled: setSunPathEnabledShared,
+    applyAdj: applySunAdjShared,
+    sunUiEvent: SUN_UI_EVT,
   };
   global.red5ElcSunAtTod = sunAtCivilTod;
   global.red5ElcSunAtTodForFloor = sunAtCivilTodForFloor;
@@ -1550,7 +1680,7 @@
   global.ElcSunPathToolbar = function ElcSunPathToolbar(props) {
     const p = Object.assign({}, props, {
       onAdjStep: function (kind) {
-        const next = applyAdjStep(props.adj || loadAdj(), kind);
+        const next = applySunAdjShared(kind);
         if (props.onAdj) props.onAdj(next);
       },
     });
@@ -1562,10 +1692,9 @@
 
   global.ElcSunPathLive = function ElcSunPathLive(props) {
     const React = global.React;
-    const [enabled, setEnabled] = React.useState(function () {
-      try { return localStorage.getItem('elc.floor.sunPathOverlay') !== '0'; } catch (_) { return true; }
-    });
-    const [adj, setAdj] = React.useState(function () { return loadAdj(); });
+    const ui = useElcSunUi();
+    const enabled = ui.enabled;
+    const adj = ui.adj;
     const lat = props && props.lat;
     const lon = props && props.lon;
     const elevationM = Number(props && props.elevation_m) || 0;
@@ -1573,40 +1702,50 @@
     const clock = useElcSunClock(timezone, lon);
     const hour = clock.hour;
     const doy = clock.doy;
+    const hostProbeRef = React.useRef(null);
+    const [hostEl, setHostEl] = React.useState(null);
 
     const sun = (Number.isFinite(lat) && Number.isFinite(lon))
       ? sunAtCivilTodForFloor(lat, lon, doy, hour, elevationM, timezone)
       : null;
 
     React.useEffect(function () {
-      try { localStorage.setItem('elc.floor.sunPathOverlay', enabled ? '1' : '0'); } catch (_) {}
       const payload = { enabled: !!enabled, sun: sun, hour: hour, doy: doy };
       if (props && props.onChange) props.onChange(payload);
       try { global.dispatchEvent(new CustomEvent('r5-sun-state', { detail: payload })); } catch (_) {}
     }, [enabled, hour, doy, lat, lon, elevationM, timezone, sun && sun.azimuth, sun && sun.elevation]);
 
-    const chrome = [];
-    chrome.push(React.createElement(global.ElcSunPathOnFloor, {
-      key: 'dome',
-      enabled: enabled, lat: lat, lon: lon, elevation_m: elevationM,
-      timezone: timezone,
-      sun: sun, hour: hour, doy: doy, adj: adj,
-      orientation: props && props.orientation,
-      northOffsetDeg: props && props.northOffsetDeg,
-      showCardinals: props && props.showCardinals,
-    }));
-    if (props && props.hostChrome) {
-      /* Date/TOD lives on the graphics host, not on the floor image. */
-    } else {
-      chrome.push(React.createElement(global.ElcSunPathControls, {
-        key: 'ctrl',
-        enabled: enabled, hour: hour, doy: doy, adj: adj, followClock: clock.followClock,
-        hideScrubbers: true,
-        onToggle: setEnabled,
-        onNow: function () { setClockFollow(true, timezone, lon); },
-        onAdjStep: function (kind) { setAdj(applyAdjStep(adj, kind)); },
-      }));
-    }
-    return React.createElement(React.Fragment, null, chrome);
+    React.useLayoutEffect(function () {
+      const n = hostProbeRef.current;
+      const zone = n && n.closest ? n.closest('.red5-graphic-zone') : null;
+      setHostEl(zone || null);
+    }, []);
+
+    const controls = React.createElement(global.ElcSunPathControls, {
+      key: 'ctrl',
+      enabled: enabled, adj: adj,
+      hostPinned: true,
+      operatorAdj: true,
+      hideScrubbers: true,
+      onToggle: setSunPathEnabledShared,
+      onAdjStep: applySunAdjShared,
+    });
+    const RD = global.ReactDOM;
+    const hostChrome = (hostEl && RD && typeof RD.createPortal === 'function')
+      ? RD.createPortal(controls, hostEl)
+      : controls;
+
+    return React.createElement(React.Fragment, null,
+      React.createElement('span', { ref: hostProbeRef, style: { display: 'none' } }),
+      React.createElement(global.ElcSunPathOnFloor, {
+        enabled: enabled, lat: lat, lon: lon, elevation_m: elevationM,
+        timezone: timezone,
+        sun: sun, hour: hour, doy: doy, adj: adj,
+        orientation: props && props.orientation,
+        northOffsetDeg: props && props.northOffsetDeg,
+        showCardinals: props && props.showCardinals,
+      }),
+      hostChrome
+    );
   };
 })(typeof window !== 'undefined' ? window : this);

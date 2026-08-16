@@ -490,6 +490,9 @@ function renderAhuEquipmentModal(ctx) {
                                                 </div>
                                             );
                                         })()}
+                                        {window.ElcSunPathHostChromeLive && (
+                                            <window.ElcSunPathHostChromeLive operatorAdj={true} />
+                                        )}
                                         {window.ElcDaySelectorLive && (
                                             <window.ElcDaySelectorLive
                                                 lat={buildingLatLon && buildingLatLon.lat}

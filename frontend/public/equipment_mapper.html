@@ -485,6 +485,18 @@
             }, []);
 
             useEffect(() => {
+                const ev = (window.red5ElcSunPath && window.red5ElcSunPath.sunUiEvent) || 'r5-elc-sun-ui';
+                const onUi = (e) => {
+                    const d = e && e.detail;
+                    if (!d) return;
+                    if (typeof d.enabled === 'boolean') setSunPathEnabled(d.enabled);
+                    if (d.adj) setSunPathAdj(d.adj);
+                };
+                window.addEventListener(ev, onUi);
+                return () => window.removeEventListener(ev, onUi);
+            }, []);
+
+            useEffect(() => {
                 if (!sunFollowClock) return undefined;
                 const tick = () => {
                     const n = new Date();
@@ -5734,7 +5746,13 @@
                                                 doy={sunDoy}
                                                 adj={sunPathAdj}
                                                 followClock={sunFollowClock}
-                                                onToggle={(on) => setSunPathEnabled(!!on)}
+                                                onToggle={(on) => {
+                                                    if (window.red5ElcSunPath && window.red5ElcSunPath.setEnabled) {
+                                                        window.red5ElcSunPath.setEnabled(on);
+                                                    } else {
+                                                        setSunPathEnabled(!!on);
+                                                    }
+                                                }}
                                                 onNow={() => {
                                                     if (window.red5ElcSunPath && window.red5ElcSunPath.setClockFollow) {
                                                         window.red5ElcSunPath.setClockFollow(true, buildingLatLon.timezone, buildingLatLon.lon);
@@ -7300,7 +7318,7 @@
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
                 '/assets/js/sun-path.js?v=sunshaft-rose2',
-                '/assets/js/elc-sun-path-overlay.js?v=daysel2',
+                '/assets/js/elc-sun-path-overlay.js?v=daysel3',
                 '/assets/js/window-blinds-popout.js'
             ];
             var mainSource = document.getElementById('main-source');

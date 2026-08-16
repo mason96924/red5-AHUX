@@ -171,7 +171,7 @@ const floorModalTree = (
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
                                     orientation={floorData.floor.orientation}
                                     showBars={false}
-                                    showRooms={true}
+                                    showRooms={false}
                                 />
                             )}
                             {/* Live windows — 2.5D bars and 2D traced glass. Click pops Open + Type. */}

@@ -922,7 +922,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   }
   var showBars = props.showBars !== false;
   var roomOutlines = [];
-  if (props.showRooms !== false && rooms.length) {
+  if (props.showRooms === true && rooms.length) {
     for (var ri = 0; ri < rooms.length; ri++) {
       var rr = rooms[ri];
       var rv = rr && (rr.vertices || rr.points);

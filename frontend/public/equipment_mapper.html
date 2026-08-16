@@ -6186,11 +6186,10 @@
                                                 return (
                                                     <polygon key={r.id}
                                                         points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
-                                                        fill={sel ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.06)'}
-                                                        stroke={sel ? '#34d399' : '#059669'}
+                                                        fill={sel ? 'rgba(57,255,20,0.10)' : 'none'}
+                                                        stroke={sel ? '#b8ff5a' : '#39ff14'}
                                                         strokeWidth={sel ? 1.25 : 1}
                                                         vectorEffect="non-scaling-stroke"
-                                                        strokeDasharray="4 3"
                                                     />
                                                 );
                                             })}
@@ -6200,15 +6199,15 @@
                                                         <polyline
                                                             points={(roomMode.pts || []).map(p => `${p.x},${p.y}`).join(' ')}
                                                             fill="none"
-                                                            stroke="#34d399"
+                                                            stroke="#39ff14"
                                                             strokeWidth="1"
                                                             vectorEffect="non-scaling-stroke"
                                                         />
                                                     )}
                                                     {(roomMode.pts || []).map((p, i) => (
                                                         <circle key={i} cx={p.x} cy={p.y} r={i === 0 ? 0.28 : 0.18}
-                                                                fill={i === 0 ? '#6ee7b7' : '#34d399'}
-                                                                stroke="#064e3b" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                                                                fill={i === 0 ? '#b8ff5a' : '#39ff14'}
+                                                                stroke="#14532d" strokeWidth="1" vectorEffect="non-scaling-stroke" />
                                                     ))}
                                                 </g>
                                             )}
@@ -7317,7 +7316,7 @@
                 '/assets/js/image-picker.js',
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
-                '/assets/js/sun-path.js?v=sunshaft-rose2',
+                '/assets/js/sun-path.js?v=sunshaft-rose3',
                 '/assets/js/elc-sun-path-overlay.js?v=daysel3',
                 '/assets/js/window-blinds-popout.js'
             ];

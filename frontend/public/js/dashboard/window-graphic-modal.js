@@ -6,32 +6,13 @@
 function WindowBlindGraphic(props) {
     const w = props.w || {};
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
-    const bt = String(w.blind_type || 'roller').toLowerCase();
-    const type = (bt === 'horizontal' || bt === 'vertical') ? bt : 'roller';
-    const sealed = open < 0.01;
+    const type = window.red5NormalizeBlindType ? window.red5NormalizeBlindType(w.blind_type) : 'roller';
+    const spec = window.red5BlindSpec ? window.red5BlindSpec(type) : { label: 'Roller' };
     const W = 280, H = 180;
     const glass = { x: 28, y: 18, w: 224, h: 144 };
-    const slats = [];
-    if (!sealed) {
-        if (type === 'roller') {
-            const drop = (1 - open) * glass.h;
-            slats.push({ kind: 'roller', y: glass.y, h: drop });
-        } else if (type === 'horizontal') {
-            const n = 12;
-            const closed = 1 - open;
-            for (let i = 0; i < n; i++) {
-                const y = glass.y + (i + 0.5) * (glass.h / n);
-                slats.push({ kind: 'h', y: y, tilt: closed });
-            }
-        } else {
-            const n = 10;
-            const closed = 1 - open;
-            for (let i = 0; i < n; i++) {
-                const x = glass.x + (i + 0.5) * (glass.w / n);
-                slats.push({ kind: 'v', x: x, tilt: closed });
-            }
-        }
-    }
+    const rects = window.red5BlindElevationRects
+        ? window.red5BlindElevationRects(type, open, glass.x, glass.y, glass.w, glass.h)
+        : [];
     return (
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" data-testid="window-graphic-svg">
             <rect x="8" y="8" width={W - 16} height={H - 16} rx="4" fill="#cbd5e1" stroke="#64748b" strokeWidth="6"/>
@@ -43,26 +24,12 @@ function WindowBlindGraphic(props) {
                     <stop offset="1" stopColor="#fbbf24" stopOpacity="0.45"/>
                 </linearGradient>
             </defs>
-            {sealed && (
-                <rect x={glass.x} y={glass.y} width={glass.w} height={glass.h}
-                      fill="#334155" opacity="0.88"/>
-            )}
-            {!sealed && type === 'roller' && slats[0] && slats[0].h > 0.5 && (
-                <rect x={glass.x} y={glass.y} width={glass.w} height={slats[0].h}
-                      fill="#334155" opacity="0.88"/>
-            )}
-            {!sealed && type === 'horizontal' && slats.map((s, i) => (
-                <rect key={i} x={glass.x + 2} y={s.y - (1.2 + s.tilt * 3)}
-                      width={glass.w - 4} height={1.4 + s.tilt * 7}
-                      fill="#1e293b" opacity={0.35 + s.tilt * 0.55}/>
-            ))}
-            {!sealed && type === 'vertical' && slats.map((s, i) => (
-                <rect key={i} x={s.x - (1.2 + s.tilt * 4)} y={glass.y + 2}
-                      width={1.4 + s.tilt * 9} height={glass.h - 4}
-                      fill="#1e293b" opacity={0.35 + s.tilt * 0.55}/>
+            {rects.map((r, i) => (
+                <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height}
+                      fill="#1e293b" opacity={r.opacity}/>
             ))}
             <text x={W / 2} y={H - 2} textAnchor="middle" fontSize="9" fill="#334155" fontFamily="ui-monospace,monospace">
-                {(type === 'roller' ? 'Roller' : type === 'horizontal' ? 'Horizontal' : 'Vertical') + ' · ' + Math.round(open * 100) + '% open'}
+                {(spec.label || 'Roller') + ' · ' + Math.round(open * 100) + '% open'}
             </text>
         </svg>
     );
@@ -78,8 +45,8 @@ function renderWindowGraphicModal(ctx) {
     const dk = theme === 'dark';
     const w = win;
     const openPct = Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
-    const bt = String(w.blind_type || 'roller').toLowerCase();
-    const blindType = (bt === 'horizontal' || bt === 'vertical') ? bt : 'roller';
+    const spec = window.red5BlindSpec ? window.red5BlindSpec(w.blind_type) : { id: 'roller', hint: '' };
+    const blindType = spec.id || 'roller';
     const patch = (fields) => { if (onPatch) onPatch(w.id, fields, windowIndex); };
     const layout = layoutMode !== false;
     const row = (label, title, control) => (
@@ -137,15 +104,19 @@ function renderWindowGraphicModal(ctx) {
                     {row('Open →', '100% = fully open',
                         slider(openPct, 0, 100, 1, (v) => patch({ blind_level: 1 - v / 100 }), '%')
                     )}
-                    {row('Type →', 'Blind style',
-                        <select value={blindType}
-                                className={`w-full rounded border px-1.5 py-1 font-mono text-[11px] ${dk ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
-                                onChange={(e) => patch({ blind_type: e.target.value })}>
-                            <option value="roller">Roller</option>
-                            <option value="horizontal">Horizontal</option>
-                            <option value="vertical">Vertical</option>
-                        </select>
-                    )}
+                    <div>
+                        <div className={`text-[9px] uppercase tracking-wider mb-1 ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Type</div>
+                        {window.WindowBlindTypeSelect ? (
+                            <window.WindowBlindTypeSelect
+                                theme={theme}
+                                value={blindType}
+                                onChange={(bt) => patch({ blind_type: bt })}
+                            />
+                        ) : null}
+                        {spec.hint ? (
+                            <div className={`text-[9px] leading-snug mt-1 ${dk ? 'text-slate-500' : 'text-slate-500'}`}>{spec.hint}</div>
+                        ) : null}
+                    </div>
                     {layout && row('Length →', 'Span on the plan',
                         slider(Number(w.length) || 8, 1, 80, 0.5, (v) => patch({ length: v }), '%')
                     )}

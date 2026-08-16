@@ -4,69 +4,78 @@
  * clicked window. Mapper config uses the Windows list / panel instead.
  * ------------------------------------------------------------------ */
 
-function red5NormalizeBlindType(t) {
-    const v = String(t || 'roller').toLowerCase();
-    return (v === 'horizontal' || v === 'vertical') ? v : 'roller';
+function wpNormBlindType(t) {
+    return window.red5NormalizeBlindType ? window.red5NormalizeBlindType(t) : 'roller';
+}
+
+function red5BlindSpecLocal(t) {
+    return window.red5BlindSpec ? window.red5BlindSpec(t) : { id: 'roller', label: 'Roller', hint: '', motion: 'drop' };
 }
 
 function WindowBlindTypeSelect(props) {
-    const bt = red5NormalizeBlindType(props.value);
+    const bt = wpNormBlindType(props.value);
     const dk = props.theme !== 'light';
+    const types = window.RED5_BLIND_TYPES || [
+        { id: 'roller', label: 'Roller', short: 'Roller' },
+        { id: 'horizontal', label: 'Horizontal — lift', short: 'H · lift' },
+        { id: 'horizontal-tilt', label: 'Horizontal — tilt', short: 'H · tilt' },
+        { id: 'vertical', label: 'Vertical — tilt', short: 'V · tilt' },
+        { id: 'vertical-stack', label: 'Vertical — stack', short: 'V · stack' },
+    ];
     return (
-        <select
-            value={bt}
-            data-testid={props.testId || 'wp-blind-type'}
-            title="Blind style"
-            className={props.className || `w-full rounded border px-1.5 py-1 font-mono text-[11px] ${dk ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-800'}`}
-            onChange={(e) => {
-                if (props.onChange) props.onChange(red5NormalizeBlindType(e.target.value));
-            }}
-        >
-            <option value="roller">Roller</option>
-            <option value="horizontal">Horizontal</option>
-            <option value="vertical">Vertical</option>
-        </select>
+        <div className="grid grid-cols-5 gap-1" data-testid={props.testId || 'wp-blind-type'} role="listbox" aria-label="Blind style">
+            {types.map((t) => {
+                const on = t.id === bt;
+                return (
+                    <button
+                        key={t.id}
+                        type="button"
+                        role="option"
+                        aria-selected={on}
+                        title={t.hint || t.label}
+                        onClick={() => { if (props.onChange) props.onChange(t.id); }}
+                        className={`rounded border px-0.5 pt-0.5 pb-1 cursor-pointer text-center transition-all ${
+                            on
+                                ? (dk ? 'border-sky-400 bg-sky-950/70 ring-1 ring-sky-400/80' : 'border-sky-500 bg-sky-50 ring-1 ring-sky-400')
+                                : (dk ? 'border-slate-700 bg-slate-900/80 hover:border-slate-500' : 'border-slate-300 bg-white hover:border-slate-400')
+                        }`}
+                    >
+                        <div className="pointer-events-none h-[34px] overflow-hidden rounded-sm">
+                            <WindowBlindPreview
+                                w={{ blind_type: t.id, blind_level: 0.5 }}
+                                width={120}
+                                height={48}
+                                className="w-full h-[34px]"
+                            />
+                        </div>
+                        <div className={`mt-0.5 text-[7px] font-black uppercase tracking-wide leading-tight ${
+                            on ? (dk ? 'text-sky-300' : 'text-sky-700') : (dk ? 'text-slate-500' : 'text-slate-500')
+                        }`}>{t.short}</div>
+                    </button>
+                );
+            })}
+        </div>
     );
 }
 
 function WindowBlindPreview(props) {
     const w = props.w || {};
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
-    const type = red5NormalizeBlindType(w.blind_type);
-    const sealed = open < 0.01;
-    const W = 220, H = 72;
-    const glass = { x: 10, y: 8, w: 200, h: 52 };
-    const shade = (
-        <rect x={glass.x} y={glass.y} width={glass.w} height={glass.h}
-              fill="#334155" opacity="0.88"/>
-    );
+    const type = wpNormBlindType(w.blind_type);
+    const W = Number(props.width) || 220;
+    const H = Number(props.height) || 72;
+    const glass = { x: 10, y: 8, w: W - 20, h: H - 20 };
+    const rects = window.red5BlindElevationRects
+        ? window.red5BlindElevationRects(type, open, glass.x, glass.y, glass.w, glass.h)
+        : [];
     return (
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[72px]" data-testid="window-blind-preview">
+        <svg viewBox={`0 0 ${W} ${H}`} className={props.className || 'w-full h-[72px]'} data-testid="window-blind-preview">
             <rect x="4" y="4" width={W - 8} height={H - 8} rx="3" fill="#cbd5e1" stroke="#64748b" strokeWidth="4"/>
             <rect x={glass.x} y={glass.y} width={glass.w} height={glass.h} fill="#38bdf8" opacity="0.55"/>
-            {sealed && shade}
-            {!sealed && type === 'roller' && (1 - open) * glass.h > 0.5 && (
-                <rect x={glass.x} y={glass.y} width={glass.w} height={(1 - open) * glass.h}
-                      fill="#334155" opacity="0.88"/>
-            )}
-            {!sealed && type === 'horizontal' && Array.from({ length: 8 }).map((_, i) => {
-                const y = glass.y + (i + 0.5) * (glass.h / 8);
-                const tilt = 1 - open;
-                return (
-                    <rect key={i} x={glass.x + 2} y={y - (1 + tilt * 2.5)}
-                          width={glass.w - 4} height={1.2 + tilt * 5}
-                          fill="#1e293b" opacity={0.35 + tilt * 0.55}/>
-                );
-            })}
-            {!sealed && type === 'vertical' && Array.from({ length: 8 }).map((_, i) => {
-                const x = glass.x + (i + 0.5) * (glass.w / 8);
-                const tilt = 1 - open;
-                return (
-                    <rect key={i} x={x - (1 + tilt * 3)} y={glass.y + 1}
-                          width={1.2 + tilt * 7} height={glass.h - 2}
-                          fill="#1e293b" opacity={0.35 + tilt * 0.55}/>
-                );
-            })}
+            {rects.map((r, i) => (
+                <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height}
+                      fill="#1e293b" opacity={r.opacity}/>
+            ))}
         </svg>
     );
 }
@@ -77,45 +86,18 @@ function WindowBlindMarks(props) {
     const W = Math.max(0.5, Number(props.width) || 100);
     const H = Math.max(0.5, Number(props.height) || 24);
     const open = Math.max(0, Math.min(1, Number(props.open)));
-    const type = red5NormalizeBlindType(props.type);
-    const sealed = open < 0.01;
+    const type = wpNormBlindType(props.type);
     const fill = props.fill || '#1e293b';
-    if (sealed) {
-        return <rect x={x} y={y} width={W} height={H} fill={fill} opacity="0.88"/>;
-    }
-    if (type === 'roller') {
-        const drop = (1 - open) * H;
-        if (drop < 0.35) return null;
-        return <rect x={x} y={y} width={W} height={drop} fill={fill} opacity="0.88"/>;
-    }
-    if (type === 'horizontal') {
-        const n = Math.max(4, Math.round(5 + (1 - open) * 7));
-        const tilt = 1 - open;
-        const slatH = Math.max(H / n * (0.32 + 0.58 * tilt), 0.55);
-        return (
-            <g>
-                {Array.from({ length: n }).map((_, i) => {
-                    const cy = y + (i + 0.5) * (H / n);
-                    return (
-                        <rect key={i} x={x} y={cy - slatH / 2} width={W} height={slatH}
-                              fill={fill} opacity={0.40 + tilt * 0.48}/>
-                    );
-                })}
-            </g>
-        );
-    }
-    const n = Math.max(4, Math.round(5 + (1 - open) * 7));
-    const tilt = 1 - open;
-    const slatW = Math.max(W / n * (0.28 + 0.62 * tilt), 0.55);
+    const rects = window.red5BlindElevationRects
+        ? window.red5BlindElevationRects(type, open, x, y, W, H)
+        : [];
+    if (!rects.length) return null;
     return (
         <g>
-            {Array.from({ length: n }).map((_, i) => {
-                const cx = x + (i + 0.5) * (W / n);
-                return (
-                    <rect key={i} x={cx - slatW / 2} y={y} width={slatW} height={H}
-                          fill={fill} opacity={0.40 + tilt * 0.48}/>
-                );
-            })}
+            {rects.map((r, i) => (
+                <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height}
+                      fill={fill} opacity={r.opacity}/>
+            ))}
         </g>
     );
 }
@@ -126,9 +108,9 @@ function WindowPlanPane(props) {
     const selected = !!props.selected;
     const showTrace = props.showTrace !== false;
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
-    const type = red5NormalizeBlindType(w.blind_type);
+    const type = wpNormBlindType(w.blind_type);
     const len = Math.max(Number(w.length) || 8, 3);
-    const typeName = type === 'horizontal' ? 'horizontal slats' : type === 'vertical' ? 'vertical slats' : 'roller';
+    const typeName = red5BlindSpecLocal(type).label;
     return (
         <div
             data-testid={props.testId}
@@ -201,72 +183,87 @@ function TracedWindowBlindMarks(props) {
     const axes = red5HeadSillAxes(verts);
     if (!axes) return null;
     const open = Math.max(0, Math.min(1, Number(props.open)));
-    const type = red5NormalizeBlindType(props.type);
+    const spec = red5BlindSpecLocal(props.type);
     const cover = 1 - open;
     const sealed = open < 0.01;
-    if (!sealed && cover < 0.01) return null;
+    if (!sealed && cover < 0.012 && spec.motion !== 'stack' && spec.motion !== 'lift') return null;
     const pad = 0.6;
-    const { sMin, sMax, hMax, hSpan, atSH, minX, maxX, minY, maxY } = axes;
-    const bandPoints = (frac) => {
-        const f = Math.min(1, Math.max(0, frac));
+    const { sMin, sMax, hMin, hMax, hSpan, sSpan, atSH } = axes;
+    const n = 10;
+    const lines = [];
+    if (sealed || spec.motion === 'drop') {
+        const f = sealed ? 1 : cover;
+        if (f <= 0.001) return null;
         const a = atSH(sMin - pad, hMax + 0.2);
         const b = atSH(sMax + pad, hMax + 0.2);
         const c = atSH(sMax + pad, hMax - f * hSpan);
         const d = atSH(sMin - pad, hMax - f * hSpan);
-        return [a, b, c, d].map(p => p[0] + ',' + p[1]).join(' ');
-    };
-    if (sealed || type === 'roller') {
-        const f = sealed ? 1 : cover;
-        if (f <= 0.001) return null;
-        return <polygon points={bandPoints(f)} fill="#1e293b" opacity={0.30 + 0.42 * f}/>;
+        return <polygon points={[a, b, c, d].map(p => p[0] + ',' + p[1]).join(' ')}
+                        fill="#1e293b" opacity={0.30 + 0.42 * f}/>;
     }
-    if (type === 'horizontal') {
-        const n = Math.max(5, Math.round(6 + cover * 10));
-        const sw = Math.max(0.32, Math.min(1.15, hSpan / n * 0.85));
-        const lines = [];
+    if (spec.family === 'horizontal' && spec.motion === 'lift') {
+        const band = cover * hSpan;
+        if (band < 0.15) return null;
+        const pitch = band / n;
+        const sw = Math.max(0.28, Math.min(1.2, pitch * 0.78));
         for (let i = 0; i < n; i++) {
-            const u = (i + 0.5) / n;
-            if (u > cover) continue;
-            const hv = hMax - u * hSpan;
+            const hv = hMax - (i + 0.5) * pitch;
             const a = atSH(sMin - pad, hv);
             const b = atSH(sMax + pad, hv);
             lines.push(
                 <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
                       stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                      opacity={0.40 + cover * 0.45}/>
+                      opacity={0.48 + cover * 0.38}/>
             );
         }
-        return (
-            <g>
-                {cover > 0.7 && (
-                    <polygon points={bandPoints(cover)} fill="#1e293b" opacity={0.18 + 0.35 * cover}/>
-                )}
-                {lines}
-            </g>
-        );
+        return <g>{lines}</g>;
     }
-    const n = Math.max(5, Math.round(6 + cover * 10));
-    const wPx = Math.max(0.4, maxX - minX);
-    const sw = Math.max(0.28, Math.min(1.0, wPx / n * 0.75));
-    const lines = [];
+    if (spec.family === 'horizontal' && spec.motion === 'tilt') {
+        const pitch = hSpan / n;
+        const sw = Math.max(0.28, pitch * (0.10 + 0.86 * cover));
+        for (let i = 0; i < n; i++) {
+            const hv = hMax - (i + 0.5) * pitch;
+            const a = atSH(sMin - pad, hv);
+            const b = atSH(sMax + pad, hv);
+            lines.push(
+                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
+                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
+                      opacity={0.38 + cover * 0.48}/>
+            );
+        }
+        return <g>{lines}</g>;
+    }
+    if (spec.family === 'vertical' && spec.motion === 'tilt') {
+        const pitch = sSpan / n;
+        const sw = Math.max(0.28, pitch * (0.10 + 0.86 * cover));
+        for (let i = 0; i < n; i++) {
+            const sv = sMin + (i + 0.5) * pitch;
+            const a = atSH(sv, hMin - 0.2);
+            const b = atSH(sv, hMax + 0.2);
+            lines.push(
+                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
+                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
+                      opacity={0.38 + cover * 0.48}/>
+            );
+        }
+        return <g>{lines}</g>;
+    }
+    /* vertical stack — vanes packed toward sMin, opening on sMax */
+    const band = open > 0.97 ? Math.max(0.35, sSpan * 0.045) : cover * sSpan;
+    if (band < 0.12) return null;
+    const pitch = band / n;
+    const sw = Math.max(0.28, pitch * 0.72);
     for (let i = 0; i < n; i++) {
-        const u = (i + 0.5) / n;
-        const x = minX + wPx * u;
+        const sv = sMin + (i + 0.5) * pitch;
+        const a = atSH(sv, hMin - 0.2);
+        const b = atSH(sv, hMax + 0.2);
         lines.push(
-            <line key={i} x1={x} y1={minY - 0.3} x2={x} y2={maxY + 0.3}
+            <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
                   stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                  opacity={0.40 + cover * 0.45}/>
+                  opacity={0.48 + cover * 0.38}/>
         );
     }
-    return (
-        <g>
-            {cover > 0.55 && (
-                <rect x={minX} y={minY} width={wPx} height={Math.max(0.4, maxY - minY)}
-                      fill="#1e293b" opacity={(cover - 0.55) * 0.55}/>
-            )}
-            {lines}
-        </g>
-    );
+    return <g>{lines}</g>;
 }
 
 /** Blind marks clipped to a traced glass polygon (plan % coords). */
@@ -277,7 +274,7 @@ function TracedWindowBlindOverlay(props) {
     const selected = !!props.selected;
     const showTrace = props.showTrace !== false;
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
-    const type = red5NormalizeBlindType(w.blind_type);
+    const type = wpNormBlindType(w.blind_type);
     const clipId = 'wb-clip-' + String(w.id || props.clipKey || 'w');
     return (
         <g data-testid={props.testId}>
@@ -311,8 +308,8 @@ function WindowBlindsPopout(props) {
     const layout = layoutMode === true;
     const openPct = Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
     const label = (w.name && String(w.name).trim()) || ('W' + ((windowIndex || 0) + 1));
-    const type = red5NormalizeBlindType(w.blind_type);
-    const typeName = type === 'horizontal' ? 'Horizontal' : type === 'vertical' ? 'Vertical' : 'Roller';
+    const spec = red5BlindSpecLocal(w.blind_type);
+    const typeName = spec.short || spec.label;
     const traced = Array.isArray(w.vertices) && w.vertices.length >= 3;
     const placeAbove = (Number(w.y) || 50) > 28;
     const storageKey = 'red5.winBlindPopout.' + String(w.id || windowIndex || 'w');
@@ -353,13 +350,13 @@ function WindowBlindsPopout(props) {
     return (
         <div
             data-testid="window-blinds-popout"
-            className={`absolute z-[96] w-[240px] rounded-md border shadow-2xl pointer-events-auto ${
+            className={`absolute z-[96] w-[280px] rounded-md border shadow-2xl pointer-events-auto ${
                 dk ? 'bg-slate-950/95 border-sky-500/70 text-slate-200' : 'bg-white/95 border-sky-400 text-slate-800'
             }`}
             style={{
                 left: `${w.x}%`,
                 top: `${w.y}%`,
-                width: 240,
+                width: 280,
                 zIndex: 96,
                 transform: `translate(-50%, ${baseTy}) translate(${pos.x}px, ${pos.y}px)`,
                 cursor: drag ? 'grabbing' : 'grab',
@@ -380,7 +377,7 @@ function WindowBlindsPopout(props) {
             <div className={`flex items-center justify-between px-2 py-1.5 border-b text-[9px] uppercase tracking-widest ${
                 dk ? 'border-slate-700 text-sky-300' : 'border-slate-200 text-sky-700'
             }`}>
-                <span className="font-mono truncate">{label} · {typeName}</span>
+                <span className="font-mono truncate" title={spec.hint}>{label} · {typeName}</span>
                 <button type="button" className="text-sm px-1 opacity-60 hover:opacity-100 cursor-pointer"
                         data-testid="window-blinds-popout-close"
                         onClick={() => { if (onClose) onClose(); }}>×</button>
@@ -409,17 +406,16 @@ function WindowBlindsPopout(props) {
                            }}/>
                     <span className="font-mono text-[10px] text-sky-400 w-9 text-right">{openPct}%</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                    <span className="text-[8px] opacity-60 w-10 shrink-0 uppercase" title="Blind style">Type</span>
-                    <div className="flex-1 min-w-0">
-                        <WindowBlindTypeSelect
-                            theme={theme}
-                            value={w.blind_type}
-                            testId={`window-type-${w.id}`}
-                            onChange={(bt) => patch({ blind_type: bt })}
-                        />
-                    </div>
+                <div>
+                    <div className="text-[8px] opacity-60 uppercase mb-1" title="Blind style">Type</div>
+                    <WindowBlindTypeSelect
+                        theme={theme}
+                        value={w.blind_type}
+                        testId={`window-type-${w.id}`}
+                        onChange={(bt) => patch({ blind_type: bt })}
+                    />
                 </div>
+                <div className={`text-[8px] leading-snug ${dk ? 'text-slate-500' : 'text-slate-500'}`}>{spec.hint}</div>
                 {layout && (
                     <div className="flex items-center justify-between pt-1 border-t border-slate-700/40">
                         <span className="text-[8px] font-mono opacity-60">
@@ -451,7 +447,6 @@ function WindowBlindsPopout(props) {
     );
 }
 
-window.red5NormalizeBlindType = red5NormalizeBlindType;
 window.red5HeadSillAxes = red5HeadSillAxes;
 window.WindowBlindTypeSelect = WindowBlindTypeSelect;
 window.WindowBlindPreview = WindowBlindPreview;

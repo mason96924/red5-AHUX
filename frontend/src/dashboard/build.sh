@@ -35,6 +35,7 @@ MODULES=(
     "$PUB/js/dashboard-components.js"
     "$PUB/js/schema-config.js"
     "$PUB/js/preview-components.js"
+    "$PUB/js/blind-types.js"
     "$PUB/js/sun-path.js"
     "$PUB/js/elc-sun-path-overlay.js"
     "$PUB/js/dashboard/dashboard-helpers.js"

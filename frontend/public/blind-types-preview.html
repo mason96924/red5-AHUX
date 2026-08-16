@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" data-cache-policy="no-cache">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta charset="utf-8">
+<title>AHUX blind types — Open % behavior</title>
+<style>
+  :root { --bg:#0b1220; --panel:#121826; --text:#e2e8f0; --muted:#94a3b8; --line:#334155; --sky:#38bdf8; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:28px 24px 72px; background:radial-gradient(ellipse at top,#152038 0%,var(--bg) 55%);
+         color:var(--text); font:14px/1.45 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+  h1 { font-size:20px; letter-spacing:.04em; margin:0 0 6px; }
+  .sub { color:var(--muted); max-width:920px; margin:0 0 22px; }
+  .picker { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; max-width:640px; margin:0 0 28px; }
+  .pick { background:#121826; border:1px solid #334155; border-radius:8px; padding:6px 6px 8px; cursor:default; text-align:center; }
+  .pick.on { border-color:#38bdf8; box-shadow:0 0 0 1px #38bdf8; background:#0b1c2e; }
+  .pick .nm { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#94a3b8; margin-top:6px; }
+  .pick.on .nm { color:#7dd3fc; }
+  .live { display:flex; align-items:center; gap:14px; margin:0 0 22px; max-width:640px; }
+  .live input { flex:1; accent-color:var(--sky); }
+  .live b { font-family:ui-monospace,monospace; color:#fbbf24; width:4.5rem; }
+  table { border-collapse:collapse; width:100%; max-width:1100px; }
+  th, td { border:1px solid var(--line); padding:8px; vertical-align:top; }
+  th { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  td.lab { width:220px; background:var(--panel); }
+  td.lab strong { display:block; color:#f8fafc; font-size:13px; }
+  td.lab span { color:var(--muted); font-size:12px; }
+  svg { display:block; width:160px; height:88px; }
+  .note { margin-top:22px; color:var(--muted); font-size:13px; max-width:920px; }
+</style>
+</head>
+<body>
+  <h1>Blind type selection</h1>
+  <p class="sub">Mapper, floor popout, and window graphic all use this picker — not a three-item dropdown.
+    Thumbnails are drawn at 50% open so lift vs tilt vs stack is obvious. Click a tile to choose.</p>
+  <div class="picker" id="picker"></div>
+  <h1>Blind types vs Open %</h1>
+  <p class="sub">Open % is always the fraction of the pane that is clear glass — not vane angle.
+    Tilt types stay in place and open gaps. Lift / stack / roller move the covering out of the way.</p>
+  <div class="live">
+    <span>Live Open</span>
+    <input id="live" type="range" min="0" max="100" value="50">
+    <b id="livePct">50%</b>
+  </div>
+  <div id="liveRow" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>0%</th><th>25%</th><th>50%</th><th>75%</th><th>100%</th>
+      </tr>
+    </thead>
+    <tbody id="grid"></tbody>
+  </table>
+  <p class="note">Existing maps: <code>vertical</code> stays tilt (vanes turn). <code>horizontal</code> stays lift (stack up).
+    New values: <code>vertical-stack</code>, <code>horizontal-tilt</code>.</p>
+  <script src="/assets/js/blind-types.js?v=blindmotion1"></script>
+  <script>
+    function pane(type, open) {
+      var W = 160, H = 88;
+      var gx = 10, gy = 10, gw = 140, gh = 64;
+      var rects = window.red5BlindElevationRects(type, open, gx, gy, gw, gh);
+      var inner = rects.map(function (r) {
+        return '<rect x="'+r.x+'" y="'+r.y+'" width="'+r.width+'" height="'+r.height+'" fill="#1e293b" opacity="'+r.opacity+'"/>';
+      }).join('');
+      return '<svg viewBox="0 0 '+W+' '+H+'">'
+        + '<rect x="4" y="4" width="'+(W-8)+'" height="'+(H-8)+'" rx="3" fill="#cbd5e1" stroke="#64748b" stroke-width="4"/>'
+        + '<rect x="'+gx+'" y="'+gy+'" width="'+gw+'" height="'+gh+'" fill="#38bdf8" opacity="0.55"/>'
+        + inner + '</svg>';
+    }
+    var types = window.RED5_BLIND_TYPES;
+    var picker = document.getElementById('picker');
+    types.forEach(function (t, i) {
+      var el = document.createElement('div');
+      el.className = 'pick' + (i === 3 ? ' on' : '');
+      el.innerHTML = pane(t.id, 0.5) + '<div class="nm">'+t.short+'</div>';
+      picker.appendChild(el);
+    });
+    var pcts = [0, 25, 50, 75, 100];
+    var grid = document.getElementById('grid');
+    types.forEach(function (t) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td class="lab"><strong>'+t.label+'</strong><span>'+t.hint+'</span></td>'
+        + pcts.map(function (p) { return '<td>'+pane(t.id, p/100)+'</td>'; }).join('');
+      grid.appendChild(tr);
+    });
+    function renderLive() {
+      var p = parseInt(document.getElementById('live').value, 10) || 0;
+      document.getElementById('livePct').textContent = p + '%';
+      document.getElementById('liveRow').innerHTML = types.map(function (t) {
+        return '<div style="background:#121826;border:1px solid #334155;border-radius:8px;padding:8px 8px 6px;">'
+          + '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">'+t.short+'</div>'
+          + pane(t.id, p/100) + '</div>';
+      }).join('');
+    }
+    document.getElementById('live').addEventListener('input', renderLive);
+    renderLive();
+  </script>
+</body>
+</html>

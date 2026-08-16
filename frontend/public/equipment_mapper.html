@@ -99,7 +99,7 @@
         - Custom sensor groups
         - All Equipment Schema Mapper features
     -->
-    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=59efbb478c">
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=79b8e698ce">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
@@ -3980,7 +3980,9 @@
                                         stretch_x: verts ? 1 : (w.stretch_x != null ? w.stretch_x : 1),
                                         stretch_y: verts ? 1 : (w.stretch_y != null ? w.stretch_y : 1),
                                         name: w.name || '',
-                                        blind_type: (w.blind_type === 'horizontal' || w.blind_type === 'vertical') ? w.blind_type : 'roller',
+                                        blind_type: window.red5NormalizeBlindType
+                                            ? window.red5NormalizeBlindType(w.blind_type)
+                                            : ((w.blind_type === 'horizontal' || w.blind_type === 'vertical' || w.blind_type === 'horizontal-tilt' || w.blind_type === 'vertical-stack') ? w.blind_type : 'roller'),
                                         ...(verts ? { vertices: verts } : {}),
                                     });
                                 });
@@ -5648,8 +5650,8 @@
                                                                    }}/>
                                                             <span className="font-mono text-[9px] text-sky-300 w-9 text-right">{openPct}%</span>
                                                         </div>
-                                                        <div className="flex items-center gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
-                                                            <span className="text-[8px] text-slate-500 w-10 shrink-0">Type</span>
+                                                        <div className="mt-1.5" onClick={e => e.stopPropagation()}>
+                                                            <div className="text-[8px] text-slate-500 uppercase mb-1">Type</div>
                                                             {window.WindowBlindTypeSelect ? (
                                                                 <window.WindowBlindTypeSelect
                                                                     theme="dark"
@@ -7246,9 +7248,10 @@
                 '/assets/js/image-picker.js',
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
-                '/assets/js/sun-path.js?v=sunglow-room1',
+                '/assets/js/sun-path.js?v=blindmotion1',
+                '/assets/js/blind-types.js?v=blindmotion1',
                 '/assets/js/elc-sun-path-overlay.js?v=daysel5',
-                '/assets/js/window-blinds-popout.js'
+                '/assets/js/window-blinds-popout.js?v=blindpicker1'
             ];
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {

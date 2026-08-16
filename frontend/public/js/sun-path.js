@@ -287,6 +287,16 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
     } else if (winRoom) {
       continue;
     }
+    var bSpec = window.red5BlindSpec ? window.red5BlindSpec(w.blind_type) : null;
+    if (bSpec && bSpec.motion === 'stack') {
+      var coverT = 1 - open;
+      var x1s = cx - tx * half, y1s = cy - ty * half;
+      var x2s = cx + tx * half, y2s = cy + ty * half;
+      x1s = x1s + (x2s - x1s) * coverT;
+      y1s = y1s + (y2s - y1s) * coverT;
+      cx = (x1s + x2s) / 2; cy = (y1s + y2s) / 2;
+      half = Math.hypot(x2s - x1s, y2s - y1s) / 2;
+    }
     var openEase = Math.pow(open, 0.7);
     var base = enter * elevF;
     var throwLen = (10 + 24 * base) * (1.0 + 1.0 * openEase);
@@ -820,10 +830,11 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var clipUrl = clipId ? ('url(#' + clipId + ')') : undefined;
     var wid = w.id || i;
     var bType = String(w.blind_type || w.blindType || 'roller').toLowerCase();
+    var spec = window.red5BlindSpec ? window.red5BlindSpec(bType)
+      : { family: bType, motion: (bType === 'horizontal' || bType === 'vertical') ? 'tilt' : 'drop' };
     var cov = blind;
     var openFrac = open;
-    var gapStyle = (bType === 'horizontal' || bType === 'vertical')
-      && openFrac > 0.01 && openFrac < 0.92;
+    var gapStyle = spec.motion === 'tilt' && openFrac > 0.01 && openFrac < 0.98;
     function flareFar(n1x, n1y, n2x, n2y) {
       var hh = Math.hypot(n2x - n1x, n2y - n1y) / 2;
       var spr = hh * (0.18 + 0.28 * openEase);
@@ -875,35 +886,32 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
         return [sv * fr.sx + hv * fr.hx, sv * fr.sy + hv * fr.hy];
       }
       var si;
-      if (bType === 'horizontal') {
-        var hn = Math.max(4, Math.round(5 + openFrac * 10));
+      if (spec.family === 'horizontal') {
+        var hn = 10;
+        var pitchH = hSpan / hn;
+        var gapH = Math.max(0.06, pitchH * openFrac);
         for (si = 0; si < hn; si++) {
-          var u0 = cov + openFrac * ((si + 0.18) / hn);
-          var u1 = cov + openFrac * ((si + 0.55) / hn);
-          if (u1 <= cov + 0.01) continue;
-          var hv = ((fr.hMax - u0 * hSpan) + (fr.hMax - u1 * hSpan)) / 2;
-          var hn1 = atSH(fr.sMin - 0.2, hv);
-          var hn2 = atSH(fr.sMax + 0.2, hv);
+          var hc = fr.hMin + pitchH * (si + 0.5);
+          var hv0 = hc - gapH * 0.5, hv1 = hc + gapH * 0.5;
+          var hn1 = atSH(fr.sMin - 0.2, hv0);
+          var hn2 = atSH(fr.sMax + 0.2, hv0);
           var hf = flareFar(hn1[0], hn1[1], hn2[0], hn2[1]);
           pushVolume(hn1[0], hn1[1], hn2[0], hn2[1], hf[0], hf[1], hf[2], hf[3],
             stripeA * 0.85, gradId, clipUrl, 'wh-' + wid + '-' + si);
         }
         return;
       }
-      var vn = Math.max(5, Math.round(6 + openFrac * 10));
-      var gapW = (0.18 + 0.42 * openFrac) * (sSpan / vn);
+      var vn = 10;
+      var pitchS = sSpan / vn;
+      var gapW = Math.max(0.06, pitchS * openFrac);
       for (si = 0; si < vn; si++) {
-        var vc = fr.sMin + sSpan * ((si + 0.5) / vn);
+        var vc = fr.sMin + pitchS * ((si + 0.5));
         var vs0 = vc - gapW * 0.5, vs1 = vc + gapW * 0.5;
         var vn1 = atSH(vs0, fr.hMin);
         var vn2 = atSH(vs1, fr.hMin);
         var vf = flareFar(vn1[0], vn1[1], vn2[0], vn2[1]);
         pushVolume(vn1[0], vn1[1], vn2[0], vn2[1], vf[0], vf[1], vf[2], vf[3],
           stripeA * 0.9, gradId, clipUrl, 'wv-' + wid + '-' + si);
-        var va1 = atSH(vs0, fr.hMin + hSpan * 0.55);
-        var va2 = atSH(vs1, fr.hMin + hSpan * 0.55);
-        pushVolume(va1[0], va1[1], va2[0], va2[1], vf[0], vf[1], vf[2], vf[3],
-          stripeA * 0.22, gradId, clipUrl, 'wva-' + wid + '-' + si);
       }
     }
     if (gapStyle) {
@@ -912,6 +920,20 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     }
     if (traced) {
       var near = w.vertices.map(function (v) { return [Number(v[0]), Number(v[1])]; });
+      var frOpen = (window.red5OpenGlassFrame && gapFrameFromVerts(w.vertices))
+        ? window.red5OpenGlassFrame(gapFrameFromVerts(w.vertices), bType, openFrac)
+        : null;
+      if (frOpen && spec.motion !== 'tilt') {
+        var atOpen = function (sv, hv) {
+          return [sv * frOpen.sx + hv * frOpen.hx, sv * frOpen.sy + hv * frOpen.hy];
+        };
+        near = [
+          atOpen(frOpen.sMin, frOpen.hMin),
+          atOpen(frOpen.sMax, frOpen.hMin),
+          atOpen(frOpen.sMax, frOpen.hMax),
+          atOpen(frOpen.sMin, frOpen.hMax)
+        ];
+      }
       var far = near.map(function (p) { return [p[0] + dx, p[1] + dy]; });
       var tLayers = [
         { k: 1.42, a: a0 * 0.10 },
@@ -931,6 +953,13 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
         );
       }
       continue;
+    }
+    if (spec.motion === 'stack' && openFrac < 0.99) {
+      var cvr = 1 - openFrac;
+      x1 = x1 + (x2 - x1) * cvr;
+      y1 = y1 + (y2 - y1) * cvr;
+      fx1 = x1 + dx - px; fy1 = y1 + dy - py;
+      fx2 = x2 + dx + px; fy2 = y2 + dy + py;
     }
     var lift = Math.max(1.6, Math.min(4.2, half * 0.55));
     var midThrow = 0.92;

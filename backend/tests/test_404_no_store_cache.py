@@ -68,3 +68,25 @@ async def test_assets_alias_404_has_no_store(client):
     assert "no-store" in cc.lower(), (
         f"404 from /assets alias MUST send Cache-Control: no-store.  Got: {cc!r}"
     )
+
+
+@pytest.mark.asyncio
+async def test_js_alias_serves_docs_index(client):
+    """Relative ``js/docs_index.js`` from dashboard.html must 200.
+
+    Without this alias, uvicorn-direct (AHUX Cloudflare → :8003) 404s
+    and the dashboard crashes: ReferenceError: red5DocsIndex is not defined.
+    """
+    r = await client.get("/js/docs_index.js")
+    assert r.status_code == 200, r.text[:200]
+    assert "red5DocsIndex" in r.text
+
+
+@pytest.mark.asyncio
+async def test_js_alias_404_has_no_store(client):
+    r = await client.get("/js/THIS_FILE_DOES_NOT_EXIST_404.js")
+    assert r.status_code == 404
+    cc = r.headers.get("cache-control", "")
+    assert "no-store" in cc.lower(), (
+        f"404 from /js alias MUST send Cache-Control: no-store.  Got: {cc!r}"
+    )

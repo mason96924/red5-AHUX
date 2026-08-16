@@ -103,7 +103,7 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
-    <link rel="stylesheet" href="equipment_mapper.css" id="app-css">
+    <link rel="stylesheet" href="/api/assets/equipment_mapper.css" id="app-css">
     <style>
         /* Critical animation CSS inlined as fallback */
         .preserve-3d { transform-style: preserve-3d; }
@@ -144,14 +144,14 @@
     </script>
     <script>
         if (window.location.pathname.indexOf('.html') === -1) {
-            document.getElementById('app-css').href = '/assets/equipment_mapper.css';
+            document.getElementById('app-css').href = '/api/assets/equipment_mapper.css';
         }
     </script>
-    <script src="js/i18n.js"></script>
-    <script src="js/toast.js"></script>
+    <script src="/api/assets/js/i18n.js"></script>
+    <script src="/api/assets/js/toast.js"></script>
     <script>
         if(!window.t){
-            var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
+            var _p=['/api/assets/js/i18n.js','/assets/js/i18n.js','/js/i18n.js'];
             (function tryNext(i){if(i>=_p.length||window.t)return;var s=document.createElement('script');s.src=_p[i];s.onerror=function(){tryNext(i+1);};document.head.appendChild(s);})(0);
         }
     </script>

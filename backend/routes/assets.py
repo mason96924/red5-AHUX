@@ -155,6 +155,19 @@ async def assets_alias(path: str, request: Request,
     return await assets(path, request, tenant)
 
 
+@router.get("/js/{path:path}")
+async def js_alias(path: str, request: Request,
+                   tenant: Optional[dict] = Depends(current_tenant_optional)):
+    """Bare `/js/<path>` -- V1.9 Flask URL spelling.
+
+    dashboard.html (and mapper / setup) load helpers with relative
+    ``src="js/docs_index.js"``.  AHU hid that behind nginx; AHUX
+    Cloudflare hits uvicorn directly, so those URLs 404'd and the
+    dashboard crashed with ``ReferenceError: red5DocsIndex is not defined``.
+    """
+    return await assets(f"js/{path}", request, tenant)
+
+
 @router.get("/api/thumb")
 async def thumb(path: str = Query(...),
                 max: int = Query(256, ge=16, le=1024),

@@ -31,16 +31,16 @@
          The bumped query string forces a refetch when any of these files
          change.  Bump the date stamp on a per-deploy basis whenever any
          of `js/*.js` changes -- it's just a string the server ignores. -->
-    <script src="js/i18n.js?v=2026-08-05c"></script>
-    <script src="js/toast.js?v=2026-06-20a"></script>
-    <script src="js/docs_index.js?v=2026-06-20a"></script>
-    <script src="js/audit_log.js?v=2026-07-15a"></script>
-    <script src="js/g36_timeline.js?v=2026-06-20a"></script>
-    <script src="js/qrcode.min.js?v=2026-02-21a"></script>
+    <script src="/api/assets/js/i18n.js?v=2026-08-05c"></script>
+    <script src="/api/assets/js/toast.js?v=2026-06-20a"></script>
+    <script src="/api/assets/js/docs_index.js?v=2026-06-20a"></script>
+    <script src="/api/assets/js/audit_log.js?v=2026-07-15a"></script>
+    <script src="/api/assets/js/g36_timeline.js?v=2026-06-20a"></script>
+    <script src="/api/assets/js/qrcode.min.js?v=2026-02-21a"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
-            var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
+            var _p=['/api/assets/js/i18n.js','/assets/js/i18n.js','/js/i18n.js'];
             (function tryNext(i){
                 if(i>=_p.length||window.t)return;
                 var s=document.createElement('script');s.src=_p[i];
@@ -54,18 +54,19 @@
         // pre-existing browser cached `js/dynamics-animation.js` against the
         // old (cache-permissive) headers, the very next reload pulls fresh.
         window.__BUST__ = '?v=' + Date.now();
-        // Load dynamics animation as plain JS (not via Babel)
+        // Load dynamics animation as plain JS (not via Babel).
+        // Always go through /api/assets/ — relative js/*.js 404s on this
+        // backend (uvicorn has no nginx /js/ tree) and that crash-looped
+        // the dashboard with `red5DocsIndex is not defined`.
         (function() {
             var s = document.createElement('script');
-            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/dynamics-animation.js' : '/assets/js/dynamics-animation.js';
-            s.src = base + window.__BUST__;
+            s.src = '/api/assets/js/dynamics-animation.js' + window.__BUST__;
             document.head.appendChild(s);
         })();
         // Load 3D weather strip engine
         (function() {
             var s = document.createElement('script');
-            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/psy-3d-engine.js' : '/assets/js/psy-3d-engine.js';
-            s.src = base + window.__BUST__;
+            s.src = '/api/assets/js/psy-3d-engine.js' + window.__BUST__;
             document.head.appendChild(s);
         })();
         // Preload Three.js so 3D Weather tab opens instantly

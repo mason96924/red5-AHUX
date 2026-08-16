@@ -615,16 +615,17 @@
       const p = solarAltAz(lat, doy, hr, lonDeg, tzHours);
       if (p.el <= 0) return;
       const q = skyTo(p.az, p.el);
-      ctx.beginPath(); ctx.arc(q.x, q.y, 2.2, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(220, 40, 32, 0.95)'; ctx.fill();
-      ctx.font = 'bold 12px ui-sans-serif, system-ui';
+      ctx.beginPath(); ctx.arc(q.x, q.y, 1.35, 0, Math.PI * 2);
+      ctx.fillStyle = '#c41e1e'; ctx.fill();
+      ctx.save();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 1;
+      ctx.font = '10px Arial, Helvetica, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)';
-      ctx.strokeText(String(hr).padStart(2, '0'), q.x, q.y - 4);
-      ctx.fillStyle = 'rgba(220, 40, 32, 0.95)';
-      ctx.fillText(String(hr).padStart(2, '0'), q.x, q.y - 4);
+      ctx.fillStyle = '#c41e1e';
+      ctx.fillText(String(hr).padStart(2, '0'), q.x, q.y - 2.5);
+      ctx.restore();
     });
 
     if (opts.showCardinals !== false) {
@@ -640,53 +641,52 @@
     }
 
     const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m, opts.timezone);
-    const liveEl = (opts.sun && Number.isFinite(opts.sun.elevation))
-      ? opts.sun.elevation * Math.PI / 180 : (todSun.elevation * Math.PI / 180);
-    const liveAz = (opts.sun && Number.isFinite(opts.sun.azimuth))
-      ? opts.sun.azimuth * Math.PI / 180 : (todSun.azimuth * Math.PI / 180);
+    const bandTod = solarAltAz(lat, doy, hour, lonDeg, tzHours);
+    const liveEl = bandTod.el > 0 ? bandTod.el
+      : ((opts.sun && Number.isFinite(opts.sun.elevation))
+        ? opts.sun.elevation * Math.PI / 180 : (todSun.elevation * Math.PI / 180));
+    const liveAz = bandTod.el > 0 ? bandTod.az
+      : ((opts.sun && Number.isFinite(opts.sun.azimuth))
+        ? opts.sun.azimuth * Math.PI / 180 : (todSun.azimuth * Math.PI / 180));
     if (liveEl > 0) {
       const sun = skyTo(liveAz, liveEl);
-      const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 18);
+      const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 16);
       g.addColorStop(0, 'rgba(255,230,120,0.95)');
       g.addColorStop(1, 'rgba(255,200,60,0)');
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 18, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 5.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffe08a'; ctx.fill();
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#dc2820'; ctx.fill();
       const adx = sun.x - cx, ady = sun.y - cy;
       const alen = Math.hypot(adx, ady);
       if (alen > 6) {
         const ux = adx / alen, uy = ady / alen;
-        const headLen = Math.min(13, alen * 0.16);
-        const headW = headLen * 0.42;
-        const bx = sun.x - ux * headLen, by = sun.y - uy * headLen;
+        const headLen = 10;
+        const headW = 4.2;
+        const tipX = sun.x + ux * 8;
+        const tipY = sun.y + uy * 8;
+        const bx = tipX - ux * headLen, by = tipY - uy * headLen;
         const px = -uy, py = ux;
         ctx.save();
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(bx, by);
-        ctx.strokeStyle = 'rgba(72, 32, 6, 0.88)';
-        ctx.lineWidth = 3.6;
-        ctx.stroke();
-        ctx.strokeStyle = '#ff9a1a';
-        ctx.lineWidth = 2.1;
+        ctx.strokeStyle = '#dc2820';
+        ctx.lineWidth = 1.15;
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(sun.x, sun.y);
+        ctx.moveTo(tipX, tipY);
         ctx.lineTo(bx + px * headW, by + py * headW);
         ctx.lineTo(bx - px * headW, by - py * headW);
         ctx.closePath();
-        ctx.fillStyle = '#ff9a1a';
-        ctx.strokeStyle = 'rgba(72, 32, 6, 0.88)';
-        ctx.lineWidth = 1.15;
+        ctx.fillStyle = '#dc2820';
         ctx.fill();
-        ctx.stroke();
         ctx.restore();
       }
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 6, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffe08a'; ctx.fill();
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 2.6, 0, Math.PI * 2);
-      ctx.fillStyle = '#e04030'; ctx.fill();
     }
     ctx.fillStyle = '#96d2ff';
     ctx.beginPath(); ctx.arc(cx, cy, 2.1, 0, Math.PI * 2); ctx.fill();

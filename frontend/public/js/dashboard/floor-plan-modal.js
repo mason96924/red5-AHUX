@@ -20,6 +20,37 @@ function isTracedFloorWindow(w) {
     return !!(w && Array.isArray(w.vertices) && w.vertices.length >= 3);
 }
 
+function renderFloorNsLetters(orientation) {
+    const o = orientation || {};
+    return ['north', 'south', 'west', 'east'].map((k) => {
+        const p = o[k];
+        if (!p || p.x == null || p.y == null) return null;
+        const letter = k === 'north' ? 'N' : k === 'south' ? 'S' : k === 'west' ? 'W' : 'E';
+        const ns = (k === 'north' || k === 'south');
+        return (
+            <div
+                key={'ns-' + k}
+                data-testid={'floor-ns-marker-' + k}
+                className="absolute pointer-events-none"
+                style={{
+                    left: `${p.x}%`,
+                    top: `${p.y}%`,
+                    transform: 'translate(-50%,-50%)',
+                    zIndex: 50,
+                }}
+            >
+                <div className={`w-7 h-7 rounded-full text-[11px] font-black flex items-center justify-center border-2 shadow-lg ${
+                    ns
+                        ? 'bg-cyan-400 text-slate-900 border-cyan-100'
+                        : 'bg-amber-400 text-slate-900 border-amber-100'
+                }`}>
+                    {letter}
+                </div>
+            </div>
+        );
+    });
+}
+
 /** Amber VAV/AHU ring: sun exposure × blind open of windows lighting this marker. */
 function liveSunRingStyle(xPct, yPct, sunState, windows, buildingFacingOffset, rooms) {
     if (!(sunState && sunState.enabled && sunState.sun)) return { score: 0, style: null, color: null };
@@ -169,6 +200,7 @@ const floorModalTree = (
                                     showRooms={true}
                                 />
                             )}
+                            {renderFloorNsLetters(floorData.floor.orientation)}
                             {/* Live windows — 2.5D bars and 2D traced glass. Click pops Open + Type. */}
                             {(floorData.floor.windows || []).map((w, wi) => {
                                 if (isTracedFloorWindow(w)) return null;

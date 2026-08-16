@@ -8,25 +8,28 @@ function WindowBlindGraphic(props) {
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
     const bt = String(w.blind_type || 'roller').toLowerCase();
     const type = (bt === 'horizontal' || bt === 'vertical') ? bt : 'roller';
+    const sealed = open < 0.01;
     const W = 280, H = 180;
     const glass = { x: 28, y: 18, w: 224, h: 144 };
     const slats = [];
-    if (type === 'roller') {
-        const drop = (1 - open) * glass.h;
-        slats.push({ kind: 'roller', y: glass.y, h: drop });
-    } else if (type === 'horizontal') {
-        const n = 12;
-        const closed = 1 - open;
-        for (let i = 0; i < n; i++) {
-            const y = glass.y + (i + 0.5) * (glass.h / n);
-            slats.push({ kind: 'h', y: y, tilt: closed });
-        }
-    } else {
-        const n = 10;
-        const closed = 1 - open;
-        for (let i = 0; i < n; i++) {
-            const x = glass.x + (i + 0.5) * (glass.w / n);
-            slats.push({ kind: 'v', x: x, tilt: closed });
+    if (!sealed) {
+        if (type === 'roller') {
+            const drop = (1 - open) * glass.h;
+            slats.push({ kind: 'roller', y: glass.y, h: drop });
+        } else if (type === 'horizontal') {
+            const n = 12;
+            const closed = 1 - open;
+            for (let i = 0; i < n; i++) {
+                const y = glass.y + (i + 0.5) * (glass.h / n);
+                slats.push({ kind: 'h', y: y, tilt: closed });
+            }
+        } else {
+            const n = 10;
+            const closed = 1 - open;
+            for (let i = 0; i < n; i++) {
+                const x = glass.x + (i + 0.5) * (glass.w / n);
+                slats.push({ kind: 'v', x: x, tilt: closed });
+            }
         }
     }
     return (
@@ -40,16 +43,20 @@ function WindowBlindGraphic(props) {
                     <stop offset="1" stopColor="#fbbf24" stopOpacity="0.45"/>
                 </linearGradient>
             </defs>
-            {type === 'roller' && slats[0] && slats[0].h > 0.5 && (
+            {sealed && (
+                <rect x={glass.x} y={glass.y} width={glass.w} height={glass.h}
+                      fill="#334155" opacity="0.88"/>
+            )}
+            {!sealed && type === 'roller' && slats[0] && slats[0].h > 0.5 && (
                 <rect x={glass.x} y={glass.y} width={glass.w} height={slats[0].h}
                       fill="#334155" opacity="0.88"/>
             )}
-            {type === 'horizontal' && slats.map((s, i) => (
+            {!sealed && type === 'horizontal' && slats.map((s, i) => (
                 <rect key={i} x={glass.x + 2} y={s.y - (1.2 + s.tilt * 3)}
                       width={glass.w - 4} height={1.4 + s.tilt * 7}
                       fill="#1e293b" opacity={0.35 + s.tilt * 0.55}/>
             ))}
-            {type === 'vertical' && slats.map((s, i) => (
+            {!sealed && type === 'vertical' && slats.map((s, i) => (
                 <rect key={i} x={s.x - (1.2 + s.tilt * 4)} y={glass.y + 2}
                       width={1.4 + s.tilt * 9} height={glass.h - 4}
                       fill="#1e293b" opacity={0.35 + s.tilt * 0.55}/>

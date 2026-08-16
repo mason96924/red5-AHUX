@@ -6136,6 +6136,19 @@
                                                 </g>
                                             )}
                                             {floorWindows.filter(w => w.floorIdx === currentFloorIdx && isTracedWindow(w)).map(w => (
+                                                window.TracedWindowBlindOverlay ? (
+                                                    <window.TracedWindowBlindOverlay
+                                                        key={'wv-'+w.id}
+                                                        w={w}
+                                                        selected={selectedWindowId === w.id}
+                                                        testId={'floor-window-'+w.id}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setSelectedWindowId(w.id);
+                                                            setWindowsPanelOpen(true);
+                                                        }}
+                                                    />
+                                                ) : (
                                                 <polygon key={'wv-'+w.id}
                                                     points={w.vertices.map(v => `${v[0]},${v[1]}`).join(' ')}
                                                     fill={selectedWindowId === w.id ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)'}
@@ -6148,6 +6161,7 @@
                                                         setWindowsPanelOpen(true);
                                                     }}
                                                 />
+                                                )
                                             ))}
                                         </svg>
                                         {(() => {
@@ -6209,6 +6223,19 @@
                                         {/* ELC + Window wall segments (2.5D). Traced 2D glass is the polygon only. */}
                                         {floorWindows.filter(w => w.floorIdx === currentFloorIdx && !isTracedWindow(w)).map(w => {
                                             const sel = selectedWindowId === w.id;
+                                            if (window.WindowPlanPane) {
+                                                return (
+                                                    <window.WindowPlanPane
+                                                        key={w.id}
+                                                        w={w}
+                                                        selected={sel}
+                                                        testId={`floor-window-${w.id}`}
+                                                        cursor="move"
+                                                        onMouseDown={(e) => handleWindowDragStart(e, w.id)}
+                                                        onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); setWindowsPanelOpen(true); }}
+                                                    />
+                                                );
+                                            }
                                             const open = 1 - Math.min(1, Math.max(0, w.blind_level || 0));
                                             const len = Math.max(Number(w.length) || 8, 3);
                                             return (

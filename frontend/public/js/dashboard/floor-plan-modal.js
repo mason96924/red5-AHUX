@@ -172,6 +172,24 @@ const floorModalTree = (
                                 if (isTracedFloorWindow(w)) return null;
                                 const wid = w.id != null ? w.id : ('idx-' + wi);
                                 const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
+                                const Pane = typeof WindowPlanPane === 'function' ? WindowPlanPane : window.WindowPlanPane;
+                                if (Pane) {
+                                    return (
+                                        <Pane
+                                            key={wid}
+                                            w={w}
+                                            selected={sel}
+                                            testId={`live-window-${wid}`}
+                                            zSelected={45}
+                                            zIdle={35}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
+                                                if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
+                                            }}
+                                        />
+                                    );
+                                }
                                 const open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
                                 const len = Math.max(Number(w.length) || 8, 3);
                                 return (
@@ -213,6 +231,23 @@ const floorModalTree = (
                                     if (!isTracedFloorWindow(w)) return null;
                                     const wid = w.id != null ? w.id : ('idx-' + wi);
                                     const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
+                                    const Overlay = typeof TracedWindowBlindOverlay === 'function' ? TracedWindowBlindOverlay : window.TracedWindowBlindOverlay;
+                                    const onPick = (e) => {
+                                        e.stopPropagation();
+                                        if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
+                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
+                                    };
+                                    if (Overlay) {
+                                        return (
+                                            <Overlay
+                                                key={wid}
+                                                w={w}
+                                                selected={sel}
+                                                testId={`live-window-${wid}`}
+                                                onMouseDown={onPick}
+                                            />
+                                        );
+                                    }
                                     return (
                                         <polygon
                                             key={wid}
@@ -222,11 +257,7 @@ const floorModalTree = (
                                             stroke={sel ? '#fbbf24' : '#7dd3fc'}
                                             strokeWidth={sel ? 0.55 : 0.35}
                                             style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                                            onMouseDown={(e) => {
-                                                e.stopPropagation();
-                                                if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
-                                                if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
-                                            }}
+                                            onMouseDown={onPick}
                                         />
                                     );
                                 })}

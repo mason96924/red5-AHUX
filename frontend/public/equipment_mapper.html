@@ -335,9 +335,8 @@
             const [floorMarkers, setFloorMarkers] = useState([]); // Physical AHU/VAV instances with coordinates
             const [draggedMarkerType, setDraggedMarkerType] = useState(null); // 'ahu' or 'vav'
             const [selectedMarkerId, setSelectedMarkerId] = useState(null);
-            // ELC window creation: + Window (two-click wall bar) and Trace Window (2D glass).
+            // ELC window creation: Trace Window (2D glass).
             const [floorWindows, setFloorWindows] = useState([]); // {id,floorIdx,x,y,length,angle_deg,blind_level,blind_type,vertices}
-            const [windowMode, setWindowMode] = useState(null); // ELC + Window: two clicks on a wall
             const [windowTraceMode, setWindowTraceMode] = useState(null); // ELC Trace Window: 2D glass polygon
             const isTracedWindow = (w) => !!(w && Array.isArray(w.vertices) && w.vertices.length >= 3);
             const [selectedWindowId, setSelectedWindowId] = useState(null);
@@ -2137,45 +2136,6 @@
                     return;
                 }
 
-                // Slim window placement: two clicks for endpoints.
-                if (windowMode) {
-                    e.stopPropagation();
-                    if (windowMode.phase === 'p1') {
-                        setWindowMode({ phase: 'p2', p1: { x: xPct, y: yPct } });
-                        return;
-                    }
-                    const p1 = windowMode.p1;
-                    const dx = xPct - p1.x, dy = yPct - p1.y;
-                    const length = Math.hypot(dx, dy);
-                    if (length < 1.0) {
-                        toast('Window too short — drag a longer span (min ~1% of plan).');
-                        setWindowMode(null);
-                        return;
-                    }
-                    const angle_deg = Math.atan2(dy, dx) * 180 / Math.PI;
-                    const n = floorWindows.filter(w => w.floorIdx === currentFloorIdx).length;
-                    const newWin = {
-                        id: 'w_' + Date.now(),
-                        floorIdx: currentFloorIdx,
-                        name: 'W' + (n + 1),
-                        x: (p1.x + xPct) / 2,
-                        y: (p1.y + yPct) / 2,
-                        length: length,
-                        angle_deg: angle_deg,
-                        blind_level: 0,
-                        blind_type: 'roller',
-                        sill_height_m: 1.0,
-                        head_height_m: 2.2,
-                        skew_x: 0.42, skew_y: 0, stretch_x: 1, stretch_y: 1,
-                    };
-                    setFloorWindows(prev => [...prev, newWin]);
-                    setSelectedWindowId(newWin.id);
-                    setWindowMode(null);
-                    setDraggedMarkerType(null);
-                    toast('Window placed. Set Open % and Type in the Windows list.');
-                    return;
-                }
-
                 if (!draggedMarkerType) return;
 
                 // If this floor already has exactly one named AHU, pre-bind new VAVs to it
@@ -2226,7 +2186,7 @@
             const handleNsMarkerDragStart = (e, key) => {
                 e.stopPropagation();
                 e.preventDefault();
-                if (windowMode || roomMode || windowTraceMode || obstructionTraceMode) return;
+                if (roomMode || windowTraceMode || obstructionTraceMode) return;
                 if (nsMode && nsMode !== 'edit') return;
                 setDraggingFloorMarker(null);
                 setDraggingWindowId(null);
@@ -2237,7 +2197,7 @@
 
             const handleWindowDragStart = (e, windowId) => {
                 e.stopPropagation();
-                if (windowMode || roomMode || windowTraceMode || obstructionTraceMode || (nsMode && nsMode !== 'edit')) return;
+                if (roomMode || windowTraceMode || obstructionTraceMode || (nsMode && nsMode !== 'edit')) return;
                 setDraggingFloorMarker(null);
                 setSelectedWindowId(windowId);
                 setDraggingWindowId(windowId);
@@ -2322,7 +2282,6 @@
             };
 
             const clearAllTraceModes = () => {
-                setWindowMode(null);
                 setRoomMode(null);
                 setWindowTraceMode(null);
                 setObstructionTraceMode(null);
@@ -2337,18 +2296,6 @@
                 setRoomMode({ pts: [] });
                 setRoomsPanelOpen(true);
                 toast('Trace room: click each corner. Click first again, double-click, or Enter to close. Esc cancels.');
-            };
-
-            const startWindowPlace = () => {
-                const was = !!windowMode;
-                clearAllTraceModes();
-                setPanMode(false);
-                if (was) {
-                    toast('Window mode off.');
-                    return;
-                }
-                setWindowMode({ phase: 'p1' });
-                toast('Place a window — click two endpoints on a wall.');
             };
 
             const startWindowTrace = (opts) => {
@@ -2411,7 +2358,7 @@
             };
 
             useEffect(() => {
-                const tracing = roomMode || windowTraceMode || obstructionTraceMode || nsMode || windowMode;
+                const tracing = roomMode || windowTraceMode || obstructionTraceMode || nsMode;
                 if (!tracing) return undefined;
                 const onKey = (ev) => {
                     if (ev.key === 'Enter') {
@@ -2440,7 +2387,7 @@
                 };
                 window.addEventListener('keydown', onKey);
                 return () => window.removeEventListener('keydown', onKey);
-            }, [roomMode, windowTraceMode, obstructionTraceMode, nsMode, windowMode, floorRooms, floorWindows, floorObstructions, currentFloorIdx]);
+            }, [roomMode, windowTraceMode, obstructionTraceMode, nsMode, floorRooms, floorWindows, floorObstructions, currentFloorIdx]);
 
             const handleFloorMarkerDrag = (e) => {
                 if ((!draggingFloorMarker && !draggingWindowId && !draggingNsKey) || !floorCanvasRef.current) return;
@@ -5415,21 +5362,14 @@
                                     <div className="mb-4 pb-4 border-b border-slate-800">
                                         <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2">Step 3: Place Equipment</div>
                                         <div className="flex gap-2 mb-3">
-                                            <button onClick={() => { setDraggedMarkerType('ahu'); setWindowMode(null); setRoomMode(null); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'ahu' ? 'bg-green-600 text-white' : 'bg-slate-800 border border-green-500 text-green-400 hover:bg-green-900/30'}`}>
+                                            <button onClick={() => { setDraggedMarkerType('ahu'); setRoomMode(null); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'ahu' ? 'bg-green-600 text-white' : 'bg-slate-800 border border-green-500 text-green-400 hover:bg-green-900/30'}`}>
                                                 + Add AHU
                                             </button>
-                                            <button onClick={() => { setDraggedMarkerType('vav'); setWindowMode(null); setRoomMode(null); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'vav' ? 'bg-blue-600 text-white' : 'bg-slate-800 border border-blue-500 text-blue-400 hover:bg-blue-900/30'}`}>
+                                            <button onClick={() => { setDraggedMarkerType('vav'); setRoomMode(null); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${draggedMarkerType === 'vav' ? 'bg-blue-600 text-white' : 'bg-slate-800 border border-blue-500 text-blue-400 hover:bg-blue-900/30'}`}>
                                                 + Add VAV
                                             </button>
                                         </div>
                                         <div className="flex gap-2 mb-3">
-                                            <button
-                                                data-testid="mapper-place-window-btn"
-                                                onClick={startWindowPlace}
-                                                className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${windowMode ? 'bg-sky-600 text-white' : 'bg-slate-800 border border-sky-500 text-sky-300 hover:bg-sky-900/30'}`}
-                                            >
-                                                {windowMode ? 'Click 2nd endpoint…' : '+ Window'}
-                                            </button>
                                             <button
                                                 data-testid="mapper-trace-window-btn"
                                                 onClick={() => startWindowTrace()}
@@ -5479,11 +5419,6 @@
                                         {draggedMarkerType && (
                                             <div className="text-[9px] text-amber-400 font-bold text-center mb-2 animate-pulse">
                                                 Click on the floor plan to place {draggedMarkerType.toUpperCase()}
-                                            </div>
-                                        )}
-                                        {windowMode && (
-                                            <div className="text-[9px] text-sky-300 font-bold text-center mb-2 animate-pulse">
-                                                {windowMode.phase === 'p1' ? 'Click first window endpoint' : 'Click second window endpoint'}
                                             </div>
                                         )}
                                         {windowTraceMode && (
@@ -5676,7 +5611,7 @@
                                         <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2 px-2">Windows on this floor</div>
                                         {floorWindows.filter(w => w.floorIdx === currentFloorIdx).length === 0 ? (
                                             <div className="text-center text-slate-600 font-mono text-[9px] py-3 px-2">
-                                                No windows yet — + Window (two clicks on a wall) or Trace Window (glass outline).
+                                                No windows yet — Trace Window (click glass outline corners).
                                             </div>
                                         ) : (
                                             floorWindows.filter(w => w.floorIdx === currentFloorIdx).map((w, i) => {
@@ -6285,7 +6220,7 @@
                                             const nsLine = o.north && o.south;
                                             const weLine = o.west && o.east;
                                             const showNsAxes = !!(draggingNsKey || nsMode);
-                                            const canDragNs = !windowMode && !roomMode && !windowTraceMode && !obstructionTraceMode && (!nsMode || nsMode === 'edit');
+                                            const canDragNs = !roomMode && !windowTraceMode && !obstructionTraceMode && (!nsMode || nsMode === 'edit');
                                             return (
                                                 <>
                                                     {(showNsAxes && (nsLine || weLine)) && (
@@ -6336,7 +6271,7 @@
                                                 </>
                                             );
                                         })()}
-                                        {/* ELC + Window wall segments (2.5D). Traced 2D glass is the polygon only. */}
+                                        {/* Legacy wall-bar windows (2.5D). Traced 2D glass is the polygon only. */}
                                         {floorWindows.filter(w => w.floorIdx === currentFloorIdx && !isTracedWindow(w)).map(w => {
                                             const sel = selectedWindowId === w.id;
                                             if (window.WindowPlanPane) {

@@ -179,6 +179,7 @@ const floorModalTree = (
                                             key={wid}
                                             w={w}
                                             selected={sel}
+                                            showTrace={false}
                                             testId={`live-window-${wid}`}
                                             zSelected={45}
                                             zIdle={35}
@@ -217,10 +218,9 @@ const floorModalTree = (
                                         <div style={{
                                             position: 'absolute', left: 0, right: 0, top: '2px', bottom: '2px',
                                             borderRadius: 2,
-                                            background: sel ? '#38bdf8' : '#7dd3fc',
-                                            opacity: 0.45 + 0.40 * open,
-                                            boxShadow: '0 0 4px rgba(125,211,252,0.35)',
-                                            border: sel ? '1px solid #e0f2fe' : '1px solid rgba(186,230,253,0.45)',
+                                            background: 'transparent',
+                                            opacity: 1,
+                                            border: 'none',
                                         }} />
                                     </div>
                                 );
@@ -243,6 +243,7 @@ const floorModalTree = (
                                                 key={wid}
                                                 w={w}
                                                 selected={sel}
+                                                showTrace={false}
                                                 testId={`live-window-${wid}`}
                                                 onMouseDown={onPick}
                                             />
@@ -253,9 +254,8 @@ const floorModalTree = (
                                             key={wid}
                                             data-testid={`live-window-${wid}`}
                                             points={w.vertices.map(v => `${v[0]},${v[1]}`).join(' ')}
-                                            fill={sel ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)'}
-                                            stroke={sel ? '#fbbf24' : '#7dd3fc'}
-                                            strokeWidth={sel ? 0.55 : 0.35}
+                                            fill="rgba(0,0,0,0.01)"
+                                            stroke="none"
                                             style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                                             onMouseDown={onPick}
                                         />

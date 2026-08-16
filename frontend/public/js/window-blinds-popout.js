@@ -125,6 +125,7 @@ function WindowBlindMarks(props) {
 function WindowPlanPane(props) {
     const w = props.w || {};
     const selected = !!props.selected;
+    const showTrace = props.showTrace !== false;
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
     const type = red5NormalizeBlindType(w.blind_type);
     const len = Math.max(Number(w.length) || 8, 3);
@@ -140,7 +141,7 @@ function WindowPlanPane(props) {
                 left: `${w.x}%`,
                 top: `${w.y}%`,
                 width: `${len}%`,
-                height: selected ? 32 : 16,
+                height: selected && showTrace ? 32 : 16,
                 transform: `translate(-50%, -50%) rotate(${Number(w.angle_deg) || 0}deg)`,
                 cursor: props.cursor || 'pointer',
                 zIndex: selected ? (props.zSelected || 95) : (props.zIdle || 16),
@@ -150,11 +151,13 @@ function WindowPlanPane(props) {
             <svg viewBox="0 0 100 24" preserveAspectRatio="none"
                  style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
                 <rect x="0.6" y="1" width="98.8" height="22" rx="1.2"
-                      fill={selected ? '#7dd3fc' : '#38bdf8'}
-                      opacity={0.38 + 0.42 * open}
-                      stroke={selected ? '#fde68a' : 'rgba(186,230,253,0.55)'}
-                      strokeWidth={selected ? 2.2 : 1.2}/>
-                <WindowBlindMarks width={100} height={24} open={open} type={type}/>
+                      fill={showTrace ? (selected ? '#7dd3fc' : '#38bdf8') : 'rgba(0,0,0,0.01)'}
+                      opacity={showTrace ? (0.38 + 0.42 * open) : 1}
+                      stroke={showTrace ? (selected ? '#fde68a' : 'rgba(186,230,253,0.55)') : 'none'}
+                      strokeWidth={showTrace ? (selected ? 2.2 : 1.2) : 0}/>
+                {(showTrace || open < 0.99) && (
+                    <WindowBlindMarks width={100} height={24} open={open} type={type}/>
+                )}
             </svg>
         </div>
     );
@@ -202,6 +205,7 @@ function TracedWindowBlindMarks(props) {
     const type = red5NormalizeBlindType(props.type);
     const cover = 1 - open;
     const sealed = open < 0.01;
+    if (!sealed && cover < 0.01) return null;
     const pad = 0.6;
     const { sMin, sMax, hMax, hSpan, atSH, minX, maxX, minY, maxY } = axes;
     const bandPoints = (frac) => {
@@ -272,6 +276,7 @@ function TracedWindowBlindOverlay(props) {
     const verts = Array.isArray(w.vertices) ? w.vertices : [];
     if (verts.length < 3) return null;
     const selected = !!props.selected;
+    const showTrace = props.showTrace !== false;
     const open = Math.max(0, Math.min(1, 1 - (Number(w.blind_level) || 0)));
     const type = red5NormalizeBlindType(w.blind_type);
     const clipId = 'wb-clip-' + String(w.id || props.clipKey || 'w');
@@ -282,9 +287,10 @@ function TracedWindowBlindOverlay(props) {
             </clipPath>
             <polygon
                 points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
-                fill={selected ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)'}
-                stroke={selected ? '#fbbf24' : '#7dd3fc'}
-                strokeWidth={selected ? 0.55 : 0.35}
+                fill={showTrace ? (selected ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)') : 'rgba(0,0,0,0.01)'}
+                stroke={showTrace ? (selected ? '#fbbf24' : '#7dd3fc') : 'none'}
+                strokeWidth={showTrace ? (selected ? 1.25 : 1) : 0}
+                vectorEffect="non-scaling-stroke"
                 style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                 onClick={props.onClick}
                 onMouseDown={props.onMouseDown}

@@ -130,6 +130,11 @@
             100% { filter: drop-shadow(0 0 20px rgba(239, 68, 68, 1)) drop-shadow(0 0 40px rgba(239, 68, 68, 0.6)); }
         }
         .trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
+        /* Config floor canvas: CSS crosshair in the margins; 1px H/V hairlines on the plan. */
+        #canvas-bg.floor-hairline { cursor: crosshair; }
+        .mapper-hairline { position: absolute; inset: 0; pointer-events: none; z-index: 50; }
+        .mapper-hairline-v { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: rgba(248,250,252,0.92); box-shadow: 0 0 0 0.5px rgba(15,23,42,0.35); }
+        .mapper-hairline-h { position: absolute; left: 0; right: 0; height: 1px; margin-top: -0.5px; background: rgba(248,250,252,0.92); box-shadow: 0 0 0 0.5px rgba(15,23,42,0.35); }
     </style>
     <script>
         // Synchronous fallback stub so any bare `t('key')` call in the JSX
@@ -352,6 +357,22 @@
             const [psychroChartData, setPsychroChartData] = useState(null);
             const [draggingFloorMarker, setDraggingFloorMarker] = useState(null);
             const floorCanvasRef = useRef(null);
+            const floorHairVRef = useRef(null);
+            const floorHairHRef = useRef(null);
+            const updateFloorHair = (e) => {
+                if (!floorHairVRef.current || !floorHairHRef.current) return;
+                const host = e.currentTarget;
+                const rect = host.getBoundingClientRect();
+                if (rect.width < 1 || rect.height < 1) return;
+                floorHairVRef.current.style.left = (e.clientX - rect.left) + 'px';
+                floorHairHRef.current.style.top = (e.clientY - rect.top) + 'px';
+                floorHairVRef.current.parentNode.style.opacity = '1';
+            };
+            const hideFloorHair = () => {
+                if (floorHairVRef.current && floorHairVRef.current.parentNode) {
+                    floorHairVRef.current.parentNode.style.opacity = '0';
+                }
+            };
             // Image aspect ratio (natural width / height) used by the air-flow
             // segment Snap-Guide overlay to convert width-fraction to %-of-height
             // for horizontal crosshair positioning.  Updated on image onLoad.
@@ -5941,11 +5962,19 @@
                     {configMode !== 'points' && configMode !== 'sizing' && (
                     <div 
                         id="canvas-bg"
-                        className={`flex-1 relative overflow-hidden shadow-inner border-l ${colors.border} canvas-container ${panMode ? 'pan-mode-active' : ''} ${isPanning ? 'panning' : ''}`}
+                        className={`flex-1 relative overflow-hidden shadow-inner border-l ${colors.border} canvas-container ${panMode ? 'pan-mode-active' : ''} ${isPanning ? 'panning' : ''} ${activeTarget.type === 'floor_plan' ? 'floor-hairline' : ''}`}
                         style={{ backgroundColor: colors.canvasBg }}
                         onWheel={handleWheel} 
                         onMouseDown={handleCanvasMouseDown} 
-                        onMouseMove={activeTarget.type === 'floor_plan' ? handleFloorMarkerDrag : handleCanvasMouseMove}
+                        onMouseMove={(e) => {
+                            if (activeTarget.type === 'floor_plan') {
+                                updateFloorHair(e);
+                                handleFloorMarkerDrag(e);
+                            } else {
+                                handleCanvasMouseMove(e);
+                            }
+                        }}
+                        onMouseLeave={() => { hideFloorHair(); }}
                         onMouseUp={() => {setIsPanning(false); setDraggingTarget(null); setDraggingFloorMarker(null); setDraggingWindowId(null); setDraggingNsKey(null); isDraggingMode.current = null;}}
                     >
                         <div className="absolute top-4 left-4 z-50 flex gap-2">
@@ -5996,6 +6025,12 @@
                             <button onClick={() => setView(p => ({...p, scale: Math.max(0.2, p.scale - 0.5)}))} className="w-8 h-8 bg-slate-900/90 hover:bg-indigo-600 text-white rounded border border-slate-700 shadow-lg backdrop-blur flex items-center justify-center font-black transition-all">-</button>
                             <button onClick={() => setView({x:0, y:0, scale: 1})} className="px-3 bg-slate-900/90 hover:bg-rose-600 text-white text-[10px] uppercase font-black tracking-widest rounded border border-slate-700 shadow-lg backdrop-blur transition-all">Reset</button>
                         </div>
+                        {activeTarget.type === 'floor_plan' && !panMode && (
+                            <div className="mapper-hairline" style={{ opacity: 0 }} data-testid="mapper-hairline-cursor">
+                                <div ref={floorHairVRef} className="mapper-hairline-v" />
+                                <div ref={floorHairHRef} className="mapper-hairline-h" />
+                            </div>
+                        )}
 
                         {/* FLOOR PLAN MODE */}
                         {activeTarget.type === 'floor_plan' ? (
@@ -6021,7 +6056,7 @@
                                         style={{ 
                                             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, 
                                             transition: isPanning || draggingFloorMarker || draggingWindowId || draggingNsKey ? 'none' : 'transform 0.15s ease-out',
-                                            cursor: draggingNsKey ? 'grabbing' : ((draggedMarkerType || windowMode || roomMode || windowTraceMode || obstructionTraceMode || (nsMode && nsMode !== 'edit')) ? 'crosshair' : (draggingWindowId ? 'grabbing' : 'default'))
+                                            cursor: (draggingNsKey || draggingWindowId || isPanning) ? 'grabbing' : (panMode ? 'grab' : 'none')
                                         }}
                                         className="relative inline-block border-2 border-slate-700 shadow-[0_0_50px_rgba(0,0,0,0.5)] bg-slate-900 max-w-full max-h-full pointer-events-auto"
                                     >
@@ -6075,8 +6110,9 @@
                                                         points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
                                                         fill={sel ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.06)'}
                                                         stroke={sel ? '#34d399' : '#059669'}
-                                                        strokeWidth={sel ? 0.55 : 0.35}
-                                                        strokeDasharray="1.4 0.9"
+                                                        strokeWidth={sel ? 1.25 : 1}
+                                                        vectorEffect="non-scaling-stroke"
+                                                        strokeDasharray="4 3"
                                                     />
                                                 );
                                             })}
@@ -6087,13 +6123,14 @@
                                                             points={(roomMode.pts || []).map(p => `${p.x},${p.y}`).join(' ')}
                                                             fill="none"
                                                             stroke="#34d399"
-                                                            strokeWidth="0.45"
+                                                            strokeWidth="1"
+                                                            vectorEffect="non-scaling-stroke"
                                                         />
                                                     )}
                                                     {(roomMode.pts || []).map((p, i) => (
-                                                        <circle key={i} cx={p.x} cy={p.y} r={i === 0 ? 0.9 : 0.55}
+                                                        <circle key={i} cx={p.x} cy={p.y} r={i === 0 ? 0.28 : 0.18}
                                                                 fill={i === 0 ? '#6ee7b7' : '#34d399'}
-                                                                stroke="#064e3b" strokeWidth="0.2" />
+                                                                stroke="#064e3b" strokeWidth="1" vectorEffect="non-scaling-stroke" />
                                                     ))}
                                                 </g>
                                             )}
@@ -6102,10 +6139,11 @@
                                                     {(obstructionTraceMode.pts || []).length >= 2 && (
                                                         <polyline
                                                             points={(obstructionTraceMode.pts || []).map(p => `${p.x},${p.y}`).join(' ')}
-                                                            fill="none" stroke="#94a3b8" strokeWidth="0.45" />
+                                                            fill="none" stroke="#94a3b8" strokeWidth="1"
+                                                            vectorEffect="non-scaling-stroke" />
                                                     )}
                                                     {(obstructionTraceMode.pts || []).map((p, i) => (
-                                                        <circle key={'ot'+i} cx={p.x} cy={p.y} r={i === 0 ? 0.9 : 0.55}
+                                                        <circle key={'ot'+i} cx={p.x} cy={p.y} r={i === 0 ? 0.28 : 0.18}
                                                                 fill={i === 0 ? '#cbd5e1' : '#94a3b8'} />
                                                     ))}
                                                 </g>
@@ -6118,7 +6156,8 @@
                                                         points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
                                                         fill="rgba(148,163,184,0.18)"
                                                         stroke="#94a3b8"
-                                                        strokeWidth="0.4"
+                                                        strokeWidth="1"
+                                                        vectorEffect="non-scaling-stroke"
                                                     />
                                                 );
                                             })}
@@ -6127,10 +6166,11 @@
                                                     {(windowTraceMode.pts || []).length >= 2 && (
                                                         <polyline
                                                             points={(windowTraceMode.pts || []).map(p => `${p.x},${p.y}`).join(' ')}
-                                                            fill="none" stroke="#38bdf8" strokeWidth="0.5" />
+                                                            fill="none" stroke="#38bdf8" strokeWidth="1"
+                                                            vectorEffect="non-scaling-stroke" />
                                                     )}
                                                     {(windowTraceMode.pts || []).map((p, i) => (
-                                                        <circle key={'wt'+i} cx={p.x} cy={p.y} r={i === 0 ? 0.9 : 0.55}
+                                                        <circle key={'wt'+i} cx={p.x} cy={p.y} r={i === 0 ? 0.28 : 0.18}
                                                                 fill={i === 0 ? '#7dd3fc' : '#38bdf8'} />
                                                     ))}
                                                 </g>
@@ -6153,7 +6193,8 @@
                                                     points={w.vertices.map(v => `${v[0]},${v[1]}`).join(' ')}
                                                     fill={selectedWindowId === w.id ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)'}
                                                     stroke={selectedWindowId === w.id ? '#fbbf24' : '#7dd3fc'}
-                                                    strokeWidth={selectedWindowId === w.id ? 0.55 : 0.35}
+                                                    strokeWidth={selectedWindowId === w.id ? 1.25 : 1}
+                                                    vectorEffect="non-scaling-stroke"
                                                     style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                                                     onClick={(e) => {
                                                         e.stopPropagation();

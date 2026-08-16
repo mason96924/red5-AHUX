@@ -558,11 +558,10 @@ window.red5FacingToNorthOffset = function(facing, lat){
   /* Keep in -180..180 for nicer diffs */
 };
 
-/* ---------- WINDOWS + SUNSHAFT OVERLAY (slim v1) --------------------- */
-/* Percent-space bars + soft trapezoid shafts.  Blinds (0..1 closed)
-   attenuate shaft opacity.  Light ONLY enters: window normal is
-   oriented toward plan center (interior heuristic); shafts paint only
-   when sun travel aligns with that inward normal — never outbound.    */
+/* ---------- WINDOWS + SUNSHAFT OVERLAY (ELC volumetric) -------------- */
+/* Soft air volume + floor wash.  Lateral feathers dissolve the sides so
+   the beam reads as volume, not a flat ribbon.  Blinds (0..1 closed)
+   attenuate.  Light only enters when sun travel hits the inward face.  */
 window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var wins = props.windows || [];
   var rooms = props.rooms || [];
@@ -572,17 +571,26 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var az = ((sun.azimuth || 0) + northOff) % 360;
   if (az < 0) az += 360;
   var azRad = az * Math.PI / 180;
-  /* Direction light travels ON the plan (from sun toward opposite). */
-  var lx = -Math.sin(azRad);
-  var ly =  Math.cos(azRad);
+  var lx0 = -Math.sin(azRad);
+  var ly0 =  Math.cos(azRad);
   var elev = Math.max(0, sun.elevation || 0);
   var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
   var cloud = (typeof props.cloudCover === 'number') ? Math.max(0, Math.min(100, props.cloudCover)) : 0;
   var weatherF = Math.max(0.12, 1.0 - (cloud / 100) * 0.85);
   var isLight = props.theme === 'light';
-  /* Interior reference — plan centre, or caller override. */
   var centerX = (typeof props.interiorX === 'number') ? props.interiorX : 50;
   var centerY = (typeof props.interiorY === 'number') ? props.interiorY : 50;
+  var hot = isLight ? '255,214,120' : '255,224,150';
+  var mid = isLight ? '251,191,36' : '251,146,60';
+  var FEATHER = [
+    { s: 1.72, a: 0.03 },
+    { s: 1.48, a: 0.05 },
+    { s: 1.30, a: 0.08 },
+    { s: 1.16, a: 0.12 },
+    { s: 1.06, a: 0.20 },
+    { s: 1.00, a: 0.32 },
+    { s: 0.88, a: 0.14 }
+  ];
 
   var bars = [];
   var shafts = [];
@@ -604,6 +612,36 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var mx = (ax + bx) / 2, my = (ay + by) / 2;
     return [mx + (ax - mx) * s, my + (ay - my) * s, mx + (bx - mx) * s, my + (by - my) * s];
   }
+  function expandRing(ring, k) {
+    var sx = 0, sy = 0, n = ring.length, j;
+    for (j = 0; j < n; j++) { sx += ring[j][0]; sy += ring[j][1]; }
+    sx /= n; sy /= n;
+    return ring.map(function (p) {
+      return [sx + (p[0] - sx) * k, sy + (p[1] - sy) * k];
+    });
+  }
+  function ringPoints(near, far) {
+    var pts = near.slice();
+    for (var k = far.length - 1; k >= 0; k--) pts.push(far[k]);
+    return pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' ');
+  }
+  function pushVolume(n1x, n1y, n2x, n2y, f1x, f1y, f2x, f2y, aBase, gradId, clipUrl, keyPrefix) {
+    if (!(aBase > 0)) return;
+    if (Math.hypot(n2x - n1x, n2y - n1y) < 0.15) return;
+    for (var li = 0; li < FEATHER.length; li++) {
+      var L = FEATHER[li];
+      var nSeg = scaleSeg(n1x, n1y, n2x, n2y, L.s);
+      var fSeg = scaleSeg(f1x, f1y, f2x, f2y, L.s);
+      shafts.push(
+        <polygon key={keyPrefix + '-' + li}
+                 points={[nSeg[0], nSeg[1], nSeg[2], nSeg[3], fSeg[2], fSeg[3], fSeg[0], fSeg[1]].join(' ')}
+                 fill={'url(#' + gradId + ')'}
+                 opacity={aBase * L.a}
+                 clipPath={clipUrl}
+        />
+      );
+    }
+  }
   for (var i = 0; i < wins.length; i++) {
     var w = wins[i];
     var cx = Number(w.x), cy = Number(w.y);
@@ -614,7 +652,6 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var rad = ang * Math.PI / 180;
     var tx = Math.cos(rad), ty = Math.sin(rad);
     var nx = -ty, ny = tx;
-    /* Orient normal INWARD (toward plan interior), not toward the sun. */
     var ix = centerX - cx, iy = centerY - cy;
     if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
     if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
@@ -622,8 +659,8 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var x1 = cx - tx * half, y1 = cy - ty * half;
     var x2 = cx + tx * half, y2 = cy + ty * half;
     var open = 1 - blind;
-    /* Entering only: light travel must hit the inward face. */
-    var enter = nx * lx + ny * ly;
+    var bx = lx0, by = ly0;
+    var enter = nx * bx + ny * by;
     var traced = Array.isArray(w.vertices) && w.vertices.length >= 3;
     if (!traced) {
     bars.push(
@@ -637,20 +674,26 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     );
     }
     if (enter < 0.05 || open < 0.01) continue;
-    /* Open → shaft strength; closed → no sunlight through this window.
-       Throw uses a soft gradient tip so the floor landing is gradual,
-       not a hard mid-room edge. */
+    if (enter < 0.28) {
+      var nk = (0.28 - enter) * 0.18;
+      bx += nx * nk; by += ny * nk;
+      var bl = Math.hypot(bx, by) || 1;
+      bx /= bl; by /= bl;
+      enter = nx * bx + ny * by;
+    }
     var openEase = Math.pow(open, 0.7);
     var base = enter * elevF * weatherF;
     if (base < 0.03) continue;
     var throwLen = (10 + 24 * base) * (1.0 + 1.0 * openEase);
-    var spread = half * (0.28 + 0.40 * openEase);
-    var fx1 = x1 + lx * throwLen + (-ny) * spread;
-    var fy1 = y1 + ly * throwLen + ( nx) * spread;
-    var fx2 = x2 + lx * throwLen + ( ny) * spread;
-    var fy2 = y2 + ly * throwLen + (-nx) * spread;
-    var opCore = Math.min(0.58, 0.10 + base * 0.30 + openEase * 0.34);
-    var amber = isLight ? '251,191,36' : '251,146,60';
+    var dx = bx * throwLen, dy = by * throwLen;
+    var spread = half * (0.18 + 0.28 * openEase);
+    var px = -(y2 - y1), py = (x2 - x1);
+    var plen = Math.hypot(px, py) || 1;
+    px = (px / plen) * spread;
+    py = (py / plen) * spread;
+    var fx1 = x1 + dx - px, fy1 = y1 + dy - py;
+    var fx2 = x2 + dx + px, fy2 = y2 + dy + py;
+    var a0 = Math.min(0.22, Math.max(0.06, 0.07 + base * 0.16 + openEase * 0.06));
     var gx0 = (x1 + x2) / 2, gy0 = (y1 + y2) / 2;
     var gx1 = (fx1 + fx2) / 2, gy1 = (fy1 + fy2) / 2;
     var gradId = 'r5-shaft-grad-' + (w.id || i);
@@ -670,33 +713,50 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       <linearGradient key={gradId} id={gradId}
                       gradientUnits="userSpaceOnUse"
                       x1={gx0} y1={gy0} x2={gx1} y2={gy1}>
-        <stop offset="0%"   stopColor={'rgb('+amber+')'} stopOpacity={opCore} />
-        <stop offset="40%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.62} />
-        <stop offset="72%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.22} />
-        <stop offset="100%" stopColor={'rgb('+amber+')'} stopOpacity="0" />
+        <stop offset="0%"   stopColor={'rgb('+hot+')'} stopOpacity="0.85" />
+        <stop offset="28%"  stopColor={'rgb('+hot+')'} stopOpacity="0.62" />
+        <stop offset="55%"  stopColor={'rgb('+mid+')'} stopOpacity="0.32" />
+        <stop offset="82%"  stopColor={'rgb('+mid+')'} stopOpacity="0.10" />
+        <stop offset="100%" stopColor={'rgb('+mid+')'} stopOpacity="0" />
       </linearGradient>
     );
-    var layers = [
-      { s: 1.70, a: 0.18 },
-      { s: 1.42, a: 0.32 },
-      { s: 1.18, a: 0.50 },
-      { s: 1.00, a: 0.82 },
-      { s: 0.84, a: 0.36 },
-    ];
     var clipUrl = clipId ? ('url(#' + clipId + ')') : undefined;
-    for (var li = 0; li < layers.length; li++) {
-      var L = layers[li];
-      var nSeg = scaleSeg(x1, y1, x2, y2, L.s);
-      var fSeg = scaleSeg(fx1, fy1, fx2, fy2, L.s);
-      shafts.push(
-        <polygon key={'ws-'+ (w.id || i) + '-' + li}
-                 points={[nSeg[0], nSeg[1], nSeg[2], nSeg[3], fSeg[2], fSeg[3], fSeg[0], fSeg[1]].join(' ')}
-                 fill={'url(#'+gradId+')'}
-                 opacity={L.a}
-                 clipPath={clipUrl}
-        />
-      );
+    var wid = w.id || i;
+    if (traced) {
+      var near = w.vertices.map(function (v) { return [Number(v[0]), Number(v[1])]; });
+      var far = near.map(function (p) { return [p[0] + dx, p[1] + dy]; });
+      var tLayers = [
+        { k: 1.42, a: a0 * 0.10 },
+        { k: 1.24, a: a0 * 0.18 },
+        { k: 1.10, a: a0 * 0.36 },
+        { k: 1.00, a: a0 * 0.85 }
+      ];
+      for (var ti = 0; ti < tLayers.length; ti++) {
+        var TL = tLayers[ti];
+        shafts.push(
+          <polygon key={'wt-'+ wid + '-' + ti}
+                   points={ringPoints(expandRing(near, TL.k), expandRing(far, TL.k))}
+                   fill={'url(#' + gradId + ')'}
+                   opacity={TL.a}
+                   clipPath={clipUrl}
+          />
+        );
+      }
+      continue;
     }
+    var lift = Math.max(1.6, Math.min(4.2, half * 0.55));
+    var midThrow = 0.92;
+    var af1x = x1 + dx * midThrow + (fx1 - (x1 + dx)) * 0.55;
+    var af1y = y1 + dy * midThrow + (fy1 - (y1 + dy)) * 0.55;
+    var af2x = x2 + dx * midThrow + (fx2 - (x2 + dx)) * 0.55;
+    var af2y = y2 + dy * midThrow + (fy2 - (y2 + dy)) * 0.55;
+    pushVolume(
+      x1 - bx * 0.35, y1 - lift, x2 - bx * 0.35, y2 - lift,
+      af1x, af1y, af2x, af2y,
+      a0 * 0.28, gradId, clipUrl, 'wa-' + wid);
+    pushVolume(
+      x1, y1, x2, y2, fx1, fy1, fx2, fy2,
+      a0 * 0.72, gradId, clipUrl, 'wf-' + wid);
   }
   var showBars = props.showBars !== false;
   var roomOutlines = [];

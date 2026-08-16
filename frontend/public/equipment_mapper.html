@@ -340,7 +340,6 @@
             const [windowMode, setWindowMode] = useState(null); // ELC + Window: two clicks on a wall
             const [windowTraceMode, setWindowTraceMode] = useState(null); // ELC Trace Window: 2D glass polygon
             const isTracedWindow = (w) => !!(w && Array.isArray(w.vertices) && w.vertices.length >= 3);
-            const [windowsPanelOpen, setWindowsPanelOpen] = useState(false);
             const [selectedWindowId, setSelectedWindowId] = useState(null);
             const [draggingWindowId, setDraggingWindowId] = useState(null);
             // Room polygons (plan %) — clip sunshafts + gate VAV amber rings (ELC-style trace).
@@ -2108,10 +2107,9 @@
                     };
                     setFloorWindows(prev => [...prev, newWin]);
                     setSelectedWindowId(newWin.id);
-                    setWindowsPanelOpen(true);
                     setWindowMode(null);
                     setDraggedMarkerType(null);
-                    toast('Window placed. Adjust blinds in ▤ Windows.');
+                    toast('Window placed. Set Open % and Type in the Windows list.');
                     return;
                 }
 
@@ -2179,7 +2177,6 @@
                 if (windowMode || roomMode || windowTraceMode || obstructionTraceMode || (nsMode && nsMode !== 'edit')) return;
                 setDraggingFloorMarker(null);
                 setSelectedWindowId(windowId);
-                setWindowsPanelOpen(true);
                 setDraggingWindowId(windowId);
             };
 
@@ -2242,7 +2239,6 @@
                     toast('Traced 2D window — sun spill follows this outline.');
                 }
                 setWindowTraceMode(null);
-                setWindowsPanelOpen(true);
             };
 
             const commitTracedObstruction = () => {
@@ -2289,7 +2285,6 @@
                     return;
                 }
                 setWindowMode({ phase: 'p1' });
-                setWindowsPanelOpen(true);
                 toast('Place a window — click two endpoints on a wall.');
             };
 
@@ -2316,7 +2311,6 @@
                     setSelectedWindowId(wid);
                 }
                 setWindowTraceMode({ windowId: wid, createNew: !wid, pts: seed });
-                setWindowsPanelOpen(true);
                 setPanMode(false);
                 toast(!wid
                     ? 'Trace new window: click each corner. Close on first point / Enter / double-click. Esc cancels.'
@@ -5383,13 +5377,6 @@
                                         </div>
                                         <div className="flex gap-2 mb-3">
                                             <button
-                                                data-testid="mapper-windows-panel-btn"
-                                                onClick={() => setWindowsPanelOpen(o => !o)}
-                                                className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${windowsPanelOpen ? 'bg-amber-700 text-white' : 'bg-slate-800 border border-amber-500/50 text-amber-300 hover:bg-amber-900/20'}`}
-                                            >
-                                                ▤ Windows
-                                            </button>
-                                            <button
                                                 data-testid="mapper-obstruction-trace-btn"
                                                 onClick={startObstructionTrace}
                                                 className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${obstructionTraceMode ? 'bg-slate-500 text-white' : 'bg-slate-800 border border-slate-500 text-slate-300 hover:bg-slate-700'}`}
@@ -5635,7 +5622,7 @@
                                                 return (
                                                     <div
                                                         key={w.id}
-                                                        onClick={() => { setSelectedWindowId(sel ? null : w.id); setWindowsPanelOpen(true); }}
+                                                        onClick={() => { setSelectedWindowId(sel ? null : w.id); }}
                                                         className={`p-2 rounded-lg border cursor-pointer transition-all ${
                                                             sel ? 'bg-slate-800 border-amber-500 shadow-lg' : 'bg-slate-900 border-slate-700 hover:border-slate-600'
                                                         }`}
@@ -6185,7 +6172,6 @@
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setSelectedWindowId(w.id);
-                                                            setWindowsPanelOpen(true);
                                                         }}
                                                     />
                                                 ) : (
@@ -6199,7 +6185,6 @@
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setSelectedWindowId(w.id);
-                                                        setWindowsPanelOpen(true);
                                                     }}
                                                 />
                                                 )
@@ -6273,7 +6258,7 @@
                                                         testId={`floor-window-${w.id}`}
                                                         cursor="move"
                                                         onMouseDown={(e) => handleWindowDragStart(e, w.id)}
-                                                        onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); setWindowsPanelOpen(true); }}
+                                                        onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); }}
                                                     />
                                                 );
                                             }
@@ -6285,7 +6270,7 @@
                                                     data-testid={`floor-window-${w.id}`}
                                                     title={`Window · open ${Math.round((1-(w.blind_level||0))*100)}% — drag to move`}
                                                     onMouseDown={(e) => handleWindowDragStart(e, w.id)}
-                                                    onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); setWindowsPanelOpen(true); }}
+                                                    onClick={(e) => { e.stopPropagation(); setSelectedWindowId(w.id); }}
                                                     style={{
                                                         position: 'absolute',
                                                         left: `${w.x}%`,
@@ -7174,70 +7159,6 @@
                         onBatchDelete={batchDeleteFiles}
                         onClearSelection={() => setSelectedFiles(new Set())}
                     />
-
-                    {/* WINDOWS · BLINDS panel (slim v1 — ELC-inspired) */}
-                    {windowsPanelOpen && activeTarget.type === 'floor_plan' && (
-                        <div data-testid="windows-panel"
-                             className="fixed right-6 bottom-6 z-[400] w-[290px] max-h-[60vh] bg-[#10141a] border border-slate-700 rounded-md shadow-2xl text-slate-200 flex flex-col"
-                             onMouseDown={e => e.stopPropagation()}>
-                            <div className="flex items-center justify-between px-2.5 py-2 border-b border-slate-700 text-[11px] uppercase tracking-widest text-slate-400">
-                                <span>Windows · Blinds</span>
-                                <button onClick={() => setWindowsPanelOpen(false)} className="text-slate-500 hover:text-white text-base px-1">×</button>
-                            </div>
-                            <div className="overflow-y-auto p-2 space-y-2" style={{maxHeight:'calc(60vh - 40px)'}}>
-                                {floorWindows.filter(w => w.floorIdx === currentFloorIdx).length === 0 ? (
-                                    <div className="text-[11px] text-slate-500 px-1 py-3 leading-snug">
-                                        No windows on this floor yet. Use <b className="text-sky-300">+ Window</b> (two clicks on a wall) or <b className="text-sky-300">Trace Window</b> (glass outline).
-                                    </div>
-                                ) : floorWindows.filter(w => w.floorIdx === currentFloorIdx).map((w, i) => {
-                                    const openPct = Math.round((1 - Math.min(1, Math.max(0, w.blind_level || 0))) * 100);
-                                    const sel = selectedWindowId === w.id;
-                                    return (
-                                        <div key={w.id}
-                                             className={`rounded border px-2 py-2 ${sel ? 'border-amber-500 bg-slate-900' : 'border-slate-700 bg-slate-950/60'}`}
-                                             onClick={() => setSelectedWindowId(w.id)}>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="font-mono text-[11px] text-slate-200">{w.name || ('W'+(i+1))} · {isTracedWindow(w) ? '2D glass' : ((w.length||0).toFixed(1) + '%')}</span>
-                                                <button className="text-[10px] text-rose-400 hover:text-rose-300"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            deleteWindow(w.id);
-                                                        }}>Delete</button>
-                                            </div>
-                                            <button type="button"
-                                                    className="mb-1.5 text-[8px] font-black uppercase tracking-widest text-sky-400 hover:text-sky-200"
-                                                    onClick={(e) => { e.stopPropagation(); startWindowTrace({ windowId: w.id }); }}>
-                                                {isTracedWindow(w) ? 'Re-trace glass' : 'Trace aperture'}
-                                            </button>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-[9px] text-slate-500 w-11 shrink-0" title="100% = fully open">Open →</span>
-                                                <input type="range" min="0" max="100" step="1" value={openPct}
-                                                       className="flex-1 min-w-0 accent-sky-300"
-                                                       data-testid={`window-open-${w.id}`}
-                                                       onChange={(e) => {
-                                                           const open = (parseInt(e.target.value, 10) || 0) / 100;
-                                                           setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_level: 1 - open } : x));
-                                                       }}/>
-                                                <span className="font-mono text-[10px] text-sky-300 w-9 text-right">{openPct}%</span>
-                                            </div>
-                                            <div className="flex items-center gap-1.5 mt-1.5">
-                                                <span className="text-[9px] text-slate-500 w-11 shrink-0">Type →</span>
-                                                {window.WindowBlindTypeSelect ? (
-                                                    <window.WindowBlindTypeSelect
-                                                        theme="dark"
-                                                        value={w.blind_type}
-                                                        testId={`wp-type-${w.id}`}
-                                                        onChange={(bt) => setFloorWindows(prev => prev.map(x => x.id === w.id ? { ...x, blind_type: bt } : x))}
-                                                    />
-                                                ) : null}
-                                            </div>
-                                            <div className="text-[8px] text-slate-600 mt-1">0% closed · 100% fully open (sun in)</div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
 
                     {/* PSYCHROMETRIC CHART MODAL (Placeholder) */}
                     {showPsychroChart && (

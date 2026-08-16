@@ -196,17 +196,119 @@
     return ephCache.data;
   }
 
-  function drawYearMesh(ctx, project, skyTo, ground, toCam, eph, cx, cy) {
+  function withCardinalFrame(ctx, x, y, nUx, nUy, eUx, eUy, paintFn) {
+    let nx = Number.isFinite(nUx) ? nUx : 0;
+    let ny = Number.isFinite(nUy) ? nUy : -1;
+    let ex = Number.isFinite(eUx) ? eUx : 1;
+    let ey = Number.isFinite(eUy) ? eUy : 0;
+    const nl = Math.hypot(nx, ny) || 1;
+    const el = Math.hypot(ex, ey) || 1;
+    nx /= nl; ny /= nl; ex /= el; ey /= el;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.transform(ex, ey, -nx, -ny, 0, 0);
+    paintFn(ctx);
+    ctx.restore();
+  }
+
+  function strokeRaisedGlyph(ctx, sz, color, strokeFn) {
+    const lw = Math.max(2.6, sz * 0.118);
+    const steps = 3;
+    const ox = sz * 0.038;
+    const oy = sz * 0.048;
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 2.5;
+    for (let i = steps; i >= 1; i--) {
+      const u = i / steps;
+      ctx.save();
+      ctx.translate(ox * u, oy * u);
+      ctx.strokeStyle = 'rgba(11,18,32,' + (0.28 + 0.22 * u).toFixed(3) + ')';
+      ctx.lineWidth = lw;
+      strokeFn(ctx);
+      ctx.restore();
+    }
+    ctx.strokeStyle = '#0b1220';
+    ctx.lineWidth = lw + 2.4;
+    strokeFn(ctx);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    strokeFn(ctx);
+  }
+
+  function pathCardinalS(ctx, sz) {
+    const h = sz * 0.78;
+    ctx.beginPath();
+    ctx.moveTo(0.40 * h, -0.72 * h);
+    ctx.bezierCurveTo(-0.55 * h, -0.98 * h, -0.58 * h, -0.08 * h, 0.02 * h, 0.02 * h);
+    ctx.bezierCurveTo(0.58 * h, 0.12 * h, 0.55 * h, 0.98 * h, -0.40 * h, 0.72 * h);
+    ctx.stroke();
+  }
+  function pathCardinalW(ctx, sz) {
+    const h = sz * 0.78;
+    ctx.beginPath();
+    ctx.moveTo(-0.58 * h, -0.72 * h);
+    ctx.lineTo(-0.30 * h, 0.72 * h);
+    ctx.lineTo(0.00 * h, -0.22 * h);
+    ctx.lineTo(0.30 * h, 0.72 * h);
+    ctx.lineTo(0.58 * h, -0.72 * h);
+    ctx.stroke();
+  }
+  function pathCardinalE(ctx, sz) {
+    const h = sz * 0.78;
+    ctx.beginPath();
+    ctx.moveTo(0.42 * h, -0.72 * h);
+    ctx.lineTo(-0.42 * h, -0.72 * h);
+    ctx.lineTo(-0.42 * h, 0.72 * h);
+    ctx.lineTo(0.42 * h, 0.72 * h);
+    ctx.moveTo(-0.42 * h, 0.00 * h);
+    ctx.lineTo(0.30 * h, 0.00 * h);
+    ctx.stroke();
+  }
+  function strokeNorthFour(ctx, sz) {
+    const h = sz;
+    ctx.beginPath();
+    ctx.moveTo(0, -0.86 * h);
+    ctx.lineTo(0, 0.78 * h);
+    ctx.moveTo(-0.58 * h, -0.02 * h);
+    ctx.lineTo(0.42 * h, -0.02 * h);
+    ctx.moveTo(0, -0.86 * h);
+    ctx.lineTo(-0.58 * h, -0.02 * h);
+    ctx.lineTo(0, -0.02 * h);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  function paintCardinalLetter(ctx, x, y, letter, nUx, nUy, eUx, eUy, size, color) {
+    const sz = size || 28;
+    const strokeFn = letter === 'S' ? pathCardinalS
+      : letter === 'W' ? pathCardinalW
+      : letter === 'E' ? pathCardinalE
+      : null;
+    if (!strokeFn) return;
+    withCardinalFrame(ctx, x, y, nUx, nUy, eUx, eUy, function (c) {
+      strokeRaisedGlyph(c, sz, color, function (cc) { strokeFn(cc, sz); });
+    });
+  }
+
+  function paintNorthArrow(ctx, x, y, nUx, nUy, eUx, eUy, size) {
+    const sz = size || 32;
+    withCardinalFrame(ctx, x, y, nUx, nUy, eUx, eUy, function (c) {
+      strokeRaisedGlyph(c, sz, '#38bdf8', function (cc) { strokeNorthFour(cc, sz); });
+    });
+  }
+
+  function drawYearMesh(ctx, project, skyTo, ground, toCam, eph, cx, cy, eSign) {
     ctx.beginPath();
     for (let d = 0; d <= 360; d += 3) {
       const q = ground(d * Math.PI / 180);
       if (d === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
     }
     ctx.closePath();
-    ctx.fillStyle = 'rgba(80, 140, 190, 0.10)';
+    ctx.fillStyle = 'rgba(70, 150, 210, 0.16)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(120, 180, 220, 0.55)';
-    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(96, 185, 240, 0.82)';
+    ctx.lineWidth = 2.0;
     ctx.stroke();
 
     ctx.setLineDash([3, 4]);
@@ -260,10 +362,11 @@
         const me = (sa.e + sb.e + sc.e + sd.e) / 4;
         const mn = (sa.n + sb.n + sc.n + sd.n) / 4;
         const mu = (sa.u + sb.u + sc.u + sd.u) / 4;
+        const se = (eSign || 1) * me;
         patches.push({
           pts: [sa, sb, sc, sd],
-          ndot: me * toCam.e + mn * toCam.n + mu * toCam.u,
-          depth: me * toCam.e + mn * toCam.n + mu * toCam.u
+          ndot: se * toCam.e + mn * toCam.n + mu * toCam.u,
+          depth: se * toCam.e + mn * toCam.n + mu * toCam.u
         });
       }
     }
@@ -271,7 +374,7 @@
     patches.forEach(function (p) {
       const q = p.pts.map(project);
       const back = p.ndot < 0;
-      const a = back ? 0.12 + 0.14 * Math.min(1, -p.ndot) : 0.22 + 0.34 * Math.min(1, p.ndot);
+      const a = back ? 0.05 + 0.08 * Math.min(1, -p.ndot) : 0.13 + 0.26 * Math.min(1, p.ndot);
       ctx.beginPath();
       ctx.moveTo(q[0].x, q[0].y);
       ctx.lineTo(q[1].x, q[1].y);
@@ -298,8 +401,8 @@
     eph.monthSamples.forEach(function (ms) {
       const isEdge = (ms.d === eph.summerDoy || ms.d === eph.winterDoy);
       strokeDay(ms.pts,
-        isEdge ? 'rgba(255,176,32,0.98)' : 'rgba(255,196,80,0.78)',
-        isEdge ? 2.2 : 1.15);
+        isEdge ? 'rgba(255,176,32,0.95)' : 'rgba(255,196,80,0.40)',
+        isEdge ? 2.0 : 0.85);
     });
 
     ctx.save();
@@ -386,7 +489,7 @@
     const angFloorN = Math.atan2(ny, nx);
     const rot2 = angFloorN - angN;
     const cr = Math.cos(rot2), sr = Math.sin(rot2);
-    function project(p) {
+    function projectRaw(p) {
       const c = lookAt(tiltPt(p));
       const vx = c.sx, vy = -c.sy;
       return {
@@ -394,6 +497,16 @@
         y: cy + (vx * sr + vy * cr) * R,
         depth: c.depth
       };
+    }
+    // Mirror world-space east (N–U plane). North is unchanged. Do not
+    // reflect the projected 2D points — that warps the hemisphere.
+    const morningEl = 0.18;
+    const morning = projectRaw(sph(Math.PI / 2, morningEl));
+    const morningSide = nx * (morning.y - cy) - ny * (morning.x - cx);
+    const eastSide = nx * ey - ny * ex;
+    const eSign = (morningSide * eastSide >= 0) ? 1 : -1;
+    function project(p) {
+      return projectRaw({ e: eSign * p.e, n: p.n, u: p.u });
     }
     function skyTo(az, el) { return project(sph(az, el)); }
     function ground(az) { return skyTo(az, 0); }
@@ -406,6 +519,7 @@
       (adj.look || 0).toFixed(2), (adj.tilt || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
+      String(eSign),
       Math.round(W), Math.round(H), Number(dpr).toFixed(2)
     ].join('|');
     if (!layerCache.canvas || layerCache.key !== layerKey) {
@@ -417,7 +531,7 @@
       const octx = off.getContext('2d');
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.clearRect(0, 0, W, H);
-      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy);
+      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy, eSign);
       layerCache.key = layerKey;
       layerCache.canvas = off;
     }
@@ -459,25 +573,17 @@
       ctx.fillText(String(hr).padStart(2, '0'), q.x, q.y - 4);
     });
 
-    function rimLetter(az, ch, color) {
-      const q = ground(az);
-      const dx = q.x - cx, dy = q.y - cy;
-      const len = Math.hypot(dx, dy) || 1;
-      const x = q.x + dx / len * 16;
-      const y = q.y + dy / len * 16;
-      ctx.font = 'bold 14px ui-sans-serif, system-ui';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.88)';
-      ctx.strokeText(ch, x, y);
-      ctx.fillStyle = color;
-      ctx.fillText(ch, x, y);
+    if (opts.showCardinals !== false) {
+      const nP = markerXY(o.north);
+      const sP = markerXY(o.south);
+      const wP = markerXY(o.west);
+      const eP = markerXY(o.east);
+      const glyph = Math.max(22, Math.min(40, R * 0.12));
+      if (sP) paintCardinalLetter(ctx, (sP.x / 100) * W, (sP.y / 100) * H, 'S', nx, ny, ex, ey, glyph, '#f472b6');
+      if (wP) paintCardinalLetter(ctx, (wP.x / 100) * W, (wP.y / 100) * H, 'W', nx, ny, ex, ey, glyph, '#fbbf24');
+      if (eP) paintCardinalLetter(ctx, (eP.x / 100) * W, (eP.y / 100) * H, 'E', nx, ny, ex, ey, glyph, '#34d399');
+      if (nP) paintNorthArrow(ctx, (nP.x / 100) * W, (nP.y / 100) * H, nx, ny, ex, ey, glyph * (32 / 28));
     }
-    rimLetter(0, 'N', '#38bdf8');
-    rimLetter(Math.PI, 'S', '#f472b6');
-    rimLetter(Math.PI / 2, 'E', '#34d399');
-    rimLetter(3 * Math.PI / 2, 'W', '#fbbf24');
 
     const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m);
     const liveEl = (opts.sun && Number.isFinite(opts.sun.elevation))
@@ -551,6 +657,7 @@
     const sun = props.sun;
     const orientation = props.orientation;
     const northOffsetDeg = props.northOffsetDeg;
+    const showCardinals = props.showCardinals !== false;
     const oKey = orientation
       ? ['north', 'south', 'west', 'east'].map(function (k) {
           const p = orientation[k];
@@ -578,7 +685,8 @@
           width: W, height: H, dpr: dpr,
           lat: lat, lon: lon, hour: hour, doy: doy,
           sun: sun, adj: adj, orientation: orientation,
-          northOffsetDeg: northOffsetDeg, elevation_m: elevationM
+          northOffsetDeg: northOffsetDeg, elevation_m: elevationM,
+          showCardinals: showCardinals
         });
       }
       paint();
@@ -588,7 +696,7 @@
       return function () { if (ro) ro.disconnect(); };
     }, [enabled, lat, lon, adj.size, adj.rot, adj.look, adj.tilt,
         hour, doy, sun && sun.azimuth, sun && sun.elevation,
-        orientation, oKey, northOffsetDeg, elevationM]);
+        orientation, oKey, northOffsetDeg, elevationM, showCardinals]);
 
     if (!enabled) return null;
     return React.createElement('div', {
@@ -781,6 +889,7 @@
         sun: sun, hour: hour, doy: doy, adj: adj,
         orientation: props && props.orientation,
         northOffsetDeg: props && props.northOffsetDeg,
+        showCardinals: props && props.showCardinals,
       }),
       React.createElement(global.ElcSunPathControls, {
         enabled: enabled, hour: hour, doy: doy, adj: adj, followClock: followClock,

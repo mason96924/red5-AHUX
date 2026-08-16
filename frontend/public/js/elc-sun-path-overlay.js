@@ -579,9 +579,13 @@
        stays on N, 06 on E, 18 on W. Never negate both e and n. */
     const southHem = latDeg < 0;
     const tiltRad = (-5 + (adj.tilt || 0)) * Math.PI / 180;
+    const pitchRad = (adj.pitch || 0) * Math.PI / 180;
     const ct = Math.cos(tiltRad), st = Math.sin(tiltRad);
+    const cp = Math.cos(pitchRad), sp = Math.sin(pitchRad);
     function tiltPt(p) {
-      return { e: p.e * ct - p.u * st, n: p.n, u: p.e * st + p.u * ct };
+      const n1 = p.n * cp - p.u * sp;
+      const u1 = p.n * sp + p.u * cp;
+      return { e: p.e * ct - u1 * st, n: n1, u: p.e * st + u1 * ct };
     }
     const camEl = (35 + (adj.look || 0)) * Math.PI / 180;
     const camAz = (southHem ? 180 : 137) * Math.PI / 180;
@@ -643,6 +647,7 @@
       eph.key,
       (adj.size || 1).toFixed(3), (adj.rot || 0).toFixed(2),
       (adj.look || 0).toFixed(2), (adj.tilt || 0).toFixed(2),
+      (adj.pitch || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
       Math.round(W), Math.round(H), Number(dpr).toFixed(2),
@@ -769,7 +774,13 @@
     }
     ctx.fillStyle = '#96d2ff';
     ctx.beginPath(); ctx.arc(cx, cy, 2.1, 0, Math.PI * 2); ctx.fill();
-    return { cx: cx, cy: cy, R: R };
+    const rim = [];
+    for (let d = 0; d < 360; d += 4) {
+      const az = d * Math.PI / 180;
+      const q = ground(az);
+      rim.push({ x: q.x, y: q.y, az: az });
+    }
+    return { cx: cx, cy: cy, R: R, rim: rim };
   }
 
   global.red5PaintElcSunPath = paintElcSunPath;
@@ -780,12 +791,15 @@
     const React = global.React;
     const canvasRef = React.useRef(null);
     const wrapRef = React.useRef(null);
+    const geomRef = React.useRef(null);
+    const hoverRef = React.useRef(null);
+    const dragRef = React.useRef(null);
     const enabled = !!props.enabled;
     const lat = typeof props.lat === 'number' ? props.lat : 40.7128;
     const lon = typeof props.lon === 'number' ? props.lon : -74.0060;
     const elevationM = Number(props.elevation_m) || 0;
     const timezone = props.timezone || '';
-    const adj = props.adj || { size: 1, rot: 0, look: 0, tilt: 0 };
+    const adj = props.adj || { size: 1, rot: 0, look: 0, tilt: 0, pitch: 0 };
     const hour = props.hour;
     const doy = props.doy;
     const sun = props.sun;
@@ -799,39 +813,152 @@
         }).join('|')
       : '';
 
-    React.useEffect(function () {
+    function paintNow() {
       const canvas = canvasRef.current;
       const wrap = wrapRef.current;
-      if (!canvas || !wrap || !enabled) return undefined;
-      function paint() {
-        const r = wrap.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const W = Math.max(1, r.width);
-        const H = Math.max(1, r.height);
-        canvas.width = Math.floor(W * dpr);
-        canvas.height = Math.floor(H * dpr);
-        canvas.style.width = W + 'px';
-        canvas.style.height = H + 'px';
-        const ctx = canvas.getContext('2d');
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, W, H);
-        paintElcSunPath(ctx, {
-          width: W, height: H, dpr: dpr,
-          lat: lat, lon: lon, hour: hour, doy: doy,
-          sun: sun, adj: adj, orientation: orientation,
-          northOffsetDeg: northOffsetDeg, elevation_m: elevationM,
-          timezone: timezone,
-          showCardinals: showCardinals
-        });
+      if (!canvas || !wrap || !enabled) return;
+      const r = wrap.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const W = Math.max(1, r.width);
+      const H = Math.max(1, r.height);
+      canvas.width = Math.floor(W * dpr);
+      canvas.height = Math.floor(H * dpr);
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const geom = paintElcSunPath(ctx, {
+        width: W, height: H, dpr: dpr,
+        lat: lat, lon: lon, hour: hour, doy: doy,
+        sun: sun, adj: adj, orientation: orientation,
+        northOffsetDeg: northOffsetDeg, elevation_m: elevationM,
+        timezone: timezone,
+        showCardinals: showCardinals
+      });
+      geomRef.current = geom;
+      const hover = hoverRef.current;
+      if (hover && geom) {
+        ctx.beginPath();
+        ctx.arc(hover.x, hover.y, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.95)';
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(hover.x, hover.y, 3.2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(253, 224, 71, 0.95)';
+        ctx.fill();
       }
-      paint();
+    }
+
+    const paintNowRef = React.useRef(paintNow);
+    paintNowRef.current = paintNow;
+
+    React.useEffect(function () {
+      const wrap = wrapRef.current;
+      if (!wrap || !enabled) return undefined;
+      paintNow();
       const ro = (typeof ResizeObserver !== 'undefined')
-        ? new ResizeObserver(paint) : null;
+        ? new ResizeObserver(function () { paintNowRef.current(); }) : null;
       if (ro) ro.observe(wrap);
       return function () { if (ro) ro.disconnect(); };
-    }, [enabled, lat, lon, adj.size, adj.rot, adj.look, adj.tilt,
+    }, [enabled, lat, lon, adj.size, adj.rot, adj.look, adj.tilt, adj.pitch,
         hour, doy, sun && sun.azimuth, sun && sun.elevation,
         orientation, oKey, northOffsetDeg, elevationM, timezone, showCardinals]);
+
+    React.useEffect(function () {
+      const wrap = wrapRef.current;
+      const host = wrap && wrap.parentElement;
+      if (!wrap || !host || !enabled) return undefined;
+      function local(e) {
+        const r = wrap.getBoundingClientRect();
+        return { x: e.clientX - r.left, y: e.clientY - r.top };
+      }
+      function hitRim(x, y) {
+        const g = geomRef.current;
+        if (!g || !g.rim) return null;
+        const tol = Math.max(12, Math.min(22, g.R * 0.07));
+        let best = null, bestD = tol;
+        for (let i = 0; i < g.rim.length; i++) {
+          const p = g.rim[i];
+          const d = Math.hypot(p.x - x, p.y - y);
+          if (d < bestD) { bestD = d; best = p; }
+        }
+        return best;
+      }
+      function onDown(e) {
+        if (e.button != null && e.button !== 0) return;
+        const pt = local(e);
+        const hit = hitRim(pt.x, pt.y);
+        if (!hit) return;
+        const g = geomRef.current;
+        const a = (global.red5ElcSunPath && global.red5ElcSunPath.loadAdj)
+          ? global.red5ElcSunPath.loadAdj()
+          : { rot: 0, tilt: 0, pitch: 0 };
+        e.preventDefault();
+        e.stopPropagation();
+        dragRef.current = {
+          id: e.pointerId,
+          startAng: Math.atan2(pt.y - g.cy, pt.x - g.cx),
+          startY: pt.y,
+          rot0: Number(a.rot) || 0,
+          tilt0: Number(a.tilt) || 0,
+          pitch0: Number(a.pitch) || 0,
+          grabAz: hit.az,
+          cx: g.cx, cy: g.cy
+        };
+        hoverRef.current = hit;
+        host.style.cursor = 'grabbing';
+        try { host.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      function onMove(e) {
+        const pt = local(e);
+        const drag = dragRef.current;
+        if (drag && (drag.id == null || drag.id === e.pointerId)) {
+          e.preventDefault();
+          e.stopPropagation();
+          const ang = Math.atan2(pt.y - drag.cy, pt.x - drag.cx);
+          let dRot = (ang - drag.startAng) * 180 / Math.PI;
+          if (dRot > 180) dRot -= 360;
+          if (dRot < -180) dRot += 360;
+          const up = -(pt.y - drag.startY);
+          const k = 0.22;
+          const tilt = Math.max(-40, Math.min(50, drag.tilt0 + up * Math.sin(drag.grabAz) * k));
+          const pitch = Math.max(-40, Math.min(40, drag.pitch0 + up * Math.cos(drag.grabAz) * k));
+          if (global.red5ElcSunPath && global.red5ElcSunPath.setAdj) {
+            global.red5ElcSunPath.setAdj({
+              rot: drag.rot0 + dRot, tilt: tilt, pitch: pitch
+            });
+          }
+          hoverRef.current = { x: pt.x, y: pt.y, az: drag.grabAz };
+          host.style.cursor = 'grabbing';
+          return;
+        }
+        const hit = hitRim(pt.x, pt.y);
+        const was = hoverRef.current;
+        hoverRef.current = hit;
+        host.style.cursor = hit ? 'grab' : '';
+        if (hit || was) paintNowRef.current();
+      }
+      function onUp(e) {
+        if (!dragRef.current) return;
+        if (dragRef.current.id != null && e.pointerId !== dragRef.current.id) return;
+        dragRef.current = null;
+        host.style.cursor = '';
+        try { host.releasePointerCapture(e.pointerId); } catch (_) {}
+      }
+      host.addEventListener('pointerdown', onDown, true);
+      host.addEventListener('pointermove', onMove, true);
+      host.addEventListener('pointerup', onUp, true);
+      host.addEventListener('pointercancel', onUp, true);
+      return function () {
+        host.removeEventListener('pointerdown', onDown, true);
+        host.removeEventListener('pointermove', onMove, true);
+        host.removeEventListener('pointerup', onUp, true);
+        host.removeEventListener('pointercancel', onUp, true);
+        host.style.cursor = '';
+      };
+    }, [enabled]);
 
     if (!enabled) return null;
     return React.createElement('div', {
@@ -1581,13 +1708,8 @@
           enabled && React.createElement('span', { className: 'inline-flex gap-1 flex-wrap items-center' },
             btn('size-', '−', 'Smaller'),
             btn('size+', '+', 'Bigger'),
-            btn('rotL', '↺', 'Spin left 15°'),
-            btn('rotR', '↻', 'Spin right 15°'),
-            btn('rot180', '180°', 'Turn the dome around 180°'),
             !props.operatorAdj && btn('lookU', '↑', 'Look up'),
             !props.operatorAdj && btn('lookD', '↓', 'Look down'),
-            !props.operatorAdj && btn('tiltW', 'W↓', 'West down'),
-            !props.operatorAdj && btn('tiltE', 'E↓', 'East down'),
             btn('reset', 'Reset', 'Reset view')
           )
         ),
@@ -1630,29 +1752,36 @@
           rot: Number(j.rot) || 0,
           look: Number(j.look) || 0,
           tilt: Number(j.tilt) || 0,
+          pitch: Number(j.pitch) || 0,
         };
       }
     } catch (_) {}
-    return { size: 1, rot: 0, look: 0, tilt: 0 };
+    return { size: 1, rot: 0, look: 0, tilt: 0, pitch: 0 };
   }
   function saveAdj(a) {
     try { localStorage.setItem('elc.floor.sunPathAdj', JSON.stringify(a)); } catch (_) {}
   }
   function applyAdjStep(adj, kind) {
-    const a = Object.assign({ size: 1, rot: 0, look: 0, tilt: 0 }, adj);
+    const a = Object.assign({ size: 1, rot: 0, look: 0, tilt: 0, pitch: 0 }, adj);
     if (kind === 'size-') a.size = Math.max(0.45, +(a.size - 0.04).toFixed(3));
     if (kind === 'size+') a.size = Math.min(2.2, +(a.size + 0.04).toFixed(3));
-    if (kind === 'rotL') a.rot += 15;
-    if (kind === 'rotR') a.rot -= 15;
-    if (kind === 'rot180') a.rot += 180;
     if (kind === 'lookU') a.look = Math.min(40, a.look + 1.2);
     if (kind === 'lookD') a.look = Math.max(-25, a.look - 1.2);
-    if (kind === 'tiltW') a.tilt = Math.min(50, a.tilt + 1);
-    if (kind === 'tiltE') a.tilt = Math.max(-40, a.tilt - 1);
-    if (kind === 'reset') { a.size = 1; a.rot = 0; a.look = 0; a.tilt = 0; }
+    if (kind === 'reset') { a.size = 1; a.rot = 0; a.look = 0; a.tilt = 0; a.pitch = 0; }
     a.rot = ((a.rot % 360) + 360) % 360;
     if (a.rot > 180) a.rot -= 360;
     saveAdj(a);
+    return a;
+  }
+  function setAdjLive(partial) {
+    const a = Object.assign({ size: 1, rot: 0, look: 0, tilt: 0, pitch: 0 }, getSunAdjLive(), partial || {});
+    a.rot = ((Number(a.rot) % 360) + 360) % 360;
+    if (a.rot > 180) a.rot -= 360;
+    a.tilt = Math.max(-40, Math.min(50, Number(a.tilt) || 0));
+    a.pitch = Math.max(-40, Math.min(40, Number(a.pitch) || 0));
+    _sunAdjLive = a;
+    saveAdj(a);
+    publishSunUi();
     return a;
   }
 
@@ -2130,6 +2259,7 @@
     loadAdj: loadAdj,
     saveAdj: saveAdj,
     applyAdjStep: applyAdjStep,
+    setAdj: setAdjLive,
     dayOfYear: dayOfYear,
     civilHourNow: civilHourNow,
     civilDoyNow: civilDoyNow,

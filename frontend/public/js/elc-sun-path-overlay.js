@@ -1633,6 +1633,384 @@
     return sunUiSnapshot();
   }
 
+  /* ---- AHU host: outdoor weather + lux (TOD) + Darken Auto/On/Off ----
+     Host chrome only — not painted into the graphic. Rooms / floor plan
+     do not mount this (no darken on rooms). */
+  const WX_MOOD = {
+    bright: { icon: '\u2600', label: 'Bright' },
+    'light-cloud': { icon: '\u26C5', label: 'Light cloud' },
+    'heavy-cloud': { icon: '\u2601', label: 'Heavy cloud' },
+    'light-rain': { icon: '\uD83C\uDF26', label: 'Light rain' },
+    rain: { icon: '\uD83C\uDF27', label: 'Rain' },
+    storm: { icon: '\u26C8', label: 'Storm' },
+    snow: { icon: '\u2744', label: 'Snow' },
+    twilight: { icon: '\uD83C\uDF05', label: 'Twilight' },
+    night: { icon: '\uD83C\uDF19', label: 'Night' },
+    none: { icon: '\u2014', label: '\u2014' },
+  };
+  const AHU_DARKEN_EVT = 'r5-ahu-darken';
+  const _ahuDarkenSubs = new Set();
+  let _ahuDarkenMode = (function () {
+    try {
+      const v = localStorage.getItem('ahux.ahu.darkenBg');
+      if (v === 'on' || v === 'off' || v === 'auto') return v;
+    } catch (_) {}
+    return 'auto';
+  })();
+  let _ahuDarkenPctMode = (function () {
+    try {
+      const m = localStorage.getItem('ahux.ahu.darkenPctMode');
+      if (m === 'manual' || m === 'tod') return m;
+    } catch (_) {}
+    return 'tod';
+  })();
+  let _ahuDarkenPct = (function () {
+    try {
+      const n = Number(localStorage.getItem('ahux.ahu.darkenPct'));
+      if (Number.isFinite(n)) return Math.min(90, Math.max(30, Math.round(n)));
+    } catch (_) {}
+    return 90;
+  })();
+
+  function ahuDarkenSnapshot() {
+    return { mode: _ahuDarkenMode, pctMode: _ahuDarkenPctMode, pct: _ahuDarkenPct };
+  }
+  function publishAhuDarken() {
+    const snap = ahuDarkenSnapshot();
+    _ahuDarkenSubs.forEach(function (fn) { try { fn(snap); } catch (_) {} });
+    try { global.dispatchEvent(new CustomEvent(AHU_DARKEN_EVT, { detail: snap })); } catch (_) {}
+  }
+  function setAhuDarkenMode(mode) {
+    const next = (mode === 'on' || mode === 'off') ? mode : 'auto';
+    _ahuDarkenMode = next;
+    if (next === 'auto') _ahuDarkenPctMode = 'tod';
+    try {
+      localStorage.setItem('ahux.ahu.darkenBg', _ahuDarkenMode);
+      localStorage.setItem('ahux.ahu.darkenPctMode', _ahuDarkenPctMode);
+    } catch (_) {}
+    publishAhuDarken();
+  }
+  function cycleAhuDarkenMode() {
+    const order = ['auto', 'on', 'off'];
+    const i = order.indexOf(_ahuDarkenMode);
+    setAhuDarkenMode(order[(i + 1) % order.length]);
+  }
+  function setAhuDarkenPctManual(pct) {
+    if (_ahuDarkenMode === 'auto') setAhuDarkenMode('on');
+    const n = Math.min(90, Math.max(30, Math.round(Number(pct))));
+    if (!Number.isFinite(n)) return;
+    _ahuDarkenPctMode = 'manual';
+    _ahuDarkenPct = n;
+    try {
+      localStorage.setItem('ahux.ahu.darkenPctMode', 'manual');
+      localStorage.setItem('ahux.ahu.darkenPct', String(n));
+    } catch (_) {}
+    publishAhuDarken();
+  }
+  function setAhuDarkenPctTod() {
+    _ahuDarkenPctMode = 'tod';
+    try { localStorage.setItem('ahux.ahu.darkenPctMode', 'tod'); } catch (_) {}
+    publishAhuDarken();
+  }
+  function useElcAhuDarken() {
+    const React = global.React;
+    const [, setRev] = React.useState(0);
+    React.useEffect(function () {
+      const sub = function () { setRev(function (n) { return n + 1; }); };
+      _ahuDarkenSubs.add(sub);
+      return function () { _ahuDarkenSubs.delete(sub); };
+    }, []);
+    return ahuDarkenSnapshot();
+  }
+
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+  function clearSkyBrightFactor(altDeg) {
+    if (!(altDeg > 0)) return 0;
+    return Math.pow(Math.sin(Math.min(90, altDeg) * Math.PI / 180), 1.15);
+  }
+  function todDarkenPct(sunEl, lat, lon, doy, timezone, elevationM) {
+    if (!Number.isFinite(sunEl) || sunEl <= 0) return 90;
+    const noonH = solarNoonHour(lat, lon, doy, timezone);
+    const noon = sunAtCivilTod(lat, lon, doy, noonH, elevationM, timezone);
+    let altNoon = noon && noon.elevation;
+    if (!(altNoon > 0.5)) return 90;
+    altNoon = Math.min(90, altNoon);
+    const bright = clearSkyBrightFactor(sunEl);
+    const brightNoon = clearSkyBrightFactor(altNoon);
+    if (brightNoon <= 1e-8) return 90;
+    return Math.round(90 - 60 * Math.min(1, bright / brightNoon));
+  }
+  function effectiveAhuDarkenPct(sunEl, lat, lon, doy, timezone, elevationM) {
+    if (_ahuDarkenMode === 'auto' || _ahuDarkenPctMode !== 'manual') {
+      return todDarkenPct(sunEl, lat, lon, doy, timezone, elevationM);
+    }
+    return _ahuDarkenPct;
+  }
+  function horizontalIlluminanceLux(alt, cloudCover, precipMmH) {
+    if (alt < -12) return 0.05;
+    if (alt < 0) {
+      const tw = Math.pow(10, (alt + 12) / 3);
+      return Math.max(0.05, Math.min(600, tw));
+    }
+    const clear = 128000 * Math.pow(Math.sin(Math.min(90, alt) * Math.PI / 180), 1.15);
+    const cc = clamp01(cloudCover);
+    const rain = Math.max(0.7, Math.min(1, 1 - 0.03 * (precipMmH || 0)));
+    return Math.max(clear * (1 - 0.85 * cc) * rain, 0.5);
+  }
+  function ambientRgb(illum, alt, cloudCover, precipMmH) {
+    const cc = clamp01(cloudCover);
+    const rain = Math.max(0.7, Math.min(1, 1 - 0.03 * (precipMmH || 0)));
+    if (alt < -6) {
+      const v = Math.log10(Math.max(illum, 0.5) + 1) / Math.log10(100001);
+      return [
+        Math.round(Math.max(0, Math.min(40, 6 + 20 * v))),
+        Math.round(Math.max(0, Math.min(50, 9 + 25 * v))),
+        Math.round(Math.max(0, Math.min(90, 18 + 40 * v))),
+      ];
+    }
+    const anchors = [
+      [-6, 40, 30, 70], [-3, 110, 60, 75], [0, 200, 95, 55], [3, 255, 140, 60],
+      [10, 255, 180, 80], [30, 255, 220, 150], [60, 255, 245, 210], [90, 255, 252, 235],
+    ];
+    const a = Math.max(-6, Math.min(90, alt));
+    let lo = anchors[0], hi = anchors[anchors.length - 1];
+    for (let i = 1; i < anchors.length; i++) {
+      if (anchors[i][0] >= a) { lo = anchors[i - 1]; hi = anchors[i]; break; }
+    }
+    const span = hi[0] - lo[0];
+    const t = span <= 0 ? 0 : (a - lo[0]) / span;
+    let r = lo[1] + t * (hi[1] - lo[1]);
+    let g = lo[2] + t * (hi[2] - lo[2]);
+    let b = lo[3] + t * (hi[3] - lo[3]);
+    r = r + (200 - r) * (0.55 * cc);
+    g = g + (200 - g) * (0.55 * cc);
+    b = b + (210 - b) * (0.55 * cc);
+    const dim = (1 - 0.40 * cc) * rain;
+    r *= dim; g *= dim; b *= dim;
+    return [
+      Math.round(Math.max(0, Math.min(255, r))),
+      Math.round(Math.max(0, Math.min(255, g))),
+      Math.round(Math.max(0, Math.min(255, b))),
+    ];
+  }
+  function rgbToHex(rgb) {
+    return '#' + rgb.map(function (n) {
+      return ('0' + n.toString(16)).slice(-2);
+    }).join('');
+  }
+  function ambientLabel(alt, cc, precip, tempC) {
+    if (alt < -6) return 'night';
+    if (alt < 0) return 'twilight';
+    if (precip > 0.1 && tempC != null && tempC < 1.5) return 'snow';
+    if (precip > 6) return 'storm';
+    if (precip > 2) return 'rain';
+    if (precip > 0.3) return 'light-rain';
+    if (cc > 0.85) return 'overcast';
+    if (cc > 0.4) return 'partly-cloudy';
+    return 'clear-sunny';
+  }
+  function weatherMood(alt, cc, precip, tempC, label) {
+    if (alt < -6) return 'night';
+    if (alt < 0) return 'twilight';
+    if (label === 'snow' || (precip > 0.1 && tempC != null && tempC < 1.5)) return 'snow';
+    if (label === 'storm' || precip > 6 || (precip > 3 && cc > 0.7)) return 'storm';
+    if (label === 'rain' || precip > 1.5) return 'rain';
+    if (label === 'light-rain' || precip > 0.2) return 'light-rain';
+    if (label === 'overcast' || cc > 0.8) return 'heavy-cloud';
+    if (label === 'partly-cloudy' || cc > 0.35) return 'light-cloud';
+    return 'bright';
+  }
+  function cloudCover01(wx) {
+    if (!wx || !wx.success) return 0;
+    const n = Number(wx.cloud_cover);
+    if (!Number.isFinite(n)) return 0;
+    return n > 1 ? clamp01(n / 100) : clamp01(n);
+  }
+  function precipMmH(wx) {
+    if (!wx || !wx.success) return 0;
+    const n = Number(wx.precipitation_mm);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  function fmtLux(lux) {
+    if (!(lux >= 0)) return '\u2014 lx';
+    if (lux >= 1000) return Math.round(lux).toLocaleString() + ' lx';
+    if (lux >= 10) return Math.round(lux) + ' lx';
+    if (lux >= 1) return lux.toFixed(1) + ' lx';
+    return lux.toFixed(2) + ' lx';
+  }
+  function useElcOutdoorWeather(lat, lon) {
+    const React = global.React;
+    const [wx, setWx] = React.useState(null);
+    React.useEffect(function () {
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
+      let cancelled = false;
+      const pull = function () {
+        if (typeof global.red5FetchCurrentWeather !== 'function') return;
+        global.red5FetchCurrentWeather(lat, lon).then(function (p) {
+          if (!cancelled) setWx(p);
+        });
+      };
+      pull();
+      const id = setInterval(pull, 5 * 60 * 1000);
+      return function () { cancelled = true; clearInterval(id); };
+    }, [lat, lon]);
+    return wx;
+  }
+
+  global.ElcAhuAmbientChrome = function ElcAhuAmbientChrome(props) {
+    const React = global.React;
+    const mode = (props && props.darkenMode) || 'auto';
+    const pctMode = (props && props.darkenPctMode) || 'tod';
+    const sunEl = Number(props && props.sunEl);
+    const lux = Number(props && props.lux);
+    const hex = (props && props.colorHex) || '#333';
+    const label = (props && props.label) || '\u2014';
+    const moodKey = (props && props.mood) || 'none';
+    const mood = WX_MOOD[moodKey] || WX_MOOD.none;
+    const tempC = props && props.tempC;
+    const cc = Number(props && props.cloudCover) || 0;
+    const tintOn = mode !== 'off';
+    const autoTod = mode === 'auto';
+    const tod = autoTod || pctMode !== 'manual';
+    const pct = Number(props && props.darkenPct);
+    const pctTxt = Number.isFinite(pct) ? String(pct) : '\u2014';
+    const darkenLabel = mode === 'auto' ? 'Darken: Auto' : (mode === 'on' ? 'Darken: On' : 'Darken: Off');
+    const tempTxt = Number.isFinite(tempC) ? (Math.round(tempC * 10) / 10) + '\u00B0C' : null;
+    const ccTxt = Math.round(cc * 100) + '% cloud';
+    return React.createElement('div', {
+      className: 'pointer-events-auto',
+      'data-testid': 'ahu-ambient-chrome',
+      onMouseDown: function (e) { e.stopPropagation(); },
+      style: { width: 248 },
+    },
+      React.createElement('div', {
+        className: 'rounded-md border shadow-2xl backdrop-blur-md px-2 py-1.5 space-y-1',
+        style: { background: 'rgba(16,20,26,0.92)', borderColor: '#334155' },
+      },
+        React.createElement('div', { className: 'flex items-center gap-1.5' },
+          React.createElement('span', {
+            'data-testid': 'ahu-ambient-swatch',
+            style: {
+              display: 'inline-block', width: 12, height: 12, borderRadius: 2,
+              border: '1px solid #475569', background: hex, flexShrink: 0,
+            },
+          }),
+          React.createElement('span', {
+            className: 'text-[11px] leading-none',
+            style: { color: '#e2e8f0' },
+          }, mood.icon + ' ' + mood.label),
+          React.createElement('span', {
+            className: 'ml-auto font-mono text-[11px] font-black tabular-nums',
+            'data-testid': 'ahu-ambient-lux',
+            style: { color: '#fbbf24' },
+          }, fmtLux(lux))
+        ),
+        React.createElement('div', {
+          className: 'text-[9px] font-mono truncate',
+          style: { color: '#94a3b8' },
+          title: 'Outside weather + horizontal lux from site TOD (sun altitude) and live cloud/precip',
+        }, label + (tempTxt ? ' \u00b7 ' + tempTxt : '') + ' \u00b7 ' + ccTxt),
+        React.createElement('div', { className: 'flex items-center gap-1.5 flex-wrap' },
+          React.createElement('button', {
+            type: 'button',
+            'data-testid': 'ahu-darken-toggle',
+            title: 'Tint overlay: Auto follows TOD (90%\u219230%\u219290% sunrise\u2013noon\u2013sunset). On locks a level; Off disables.',
+            onClick: function () { if (props.onCycleDarken) props.onCycleDarken(); },
+            className: 'px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ' +
+              (tintOn ? 'bg-emerald-900/50 text-emerald-300 border-emerald-500/60' : 'bg-slate-800 text-slate-300 border-slate-600'),
+          }, darkenLabel),
+          React.createElement('button', {
+            type: 'button',
+            'data-testid': 'ahu-darken-level-pct',
+            disabled: autoTod || !tintOn,
+            title: autoTod
+              ? 'Darken Auto tracks sunrise\u2192noon\u2192sunset (90%\u219230%\u219290%). Switch to Darken: On to lock a level.'
+              : (tod
+                ? 'Following sunrise\u2192noon\u2192sunset. Drag slider to lock.'
+                : 'Locked level. Click to follow time of day again.'),
+            onClick: function () { if (!autoTod && tintOn && props.onDarkenTod) props.onDarkenTod(); },
+            className: 'px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ' +
+              (!tod && tintOn ? 'bg-emerald-900/40 text-emerald-200 border-emerald-500/50' : 'bg-slate-800 text-slate-400 border-slate-600'),
+            style: { opacity: tintOn ? 1 : 0.45, minWidth: '4.5em' },
+          }, tod ? (pctTxt + '% \u00b7 TOD') : (pctTxt + '%'))
+        ),
+        tintOn && !autoTod && React.createElement('input', {
+          type: 'range', min: 30, max: 90, step: 1,
+          value: Number.isFinite(pct) ? pct : 90,
+          'data-testid': 'ahu-darken-level',
+          className: 'w-full accent-emerald-400',
+          style: { height: 12 },
+          'aria-label': 'Background darkness percent',
+          onChange: function (e) {
+            if (props.onDarkenPct) props.onDarkenPct(+e.target.value);
+          },
+        })
+      )
+    );
+  };
+
+  global.ElcAhuAmbientChromeLive = function ElcAhuAmbientChromeLive(props) {
+    const React = global.React;
+    const lat = Number(props && props.lat);
+    const lon = Number(props && props.lon);
+    const elevationM = Number(props && props.elevation_m) || 0;
+    const timezone = (props && props.timezone) || '';
+    const clock = useElcSunClock(timezone, lon);
+    const dark = useElcAhuDarken();
+    const wx = useElcOutdoorWeather(lat, lon);
+    const sun = (Number.isFinite(lat) && Number.isFinite(lon))
+      ? sunAtCivilTod(lat, lon, clock.doy, clock.hour, elevationM, timezone)
+      : null;
+    const sunEl = sun ? sun.elevation : NaN;
+    const cc = cloudCover01(wx);
+    const precip = precipMmH(wx);
+    const tempC = wx && wx.success ? Number(wx.temperature_c) : NaN;
+    const lux = Number.isFinite(sunEl) ? horizontalIlluminanceLux(sunEl, cc, precip) : NaN;
+    const rgb = Number.isFinite(sunEl) ? ambientRgb(lux, sunEl, cc, precip) : [51, 51, 51];
+    const label = Number.isFinite(sunEl)
+      ? ambientLabel(sunEl, cc, precip, Number.isFinite(tempC) ? tempC : null)
+      : '\u2014';
+    const mood = Number.isFinite(sunEl)
+      ? weatherMood(sunEl, cc, precip, Number.isFinite(tempC) ? tempC : null, label)
+      : 'none';
+    const pct = effectiveAhuDarkenPct(sunEl, lat, lon, clock.doy, timezone, elevationM);
+    return global.ElcAhuAmbientChrome({
+      sunEl: sunEl, lux: lux, colorHex: rgbToHex(rgb), label: label, mood: mood,
+      tempC: Number.isFinite(tempC) ? tempC : null, cloudCover: cc,
+      darkenMode: dark.mode, darkenPctMode: dark.pctMode, darkenPct: pct,
+      onCycleDarken: cycleAhuDarkenMode,
+      onDarkenPct: setAhuDarkenPctManual,
+      onDarkenTod: setAhuDarkenPctTod,
+    });
+  };
+
+  global.ElcAhuDarkenVeil = function ElcAhuDarkenVeil(props) {
+    const React = global.React;
+    const lat = Number(props && props.lat);
+    const lon = Number(props && props.lon);
+    const elevationM = Number(props && props.elevation_m) || 0;
+    const timezone = (props && props.timezone) || '';
+    const clock = useElcSunClock(timezone, lon);
+    const dark = useElcAhuDarken();
+    if (dark.mode === 'off') return null;
+    const sun = (Number.isFinite(lat) && Number.isFinite(lon))
+      ? sunAtCivilTod(lat, lon, clock.doy, clock.hour, elevationM, timezone)
+      : null;
+    const sunEl = sun ? sun.elevation : 0;
+    const pct = effectiveAhuDarkenPct(sunEl, lat, lon, clock.doy, timezone, elevationM);
+    return React.createElement('div', {
+      'data-testid': 'ahu-darken-veil',
+      className: 'pointer-events-none',
+      style: {
+        gridArea: '1 / 1',
+        width: '100%',
+        height: '100%',
+        background: 'rgba(0,0,0,' + (pct / 100) + ')',
+        zIndex: 1,
+      },
+    });
+  };
+
   global.ElcSunPathHostChrome = function ElcSunPathHostChrome(props) {
     return global.ElcSunPathControls(Object.assign({}, props, {
       hostPinned: true,
@@ -1673,6 +2051,10 @@
     setEnabled: setSunPathEnabledShared,
     applyAdj: applySunAdjShared,
     sunUiEvent: SUN_UI_EVT,
+    ahuDarkenEvent: AHU_DARKEN_EVT,
+    ahuDarkenSnapshot: ahuDarkenSnapshot,
+    setAhuDarkenMode: setAhuDarkenMode,
+    cycleAhuDarkenMode: cycleAhuDarkenMode,
   };
   global.red5ElcSunAtTod = sunAtCivilTod;
   global.red5ElcSunAtTodForFloor = sunAtCivilTodForFloor;

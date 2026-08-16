@@ -627,7 +627,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   }
   function pushVolume(n1x, n1y, n2x, n2y, f1x, f1y, f2x, f2y, aBase, gradId, clipUrl, keyPrefix) {
     if (!(aBase > 0)) return;
-    if (Math.hypot(n2x - n1x, n2y - n1y) < 0.15) return;
+    if (Math.hypot(n2x - n1x, n2y - n1y) < 0.04) return;
     for (var li = 0; li < FEATHER.length; li++) {
       var L = FEATHER[li];
       var nSeg = scaleSeg(n1x, n1y, n2x, n2y, L.s);
@@ -722,6 +722,97 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     );
     var clipUrl = clipId ? ('url(#' + clipId + ')') : undefined;
     var wid = w.id || i;
+    var bType = String(w.blind_type || w.blindType || 'roller').toLowerCase();
+    var cov = blind;
+    var openFrac = open;
+    var gapStyle = (bType === 'horizontal' || bType === 'vertical')
+      && openFrac > 0.01 && openFrac < 0.92;
+    function flareFar(n1x, n1y, n2x, n2y) {
+      var hh = Math.hypot(n2x - n1x, n2y - n1y) / 2;
+      var spr = hh * (0.18 + 0.28 * openEase);
+      var qx = -(n2y - n1y), qy = (n2x - n1x);
+      var ql = Math.hypot(qx, qy) || 1;
+      qx = (qx / ql) * spr; qy = (qy / ql) * spr;
+      return [n1x + dx - qx, n1y + dy - qy, n2x + dx + qx, n2y + dy + qy];
+    }
+    function gapFrameFromVerts(verts) {
+      var gp = verts.map(function (v) { return [Number(v[0]), Number(v[1])]; });
+      if (gp.length < 3) return null;
+      var ssx = gp[1][0] - gp[0][0], ssy = gp[1][1] - gp[0][1];
+      var sl = Math.hypot(ssx, ssy) || 1;
+      ssx /= sl; ssy /= sl;
+      var hhx = -ssy, hhy = ssx;
+      var gcx = 0, gcy = 0, gi;
+      for (gi = 0; gi < gp.length; gi++) { gcx += gp[gi][0]; gcy += gp[gi][1]; }
+      gcx /= gp.length; gcy /= gp.length;
+      if (gcx * hhx + gcy * hhy > gp[0][0] * hhx + gp[0][1] * hhy) { hhx = -hhx; hhy = -hhy; }
+      var dotsS = gp.map(function (p) { return p[0] * ssx + p[1] * ssy; });
+      var dotsH = gp.map(function (p) { return p[0] * hhx + p[1] * hhy; });
+      return {
+        sx: ssx, sy: ssy, hx: hhx, hy: hhy,
+        sMin: Math.min.apply(null, dotsS), sMax: Math.max.apply(null, dotsS),
+        hMin: Math.min.apply(null, dotsH), hMax: Math.max.apply(null, dotsH)
+      };
+    }
+    function gapFrameFromBar() {
+      var ssx = x2 - x1, ssy = y2 - y1;
+      var sl = Math.hypot(ssx, ssy) || 1;
+      ssx /= sl; ssy /= sl;
+      var hhx = -ssy, hhy = ssx;
+      if (hhx * nx + hhy * ny < 0) { hhx = -hhx; hhy = -hhy; }
+      var sA = x1 * ssx + y1 * ssy, sB = x2 * ssx + y2 * ssy;
+      var h0 = x1 * hhx + y1 * hhy;
+      var hLift = Math.max(1.8, Math.min(4.2, half * 0.55));
+      return {
+        sx: ssx, sy: ssy, hx: hhx, hy: hhy,
+        sMin: Math.min(sA, sB), sMax: Math.max(sA, sB),
+        hMin: h0, hMax: h0 + hLift
+      };
+    }
+    function paintGapGloss(fr) {
+      if (!fr) return;
+      var sSpan = Math.max(0.2, fr.sMax - fr.sMin);
+      var hSpan = Math.max(0.2, fr.hMax - fr.hMin);
+      var stripeA = a0 * (0.55 + 0.45 * openEase);
+      function atSH(sv, hv) {
+        return [sv * fr.sx + hv * fr.hx, sv * fr.sy + hv * fr.hy];
+      }
+      var si;
+      if (bType === 'horizontal') {
+        var hn = Math.max(4, Math.round(5 + openFrac * 10));
+        for (si = 0; si < hn; si++) {
+          var u0 = cov + openFrac * ((si + 0.18) / hn);
+          var u1 = cov + openFrac * ((si + 0.55) / hn);
+          if (u1 <= cov + 0.01) continue;
+          var hv = ((fr.hMax - u0 * hSpan) + (fr.hMax - u1 * hSpan)) / 2;
+          var hn1 = atSH(fr.sMin - 0.2, hv);
+          var hn2 = atSH(fr.sMax + 0.2, hv);
+          var hf = flareFar(hn1[0], hn1[1], hn2[0], hn2[1]);
+          pushVolume(hn1[0], hn1[1], hn2[0], hn2[1], hf[0], hf[1], hf[2], hf[3],
+            stripeA * 0.85, gradId, clipUrl, 'wh-' + wid + '-' + si);
+        }
+        return;
+      }
+      var vn = Math.max(5, Math.round(6 + openFrac * 10));
+      var gapW = (0.18 + 0.42 * openFrac) * (sSpan / vn);
+      for (si = 0; si < vn; si++) {
+        var vc = fr.sMin + sSpan * ((si + 0.5) / vn);
+        var vs0 = vc - gapW * 0.5, vs1 = vc + gapW * 0.5;
+        var vn1 = atSH(vs0, fr.hMin);
+        var vn2 = atSH(vs1, fr.hMin);
+        var vf = flareFar(vn1[0], vn1[1], vn2[0], vn2[1]);
+        pushVolume(vn1[0], vn1[1], vn2[0], vn2[1], vf[0], vf[1], vf[2], vf[3],
+          stripeA * 0.9, gradId, clipUrl, 'wv-' + wid + '-' + si);
+        var va1 = atSH(vs0, fr.hMin + hSpan * 0.55);
+        var va2 = atSH(vs1, fr.hMin + hSpan * 0.55);
+        pushVolume(va1[0], va1[1], va2[0], va2[1], vf[0], vf[1], vf[2], vf[3],
+          stripeA * 0.22, gradId, clipUrl, 'wva-' + wid + '-' + si);
+      }
+    }
+    if (gapStyle) {
+      paintGapGloss(traced ? gapFrameFromVerts(w.vertices) : gapFrameFromBar());
+      continue;
+    }
     if (traced) {
       var near = w.vertices.map(function (v) { return [Number(v[0]), Number(v[1])]; });
       var far = near.map(function (p) { return [p[0] + dx, p[1] + dy]; });

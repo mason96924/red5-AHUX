@@ -915,6 +915,221 @@
     return clockSnapshot();
   }
 
+  /* ELC day-length infographic (year plot + twilight bands). */
+  const DL = { W: 220, H: 152, L: 17, R: 4, T: 4, B: 14 };
+  const DAYLEN_CACHE_MAX = 5;
+  const DAYLEN_CHUNK_DAYS = 14;
+  const _dayLenCaches = new Map();
+  let _dayLenBuild = null;
+  const _dlReady = new Set();
+
+  function daysInYear(y) {
+    return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365;
+  }
+  function dlX(doy, days) {
+    return DL.L + ((doy - 1) / Math.max(1, days - 1)) * (DL.W - DL.L - DL.R);
+  }
+  function dlY(hour) {
+    return DL.T + (Math.max(0, Math.min(24, hour)) / 24) * (DL.H - DL.T - DL.B);
+  }
+  function solarElDeg(latRad, doy, hour, lonDeg, tzHours) {
+    return solarAltAz(latRad, doy, hour, lonDeg, tzHours).el * 180 / Math.PI;
+  }
+  function crossingHour(latRad, doy, target, rising, lonDeg, tzHours) {
+    let prevH = 0;
+    let prevEl = solarElDeg(latRad, doy, 0, lonDeg, tzHours);
+    let h0 = null, h1 = null;
+    for (let h = 0.5; h <= 24.001; h += 0.5) {
+      const hh = Math.min(h, 24);
+      const el = solarElDeg(latRad, doy, hh, lonDeg, tzHours);
+      const crossed = rising
+        ? (prevEl < target && el >= target)
+        : (prevEl > target && el <= target);
+      if (crossed) { h0 = prevH; h1 = hh; break; }
+      prevH = hh; prevEl = el;
+    }
+    if (h0 == null) return null;
+    for (let i = 0; i < 14; i++) {
+      const mid = (h0 + h1) / 2;
+      const el = solarElDeg(latRad, doy, mid, lonDeg, tzHours);
+      if (rising ? (el < target) : (el > target)) h0 = mid;
+      else h1 = mid;
+    }
+    return (h0 + h1) / 2;
+  }
+  function bandHours(latRad, doy, target, lonDeg, tzHours) {
+    const rise = crossingHour(latRad, doy, target, true, lonDeg, tzHours);
+    const set = crossingHour(latRad, doy, target, false, lonDeg, tzHours);
+    if (rise != null && set != null) {
+      if (set >= rise) return [[rise, set]];
+      return [[0, set], [rise, 24]];
+    }
+    const noon = solarElDeg(latRad, doy, 12, lonDeg, tzHours);
+    const midn = solarElDeg(latRad, doy, 0, lonDeg, tzHours);
+    if (noon >= target || midn >= target) return [[0, 24]];
+    return [];
+  }
+  function dayLenThresholds() {
+    return [
+      { name: 'astro', el: -18 },
+      { name: 'naut', el: -12 },
+      { name: 'civil', el: -6 },
+      { name: 'day', el: 0 },
+    ];
+  }
+  function dayLenCacheKey(year, latDeg, lonDeg, timezone) {
+    return year + '|' + (Number(latDeg) || 0).toFixed(4) + '|' + (Number(lonDeg) || 0).toFixed(4) +
+      '|' + String(timezone || '') + '|' + DL.W + 'x' + DL.H;
+  }
+  function getDayLenCache(key) {
+    return _dayLenCaches.get(key) || null;
+  }
+  function putDayLenCache(cache) {
+    _dayLenCaches.delete(cache.key);
+    _dayLenCaches.set(cache.key, cache);
+    while (_dayLenCaches.size > DAYLEN_CACHE_MAX) {
+      const oldest = _dayLenCaches.keys().next().value;
+      if (oldest === cache.key) break;
+      _dayLenCaches.delete(oldest);
+    }
+    _dlReady.forEach(function (fn) { try { fn(cache); } catch (_) {} });
+  }
+  function appendDayLenDay(acc, latRad, days, doy, lonDeg, tzHours) {
+    const x0 = dlX(doy, days);
+    const x1 = dlX(Math.min(days, doy + 1), days);
+    const row = { doy: doy, rise: null, set: null };
+    dayLenThresholds().forEach(function (th) {
+      const segs = bandHours(latRad, doy, th.el, lonDeg, tzHours);
+      if (th.name === 'day' && segs.length === 1) {
+        row.rise = segs[0][0];
+        row.set = segs[0][1];
+      } else if (th.name === 'day' && segs.length === 2) {
+        row.rise = segs[1][0];
+        row.set = segs[0][1];
+      }
+      segs.forEach(function (seg) {
+        const y0 = dlY(seg[0]).toFixed(2);
+        const y1 = dlY(seg[1]).toFixed(2);
+        acc.paths[th.name].push(
+          'M' + x0.toFixed(2) + ',' + y0 + 'L' + x1.toFixed(2) + ',' + y0 +
+          'L' + x1.toFixed(2) + ',' + y1 + 'L' + x0.toFixed(2) + ',' + y1 + 'Z');
+      });
+    });
+    acc.perDay.push(row);
+  }
+  function dayLenDayRow(latRad, doy, lonDeg, tzHours) {
+    const segs = bandHours(latRad, doy, 0, lonDeg, tzHours);
+    const row = { doy: doy, rise: null, set: null };
+    if (segs.length === 1) {
+      row.rise = segs[0][0];
+      row.set = segs[0][1];
+    } else if (segs.length === 2) {
+      row.rise = segs[1][0];
+      row.set = segs[0][1];
+    }
+    return row;
+  }
+  function scheduleDayLenBuild(year, latDeg, lonDeg, timezone, priority) {
+    const key = dayLenCacheKey(year, latDeg, lonDeg, timezone);
+    if (_dayLenCaches.has(key)) return;
+    if (_dayLenBuild) {
+      if (_dayLenBuild.key === key) {
+        if (priority) _dayLenBuild.priority = true;
+        return;
+      }
+      if (!priority) return;
+      _dayLenBuild.cancelled = true;
+    }
+    const latRad = (Number(latDeg) || 0) * Math.PI / 180;
+    const days = daysInYear(year);
+    const tzHours = siteTzOffsetHours(new Date(), timezone, lonDeg);
+    const acc = { perDay: [], paths: { astro: [], naut: [], civil: [], day: [] } };
+    const job = { key: key, year: year, priority: !!priority, cancelled: false };
+    _dayLenBuild = job;
+    let doy = 1;
+    const chunk = function () {
+      if (job.cancelled) {
+        if (_dayLenBuild === job) _dayLenBuild = null;
+        return;
+      }
+      const end = Math.min(days, doy + DAYLEN_CHUNK_DAYS - 1);
+      for (let d = doy; d <= end; d++) appendDayLenDay(acc, latRad, days, d, lonDeg, tzHours);
+      doy = end + 1;
+      if (doy <= days) {
+        (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(chunk);
+        return;
+      }
+      putDayLenCache({
+        key: key, year: year, days: days, perDay: acc.perDay,
+        astro: acc.paths.astro.join(''),
+        naut: acc.paths.naut.join(''),
+        civil: acc.paths.civil.join(''),
+        day: acc.paths.day.join(''),
+      });
+      if (_dayLenBuild === job) _dayLenBuild = null;
+    };
+    (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(chunk);
+  }
+  function ensureDayLenCache(year, latDeg, lonDeg, timezone) {
+    const key = dayLenCacheKey(year, latDeg, lonDeg, timezone);
+    const ready = getDayLenCache(key);
+    if (ready) return ready;
+    scheduleDayLenBuild(year, latDeg, lonDeg, timezone, true);
+    return null;
+  }
+  function fmtHM(hour) {
+    if (hour == null || !Number.isFinite(hour)) return '';
+    const m = Math.round(hour * 60);
+    const wrap = ((m % 1440) + 1440) % 1440;
+    const hh = String(Math.floor(wrap / 60)).padStart(2, '0');
+    const mm = String(wrap % 60).padStart(2, '0');
+    return hh + ':' + mm;
+  }
+  function dayLengthHours(row) {
+    if (!row || row.rise == null || row.set == null) return null;
+    const rise = Number(row.rise), set = Number(row.set);
+    if (!Number.isFinite(rise) || !Number.isFinite(set)) return 0;
+    if (set >= rise) return set - rise;
+    return (24 - rise) + set;
+  }
+  function fmtDayLengthDur(hours) {
+    if (hours == null || !Number.isFinite(hours)) return '—';
+    const mins = Math.round(Math.max(0, Math.min(24, hours)) * 60);
+    if (mins <= 0) return '0h';
+    if (mins >= 1440) return '24h';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m ? (h + 'h ' + String(m).padStart(2, '0') + 'm') : (h + 'h');
+  }
+  function monthStartDoy(year, monthIndex) {
+    return Math.round((Date.UTC(year, monthIndex, 1) - Date.UTC(year, 0, 1)) / 86400000) + 1;
+  }
+  function partsFromPlotFrac(year, nx, ny) {
+    const days = daysInYear(year);
+    const doy = Math.max(1, Math.min(days, Math.round(nx * (days - 1) + 1)));
+    const minutes = Math.max(0, Math.min(1439, Math.round(ny * 1440)));
+    const d = new Date(year, 0, doy);
+    return {
+      y: d.getFullYear(), mo: d.getMonth(), da: d.getDate(),
+      h: Math.floor(minutes / 60), mi: minutes % 60, se: 0,
+      doy: dayOfYearYmd(d.getFullYear(), d.getMonth(), d.getDate())
+    };
+  }
+  function plotEventToParts(svg, clientX, clientY, year) {
+    if (!svg || typeof svg.getScreenCTM !== 'function') return null;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const loc = pt.matrixTransform(ctm.inverse());
+    const plotW = DL.W - DL.L - DL.R;
+    const plotH = DL.H - DL.T - DL.B;
+    const nx = (loc.x - DL.L) / plotW;
+    const ny = (loc.y - DL.T) / plotH;
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+    return partsFromPlotFrac(year, nx, ny);
+  }
+
   function daySelBtnStyle(extra) {
     return Object.assign({
       background: '#1a2028',
@@ -936,7 +1151,105 @@
     const follow = !!props.followClock;
     const parts = props.parts || civilPartsNow(props.timezone, props.lon);
     const step = props.step || 'day';
+    const lat = Number(props.lat) || 0;
+    const lon = Number(props.lon) || 0;
+    const timezone = props.timezone || '';
+    const year = parts.y || new Date().getFullYear();
+    const days = daysInYear(year);
+    const doy = Math.max(1, Math.min(days, parts.doy || 1));
+    const hour = hourFromParts(parts);
+    const cache = ensureDayLenCache(year, lat, lon, timezone);
+    const [, setRev] = React.useState(0);
+    React.useEffect(function () {
+      const sub = function () { setRev(function (n) { return n + 1; }); };
+      _dlReady.add(sub);
+      return function () { _dlReady.delete(sub); };
+    }, []);
+    const latRad = lat * Math.PI / 180;
+    const tzHours = siteTzOffsetHours(new Date(), timezone, lon);
+    let row = (cache && cache.year === year && cache.perDay[doy - 1]) || null;
+    if (!row) row = dayLenDayRow(latRad, doy, lon, tzHours);
+    const xNow = dlX(doy, days);
+    const yNow = dlY(hour);
+    const labelRight = xNow < (DL.W - DL.R) * 0.72;
+    const lx = labelRight ? xNow + 6 : xNow - 6;
+    const anchor = labelRight ? 'start' : 'end';
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthMarks = [];
+    for (let m = 1; m < 12; m++) {
+      const md = monthStartDoy(year, m);
+      const mx = dlX(md, days);
+      monthMarks.push(React.createElement('line', {
+        key: 'ml' + m, x1: mx, y1: DL.T, x2: mx, y2: DL.H - DL.B,
+        stroke: 'rgba(160,180,200,0.10)', strokeWidth: 0.6
+      }));
+      monthMarks.push(React.createElement('text', {
+        key: 'mt' + m, x: mx, y: DL.H - 3, textAnchor: 'middle',
+        fill: '#7a8592', fontSize: 6.5, fontFamily: 'ui-sans-serif,system-ui'
+      }, MONTHS[m]));
+    }
+    const hourLabs = [0, 6, 12, 18, 23].map(function (h) {
+      return React.createElement('text', {
+        key: 'hl' + h, x: DL.L - 2, y: dlY(h) + 2.4, textAnchor: 'end',
+        fill: '#7a8592', fontSize: 6.5, fontFamily: MONO
+      }, String(h).padStart(2, '0'));
+    });
+    const hGrid = [0, 3, 6, 9, 12, 15, 18, 21, 24].map(function (h) {
+      const y = dlY(h);
+      const dash = h === 12 ? '1.4 2.2' : '0';
+      const op = h === 12 ? '0.42' : (h % 6 === 0 ? '0.16' : '0.08');
+      return React.createElement('line', {
+        key: 'hg' + h, x1: DL.L, y1: y, x2: DL.W - DL.R, y2: y,
+        stroke: 'rgba(170,190,210,' + op + ')', strokeWidth: 0.65,
+        strokeDasharray: dash
+      });
+    });
+    const riseH = row && row.rise;
+    const setH = row && row.set;
+    const hairKids = [
+      React.createElement('line', {
+        key: 'vx', x1: xNow, y1: DL.T, x2: xNow, y2: DL.H - DL.B,
+        stroke: '#e23b32', strokeWidth: 0.85, strokeDasharray: '2.4 2.2'
+      }),
+      React.createElement('line', {
+        key: 'hy', x1: DL.L, y1: yNow, x2: DL.W - DL.R, y2: yNow,
+        stroke: '#e23b32', strokeWidth: 0.85, strokeDasharray: '2.4 2.2'
+      }),
+    ];
+    if (riseH != null && riseH > 0 && riseH < 24) {
+      const y = dlY(riseH);
+      hairKids.push(React.createElement('circle', {
+        key: 'rc', cx: xNow, cy: y, r: 2.6, fill: 'none',
+        stroke: '#e23b32', strokeWidth: 1.15
+      }));
+      hairKids.push(React.createElement('text', {
+        key: 'rt', x: lx, y: y - 3, textAnchor: anchor,
+        fill: '#f06a60', fontSize: 7, fontFamily: MONO
+      }, fmtHM(riseH)));
+    }
+    if (setH != null && setH > 0 && setH < 24) {
+      const y = dlY(setH);
+      hairKids.push(React.createElement('circle', {
+        key: 'sc', cx: xNow, cy: y, r: 2.6, fill: 'none',
+        stroke: '#e23b32', strokeWidth: 1.15
+      }));
+      hairKids.push(React.createElement('text', {
+        key: 'st', x: lx, y: y + 8, textAnchor: anchor,
+        fill: '#f06a60', fontSize: 7, fontFamily: MONO
+      }, fmtHM(setH)));
+    }
+    hairKids.push(React.createElement('circle', {
+      key: 'now', cx: xNow, cy: yNow, r: 2.8, fill: '#e23b32'
+    }));
     const nowStyle = daySelBtnStyle(follow ? { borderColor: '#ffb020', color: '#ffb020' } : null);
+    const plotRef = React.useRef(null);
+    const dragRef = React.useRef(false);
+    const scrub = function (ev) {
+      const svg = plotRef.current;
+      const next = plotEventToParts(svg, ev.clientX, ev.clientY, year);
+      if (next && props.onScrub) props.onScrub(next);
+    };
     return React.createElement('div', {
       className: 'pointer-events-auto',
       'data-testid': 'elc-day-selector',
@@ -946,6 +1259,7 @@
         right: 8,
         bottom: 8,
         zIndex: 50,
+        width: 248,
         padding: '4px 4px 3px',
         background: 'rgba(16,20,26,0.88)',
         border: '1px solid ' + LINE,
@@ -955,60 +1269,115 @@
       }, props.style || {})
     },
       React.createElement('div', {
-        style: { display: 'flex', alignItems: 'stretch', gap: 4 }
+        style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4, marginBottom: 2 }
       },
-        React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 } },
-          React.createElement('div', {
-            style: { display: 'flex', alignItems: 'center', gap: 2 }
+        React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 } },
+          React.createElement('button', {
+            type: 'button', 'data-testid': 'elc-day-prev', title: 'Previous',
+            style: daySelBtnStyle(),
+            onClick: function () { if (props.onPrev) props.onPrev(); }
+          }, '◀'),
+          React.createElement('select', {
+            'data-testid': 'elc-day-step', title: 'Date step',
+            value: step,
+            onChange: function (e) { if (props.onStep) props.onStep(e.target.value); },
+            style: daySelBtnStyle({ padding: '1px 2px', maxWidth: 58, color: MUTED })
           },
-            React.createElement('button', {
-              type: 'button', 'data-testid': 'elc-day-prev', title: 'Previous',
-              style: daySelBtnStyle(),
-              onClick: function () { if (props.onPrev) props.onPrev(); }
-            }, '◀'),
-            React.createElement('select', {
-              'data-testid': 'elc-day-step', title: 'Date step',
-              value: step,
-              onChange: function (e) { if (props.onStep) props.onStep(e.target.value); },
-              style: daySelBtnStyle({ padding: '1px 2px', maxWidth: 58, color: MUTED })
+            React.createElement('option', { value: 'day' }, 'Day'),
+            React.createElement('option', { value: 'week' }, 'Week'),
+            React.createElement('option', { value: 'month' }, 'Month')
+          ),
+          React.createElement('button', {
+            type: 'button', 'data-testid': 'elc-day-next', title: 'Next',
+            style: daySelBtnStyle(),
+            onClick: function () { if (props.onNext) props.onNext(); }
+          }, '▶'),
+          React.createElement('button', {
+            type: 'button', 'data-testid': 'elc-day-now',
+            title: follow ? 'Following site time of day' : 'Return to now',
+            style: nowStyle,
+            onClick: function () { if (props.onNow) props.onNow(); }
+          }, 'Now')
+        ),
+        React.createElement('div', {
+          style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, flex: '0 0 auto', pointerEvents: 'none' }
+        },
+          React.createElement('span', {
+            style: {
+              background: '#c5cad2', color: '#2a3038', fontSize: 8, fontWeight: 700,
+              letterSpacing: '.07em', padding: '2px 6px 2px 7px', borderRadius: 2,
+              textTransform: 'uppercase', lineHeight: 1.2
+            }
+          }, 'Day-length ▾'),
+          React.createElement('span', {
+            'data-testid': 'elc-day-hours',
+            style: { fontFamily: MONO, fontSize: 9, fontWeight: 600, color: '#c8d0d8', letterSpacing: '0.03em', whiteSpace: 'nowrap' }
+          }, fmtDayLengthDur(dayLengthHours(row)))
+        )
+      ),
+      React.createElement('div', { style: { display: 'flex', alignItems: 'stretch', gap: 1 } },
+        React.createElement('div', { style: { position: 'relative', flex: 1, minWidth: 0 } },
+          React.createElement('svg', {
+            ref: plotRef,
+            viewBox: '0 0 ' + DL.W + ' ' + DL.H,
+            preserveAspectRatio: 'none',
+            'data-testid': 'elc-day-plot',
+            style: { display: 'block', width: '100%', height: 152, cursor: 'crosshair' },
+            onPointerDown: function (ev) {
+              if (ev.button != null && ev.button !== 0) return;
+              dragRef.current = true;
+              try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch (_) {}
+              scrub(ev);
+              ev.preventDefault();
             },
-              React.createElement('option', { value: 'day' }, 'Day'),
-              React.createElement('option', { value: 'week' }, 'Week'),
-              React.createElement('option', { value: 'month' }, 'Month')
-            ),
-            React.createElement('button', {
-              type: 'button', 'data-testid': 'elc-day-next', title: 'Next',
-              style: daySelBtnStyle(),
-              onClick: function () { if (props.onNext) props.onNext(); }
-            }, '▶'),
-            React.createElement('button', {
-              type: 'button', 'data-testid': 'elc-day-now',
-              title: follow ? 'Following site time of day' : 'Return to now',
-              style: nowStyle,
-              onClick: function () { if (props.onNow) props.onNow(); }
-            }, 'Now')
+            onPointerMove: function (ev) { if (dragRef.current) scrub(ev); },
+            onPointerUp: function () { dragRef.current = false; },
+            onPointerCancel: function () { dragRef.current = false; }
+          },
+            React.createElement('rect', { x: 0, y: 0, width: DL.W, height: DL.H, fill: '#0a101c' }),
+            React.createElement('rect', {
+              x: DL.L, y: DL.T, width: DL.W - DL.L - DL.R, height: DL.H - DL.T - DL.B, fill: '#0b1220'
+            }),
+            cache && React.createElement('path', { d: cache.astro, fill: '#152238' }),
+            cache && React.createElement('path', { d: cache.naut, fill: '#1c3a5c' }),
+            cache && React.createElement('path', { d: cache.civil, fill: '#2d5a8a' }),
+            cache && React.createElement('path', { d: cache.day, fill: '#8ec8e8' }),
+            hGrid, monthMarks, hourLabs
           ),
           React.createElement('div', {
             style: {
-              fontFamily: MONO, fontSize: 9, fontWeight: 600,
-              color: TEXT, letterSpacing: '0.02em', whiteSpace: 'nowrap',
-              display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 2px'
+              position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none', zIndex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', gap: 2, padding: '5px 10px', borderRadius: 8,
+              background: 'rgba(8, 12, 20, 0.68)', boxShadow: '0 1px 8px rgba(0,0,0,0.4)', maxWidth: '86%'
             }
           },
-            React.createElement('span', { 'data-testid': 'elc-day-when' }, fmtDayLengthWhen(parts)),
+            React.createElement('span', {
+              'data-testid': 'elc-day-when',
+              style: {
+                fontFamily: MONO, fontSize: 9, fontWeight: 600, color: '#e8edf3',
+                letterSpacing: '0.02em', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.55)'
+              }
+            }, fmtDayLengthWhen(parts)),
             React.createElement('span', {
               'data-testid': 'elc-day-mode',
               style: {
-                fontSize: 8, letterSpacing: '.08em', textTransform: 'uppercase',
+                fontFamily: MONO, fontSize: 8, letterSpacing: '.08em', textTransform: 'uppercase',
                 color: follow ? '#ffb020' : '#c5cad2'
               }
             }, follow ? 'LIVE' : 'SELECTED')
-          )
+          ),
+          React.createElement('svg', {
+            viewBox: '0 0 ' + DL.W + ' ' + DL.H,
+            preserveAspectRatio: 'none',
+            'data-testid': 'elc-day-hair',
+            style: { position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }
+          }, hairKids)
         ),
         React.createElement('div', {
           style: {
             display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-            width: 14, flex: '0 0 14px', padding: '0 0 1px'
+            width: 14, flex: '0 0 14px', padding: '4px 0 14px'
           }
         },
           React.createElement('button', {
@@ -1029,10 +1398,11 @@
   global.ElcDaySelectorLive = function ElcDaySelectorLive(props) {
     const timezone = (props && props.timezone) || '';
     const lon = props && props.lon;
+    const lat = props && props.lat;
     const snap = useElcSunClock(timezone, lon);
     const parts = snap.parts || civilPartsNow(timezone, lon);
     return global.ElcDaySelector({
-      timezone: timezone, lon: lon, style: props && props.style,
+      timezone: timezone, lat: lat, lon: lon, style: props && props.style,
       followClock: snap.followClock, parts: parts, step: snap.step,
       onStep: setClockStep,
       onPrev: function () { setClockParts(stepCivilDate(ensureClockParts(timezone, lon), _clockStep, -1)); },
@@ -1040,6 +1410,7 @@
       onNow: function () { setClockFollow(true, timezone, lon); },
       onHourUp: function () { setClockParts(stepCivilHour(ensureClockParts(timezone, lon), -1)); },
       onHourDown: function () { setClockParts(stepCivilHour(ensureClockParts(timezone, lon), 1)); },
+      onScrub: function (next) { setClockParts(next); },
     });
   };
 

@@ -444,6 +444,7 @@ const floorModalTree = (
                         </div>
                         {window.ElcDaySelectorLive && (
                             <window.ElcDaySelectorLive
+                                lat={buildingLatLon && buildingLatLon.lat}
                                 timezone={buildingLatLon && buildingLatLon.timezone}
                                 lon={buildingLatLon && buildingLatLon.lon}
                             />
@@ -618,6 +619,7 @@ const floorModalTree = (
                         </React.Fragment>
                         {window.ElcDaySelectorLive && (
                             <window.ElcDaySelectorLive
+                                lat={buildingLatLon && buildingLatLon.lat}
                                 timezone={buildingLatLon && buildingLatLon.timezone}
                                 lon={buildingLatLon && buildingLatLon.lon}
                             />

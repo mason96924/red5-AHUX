@@ -492,6 +492,7 @@ function renderAhuEquipmentModal(ctx) {
                                         })()}
                                         {window.ElcDaySelectorLive && (
                                             <window.ElcDaySelectorLive
+                                                lat={buildingLatLon && buildingLatLon.lat}
                                                 timezone={buildingLatLon && buildingLatLon.timezone}
                                                 lon={buildingLatLon && buildingLatLon.lon}
                                             />

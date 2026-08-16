@@ -6067,6 +6067,7 @@
                         <div className="absolute bottom-4 right-4 z-50 flex flex-col items-end gap-2">
                             {window.ElcDaySelectorLive && (
                                 <window.ElcDaySelectorLive
+                                    lat={buildingLatLon.lat}
                                     timezone={buildingLatLon.timezone}
                                     lon={buildingLatLon.lon}
                                     style={{ position: 'relative', right: 0, bottom: 0 }}
@@ -7299,7 +7300,7 @@
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
                 '/assets/js/sun-path.js?v=sunshaft-rose2',
-                '/assets/js/elc-sun-path-overlay.js?v=daysel1',
+                '/assets/js/elc-sun-path-overlay.js?v=daysel2',
                 '/assets/js/window-blinds-popout.js'
             ];
             var mainSource = document.getElementById('main-source');

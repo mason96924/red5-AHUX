@@ -588,7 +588,7 @@
       return { e: p.e * ct - u1 * st, n: n1, u: p.e * st + u1 * ct };
     }
     const camEl = (35 + (adj.look || 0)) * Math.PI / 180;
-    const camAz = (southHem ? 180 : 137) * Math.PI / 180;
+    const camAz = ((southHem ? 180 : 137) + (adj.rot || 0)) * Math.PI / 180;
     const eyeE = Math.sin(camAz) * Math.cos(camEl);
     const eyeN = Math.cos(camAz) * Math.cos(camEl);
     const eyeU = Math.sin(camEl);
@@ -627,16 +627,8 @@
        rotate 180° (that also swaps N/S and puts noon in the south). */
     const pE = projectRaw({ e: 1, n: 0, u: 0 });
     const ewSign = (ex * (pE.x - cx) + ey * (pE.y - cy) < 0) ? -1 : 1;
-    const yaw = (Number(adj.rot) || 0) * Math.PI / 180;
-    const cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
     function project(p) {
-      const q = projectRaw({ e: ewSign * p.e, n: p.n, u: p.u });
-      const dx = q.x - cx, dy = q.y - cy;
-      return {
-        x: cx + dx * cyaw - dy * syaw,
-        y: cy + dx * syaw + dy * cyaw,
-        depth: q.depth
-      };
+      return projectRaw({ e: ewSign * p.e, n: p.n, u: p.u });
     }
     function skyTo(az, el) { return project(sph(az, el)); }
     function ground(az) { return skyTo(az, 0); }
@@ -874,38 +866,40 @@
         const r = wrap.getBoundingClientRect();
         return { x: e.clientX - r.left, y: e.clientY - r.top };
       }
-      function hitRim(x, y) {
+      function hitDisk(x, y) {
         const g = geomRef.current;
-        if (!g || !g.rim) return null;
-        const tol = Math.max(12, Math.min(22, g.R * 0.07));
-        let best = null, bestD = tol;
+        if (!g || !g.rim || !g.rim.length) return null;
+        const ang = Math.atan2(y - g.cy, x - g.cx);
+        let best = g.rim[0], bestD = 99;
         for (let i = 0; i < g.rim.length; i++) {
           const p = g.rim[i];
-          const d = Math.hypot(p.x - x, p.y - y);
+          let d = Math.abs(Math.atan2(p.y - g.cy, p.x - g.cx) - ang);
+          if (d > Math.PI) d = 2 * Math.PI - d;
           if (d < bestD) { bestD = d; best = p; }
         }
+        const rHit = Math.hypot(x - g.cx, y - g.cy);
+        const rRim = Math.hypot(best.x - g.cx, best.y - g.cy) || g.R;
+        if (rHit > rRim * 1.1) return null;
         return best;
       }
       function onDown(e) {
         if (e.button != null && e.button !== 0) return;
         const pt = local(e);
-        const hit = hitRim(pt.x, pt.y);
+        const hit = hitDisk(pt.x, pt.y);
         if (!hit) return;
         const g = geomRef.current;
         const a = (global.red5ElcSunPath && global.red5ElcSunPath.loadAdj)
           ? global.red5ElcSunPath.loadAdj()
-          : { rot: 0, tilt: 0, pitch: 0 };
+          : { rot: 0, look: 0 };
         e.preventDefault();
         e.stopPropagation();
         dragRef.current = {
           id: e.pointerId,
-          startAng: Math.atan2(pt.y - g.cy, pt.x - g.cx),
+          startX: pt.x,
           startY: pt.y,
           rot0: Number(a.rot) || 0,
-          tilt0: Number(a.tilt) || 0,
-          pitch0: Number(a.pitch) || 0,
-          grabAz: hit.az,
-          cx: g.cx, cy: g.cy
+          look0: Number(a.look) || 0,
+          R: g.R || 120
         };
         hoverRef.current = hit;
         host.style.cursor = 'grabbing';
@@ -917,24 +911,18 @@
         if (drag && (drag.id == null || drag.id === e.pointerId)) {
           e.preventDefault();
           e.stopPropagation();
-          const ang = Math.atan2(pt.y - drag.cy, pt.x - drag.cx);
-          let dRot = (ang - drag.startAng) * 180 / Math.PI;
-          if (dRot > 180) dRot -= 360;
-          if (dRot < -180) dRot += 360;
-          const up = -(pt.y - drag.startY);
-          const k = 0.22;
-          const tilt = Math.max(-40, Math.min(50, drag.tilt0 + up * Math.sin(drag.grabAz) * k));
-          const pitch = Math.max(-40, Math.min(40, drag.pitch0 + up * Math.cos(drag.grabAz) * k));
+          const dx = pt.x - drag.startX;
+          const dy = pt.y - drag.startY;
+          const deg = 90 / Math.max(80, drag.R);
+          const rot = drag.rot0 + dx * deg;
+          const look = Math.max(-25, Math.min(40, drag.look0 - dy * deg));
           if (global.red5ElcSunPath && global.red5ElcSunPath.setAdj) {
-            global.red5ElcSunPath.setAdj({
-              rot: drag.rot0 + dRot, tilt: tilt, pitch: pitch
-            });
+            global.red5ElcSunPath.setAdj({ rot: rot, look: look });
           }
-          hoverRef.current = { x: pt.x, y: pt.y, az: drag.grabAz };
           host.style.cursor = 'grabbing';
           return;
         }
-        const hit = hitRim(pt.x, pt.y);
+        const hit = hitDisk(pt.x, pt.y);
         const was = hoverRef.current;
         hoverRef.current = hit;
         host.style.cursor = hit ? 'grab' : '';

@@ -516,10 +516,6 @@
 
             useEffect(() => {
                 try { localStorage.setItem('elc.floor.sunPathOverlay', sunPathEnabled ? '1' : '0'); } catch (e) {}
-                if (!sunPathEnabled) {
-                    setSunState(prev => prev ? Object.assign({}, prev, { enabled: false }) : { enabled: false, sun: null });
-                    return;
-                }
                 const sunFn = (window.red5ElcSunPath && window.red5ElcSunPath.sunAtCivilTod)
                     || window.red5ElcSunAtTod
                     || window.red5ElcSunAtTodForFloor;
@@ -528,7 +524,7 @@
                     : (window.red5SolarPosition
                         ? window.red5SolarPosition(buildingLatLon.lat, buildingLatLon.lon, new Date())
                         : null);
-                setSunState({ enabled: true, sun: sun, hour: sunHour, doy: sunDoy });
+                setSunState({ enabled: !!sunPathEnabled, sun: sun, hour: sunHour, doy: sunDoy });
             }, [sunPathEnabled, sunHour, sunDoy, buildingLatLon.lat, buildingLatLon.lon, buildingLatLon.elevation_m, buildingLatLon.timezone]);
 
             // ============= POINTS EDITOR STATE =============
@@ -6091,15 +6087,14 @@
                                             />
                                         )}
 
-                                        {/* Sun-Ray overlay — soft warm gradient coming from the sun's
-                                            direction.  Sits below markers (zIndex 5) so clicks still
-                                            reach markers at zIndex 10+.  Only visible when overlay on. */}
-                                        {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                                        {/* Sun-Ray + window spill — always on while the sun is up.
+                                            Sun path On/Off only hides the sky-dome band. */}
+                                        {sunState && sunState.sun && window.SunRayOverlay && (
                                             <window.SunRayOverlay sun={sunState.sun} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}
                                                 orientation={floorOrientations[currentFloorIdx]}
                                                 rooms={floorRooms.filter(r => r.floorIdx === currentFloorIdx)} />
                                         )}
-                                        {sunState && sunState.enabled && sunState.sun && window.WindowsSunshaftOverlay && (
+                                        {sunState && sunState.sun && window.WindowsSunshaftOverlay && (
                                             <window.WindowsSunshaftOverlay
                                                 windows={floorWindows.filter(w => w.floorIdx === currentFloorIdx)}
                                                 rooms={floorRooms.filter(r => r.floorIdx === currentFloorIdx)}
@@ -6324,11 +6319,11 @@
                                         {/* Floor Markers */}
                                         {floorMarkers.filter(m => m.floorIdx === currentFloorIdx).map(marker => {
                                             const isSelected = selectedMarkerId === marker.id;
-                                            // Compute sun-exposure halo color when overlay is enabled.
+                                            // Compute sun-exposure halo while the sun is up (band On/Off does not gate this).
                                             // marker.x, marker.y are 0..100 (%) from the top-left.
                                             let exposureRing = null;
                                             let shadowGeom  = null;
-                                            if (sunState && sunState.enabled && sunState.sun) {
+                                            if (sunState && sunState.sun) {
                                                 const floorWins = floorWindows.filter(w => w.floorIdx === currentFloorIdx);
                                                 const floorRms = floorRooms.filter(r => r.floorIdx === currentFloorIdx);
                                                 if (floorWins.length) {
@@ -7252,7 +7247,7 @@
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
                 '/assets/js/sun-path.js?v=sunshaft-rose3',
-                '/assets/js/elc-sun-path-overlay.js?v=daysel4',
+                '/assets/js/elc-sun-path-overlay.js?v=daysel5',
                 '/assets/js/window-blinds-popout.js'
             ];
             var mainSource = document.getElementById('main-source');

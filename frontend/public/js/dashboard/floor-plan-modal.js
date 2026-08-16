@@ -22,7 +22,7 @@ function isTracedFloorWindow(w) {
 
 /** Amber VAV/AHU ring: sun exposure × blind open of windows lighting this marker. */
 function liveSunRingStyle(xPct, yPct, sunState, windows, buildingFacingOffset, rooms, orientation) {
-    if (!(sunState && sunState.enabled && sunState.sun)) return { score: 0, style: null, color: null };
+    if (!(sunState && sunState.sun)) return { score: 0, style: null, color: null };
     const opts = {
         northOffsetDeg: typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0,
         rooms: rooms || [],
@@ -164,13 +164,13 @@ const floorModalTree = (
                                     onChange={(s) => setSunState(s)}
                                 />
                             )}
-                            {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                            {sunState && sunState.sun && window.SunRayOverlay && (
                                 <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
                                     orientation={floorData.floor.orientation}
                                     rooms={floorData.floor.rooms || []} />
                             )}
-                            {sunState && sunState.enabled && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
+                            {sunState && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
                                 <window.WindowsSunshaftOverlay
                                     windows={floorData.floor.windows}
                                     rooms={floorData.floor.rooms || []}
@@ -312,10 +312,9 @@ const floorModalTree = (
                             {/* Render ALL AHU markers from map_config */}
                             {floorData.allMarkers.filter(m => m.type === 'ahu').map(marker => {
                                 const isActive = marker.name === showFloorPlanForAhu || marker.id === showFloorPlanForAhu;
-                                // Sun-Path Phase A: compute exposure halo + directional
-                                // shadow for this marker when the overlay is active.
+                                // Sun-Path Phase A: exposure halo + directional shadow while the sun is up.
                                 let sunRing = null, sunRingStyle = null, sunShadow = null;
-                                if (sunState && sunState.enabled && sunState.sun) {
+                                if (sunState && sunState.sun) {
                                     const ring = liveSunRingStyle(marker.x, marker.y, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms, floorData.floor.orientation);
                                     sunRing = ring.color;
                                     sunRingStyle = ring.style;
@@ -394,7 +393,7 @@ const floorModalTree = (
                                 // NaN scores produced invisible rgba(NaN,…) “rings”.
                                 const mx = Number(marker.x), my = Number(marker.y);
                                 let vavSunScore = null, vavBandTrim = null, sunRing = null, sunRingStyle = null;
-                                if (sunState && sunState.enabled && sunState.sun
+                                if (sunState && sunState.sun
                                     && Number.isFinite(mx) && Number.isFinite(my)) {
                                     const ring = liveSunRingStyle(mx, my, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms, floorData.floor.orientation);
                                     vavSunScore = ring.score;
@@ -413,7 +412,7 @@ const floorModalTree = (
                                         {(() => {
                                             // Sun-Path Phase A: directional shadow for this
                                             // VAV marker pointing away from the sun.
-                                            if (!(sunState && sunState.enabled && sunState.sun && window.red5MarkerShadow)) return null;
+                                            if (!(sunState && sunState.sun && window.red5MarkerShadow)) return null;
                                             const sh = window.red5MarkerShadow(sunState.sun);
                                             if (!sh) return null;
                                             return (
@@ -501,7 +500,7 @@ const floorModalTree = (
                                     onChange={(s) => setSunState(s)}
                                 />
                             )}
-                            {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                            {sunState && sunState.sun && window.SunRayOverlay && (
                                 <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
                             )}
                             <div className={`absolute top-4 left-4 z-10 flex items-center gap-2 text-sm font-mono px-3 py-1.5 rounded ${theme === 'dark' ? 'text-amber-400 bg-slate-900/80' : 'text-amber-700 bg-white/80'}`}>
@@ -571,7 +570,7 @@ const floorModalTree = (
                                     const pos = ahuPositions[i]; const isActiveAhu = showFloorPlanForAhu === ahu.id;
                                     // Sun-Path Phase A: halo + shadow for fallback AHU markers
                                     let sunRing = null, sunRingStyle = null, sunShadow = null;
-                                    if (sunState && sunState.enabled && sunState.sun) {
+                                    if (sunState && sunState.sun) {
                                         const ring = liveSunRingStyle(pos.left, pos.top, sunState, [], buildingFacingOffset);
                                         sunRing = ring.color;
                                         sunRingStyle = ring.style;
@@ -610,7 +609,7 @@ const floorModalTree = (
                                     // Sun-Path Phase A: halo + directional shadow for
                                     // fallback-layout VAV dots.
                                     let sunRing = null, sunRingStyle = null, sunShadow = null;
-                                    if (sunState && sunState.enabled && sunState.sun) {
+                                    if (sunState && sunState.sun) {
                                         const ring = liveSunRingStyle(gp.left, gp.top, sunState, [], buildingFacingOffset);
                                         sunRing = ring.color;
                                         sunRingStyle = ring.style;

@@ -1518,6 +1518,7 @@
             type: 'button',
             'data-testid': 'floor-sunpath-toggle',
             onClick: function () { if (props.onToggle) props.onToggle(!enabled); },
+            title: 'Show or hide the sky-dome band. Window spill and VAV sun glow stay on while the sun is up.',
             className: 'px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ' +
               (enabled ? 'bg-amber-500 text-slate-900 border-amber-300' : 'bg-slate-800 text-slate-300 border-slate-600')
           }, enabled ? 'Sun path: On' : 'Sun path: Off'),

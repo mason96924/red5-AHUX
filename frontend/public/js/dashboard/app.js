@@ -1253,8 +1253,9 @@
                     lat: weatherLocation.lat,
                     lon: weatherLocation.lon,
                     elevation_m: Number(weatherLocation.elevation_m != null ? weatherLocation.elevation_m : weatherLocation.asl) || 0,
+                    timezone: String(weatherLocation.timezone || weatherLocation.tz_id || weatherLocation.tz || '').trim(),
                 }
-                : {lat: 40.7128, lon: -74.0060, elevation_m: 0};
+                : {lat: 40.7128, lon: -74.0060, elevation_m: 0, timezone: ''};
             // ELC-style building aspect (façade facing). Slim v1: drives
             // northOffsetDeg for sun ray / window shafts on the floor plan.
             const [buildingFacing, setBuildingFacing] = useState(() => {

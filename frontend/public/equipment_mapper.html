@@ -425,7 +425,8 @@
             // response as `data[0]` but it's actually `{active, saved,
             // default}` -- so the array check always failed and the sun
             // path was permanently stuck on NYC.
-            const NYC = {lat: 40.7128, lon: -74.0060, elevation_m: 0};
+            const NYC = {lat: 40.7128, lon: -74.0060, elevation_m: 0, timezone: ''};
+            const locTimezone = (wl) => String((wl && (wl.timezone || wl.tz_id || wl.tz)) || '').trim();
             const readLatLonFromStorage = () => {
                 try {
                     const wl = JSON.parse(localStorage.getItem('weatherLocation'));
@@ -434,6 +435,7 @@
                             lat: wl.lat,
                             lon: wl.lon,
                             elevation_m: Number(wl.elevation_m != null ? wl.elevation_m : wl.asl) || 0,
+                            timezone: locTimezone(wl),
                         };
                     }
                 } catch (e) {}
@@ -452,6 +454,7 @@
                             lat: pick.lat,
                             lon: pick.lon,
                             elevation_m: Number(pick.elevation_m != null ? pick.elevation_m : pick.asl) || 0,
+                            timezone: locTimezone(pick),
                         });
                     }
                 }).catch(() => {});
@@ -472,13 +475,20 @@
                 if (!sunFollowClock) return undefined;
                 const tick = () => {
                     const n = new Date();
-                    setSunHour(n.getHours() + n.getMinutes() / 60 + n.getSeconds() / 3600);
-                    setSunDoy(Math.round((Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) - Date.UTC(n.getFullYear(), 0, 1)) / 86400000) + 1);
+                    const tz = buildingLatLon.timezone;
+                    const lon = buildingLatLon.lon;
+                    if (window.red5ElcSunPath && window.red5ElcSunPath.civilHourNow) {
+                        setSunHour(window.red5ElcSunPath.civilHourNow(n, tz, lon));
+                        setSunDoy(window.red5ElcSunPath.civilDoyNow(n, tz, lon));
+                    } else {
+                        setSunHour(n.getHours() + n.getMinutes() / 60 + n.getSeconds() / 3600);
+                        setSunDoy(Math.round((Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) - Date.UTC(n.getFullYear(), 0, 1)) / 86400000) + 1);
+                    }
                 };
                 tick();
                 const id = setInterval(tick, 15000);
                 return () => clearInterval(id);
-            }, [sunFollowClock]);
+            }, [sunFollowClock, buildingLatLon.timezone, buildingLatLon.lon]);
 
             useEffect(() => {
                 try { localStorage.setItem('elc.floor.sunPathOverlay', sunPathEnabled ? '1' : '0'); } catch (e) {}
@@ -487,12 +497,12 @@
                     return;
                 }
                 const sun = (typeof window.red5ElcSunAtTod === 'function')
-                    ? window.red5ElcSunAtTod(buildingLatLon.lat, buildingLatLon.lon, sunDoy, sunHour, buildingLatLon.elevation_m)
+                    ? window.red5ElcSunAtTod(buildingLatLon.lat, buildingLatLon.lon, sunDoy, sunHour, buildingLatLon.elevation_m, buildingLatLon.timezone)
                     : (window.red5SolarPosition
                         ? window.red5SolarPosition(buildingLatLon.lat, buildingLatLon.lon, new Date())
                         : null);
                 setSunState({ enabled: true, sun: sun, hour: sunHour, doy: sunDoy });
-            }, [sunPathEnabled, sunHour, sunDoy, buildingLatLon.lat, buildingLatLon.lon, buildingLatLon.elevation_m]);
+            }, [sunPathEnabled, sunHour, sunDoy, buildingLatLon.lat, buildingLatLon.lon, buildingLatLon.elevation_m, buildingLatLon.timezone]);
 
             // ============= POINTS EDITOR STATE =============
             const [pointsEditorView, setPointsEditorView] = useState('table'); // Default to 'table' now, not 'json'
@@ -6088,6 +6098,7 @@
                                                 lat={buildingLatLon.lat}
                                                 lon={buildingLatLon.lon}
                                                 elevation_m={buildingLatLon.elevation_m}
+                                                timezone={buildingLatLon.timezone}
                                                 sun={sunState && sunState.sun}
                                                 hour={sunHour}
                                                 doy={sunDoy}

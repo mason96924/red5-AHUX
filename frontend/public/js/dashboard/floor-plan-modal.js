@@ -146,6 +146,7 @@ const floorModalTree = (
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
                                     elevation_m={buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon.timezone}
                                     theme={theme}
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
                                     orientation={floorData.floor.orientation}
@@ -456,6 +457,7 @@ const floorModalTree = (
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
                                     elevation_m={buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon.timezone}
                                     theme={theme}
                                     onChange={(s) => setSunState(s)}
                                 />

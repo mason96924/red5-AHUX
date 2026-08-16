@@ -14,21 +14,56 @@
   function dayOfYear(d) {
     return dayOfYearYmd(d.getFullYear(), d.getMonth(), d.getDate());
   }
-  function clockParts(date) {
+  function ianaClockParts(date, tz) {
+    const fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23',
+    });
+    const parts = fmt.formatToParts(date);
+    const get = function (t) {
+      const p = parts.find(function (x) { return x.type === t; });
+      return p ? Number(p.value) : 0;
+    };
+    const y = get('year'), mo = get('month') - 1, da = get('day');
+    const h = get('hour'), mi = get('minute'), se = get('second');
+    return { y: y, mo: mo, da: da, h: h, mi: mi, se: se, doy: dayOfYearYmd(y, mo, da) };
+  }
+
+  function clockParts(date, timezone) {
     const d = (date instanceof Date) ? date : new Date(date);
     if (Number.isNaN(d.getTime())) {
       const now = new Date();
       return { y: now.getFullYear(), mo: now.getMonth(), da: now.getDate(),
         h: now.getHours(), mi: now.getMinutes(), se: now.getSeconds(), doy: dayOfYear(now) };
     }
+    const tz = timezone && String(timezone).trim();
+    if (tz && tz !== 'auto') {
+      try { return ianaClockParts(d, tz); } catch (_) {}
+    }
     return { y: d.getFullYear(), mo: d.getMonth(), da: d.getDate(),
       h: d.getHours(), mi: d.getMinutes(), se: d.getSeconds(), doy: dayOfYear(d) };
+  }
+
+  function siteTzOffsetHours(date, timezone, lonDeg) {
+    const d = (date instanceof Date) ? date : new Date();
+    const tz = timezone && String(timezone).trim();
+    if (tz && tz !== 'auto') {
+      try {
+        const p = ianaClockParts(d, tz);
+        return (Date.UTC(p.y, p.mo, p.da, p.h, p.mi, p.se) - d.getTime()) / 3600000;
+      } catch (_) {}
+    }
+    const lon = Number(lonDeg);
+    if (Number.isFinite(lon) && lon !== 0) return lon / 15;
+    return -d.getTimezoneOffset() / 60;
   }
 
   function solarAltAz(latRad, doy, hour, lonDeg, tzHours) {
     const lon = Number(lonDeg) || 0;
     let tz = tzHours;
-    if (tz == null || !Number.isFinite(tz)) tz = -new Date().getTimezoneOffset() / 60;
+    if (tz == null || !Number.isFinite(tz)) tz = siteTzOffsetHours(new Date(), null, lon);
     const gamma = (2 * Math.PI / 365) * (doy - 1 + (hour - 12) / 24);
     const eqtime = 229.18 * (
       0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma)
@@ -60,13 +95,40 @@
     return Math.acos(R / (R + clamped)) * 180 / Math.PI;
   }
 
-  function civilHourNow(date) {
+  function civilHourNow(date, timezone, lonDeg) {
     const d = (date instanceof Date) ? date : new Date();
+    const tz = timezone && String(timezone).trim();
+    if (tz && tz !== 'auto') {
+      try {
+        const p = ianaClockParts(d, tz);
+        return p.h + p.mi / 60 + p.se / 3600;
+      } catch (_) {}
+    }
+    const off = siteTzOffsetHours(d, timezone, lonDeg);
+    if (Number.isFinite(Number(lonDeg)) && Number(lonDeg) !== 0) {
+      const u = new Date(d.getTime() + off * 3600000);
+      return u.getUTCHours() + u.getUTCMinutes() / 60 + u.getUTCSeconds() / 3600;
+    }
     return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
   }
 
-  function sunAtCivilTod(latDeg, lonDeg, doy, hour, elevationM) {
-    const p = solarAltAz((Number(latDeg) || 0) * Math.PI / 180, Number(doy) || 1, Number(hour) || 0, lonDeg);
+  function civilDoyNow(date, timezone, lonDeg) {
+    const d = (date instanceof Date) ? date : new Date();
+    const tz = timezone && String(timezone).trim();
+    if (tz && tz !== 'auto') {
+      try { return ianaClockParts(d, tz).doy; } catch (_) {}
+    }
+    const off = siteTzOffsetHours(d, timezone, lonDeg);
+    if (Number.isFinite(Number(lonDeg)) && Number(lonDeg) !== 0) {
+      const u = new Date(d.getTime() + off * 3600000);
+      return dayOfYearYmd(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
+    }
+    return dayOfYear(d);
+  }
+
+  function sunAtCivilTod(latDeg, lonDeg, doy, hour, elevationM, timezone) {
+    const tzHours = siteTzOffsetHours(new Date(), timezone, lonDeg);
+    const p = solarAltAz((Number(latDeg) || 0) * Math.PI / 180, Number(doy) || 1, Number(hour) || 0, lonDeg, tzHours);
     const elDeg = (p.el * 180 / Math.PI) + horizonDipDeg(elevationM);
     return {
       azimuth: p.az * 180 / Math.PI,
@@ -155,8 +217,9 @@
   const ephCache = { key: '', data: null };
   const layerCache = { key: '', canvas: null };
 
-  function ensureEph(latDeg, lonDeg) {
-    const key = Number(latDeg).toFixed(4) + '|' + Number(lonDeg).toFixed(4);
+  function ensureEph(latDeg, lonDeg, tzHours) {
+    const tzKey = Number.isFinite(tzHours) ? tzHours.toFixed(4) : 'auto';
+    const key = Number(latDeg).toFixed(4) + '|' + Number(lonDeg).toFixed(4) + '|' + tzKey;
     if (ephCache.data && ephCache.key === key) return ephCache.data;
     const lat = latDeg * Math.PI / 180;
     const sph = function (az, el) {
@@ -169,20 +232,20 @@
     for (let h = 4; h <= 21.001; h += 0.2) hours.push(h);
     const grid = days.map(function (d) {
       return hours.map(function (h) {
-        const p = solarAltAz(lat, d, h, lonDeg);
+        const p = solarAltAz(lat, d, h, lonDeg, tzHours);
         return { s: sph(p.az, p.el > 0 ? p.el : 0), up: p.el > 0 };
       });
     });
     function sampleDay(day, stepMin) {
       const pts = [];
-      for (let m = 0; m <= 1440; m += stepMin) pts.push(solarAltAz(lat, day, m / 60, lonDeg));
+      for (let m = 0; m <= 1440; m += stepMin) pts.push(solarAltAz(lat, day, m / 60, lonDeg, tzHours));
       return pts;
     }
     const monthDoys = [21, 52, 80, 111, 141, 172, 202, 233, 264, 294, 325, 355];
     const monthSamples = monthDoys.map(function (d) { return { d: d, pts: sampleDay(d, 8) }; });
     const analemmas = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map(function (hr) {
       const pts = [];
-      for (let d = 1; d <= 367; d += 2) pts.push(solarAltAz(lat, ((d - 1) % 365) + 1, hr, lonDeg));
+      for (let d = 1; d <= 367; d += 2) pts.push(solarAltAz(lat, ((d - 1) % 365) + 1, hr, lonDeg, tzHours));
       return { hr: hr, pts: pts };
     });
     ephCache.key = key;
@@ -298,7 +361,7 @@
     });
   }
 
-  function drawYearMesh(ctx, project, skyTo, ground, toCam, eph, cx, cy, eSign) {
+  function drawYearMesh(ctx, project, skyTo, ground, toCam, eph, cx, cy) {
     ctx.beginPath();
     for (let d = 0; d <= 360; d += 3) {
       const q = ground(d * Math.PI / 180);
@@ -362,11 +425,10 @@
         const me = (sa.e + sb.e + sc.e + sd.e) / 4;
         const mn = (sa.n + sb.n + sc.n + sd.n) / 4;
         const mu = (sa.u + sb.u + sc.u + sd.u) / 4;
-        const se = (eSign || 1) * me;
         patches.push({
           pts: [sa, sb, sc, sd],
-          ndot: se * toCam.e + mn * toCam.n + mu * toCam.u,
-          depth: se * toCam.e + mn * toCam.n + mu * toCam.u
+          ndot: me * toCam.e + mn * toCam.n + mu * toCam.u,
+          depth: me * toCam.e + mn * toCam.n + mu * toCam.u
         });
       }
     }
@@ -449,9 +511,9 @@
     if (!(R > 8)) return null;
 
     const clock = opts.date instanceof Date ? opts.date : new Date();
-    const tod = clockParts(clock);
-    const doy = (opts.doy != null) ? Number(opts.doy) : tod.doy;
-    const hour = (opts.hour != null) ? Number(opts.hour) : (tod.h + tod.mi / 60);
+    const tzHours = siteTzOffsetHours(clock, opts.timezone, lonDeg);
+    const doy = (opts.doy != null) ? Number(opts.doy) : civilDoyNow(clock, opts.timezone, lonDeg);
+    const hour = (opts.hour != null) ? Number(opts.hour) : civilHourNow(clock, opts.timezone, lonDeg);
 
     const lat = latDeg * Math.PI / 180;
     function sph(az, el) {
@@ -489,7 +551,7 @@
     const angFloorN = Math.atan2(ny, nx);
     const rot2 = angFloorN - angN;
     const cr = Math.cos(rot2), sr = Math.sin(rot2);
-    function projectRaw(p) {
+    function project(p) {
       const c = lookAt(tiltPt(p));
       const vx = c.sx, vy = -c.sy;
       return {
@@ -498,20 +560,10 @@
         depth: c.depth
       };
     }
-    // Mirror world-space east (N–U plane). North is unchanged. Do not
-    // reflect the projected 2D points — that warps the hemisphere.
-    const morningEl = 0.18;
-    const morning = projectRaw(sph(Math.PI / 2, morningEl));
-    const morningSide = nx * (morning.y - cy) - ny * (morning.x - cx);
-    const eastSide = nx * ey - ny * ex;
-    const eSign = (morningSide * eastSide >= 0) ? 1 : -1;
-    function project(p) {
-      return projectRaw({ e: eSign * p.e, n: p.n, u: p.u });
-    }
     function skyTo(az, el) { return project(sph(az, el)); }
     function ground(az) { return skyTo(az, 0); }
 
-    const eph = ensureEph(latDeg, lonDeg);
+    const eph = ensureEph(latDeg, lonDeg, tzHours);
     const dpr = opts.dpr || 1;
     const layerKey = [
       eph.key,
@@ -519,7 +571,6 @@
       (adj.look || 0).toFixed(2), (adj.tilt || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
-      String(eSign),
       Math.round(W), Math.round(H), Number(dpr).toFixed(2)
     ].join('|');
     if (!layerCache.canvas || layerCache.key !== layerKey) {
@@ -531,7 +582,7 @@
       const octx = off.getContext('2d');
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.clearRect(0, 0, W, H);
-      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy, eSign);
+      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy);
       layerCache.key = layerKey;
       layerCache.canvas = off;
     }
@@ -553,23 +604,26 @@
       ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = 'round';
       ctx.stroke();
     }
-    if (!eph.today || eph.today.doy !== doy) {
+    if (!eph.today || eph.today.doy !== doy || eph.today.tz !== tzHours) {
       const pts = [];
-      for (let m = 0; m <= 1440; m += 5) pts.push(solarAltAz(eph.lat, doy, m / 60, lonDeg));
-      eph.today = { doy: doy, pts: pts };
+      for (let m = 0; m <= 1440; m += 5) pts.push(solarAltAz(eph.lat, doy, m / 60, lonDeg, tzHours));
+      eph.today = { doy: doy, tz: tzHours, pts: pts };
     }
     strokeDay(eph.today.pts, 'rgba(220, 40, 32, 0.95)', 2.0);
 
     [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].forEach(function (hr) {
-      const p = solarAltAz(lat, doy, hr, lonDeg);
+      const p = solarAltAz(lat, doy, hr, lonDeg, tzHours);
       if (p.el <= 0) return;
       const q = skyTo(p.az, p.el);
       ctx.beginPath(); ctx.arc(q.x, q.y, 2.2, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(220, 40, 32, 0.95)'; ctx.fill();
-      ctx.fillStyle = 'rgba(220, 40, 32, 0.95)';
       ctx.font = 'bold 12px ui-sans-serif, system-ui';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)';
+      ctx.strokeText(String(hr).padStart(2, '0'), q.x, q.y - 4);
+      ctx.fillStyle = 'rgba(220, 40, 32, 0.95)';
       ctx.fillText(String(hr).padStart(2, '0'), q.x, q.y - 4);
     });
 
@@ -585,7 +639,7 @@
       if (nP) paintNorthArrow(ctx, (nP.x / 100) * W, (nP.y / 100) * H, nx, ny, ex, ey, glyph * (32 / 28));
     }
 
-    const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m);
+    const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m, opts.timezone);
     const liveEl = (opts.sun && Number.isFinite(opts.sun.elevation))
       ? opts.sun.elevation * Math.PI / 180 : (todSun.elevation * Math.PI / 180);
     const liveAz = (opts.sun && Number.isFinite(opts.sun.azimuth))
@@ -651,6 +705,7 @@
     const lat = typeof props.lat === 'number' ? props.lat : 40.7128;
     const lon = typeof props.lon === 'number' ? props.lon : -74.0060;
     const elevationM = Number(props.elevation_m) || 0;
+    const timezone = props.timezone || '';
     const adj = props.adj || { size: 1, rot: 0, look: 0, tilt: 0 };
     const hour = props.hour;
     const doy = props.doy;
@@ -686,6 +741,7 @@
           lat: lat, lon: lon, hour: hour, doy: doy,
           sun: sun, adj: adj, orientation: orientation,
           northOffsetDeg: northOffsetDeg, elevation_m: elevationM,
+          timezone: timezone,
           showCardinals: showCardinals
         });
       }
@@ -696,7 +752,7 @@
       return function () { if (ro) ro.disconnect(); };
     }, [enabled, lat, lon, adj.size, adj.rot, adj.look, adj.tilt,
         hour, doy, sun && sun.azimuth, sun && sun.elevation,
-        orientation, oKey, northOffsetDeg, elevationM, showCardinals]);
+        orientation, oKey, northOffsetDeg, elevationM, timezone, showCardinals]);
 
     if (!enabled) return null;
     return React.createElement('div', {
@@ -829,6 +885,8 @@
     applyAdjStep: applyAdjStep,
     dayOfYear: dayOfYear,
     civilHourNow: civilHourNow,
+    civilDoyNow: civilDoyNow,
+    siteTzOffsetHours: siteTzOffsetHours,
     sunAtCivilTod: sunAtCivilTod,
     horizonDipDeg: horizonDipDeg,
   };
@@ -859,21 +917,22 @@
     const lat = props && props.lat;
     const lon = props && props.lon;
     const elevationM = Number(props && props.elevation_m) || 0;
+    const timezone = (props && props.timezone) || '';
 
     React.useEffect(function () {
       if (!followClock) return undefined;
       function tick() {
         const n = new Date();
-        setHour(civilHourNow(n));
-        setDoy(dayOfYear(n));
+        setHour(civilHourNow(n, timezone, lon));
+        setDoy(civilDoyNow(n, timezone, lon));
       }
       tick();
       const id = setInterval(tick, 15000);
       return function () { clearInterval(id); };
-    }, [followClock]);
+    }, [followClock, timezone, lon]);
 
     const sun = (Number.isFinite(lat) && Number.isFinite(lon))
-      ? sunAtCivilTod(lat, lon, doy, hour, elevationM)
+      ? sunAtCivilTod(lat, lon, doy, hour, elevationM, timezone)
       : null;
 
     React.useEffect(function () {
@@ -881,11 +940,12 @@
       const payload = { enabled: !!enabled, sun: sun, hour: hour, doy: doy };
       if (props && props.onChange) props.onChange(payload);
       try { global.dispatchEvent(new CustomEvent('r5-sun-state', { detail: payload })); } catch (_) {}
-    }, [enabled, hour, doy, lat, lon, elevationM, sun && sun.azimuth, sun && sun.elevation]);
+    }, [enabled, hour, doy, lat, lon, elevationM, timezone, sun && sun.azimuth, sun && sun.elevation]);
 
     return React.createElement(React.Fragment, null,
       React.createElement(global.ElcSunPathOnFloor, {
         enabled: enabled, lat: lat, lon: lon, elevation_m: elevationM,
+        timezone: timezone,
         sun: sun, hour: hour, doy: doy, adj: adj,
         orientation: props && props.orientation,
         northOffsetDeg: props && props.northOffsetDeg,

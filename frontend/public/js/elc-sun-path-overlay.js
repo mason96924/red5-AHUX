@@ -650,23 +650,23 @@
         ? opts.sun.azimuth * Math.PI / 180 : (todSun.azimuth * Math.PI / 180));
     if (liveEl > 0) {
       const sun = skyTo(liveAz, liveEl);
-      const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 16);
-      g.addColorStop(0, 'rgba(255,230,120,0.95)');
+      const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 14);
+      g.addColorStop(0, 'rgba(255,230,120,0.90)');
       g.addColorStop(1, 'rgba(255,200,60,0)');
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 16, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 5.2, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 4.4, 0, Math.PI * 2);
       ctx.fillStyle = '#ffe08a'; ctx.fill();
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 2.2, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 1.8, 0, Math.PI * 2);
       ctx.fillStyle = '#dc2820'; ctx.fill();
       const adx = sun.x - cx, ady = sun.y - cy;
       const alen = Math.hypot(adx, ady);
       if (alen > 6) {
         const ux = adx / alen, uy = ady / alen;
-        const headLen = 10;
-        const headW = 4.2;
-        const tipX = sun.x + ux * 8;
-        const tipY = sun.y + uy * 8;
+        const headLen = 7;
+        const headW = 2.6;
+        const tipX = sun.x + ux * 7;
+        const tipY = sun.y + uy * 7;
         const bx = tipX - ux * headLen, by = tipY - uy * headLen;
         const px = -uy, py = ux;
         ctx.save();
@@ -675,15 +675,15 @@
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(bx, by);
-        ctx.strokeStyle = '#dc2820';
-        ctx.lineWidth = 1.15;
+        ctx.strokeStyle = '#b91c1c';
+        ctx.lineWidth = 1.6;
         ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(tipX, tipY);
         ctx.lineTo(bx + px * headW, by + py * headW);
         ctx.lineTo(bx - px * headW, by - py * headW);
         ctx.closePath();
-        ctx.fillStyle = '#dc2820';
+        ctx.fillStyle = '#b91c1c';
         ctx.fill();
         ctx.restore();
       }

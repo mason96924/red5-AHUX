@@ -99,7 +99,7 @@
         - Custom sensor groups
         - All Equipment Schema Mapper features
     -->
-    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=78473dfda0">
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=6485895b0c">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
@@ -405,11 +405,15 @@
                     ? window.red5ElcSunPath.loadAdj()
                     : { size: 1, rot: 0, look: 0, tilt: 0 }
             ));
-            const [sunHour, setSunHour] = useState(() => new Date().getHours());
+            const [sunHour, setSunHour] = useState(() => {
+                const n = new Date();
+                return n.getHours() + n.getMinutes() / 60 + n.getSeconds() / 3600;
+            });
             const [sunDoy, setSunDoy] = useState(() => {
                 const n = new Date();
                 return Math.round((Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) - Date.UTC(n.getFullYear(), 0, 1)) / 86400000) + 1;
             });
+            const [sunFollowClock, setSunFollowClock] = useState(true);
             const [sunState, setSunState] = useState(null);
             // Building lat/lon for solar math.  Reads (1) localStorage
             // `weatherLocation` (set by the Dashboard whenever the operator
@@ -421,11 +425,17 @@
             // response as `data[0]` but it's actually `{active, saved,
             // default}` -- so the array check always failed and the sun
             // path was permanently stuck on NYC.
-            const NYC = {lat: 40.7128, lon: -74.0060};
+            const NYC = {lat: 40.7128, lon: -74.0060, elevation_m: 0};
             const readLatLonFromStorage = () => {
                 try {
                     const wl = JSON.parse(localStorage.getItem('weatherLocation'));
-                    if (wl && typeof wl.lat === 'number') return {lat: wl.lat, lon: wl.lon};
+                    if (wl && typeof wl.lat === 'number') {
+                        return {
+                            lat: wl.lat,
+                            lon: wl.lon,
+                            elevation_m: Number(wl.elevation_m != null ? wl.elevation_m : wl.asl) || 0,
+                        };
+                    }
                 } catch (e) {}
                 return null;
             };
@@ -434,10 +444,15 @@
                 // Only fall back to the API if localStorage has no pick yet.
                 if (readLatLonFromStorage()) return;
                 fetch('/api/weather-location').then(r => r.ok ? r.json() : null).then(data => {
-                    if (data && data.active && typeof data.active.lat === 'number') {
-                        setBuildingLatLon({lat: data.active.lat, lon: data.active.lon});
-                    } else if (data && data.default && typeof data.default.lat === 'number') {
-                        setBuildingLatLon({lat: data.default.lat, lon: data.default.lon});
+                    const pick = (data && data.active && typeof data.active.lat === 'number')
+                        ? data.active
+                        : (data && data.default && typeof data.default.lat === 'number' ? data.default : null);
+                    if (pick) {
+                        setBuildingLatLon({
+                            lat: pick.lat,
+                            lon: pick.lon,
+                            elevation_m: Number(pick.elevation_m != null ? pick.elevation_m : pick.asl) || 0,
+                        });
                     }
                 }).catch(() => {});
             }, []);
@@ -454,20 +469,30 @@
             }, []);
 
             useEffect(() => {
+                if (!sunFollowClock) return undefined;
+                const tick = () => {
+                    const n = new Date();
+                    setSunHour(n.getHours() + n.getMinutes() / 60 + n.getSeconds() / 3600);
+                    setSunDoy(Math.round((Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) - Date.UTC(n.getFullYear(), 0, 1)) / 86400000) + 1);
+                };
+                tick();
+                const id = setInterval(tick, 15000);
+                return () => clearInterval(id);
+            }, [sunFollowClock]);
+
+            useEffect(() => {
                 try { localStorage.setItem('elc.floor.sunPathOverlay', sunPathEnabled ? '1' : '0'); } catch (e) {}
                 if (!sunPathEnabled) {
                     setSunState(prev => prev ? Object.assign({}, prev, { enabled: false }) : { enabled: false, sun: null });
                     return;
                 }
-                const year = new Date().getFullYear();
-                const tzOffsetH = Math.round((buildingLatLon.lon || 0) / 15);
-                const utcMs = Date.UTC(year, 0, sunDoy) + (sunHour - tzOffsetH) * 3600000;
-                const date = new Date(utcMs);
-                const sun = window.red5SolarPosition
-                    ? window.red5SolarPosition(buildingLatLon.lat, buildingLatLon.lon, date)
-                    : null;
+                const sun = (typeof window.red5ElcSunAtTod === 'function')
+                    ? window.red5ElcSunAtTod(buildingLatLon.lat, buildingLatLon.lon, sunDoy, sunHour, buildingLatLon.elevation_m)
+                    : (window.red5SolarPosition
+                        ? window.red5SolarPosition(buildingLatLon.lat, buildingLatLon.lon, new Date())
+                        : null);
                 setSunState({ enabled: true, sun: sun, hour: sunHour, doy: sunDoy });
-            }, [sunPathEnabled, sunHour, sunDoy, buildingLatLon.lat, buildingLatLon.lon]);
+            }, [sunPathEnabled, sunHour, sunDoy, buildingLatLon.lat, buildingLatLon.lon, buildingLatLon.elevation_m]);
 
             // ============= POINTS EDITOR STATE =============
             const [pointsEditorView, setPointsEditorView] = useState('table'); // Default to 'table' now, not 'json'
@@ -5681,9 +5706,11 @@
                                                 hour={sunHour}
                                                 doy={sunDoy}
                                                 adj={sunPathAdj}
+                                                followClock={sunFollowClock}
                                                 onToggle={(on) => setSunPathEnabled(!!on)}
-                                                onHour={(h) => setSunHour(h)}
-                                                onDoy={(d) => setSunDoy(d)}
+                                                onHour={(h) => { setSunFollowClock(false); setSunHour(h); }}
+                                                onDoy={(d) => { setSunFollowClock(false); setSunDoy(d); }}
+                                                onNow={() => setSunFollowClock(true)}
                                                 onAdj={(a) => setSunPathAdj(a)}
                                             />
                                         )}
@@ -6060,6 +6087,7 @@
                                                 enabled={sunPathEnabled}
                                                 lat={buildingLatLon.lat}
                                                 lon={buildingLatLon.lon}
+                                                elevation_m={buildingLatLon.elevation_m}
                                                 sun={sunState && sunState.sun}
                                                 hour={sunHour}
                                                 doy={sunDoy}

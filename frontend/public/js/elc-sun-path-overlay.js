@@ -52,6 +52,29 @@
     return { el, az };
   }
 
+  function horizonDipDeg(elevationM) {
+    const h = Number(elevationM);
+    if (!Number.isFinite(h) || h <= 0) return 0;
+    const clamped = Math.min(h, 9000);
+    const R = 6371000;
+    return Math.acos(R / (R + clamped)) * 180 / Math.PI;
+  }
+
+  function civilHourNow(date) {
+    const d = (date instanceof Date) ? date : new Date();
+    return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  }
+
+  function sunAtCivilTod(latDeg, lonDeg, doy, hour, elevationM) {
+    const p = solarAltAz((Number(latDeg) || 0) * Math.PI / 180, Number(doy) || 1, Number(hour) || 0, lonDeg);
+    const elDeg = (p.el * 180 / Math.PI) + horizonDipDeg(elevationM);
+    return {
+      azimuth: p.az * 180 / Math.PI,
+      elevation: elDeg,
+      is_day: elDeg > 0
+    };
+  }
+
   function solarAltAzAt(latDeg, lonDeg, date) {
     const jd = date.getTime() / 86400000 + 2440587.5;
     const n = jd - 2451545.0;
@@ -436,11 +459,11 @@
       ctx.fillText(String(hr).padStart(2, '0'), q.x, q.y - 4);
     });
 
-    const live = solarAltAzAt(latDeg, lonDeg, clock);
+    const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m);
     const liveEl = (opts.sun && Number.isFinite(opts.sun.elevation))
-      ? opts.sun.elevation * Math.PI / 180 : live.el;
+      ? opts.sun.elevation * Math.PI / 180 : (todSun.elevation * Math.PI / 180);
     const liveAz = (opts.sun && Number.isFinite(opts.sun.azimuth))
-      ? opts.sun.azimuth * Math.PI / 180 : live.az;
+      ? opts.sun.azimuth * Math.PI / 180 : (todSun.azimuth * Math.PI / 180);
     if (liveEl > 0) {
       const sun = skyTo(liveAz, liveEl);
       const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 18);
@@ -501,6 +524,7 @@
     const enabled = !!props.enabled;
     const lat = typeof props.lat === 'number' ? props.lat : 40.7128;
     const lon = typeof props.lon === 'number' ? props.lon : -74.0060;
+    const elevationM = Number(props.elevation_m) || 0;
     const adj = props.adj || { size: 1, rot: 0, look: 0, tilt: 0 };
     const hour = props.hour;
     const doy = props.doy;
@@ -530,14 +554,11 @@
         const ctx = canvas.getContext('2d');
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, W, H);
-        const date = (hour != null && doy != null)
-          ? new Date(Date.UTC(new Date().getFullYear(), 0, doy, Math.floor(hour) - Math.round(lon / 15), Math.round((hour % 1) * 60), 0))
-          : new Date();
         paintElcSunPath(ctx, {
           width: W, height: H, dpr: dpr,
-          lat: lat, lon: lon, date: date, hour: hour, doy: doy,
+          lat: lat, lon: lon, hour: hour, doy: doy,
           sun: sun, adj: adj, orientation: orientation,
-          northOffsetDeg: northOffsetDeg
+          northOffsetDeg: northOffsetDeg, elevation_m: elevationM
         });
       }
       paint();
@@ -547,7 +568,7 @@
       return function () { if (ro) ro.disconnect(); };
     }, [enabled, lat, lon, adj.size, adj.rot, adj.look, adj.tilt,
         hour, doy, sun && sun.azimuth, sun && sun.elevation,
-        orientation, oKey, northOffsetDeg]);
+        orientation, oKey, northOffsetDeg, elevationM]);
 
     if (!enabled) return null;
     return React.createElement('div', {
@@ -613,6 +634,16 @@
         ),
         enabled && React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('span', { className: 'text-[8px] text-slate-400 font-black uppercase w-10' }, hhLabel),
+          React.createElement('button', {
+            type: 'button',
+            title: 'Follow wall-clock time of day',
+            'data-testid': 'elc-sunpath-now',
+            onClick: function () { if (props.onNow) props.onNow(); },
+            className: 'px-1.5 py-0.5 rounded border text-[8px] font-black uppercase tracking-wider ' +
+              (props.followClock
+                ? 'bg-amber-500 text-slate-900 border-amber-300'
+                : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400')
+          }, props.followClock ? 'TOD' : 'Now'),
           React.createElement('input', {
             type: 'range', min: 0, max: 23.75, step: 0.25, value: hour,
             'data-testid': 'elc-sunpath-hour',
@@ -669,7 +700,11 @@
     saveAdj: saveAdj,
     applyAdjStep: applyAdjStep,
     dayOfYear: dayOfYear,
+    civilHourNow: civilHourNow,
+    sunAtCivilTod: sunAtCivilTod,
+    horizonDipDeg: horizonDipDeg,
   };
+  global.red5ElcSunAtTod = sunAtCivilTod;
   global.ElcSunPathOverlay = global.ElcSunPathOnFloor;
   global.ElcSunPathToolbar = function ElcSunPathToolbar(props) {
     const p = Object.assign({}, props, {
@@ -690,16 +725,27 @@
       try { return localStorage.getItem('elc.floor.sunPathOverlay') !== '0'; } catch (_) { return true; }
     });
     const [adj, setAdj] = React.useState(function () { return loadAdj(); });
-    const [hour, setHour] = React.useState(function () { return new Date().getHours(); });
+    const [followClock, setFollowClock] = React.useState(true);
+    const [hour, setHour] = React.useState(function () { return civilHourNow(new Date()); });
     const [doy, setDoy] = React.useState(function () { return dayOfYear(new Date()); });
     const lat = props && props.lat;
     const lon = props && props.lon;
-    const year = new Date().getFullYear();
-    const tzOffsetH = Math.round((Number(lon) || 0) / 15);
-    const utcMs = Date.UTC(year, 0, doy) + (hour - tzOffsetH) * 3600000;
-    const date = new Date(utcMs);
-    const sun = (global.red5SolarPosition && Number.isFinite(lat) && Number.isFinite(lon))
-      ? global.red5SolarPosition(lat, lon, date)
+    const elevationM = Number(props && props.elevation_m) || 0;
+
+    React.useEffect(function () {
+      if (!followClock) return undefined;
+      function tick() {
+        const n = new Date();
+        setHour(civilHourNow(n));
+        setDoy(dayOfYear(n));
+      }
+      tick();
+      const id = setInterval(tick, 15000);
+      return function () { clearInterval(id); };
+    }, [followClock]);
+
+    const sun = (Number.isFinite(lat) && Number.isFinite(lon))
+      ? sunAtCivilTod(lat, lon, doy, hour, elevationM)
       : null;
 
     React.useEffect(function () {
@@ -707,17 +753,21 @@
       const payload = { enabled: !!enabled, sun: sun, hour: hour, doy: doy };
       if (props && props.onChange) props.onChange(payload);
       try { global.dispatchEvent(new CustomEvent('r5-sun-state', { detail: payload })); } catch (_) {}
-    }, [enabled, hour, doy, lat, lon, sun && sun.azimuth, sun && sun.elevation]);
+    }, [enabled, hour, doy, lat, lon, elevationM, sun && sun.azimuth, sun && sun.elevation]);
 
     return React.createElement(React.Fragment, null,
       React.createElement(global.ElcSunPathOnFloor, {
-        enabled: enabled, lat: lat, lon: lon, sun: sun, hour: hour, doy: doy,
-        adj: adj, orientation: props && props.orientation,
-        northOffsetDeg: props && props.northOffsetDeg, date: date,
+        enabled: enabled, lat: lat, lon: lon, elevation_m: elevationM,
+        sun: sun, hour: hour, doy: doy, adj: adj,
+        orientation: props && props.orientation,
+        northOffsetDeg: props && props.northOffsetDeg,
       }),
       React.createElement(global.ElcSunPathControls, {
-        enabled: enabled, hour: hour, doy: doy, adj: adj,
-        onToggle: setEnabled, onHour: setHour, onDoy: setDoy,
+        enabled: enabled, hour: hour, doy: doy, adj: adj, followClock: followClock,
+        onToggle: setEnabled,
+        onHour: function (h) { setFollowClock(false); setHour(h); },
+        onDoy: function (d) { setFollowClock(false); setDoy(d); },
+        onNow: function () { setFollowClock(true); },
         onAdjStep: function (kind) { setAdj(applyAdjStep(adj, kind)); },
       })
     );

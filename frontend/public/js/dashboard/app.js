@@ -1249,8 +1249,12 @@
             // Derived value -- always reflects the active weather location.
             // See comment near `sunState` declaration for bug history.
             const buildingLatLon = (weatherLocation && typeof weatherLocation.lat === 'number')
-                ? {lat: weatherLocation.lat, lon: weatherLocation.lon}
-                : {lat: 40.7128, lon: -74.0060};
+                ? {
+                    lat: weatherLocation.lat,
+                    lon: weatherLocation.lon,
+                    elevation_m: Number(weatherLocation.elevation_m != null ? weatherLocation.elevation_m : weatherLocation.asl) || 0,
+                }
+                : {lat: 40.7128, lon: -74.0060, elevation_m: 0};
             // ELC-style building aspect (façade facing). Slim v1: drives
             // northOffsetDeg for sun ray / window shafts on the floor plan.
             const [buildingFacing, setBuildingFacing] = useState(() => {
@@ -1380,7 +1384,10 @@
             // ----------------------------------------------------------------
             const pinLocation = useCallback((loc) => {
                 const body = (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number')
-                    ? { default: { lat: loc.lat, lon: loc.lon, name: loc.name || '' } }
+                    ? { default: {
+                        lat: loc.lat, lon: loc.lon, name: loc.name || '',
+                        elevation_m: Number(loc.elevation_m != null ? loc.elevation_m : loc.asl) || 0,
+                    } }
                     : { default: null };
                 if (body.default) {
                     try { localStorage.setItem('defaultWeatherLocation', JSON.stringify(body.default)); } catch (e) {}

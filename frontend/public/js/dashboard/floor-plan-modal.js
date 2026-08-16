@@ -145,6 +145,7 @@ const floorModalTree = (
                                 <window.ElcSunPathLive
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
+                                    elevation_m={buildingLatLon.elevation_m}
                                     theme={theme}
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
                                     orientation={floorData.floor.orientation}
@@ -454,6 +455,7 @@ const floorModalTree = (
                                 <window.ElcSunPathLive
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
+                                    elevation_m={buildingLatLon.elevation_m}
                                     theme={theme}
                                     onChange={(s) => setSunState(s)}
                                 />

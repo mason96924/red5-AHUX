@@ -137,6 +137,25 @@
     };
   }
 
+  function solarNoonHour(latDeg, lonDeg, doy, timezone) {
+    const tzHours = siteTzOffsetHours(new Date(), timezone, lonDeg);
+    const lat = (Number(latDeg) || 0) * Math.PI / 180;
+    let bestHour = 12, bestEl = -Infinity;
+    for (let h = 5; h <= 19; h += 0.1) {
+      const p = solarAltAz(lat, Number(doy) || 1, h, lonDeg, tzHours);
+      if (p.el > bestEl) { bestEl = p.el; bestHour = h; }
+    }
+    return bestHour;
+  }
+
+  // Same sun the floor pointer uses: live TOD when the sun is up,
+  // solar noon when site clock is night so shafts/rays still match the disc.
+  function sunAtCivilTodForFloor(latDeg, lonDeg, doy, hour, elevationM, timezone) {
+    const primary = sunAtCivilTod(latDeg, lonDeg, doy, hour, elevationM, timezone);
+    if (primary.is_day && primary.elevation > 0) return primary;
+    return sunAtCivilTod(latDeg, lonDeg, doy, solarNoonHour(latDeg, lonDeg, doy, timezone), elevationM, timezone);
+  }
+
   function solarAltAzAt(latDeg, lonDeg, date) {
     const jd = date.getTime() / 86400000 + 2440587.5;
     const n = jd - 2451545.0;
@@ -642,19 +661,10 @@
 
     // Same paint as red5-elc floor.html _paintSunPathOverlay: orange
     // shaft from horizon-center through the live sun on today's red path.
-    // If site TOD is night (no point on the daytime curve), use solar noon
-    // so the line is still there — that was why AHUX looked empty vs ELC.
-    const bandTod = solarAltAz(lat, doy, hour, lonDeg, tzHours);
-    let liveEl = bandTod.el;
-    let liveAz = bandTod.az;
-    if (!(liveEl > 0) && eph.today && eph.today.pts) {
-      let best = null;
-      for (let i = 0; i < eph.today.pts.length; i++) {
-        const p = eph.today.pts[i];
-        if (p.el > 0 && (!best || p.el > best.el)) best = p;
-      }
-      if (best) { liveEl = best.el; liveAz = best.az; }
-    }
+    // Night TOD uses solar noon so the disc (and window glow) still match.
+    const floorSun = sunAtCivilTodForFloor(latDeg, lonDeg, doy, hour, opts.elevation_m, opts.timezone);
+    const liveEl = floorSun.elevation * Math.PI / 180;
+    const liveAz = floorSun.azimuth * Math.PI / 180;
     if (liveEl > 0) {
       const sun = skyTo(liveAz, liveEl);
       const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 18);
@@ -900,9 +910,11 @@
     civilDoyNow: civilDoyNow,
     siteTzOffsetHours: siteTzOffsetHours,
     sunAtCivilTod: sunAtCivilTod,
+    sunAtCivilTodForFloor: sunAtCivilTodForFloor,
     horizonDipDeg: horizonDipDeg,
   };
   global.red5ElcSunAtTod = sunAtCivilTod;
+  global.red5ElcSunAtTodForFloor = sunAtCivilTodForFloor;
   global.ElcSunPathOverlay = global.ElcSunPathOnFloor;
   global.ElcSunPathToolbar = function ElcSunPathToolbar(props) {
     const p = Object.assign({}, props, {
@@ -944,7 +956,7 @@
     }, [followClock, timezone, lon]);
 
     const sun = (Number.isFinite(lat) && Number.isFinite(lon))
-      ? sunAtCivilTod(lat, lon, doy, hour, elevationM, timezone)
+      ? sunAtCivilTodForFloor(lat, lon, doy, hour, elevationM, timezone)
       : null;
 
     React.useEffect(function () {

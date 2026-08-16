@@ -721,7 +721,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       className="absolute inset-0 pointer-events-none"
       preserveAspectRatio="none"
       viewBox="0 0 100 100"
-      style={{width:'100%', height:'100%', zIndex: 7, mixBlendMode: isLight ? 'multiply' : 'screen'}}
+      style={{width:'100%', height:'100%', zIndex: 81, mixBlendMode: isLight ? 'multiply' : 'screen'}}
       data-testid="windows-sunshaft-overlay"
     >
       {clipDefs.length ? <defs>{clipDefs}</defs> : null}

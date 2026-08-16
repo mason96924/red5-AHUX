@@ -496,8 +496,11 @@
                     setSunState(prev => prev ? Object.assign({}, prev, { enabled: false }) : { enabled: false, sun: null });
                     return;
                 }
-                const sun = (typeof window.red5ElcSunAtTod === 'function')
-                    ? window.red5ElcSunAtTod(buildingLatLon.lat, buildingLatLon.lon, sunDoy, sunHour, buildingLatLon.elevation_m, buildingLatLon.timezone)
+                const sunFn = (window.red5ElcSunPath && window.red5ElcSunPath.sunAtCivilTodForFloor)
+                    || window.red5ElcSunAtTodForFloor
+                    || window.red5ElcSunAtTod;
+                const sun = (typeof sunFn === 'function')
+                    ? sunFn(buildingLatLon.lat, buildingLatLon.lon, sunDoy, sunHour, buildingLatLon.elevation_m, buildingLatLon.timezone)
                     : (window.red5SolarPosition
                         ? window.red5SolarPosition(buildingLatLon.lat, buildingLatLon.lon, new Date())
                         : null);
@@ -7267,8 +7270,8 @@
                 '/assets/js/image-picker.js',
                 '/assets/js/file-browser.js',
                 '/assets/js/sizing-check.js',
-                '/assets/js/sun-path.js',
-                '/assets/js/elc-sun-path-overlay.js?v=sunptr-elc1',
+                '/assets/js/sun-path.js?v=sunshaft-tod1',
+                '/assets/js/elc-sun-path-overlay.js?v=sunshaft-tod1',
                 '/assets/js/window-blinds-popout.js'
             ];
             var mainSource = document.getElementById('main-source');

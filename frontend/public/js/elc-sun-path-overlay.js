@@ -640,60 +640,65 @@
       if (nP) paintNorthArrow(ctx, (nP.x / 100) * W, (nP.y / 100) * H, nx, ny, ex, ey, glyph * (32 / 28));
     }
 
-    const todSun = sunAtCivilTod(latDeg, lonDeg, doy, hour, opts.elevation_m, opts.timezone);
+    // Same paint as red5-elc floor.html _paintSunPathOverlay: orange
+    // shaft from horizon-center through the live sun on today's red path.
+    // If site TOD is night (no point on the daytime curve), use solar noon
+    // so the line is still there — that was why AHUX looked empty vs ELC.
     const bandTod = solarAltAz(lat, doy, hour, lonDeg, tzHours);
-    const liveEl = bandTod.el > 0 ? bandTod.el
-      : ((opts.sun && Number.isFinite(opts.sun.elevation))
-        ? opts.sun.elevation * Math.PI / 180 : (todSun.elevation * Math.PI / 180));
-    const liveAz = bandTod.el > 0 ? bandTod.az
-      : ((opts.sun && Number.isFinite(opts.sun.azimuth))
-        ? opts.sun.azimuth * Math.PI / 180 : (todSun.azimuth * Math.PI / 180));
+    let liveEl = bandTod.el;
+    let liveAz = bandTod.az;
+    if (!(liveEl > 0) && eph.today && eph.today.pts) {
+      let best = null;
+      for (let i = 0; i < eph.today.pts.length; i++) {
+        const p = eph.today.pts[i];
+        if (p.el > 0 && (!best || p.el > best.el)) best = p;
+      }
+      if (best) { liveEl = best.el; liveAz = best.az; }
+    }
     if (liveEl > 0) {
       const sun = skyTo(liveAz, liveEl);
-      const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 14);
-      g.addColorStop(0, 'rgba(255,230,120,0.90)');
+      const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 18);
+      g.addColorStop(0, 'rgba(255,230,120,0.95)');
       g.addColorStop(1, 'rgba(255,200,60,0)');
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 14, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 4.4, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffe08a'; ctx.fill();
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, 1.8, 0, Math.PI * 2);
-      ctx.fillStyle = '#dc2820'; ctx.fill();
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 18, 0, Math.PI * 2); ctx.fill();
       const adx = sun.x - cx, ady = sun.y - cy;
       const alen = Math.hypot(adx, ady);
       if (alen > 6) {
         const ux = adx / alen, uy = ady / alen;
-        const headLen = 7;
-        const headW = 2.6;
-        const tipX = sun.x + ux * 7;
-        const tipY = sun.y + uy * 7;
-        const bx = tipX - ux * headLen, by = tipY - uy * headLen;
+        const headLen = Math.min(13, alen * 0.16);
+        const headW = headLen * 0.42;
+        const bx = sun.x - ux * headLen, by = sun.y - uy * headLen;
         const px = -uy, py = ux;
         ctx.save();
         ctx.setLineDash([]);
-        ctx.lineCap = 'butt';
-        ctx.lineJoin = 'miter';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(bx, by);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(72, 32, 6, 0.88)';
+        ctx.lineWidth = 3.6;
+        ctx.stroke();
+        ctx.strokeStyle = '#ff9a1a';
+        ctx.lineWidth = 2.1;
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(bx, by);
-        ctx.strokeStyle = '#9f1239';
-        ctx.lineWidth = 1.7;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(tipX, tipY);
+        ctx.moveTo(sun.x, sun.y);
         ctx.lineTo(bx + px * headW, by + py * headW);
         ctx.lineTo(bx - px * headW, by - py * headW);
         ctx.closePath();
-        ctx.fillStyle = '#9f1239';
+        ctx.fillStyle = '#ff9a1a';
+        ctx.strokeStyle = 'rgba(72, 32, 6, 0.88)';
+        ctx.lineWidth = 1.15;
         ctx.fill();
+        ctx.stroke();
         ctx.restore();
       }
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffe08a'; ctx.fill();
+      ctx.beginPath(); ctx.arc(sun.x, sun.y, 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#e04030'; ctx.fill();
     }
     ctx.fillStyle = '#96d2ff';
     ctx.beginPath(); ctx.arc(cx, cy, 2.1, 0, Math.PI * 2); ctx.fill();

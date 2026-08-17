@@ -775,6 +775,7 @@ const bandStory = (b) => {
  * Click the plot to pick a focus point; slider / wheel zooms that section
  * (leftmost = Off). Double-click resets. No magnifying-glass chrome —
  * the plot itself enlarges around the selected point.
+ * Right-edge slide tab, half the psych-chart pane (width × height 50%).
  * MUST be invoked on every App render (even with ahu=null) so its React
  * hooks stay at a stable call index — gating the call behind selectedAhuId
  * caused "React Rendering Crash Prevented" (hooks count flip).
@@ -788,6 +789,12 @@ function renderProcessMiniBadge(ctx) {
     const [zoom, setZoom] = React.useState(1.0); /* 1.0 = Off */
     const [dragging, setDragging] = React.useState(false);
     const dragRef = React.useRef(null);
+    const [open, setOpen] = React.useState(function () {
+        try { return localStorage.getItem('red5.processMiniOpen') === '1'; } catch (_) { return false; }
+    });
+    React.useEffect(function () {
+        try { localStorage.setItem('red5.processMiniOpen', open ? '1' : '0'); } catch (_) {}
+    }, [open]);
     const magOn = zoom > 1.001 && !!focus;
 
     const { ahu, theme, sweetSpotRange, showSweetSpot } = ctx || {};
@@ -1062,27 +1069,60 @@ function renderProcessMiniBadge(ctx) {
     );
 
     return (
-        <details
+        <div
             data-testid="process-mini-badge"
-            className="absolute top-3 right-3 z-40 select-none"
-            style={{ maxWidth: 460, color: '#0f172a', isolation: 'isolate', opacity: 1 }}
+            className="absolute z-40 pointer-events-none select-none"
+            style={{
+                right: 0,
+                bottom: 0,
+                width: '50%',
+                height: '50%',
+                transform: open ? 'translateX(0)' : 'translateX(100%)',
+                transition: 'transform 0.28s ease',
+                isolation: 'isolate',
+                color: '#0f172a',
+            }}
             onMouseDown={(e) => e.stopPropagation()}
         >
-            <summary
-                className="list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9px] font-black tracking-wider uppercase font-mono bg-slate-900 border-slate-500 text-white hover:border-sky-400"
-                title="Show OA–MA–SA / RA process sketch (auto-framed on state points)"
+            <button
+                type="button"
+                data-testid="process-mini-tab"
+                title={open ? 'Hide process mini-psychart' : 'Show process mini-psychart'}
+                onClick={function () { setOpen(function (v) { return !v; }); }}
+                className="pointer-events-auto absolute flex items-center justify-center"
+                style={{
+                    left: -28,
+                    top: '50%',
+                    width: 28,
+                    height: 108,
+                    marginTop: -54,
+                    borderRadius: '8px 0 0 8px',
+                    background: 'rgba(15,23,42,0.94)',
+                    border: '1px solid #334155',
+                    borderRight: 'none',
+                    color: open ? '#7dd3fc' : '#94a3b8',
+                    boxShadow: '-4px 0 18px rgba(0,0,0,0.35)',
+                    cursor: 'pointer',
+                }}
             >
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colOA }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colMA, outline: `2px solid ${colMARing}`, outlineOffset: 1 }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colRA }} />
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colSA }} />
-                Process
-            </summary>
+                <span
+                    className="text-[9px] font-black uppercase tracking-[0.18em]"
+                    style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                >
+                    {open ? 'Process ›' : '‹ Process'}
+                </span>
+            </button>
             <div
-                className="mt-1.5 rounded-xl border p-2 shadow-xl"
-                style={{ background: cardBg, borderColor: cardBd, width: VW + 16, color: '#0f172a' }}
+                className="pointer-events-auto h-full w-full overflow-hidden border-l border-slate-300 shadow-[-12px_0_28px_rgba(0,0,0,0.35)] flex flex-col"
+                style={{ background: cardBg, color: '#0f172a' }}
             >
-                <div className="px-1 pb-1 flex items-center gap-2" style={{ color: titleC }}>
+                <div className="px-2 pt-2 pb-1 flex items-center gap-2 shrink-0" style={{ color: titleC }}>
+                    <div className="inline-flex items-center gap-1.5 shrink-0">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colOA }} />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colMA, outline: `2px solid ${colMARing}`, outlineOffset: 1 }} />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colRA }} />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: colSA }} />
+                    </div>
                     <div className="text-[9px] font-black uppercase tracking-[0.14em] font-mono flex-1 min-w-0">
                         {ahu.id} · OA–MA–SA / RA
                         {drawBand ? ` · ${rhLo}–${rhHi}% RH` : ''}
@@ -1106,8 +1146,9 @@ function renderProcessMiniBadge(ctx) {
                                style={{ width: 72, accentColor: '#1e3a8a', cursor: 'pointer' }} />
                     </label>
                 </div>
-                <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} width={VW} height={VH} aria-hidden="true"
+                <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} aria-hidden="true"
                      data-testid="process-mini-svg"
+                     className="flex-1 min-h-0 w-full"
                      style={{ color: '#0f172a', display: 'block', cursor: magOn ? 'grab' : 'crosshair', touchAction: 'none' }}
                      onClick={(e) => {
                          if (dragging || (dragRef.current && dragRef.current.moved)) {
@@ -1160,8 +1201,8 @@ function renderProcessMiniBadge(ctx) {
                      }}
                      onMouseMove={(e) => {
                          if (!dragging || !dragRef.current || !focus) return;
-                         const sx = vbW / VW;
-                         const sy = vbH / VH;
+                         const sx = vbW / Math.max(1, e.currentTarget.clientWidth || VW);
+                         const sy = vbH / Math.max(1, e.currentTarget.clientHeight || VH);
                          const dx = (e.clientX - dragRef.current.x) * sx;
                          const dy = (e.clientY - dragRef.current.y) * sy;
                          if (Math.abs(dx) + Math.abs(dy) > 0.5) dragRef.current.moved = true;
@@ -1182,18 +1223,20 @@ function renderProcessMiniBadge(ctx) {
                     </defs>
                     {chartLayers}
                 </svg>
-                <div className="px-1 pt-1 text-[8px] font-mono" style={{ color: '#94a3b8' }}>
+                <div className="px-2 pb-2 shrink-0">
+                <div className="pt-1 text-[8px] font-mono" style={{ color: '#94a3b8' }}>
                     {magOn
                         ? 'Drag to pan · scroll/slider zoom · left=Off · double-click clears'
                         : 'Slider left = Off · click plot or raise zoom to magnify'}
                 </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 px-1 pt-1 font-mono text-[11px] font-extrabold leading-tight">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 font-mono text-[11px] font-extrabold leading-tight">
                     <div style={{ color: colOA }}>OA {fmt(OA)}</div>
                     <div style={{ color: colRA }}>RA {fmt(RA)}</div>
                     <div style={{ color: colMALabel }}>MA {MA ? fmt(MA) : '—'}</div>
                     <div style={{ color: colSA }}>SA {fmt(SA)}</div>
                 </div>
+                </div>
             </div>
-        </details>
+        </div>
     );
 }

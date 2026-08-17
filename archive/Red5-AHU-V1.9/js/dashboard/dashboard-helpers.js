@@ -982,13 +982,15 @@ function renderProcessMiniBadge(ctx) {
     const colMALabel = RED5_POINT_COLORS.MA; /* darkish yellow — readable on light + dark */
     const dotOp = 0.80;          /* 20% transparent fill + ring (incl. MA yellow) */
     const labelOp = 0.90;        /* 10% transparent OA/RA/MA/SA labels */
-    const colBand = '#047857';  /* overview green for RH band + mix line only */
-    const colH = '#6d28d9';
-    const colSat = '#1d4ed8';
-    const cardBg = '#ffffff';
-    const cardBd = '#cbd5e1';
-    const titleC = '#334155';
-    const axisC = '#334155';
+    const colBand = '#059669';  /* brighter emerald — RH band + OA–RA mix */
+    const colH = '#7c3aed';     /* brighter violet — enthalpy */
+    const colSat = '#2563eb';   /* brighter blue — saturation */
+    const cardBg = '#e8eef6';   /* cool slate so process lines pop */
+    const plotBg = '#e2eaf4';
+    const gridC = '#b8c5d6';
+    const cardBd = '#94a3b8';
+    const titleC = '#1e293b';
+    const axisC = '#1e293b';
     void theme; /* badge is always light; ignore dashboard dark theme inheritance */
 
     /* RH-band label near the left edge of the visible band polygon */
@@ -1042,31 +1044,31 @@ function renderProcessMiniBadge(ctx) {
 
     const chartLayers = (
         <g>
-            <rect x="2" y="2" width={VW - 4} height={VH - 4} rx="6" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
+            <rect x="2" y="2" width={VW - 4} height={VH - 4} rx="6" fill={plotBg} stroke={gridC} strokeWidth="1" />
             {tTicks.map((t) => (
-                <line key={'tg' + t} x1={xOf(t)} y1={TOP} x2={xOf(t)} y2={TOP + gh} stroke="#e2e8f0" strokeWidth="1" />
+                <line key={'tg' + t} x1={xOf(t)} y1={TOP} x2={xOf(t)} y2={TOP + gh} stroke={gridC} strokeWidth="1" />
             ))}
             {wTicks.map((w) => (
-                <line key={'wg' + w} x1={L} y1={yOf(w)} x2={L + gw} y2={yOf(w)} stroke="#e2e8f0" strokeWidth="1" />
+                <line key={'wg' + w} x1={L} y1={yOf(w)} x2={L + gw} y2={yOf(w)} stroke={gridC} strokeWidth="1" />
             ))}
-            <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
-            <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
+            <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#475569" strokeWidth="1.6" />
+            <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#475569" strokeWidth="1.6" />
             {tTicks.map((t) => (
-                <text key={'tl' + t} x={xOf(t)} y={TOP + gh + 12} fill="#64748b" fontSize="8" textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace">{fmtT(t)}</text>
+                <text key={'tl' + t} x={xOf(t)} y={TOP + gh + 12} fill="#334155" fontSize="8" textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace">{fmtT(t)}</text>
             ))}
             {wTicks.map((w) => (
-                <text key={'wl' + w} x={L - 4} y={yOf(w) + 3} fill="#64748b" fontSize="8" textAnchor="end" fontFamily="ui-monospace,Menlo,monospace">{fmtW(w)}</text>
+                <text key={'wl' + w} x={L - 4} y={yOf(w) + 3} fill="#334155" fontSize="8" textAnchor="end" fontFamily="ui-monospace,Menlo,monospace">{fmtW(w)}</text>
             ))}
-            {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
-            {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
-            {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="2" strokeDasharray="7 4" />}
+            {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.8" strokeDasharray="2 4" />}
+            {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.8" strokeDasharray="2 4" />}
+            {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="2.4" strokeDasharray="7 4" />}
             {satPath && (
-                <path d={satPath} fill="none" stroke={colSat} strokeWidth="2.8" strokeLinecap="round" />
+                <path d={satPath} fill="none" stroke={colSat} strokeWidth="3.2" strokeLinecap="round" />
             )}
             {satPath && (
                 <g fontFamily="system-ui,sans-serif">
                     <text x={L + gw * 0.78} y={TOP + 16} fill={colSat} style={{ fill: colSat }} fontSize="12" fontWeight="700">100% RH</text>
-                    <text x={L + gw * 0.78} y={TOP + 30} fill="#475569" style={{ fill: '#475569' }} fontSize="11">(saturation)</text>
+                    <text x={L + gw * 0.78} y={TOP + 30} fill="#334155" style={{ fill: '#334155' }} fontSize="11">(saturation)</text>
                 </g>
             )}
             {hRA && (
@@ -1076,8 +1078,8 @@ function renderProcessMiniBadge(ctx) {
             {bandPts && (
                 <g>
                     <polygon points={bandPts}
-                             fill="#10b981" fillOpacity="0.22"
-                             stroke={colBand} strokeWidth="1.8"
+                             fill="#10b981" fillOpacity="0.30"
+                             stroke={colBand} strokeWidth="2.2"
                              strokeDasharray="5 3" />
                     <text x={bandLabelX} y={bandLabelY} fill={colBand} style={{ fill: colBand }} fontSize="11"
                           fontWeight="800" textAnchor="middle"
@@ -1087,9 +1089,9 @@ function renderProcessMiniBadge(ctx) {
                 </g>
             )}
             <line x1={ox} y1={oy} x2={rx} y2={ry}
-                  stroke={_maOff ? '#ef4444' : colBand} strokeWidth={_maOff ? 2.8 : 2.2}
+                  stroke={_maOff ? '#ef4444' : colBand} strokeWidth={_maOff ? 3.2 : 2.8}
                   strokeDasharray="6 4" />
-            <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6" />
+            <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="3.2" />
             <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
                   textAnchor="middle" fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
             <text x={14} y={TOP + gh / 2} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"

@@ -775,8 +775,8 @@ const bandStory = (b) => {
  * Click the plot to pick a focus point; slider / wheel zooms that section
  * (leftmost = Off). Double-click resets. Magnify shrinks the T/W window
  * and redraws sat / enthalpy / RH / ticks so clustered OA–MA–SA / RA
- * points separate. OA/RA/MA/SA circles and 2-letter labels stay CSS
- * pixel size (HTML overlay) — only the grid units open up.
+ * points separate. OA/RA/MA/SA circles, 2-letter labels, and the MA→SA
+ * arrow tip stay CSS pixel size (HTML overlay) — only the grid units open up.
  * Right-edge slide tab, half the psych-chart pane (width × height 50%).
  * MUST be invoked on every App render (even with ahu=null) so its React
  * hooks stay at a stable call index — gating the call behind selectedAhuId
@@ -986,7 +986,6 @@ function renderProcessMiniBadge(ctx) {
     const cardBd = '#cbd5e1';
     const titleC = '#334155';
     const axisC = '#334155';
-    const arrId = 'pmini-arr-' + String(ahu.id || 'x').replace(/[^a-zA-Z0-9_-]/g, '_');
     void theme; /* badge is always light; ignore dashboard dark theme inheritance */
 
     /* RH-band label near the left edge of the visible band polygon */
@@ -1087,8 +1086,7 @@ function renderProcessMiniBadge(ctx) {
             <line x1={ox} y1={oy} x2={rx} y2={ry}
                   stroke={_maOff ? '#ef4444' : colBand} strokeWidth={_maOff ? 2.8 : 2.2}
                   strokeDasharray="6 4" />
-            <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
-                  markerEnd={'url(#' + arrId + ')'} />
+            <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6" />
             <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
                   textAnchor="middle" fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
             <text x={14} y={TOP + gh / 2} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
@@ -1140,6 +1138,30 @@ function renderProcessMiniBadge(ctx) {
             </div>
         );
     };
+
+    /* Screen-pixel MA→SA chevron — same overlay as labels, so zoom cannot blow it up. */
+    const processArrow = (() => {
+        if (!inPlot(sx, sy)) return null;
+        const ang = Math.atan2((sy - my) / VH, (sx - mx) / VW) * 180 / Math.PI;
+        return (
+            <div
+                data-testid="process-mini-arrow"
+                style={{
+                    position: 'absolute',
+                    left: ((sx / VW) * 100) + '%',
+                    top: ((sy / VH) * 100) + '%',
+                    transform: 'translate(-50%, -50%) rotate(' + ang + 'deg) translate(-11px, 0)',
+                    width: 0,
+                    height: 0,
+                    borderTop: '4px solid transparent',
+                    borderBottom: '4px solid transparent',
+                    borderLeft: '8px solid ' + colSA,
+                    opacity: dotOp,
+                    pointerEvents: 'none',
+                }}
+            />
+        );
+    })();
 
     return (
         <div
@@ -1295,11 +1317,6 @@ function renderProcessMiniBadge(ctx) {
                      onMouseUp={() => { setDragging(false); }}
                      onMouseLeave={() => { setDragging(false); dragRef.current = null; }}
                 >
-                    <defs>
-                        <marker id={arrId} markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                            <path d="M0,0 L7,3.5 L0,7 Z" fill={colSA} />
-                        </marker>
-                    </defs>
                     {chartLayers}
                 </svg>
                 <div className="absolute inset-0 pointer-events-none" data-testid="process-mini-markers">
@@ -1307,6 +1324,7 @@ function renderProcessMiniBadge(ctx) {
                     {markerChip(rx, ry, colRA, colRA, 'RA', colRA)}
                     {markerChip(mx, my, colMA, _maOff ? '#ef4444' : colMARing, _maOff ? ('MA·' + _maFault.cat) : 'MA', _maOff ? '#ef4444' : colMALabel)}
                     {markerChip(sx, sy, colSA, colSA, 'SA', colSA, 'left')}
+                    {processArrow}
                 </div>
                 </div>
                 <div className="px-2 pb-2 shrink-0">

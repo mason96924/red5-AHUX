@@ -984,10 +984,10 @@ function renderProcessMiniBadge(ctx) {
     const colBand = '#059669';  /* brighter emerald — RH band + OA–RA mix */
     const colH = '#7c3aed';     /* brighter violet — enthalpy */
     const colSat = '#2563eb';   /* brighter blue — saturation */
-    const cardBg = '#e8eef6';   /* cool slate so process lines pop */
-    const plotBg = '#e2eaf4';
-    const gridC = '#b8c5d6';
-    const cardBd = '#94a3b8';
+    const cardBg = '#cfd4da';   /* medium light grey — not blue-tinted */
+    const plotBg = '#c8ced6';
+    const gridC = '#9aa3ad';
+    const cardBd = '#8a929a';
     const titleC = '#1e293b';
     const axisC = '#1e293b';
     void theme; /* badge is always light; ignore dashboard dark theme inheritance */
@@ -1050,13 +1050,13 @@ function renderProcessMiniBadge(ctx) {
             {wTicks.map((w) => (
                 <line key={'wg' + w} x1={L} y1={yOf(w)} x2={L + gw} y2={yOf(w)} stroke={gridC} strokeWidth="1" />
             ))}
-            <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#475569" strokeWidth="1.6" />
-            <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#475569" strokeWidth="1.6" />
+            <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#334155" strokeWidth="1.6" />
+            <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#334155" strokeWidth="1.6" />
             {tTicks.map((t) => (
-                <text key={'tl' + t} x={xOf(t)} y={TOP + gh + 12} fill="#334155" fontSize="8" textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace">{fmtT(t)}</text>
+                <text key={'tl' + t} x={xOf(t)} y={TOP + gh + 12} fill="#1e293b" fontSize="8" textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace">{fmtT(t)}</text>
             ))}
             {wTicks.map((w) => (
-                <text key={'wl' + w} x={L - 4} y={yOf(w) + 3} fill="#334155" fontSize="8" textAnchor="end" fontFamily="ui-monospace,Menlo,monospace">{fmtW(w)}</text>
+                <text key={'wl' + w} x={L - 4} y={yOf(w) + 3} fill="#1e293b" fontSize="8" textAnchor="end" fontFamily="ui-monospace,Menlo,monospace">{fmtW(w)}</text>
             ))}
             {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.8" strokeDasharray="2 4" />}
             {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.8" strokeDasharray="2 4" />}
@@ -1067,7 +1067,7 @@ function renderProcessMiniBadge(ctx) {
             {satPath && (
                 <g fontFamily="system-ui,sans-serif">
                     <text x={L + gw * 0.78} y={TOP + 16} fill={colSat} style={{ fill: colSat }} fontSize="12" fontWeight="700">100% RH</text>
-                    <text x={L + gw * 0.78} y={TOP + 30} fill="#334155" style={{ fill: '#334155' }} fontSize="11">(saturation)</text>
+                    <text x={L + gw * 0.78} y={TOP + 30} fill="#1e293b" style={{ fill: '#1e293b' }} fontSize="11">(saturation)</text>
                 </g>
             )}
             {hRA && (
@@ -1229,7 +1229,7 @@ function renderProcessMiniBadge(ctx) {
                     <label className="shrink-0 inline-flex items-center gap-1 font-mono text-[9px] font-bold"
                            title="Zoom selected section — slide fully left to turn off"
                            onMouseDown={(e) => e.stopPropagation()}>
-                        <span style={{ color: '#64748b' }}>{zoom <= 1.001 ? 'Off' : (zoom.toFixed(1) + '\u00D7')}</span>
+                        <span style={{ color: '#334155' }}>{zoom <= 1.001 ? 'Off' : (zoom.toFixed(1) + '\u00D7')}</span>
                         <input type="range" min="1" max="4.5" step="0.1" value={zoom}
                                data-testid="process-mini-zoom"
                                onChange={(e) => {
@@ -1331,7 +1331,7 @@ function renderProcessMiniBadge(ctx) {
                 </div>
                 </div>
                 <div className="px-2 pb-2 shrink-0">
-                <div className="pt-1 text-[8px] font-mono" style={{ color: '#94a3b8', opacity: 1 }}>
+                <div className="pt-1 text-[8px] font-mono" style={{ color: '#334155', opacity: 1 }}>
                     {magOn
                         ? 'T/W window opens · dots stay point-size · drag to pan · left=Off'
                         : 'Slider left = Off · click plot or raise zoom to open the T/W grid'}

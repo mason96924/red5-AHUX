@@ -220,6 +220,23 @@
     return { nx: nx, ny: ny, ex: -ny, ey: nx };
   }
 
+  /* Vault lift: rotate the east rose axis 90° in screen space. Pick the
+     sign so zenith sits on the year-band half of the disk (N when lat<0,
+     S when lat>=0). Horizon (u=0) is unchanged. Do not score toward
+     page-up — that shears a rotated plan off the N/S/W/E markers. */
+  function roseVaultUp(ex, ey, nx, ny, latDeg) {
+    const a = [-ey, ex];
+    const b = [ey, -ex];
+    const aN = a[0] * nx + a[1] * ny;
+    const bN = b[0] * nx + b[1] * ny;
+    const towardN = aN >= bN ? a : b;
+    const towardS = (towardN === a) ? b : a;
+    const pick = (Number(latDeg) < 0) ? towardN : towardS;
+    const len = Math.hypot(pick[0], pick[1]);
+    if (len < 1e-6) return { ux: towardN[0], uy: towardN[1] };
+    return { ux: pick[0] / len, uy: pick[1] / len };
+  }
+
   function lineIntersect(a, b, c, d) {
     const pa = markerXY(a), pb = markerXY(b), pc = markerXY(c), pd = markerXY(d);
     if (!pa || !pb || !pc || !pd) return null;
@@ -573,19 +590,19 @@
       const ce = Math.cos(el), se = Math.sin(el);
       return { e: Math.sin(az) * ce, n: Math.cos(az) * ce, u: se };
     }
-    /* Floor-rose projection: horizon N sits on the N–S marker line,
-       E on the W–E marker line. Altitude leans the vault toward South
-       (along the markers), never toward the top of the page — that
-       shear is why a rotated AHUX plan looked unaligned while ELC
-       (N usually up the page) looked fine. */
-    const h = Math.max(0.05, Math.min(0.85, 0.42 + (adj.look || 0) / 90));
-    const toCam = { e: 0, n: -h, u: 1 };
-    const tlen = Math.hypot(toCam.e, toCam.n, toCam.u) || 1;
-    toCam.e /= tlen; toCam.n /= tlen; toCam.u /= tlen;
+    /* Horizon is only the rose (u=0). Altitude lifts along rotate(E,90°)
+       toward the year-band half of the disk so the vault has height
+       without sliding noon across the N–S markers (the old always-south
+       lean flattened Sydney onto S; page-up sheared AHUX off the rose). */
+    const h = Math.max(0.18, Math.min(1.15, 0.78 + (adj.look || 0) / 90));
+    const vault = roseVaultUp(ex, ey, nx, ny, latDeg);
+    const ux = vault.ux, uy = vault.uy;
+    const nsShade = latDeg < 0 ? -1 : 1;
+    const toCam = { e: 0.08, n: -0.48, u: 0.87 };
     function project(p) {
       return {
-        x: cx + R * (p.e * ex + p.n * nx) - R * p.u * h * nx,
-        y: cy + R * (p.e * ey + p.n * ny) - R * p.u * h * ny,
+        x: cx + R * (p.e * ex + p.n * nx) + R * p.u * h * ux,
+        y: cy + R * (p.e * ey + p.n * ny) + R * p.u * h * uy,
         depth: p.u
       };
     }
@@ -600,6 +617,7 @@
       (adj.look || 0).toFixed(2),
       R.toFixed(2), cx.toFixed(1), cy.toFixed(1),
       nx.toFixed(4), ny.toFixed(4), ex.toFixed(4), ey.toFixed(4),
+      ux.toFixed(4), uy.toFixed(4), nsShade,
       Math.round(W), Math.round(H), Number(dpr).toFixed(2)
     ].join('|');
     if (!layerCache.canvas || layerCache.key !== layerKey) {
@@ -611,7 +629,7 @@
       const octx = off.getContext('2d');
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.clearRect(0, 0, W, H);
-      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy, 1);
+      drawYearMesh(octx, project, skyTo, ground, toCam, eph, cx, cy, nsShade);
       layerCache.key = layerKey;
       layerCache.canvas = off;
     }

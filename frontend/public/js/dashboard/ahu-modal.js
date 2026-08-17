@@ -171,6 +171,91 @@ function AhuVavHubSlideTab(props) {
     );
 }
 
+function AhuPerfSlideTab(props) {
+    const theme = props.theme;
+    const ahuId = props.ahuId;
+    const [open, setOpen] = React.useState(function () {
+        try { return localStorage.getItem('red5.ahuPerfOpen') === '1'; } catch (_) { return false; }
+    });
+    const [loaded, setLoaded] = React.useState(open);
+    React.useEffect(function () {
+        try { localStorage.setItem('red5.ahuPerfOpen', open ? '1' : '0'); } catch (_) {}
+        if (open) setLoaded(true);
+    }, [open]);
+    const dark = theme === 'dark';
+    const pageUrl = ahuId ? ('/ahu.html?id=' + encodeURIComponent(ahuId)) : '/ahu.html';
+    const embedUrl = pageUrl + (pageUrl.indexOf('?') >= 0 ? '&' : '?') + 'embed=1';
+    return (
+        <div
+            data-testid="ahu-perf-drawer"
+            className="absolute top-0 left-0 bottom-0 z-50 pointer-events-none"
+            style={{
+                width: 'min(760px, 72%)',
+                transform: open ? 'translateX(0)' : 'translateX(-100%)',
+                transition: 'transform 0.28s ease',
+            }}
+        >
+            <button
+                type="button"
+                data-testid="ahu-perf-tab"
+                title={open ? 'Hide AHU performance' : 'Show AHU performance'}
+                onClick={function () { setOpen(function (v) { return !v; }); }}
+                className="pointer-events-auto absolute flex items-center justify-center"
+                style={{
+                    right: -28,
+                    top: '50%',
+                    width: 28,
+                    height: 108,
+                    marginTop: -54,
+                    borderRadius: '0 8px 8px 0',
+                    background: dark ? 'rgba(15,23,42,0.94)' : 'rgba(15,23,42,0.90)',
+                    border: '1px solid #334155',
+                    borderLeft: 'none',
+                    color: open ? '#6ee7b7' : '#94a3b8',
+                    boxShadow: '4px 0 18px rgba(0,0,0,0.35)',
+                    cursor: 'pointer',
+                }}
+            >
+                <span
+                    className="text-[9px] font-black uppercase tracking-[0.18em]"
+                    style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                >
+                    {open ? '‹ Perf' : 'Perf ›'}
+                </span>
+            </button>
+            <div
+                className="pointer-events-auto h-full w-full overflow-hidden border-r border-slate-700 shadow-[12px_0_28px_rgba(0,0,0,0.35)] flex flex-col"
+                style={{ background: dark ? '#0b0f1a' : '#0b0f1a' }}
+            >
+                <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-slate-800">
+                    <span className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-400">AHU performance</span>
+                    <a
+                        href={pageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="ahu-perf-new-tab"
+                        title="Open ahu.html in a new tab"
+                        className="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-emerald-300 no-underline"
+                    >
+                        {'\u2197'} New tab
+                    </a>
+                </div>
+                {loaded && ahuId ? (
+                    <iframe
+                        key={ahuId}
+                        title={ahuId + ' performance'}
+                        src={embedUrl}
+                        data-testid="ahu-perf-iframe"
+                        className="flex-1 min-h-0 w-full border-0 bg-[#0b0f1a]"
+                    />
+                ) : (
+                    <div className="flex-1 flex items-center justify-center text-[10px] font-mono uppercase tracking-widest text-slate-500">No AHU</div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function renderAhuEquipmentModal(ctx) {
     const {
         API_URL, _setForceApTick,
@@ -957,6 +1042,7 @@ function renderAhuEquipmentModal(ctx) {
                                         </div>
                                         </div>
                                         )}
+                                        <AhuPerfSlideTab ahuId={targetAhu && targetAhu.id} theme={theme} />
                                         <AhuVavHubSlideTab
                                             ahu={targetAhu}
                                             theme={theme}

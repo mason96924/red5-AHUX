@@ -16,19 +16,160 @@
  *   pass: convert to `<AhuEquipmentModal {...ctx} />` for React.memo
  *   and DevTools visibility.
  *
- * Ctx props expected (23):
+ * Ctx props expected:
  *   API_URL, _setForceApTick, ahuBandGuideZoomed, setAhuBandGuideZoomed,
  *   ahuBodyRef, ahuData, ahuImage, ahuImgDims, ahuImgRef, ahuModalOffset,
  *   ahuModalPopupHost, ahuModalPopupWin, ahuModalSize, ahuOuterRef,
  *   ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal, floatPipAhuModal,
  *   setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
- *   setShowAhuModalFor, showAhuModalFor, theme
+ *   setShowAhuModalFor, showAhuModalFor, theme,
+ *   lockedVavId, setLockedVavId, setIsLockedToSA, setSelectedVavForModal,
+ *   setVavCfm, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, ui, t
  *
  * LOCALS — declared inside the body, NOT passed via ctx (would cause
  * "already declared" errors):
  *   dk, writeRW, imgScale, currentAhuImage, groupedPoints, schemaPoints,
  *   schemaAnimations, schemaType, targetAhu, ahuTypeId, etc.
  * ------------------------------------------------------------------ */
+
+function renderVavTerminalHubPanel(props) {
+    const currentAhu = props.ahu;
+    const theme = props.theme;
+    const ui = props.ui || (typeof THEMES !== 'undefined' && THEMES[theme]) || {};
+    const t = props.t || (typeof window !== 'undefined' && window.t) || function (k) { return k; };
+    const lockedVavId = props.lockedVavId;
+    const setLockedVavId = props.setLockedVavId;
+    const setIsLockedToSA = props.setIsLockedToSA;
+    const setSelectedVavForModal = props.setSelectedVavForModal;
+    const setVavCfm = props.setVavCfm;
+    const comfortZonePoly = props.comfortZonePoly;
+    const sweetSpotRange = props.sweetSpotRange;
+    const showGivoni = props.showGivoni;
+    const showSweetSpot = props.showSweetSpot;
+    if (!currentAhu) return null;
+    const saP = currentAhu.points && currentAhu.points.find(function (p) { return p && p.label === 'SA'; });
+    const activeSweet = (showGivoni && showSweetSpot && sweetSpotRange) ? { lo: sweetSpotRange.lo, hi: sweetSpotRange.hi } : null;
+    const ahuDiag = typeof getAhuDiagnostic === 'function' ? getAhuDiagnostic(currentAhu, comfortZonePoly, activeSweet) : null;
+    return (
+        <div className={`${ui.vavHub || ''} h-full backdrop-blur-xl flex flex-col overflow-hidden`} data-testid="vav-terminal-hub">
+            <div className={`p-4 shrink-0 ${theme === 'dark' ? 'bg-indigo-600/10 border-indigo-500/20' : 'bg-indigo-50 border-indigo-200'} border-b font-black`}>
+                <div className="flex justify-between items-center gap-2">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400 font-mono">{t('vav_terminal_hub')}</h3>
+                    {ahuDiag && (
+                        <div className="flex items-center gap-3">
+                            <span className={`text-[9px] font-black uppercase tracking-wider ${ahuDiag.process === 'heating' ? 'text-orange-400' : ahuDiag.process === 'cooling' ? 'text-cyan-400' : 'text-emerald-400'}`}>
+                                {ahuDiag.process === 'heating' ? 'HTG' : ahuDiag.process === 'cooling' ? 'CLG' : 'IDLE'}
+                            </span>
+                            <span className={`text-[10px] font-black ${ahuDiag.comfortPct >= 80 ? 'text-emerald-400' : ahuDiag.comfortPct >= 50 ? 'text-amber-400' : 'text-red-400'}`}
+                                  title={activeSweet
+                                      ? `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ AND RH ${activeSweet.lo}–${activeSweet.hi}%`
+                                      : `${ahuDiag.inCZCount} of ${ahuDiag.totalVavs} VAVs inside Givoni CZ`}>
+                                {ahuDiag.comfortPct}% ({ahuDiag.inCZCount}/{ahuDiag.totalVavs}) {activeSweet ? 'CZ∩SS' : 'CZ'}
+                            </span>
+                        </div>
+                    )}
+                </div>
+                {typeof renderGivoniTierLegend === 'function' && renderGivoniTierLegend({ showGivoni: showGivoni, theme: theme })}
+                {ahuDiag && ahuDiag.recommendations && ahuDiag.recommendations.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                        {ahuDiag.recommendations.slice(0, 2).map(function (r, i) {
+                            return (
+                                <span key={i} className={`text-[8px] px-1.5 py-0.5 rounded ${theme === 'dark' ? 'bg-amber-900/30 text-amber-400 border border-amber-700/50' : 'bg-amber-50 text-amber-700 border border-amber-200'} font-bold`}>{r}</span>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+            <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 bg-opacity-20 font-mono text-[11px] ${ui.text || ''}`}>
+                <table className="w-full text-left border-separate border-spacing-y-1">
+                    <thead><tr className="text-[9px] font-black uppercase text-slate-400"><th className="w-5">CZ</th><th>ID</th><th>Temp</th><th>RH%</th><th>h</th><th>Dh(SA)</th><th>Dist</th><th>Demand</th><th className="text-center font-black">Lock</th></tr></thead>
+                    <tbody className="opacity-90">
+                        {(currentAhu.vavs || []).map(function (v) {
+                            const saH = saP && typeof getH === 'function' ? getH(saP.t, saP.w) : 0;
+                            const diffH = v.h - saH;
+                            const diag = typeof getVavDiagnostic === 'function' ? getVavDiagnostic(v, saP, comfortZonePoly, activeSweet) : { distSA: 0, totalDemand: 0, demandType: '' };
+                            const gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
+                            const gv = typeof getGivoniTier === 'function' ? getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, gvSweet, showGivoni) : { dotFill: '#64748b', tooltip: '' };
+                            const statusStyle = { backgroundColor: gv.dotFill, boxShadow: '0 0 5px ' + gv.dotFill + '80' };
+                            return (
+                                <tr key={v.id} className={`rounded-lg transition-colors ${lockedVavId === v.id ? 'bg-indigo-500/30' : (theme === 'dark' ? 'bg-slate-950/40 hover:bg-indigo-500/10' : 'bg-slate-100 hover:bg-indigo-100')}`}>
+                                    <td className="px-1 py-2" title={gv.tooltip} data-testid={`vav-cz-status-${v.id}`}>
+                                        <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={statusStyle}></div>
+                                    </td>
+                                    <td className="px-2 py-2 text-indigo-500 font-bold cursor-pointer hover:underline transition-colors hover:text-indigo-400" onMouseDown={function (e) { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }} title={(window.t && window.t('view_diagram')) || 'View Diagram'}>{v.id}</td>
+                                    <td className="font-black">{v.t.toFixed(1)}</td>
+                                    <td className="font-black">{v.rh.toFixed(0)}</td>
+                                    <td className="text-pink-500 font-black">{v.h.toFixed(1)}</td>
+                                    <td className={`font-black ${Math.abs(diffH) < 3 ? 'text-emerald-500' : Math.abs(diffH) < 6 ? 'text-blue-500' : 'text-red-400'}`}>{diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</td>
+                                    <td className={`font-black text-[10px] ${diag.distSA < 3 ? 'text-emerald-500' : diag.distSA < 6 ? 'text-slate-400' : 'text-amber-400'}`}>{diag.distSA.toFixed(1)}</td>
+                                    <td className={`font-black text-[10px] ${diag.totalDemand === 0 ? 'text-emerald-500' : diag.demandType === 'heating' ? 'text-orange-400' : 'text-cyan-400'}`}>{diag.totalDemand === 0 ? '--' : diag.totalDemand.toFixed(1)}</td>
+                                    <td className="text-center"><button type="button" onMouseDown={function (e) { e.stopPropagation(); setLockedVavId(lockedVavId === v.id ? null : v.id); setIsLockedToSA(false); }} className={`p-1.5 rounded-lg border transition-all ${lockedVavId === v.id ? 'bg-emerald-600 border-emerald-400 text-slate-100 shadow-lg' : ui.btnToggle}`}><LockIcon/></button></td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+function AhuVavHubSlideTab(props) {
+    const theme = props.theme;
+    const [open, setOpen] = React.useState(function () {
+        try { return localStorage.getItem('red5.ahuVavHubOpen') === '1'; } catch (_) { return false; }
+    });
+    React.useEffect(function () {
+        try { localStorage.setItem('red5.ahuVavHubOpen', open ? '1' : '0'); } catch (_) {}
+    }, [open]);
+    const dark = theme === 'dark';
+    return (
+        <div
+            data-testid="ahu-vav-hub-drawer"
+            className="absolute top-0 right-0 bottom-0 z-50 pointer-events-none"
+            style={{
+                width: 'min(640px, 62%)',
+                transform: open ? 'translateX(0)' : 'translateX(100%)',
+                transition: 'transform 0.28s ease',
+            }}
+        >
+            <button
+                type="button"
+                data-testid="ahu-vav-hub-tab"
+                title={open ? 'Hide VAV terminal hub' : 'Show VAV terminal hub'}
+                onClick={function () { setOpen(function (v) { return !v; }); }}
+                className="pointer-events-auto absolute flex items-center justify-center"
+                style={{
+                    left: -28,
+                    top: '50%',
+                    width: 28,
+                    height: 108,
+                    marginTop: -54,
+                    borderRadius: '8px 0 0 8px',
+                    background: dark ? 'rgba(15,23,42,0.94)' : 'rgba(15,23,42,0.90)',
+                    border: '1px solid #334155',
+                    borderRight: 'none',
+                    color: open ? '#a5b4fc' : '#94a3b8',
+                    boxShadow: '-4px 0 18px rgba(0,0,0,0.35)',
+                    cursor: 'pointer',
+                }}
+            >
+                <span
+                    className="text-[9px] font-black uppercase tracking-[0.18em]"
+                    style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                >
+                    {open ? 'Hub ›' : '‹ Hub'}
+                </span>
+            </button>
+            <div
+                className="pointer-events-auto h-full w-full overflow-hidden border-l border-slate-700 shadow-[-12px_0_28px_rgba(0,0,0,0.35)]"
+                style={{ background: dark ? '#020617' : '#f8fafc' }}
+            >
+                {renderVavTerminalHubPanel(props)}
+            </div>
+        </div>
+    );
+}
 
 function renderAhuEquipmentModal(ctx) {
     const {
@@ -43,6 +184,10 @@ function renderAhuEquipmentModal(ctx) {
         setShowAhuModalFor, showAhuModalFor,
         theme,
         buildingLatLon,
+        lockedVavId, setLockedVavId, setIsLockedToSA,
+        setSelectedVavForModal, setVavCfm,
+        comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot,
+        ui, t,
     } = ctx;
     const bandGuideZoomed = !!ahuBandGuideZoomed;
                         const targetAhu = ahuData.find(a => a.id === showAhuModalFor) || ahuData[0];
@@ -812,6 +957,21 @@ function renderAhuEquipmentModal(ctx) {
                                         </div>
                                         </div>
                                         )}
+                                        <AhuVavHubSlideTab
+                                            ahu={targetAhu}
+                                            theme={theme}
+                                            ui={ui}
+                                            t={t}
+                                            lockedVavId={lockedVavId}
+                                            setLockedVavId={setLockedVavId}
+                                            setIsLockedToSA={setIsLockedToSA}
+                                            setSelectedVavForModal={setSelectedVavForModal}
+                                            setVavCfm={setVavCfm}
+                                            comfortZonePoly={comfortZonePoly}
+                                            sweetSpotRange={sweetSpotRange}
+                                            showGivoni={showGivoni}
+                                            showSweetSpot={showSweetSpot}
+                                        />
                                     </div>
                                 </div>
                             </div>

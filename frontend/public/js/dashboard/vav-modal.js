@@ -32,6 +32,63 @@
  *   sweetSpotRange, showSweetSpot
  * ------------------------------------------------------------------ */
 
+function VavPsySlideTab(props) {
+    const theme = props.theme;
+    const [open, setOpen] = React.useState(function () {
+        try { return localStorage.getItem('red5.vavPsyOpen') === '1'; } catch (_) { return false; }
+    });
+    React.useEffect(function () {
+        try { localStorage.setItem('red5.vavPsyOpen', open ? '1' : '0'); } catch (_) {}
+    }, [open]);
+    const dark = theme === 'dark';
+    return (
+        <div
+            data-testid="vav-psy-drawer"
+            className="absolute top-0 right-0 bottom-0 z-40 pointer-events-none"
+            style={{
+                width: 'min(520px, 48%)',
+                transform: open ? 'translateX(0)' : 'translateX(100%)',
+                transition: 'transform 0.28s ease',
+            }}
+        >
+            <button
+                type="button"
+                data-testid="vav-psy-tab"
+                title={open ? 'Hide zone psychart' : 'Show zone psychart'}
+                onClick={function () { setOpen(function (v) { return !v; }); }}
+                className="pointer-events-auto absolute flex items-center justify-center"
+                style={{
+                    left: -28,
+                    top: '50%',
+                    width: 28,
+                    height: 108,
+                    marginTop: -54,
+                    borderRadius: '8px 0 0 8px',
+                    background: dark ? 'rgba(15,23,42,0.94)' : 'rgba(15,23,42,0.90)',
+                    border: '1px solid #334155',
+                    borderRight: 'none',
+                    color: open ? '#a5b4fc' : '#94a3b8',
+                    boxShadow: '-4px 0 18px rgba(0,0,0,0.35)',
+                    cursor: 'pointer',
+                }}
+            >
+                <span
+                    className="text-[9px] font-black uppercase tracking-[0.18em]"
+                    style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                >
+                    {open ? 'Psy ›' : '‹ Psy'}
+                </span>
+            </button>
+            <div
+                className="pointer-events-auto h-full w-full overflow-hidden border-l border-slate-700 shadow-[-12px_0_28px_rgba(0,0,0,0.35)]"
+                style={{ background: dark ? '#020617' : '#0f172a' }}
+            >
+                {typeof renderVavPsyChart === 'function' && renderVavPsyChart(props)}
+            </div>
+        </div>
+    );
+}
+
 function renderVavEquipmentModal(ctx) {
     const {
         API_URL, _setForceApTick,
@@ -300,8 +357,8 @@ function renderVavEquipmentModal(ctx) {
                                         </div>
                                     </div>
 
-                                    <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
-                                    <div className={`red5-graphic-zone relative w-full min-h-[240px] lg:min-h-0 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2 lg:border-r lg:border-slate-700`}>
+                                    <div className="flex-1 min-h-0 relative overflow-hidden">
+                                    <div className={`red5-graphic-zone absolute inset-0 ${theme === 'dark' ? 'bg-[#d0d4d8]' : 'bg-[#d8dce0]'} overflow-hidden flex items-center justify-center p-2`}>
                                         {!effectiveVavImage ? (
                                             <div className="flex flex-col items-center justify-center font-bold text-center font-mono text-[10px] w-full h-full">
                                                 <span className="mb-2 uppercase tracking-widest text-red-600 text-lg">{window.t ? window.t("vav_image_missing") : "VAV IMAGE MISSING"}</span>
@@ -497,16 +554,14 @@ function renderVavEquipmentModal(ctx) {
                                         </div>
                                         )}
                                     </div>
-                                    <div className="relative w-full min-h-[280px] lg:min-h-0 overflow-hidden border-t lg:border-t-0 border-slate-700">
-                                        {typeof renderVavPsyChart === 'function' && renderVavPsyChart({
-                                            vav: selectedVavForModal,
-                                            saPoint,
-                                            ahuId: currentAhuForModal && currentAhuForModal.id,
-                                            sweetSpotRange,
-                                            showSweetSpot,
-                                            theme,
-                                        })}
-                                    </div>
+                                    <VavPsySlideTab
+                                        vav={selectedVavForModal}
+                                        saPoint={saPoint}
+                                        ahuId={currentAhuForModal && currentAhuForModal.id}
+                                        sweetSpotRange={sweetSpotRange}
+                                        showSweetSpot={showSweetSpot}
+                                        theme={theme}
+                                    />
                                     </div>
                                 </div>
                             </div>

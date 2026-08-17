@@ -2959,6 +2959,10 @@
                         setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
                         setShowAhuModalFor, showAhuModalFor, theme,
                         buildingLatLon,
+                        lockedVavId, setLockedVavId, setIsLockedToSA,
+                        setSelectedVavForModal, setVavCfm,
+                        comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot,
+                        ui, t,
                     })}
 
 

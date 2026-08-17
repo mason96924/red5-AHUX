@@ -774,7 +774,7 @@ const bandStory = (b) => {
  * Point colours (fixed — match operator request / live chart intent):
  *   OA darker blue · RA pinkish-red · SA darker green · MA black with yellow ring.
  *   State dots/rings 20% transparent (opacity 0.80), including MA yellow ring.
- *   OA/RA/MA/SA labels 5% transparent (opacity 0.95).
+ *   OA/RA/MA/SA overlay labels fully opaque (no fillOpacity/opacity).
  * Click the plot to pick a focus point; slider / wheel zooms that section
  * (leftmost = Off). Double-click resets. Magnify shrinks the T/W window
  * and redraws sat / enthalpy / RH / ticks so clustered OA–MA–SA / RA
@@ -981,7 +981,6 @@ function renderProcessMiniBadge(ctx) {
     const colMARing = (typeof RED5_MA_RING === 'string' ? RED5_MA_RING : '#eab308');
     const colMALabel = RED5_POINT_COLORS.MA; /* darkish yellow — readable on light + dark */
     const dotOp = 0.80;          /* 20% transparent fill + ring (incl. MA yellow) */
-    const labelOp = 0.95;        /* 5% transparent OA/RA/MA/SA labels */
     const colBand = '#059669';  /* brighter emerald — RH band + OA–RA mix */
     const colH = '#7c3aed';     /* brighter violet — enthalpy */
     const colSat = '#2563eb';   /* brighter blue — saturation */
@@ -1128,13 +1127,12 @@ function renderProcessMiniBadge(ctx) {
                 }} />
                 <div style={{
                     position: 'absolute',
-                    left: labelLeft ? 12 : 'auto',
-                    right: labelLeft ? 'auto' : 12,
-                    top: -7,
-                    fontSize: 10,
+                    left: labelLeft ? 18 : 'auto',
+                    right: labelLeft ? 'auto' : 18,
+                    top: -12,
+                    fontSize: 20,
                     fontWeight: 800,
                     lineHeight: 1,
-                    opacity: labelOp,
                     color: labelColor || fill,
                     fontFamily: 'system-ui,sans-serif',
                     whiteSpace: 'nowrap',
@@ -1333,16 +1331,16 @@ function renderProcessMiniBadge(ctx) {
                 </div>
                 </div>
                 <div className="px-2 pb-2 shrink-0">
-                <div className="pt-1 text-[8px] font-mono" style={{ color: '#94a3b8' }}>
+                <div className="pt-1 text-[8px] font-mono" style={{ color: '#94a3b8', opacity: 1 }}>
                     {magOn
                         ? 'T/W window opens · dots stay point-size · drag to pan · left=Off'
                         : 'Slider left = Off · click plot or raise zoom to open the T/W grid'}
                 </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 font-mono text-[11px] font-extrabold leading-tight">
-                    <div style={{ color: colOA }}>OA {fmt(OA)}</div>
-                    <div style={{ color: colRA }}>RA {fmt(RA)}</div>
-                    <div style={{ color: colMALabel }}>MA {MA ? fmt(MA) : '—'}</div>
-                    <div style={{ color: colSA }}>SA {fmt(SA)}</div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 font-mono text-[11px] font-extrabold leading-tight" style={{ opacity: 1 }}>
+                    <div style={{ color: colOA, opacity: 1 }}>OA {fmt(OA)}</div>
+                    <div style={{ color: colRA, opacity: 1 }}>RA {fmt(RA)}</div>
+                    <div style={{ color: colMALabel, opacity: 1 }}>MA {MA ? fmt(MA) : '—'}</div>
+                    <div style={{ color: colSA, opacity: 1 }}>SA {fmt(SA)}</div>
                 </div>
                 </div>
             </div>

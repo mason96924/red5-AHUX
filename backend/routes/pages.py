@@ -152,3 +152,10 @@ async def psy_3d_html() -> Response:
 @router.get("/deepdive.html", include_in_schema=False)
 async def deepdive_html() -> Response:
     return _serve("deepdive.html")
+
+
+@router.get("/learn", include_in_schema=False)
+@router.get("/learn.html", include_in_schema=False)
+async def learn_html() -> Response:
+    """Comfort Decoded — linked from Deep Dive ('Back to … interactive chart')."""
+    return _serve("learn.html")

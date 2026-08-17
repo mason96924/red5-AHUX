@@ -9,6 +9,8 @@ Routes:
                         serve_landing when this plug-in is loaded)
   GET  /access.html
   GET  /setup.html
+  GET  /learn.html    → Comfort Decoded (Deep Dive crumb; app.py is not
+                        auto-deployed so this must live in the plug-in)
   POST /api/config/unlock   → {"ok": true|false}  (server-side master key)
 """
 from __future__ import annotations
@@ -53,6 +55,12 @@ def register(app, ctx):
     @app.route('/setup.html')
     def serve_setup_html():
         return _no_cache(send_from_directory(_DATA_ROOT, 'setup.html'))
+
+    @app.route('/learn.html')
+    def serve_learn_html():
+        """Comfort Decoded — Deep Dive 'Back to interactive chart'. Bootloader
+        app.py is not auto-deployed, so this URL must be registered here."""
+        return _no_cache(send_from_directory(_DATA_ROOT, 'learn.html'))
 
     @app.route('/api/config/unlock', methods=['POST'])
     def config_unlock():

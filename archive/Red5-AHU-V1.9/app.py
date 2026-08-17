@@ -311,6 +311,7 @@ def download_bundle_file(filename):
         'equipment_mapper.html': '/root/data/equipment_mapper.html',
         'psy_3d.html': '/root/data/psy_3d.html',
         'deepdive.html': '/root/data/deepdive.html',
+        'learn.html': '/root/data/learn.html',
         'configs/collector_config.json': '/root/data/configs/collector_config.json',
         'configs/equipment_types.json': '/root/data/configs/equipment_types.json',
     }

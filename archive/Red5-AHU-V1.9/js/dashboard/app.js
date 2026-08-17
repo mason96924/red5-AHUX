@@ -2917,6 +2917,7 @@
                         vavCfm, vavImage, vavImgRef, vavTypeImages,
                         vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize,
                         vavOuterRef,
+                        ahuModalPopupHost, ahuModalPopupWin,
                         sweetSpotRange: (() => {
                             const spot = (ahuSweetSpots || []).find(s => s.ahuId === selectedAhuId);
                             return spot ? { lo: spot.lo, hi: spot.hi } : sweetSpotRange;

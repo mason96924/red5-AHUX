@@ -104,6 +104,7 @@ function renderVavEquipmentModal(ctx) {
         vavImage, vavImgRef, vavTypeImages,
         vavModalOffset, vavModalPopupHost, vavModalPopupWin, vavModalSize,
         vavOuterRef,
+        ahuModalPopupHost, ahuModalPopupWin,
         sweetSpotRange, showSweetSpot,
         comfortZonePoly, showGivoni, getGivoniTier,
     } = ctx;
@@ -268,22 +269,27 @@ function renderVavEquipmentModal(ctx) {
 
                         const vavIsPopped = !!(vavModalPopupWin && vavModalPopupHost);
                         const vavIsPip = !!(vavIsPopped && vavModalPopupWin.__red5IsPip);
+                        const nestInAhuPopup = !vavIsPopped && !!(ahuModalPopupHost && ahuModalPopupWin && !ahuModalPopupWin.closed);
                         const vavPipOk = typeof red5PipSupported === 'function' && red5PipSupported();
                         const vavOuterStyle = vavIsPopped
                             ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }
-                            : { top: `${safe(vavModalOffset.y)}px`, left: `${safe(vavModalOffset.x)}px` };
+                            : nestInAhuPopup
+                            ? { position: 'absolute', top: 48, left: 48, zIndex: 140 }
+                            : { position: 'fixed', top: `${safe(vavModalOffset.y)}px`, left: `${safe(vavModalOffset.x)}px`, zIndex: 140 };
                         const vavOuterCls = vavIsPopped
                             ? 'block select-none'
-                            : 'absolute z-[120] select-none shadow-2xl drop-shadow-2xl';
+                            : 'absolute z-[140] select-none shadow-2xl drop-shadow-2xl';
                         const vavInnerStyle = vavIsPopped
                             ? { width: '100vw', height: '100vh', maxWidth: 'none', maxHeight: 'none' }
+                            : nestInAhuPopup
+                            ? { width: `${vavModalSize.w}px`, height: `${vavModalSize.h}px`, maxWidth: 'calc(100% - 64px)', maxHeight: 'calc(100% - 64px)', resize: 'both' }
                             : { width: `${vavModalSize.w}px`, height: `${vavModalSize.h}px`, maxWidth: '98vw', maxHeight: '95vh', resize: 'both' };
 
                         const vavModalTree = (
-                            <div className={vavOuterCls} style={vavOuterStyle}>
+                            <div className={vavOuterCls} style={vavOuterStyle} data-testid={nestInAhuPopup ? 'vav-modal-in-ahu-popup' : 'vav-equipment-modal'}>
                                 <div ref={vavOuterRef} className={`${theme === 'dark' ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-[#e2e5e8] border-white/20 text-slate-800'} ${vavIsPopped ? '' : 'rounded-xl border-2'} shadow-2xl relative flex flex-col overflow-hidden`} style={vavInnerStyle} onMouseDown={e => e.stopPropagation()}>
                                     
-                                    <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (vavIsPopped) return; setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
+                                    <div className={`cursor-grab active:cursor-grabbing ${theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-slate-300/60 border-slate-300'} backdrop-blur-md border-b p-3 flex justify-between items-center z-[60]`} onMouseDown={(e) => { if (vavIsPopped || nestInAhuPopup) return; setIsVavModalDragging(true); setDragStart({ x: e.clientX - vavModalOffset.x, y: e.clientY - vavModalOffset.y }); }}>
                                         <h3 className={`text-sm font-black tracking-widest ml-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{selectedVavForModal.id} DIAGRAM {vavSchema && <span className="text-[9px] font-normal text-slate-500 ml-2">Type {vavTypeId}: {vavSchema.name}</span>}{vavStrategy && (
                                             <span
                                                 className="ml-3 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold tracking-wider"
@@ -566,7 +572,7 @@ function renderVavEquipmentModal(ctx) {
                                 </div>
                             </div>
                         );
-                        return vavIsPopped
-                            ? ReactDOM.createPortal(vavModalTree, vavModalPopupHost)
-                            : vavModalTree;
+                        if (vavIsPopped) return ReactDOM.createPortal(vavModalTree, vavModalPopupHost);
+                        if (nestInAhuPopup) return ReactDOM.createPortal(vavModalTree, ahuModalPopupHost);
+                        return vavModalTree;
 }

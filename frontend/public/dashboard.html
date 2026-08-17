@@ -16,7 +16,7 @@
         // =====================================================
         window.API_BASE_URL = window.location.origin;
     </script>
-    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=9728824698">
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=eedd7a3fb5">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
@@ -329,20 +329,23 @@
            context #root might create from transform/opacity rules). */
         body.iframe-modal-mode #root > * { visibility: hidden !important; }
         /* Re-show the equipment modals.  AHU modal lives at z-[130], VAV at
-           z-[120] (verified in dashboard.html lines 4358 + 5194).  Promote
-           BOTH to a very high z-index so a chart-rendered canvas or any
+           z-[140] (above the AHU graphic so hub-opened terminals stay on top).
+           Promote BOTH to a very high z-index so a chart-rendered canvas or any
            other rogue element can never paint over them. */
         body.iframe-modal-mode [class*='z-[120]'],
-        body.iframe-modal-mode [class*='z-[130]'] {
+        body.iframe-modal-mode [class*='z-[130]'],
+        body.iframe-modal-mode [class*='z-[140]'] {
             visibility: visible !important;
             position: fixed !important;
             inset: 0 !important;
             z-index: 2147483000 !important;
         }
         body.iframe-modal-mode [class*='z-[120]'] *,
-        body.iframe-modal-mode [class*='z-[130]'] * { visibility: visible !important; }
+        body.iframe-modal-mode [class*='z-[130]'] *,
+        body.iframe-modal-mode [class*='z-[140]'] * { visibility: visible !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div,
-        body.iframe-modal-mode [class*='z-[130]'] > div {
+        body.iframe-modal-mode [class*='z-[130]'] > div,
+        body.iframe-modal-mode [class*='z-[140]'] > div {
             width: 100vw !important;
             height: 100vh !important;
             max-width: none !important;
@@ -351,9 +354,11 @@
             resize: none !important;
         }
         body.iframe-modal-mode [class*='z-[120]'] *,
-        body.iframe-modal-mode [class*='z-[130]'] * { visibility: visible !important; }
+        body.iframe-modal-mode [class*='z-[130]'] *,
+        body.iframe-modal-mode [class*='z-[140]'] * { visibility: visible !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div,
-        body.iframe-modal-mode [class*='z-[130]'] > div {
+        body.iframe-modal-mode [class*='z-[130]'] > div,
+        body.iframe-modal-mode [class*='z-[140]'] > div {
             width: 100vw !important;
             height: 100vh !important;
             max-width: none !important;
@@ -367,9 +372,11 @@
         body.iframe-modal-mode [data-testid='popout-vav-hub-btn'],
         body.iframe-modal-mode [data-testid='float-vav-hub-btn'] { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > h3 > span:last-child,
-        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
+        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child,
+        body.iframe-modal-mode [class*='z-[140]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > div:last-child > button:last-child,
-        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > div:last-child > button:last-child { display: none !important; }
+        body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > div:last-child > button:last-child,
+        body.iframe-modal-mode [class*='z-[140]'] > div > div:first-child > div:last-child > button:last-child { display: none !important; }
         /* Hide the QR button in iframe mode too (embedder owns the share UX) */
         body.iframe-modal-mode [data-testid='qr-phone-preview-btn'] { display: none !important; }
 
@@ -780,6 +787,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=0deadcb86f"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=fe452cecfb"></script>
 </body>
 </html>

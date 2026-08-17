@@ -774,7 +774,7 @@ const bandStory = (b) => {
  * Point colours (fixed — match operator request / live chart intent):
  *   OA darker blue · RA pinkish-red · SA darker green · MA black with yellow ring.
  *   State dots/rings 20% transparent (opacity 0.80), including MA yellow ring.
- *   OA/RA/MA/SA labels 10% transparent (opacity 0.90).
+ *   OA/RA/MA/SA labels 5% transparent (opacity 0.95).
  * Click the plot to pick a focus point; slider / wheel zooms that section
  * (leftmost = Off). Double-click resets. Magnify shrinks the T/W window
  * and redraws sat / enthalpy / RH / ticks so clustered OA–MA–SA / RA
@@ -981,7 +981,7 @@ function renderProcessMiniBadge(ctx) {
     const colMARing = (typeof RED5_MA_RING === 'string' ? RED5_MA_RING : '#eab308');
     const colMALabel = RED5_POINT_COLORS.MA; /* darkish yellow — readable on light + dark */
     const dotOp = 0.80;          /* 20% transparent fill + ring (incl. MA yellow) */
-    const labelOp = 0.90;        /* 10% transparent OA/RA/MA/SA labels */
+    const labelOp = 0.95;        /* 5% transparent OA/RA/MA/SA labels */
     const colBand = '#059669';  /* brighter emerald — RH band + OA–RA mix */
     const colH = '#7c3aed';     /* brighter violet — enthalpy */
     const colSat = '#2563eb';   /* brighter blue — saturation */

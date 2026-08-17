@@ -773,8 +773,10 @@ const bandStory = (b) => {
  *   State dots/rings 20% transparent (opacity 0.80), including MA yellow ring.
  *   OA/RA/MA/SA labels 10% transparent (opacity 0.90).
  * Click the plot to pick a focus point; slider / wheel zooms that section
- * (leftmost = Off). Double-click resets. No magnifying-glass chrome —
- * the plot itself enlarges around the selected point.
+ * (leftmost = Off). Double-click resets. Magnify shrinks the T/W window
+ * and redraws sat / enthalpy / RH / ticks so clustered OA–MA–SA / RA
+ * points separate. OA/RA/MA/SA circles and 2-letter labels stay CSS
+ * pixel size (HTML overlay) — only the grid units open up.
  * Right-edge slide tab, half the psych-chart pane (width × height 50%).
  * MUST be invoked on every App render (even with ahu=null) so its React
  * hooks stay at a stable call index — gating the call behind selectedAhuId
@@ -784,8 +786,8 @@ const bandStory = (b) => {
 function renderProcessMiniBadge(ctx) {
     /* Hooks first — this helper is invoked during App render like a component. */
     const VW = 440, VH = 248;
-    const [focus, setFocus] = React.useState(null); /* { cx, cy } in SVG user units */
-    const [lastFocus, setLastFocus] = React.useState({ cx: VW * 0.56, cy: VH * 0.60 });
+    const [focus, setFocus] = React.useState(null); /* { t, w } psychrometric; null = cluster mid */
+    const [lastFocus, setLastFocus] = React.useState(null);
     const [zoom, setZoom] = React.useState(1.0); /* 1.0 = Off */
     const [dragging, setDragging] = React.useState(false);
     const dragRef = React.useRef(null);
@@ -795,7 +797,7 @@ function renderProcessMiniBadge(ctx) {
     React.useEffect(function () {
         try { localStorage.setItem('red5.processMiniOpen', open ? '1' : '0'); } catch (_) {}
     }, [open]);
-    const magOn = zoom > 1.001 && !!focus;
+    const magOn = zoom > 1.001;
 
     const { ahu, theme, sweetSpotRange, showSweetSpot } = ctx || {};
     if (!ahu || !ahu.points) return null;
@@ -830,11 +832,26 @@ function renderProcessMiniBadge(ctx) {
     /* Half-span: ≥ ~1.4× data span, with floor so a tight cluster still has air. */
     const tHalf = Math.max((tHi - tLo) * 1.4, 6);
     const wHalf = Math.max((wHi - wLo) * 1.5, 0.003);
-    let tMin = tMid - tHalf;
-    let tMax = tMid + tHalf;
-    let wMin = wMid - wHalf;
-    let wMax = wMid + wHalf;
-    if (wMin < 0) { wMax -= wMin; wMin = 0; }
+    let tMin0 = tMid - tHalf;
+    let tMax0 = tMid + tHalf;
+    let wMin0 = wMid - wHalf;
+    let wMax0 = wMid + wHalf;
+    if (wMin0 < 0) { wMax0 -= wMin0; wMin0 = 0; }
+
+    /* Magnify = crop the psychrometric window (not SVG viewBox scale), so
+       sat/enthalpy/RH/ticks recompute and state dots keep a constant radius. */
+    const cT = (focus && Number.isFinite(focus.t)) ? focus.t : tMid;
+    const cW = (focus && Number.isFinite(focus.w)) ? focus.w : wMid;
+    let tMin = tMin0, tMax = tMax0, wMin = wMin0, wMax = wMax0;
+    if (magOn) {
+        const tSpan = (tMax0 - tMin0) / zoom;
+        const wSpan = (wMax0 - wMin0) / zoom;
+        tMin = cT - tSpan / 2;
+        tMax = cT + tSpan / 2;
+        wMin = cW - wSpan / 2;
+        wMax = cW + wSpan / 2;
+        if (wMin < 0) { wMax -= wMin; wMin = 0; }
+    }
 
     /* ~2× card — overview sketch on white. */
     const L = 40, R = 18, TOP = 20, BOT = 30;
@@ -848,8 +865,9 @@ function renderProcessMiniBadge(ctx) {
             ' \u00B7 ' + (Number.isFinite(rh) ? rh.toFixed(0) + '%' : '--');
     };
 
+    const tSamp = Math.max(0.06, (tMax - tMin) / 90);
     const satSegs = [];
-    for (let tt = tMin; tt <= tMax + 1e-9; tt += 0.35) {
+    for (let tt = tMin; tt <= tMax + 1e-9; tt += tSamp) {
         let ws = null;
         if (_getW) {
             try { ws = _getW(tt, 100); } catch (_) { ws = null; }
@@ -874,7 +892,7 @@ function renderProcessMiniBadge(ctx) {
         const h0 = _getH(Number(pt.t), Number(pt.w));
         if (!Number.isFinite(h0)) return '';
         const segs = [];
-        for (let tt = tMin; tt <= tMax + 1e-9; tt += 0.4) {
+        for (let tt = tMin; tt <= tMax + 1e-9; tt += tSamp) {
             const w = (h0 - 1.006 * tt) / (2501 + 1.86 * tt);
             if (!Number.isFinite(w) || w < wMin || w > wMax) {
                 if (segs.length) segs.push(null);
@@ -910,10 +928,10 @@ function renderProcessMiniBadge(ctx) {
         tBandLo = Math.max(tMin, 18);
         tBandHi = Math.min(tMax, 28);
         if (tBandHi > tBandLo + 0.4) {
-            for (let tt = tBandLo; tt <= tBandHi + 1e-9; tt += 0.35) {
+            for (let tt = tBandLo; tt <= tBandHi + 1e-9; tt += tSamp) {
                 top.push([tt, Math.min(wMax, Math.max(wMin, _getW(tt, rhHi)))]);
             }
-            for (let tt = tBandHi; tt >= tBandLo - 1e-9; tt -= 0.35) {
+            for (let tt = tBandHi; tt >= tBandLo - 1e-9; tt -= tSamp) {
                 bot.push([tt, Math.min(wMax, Math.max(wMin, _getW(tt, rhLo)))]);
             }
             bandPts = top.concat(bot).map(([t, w]) =>
@@ -991,22 +1009,52 @@ function renderProcessMiniBadge(ctx) {
             };
         } catch (_) { return null; }
     };
+    const svgToPsy = (svgEl, clientX, clientY) => {
+        const loc = svgToLocal(svgEl, clientX, clientY);
+        if (!loc) return null;
+        const t = tMin + ((loc.cx - L) / gw) * (tMax - tMin);
+        const w = wMin + ((TOP + gh - loc.cy) / gh) * (wMax - wMin);
+        return { t: t, w: Math.max(0, w) };
+    };
 
-    /* Zoom the plot itself around the focus (no circular loupe overlay). */
-    const vbW = magOn ? VW / zoom : VW;
-    const vbH = magOn ? VH / zoom : VH;
-    let vbX = magOn ? focus.cx - vbW / 2 : 0;
-    let vbY = magOn ? focus.cy - vbH / 2 : 0;
-    if (magOn) {
-        vbX = Math.max(-VW * 0.15, Math.min(VW - vbW + VW * 0.15, vbX));
-        vbY = Math.max(-VH * 0.15, Math.min(VH - vbH + VH * 0.15, vbY));
-    }
+    const niceStep = (span, n) => {
+        const raw = Math.abs(span) / Math.max(2, n);
+        if (!(raw > 0) || !Number.isFinite(raw)) return 1;
+        const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+        const m = raw / pow;
+        return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * pow;
+    };
+    const tStep = niceStep(tMax - tMin, 6);
+    const wStep = niceStep(wMax - wMin, 5);
+    const tTicks = [];
+    const tTick0 = Math.ceil((tMin - 1e-9) / tStep) * tStep;
+    for (let t = tTick0; t <= tMax + 1e-9; t += tStep) tTicks.push(t);
+    const wTicks = [];
+    const wTick0 = Math.ceil((wMin - 1e-9) / wStep) * wStep;
+    for (let w = wTick0; w <= wMax + 1e-9; w += wStep) wTicks.push(w);
+    const fmtT = (t) => (tStep < 0.2 ? t.toFixed(2) : tStep < 1 ? t.toFixed(1) : t.toFixed(0));
+    const fmtW = (w) => {
+        const g = w * 1000;
+        return wStep * 1000 < 0.5 ? g.toFixed(2) : wStep * 1000 < 2 ? g.toFixed(1) : g.toFixed(0);
+    };
 
     const chartLayers = (
         <g>
             <rect x="2" y="2" width={VW - 4} height={VH - 4} rx="6" fill="#ffffff" stroke="#e2e8f0" strokeWidth="1" />
+            {tTicks.map((t) => (
+                <line key={'tg' + t} x1={xOf(t)} y1={TOP} x2={xOf(t)} y2={TOP + gh} stroke="#e2e8f0" strokeWidth="1" />
+            ))}
+            {wTicks.map((w) => (
+                <line key={'wg' + w} x1={L} y1={yOf(w)} x2={L + gw} y2={yOf(w)} stroke="#e2e8f0" strokeWidth="1" />
+            ))}
             <line x1={L} y1={TOP + gh} x2={L + gw} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
             <line x1={L} y1={TOP} x2={L} y2={TOP + gh} stroke="#64748b" strokeWidth="1.5" />
+            {tTicks.map((t) => (
+                <text key={'tl' + t} x={xOf(t)} y={TOP + gh + 12} fill="#64748b" fontSize="8" textAnchor="middle" fontFamily="ui-monospace,Menlo,monospace">{fmtT(t)}</text>
+            ))}
+            {wTicks.map((w) => (
+                <text key={'wl' + w} x={L - 4} y={yOf(w) + 3} fill="#64748b" fontSize="8" textAnchor="end" fontFamily="ui-monospace,Menlo,monospace">{fmtW(w)}</text>
+            ))}
             {hOA && <path d={hOA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
             {hSA && <path d={hSA} fill="none" stroke={colH} strokeWidth="1.4" strokeDasharray="2 4" />}
             {hRA && <path d={hRA} fill="none" stroke={colH} strokeWidth="2" strokeDasharray="7 4" />}
@@ -1041,24 +1089,6 @@ function renderProcessMiniBadge(ctx) {
                   strokeDasharray="6 4" />
             <line x1={mx} y1={my} x2={sx} y2={sy} stroke={colSA} strokeWidth="2.6"
                   markerEnd={'url(#' + arrId + ')'} />
-            <circle cx={ox} cy={oy} r="6.5" fill={colOA} fillOpacity={dotOp} stroke={colOA} strokeOpacity={dotOp} strokeWidth="1.6" />
-            <text x={ox + 10} y={oy - 6} fill={colOA} fillOpacity={labelOp} style={{ fill: colOA, fillOpacity: labelOp }}
-                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">OA</text>
-            <circle cx={rx} cy={ry} r="6.5" fill={colRA} fillOpacity={dotOp} stroke={colRA} strokeOpacity={dotOp} strokeWidth="1.6" />
-            <text x={rx + 8} y={ry + 18} fill={colRA} fillOpacity={labelOp} style={{ fill: colRA, fillOpacity: labelOp }}
-                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">RA</text>
-            <circle cx={mx} cy={my} r="6" fill={colMA} fillOpacity={dotOp}
-                    stroke={_maOff ? '#ef4444' : colMARing} strokeOpacity={dotOp}
-                    strokeWidth={_maOff ? 3.2 : 2.5} />
-            <text x={mx + 9} y={my - 7}
-                  fill={_maOff ? '#ef4444' : colMALabel} fillOpacity={labelOp}
-                  style={{ fill: _maOff ? '#ef4444' : colMALabel, fillOpacity: labelOp }}
-                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">
-                {_maOff ? ('MA·' + _maFault.cat) : 'MA'}
-            </text>
-            <circle cx={sx} cy={sy} r="6.5" fill={colSA} fillOpacity={dotOp} stroke={colSA} strokeOpacity={dotOp} strokeWidth="1.6" />
-            <text x={sx - 26} y={sy - 8} fill={colSA} fillOpacity={labelOp} style={{ fill: colSA, fillOpacity: labelOp }}
-                  fontSize="13" fontWeight="800" fontFamily="system-ui,sans-serif">SA</text>
             <text x={L + gw / 2} y={VH - 8} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
                   textAnchor="middle" fontFamily="system-ui,sans-serif">Dry-bulb temperature →</text>
             <text x={14} y={TOP + gh / 2} fill={axisC} style={{ fill: axisC }} fontSize="12" fontWeight="700"
@@ -1067,6 +1097,49 @@ function renderProcessMiniBadge(ctx) {
                   fontFamily="system-ui,sans-serif">Moisture in the air →</text>
         </g>
     );
+
+    const inPlot = (x, y) => x >= L - 8 && x <= L + gw + 8 && y >= TOP - 8 && y <= TOP + gh + 8;
+    const markerChip = (x, y, fill, ring, label, labelColor, labelSide) => {
+        if (!inPlot(x, y)) return null;
+        const labelLeft = labelSide !== 'left';
+        return (
+            <div
+                key={label}
+                style={{
+                    position: 'absolute',
+                    left: ((x / VW) * 100) + '%',
+                    top: ((y / VH) * 100) + '%',
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none',
+                }}
+            >
+                <div style={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: '50%',
+                    background: fill,
+                    opacity: dotOp,
+                    boxSizing: 'border-box',
+                    border: '2px solid ' + (ring || fill),
+                    boxShadow: '0 0 0 1px rgba(255,255,255,0.85)',
+                }} />
+                <div style={{
+                    position: 'absolute',
+                    left: labelLeft ? 12 : 'auto',
+                    right: labelLeft ? 'auto' : 12,
+                    top: -7,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    opacity: labelOp,
+                    color: labelColor || fill,
+                    fontFamily: 'system-ui,sans-serif',
+                    whiteSpace: 'nowrap',
+                    textShadow: '0 0 3px #fff, 0 0 3px #fff',
+                }}>{label}</div>
+            </div>
+        );
+    };
 
     return (
         <div
@@ -1126,6 +1199,7 @@ function renderProcessMiniBadge(ctx) {
                     <div className="text-[9px] font-black uppercase tracking-[0.14em] font-mono flex-1 min-w-0">
                         {ahu.id} · OA–MA–SA / RA
                         {drawBand ? ` · ${rhLo}–${rhHi}% RH` : ''}
+                        {magOn ? ` · ${fmtT(tMin)}–${fmtT(tMax)}°C` : ''}
                     </div>
                     <label className="shrink-0 inline-flex items-center gap-1 font-mono text-[9px] font-bold"
                            title="Zoom selected section — slide fully left to turn off"
@@ -1140,15 +1214,16 @@ function renderProcessMiniBadge(ctx) {
                                        if (focus) setLastFocus(focus);
                                        setFocus(null);
                                    } else if (!focus) {
-                                       setFocus(lastFocus);
+                                       setFocus(lastFocus || { t: tMid, w: wMid });
                                    }
                                }}
                                style={{ width: 72, accentColor: '#1e3a8a', cursor: 'pointer' }} />
                     </label>
                 </div>
-                <svg viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`} aria-hidden="true"
+                <div className="relative flex-1 min-h-0 w-full">
+                <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none" aria-hidden="true"
                      data-testid="process-mini-svg"
-                     className="flex-1 min-h-0 w-full"
+                     className="absolute inset-0 w-full h-full"
                      style={{ color: '#0f172a', display: 'block', cursor: magOn ? 'grab' : 'crosshair', touchAction: 'none' }}
                      onClick={(e) => {
                          if (dragging || (dragRef.current && dragRef.current.moved)) {
@@ -1161,25 +1236,24 @@ function renderProcessMiniBadge(ctx) {
                              setZoom(1);
                              return;
                          }
-                         const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
-                         if (!loc) return;
-                         setFocus(loc);
-                         setLastFocus(loc);
+                         const psy = svgToPsy(e.currentTarget, e.clientX, e.clientY);
+                         if (!psy) return;
+                         setFocus(psy);
+                         setLastFocus(psy);
                          if (zoom <= 1.001) setZoom(2.2);
                      }}
                      onWheel={(e) => {
                          e.preventDefault();
                          e.stopPropagation();
                          const dy = e.deltaY;
+                         const psy = svgToPsy(e.currentTarget, e.clientX, e.clientY);
                          setZoom((z) => {
                              const next = Math.max(1, Math.min(4.5, z + (dy < 0 ? 0.15 : -0.15)));
                              if (next <= 1.001) {
                                  setFocus((cur) => { if (cur) setLastFocus(cur); return null; });
                              } else {
                                  setFocus((cur) => {
-                                     if (cur) return cur;
-                                     const loc = svgToLocal(e.currentTarget, e.clientX, e.clientY);
-                                     const place = loc || lastFocus;
+                                     const place = cur || psy || lastFocus || { t: tMid, w: wMid };
                                      setLastFocus(place);
                                      return place;
                                  });
@@ -1190,26 +1264,31 @@ function renderProcessMiniBadge(ctx) {
                      onMouseDown={(e) => {
                          e.stopPropagation();
                          if (!magOn || e.button !== 0) return;
+                         const ctr = focus || { t: cT, w: cW };
                          dragRef.current = {
                              x: e.clientX,
                              y: e.clientY,
-                             cx: focus.cx,
-                             cy: focus.cy,
+                             t: ctr.t,
+                             w: ctr.w,
+                             tSpan: tMax - tMin,
+                             wSpan: wMax - wMin,
+                             plotW: Math.max(1, e.currentTarget.clientWidth || VW),
+                             plotH: Math.max(1, e.currentTarget.clientHeight || VH),
                              moved: false,
                          };
                          setDragging(true);
                      }}
                      onMouseMove={(e) => {
-                         if (!dragging || !dragRef.current || !focus) return;
-                         const sx = vbW / Math.max(1, e.currentTarget.clientWidth || VW);
-                         const sy = vbH / Math.max(1, e.currentTarget.clientHeight || VH);
-                         const dx = (e.clientX - dragRef.current.x) * sx;
-                         const dy = (e.clientY - dragRef.current.y) * sy;
-                         if (Math.abs(dx) + Math.abs(dy) > 0.5) dragRef.current.moved = true;
+                         if (!dragging || !dragRef.current) return;
+                         const d = dragRef.current;
+                         const dx = e.clientX - d.x;
+                         const dy = e.clientY - d.y;
+                         if (Math.abs(dx) + Math.abs(dy) > 0.5) d.moved = true;
                          const next = {
-                             cx: Math.max(8, Math.min(VW - 8, dragRef.current.cx - dx)),
-                             cy: Math.max(8, Math.min(VH - 8, dragRef.current.cy - dy)),
+                             t: d.t - (dx / d.plotW) * d.tSpan,
+                             w: d.w + (dy / d.plotH) * d.wSpan,
                          };
+                         if (next.w < 0) next.w = 0;
                          setFocus(next);
                          setLastFocus(next);
                      }}
@@ -1223,11 +1302,18 @@ function renderProcessMiniBadge(ctx) {
                     </defs>
                     {chartLayers}
                 </svg>
+                <div className="absolute inset-0 pointer-events-none" data-testid="process-mini-markers">
+                    {markerChip(ox, oy, colOA, colOA, 'OA', colOA)}
+                    {markerChip(rx, ry, colRA, colRA, 'RA', colRA)}
+                    {markerChip(mx, my, colMA, _maOff ? '#ef4444' : colMARing, _maOff ? ('MA·' + _maFault.cat) : 'MA', _maOff ? '#ef4444' : colMALabel)}
+                    {markerChip(sx, sy, colSA, colSA, 'SA', colSA, 'left')}
+                </div>
+                </div>
                 <div className="px-2 pb-2 shrink-0">
                 <div className="pt-1 text-[8px] font-mono" style={{ color: '#94a3b8' }}>
                     {magOn
-                        ? 'Drag to pan · scroll/slider zoom · left=Off · double-click clears'
-                        : 'Slider left = Off · click plot or raise zoom to magnify'}
+                        ? 'T/W window opens · dots stay point-size · drag to pan · left=Off'
+                        : 'Slider left = Off · click plot or raise zoom to open the T/W grid'}
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 font-mono text-[11px] font-extrabold leading-tight">
                     <div style={{ color: colOA }}>OA {fmt(OA)}</div>

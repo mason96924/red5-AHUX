@@ -574,15 +574,18 @@
       return { e: Math.sin(az) * ce, n: Math.cos(az) * ce, u: se };
     }
     /* Floor-rose projection: horizon N sits on the N–S marker line,
-       E on the W–E marker line. Altitude lifts toward the top of the
-       page so the vault reads as a dome. No orbit camera — AJM-style
-       drag was rotating the rose off the markers. */
-    const h = Math.max(0.18, Math.min(1.15, 0.58 + (adj.look || 0) / 90));
-    const toCam = { e: 0, n: 0, u: 1 };
+       E on the W–E marker line. Altitude leans the vault toward South
+       (along the markers), never toward the top of the page — that
+       shear is why a rotated AHUX plan looked unaligned while ELC
+       (N usually up the page) looked fine. */
+    const h = Math.max(0.05, Math.min(0.85, 0.42 + (adj.look || 0) / 90));
+    const toCam = { e: 0, n: -h, u: 1 };
+    const tlen = Math.hypot(toCam.e, toCam.n, toCam.u) || 1;
+    toCam.e /= tlen; toCam.n /= tlen; toCam.u /= tlen;
     function project(p) {
       return {
-        x: cx + R * (p.e * ex + p.n * nx),
-        y: cy + R * (p.e * ey + p.n * ny) - R * p.u * h,
+        x: cx + R * (p.e * ex + p.n * nx) - R * p.u * h * nx,
+        y: cy + R * (p.e * ey + p.n * ny) - R * p.u * h * ny,
         depth: p.u
       };
     }

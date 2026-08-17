@@ -168,8 +168,8 @@
       "kind": "ui",
       "label": "update.html",
       "desc": "This page (Repair Mode + Data Bridges UI)",
-      "size": 85007,
-      "sha256": "2ac732bcc94ba09ad1bbe2b1160fe45032fd74cfc4c6aef90d4cf56be02756b3",
+      "size": 87748,
+      "sha256": "064ced994e1cdea4b4cd61a3116968d256f0f42665e026ad4647eda7732b6904",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -178,8 +178,8 @@
       "kind": "ui",
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
-      "size": 36934,
-      "sha256": "ac88373c6689d3b7046bff5a9a11620b7c94c3e8789cb47023fc1519327b7fcb",
+      "size": 43912,
+      "sha256": "140abdc9fc9d2f532dcb6c778c1e3e1029099cd9a3c58c86c2fd0b22d16a9842",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -188,8 +188,8 @@
       "kind": "ui",
       "label": "dashboard.compiled.js",
       "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
-      "size": 466984,
-      "sha256": "dbe34ea6a74863c91b347808149cf3cf9cb6072c4de8a58236dc48a0a360edbb",
+      "size": 601361,
+      "sha256": "3e402c483ca6767825fa4d31b2ec4ed0a46bb7246e1b6d2f60a75eb8f8af31b1",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -198,8 +198,8 @@
       "kind": "ui",
       "label": "dashboard.tailwind.css",
       "desc": "Pre-extracted Tailwind CSS (replaces cdn.tailwindcss.com runtime)",
-      "size": 89030,
-      "sha256": "f98253589e35f8caf5652a92bc05426a77dc0a407f704e4efbfbd88987922550",
+      "size": 91772,
+      "sha256": "7bd2f7a90e49b1fb4bbb1221aff9be4a453ba687dbf9c1ebfe4a866e6f9f513b",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -218,8 +218,8 @@
       "kind": "ui",
       "label": "equipment_mapper.html",
       "desc": "Config Tool",
-      "size": 500643,
-      "sha256": "53f15377a5d6cdb2972de60663f14bb4385e0cc2159fdbbcad5caa08f4a27ed1",
+      "size": 540253,
+      "sha256": "335431a6d461fe0b5576b63fa924fc37d22f1b6e089d4d2e4a4cd81d31ee0c55",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -229,7 +229,7 @@
       "label": "landing.html",
       "desc": "Landing page (password / login screen)",
       "size": 9648,
-      "sha256": "2955ec77e2fd6f24628ecaf0bda44c50ab75f57426bbb14720f1c74e1dedf0ea",
+      "sha256": "8be15e5a641025fc5c2c2beba85e37a63a02de99b0e76c0f87d8880dd00e3edb",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -248,8 +248,8 @@
       "kind": "ui",
       "label": "setup.html",
       "desc": "Setup Walk entry HTML (post-login landing on V1.9)",
-      "size": 5302,
-      "sha256": "d3ec5c9675cd8df91dd379ab4f21cf4634efb6166c71c58e7a4dece1fb4bd797",
+      "size": 5314,
+      "sha256": "873540fb4ddab819e7919fc0dfada4599bbb927d6c9ad50739c8dae976f086b8",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -378,8 +378,8 @@
       "kind": "ui",
       "label": "psychrometric.js",
       "desc": "Psychrometric helpers (loaded by setup.html)",
-      "size": 17028,
-      "sha256": "943251ae22f0066c7eeccc42dee00ae0b09fd81fd5fe4c5895fdae3d7a5ac358",
+      "size": 18201,
+      "sha256": "7509a0c3f8f9de88436f1f860f660f9663486920bdda2757ff5b801885fb79e3",
       "show_in_ui": false,
       "hot_reload": false
     },
@@ -448,8 +448,8 @@
       "kind": "ui",
       "label": "sun_preview.html",
       "desc": "Solar exposure preview (linked from app.py & build_bundle.py)",
-      "size": 7311,
-      "sha256": "f4ecbad3d95444c352224481308df7750133e6e739c3052edcde4f4eedf8e17c",
+      "size": 7338,
+      "sha256": "024bc3a9083d76d895e181dc42c32ba404f5049dfd59fe35d6e500d5044f10de",
       "show_in_ui": false,
       "hot_reload": false
     },
@@ -480,6 +480,66 @@
       "desc": "Equipment-type schema config (loaded via app.py)",
       "size": 11666,
       "sha256": "e482dc479b631060d4094612b2bc7c9a03cd171cc65d643bdc1ebeb62bb6ce3b",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/sun-path.js",
+      "kind": "ui",
+      "label": "sun-path.js",
+      "desc": "Sun-path math (loaded by equipment_mapper.html + dashboard)",
+      "size": 73876,
+      "sha256": "be5aff7ea7a537317a70404a7a5bf2af73f13b468f6fd0acfbac0fd86f86603b",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/elc-sun-path-overlay.js",
+      "kind": "ui",
+      "label": "elc-sun-path-overlay.js",
+      "desc": "Floor-rose sun-path overlay (loaded by equipment_mapper.html)",
+      "size": 89298,
+      "sha256": "d0739bfcab175a138af17bc7bd17beb68e4cfc50ec8bdf5dca92a7024784fb91",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/blind-types.js",
+      "kind": "ui",
+      "label": "blind-types.js",
+      "desc": "Window blind type glyphs (loaded by equipment_mapper.html)",
+      "size": 9225,
+      "sha256": "81c94702ebc7baeb655b94f12c53849f88d18d7f3686f502bf21040371b022e7",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/window-blinds-popout.js",
+      "kind": "ui",
+      "label": "window-blinds-popout.js",
+      "desc": "Window blinds popout (loaded by equipment_mapper.html)",
+      "size": 20434,
+      "sha256": "4aafc45ada104337feb76ca9498ffd593b744e6e67edb36d2bc2ab1d9525df07",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "js/dashboard/window-graphic-modal.js",
+      "kind": "ui",
+      "label": "window-graphic-modal.js",
+      "desc": "Window graphic modal (compiled into dashboard.compiled.js)",
+      "size": 10221,
+      "sha256": "d793a83e452af342149a3d8d84699bbabcc3aa019760c5db19bf0620502924c5",
+      "show_in_ui": false,
+      "hot_reload": false
+    },
+    {
+      "name": "assets/js/sun-path.js",
+      "kind": "ui",
+      "label": "assets/js/sun-path.js",
+      "desc": "Archive copy referenced by sun_preview.html (/assets/js/sun-path.js)",
+      "size": 73876,
+      "sha256": "be5aff7ea7a537317a70404a7a5bf2af73f13b468f6fd0acfbac0fd86f86603b",
       "show_in_ui": false,
       "hot_reload": false
     },

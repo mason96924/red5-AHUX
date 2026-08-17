@@ -8,18 +8,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Building Diagnostic Command Center</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=f0a9b3d803">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
-    <script src="js/i18n.js"></script>
-    <link rel="stylesheet" href="landing.css" id="app-css">
+    <script src="/api/assets/js/i18n.js"></script>
+    <link rel="stylesheet" href="/api/assets/landing.css" id="app-css">
     <script>
-        if (window.location.pathname.indexOf('.html') === -1) {
-            document.getElementById('app-css').href = '/assets/landing.css';
-        }
         if(!window.t){
-            var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
+            var _p=['/api/assets/js/i18n.js','/assets/js/i18n.js','/js/i18n.js'];
             (function tryNext(i){if(i>=_p.length||window.t)return;var s=document.createElement('script');s.src=_p[i];s.onerror=function(){tryNext(i+1);};document.head.appendChild(s);})(0);
         }
     </script>
@@ -27,34 +24,29 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
+        const t = window.t || (k => k);
         const { useState, useEffect } = React;
 
-        const MASTER_KEY = "b%9P$MdeQP][";
+        // Production settings hub (pentagon setup walk).  ?force=1 always
+        // shows the hub even if the operator previously clicked Open Dashboard.
+        const SETTINGS_PAGE = '/setup.html?force=1';
 
-        const hashPassword = async (password) => {
-            let hash = 0;
-            for (let i = 0; i < password.length; i++) {
-                const char = password.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash;
-            }
-            const hex = Math.abs(hash).toString(16).padStart(8, '0');
-            let hash2 = 0;
-            const salted = password + hex;
-            for (let i = 0; i < salted.length; i++) {
-                const char = salted.charCodeAt(i);
-                hash2 = ((hash2 << 5) - hash2) + char;
-                hash2 = hash2 & hash2;
-            }
-            return hex + Math.abs(hash2).toString(16).padStart(8, '0');
+        const authFetch = (path, opts = {}) => fetch(path, {
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            ...opts,
+        });
+
+        const goToSettings = () => {
+            window.location.href = SETTINGS_PAGE;
         };
 
         const App = () => {
             const lang = window.useLang ? window.useLang() : 'en';
             const [i18nReady, setI18nReady] = useState(!!window.LangSelector);
-            const [view, setView] = useState('login');
+            const [view, setView] = useState('checking');
+            const [usernameInput, setUsernameInput] = useState('');
             const [passwordInput, setPasswordInput] = useState('');
-            const [configPassword, setConfigPassword] = useState(localStorage.getItem('configPasswordHash') || '');
             const [error, setError] = useState('');
 
             useEffect(() => {
@@ -63,76 +55,63 @@
                 return () => clearInterval(iv);
             }, []);
 
-            const handleAuth = async () => {
-                if (!passwordInput.trim()) return;
-
-                if (passwordInput === MASTER_KEY) {
-                    sessionStorage.setItem('engineerAuthenticated', 'true');
-                    setView('menu');
-                    setPasswordInput('');
-                    setError('');
-                    return;
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('auth') === 'config') {
+                    setError('Sign in with your registered username and password. Contact your administrator if you need an account.');
                 }
+            }, []);
 
-                const hashed = await hashPassword(passwordInput);
+            useEffect(() => {
+                authFetch('/api/auth/whoami')
+                    .then(r => r.json())
+                    .then(d => {
+                        const r = d.role || 'viewer';
+                        if (r === 'editor' || r === 'admin') {
+                            sessionStorage.setItem('engineerAuthenticated', 'true');
+                            goToSettings();
+                            return;
+                        }
+                        sessionStorage.removeItem('engineerAuthenticated');
+                        setView('login');
+                    })
+                    .catch(() => setView('login'));
+            }, []);
 
-                if (!configPassword) {
-                    localStorage.setItem('configPasswordHash', hashed);
-                    setConfigPassword(hashed);
+            const handleAuth = async () => {
+                const u = usernameInput.trim();
+                const p = passwordInput;
+                if (!u || !p) return;
+                setError('');
+                try {
+                    const r = await authFetch('/api/auth/login', {
+                        method: 'POST',
+                        body: JSON.stringify({ username: u, password: p }),
+                    });
+                    const d = await r.json();
+                    if (!d.ok) {
+                        setError('Invalid username or password. If you are not registered, ask your administrator for an account.');
+                        setTimeout(() => setError(''), 4000);
+                        return;
+                    }
                     sessionStorage.setItem('engineerAuthenticated', 'true');
-                    setView('menu');
                     setPasswordInput('');
-                    setError('');
-                } else if (hashed === configPassword) {
-                    sessionStorage.setItem('engineerAuthenticated', 'true');
-                    setView('menu');
-                    setPasswordInput('');
-                    setError('');
-                } else {
-                    setError(t('incorrect_password'));
-                    setTimeout(() => setError(''), 2000);
+                    goToSettings();
+                } catch (e) {
+                    setError('Sign in failed.');
+                    setTimeout(() => setError(''), 2500);
                 }
             };
 
             const handleSkip = () => {
-                window.location.href = '/setup.html';
+                // Viewers: operate the dashboard without signing in.
+                window.location.href = '/dashboard.html';
             };
 
-            if (view === 'menu') {
+            if (view === 'checking') {
                 return (
                     <div className="flex h-screen items-center justify-center bg-slate-950">
-                        <div style={{position:'absolute',top:'16px',right:'16px'}}>{i18nReady && window.LangSelector && <LangSelector />}</div>
-                        <div className="text-center">
-                            <h1 className="text-3xl font-black italic uppercase tracking-tight mb-2 animate-fade-up">
-                                <span className="text-red-500">Red5</span> <span className="text-white">Studio</span>
-                            </h1>
-                            <p className="text-slate-500 text-sm mb-1 animate-fade-up" style={{animationDelay:'0.1s'}}>{t('by_delta_controls')}</p>
-                            <p className="text-slate-600 text-xs font-mono mb-12 animate-fade-up" style={{animationDelay:'0.15s'}}>{t('building_diag_cmd_center')}</p>
-
-                            <div className="flex gap-8 justify-center">
-                                <a href="/setup.html"
-                                   className="animate-fade-up card-hover block w-72 bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-indigo-500/40 rounded-2xl p-8 text-center cursor-pointer"
-                                   style={{animationDelay:'0.2s'}}>
-                                    <div className="w-16 h-16 mx-auto mb-5 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center" style={{animation:'pulse-glow 3s ease-in-out infinite'}}>
-                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                                    </div>
-                                    <h2 className="text-xl font-black text-indigo-400 uppercase tracking-wider mb-2">{t('dashboard')}</h2>
-                                    <p className="text-slate-400 text-xs leading-relaxed">{t('dashboard_desc')}</p>
-                                </a>
-
-                                <a href="/mapper"
-                                   className="animate-fade-up card-hover block w-72 bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-amber-500/40 rounded-2xl p-8 text-center cursor-pointer"
-                                   style={{animationDelay:'0.35s'}}>
-                                    <div className="w-16 h-16 mx-auto mb-5 rounded-xl bg-amber-600/20 border border-amber-500/40 flex items-center justify-center">
-                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                                    </div>
-                                    <h2 className="text-xl font-black text-amber-400 uppercase tracking-wider mb-2">{t('configuration')}</h2>
-                                    <p className="text-slate-400 text-xs leading-relaxed">{t('config_desc')}</p>
-                                </a>
-                            </div>
-
-                            <p className="text-slate-700 text-[10px] font-mono mt-12 animate-fade-up" style={{animationDelay:'0.5s'}}>v31.39 | Equipment Points Mapper v12.10</p>
-                        </div>
+                        <p className="text-slate-500 text-sm font-mono">Loading&hellip;</p>
                     </div>
                 );
             }
@@ -151,16 +130,26 @@
 
                         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
                             <p className="text-slate-400 text-xs text-center mb-4">
-                                {!configPassword ? t('set_pw_prompt') : t('enter_pw_prompt')}
+                                Sign in to open Settings. Viewers can skip to the dashboard.
                             </p>
+
+                            <input
+                                type="text"
+                                value={usernameInput}
+                                onChange={e => { setUsernameInput(e.target.value); setError(''); }}
+                                placeholder="Username"
+                                autoComplete="username"
+                                autoFocus
+                                className="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-lg p-3 text-white text-sm font-mono outline-none transition-all mb-3"
+                            />
 
                             <input
                                 type="password"
                                 value={passwordInput}
                                 onChange={e => { setPasswordInput(e.target.value); setError(''); }}
                                 onKeyDown={e => e.key === 'Enter' && handleAuth()}
-                                placeholder={!configPassword ? t('set_your_password') : t('enter_password')}
-                                autoFocus
+                                placeholder={t('enter_password')}
+                                autoComplete="current-password"
                                 className="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-lg p-3 text-white text-sm font-mono outline-none transition-all mb-3"
                             />
 
@@ -170,7 +159,7 @@
                                 onClick={handleAuth}
                                 className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-black uppercase tracking-widest text-xs transition-all mb-3"
                             >
-                                {!configPassword ? t('set_password_enter') : t('unlock')}
+                                {t('unlock')}
                             </button>
 
                             <div className="flex items-center gap-3 mb-3">

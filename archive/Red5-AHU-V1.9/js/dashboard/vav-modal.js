@@ -85,7 +85,7 @@ function renderVavEquipmentModal(ctx) {
                         }
                         // Sun-Path → B1-B10 trim: only amber-ring VAVs (in-shaft × blinds).
                         let modalSunScore = null, modalBandTrim = null;
-                        if (sunState && sunState.enabled && sunState.sun && vavMarkerPos) {
+                        if (sunState && sunState.sun && vavMarkerPos) {
                             let floorWins = [], floorRooms = [];
                             if (mapConfig && mapConfig.floors) {
                                 for (const floor of mapConfig.floors) {

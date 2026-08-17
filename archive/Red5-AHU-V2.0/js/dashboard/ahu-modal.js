@@ -42,6 +42,7 @@ function renderAhuEquipmentModal(ctx) {
         setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
         setShowAhuModalFor, showAhuModalFor,
         theme,
+        buildingLatLon,
     } = ctx;
     const bandGuideZoomed = !!ahuBandGuideZoomed;
                         const targetAhu = ahuData.find(a => a.id === showAhuModalFor) || ahuData[0];

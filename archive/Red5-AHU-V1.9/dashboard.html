@@ -7,7 +7,7 @@
 <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AHU Diagnostic HUB v31.39</title>
+    <title>AHUX Diagnostic HUB</title>
     <script>
         // =====================================================
         // BACKEND API CONFIGURATION
@@ -16,12 +16,12 @@
         // =====================================================
         window.API_BASE_URL = window.location.origin;
     </script>
-    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=efa85a8330">
-    <!-- React + dashboard.compiled.js are loaded at the bottom of <body>
-         after #root exists, with CDN/path fallbacks and on-screen errors. -->
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=f0a9b3d803">
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <!-- @babel/standalone removed 2026-06-25 — the 20 JSX modules under
          js/dashboard/* are now pre-compiled offline into the single bundle
-         /api/assets/dashboard.compiled.js (built via /app/frontend/src/dashboard/build.sh).
+         /api/assets/dashboard.compiled.js?v=406733c998 (built via /app/frontend/src/dashboard/build.sh).
          Saves ~3 MB of runtime JS and ~4 s of first-paint JIT on hardware. -->
     <!-- Cache-busting version stamp on the local helper scripts.  Browsers
          cache `.js` files aggressively (often days to weeks) which has
@@ -31,16 +31,16 @@
          The bumped query string forces a refetch when any of these files
          change.  Bump the date stamp on a per-deploy basis whenever any
          of `js/*.js` changes -- it's just a string the server ignores. -->
-    <script src="js/i18n.js?v=2026-08-05c"></script>
-    <script src="js/toast.js?v=2026-06-20a"></script>
-    <script src="js/docs_index.js?v=2026-06-20a"></script>
-    <script src="js/audit_log.js?v=2026-07-15a"></script>
-    <script src="js/g36_timeline.js?v=2026-06-20a"></script>
-    <script src="js/qrcode.min.js?v=2026-02-21a"></script>
+    <script src="/api/assets/js/i18n.js?v=2026-08-05c"></script>
+    <script src="/api/assets/js/toast.js?v=2026-06-20a"></script>
+    <script src="/api/assets/js/docs_index.js?v=2026-06-20a"></script>
+    <script src="/api/assets/js/audit_log.js?v=2026-07-15a"></script>
+    <script src="/api/assets/js/g36_timeline.js?v=2026-06-20a"></script>
+    <script src="/api/assets/js/qrcode.min.js?v=2026-02-21a"></script>
     <script>
         /* Robust i18n fallback: try alternative paths if primary load failed */
         if(!window.t){
-            var _p=['/js/i18n.js','js/i18n.js','/assets/js/i18n.js'];
+            var _p=['/api/assets/js/i18n.js','/assets/js/i18n.js','/js/i18n.js'];
             (function tryNext(i){
                 if(i>=_p.length||window.t)return;
                 var s=document.createElement('script');s.src=_p[i];
@@ -54,18 +54,19 @@
         // pre-existing browser cached `js/dynamics-animation.js` against the
         // old (cache-permissive) headers, the very next reload pulls fresh.
         window.__BUST__ = '?v=' + Date.now();
-        // Load dynamics animation as plain JS (not via Babel)
+        // Load dynamics animation as plain JS (not via Babel).
+        // Always go through /api/assets/ — relative js/*.js 404s on this
+        // backend (uvicorn has no nginx /js/ tree) and that crash-looped
+        // the dashboard with `red5DocsIndex is not defined`.
         (function() {
             var s = document.createElement('script');
-            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/dynamics-animation.js' : '/assets/js/dynamics-animation.js';
-            s.src = base + window.__BUST__;
+            s.src = '/api/assets/js/dynamics-animation.js' + window.__BUST__;
             document.head.appendChild(s);
         })();
         // Load 3D weather strip engine
         (function() {
             var s = document.createElement('script');
-            var base = (window.location.pathname.indexOf('.html') !== -1) ? 'js/psy-3d-engine.js' : '/assets/js/psy-3d-engine.js';
-            s.src = base + window.__BUST__;
+            s.src = '/api/assets/js/psy-3d-engine.js' + window.__BUST__;
             document.head.appendChild(s);
         })();
         // Preload Three.js so 3D Weather tab opens instantly
@@ -81,13 +82,6 @@
         })();
     </script>
     <style>
-        /* Fallback layout if dashboard.tailwind.css fails to load */
-        html, body { margin: 0; min-height: 100%; background: #0f172a; color: #e2e8f0; }
-        #root { min-height: 100vh; }
-        #boot-fallback {
-            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            font-size: 12px; line-height: 1.5; padding: 24px; color: #fca5a5;
-        }
         .preserve-3d { transform-style: preserve-3d; }
         @keyframes fan-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .anim-spin { transform-origin: center; transform-box: fill-box; animation-name: fan-rotate; animation-timing-function: linear; animation-iteration-count: infinite; }
@@ -114,6 +108,7 @@
         .trace-alarm { animation: trace-red 0.5s ease-in-out infinite alternate; }
         @keyframes fadeGlow { 0%{opacity:0.4} 50%{opacity:1} 100%{opacity:0.4} }
         .anim-glow { animation: fadeGlow 2s ease-in-out infinite; }
+        /* MA fault glow + category popup (sidebar AHU badge) */
         @keyframes ma-pulse {
             0%, 100% { box-shadow: 0 0 0 1px rgba(239,68,68,.35), 0 0 6px 1px rgba(239,68,68,.45), 0 0 10px 1px rgba(239,68,68,.2); }
             50%      { box-shadow: 0 0 0 1px rgba(239,68,68,.55), 0 0 8px 2px rgba(239,68,68,.65), 0 0 14px 2px rgba(239,68,68,.3); }
@@ -220,7 +215,6 @@
             text-transform: uppercase;
             color: #64748b;
         }
-
         .ma-fault-cat {
             flex-shrink: 0;
             width: 28px;
@@ -272,7 +266,6 @@
             color: #fecaca;
             font-weight: 700;
         }
-
         /* MetricBar peripheral-vision cue (Phase L.44, 2026-06-27).
            Fires ONCE for 600 ms when a pill enters / leaves an "alarming"
            bucket (|delta| >= 3 kJ/kg).  Runs on the wrapper div whose
@@ -370,7 +363,9 @@
         }
         /* Hide embedder-irrelevant chrome inside the modal */
         body.iframe-modal-mode [data-testid='popout-ahu-modal-btn'],
-        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'] { display: none !important; }
+        body.iframe-modal-mode [data-testid='popout-vav-modal-btn'],
+        body.iframe-modal-mode [data-testid='popout-vav-hub-btn'],
+        body.iframe-modal-mode [data-testid='float-vav-hub-btn'] { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > h3 > span:last-child,
         body.iframe-modal-mode [class*='z-[130]'] > div > div:first-child > h3 > span:last-child { display: none !important; }
         body.iframe-modal-mode [class*='z-[120]'] > div > div:first-child > div:last-child > button:last-child,
@@ -641,7 +636,7 @@
             setInterval(refresh, 30000);
         })();
     </script>
-        <script>
+    <script>
         /* Pin MA fault tip to the viewport (escape sidebar overflow) and
            allow dragging the tip header while it stays open/focused. */
         (function () {
@@ -776,13 +771,7 @@
             window.addEventListener('resize', refresh);
         })();
     </script>
-<div id="root" style="min-height:100vh;background:#0f172a;color:#94a3b8;font-family:ui-monospace,monospace;font-size:13px;padding:24px;">
-        <p id="boot-fallback">Loading dashboard&hellip;</p>
-    </div>
-    <!-- Always-visible build proof (HTML only — no JS). If this corner
-         badge is missing after /update, the new dashboard.html never
-         landed on the controller. -->
-    <div id="red5-html-build" style="position:fixed;bottom:6px;right:8px;z-index:99999;font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:#f59e0b;background:rgba(15,23,42,0.85);border:1px solid #b45309;border-radius:4px;padding:4px 8px;pointer-events:none;letter-spacing:0.04em">SP47</div>
+    <div id="root"></div>
     <!-- Pre-compiled offline by /app/frontend/src/dashboard/build.sh —
          contains the verbatim concatenation of (in order):
             psychrometric.js, dashboard-components.js, schema-config.js,
@@ -791,94 +780,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script>
-    (function () {
-        // Cache-bust stamp — must match md5 of dashboard.compiled.js (first 10 hex).
-        // Updated by frontend/src/dashboard/build.sh; do NOT hardcode a second
-        // ?v= into the path strings below (that produced ?v=abc?v= + HASH and
-        // left browsers stuck on a stale pre-sun-path-fix bundle on V1.9).
-        var HASH = '09418efc4e';
-        var stamp = document.getElementById('red5-html-build');
-        if (stamp) stamp.textContent = 'SP47·' + HASH;
-        var root = document.getElementById('root');
-        function showBootError(msg) {
-            if (!root) return;
-            root.innerHTML = '<div id="boot-fallback" style="color:#fca5a5;line-height:1.6">'
-                + '<strong style="color:#f87171">Dashboard failed to start</strong><br><br>'
-                + msg
-                + '<br><br>Re-upload <b>both</b> <code>dashboard.html</code> and <code>dashboard.compiled.js</code> '
-                + '(~392&nbsp;KB). Then hard-refresh: <kbd>Cmd+Shift+R</kbd>.</div>';
-        }
-        window.__red5BootOk = function () {
-            var fb = document.getElementById('boot-fallback');
-            if (fb && fb.parentNode) fb.parentNode.removeChild(fb);
-        };
-        window.addEventListener('error', function (e) {
-            if (e.filename && e.filename.indexOf('dashboard.compiled.js') !== -1) {
-                showBootError('Bundle script error: ' + (e.message || 'unknown'));
-            }
-        });
-        // Canonical path only.  Falling through to /js/dashboard.compiled.js
-        // previously let a stale copy win — HTML stamp updated, JS stayed old
-        // (compass local-ON, parent sunState null, no VAV rings).
-        var paths = [
-            '/api/assets/dashboard.compiled.js?v=' + HASH,
-            '/assets/dashboard.compiled.js?v=' + HASH,
-            'dashboard.compiled.js?v=' + HASH
-        ];
-        var pi = 0;
-        function loadBundle() {
-            if (pi >= paths.length) {
-                showBootError('Could not load dashboard.compiled.js from any path. '
-                    + 'Open <code>/api/assets/dashboard.compiled.js</code> directly — '
-                    + 'it must start with <code>"use strict";function</code> and be ~392&nbsp;KB.');
-                return;
-            }
-            var s = document.createElement('script');
-            s.src = paths[pi++];
-            s.onload = function () {
-                setTimeout(function () {
-                    if (!window.__RED5_BUNDLE_ID && stamp) {
-                        stamp.textContent = 'SP47·' + HASH + '·NOJS';
-                        stamp.style.color = '#f87171';
-                        stamp.style.borderColor = '#ef4444';
-                    }
-                }, 1000);
-            };
-            s.onerror = loadBundle;
-            document.body.appendChild(s);
-        }
-        var PAIRS = [
-            ['https://unpkg.com/react@18/umd/react.production.min.js',
-             'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'],
-            ['https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js',
-             'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js']
-        ];
-        function loadPair(idx) {
-            if (idx >= PAIRS.length) {
-                showBootError('React failed to load from CDN. Check controller internet access.');
-                return;
-            }
-            var react = document.createElement('script');
-            react.src = PAIRS[idx][0];
-            react.onload = function () {
-                var dom = document.createElement('script');
-                dom.src = PAIRS[idx][1];
-                dom.onload = loadBundle;
-                dom.onerror = function () { loadPair(idx + 1); };
-                document.head.appendChild(dom);
-            };
-            react.onerror = function () { loadPair(idx + 1); };
-            document.head.appendChild(react);
-        }
-        setTimeout(function () {
-            if (!window.__red5DashboardMounted && document.getElementById('boot-fallback')) {
-                showBootError('Timed out waiting for dashboard.compiled.js to mount. '
-                    + 'The uploaded bundle may be truncated or the wrong version.');
-            }
-        }, 12000);
-        loadPair(0);
-    })();
-    </script>
+    <script src="/api/assets/dashboard.compiled.js?v=4db1779549"></script>
 </body>
 </html>

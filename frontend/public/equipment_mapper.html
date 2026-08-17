@@ -99,7 +99,7 @@
         - Custom sensor groups
         - All Equipment Schema Mapper features
     -->
-    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=79b8e698ce">
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=f0a9b3d803">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
@@ -2369,8 +2369,10 @@
                     toast('Window trace cancelled.');
                     return;
                 }
-                const createNew = !!(opts && opts.createNew) || (togglingToolbar && !selectedWindowId);
-                const wid = createNew ? null : ((opts && opts.windowId) || selectedWindowId || null);
+                // Toolbar Trace Window always creates. Do not inherit the
+                // last finished pane — that retraced it and kept amber focus.
+                const createNew = togglingToolbar || !!(opts && opts.createNew);
+                const wid = createNew ? null : ((opts && opts.windowId) || null);
                 if (!createNew && !wid) {
                     toast('Select exactly one window, then Trace aperture — or use Trace Window to create.');
                     return;
@@ -2382,6 +2384,8 @@
                         w.vertices.forEach(p => seed.push({ x: p[0], y: p[1] }));
                     }
                     setSelectedWindowId(wid);
+                } else {
+                    setSelectedWindowId(null);
                 }
                 setWindowTraceMode({ windowId: wid, createNew: !wid, pts: seed });
                 setPanMode(false);
@@ -6282,6 +6286,7 @@
                                                         key={'wv-'+w.id}
                                                         w={w}
                                                         selected={selectedWindowId === w.id}
+                                                        interactive={!windowTraceMode && !roomMode && !obstructionTraceMode}
                                                         testId={'floor-window-'+w.id}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -6295,7 +6300,7 @@
                                                     stroke={selectedWindowId === w.id ? '#fbbf24' : '#7dd3fc'}
                                                     strokeWidth={selectedWindowId === w.id ? 1.25 : 1}
                                                     vectorEffect="non-scaling-stroke"
-                                                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                                                    style={{ pointerEvents: (windowTraceMode || roomMode || obstructionTraceMode) ? 'none' : 'auto', cursor: 'pointer' }}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setSelectedWindowId(w.id);
@@ -6369,6 +6374,7 @@
                                                         key={w.id}
                                                         w={w}
                                                         selected={sel}
+                                                        interactive={!windowTraceMode && !roomMode && !obstructionTraceMode}
                                                         testId={`floor-window-${w.id}`}
                                                         cursor="move"
                                                         onMouseDown={(e) => handleWindowDragStart(e, w.id)}
@@ -6394,7 +6400,7 @@
                                                         transform: `translate(-50%, -50%) rotate(${Number(w.angle_deg)||0}deg)`,
                                                         cursor: 'move',
                                                         zIndex: sel ? 95 : 16,
-                                                        pointerEvents: 'auto',
+                                                        pointerEvents: (windowTraceMode || roomMode || obstructionTraceMode) ? 'none' : 'auto',
                                                     }}
                                                 >
                                                     <div style={{
@@ -7343,7 +7349,7 @@
                 '/assets/js/blind-types.js?v=jamb1',
                 '/assets/js/sun-path.js?v=jamb1',
                 '/assets/js/elc-sun-path-overlay.js?v=isoUp1',
-                '/assets/js/window-blinds-popout.js?v=jamb1'
+                '/assets/js/window-blinds-popout.js?v=relFocus1'
             ];
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {

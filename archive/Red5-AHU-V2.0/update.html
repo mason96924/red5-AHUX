@@ -48,6 +48,57 @@ h1 span{color:#ef4444;font-style:italic}
 </style>
 </head>
 <body>
+<!-- Return-to-Setup badge: only shown when this page was opened from the
+     Setup Walk's pentagon hub.  Detected via ?from=setup in the URL.
+     Floats top-left, fixed position, so it stays visible while scrolling. -->
+<a id="returnToSetupBadge" href="/setup.html?force=1"
+   style="display:none;align-items:center;gap:6px;position:fixed;top:16px;left:16px;z-index:9999;
+          padding:8px 14px 8px 10px;border-radius:999px;
+          background:#1e293b;border:1px solid #334155;
+          color:#cbd5e1;font-family:'Courier New',monospace;font-size:12px;
+          font-weight:700;text-decoration:none;letter-spacing:.04em;
+          box-shadow:0 4px 18px -6px rgba(99,102,241,0.45);
+          transition:background .15s, border-color .15s;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+    </svg>
+    Return to Setup
+</a>
+<script>
+    /* Surface the badge only if we arrived from the Setup Walk (or there's
+       a sticky session flag set by it).  Setting the sessionStorage flag
+       too means the badge survives a hard-refresh of update.html. */
+    (function () {
+        try {
+            var qs = new URLSearchParams(window.location.search);
+            var fromSetup = qs.get('from') === 'setup' ||
+                            sessionStorage.getItem('red5.return_to_setup') === '1';
+            if (fromSetup) {
+                sessionStorage.setItem('red5.return_to_setup', '1');
+                var el = document.getElementById('returnToSetupBadge');
+                if (el) el.style.display = 'inline-flex';
+                /* Hover styling without bloating the inline CSS */
+                if (el) {
+                    el.addEventListener('mouseenter', function () {
+                        el.style.background    = '#312e81';
+                        el.style.borderColor   = '#6366f1';
+                        el.style.color         = '#e0e7ff';
+                    });
+                    el.addEventListener('mouseleave', function () {
+                        el.style.background    = '#1e293b';
+                        el.style.borderColor   = '#334155';
+                        el.style.color         = '#cbd5e1';
+                    });
+                }
+            } else {
+                /* Direct visit (operator typed /update.html) -- clear any
+                   stale flag so the badge doesn't bleed into a fresh session. */
+                sessionStorage.removeItem('red5.return_to_setup');
+            }
+        } catch (e) { /* private mode -- no-op */ }
+    })();
+</script>
 <h1><span>RED5</span> PLATFORM UPDATE</h1>
 <p class="sub">Standalone update tool — upload or download encrypted bundles (.red5)</p>
 
@@ -83,6 +134,7 @@ h1 span{color:#ef4444;font-style:italic}
   <select id="hotReloadPlugin" data-testid="hot-reload-plugin-select"
     style="background:#020617;color:#e2e8f0;border:1px solid #334155;padding:8px 10px;font-family:'Courier New',monospace;font-size:12px;border-radius:4px;flex:1;min-width:240px">
     <option value="upload_service">upload_service</option>
+    <option value="auth_service">auth_service</option>
     <option value="weather_service">weather_service</option>
     <option value="band_service">band_service</option>
     <option value="telemetry_service">telemetry_service</option>
@@ -146,6 +198,28 @@ h1 span{color:#ef4444;font-style:italic}
 <div class="report" id="report" style="display:none"></div>
 </div>
 
+<div class="card" id="masterKeyCard">
+<h2 style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>Master Key</span>
+  <span id="mkStatePill" style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#1e293b;color:#94a3b8;border:1px solid #334155">checking&hellip;</span>
+</h2>
+<p class="note" style="margin-bottom:12px">Authorizes the <code style="background:#1e293b;padding:1px 4px;border-radius:3px">admin</code> sign-in and decrypts encrypted bundles. It is <b>upload-only</b>: set or replace it here &mdash; the value is never displayed, downloaded, or editable in place. Replacing an existing key requires the current key (or an admin session).</p>
+<div class="pwd-row">
+  <label>New key:</label>
+  <input type="password" class="pwd-input" id="mkNew" placeholder="Enter new master key (min 8 characters)" autocomplete="new-password">
+</div>
+<div class="pwd-row" id="mkCurrentRow" style="display:none">
+  <label>Current key:</label>
+  <input type="password" class="pwd-input" id="mkCurrent" placeholder="Required to replace the existing key" autocomplete="off">
+</div>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+  <label class="btn btn-outline" style="cursor:pointer;margin:0;width:auto" title="Upload a master_key.txt file instead of typing the key">Upload key file<input type="file" id="mkFile" accept=".txt,text/plain" style="display:none"></label>
+  <span id="mkFileName" style="font-size:11px;color:#a5b4fc"></span>
+  <button class="btn btn-primary" id="mkSetBtn" style="margin-left:auto;width:auto" onclick="setMasterKey()">Set master key</button>
+</div>
+<p class="note" style="margin-top:10px;font-style:normal">After setting, sign in on the <a href="/" style="color:#a5b4fc">Access</a> page with username <code style="background:#1e293b;padding:1px 4px;border-radius:3px">admin</code> and this key. Restart <code style="background:#1e293b;padding:1px 4px;border-radius:3px">app.py</code> so encrypted-bundle decryption also picks up a rotated key.</p>
+<div id="mkStatus" style="margin-top:10px;font-size:12px"></div>
+</div>
+
 <div class="card">
 <h2>Download Bundle</h2>
 <div class="pwd-row">
@@ -154,8 +228,8 @@ h1 span{color:#ef4444;font-style:italic}
 </div>
 <button class="btn btn-outline" id="downloadBtn" onclick="downloadBundle('full')">Download FULL Bundle (clone everything)</button>
 <button class="btn btn-outline" id="downloadReplicateBtn" onclick="downloadBundle('replicate')">Download REPLICATION Bundle (configs + code, skip runtime state)</button>
-<p class="note"><b>Full</b>: complete clone including telemetry, weather caches, band states, and collector logs.<br>
-<b>Replication</b>: app code + equipment configs + graphics + saved weather locations. Excludes per-controller runtime state (telemetry.json, weather caches, band_guide.csv, collector logs) so the destination controller keeps its own runtime state but adopts the source's setup. Use this when copying a configured controller's setup onto a fresh controller.</p>
+<p class="note"><b>Full</b>: complete clone including <code>master_key.txt</code>, editor accounts (<code>red5_auth/</code>), telemetry, weather caches, band states, and collector logs.<br>
+<b>Replication</b>: app code + equipment configs + graphics + saved weather locations + <code>master_key.txt</code> + editor accounts. Excludes per-controller runtime state (telemetry.json, weather caches, band_guide.csv, g36_state.json, collector logs) so the destination controller keeps its own live telemetry but adopts the source's setup. Use this when copying a configured controller's setup onto a fresh controller.</p>
 <div id="dlStatus" style="margin-top:12px;font-size:13px"></div>
 </div>
 
@@ -164,6 +238,11 @@ h1 span{color:#ef4444;font-style:italic}
   <span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#422006;color:#fbbf24;border:1px solid #b45309;vertical-align:middle">Out-of-Band</span>
 </h2>
 <p class="note" style="margin-bottom:12px">Direct single-file replacement &mdash; bypasses the bundle/decrypt/extract pipeline. Use when the regular bundle upload is blocked by <code style="background:#1e293b;padding:1px 4px;border-radius:3px">Low disk headroom</code> or you need to hotfix one plug-in without re-uploading the full bundle. Each upload writes via tmp+rename so a corrupted transfer can never leave a half-written plug-in on disk.</p>
+<p class="note" style="margin-bottom:10px;font-style:normal;color:#93c5fd">If Replace fails with <b>sha256 mismatch</b>: first Replace <code style="background:#1e293b;padding:1px 4px;border-radius:3px">repair_manifest.json</code> (it is integrity-exempt), then retry the plug-in — or tick <b>Force override</b> below for a one-shot bypass.</p>
+<label style="display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:#fbbf24;cursor:pointer;user-select:none">
+  <input type="checkbox" id="repairForceOverride" style="accent-color:#f59e0b">
+  Force override (send <code style="background:#1e293b;padding:1px 4px;border-radius:3px">X-Force-Override: 1</code> — skips sha256 check)
+</label>
 <div id="repairList" style="display:flex;flex-direction:column;gap:6px"></div>
 <p class="note" style="margin-top:12px;font-style:normal;color:#fbbf24"><b>One-click flow:</b> click <b>Replace</b> &rarr; pick file &rarr; the new module is auto hot-reloaded into the running Flask process &mdash; no enteliWEB script-toggle needed. The standalone <b>Reload</b> button re-imports a plug-in without a fresh upload (useful after editing on disk via SCP). For changes that <i>add or remove routes</i>, a full Flask restart is still required (the live <code>app.url_map</code> only rebuilds on full process boot).</p>
 <div id="repairStatus" style="margin-top:10px;font-size:12px"></div>
@@ -785,6 +864,9 @@ function downloadBundle(mode) {
 }
 
 // ---------- Repair Mode (out-of-band single-file plug-in upload) ----------
+// Fallback list if /api/repair/manifest is absent (fresh / very old controller).
+// Prefer the live manifest (show_in_ui) when available so repair_manifest.json
+// and new plug-ins always appear without hand-editing this array.
 var REPAIR_FILES = [
     // -- Core plug-ins --
     {name: 'upload_service.py',    label: 'Upload Service',    desc: 'Bundle upload + chunked endpoints + disk-status + Repair Mode', kind: 'plugin'},
@@ -800,6 +882,7 @@ var REPAIR_FILES = [
     {name: 'ws_bridge_service.py',      label: 'WebSocket Bridge',          desc: 'Push telemetry to live clients (needs websockets)',            kind: 'plugin'},
     {name: 'bacnet_diag_service.py',    label: 'BACnet Diagnose Service',   desc: '/api/bacnet/diagnose-config — detect name-based BACnet targets', kind: 'plugin'},
     // -- UI / static files --
+    {name: 'repair_manifest.json', label: 'repair_manifest.json', desc: 'Repair Mode allow-list + sha256 source of truth (replace this FIRST when hashes drift)', kind: 'ui'},
     {name: 'update.html',          label: 'update.html',       desc: 'This page (Repair Mode + Data Bridges UI)',       kind: 'ui'},
     {name: 'dashboard.html',       label: 'dashboard.html',    desc: 'Main UI',                                         kind: 'ui'},
     {name: 'equipment_mapper.html',label: 'equipment_mapper.html', desc: 'Config Tool',                                 kind: 'ui'},
@@ -824,7 +907,7 @@ function _renderRepairList(){
         head.innerHTML = ''
             + '<span style="display:inline-block;padding:2px 6px;border-radius:3px;background:' + bg + ';color:' + color + ';font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase">' + f.kind + '</span>'
             + '<span style="flex:1"><span style="color:#e2e8f0;font-size:12px;font-weight:700">' + f.name + '</span><span style="color:#64748b;font-size:10px;display:block;margin-top:1px">' + f.desc + '</span></span>'
-            + '<input type="file" accept=".py,.html" id="rf_' + safeId + '" style="display:none">'
+            + '<input type="file" accept=".py,.html,.md,.json,.js,.css,.txt" id="rf_' + safeId + '" style="display:none">'
             + '<button class="btn" data-act="pick" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;text-transform:uppercase;letter-spacing:.05em">Replace</button>'
             + (f.kind === 'plugin'
                 ? '<button class="btn" data-act="reload" data-name="' + f.name + '" style="padding:6px 10px;font-size:10px;background:#312e81;color:#a5b4fc;border:1px solid #4338ca;text-transform:uppercase;letter-spacing:.05em" title="Hot-reload — re-imports the module without restarting Flask">Reload</button>'
@@ -843,6 +926,28 @@ function _renderRepairList(){
     });
     box.addEventListener('click', _onRepairClick);
     box.addEventListener('change', _onRepairFileChange);
+}
+
+function _loadRepairFilesFromManifest(done){
+    var base = (document.getElementById('serverUrl') && document.getElementById('serverUrl').value || '').replace(/\/$/, '');
+    if (!base) { if (done) done(); return; }
+    fetch(base + '/api/repair/manifest', {credentials: 'include'})
+        .then(function(r){ return r.json(); })
+        .then(function(m){
+            if (!m || m.absent || !Array.isArray(m.files)) { if (done) done(); return; }
+            var rows = m.files.filter(function(e){ return e && e.show_in_ui !== false && e.name; })
+                .map(function(e){
+                    return {
+                        name: e.name,
+                        label: e.label || e.name,
+                        desc: e.desc || '',
+                        kind: e.kind === 'plugin' ? 'plugin' : 'ui',
+                    };
+                });
+            if (rows.length) REPAIR_FILES = rows;
+            if (done) done();
+        })
+        .catch(function(){ if (done) done(); });
 }
 
 function _showFreshBadge(name, newEndpoints){
@@ -946,10 +1051,14 @@ function _doRepairUpload(name, file){
     var fd = new FormData();
     fd.append('file', file, name);
     fd.append('filename', name);
-    fetch(base + '/api/repair/upload-plugin', {method:'POST', body: fd})
+    var headers = {};
+    var forceEl = document.getElementById('repairForceOverride');
+    if (forceEl && forceEl.checked) headers['X-Force-Override'] = '1';
+    fetch(base + '/api/repair/upload-plugin', {method:'POST', body: fd, headers: headers})
         .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); })
         .then(function(rs){
             if (rs.ok && rs.j && rs.j.success){
+                if (forceEl) forceEl.checked = false; // one-shot
                 status.className = 'status-ok';
                 status.textContent = 'OK: replaced ' + (rs.j.dest || name) + ' (' + rs.j.bytes + ' bytes). ';
                 // Auto-refresh disk status after a plug-in replace
@@ -993,7 +1102,14 @@ function _doRepairUpload(name, file){
             status.textContent = 'Network error: ' + err.message;
         });
 }
-_renderRepairList();
+_loadRepairFilesFromManifest(function(){ _renderRepairList(); });
+// Also re-render after controller URL is tested/changed (best-effort).
+(function(){
+    var btn = document.getElementById('testBtn');
+    if (btn) btn.addEventListener('click', function(){
+        setTimeout(function(){ _loadRepairFilesFromManifest(function(){ _renderRepairList(); }); }, 400);
+    });
+})();
 
 // ---------- Data Bridges UI ----------
 var BRIDGE_DEFS = [
@@ -1179,12 +1295,94 @@ function _runBacnetDiag(){
 }
 document.getElementById('bacnetDiagRunBtn').onclick = _runBacnetDiag;
 
+// ---------- Master Key (upload-only; never displays the value) ----------
+function _mkBase() {
+    return (document.getElementById('serverUrl').value || '').trim().replace(/\/+$/, '');
+}
+function refreshMasterKeyStatus() {
+    var base = _mkBase();
+    var pill = document.getElementById('mkStatePill');
+    var curRow = document.getElementById('mkCurrentRow');
+    var setBtn = document.getElementById('mkSetBtn');
+    if (!base) { pill.textContent = 'unknown'; return; }
+    fetch(base + '/api/auth/master-key', { mode: 'cors' })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (d && d.configured) {
+                pill.textContent = 'configured';
+                pill.style.background = '#064e3b'; pill.style.color = '#34d399';
+                pill.style.borderColor = '#047857';
+                curRow.style.display = 'flex';
+                setBtn.textContent = 'Replace master key';
+            } else {
+                pill.textContent = 'not set';
+                pill.style.background = '#451a03'; pill.style.color = '#fbbf24';
+                pill.style.borderColor = '#b45309';
+                curRow.style.display = 'none';
+                setBtn.textContent = 'Set master key';
+            }
+        })
+        .catch(function(){ pill.textContent = 'unavailable'; });
+}
+(function(){
+    var fi = document.getElementById('mkFile');
+    if (fi) fi.addEventListener('change', function(){
+        var f = fi.files && fi.files[0];
+        document.getElementById('mkFileName').textContent = f ? f.name : '';
+    });
+})();
+function setMasterKey() {
+    var base = _mkBase();
+    if (!base) { alert('Enter the controller URL first.'); return; }
+    var st = document.getElementById('mkStatus');
+    var fileEl = document.getElementById('mkFile');
+    var file = fileEl && fileEl.files && fileEl.files[0];
+    var newKey = document.getElementById('mkNew').value;
+    var curKey = document.getElementById('mkCurrent').value;
+    var opts;
+    if (file) {
+        var fd = new FormData();
+        fd.append('file', file);
+        if (curKey) fd.append('current_key', curKey);
+        opts = { method: 'POST', body: fd, mode: 'cors' };
+    } else {
+        if (!newKey || newKey.length < 8) {
+            st.textContent = 'Enter a new key of at least 8 characters (or choose a key file).';
+            st.style.color = '#f87171'; return;
+        }
+        opts = {
+            method: 'POST', mode: 'cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_key: newKey, current_key: curKey }),
+        };
+    }
+    st.textContent = 'Saving master key\u2026'; st.style.color = '#f59e0b';
+    fetch(base + '/api/auth/master-key', opts)
+        .then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); })
+        .then(function(res){
+            if (res.body && res.body.ok) {
+                st.textContent = 'OK \u00b7 ' + (res.body.rotated ? 'Master key replaced. ' : 'Master key set. ') + (res.body.note || '');
+                st.style.color = '#22c55e';
+                document.getElementById('mkNew').value = '';
+                document.getElementById('mkCurrent').value = '';
+                if (fileEl) fileEl.value = '';
+                document.getElementById('mkFileName').textContent = '';
+                refreshMasterKeyStatus();
+            } else {
+                st.textContent = 'FAILED: ' + (res.body && res.body.error ? res.body.error : ('HTTP ' + res.status));
+                st.style.color = '#f87171';
+            }
+        })
+        .catch(function(e){ st.textContent = 'Network error: ' + (e && e.message ? e.message : e); st.style.color = '#f87171'; });
+}
+
 // Auto-detect server from current page origin (works when served by controller)
 (function() {
     var input = document.getElementById('serverUrl');
     if (window.location.protocol !== 'file:') {
         input.value = window.location.origin;
         checkServer();
+        refreshMasterKeyStatus();
     }
 })();
 </script>

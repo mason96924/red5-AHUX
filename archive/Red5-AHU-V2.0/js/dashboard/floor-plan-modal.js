@@ -16,107 +16,17 @@
  * (modulo a single block of dedent) so behaviour stays unchanged.
  * ------------------------------------------------------------------ */
 
-/** Draggable per-window blind 0–100% pill (Closed ↔ Open). */
-function LiveBlindControlPill(props) {
-    const {
-        theme, wi, wid, w, floorKey, openPct,
-        setFloorWindowOpenPct, setFloorWindowsPanelOpen, setSelectedFloorWindowId,
-    } = props;
-    const placeAbove = (Number(w.y) || 50) > 22;
-    const storageKey = 'red5.liveBlindPillPos.' + String(wid);
-    const [pos, setPos] = React.useState(() => {
-        try {
-            const p = JSON.parse(localStorage.getItem(storageKey) || 'null');
-            if (p && typeof p.x === 'number' && typeof p.y === 'number') return p;
-        } catch (_) {}
-        return { x: 0, y: 0 };
-    });
-    const [drag, setDrag] = React.useState(null);
-    const posRef = React.useRef(pos);
-    posRef.current = pos;
-
-    React.useEffect(() => {
-        if (!drag) return undefined;
-        const onMove = (e) => {
-            setPos({
-                x: drag.baseX + (e.clientX - drag.startX),
-                y: drag.baseY + (e.clientY - drag.startY),
-            });
-        };
-        const onUp = () => {
-            setDrag(null);
-            try { localStorage.setItem(storageKey, JSON.stringify(posRef.current)); } catch (_) {}
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-        return () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-    }, [drag, storageKey]);
-
-    const baseTx = placeAbove ? '-50%' : '-50%';
-    const baseTy = placeAbove ? 'calc(-100% - 16px)' : '16px';
-
-    return (
-        <div
-            data-testid="live-window-individual-control"
-            className={`absolute z-[55] w-[220px] rounded-md border shadow-2xl pointer-events-auto ${
-                theme === 'dark' ? 'bg-slate-950/95 border-amber-500/70 text-slate-200' : 'bg-white/95 border-amber-400 text-slate-800'
-            }`}
-            style={{
-                left: `${w.x}%`,
-                top: `${w.y}%`,
-                transform: `translate(${baseTx}, ${baseTy}) translate(${pos.x}px, ${pos.y}px)`,
-                cursor: drag ? 'grabbing' : 'grab',
-                userSelect: 'none',
-                touchAction: 'none',
-            }}
-            onMouseDown={(e) => {
-                if (e.button !== 0) return;
-                const t = e.target;
-                if (t && t.closest && (t.closest('button') || t.closest('input'))) return;
-                e.stopPropagation();
-                e.preventDefault();
-                setDrag({ startX: e.clientX, startY: e.clientY, baseX: pos.x, baseY: pos.y });
-            }}
-            title="Drag to move · this window’s blind only"
-        >
-            <div className={`flex items-center justify-between px-2 py-1.5 border-b text-[9px] uppercase tracking-widest ${
-                theme === 'dark' ? 'border-slate-700 text-amber-300' : 'border-slate-200 text-amber-700'
-            }`}>
-                <span>W{wi + 1} · Blind</span>
-                <button type="button" className="text-sm px-1 opacity-60 hover:opacity-100 cursor-pointer"
-                        onClick={() => {
-                            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
-                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
-                        }}>×</button>
-            </div>
-            <div className="px-2 py-2">
-                <div className="flex items-center gap-1.5">
-                    <span className="text-[8px] opacity-60 w-10 shrink-0">Closed</span>
-                    <input type="range" min="0" max="100" step="1" value={openPct}
-                           className="flex-1 min-w-0 accent-amber-400 cursor-pointer"
-                           data-testid={`live-window-open-${wid}`}
-                           onChange={(e) => {
-                               const v = parseInt(e.target.value, 10) || 0;
-                               if (setFloorWindowOpenPct) setFloorWindowOpenPct(floorKey, w.id, v, wi);
-                           }}/>
-                    <span className="text-[8px] opacity-60 w-8 shrink-0 text-right">Open</span>
-                    <span className="font-mono text-[10px] text-amber-400 w-9 text-right">{openPct}%</span>
-                </div>
-                <div className="text-[8px] opacity-50 mt-1">This window only · 0% closed · 100% open</div>
-            </div>
-        </div>
-    );
+function isTracedFloorWindow(w) {
+    return !!(w && Array.isArray(w.vertices) && w.vertices.length >= 3);
 }
 
 /** Amber VAV/AHU ring: sun exposure × blind open of windows lighting this marker. */
-function liveSunRingStyle(xPct, yPct, sunState, windows, buildingFacingOffset, rooms) {
-    if (!(sunState && sunState.enabled && sunState.sun)) return { score: 0, style: null, color: null };
+function liveSunRingStyle(xPct, yPct, sunState, windows, buildingFacingOffset, rooms, orientation) {
+    if (!(sunState && sunState.sun)) return { score: 0, style: null, color: null };
     const opts = {
         northOffsetDeg: typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0,
         rooms: rooms || [],
+        orientation: orientation || null,
     };
     const wins = windows || [];
     let score = 0;
@@ -148,7 +58,7 @@ function renderFloorPlanModal(ctx) {
         buildingFacingOffset,
         floorWindowsPanelOpen, setFloorWindowsPanelOpen,
         selectedFloorWindowId, setSelectedFloorWindowId,
-        setFloorWindowOpenPct,
+        setFloorWindowOpenPct, patchFloorWindow,
         comfortZonePoly,
         showGivoni, showSweetSpot, sweetSpotRange,
         // Helpers + look-up tables
@@ -213,7 +123,7 @@ const floorModalTree = (
             </div>
         </div>
         
-        <div className={`red5-graphic-zone relative bg-slate-200 overflow-hidden flex items-center justify-center`}>
+        <div className={`red5-graphic-zone relative flex-1 min-h-0 w-full bg-slate-200 overflow-hidden flex items-center justify-center`}>
             
             {(() => {
                 const floorData = getFloorForAhu(showFloorPlanForAhu);
@@ -224,6 +134,7 @@ const floorModalTree = (
                     // === MAP_CONFIG DRIVEN FLOOR PLAN ===
                     const imgSrc = `${API_URL}/api/assets/${floorData.floor.image_path}`;
                     return (
+                        <React.Fragment>
                         <div className="relative inline-block">
                             <img 
                                 src={imgSrc} 
@@ -231,24 +142,36 @@ const floorModalTree = (
                                 style={{ maxWidth: 'calc(min(1400px, 95vw) - 20px)', maxHeight: 'calc(min(850px, 90vh) - 90px)', mixBlendMode: 'multiply' }}
                                 alt={floorData.floor.name}
                             />
-                            {/* Sun-Path Phase A: compass + directional ray overlay.
-                                Compass lives in the top-right corner of the floor plan
-                                image.  Ray overlay washes a warm gradient across the
-                                plan from the sun's incoming direction.  Both only
-                                visible when the Sun-Path toggle is ON. */}
-                            {window.SunCompass && (
-                                <window.SunCompass
+                            {window.ElcFloorDarkenVeil && (
+                                <window.ElcFloorDarkenVeil
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                    rooms={floorData.floor.rooms || []}
+                                />
+                            )}
+                            {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
+                            {window.ElcSunPathLive && (
+                                <window.ElcSunPathLive
+                                    hostChrome={false}
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
+                                    elevation_m={buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon.timezone}
                                     theme={theme}
+                                    northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
+                                    orientation={floorData.floor.orientation}
                                     onChange={(s) => setSunState(s)}
                                 />
                             )}
-                            {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                            {sunState && sunState.sun && window.SunRayOverlay && (
                                 <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}
-                                    northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0} />
+                                    northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
+                                    orientation={floorData.floor.orientation}
+                                    rooms={floorData.floor.rooms || []} />
                             )}
-                            {sunState && sunState.enabled && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
+                            {sunState && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
                                 <window.WindowsSunshaftOverlay
                                     windows={floorData.floor.windows}
                                     rooms={floorData.floor.rooms || []}
@@ -256,21 +179,42 @@ const floorModalTree = (
                                     theme={theme}
                                     cloudCover={sunState.cloudCover}
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
+                                    orientation={floorData.floor.orientation}
                                     showBars={false}
-                                    showRooms={true}
+                                    showRooms={false}
                                 />
                             )}
-                            {/* Live window bars — click to set blinds; no amber halo on the glass */}
+                            {/* Live windows — 2.5D bars and 2D traced glass. Click pops Open + Type. */}
                             {(floorData.floor.windows || []).map((w, wi) => {
+                                if (isTracedFloorWindow(w)) return null;
                                 const wid = w.id != null ? w.id : ('idx-' + wi);
                                 const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
+                                const Pane = typeof WindowPlanPane === 'function' ? WindowPlanPane : window.WindowPlanPane;
+                                if (Pane) {
+                                    return (
+                                        <Pane
+                                            key={wid}
+                                            w={w}
+                                            selected={sel}
+                                            showTrace={false}
+                                            testId={`live-window-${wid}`}
+                                            zSelected={45}
+                                            zIdle={35}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
+                                                if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
+                                            }}
+                                        />
+                                    );
+                                }
                                 const open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
                                 const len = Math.max(Number(w.length) || 8, 3);
                                 return (
                                     <div
                                         key={wid}
                                         data-testid={`live-window-${wid}`}
-                                        title={`W${wi + 1} · blind ${Math.round(open * 100)}% open — click to set`}
+                                        title={`W${wi + 1} · ${(w.blind_type || 'roller')} · ${Math.round(open * 100)}% open — click to set`}
                                         onMouseDown={(e) => {
                                             e.stopPropagation();
                                             if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
@@ -291,39 +235,73 @@ const floorModalTree = (
                                         <div style={{
                                             position: 'absolute', left: 0, right: 0, top: '2px', bottom: '2px',
                                             borderRadius: 2,
-                                            background: sel ? '#38bdf8' : '#7dd3fc',
-                                            opacity: 0.45 + 0.40 * open,
-                                            boxShadow: '0 0 4px rgba(125,211,252,0.35)',
-                                            border: sel ? '1px solid #e0f2fe' : '1px solid rgba(186,230,253,0.45)',
+                                            background: 'transparent',
+                                            opacity: 1,
+                                            border: 'none',
                                         }} />
                                     </div>
                                 );
                             })}
-                            {/* Individual blind control — draggable Closed ↔ Open pill */}
-                            {floorWindowsPanelOpen && (() => {
+                            <svg className="absolute inset-0 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none"
+                                 style={{width:'100%', height:'100%', zIndex: 36}}>
+                                {(floorData.floor.windows || []).map((w, wi) => {
+                                    if (!isTracedFloorWindow(w)) return null;
+                                    const wid = w.id != null ? w.id : ('idx-' + wi);
+                                    const sel = selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
+                                    const Overlay = typeof TracedWindowBlindOverlay === 'function' ? TracedWindowBlindOverlay : window.TracedWindowBlindOverlay;
+                                    const onPick = (e) => {
+                                        e.stopPropagation();
+                                        if (setSelectedFloorWindowId) setSelectedFloorWindowId(wid);
+                                        if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(true);
+                                    };
+                                    if (Overlay) {
+                                        return (
+                                            <Overlay
+                                                key={wid}
+                                                w={w}
+                                                selected={sel}
+                                                showTrace={false}
+                                                testId={`live-window-${wid}`}
+                                                onMouseDown={onPick}
+                                            />
+                                        );
+                                    }
+                                    return (
+                                        <polygon
+                                            key={wid}
+                                            data-testid={`live-window-${wid}`}
+                                            points={w.vertices.map(v => `${v[0]},${v[1]}`).join(' ')}
+                                            fill="rgba(0,0,0,0.01)"
+                                            stroke="none"
+                                            style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                                            onMouseDown={onPick}
+                                        />
+                                    );
+                                })}
+                            </svg>
+                            {selectedFloorWindowId && (typeof WindowBlindsPopout === 'function' || window.WindowBlindsPopout) && (() => {
                                 const wins = floorData.floor.windows || [];
                                 let wi = wins.findIndex((w, i) => {
                                     const wid = w.id != null ? w.id : ('idx-' + i);
                                     return selectedFloorWindowId === wid || selectedFloorWindowId === w.id;
                                 });
-                                if (wi < 0 && wins.length) wi = 0;
-                                const w = wi >= 0 ? wins[wi] : null;
-                                if (!w) return null;
-                                const wid = w.id != null ? w.id : ('idx-' + wi);
+                                if (wi < 0) return null;
+                                const w = wins[wi];
                                 const floorKey = floorData.floor.id || floorData.floor.name || 'floor';
-                                const openPct = Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
+                                const Pop = typeof WindowBlindsPopout === 'function' ? WindowBlindsPopout : window.WindowBlindsPopout;
                                 return (
-                                    <LiveBlindControlPill
-                                        key={'live-blind-pill-' + wid}
+                                    <Pop
                                         theme={theme}
-                                        wi={wi}
-                                        wid={wid}
                                         w={w}
-                                        floorKey={floorKey}
-                                        openPct={openPct}
-                                        setFloorWindowOpenPct={setFloorWindowOpenPct}
-                                        setFloorWindowsPanelOpen={setFloorWindowsPanelOpen}
-                                        setSelectedFloorWindowId={setSelectedFloorWindowId}
+                                        windowIndex={wi}
+                                        layoutMode={false}
+                                        onChange={(fields) => {
+                                            if (patchFloorWindow) patchFloorWindow(floorKey, w.id, fields, wi);
+                                        }}
+                                        onClose={() => {
+                                            if (setFloorWindowsPanelOpen) setFloorWindowsPanelOpen(false);
+                                            if (setSelectedFloorWindowId) setSelectedFloorWindowId(null);
+                                        }}
                                     />
                                 );
                             })()}
@@ -335,14 +313,13 @@ const floorModalTree = (
                             {/* Render ALL AHU markers from map_config */}
                             {floorData.allMarkers.filter(m => m.type === 'ahu').map(marker => {
                                 const isActive = marker.name === showFloorPlanForAhu || marker.id === showFloorPlanForAhu;
-                                // Sun-Path Phase A: compute exposure halo + directional
-                                // shadow for this marker when the overlay is active.
+                                // Sun-Path Phase A: exposure halo + directional shadow while the sun is up.
                                 let sunRing = null, sunRingStyle = null, sunShadow = null;
-                                if (sunState && sunState.enabled && sunState.sun) {
-                                    const ring = liveSunRingStyle(marker.x, marker.y, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms);
+                                if (sunState && sunState.sun) {
+                                    const ring = liveSunRingStyle(marker.x, marker.y, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms, floorData.floor.orientation);
                                     sunRing = ring.color;
                                     sunRingStyle = ring.style;
-                                    if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                    if (sunRing && window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                 }
                                 return (
                                     <div key={marker.id} className="absolute flex flex-col items-center z-30 group pointer-events-auto" style={{ left: `${marker.x}%`, top: `${marker.y}%`, transform: 'translate(-50%, -50%)' }}>
@@ -417,9 +394,9 @@ const floorModalTree = (
                                 // NaN scores produced invisible rgba(NaN,…) “rings”.
                                 const mx = Number(marker.x), my = Number(marker.y);
                                 let vavSunScore = null, vavBandTrim = null, sunRing = null, sunRingStyle = null;
-                                if (sunState && sunState.enabled && sunState.sun
+                                if (sunState && sunState.sun
                                     && Number.isFinite(mx) && Number.isFinite(my)) {
-                                    const ring = liveSunRingStyle(mx, my, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms);
+                                    const ring = liveSunRingStyle(mx, my, sunState, floorData.floor.windows, buildingFacingOffset, floorData.floor.rooms, floorData.floor.orientation);
                                     vavSunScore = ring.score;
                                     sunRing = ring.color;
                                     sunRingStyle = ring.style;
@@ -436,7 +413,7 @@ const floorModalTree = (
                                         {(() => {
                                             // Sun-Path Phase A: directional shadow for this
                                             // VAV marker pointing away from the sun.
-                                            if (!(sunState && sunState.enabled && sunState.sun && window.red5MarkerShadow)) return null;
+                                            if (!(sunRing && window.red5MarkerShadow)) return null;
                                             const sh = window.red5MarkerShadow(sunState.sun);
                                             if (!sh) return null;
                                             return (
@@ -474,6 +451,27 @@ const floorModalTree = (
                             })}
                             </div>
                         </div>
+                        {window.ElcFloorAmbientChromeLive && (
+                            <div className="absolute top-2 right-2 z-50 pointer-events-auto" data-testid="floor-host-top-right">
+                                <window.ElcFloorAmbientChromeLive
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                />
+                            </div>
+                        )}
+                        {window.ElcSunPathHostChromeLive && (
+                            <window.ElcSunPathHostChromeLive />
+                        )}
+                        {window.ElcDaySelectorLive && (
+                            <window.ElcDaySelectorLive
+                                lat={buildingLatLon && buildingLatLon.lat}
+                                timezone={buildingLatLon && buildingLatLon.timezone}
+                                lon={buildingLatLon && buildingLatLon.lon}
+                            />
+                        )}
+                        </React.Fragment>
                     );
                 } else {
                     // === FALLBACK: no map_config or no floor found ===
@@ -487,18 +485,27 @@ const floorModalTree = (
                             ) : (
                                 <div className="absolute inset-0 blueprint-grid opacity-30 pointer-events-none z-0"></div>
                             )}
-                            {/* Sun-Path Phase A: compass + ray overlay in the fallback
-                                layout.  Lets users exercise sun-path even without a
-                                real map_config.json uploaded. */}
-                            {window.SunCompass && (
-                                <window.SunCompass
+                            {window.ElcFloorDarkenVeil && (
+                                <window.ElcFloorDarkenVeil
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                />
+                            )}
+                            {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
+                            {window.ElcSunPathLive && (
+                                <window.ElcSunPathLive
+                                    hostChrome={false}
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
+                                    elevation_m={buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon.timezone}
                                     theme={theme}
                                     onChange={(s) => setSunState(s)}
                                 />
                             )}
-                            {sunState && sunState.enabled && sunState.sun && window.SunRayOverlay && (
+                            {sunState && sunState.sun && window.SunRayOverlay && (
                                 <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2} />
                             )}
                             <div className={`absolute top-4 left-4 z-10 flex items-center gap-2 text-sm font-mono px-3 py-1.5 rounded ${theme === 'dark' ? 'text-amber-400 bg-slate-900/80' : 'text-amber-700 bg-white/80'}`}>
@@ -568,11 +575,11 @@ const floorModalTree = (
                                     const pos = ahuPositions[i]; const isActiveAhu = showFloorPlanForAhu === ahu.id;
                                     // Sun-Path Phase A: halo + shadow for fallback AHU markers
                                     let sunRing = null, sunRingStyle = null, sunShadow = null;
-                                    if (sunState && sunState.enabled && sunState.sun) {
+                                    if (sunState && sunState.sun) {
                                         const ring = liveSunRingStyle(pos.left, pos.top, sunState, [], buildingFacingOffset);
                                         sunRing = ring.color;
                                         sunRingStyle = ring.style;
-                                        if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                        if (sunRing && window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                     }
                                     return (
                                         <div key={ahu.id} className="absolute flex flex-col items-center z-30 group" style={{ left: `${pos.left}%`, top: `${pos.top}%`, transform: 'translate(-50%, -50%)' }}>
@@ -607,11 +614,11 @@ const floorModalTree = (
                                     // Sun-Path Phase A: halo + directional shadow for
                                     // fallback-layout VAV dots.
                                     let sunRing = null, sunRingStyle = null, sunShadow = null;
-                                    if (sunState && sunState.enabled && sunState.sun) {
+                                    if (sunState && sunState.sun) {
                                         const ring = liveSunRingStyle(gp.left, gp.top, sunState, [], buildingFacingOffset);
                                         sunRing = ring.color;
                                         sunRingStyle = ring.style;
-                                        if (window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
+                                        if (sunRing && window.red5MarkerShadow) sunShadow = window.red5MarkerShadow(sunState.sun);
                                     }
                                     return (
                                         <div key={v.id} className="absolute flex flex-col items-center z-20 group" style={{ left: `${gp.left}%`, top: `${gp.top}%`, transform: 'translate(-50%, -50%)' }}>
@@ -641,6 +648,26 @@ const floorModalTree = (
                                 });
                             })()}
                         </React.Fragment>
+                        {window.ElcFloorAmbientChromeLive && (
+                            <div className="absolute top-2 right-2 z-50 pointer-events-auto" data-testid="floor-host-top-right">
+                                <window.ElcFloorAmbientChromeLive
+                                    lat={buildingLatLon && buildingLatLon.lat}
+                                    lon={buildingLatLon && buildingLatLon.lon}
+                                    elevation_m={buildingLatLon && buildingLatLon.elevation_m}
+                                    timezone={buildingLatLon && buildingLatLon.timezone}
+                                />
+                            </div>
+                        )}
+                        {window.ElcSunPathHostChromeLive && (
+                            <window.ElcSunPathHostChromeLive />
+                        )}
+                        {window.ElcDaySelectorLive && (
+                            <window.ElcDaySelectorLive
+                                lat={buildingLatLon && buildingLatLon.lat}
+                                timezone={buildingLatLon && buildingLatLon.timezone}
+                                lon={buildingLatLon && buildingLatLon.lon}
+                            />
+                        )}
                         </div>
                     );
                 }

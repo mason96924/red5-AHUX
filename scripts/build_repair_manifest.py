@@ -90,6 +90,12 @@ EXTRA_ALLOWED_NOT_IN_UI = [
     ('js/dynamics-animation.js',    'ui',     'dynamics-animation.js',    'Psy chart dynamics animation (loaded by dashboard.html)'),
     ('js/preview-components.js',    'ui',     'preview-components.js',    'Equipment-mapper preview components (loaded via app.py)'),
     ('js/schema-config.js',         'ui',     'schema-config.js',         'Equipment-type schema config (loaded via app.py)'),
+    ('js/sun-path.js',              'ui',     'sun-path.js',              'Sun-path math (loaded by equipment_mapper.html + dashboard)'),
+    ('js/elc-sun-path-overlay.js',  'ui',     'elc-sun-path-overlay.js',  'Floor-rose sun-path overlay (loaded by equipment_mapper.html)'),
+    ('js/blind-types.js',           'ui',     'blind-types.js',           'Window blind type glyphs (loaded by equipment_mapper.html)'),
+    ('js/window-blinds-popout.js',  'ui',     'window-blinds-popout.js',  'Window blinds popout (loaded by equipment_mapper.html)'),
+    ('js/dashboard/window-graphic-modal.js', 'ui', 'window-graphic-modal.js', 'Window graphic modal (compiled into dashboard.compiled.js)'),
+    ('assets/js/sun-path.js',       'ui',     'assets/js/sun-path.js',    'Archive copy referenced by sun_preview.html (/assets/js/sun-path.js)'),
     # IMPORTANT -- deployment-ordering rule.
     # These docs/configs SHOULD be tagged 'doc' / 'config' (their natural
     # kinds, which the refactored upload_service.py now accepts via

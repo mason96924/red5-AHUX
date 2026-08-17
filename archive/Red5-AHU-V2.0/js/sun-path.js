@@ -142,7 +142,16 @@ window.red5FindContainingRoom = function(x, y, rooms){
 window.red5RoomForWindow = function(w, rooms){
   if (!w || !rooms || !rooms.length) return null;
   var cx = Number(w.x), cy = Number(w.y);
+  if (Array.isArray(w.vertices) && w.vertices.length >= 3) {
+    cx = 0; cy = 0;
+    for (var vi = 0; vi < w.vertices.length; vi++) {
+      cx += Number(w.vertices[vi][0]); cy += Number(w.vertices[vi][1]);
+    }
+    cx /= w.vertices.length; cy /= w.vertices.length;
+  }
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  var hit = window.red5FindContainingRoom(cx, cy, rooms);
+  if (hit) return hit;
   var ang = Number(w.angle_deg) || 0;
   var rad = ang * Math.PI / 180;
   var tx = Math.cos(rad), ty = Math.sin(rad);
@@ -150,10 +159,16 @@ window.red5RoomForWindow = function(w, rooms){
   var ix = 50 - cx, iy = 50 - cy;
   if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
   if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
-  /* Nudge ~1.5% of plan into the room. */
-  var sx = cx + nx * 1.5, sy = cy + ny * 1.5;
-  return window.red5FindContainingRoom(sx, sy, rooms)
-      || window.red5FindContainingRoom(cx, cy, rooms);
+  var depths = [0.8, 1.5, 3.0, 5.0];
+  for (var di = 0; di < depths.length; di++) {
+    hit = window.red5FindContainingRoom(cx + nx * depths[di], cy + ny * depths[di], rooms);
+    if (hit) return hit;
+  }
+  for (di = 0; di < depths.length; di++) {
+    hit = window.red5FindContainingRoom(cx - nx * depths[di], cy - ny * depths[di], rooms);
+    if (hit) return hit;
+  }
+  return null;
 };
 /* Blend from soft amber → bright amber as the score rises.
    Returns a CSS color string used as a ring/halo around the marker.
@@ -187,72 +202,116 @@ window.red5ExposureRingStyle = function(score){
 };
 
 /* Blind open / in-shaft factor (0..1) for a marker at plan % coords.
-   MUST use the same light-travel vector as WindowsSunshaftOverlay
-   (lx=-sin(az), ly=cos(az)).  Closed blinds → 0; open + in beam → up to 1. */
+   Matches the painted WindowsSunshaftOverlay volume: same travel vector,
+   same throw, same shaft width.  Closed blinds → 0.  Light does not
+   cross into a different traced room.  No window on a façade → no glow
+   from that side.  Empty window list → 0 (never fake a full-sun ring). */
 window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
   opts = opts || {};
-  if (!windows || !windows.length) return 1;
+  if (!windows || !windows.length) return 0;
   if (!sun || !sun.is_day) return 0;
   var rooms = opts.rooms || null;
-  var northOffsetDeg = opts.northOffsetDeg || 0;
-  var az = ((sun.azimuth || 0) + northOffsetDeg) % 360;
-  if (az < 0) az += 360;
-  var rad = az * Math.PI / 180;
-  /* Same inbound travel as WindowsSunshaftOverlay — NOT the exposure-score vector. */
-  var lx = -Math.sin(rad);
-  var ly =  Math.cos(rad);
+  var travel = window.red5PlanSunVectors
+    ? window.red5PlanSunVectors(sun.azimuth, opts.orientation, opts.northOffsetDeg)
+    : null;
+  var lx = travel ? travel.lx : (function () {
+    var az = ((sun.azimuth || 0) + (opts.northOffsetDeg || 0)) % 360;
+    if (az < 0) az += 360;
+    var rad = az * Math.PI / 180;
+    return -Math.sin(rad);
+  })();
+  var ly = travel ? travel.ly : (function () {
+    var az = ((sun.azimuth || 0) + (opts.northOffsetDeg || 0)) % 360;
+    if (az < 0) az += 360;
+    var rad = az * Math.PI / 180;
+    return Math.cos(rad);
+  })();
   var elev = Math.max(0, sun.elevation || 0);
   var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
   var centerX = 50, centerY = 50;
+  var vavRoom = (rooms && rooms.length && window.red5FindContainingRoom)
+    ? window.red5FindContainingRoom(mxPct, myPct, rooms) : null;
+  function sameRoom(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.id != null && b.id != null && String(a.id) !== '' && String(a.id) === String(b.id)) return true;
+    if (a.name && b.name && a.name === b.name) return true;
+    return false;
+  }
   var best = 0;
   for (var i = 0; i < windows.length; i++) {
     var w = windows[i];
-    var cx = Number(w.x), cy = Number(w.y);
-    var len = Number(w.length);
-    var ang = Number(w.angle_deg) || 0;
-    if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+    var verts = (Array.isArray(w.vertices) && w.vertices.length >= 3) ? w.vertices : null;
+    var cx, cy, tx, ty, half;
+    if (verts) {
+      var bestLen = 0, x1 = 0, y1 = 0, x2 = 0, y2 = 0, k;
+      for (k = 0; k < verts.length; k++) {
+        var a = verts[k], b = verts[(k + 1) % verts.length];
+        var ax = Number(a[0]), ay = Number(a[1]), bx = Number(b[0]), by = Number(b[1]);
+        if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) continue;
+        var elen = Math.hypot(bx - ax, by - ay);
+        if (elen > bestLen) {
+          bestLen = elen; x1 = ax; y1 = ay; x2 = bx; y2 = by;
+        }
+      }
+      if (!(bestLen > 0.5)) continue;
+      cx = (x1 + x2) / 2; cy = (y1 + y2) / 2;
+      tx = (x2 - x1) / bestLen; ty = (y2 - y1) / bestLen;
+      half = bestLen / 2;
+    } else {
+      cx = Number(w.x); cy = Number(w.y);
+      var len = Number(w.length);
+      var ang = Number(w.angle_deg) || 0;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !(len > 0.5)) continue;
+      var wrad = ang * Math.PI / 180;
+      tx = Math.cos(wrad); ty = Math.sin(wrad);
+      half = len / 2;
+    }
     var open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
     if (open < 0.01) continue;
-    var openEase = Math.pow(open, 0.7);
-    var wrad = ang * Math.PI / 180;
-    var tx = Math.cos(wrad), ty = Math.sin(wrad);
     var nx = -ty, ny = tx;
     var ix = centerX - cx, iy = centerY - cy;
     if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
     if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
     var enter = nx * lx + ny * ly;
     if (enter < 0.05) continue;
-    /* Room boundary: if this window belongs to a traced room, the VAV
-       must sit inside that same polygon — no amber through walls. */
-    var room = null;
-    if (rooms && rooms.length && window.red5RoomForWindow) {
-      room = window.red5RoomForWindow(w, rooms);
-      if (room) {
-        var rVerts = room.vertices || room.points;
-        if (!window.red5PointInPolygon(mxPct, myPct, rVerts)) continue;
+    var winRoom = (rooms && rooms.length && window.red5RoomForWindow)
+      ? window.red5RoomForWindow(w, rooms) : null;
+    if (vavRoom) {
+      if (winRoom) {
+        if (!sameRoom(winRoom, vavRoom)) continue;
+      } else {
+        var sample = window.red5FindContainingRoom(cx + nx * 1.5, cy + ny * 1.5, rooms);
+        if (!sameRoom(sample, vavRoom)) continue;
       }
+    } else if (winRoom) {
+      continue;
     }
-    var dx = mxPct - cx, dy = myPct - cy;
-    /* Distance along the inbound beam (into the room). */
-    var alongDist = dx * lx + dy * ly;
-    if (alongDist < 0.4) continue;
+    var bSpec = window.red5BlindSpec ? window.red5BlindSpec(w.blind_type) : null;
+    if (bSpec && bSpec.motion === 'stack') {
+      var coverT = 1 - open;
+      var x1s = cx - tx * half, y1s = cy - ty * half;
+      var x2s = cx + tx * half, y2s = cy + ty * half;
+      x1s = x1s + (x2s - x1s) * coverT;
+      y1s = y1s + (y2s - y1s) * coverT;
+      cx = (x1s + x2s) / 2; cy = (y1s + y2s) / 2;
+      half = Math.hypot(x2s - x1s, y2s - y1s) / 2;
+    }
+    var openEase = Math.pow(open, 0.7);
     var base = enter * elevF;
     var throwLen = (10 + 24 * base) * (1.0 + 1.0 * openEase);
-    if (alongDist > throwLen * 1.15) continue;
-    var half = (Number.isFinite(len) && len > 0.5 ? len : 8) / 2;
+    var visThrow = throwLen * 0.42;
+    var dx = mxPct - cx, dy = myPct - cy;
+    var alongDist = dx * lx + dy * ly;
+    if (alongDist < 0.4 || alongDist > visThrow) continue;
+    var spread = half * (0.18 + 0.28 * openEase);
+    var tAlong = Math.min(1, alongDist / throwLen);
+    var maxLat = half + tAlong * spread;
     var lat = Math.abs(dx * tx + dy * ty);
-    /* Widen with throw — same idea as shaft spread. Soft tip: ring fades
-       with depth so VAVs in the washed-out tip get weaker amber. */
-    var maxLat = half * (0.55 + 0.55 * openEase) + alongDist * 0.40;
     if (lat > maxLat) continue;
-    var latF = Math.max(0, 1 - lat / maxLat);
-    var depthF = Math.max(0.15, 1 - alongDist / throwLen);
-    /* Soft landing: beyond ~70% of throw, ring strength falls off fast. */
-    if (alongDist / throwLen > 0.70) {
-      depthF *= Math.max(0, 1 - (alongDist / throwLen - 0.70) / 0.30);
-    }
-    /* Ring intensity tracks blind open % for VAVs in this shaft. */
-    var strength = open * (0.45 + 0.55 * enter) * elevF * latF * (0.55 + 0.45 * depthF);
+    var latF = Math.max(0, 1 - lat / (maxLat || 1e-6));
+    var depthF = Math.max(0, 1 - alongDist / visThrow);
+    var strength = open * (0.45 + 0.55 * enter) * elevF * latF * (0.35 + 0.65 * depthF);
     if (strength > best) best = strength;
   }
   return Math.min(1, best);
@@ -260,13 +319,11 @@ window.red5WindowBlindFactor = function(mxPct, myPct, windows, sun, opts){
 
 /* Combined score for a VAV/AHU marker (plan % coords).
    With mapped windows: amber ring = in-sunshaft × blind open (matches painted shafts).
-   Without windows: fall back to plan-centroid sun exposure. */
+   With no windows: 0 — do not fake a sun-glow highlight on VAVs. */
 window.red5SunBlindScore = function(mxPct, myPct, sun, windows, opts){
   opts = opts || {};
   if (!sun || !sun.is_day) return 0;
-  if (!windows || !windows.length) {
-    return window.red5SunExposureScore(mxPct / 100, myPct / 100, sun, opts);
-  }
+  if (!windows || !windows.length) return 0;
   return window.red5WindowBlindFactor(mxPct, myPct, windows, sun, opts);
 };
 
@@ -545,35 +602,153 @@ window.red5FacingToNorthOffset = function(facing, lat){
   /* Keep in -180..180 for nicer diffs */
 };
 
-/* ---------- WINDOWS + SUNSHAFT OVERLAY (slim v1) --------------------- */
-/* Percent-space bars + soft trapezoid shafts.  Blinds (0..1 closed)
-   attenuate shaft opacity.  Light ONLY enters: window normal is
-   oriented toward plan center (interior heuristic); shafts paint only
-   when sun travel aligns with that inward normal — never outbound.    */
+/* ELC floor.html _planCardinalBasis: S→N and W→E from placed markers.
+   Glow travel is NOT “plan-up = north”; it is −towardSun in this frame. */
+window.red5PlanCardinalBasis = function(orientation){
+  var o = orientation || {};
+  function unit(a, b) {
+    if (!a || !b) return null;
+    var ax = (a.x != null && a.x !== '') ? Number(a.x) : Number(a.x_m);
+    var ay = (a.y != null && a.y !== '') ? Number(a.y) : Number(a.y_m);
+    var bx = (b.x != null && b.x !== '') ? Number(b.x) : Number(b.x_m);
+    var by = (b.y != null && b.y !== '') ? Number(b.y) : Number(b.y_m);
+    if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) return null;
+    var dx = bx - ax, dy = by - ay;
+    var len = Math.hypot(dx, dy);
+    if (len < 1e-6) return null;
+    return [dx / len, dy / len];
+  }
+  var ns = unit(o.south, o.north);
+  var we = unit(o.west, o.east);
+  if (!ns && !we) return null;
+  if (!ns && we) ns = [we[1], -we[0]];
+  if (!we && ns) we = [-ns[1], ns[0]];
+  var nx = ns[0], ny = ns[1], ex = we[0], ey = we[1];
+  var dot = ex * nx + ey * ny;
+  var ex2 = ex - dot * nx, ey2 = ey - dot * ny;
+  var el = Math.hypot(ex2, ey2);
+  if (el < 0.2) { ex2 = -ny; ey2 = nx; el = 1; }
+  else { ex2 /= el; ey2 /= el; }
+  if (ex2 * ex + ey2 * ey < 0) { ex2 = -ex2; ey2 = -ey2; }
+  return { nx: nx, ny: ny, ex: ex2, ey: ey2 };
+};
+
+/* Same mapping as ELC _ambientSunState: toward-sun in the marker frame,
+   then light travel = opposite.  azDeg is geographic (0=N, 90=E). */
+window.red5PlanSunVectors = function(azDeg, orientation, northOffsetDeg){
+  var az = ((Number(azDeg) || 0) % 360 + 360) % 360;
+  var basis = window.red5PlanCardinalBasis(orientation);
+  var sx, sy;
+  if (basis) {
+    var ar = az * Math.PI / 180;
+    var c = Math.cos(ar), s = Math.sin(ar);
+    sx = basis.nx * c + basis.ex * s;
+    sy = basis.ny * c + basis.ey * s;
+  } else {
+    var off = Number(northOffsetDeg) || 0;
+    var ar2 = ((az + off) % 360) * Math.PI / 180;
+    if (ar2 < 0) ar2 += 2 * Math.PI;
+    sx = Math.sin(ar2);
+    sy = -Math.cos(ar2);
+  }
+  var sl = Math.hypot(sx, sy) || 1;
+  sx /= sl; sy /= sl;
+  return { sx: sx, sy: sy, lx: -sx, ly: -sy, basis: basis };
+};
+
+/* ---------- WINDOWS + SUNSHAFT OVERLAY (ELC volumetric) -------------- */
+/* Soft air volume + floor wash.  Lateral feathers dissolve the sides so
+   the beam reads as volume, not a flat ribbon.  Blinds (0..1 closed)
+   attenuate.  Light only enters when sun travel hits the inward face.  */
 window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
   var wins = props.windows || [];
   var rooms = props.rooms || [];
   var sun = props.sun;
   if (!sun || !sun.is_day || !wins.length) return null;
-  var northOff = props.northOffsetDeg || 0;
-  var az = ((sun.azimuth || 0) + northOff) % 360;
-  if (az < 0) az += 360;
-  var azRad = az * Math.PI / 180;
-  /* Direction light travels ON the plan (from sun toward opposite). */
-  var lx = -Math.sin(azRad);
-  var ly =  Math.cos(azRad);
+  var travel = window.red5PlanSunVectors
+    ? window.red5PlanSunVectors(sun.azimuth, props.orientation, props.northOffsetDeg)
+    : null;
+  var lx0 = travel ? travel.lx : (function () {
+    var northOff = props.northOffsetDeg || 0;
+    var az = ((sun.azimuth || 0) + northOff) % 360;
+    if (az < 0) az += 360;
+    return -Math.sin(az * Math.PI / 180);
+  })();
+  var ly0 = travel ? travel.ly : (function () {
+    var northOff = props.northOffsetDeg || 0;
+    var az = ((sun.azimuth || 0) + northOff) % 360;
+    if (az < 0) az += 360;
+    return Math.cos(az * Math.PI / 180);
+  })();
   var elev = Math.max(0, sun.elevation || 0);
   var elevF = Math.max(0.15, Math.sin(elev * Math.PI / 180));
   var cloud = (typeof props.cloudCover === 'number') ? Math.max(0, Math.min(100, props.cloudCover)) : 0;
   var weatherF = Math.max(0.12, 1.0 - (cloud / 100) * 0.85);
   var isLight = props.theme === 'light';
-  /* Interior reference — plan centre, or caller override. */
   var centerX = (typeof props.interiorX === 'number') ? props.interiorX : 50;
   var centerY = (typeof props.interiorY === 'number') ? props.interiorY : 50;
+  var hot = isLight ? '255,214,120' : '255,224,150';
+  var mid = isLight ? '251,191,36' : '251,146,60';
+  var FEATHER = [
+    { s: 1.72, a: 0.03 },
+    { s: 1.48, a: 0.05 },
+    { s: 1.30, a: 0.08 },
+    { s: 1.16, a: 0.12 },
+    { s: 1.06, a: 0.20 },
+    { s: 1.00, a: 0.32 },
+    { s: 0.88, a: 0.14 }
+  ];
 
   var bars = [];
   var shafts = [];
   var clipDefs = [];
+  var unionId = null;
+  if (rooms.length) {
+    unionId = 'r5-rooms-union';
+    clipDefs.push(
+      <clipPath key={unionId} id={unionId} clipPathUnits="userSpaceOnUse">
+        {rooms.map(function (rr, ri) {
+          var rv = rr && (rr.vertices || rr.points);
+          if (!rv || rv.length < 3) return null;
+          return <polygon key={'ru-'+ri} points={rv.map(function (v) { return Number(v[0]) + ',' + Number(v[1]); }).join(' ')} />;
+        })}
+      </clipPath>
+    );
+  }
+  function scaleSeg(ax, ay, bx, by, s) {
+    var mx = (ax + bx) / 2, my = (ay + by) / 2;
+    return [mx + (ax - mx) * s, my + (ay - my) * s, mx + (bx - mx) * s, my + (by - my) * s];
+  }
+  function expandRing(ring, k) {
+    var sx = 0, sy = 0, n = ring.length, j;
+    for (j = 0; j < n; j++) { sx += ring[j][0]; sy += ring[j][1]; }
+    sx /= n; sy /= n;
+    return ring.map(function (p) {
+      return [sx + (p[0] - sx) * k, sy + (p[1] - sy) * k];
+    });
+  }
+  function ringPoints(near, far) {
+    var pts = near.slice();
+    for (var k = far.length - 1; k >= 0; k--) pts.push(far[k]);
+    return pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' ');
+  }
+  function pushVolume(n1x, n1y, n2x, n2y, f1x, f1y, f2x, f2y, aBase, gradId, clipUrl, keyPrefix) {
+    if (!(aBase > 0)) return;
+    if (Math.hypot(n2x - n1x, n2y - n1y) < 0.04) return;
+    for (var li = 0; li < FEATHER.length; li++) {
+      var L = FEATHER[li];
+      var nSeg = scaleSeg(n1x, n1y, n2x, n2y, L.s);
+      var fSeg = scaleSeg(f1x, f1y, f2x, f2y, L.s);
+      shafts.push(
+        <polygon key={keyPrefix + '-' + li}
+                 points={[nSeg[0], nSeg[1], nSeg[2], nSeg[3], fSeg[2], fSeg[3], fSeg[0], fSeg[1]].join(' ')}
+                 fill={'url(#' + gradId + ')'}
+                 opacity={aBase * L.a}
+                 clipPath={clipUrl}
+        />
+      );
+    }
+  }
   for (var i = 0; i < wins.length; i++) {
     var w = wins[i];
     var cx = Number(w.x), cy = Number(w.y);
@@ -584,7 +759,6 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var rad = ang * Math.PI / 180;
     var tx = Math.cos(rad), ty = Math.sin(rad);
     var nx = -ty, ny = tx;
-    /* Orient normal INWARD (toward plan interior), not toward the sun. */
     var ix = centerX - cx, iy = centerY - cy;
     if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
     if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
@@ -592,8 +766,10 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var x1 = cx - tx * half, y1 = cy - ty * half;
     var x2 = cx + tx * half, y2 = cy + ty * half;
     var open = 1 - blind;
-    /* Entering only: light travel must hit the inward face. */
-    var enter = nx * lx + ny * ly;
+    var bx = lx0, by = ly0;
+    var enter = nx * bx + ny * by;
+    var traced = Array.isArray(w.vertices) && w.vertices.length >= 3;
+    if (!traced) {
     bars.push(
       <line key={'wb-'+ (w.id || i)}
             x1={x1} y1={y1} x2={x2} y2={y2}
@@ -603,25 +779,32 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
             opacity={0.55 + 0.35 * open}
       />
     );
+    }
     if (enter < 0.05 || open < 0.01) continue;
-    /* Open → shaft strength; closed → no sunlight through this window.
-       Throw uses a soft gradient tip so the floor landing is gradual,
-       not a hard mid-room edge. */
+    if (enter < 0.28) {
+      var nk = (0.28 - enter) * 0.18;
+      bx += nx * nk; by += ny * nk;
+      var bl = Math.hypot(bx, by) || 1;
+      bx /= bl; by /= bl;
+      enter = nx * bx + ny * by;
+    }
     var openEase = Math.pow(open, 0.7);
     var base = enter * elevF * weatherF;
     if (base < 0.03) continue;
     var throwLen = (10 + 24 * base) * (1.0 + 1.0 * openEase);
-    var spread = half * (0.28 + 0.40 * openEase);
-    var fx1 = x1 + lx * throwLen + (-ny) * spread;
-    var fy1 = y1 + ly * throwLen + ( nx) * spread;
-    var fx2 = x2 + lx * throwLen + ( ny) * spread;
-    var fy2 = y2 + ly * throwLen + (-nx) * spread;
-    var opCore = Math.min(0.58, 0.10 + base * 0.30 + openEase * 0.34);
-    var amber = isLight ? '251,191,36' : '251,146,60';
+    var dx = bx * throwLen, dy = by * throwLen;
+    var spread = half * (0.18 + 0.28 * openEase);
+    var px = -(y2 - y1), py = (x2 - x1);
+    var plen = Math.hypot(px, py) || 1;
+    px = (px / plen) * spread;
+    py = (py / plen) * spread;
+    var fx1 = x1 + dx - px, fy1 = y1 + dy - py;
+    var fx2 = x2 + dx + px, fy2 = y2 + dy + py;
+    var a0 = Math.min(0.22, Math.max(0.06, 0.07 + base * 0.16 + openEase * 0.06));
     var gx0 = (x1 + x2) / 2, gy0 = (y1 + y2) / 2;
     var gx1 = (fx1 + fx2) / 2, gy1 = (fy1 + fy2) / 2;
     var gradId = 'r5-shaft-grad-' + (w.id || i);
-    var clipId = null;
+    var clipId = unionId;
     var room = (rooms.length && window.red5RoomForWindow) ? window.red5RoomForWindow(w, rooms) : null;
     var rVerts = room && (room.vertices || room.points);
     if (rVerts && rVerts.length >= 3) {
@@ -637,23 +820,176 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       <linearGradient key={gradId} id={gradId}
                       gradientUnits="userSpaceOnUse"
                       x1={gx0} y1={gy0} x2={gx1} y2={gy1}>
-        <stop offset="0%"   stopColor={'rgb('+amber+')'} stopOpacity={opCore} />
-        <stop offset="45%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.72} />
-        <stop offset="78%"  stopColor={'rgb('+amber+')'} stopOpacity={opCore * 0.28} />
-        <stop offset="100%" stopColor={'rgb('+amber+')'} stopOpacity="0" />
+        <stop offset="0%"   stopColor={'rgb('+hot+')'} stopOpacity="0.85" />
+        <stop offset="28%"  stopColor={'rgb('+hot+')'} stopOpacity="0.62" />
+        <stop offset="55%"  stopColor={'rgb('+mid+')'} stopOpacity="0.32" />
+        <stop offset="82%"  stopColor={'rgb('+mid+')'} stopOpacity="0.10" />
+        <stop offset="100%" stopColor={'rgb('+mid+')'} stopOpacity="0" />
       </linearGradient>
     );
-    shafts.push(
-      <polygon key={'ws-'+ (w.id || i)}
-               points={[x1,y1, x2,y2, fx2,fy2, fx1,fy1].join(' ')}
-               fill={'url(#'+gradId+')'}
-               clipPath={clipId ? ('url(#'+clipId+')') : undefined}
-      />
-    );
+    var clipUrl = clipId ? ('url(#' + clipId + ')') : undefined;
+    var wid = w.id || i;
+    var bType = String(w.blind_type || w.blindType || 'roller').toLowerCase();
+    var spec = window.red5BlindSpec ? window.red5BlindSpec(bType)
+      : { family: bType, motion: (bType === 'horizontal' || bType === 'vertical') ? 'tilt' : 'drop' };
+    var cov = blind;
+    var openFrac = open;
+    var gapStyle = spec.motion === 'tilt' && openFrac > 0.01 && openFrac < 0.98;
+    function flareFar(n1x, n1y, n2x, n2y) {
+      var hh = Math.hypot(n2x - n1x, n2y - n1y) / 2;
+      var spr = hh * (0.18 + 0.28 * openEase);
+      var qx = -(n2y - n1y), qy = (n2x - n1x);
+      var ql = Math.hypot(qx, qy) || 1;
+      qx = (qx / ql) * spr; qy = (qy / ql) * spr;
+      return [n1x + dx - qx, n1y + dy - qy, n2x + dx + qx, n2y + dy + qy];
+    }
+    function gapFrameFromVerts(verts) {
+      if (window.red5HeadSillAxes) {
+        var ax = window.red5HeadSillAxes(verts);
+        if (ax) {
+          return {
+            sx: ax.sx, sy: ax.sy, hx: ax.hx, hy: ax.hy,
+            sMin: ax.sMin, sMax: ax.sMax, hMin: ax.hMin, hMax: ax.hMax,
+            atSH: ax.atSH
+          };
+        }
+      }
+      var gp = verts.map(function (v) { return [Number(v[0]), Number(v[1])]; });
+      if (gp.length < 3) return null;
+      var ssx = gp[1][0] - gp[0][0], ssy = gp[1][1] - gp[0][1];
+      var sl = Math.hypot(ssx, ssy) || 1;
+      ssx /= sl; ssy /= sl;
+      var hhx = -ssy, hhy = ssx;
+      var gcx = 0, gcy = 0, gi;
+      for (gi = 0; gi < gp.length; gi++) { gcx += gp[gi][0]; gcy += gp[gi][1]; }
+      gcx /= gp.length; gcy /= gp.length;
+      if (gcx * hhx + gcy * hhy > gp[0][0] * hhx + gp[0][1] * hhy) { hhx = -hhx; hhy = -hhy; }
+      var dotsS = gp.map(function (p) { return p[0] * ssx + p[1] * ssy; });
+      var dotsH = gp.map(function (p) { return p[0] * hhx + p[1] * hhy; });
+      return {
+        sx: ssx, sy: ssy, hx: hhx, hy: hhy,
+        sMin: Math.min.apply(null, dotsS), sMax: Math.max.apply(null, dotsS),
+        hMin: Math.min.apply(null, dotsH), hMax: Math.max.apply(null, dotsH)
+      };
+    }
+    function gapFrameFromBar() {
+      var ssx = x2 - x1, ssy = y2 - y1;
+      var sl = Math.hypot(ssx, ssy) || 1;
+      ssx /= sl; ssy /= sl;
+      var hhx = -ssy, hhy = ssx;
+      if (hhx * nx + hhy * ny < 0) { hhx = -hhx; hhy = -hhy; }
+      var sA = x1 * ssx + y1 * ssy, sB = x2 * ssx + y2 * ssy;
+      var h0 = x1 * hhx + y1 * hhy;
+      var hLift = Math.max(1.8, Math.min(4.2, half * 0.55));
+      return {
+        sx: ssx, sy: ssy, hx: hhx, hy: hhy,
+        sMin: Math.min(sA, sB), sMax: Math.max(sA, sB),
+        hMin: h0, hMax: h0 + hLift
+      };
+    }
+    function paintGapGloss(fr) {
+      if (!fr) return;
+      var sSpan = Math.max(0.2, fr.sMax - fr.sMin);
+      var hSpan = Math.max(0.2, fr.hMax - fr.hMin);
+      var stripeA = a0 * (0.55 + 0.45 * openEase);
+      function atSH(sv, hv) {
+        if (fr.atSH) return fr.atSH(sv, hv);
+        return [sv * fr.sx + hv * fr.hx, sv * fr.sy + hv * fr.hy];
+      }
+      var si;
+      if (spec.family === 'horizontal') {
+        var hn = 10;
+        var pitchH = hSpan / hn;
+        var gapH = Math.max(0.06, pitchH * openFrac);
+        for (si = 0; si < hn; si++) {
+          var hc = fr.hMin + pitchH * (si + 0.5);
+          var hv0 = hc - gapH * 0.5, hv1 = hc + gapH * 0.5;
+          var hn1 = atSH(fr.sMin - 0.2, hv0);
+          var hn2 = atSH(fr.sMax + 0.2, hv0);
+          var hf = flareFar(hn1[0], hn1[1], hn2[0], hn2[1]);
+          pushVolume(hn1[0], hn1[1], hn2[0], hn2[1], hf[0], hf[1], hf[2], hf[3],
+            stripeA * 0.85, gradId, clipUrl, 'wh-' + wid + '-' + si);
+        }
+        return;
+      }
+      var vn = 10;
+      var pitchS = sSpan / vn;
+      var gapW = Math.max(0.06, pitchS * openFrac);
+      for (si = 0; si < vn; si++) {
+        var vc = fr.sMin + pitchS * ((si + 0.5));
+        var vs0 = vc - gapW * 0.5, vs1 = vc + gapW * 0.5;
+        var vn1 = atSH(vs0, fr.hMin);
+        var vn2 = atSH(vs1, fr.hMin);
+        var vf = flareFar(vn1[0], vn1[1], vn2[0], vn2[1]);
+        pushVolume(vn1[0], vn1[1], vn2[0], vn2[1], vf[0], vf[1], vf[2], vf[3],
+          stripeA * 0.9, gradId, clipUrl, 'wv-' + wid + '-' + si);
+      }
+    }
+    if (gapStyle) {
+      paintGapGloss(traced ? gapFrameFromVerts(w.vertices) : gapFrameFromBar());
+      continue;
+    }
+    if (traced) {
+      var near = w.vertices.map(function (v) { return [Number(v[0]), Number(v[1])]; });
+      var frOpen = (window.red5OpenGlassFrame && gapFrameFromVerts(w.vertices))
+        ? window.red5OpenGlassFrame(gapFrameFromVerts(w.vertices), bType, openFrac)
+        : null;
+      if (frOpen && spec.motion !== 'tilt') {
+        var atOpen = function (sv, hv) {
+          if (frOpen.atSH) return frOpen.atSH(sv, hv);
+          return [sv * frOpen.sx + hv * frOpen.hx, sv * frOpen.sy + hv * frOpen.hy];
+        };
+        near = [
+          atOpen(frOpen.sMin, frOpen.hMin),
+          atOpen(frOpen.sMax, frOpen.hMin),
+          atOpen(frOpen.sMax, frOpen.hMax),
+          atOpen(frOpen.sMin, frOpen.hMax)
+        ];
+      }
+      var far = near.map(function (p) { return [p[0] + dx, p[1] + dy]; });
+      var tLayers = [
+        { k: 1.42, a: a0 * 0.10 },
+        { k: 1.24, a: a0 * 0.18 },
+        { k: 1.10, a: a0 * 0.36 },
+        { k: 1.00, a: a0 * 0.85 }
+      ];
+      for (var ti = 0; ti < tLayers.length; ti++) {
+        var TL = tLayers[ti];
+        shafts.push(
+          <polygon key={'wt-'+ wid + '-' + ti}
+                   points={ringPoints(expandRing(near, TL.k), expandRing(far, TL.k))}
+                   fill={'url(#' + gradId + ')'}
+                   opacity={TL.a}
+                   clipPath={clipUrl}
+          />
+        );
+      }
+      continue;
+    }
+    if (spec.motion === 'stack' && openFrac < 0.99) {
+      var cvr = 1 - openFrac;
+      x1 = x1 + (x2 - x1) * cvr;
+      y1 = y1 + (y2 - y1) * cvr;
+      fx1 = x1 + dx - px; fy1 = y1 + dy - py;
+      fx2 = x2 + dx + px; fy2 = y2 + dy + py;
+    }
+    var lift = Math.max(1.6, Math.min(4.2, half * 0.55));
+    var midThrow = 0.92;
+    var af1x = x1 + dx * midThrow + (fx1 - (x1 + dx)) * 0.55;
+    var af1y = y1 + dy * midThrow + (fy1 - (y1 + dy)) * 0.55;
+    var af2x = x2 + dx * midThrow + (fx2 - (x2 + dx)) * 0.55;
+    var af2y = y2 + dy * midThrow + (fy2 - (y2 + dy)) * 0.55;
+    pushVolume(
+      x1 - bx * 0.35, y1 - lift, x2 - bx * 0.35, y2 - lift,
+      af1x, af1y, af2x, af2y,
+      a0 * 0.28, gradId, clipUrl, 'wa-' + wid);
+    pushVolume(
+      x1, y1, x2, y2, fx1, fy1, fx2, fy2,
+      a0 * 0.72, gradId, clipUrl, 'wf-' + wid);
   }
   var showBars = props.showBars !== false;
   var roomOutlines = [];
-  if (props.showRooms !== false && rooms.length) {
+  if (props.showRooms === true && rooms.length) {
     for (var ri = 0; ri < rooms.length; ri++) {
       var rr = rooms[ri];
       var rv = rr && (rr.vertices || rr.points);
@@ -674,7 +1010,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
       className="absolute inset-0 pointer-events-none"
       preserveAspectRatio="none"
       viewBox="0 0 100 100"
-      style={{width:'100%', height:'100%', zIndex: 7, mixBlendMode: isLight ? 'multiply' : 'screen'}}
+      style={{width:'100%', height:'100%', zIndex: 81, mixBlendMode: isLight ? 'multiply' : 'screen'}}
       data-testid="windows-sunshaft-overlay"
     >
       {clipDefs.length ? <defs>{clipDefs}</defs> : null}
@@ -687,10 +1023,11 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
 
 window.SunRayOverlay = function SunRayOverlay(props){
   if (!props.sun || !props.sun.is_day) return null;
-  var az = (props.sun.azimuth + (props.northOffsetDeg || 0)) % 360;
-  var radR = az * Math.PI / 180;
-  var gx = 50 + 60 * Math.sin(radR);
-  var gy = 50 - 60 * Math.cos(radR);
+  var travel = window.red5PlanSunVectors
+    ? window.red5PlanSunVectors(props.sun.azimuth, props.orientation, props.northOffsetDeg)
+    : null;
+  var gx = 50 + 60 * (travel ? travel.sx : Math.sin(((props.sun.azimuth + (props.northOffsetDeg || 0)) % 360) * Math.PI / 180));
+  var gy = 50 + 60 * (travel ? travel.sy : -Math.cos(((props.sun.azimuth + (props.northOffsetDeg || 0)) % 360) * Math.PI / 180));
   /* Theme-aware ray palette.  Light mode needs MORE saturation and
      greater opacity so the wash reads against near-white floor plans
      (dark mode gets a softer amber that survives on deep backgrounds). */
@@ -741,7 +1078,18 @@ window.SunRayOverlay = function SunRayOverlay(props){
   var stopIn  = _mix(stopInBright,  stopInDim,  grey);
   var stopMid = _mix(stopMidBright, stopMidDim, grey);
   var stopOut = stopMid;
-  var gid = 'sunray-grad-' + Math.round(az) + '-' + Math.round(weatherFactor*100) + '-' + (isLight ? 'l' : 'd');
+  var gid = 'sunray-grad-' + Math.round(props.sun.azimuth || 0) + '-' + Math.round(gx) + '-' + Math.round(gy) + '-' + Math.round(weatherFactor*100) + '-' + (isLight ? 'l' : 'd');
+  var rooms = props.rooms || [];
+  var clipId = null;
+  var clipPolys = [];
+  for (var ri = 0; ri < rooms.length; ri++) {
+    var rv = rooms[ri] && (rooms[ri].vertices || rooms[ri].points);
+    if (!rv || rv.length < 3) continue;
+    clipPolys.push(
+      <polygon key={'sr-'+ri} points={rv.map(function (v) { return Number(v[0]) + ',' + Number(v[1]); }).join(' ')} />
+    );
+  }
+  if (clipPolys.length) clipId = 'sunray-rooms-clip';
   return (
     <svg
       className="absolute inset-0 pointer-events-none"
@@ -751,13 +1099,15 @@ window.SunRayOverlay = function SunRayOverlay(props){
       data-testid="sun-ray-overlay"
     >
       <defs>
+        {clipId ? <clipPath id={clipId} clipPathUnits="userSpaceOnUse">{clipPolys}</clipPath> : null}
         <radialGradient id={gid} cx={gx+'%'} cy={gy+'%'} r="85%" fx={gx+'%'} fy={gy+'%'}>
           <stop offset="0%"  stopColor={stopIn}  stopOpacity={intensity}/>
           <stop offset="40%" stopColor={stopMid} stopOpacity={intensity*0.5}/>
           <stop offset="100%" stopColor={stopOut} stopOpacity="0"/>
         </radialGradient>
       </defs>
-      <rect x="0" y="0" width="100" height="100" fill={'url(#' + gid + ')'}/>
+      <rect x="0" y="0" width="100" height="100" fill={'url(#' + gid + ')'}
+            clipPath={clipId ? ('url(#' + clipId + ')') : undefined}/>
     </svg>
   );
 };

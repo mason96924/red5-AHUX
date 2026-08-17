@@ -1249,8 +1249,13 @@
             // Derived value -- always reflects the active weather location.
             // See comment near `sunState` declaration for bug history.
             const buildingLatLon = (weatherLocation && typeof weatherLocation.lat === 'number')
-                ? {lat: weatherLocation.lat, lon: weatherLocation.lon}
-                : {lat: 40.7128, lon: -74.0060};
+                ? {
+                    lat: weatherLocation.lat,
+                    lon: weatherLocation.lon,
+                    elevation_m: Number(weatherLocation.elevation_m != null ? weatherLocation.elevation_m : weatherLocation.asl) || 0,
+                    timezone: String(weatherLocation.timezone || weatherLocation.tz_id || weatherLocation.tz || '').trim(),
+                }
+                : {lat: 40.7128, lon: -74.0060, elevation_m: 0, timezone: ''};
             // ELC-style building aspect (façade facing). Slim v1: drives
             // northOffsetDeg for sun ray / window shafts on the floor plan.
             const [buildingFacing, setBuildingFacing] = useState(() => {
@@ -1380,7 +1385,10 @@
             // ----------------------------------------------------------------
             const pinLocation = useCallback((loc) => {
                 const body = (loc && typeof loc.lat === 'number' && typeof loc.lon === 'number')
-                    ? { default: { lat: loc.lat, lon: loc.lon, name: loc.name || '' } }
+                    ? { default: {
+                        lat: loc.lat, lon: loc.lon, name: loc.name || '',
+                        elevation_m: Number(loc.elevation_m != null ? loc.elevation_m : loc.asl) || 0,
+                    } }
                     : { default: null };
                 if (body.default) {
                     try { localStorage.setItem('defaultWeatherLocation', JSON.stringify(body.default)); } catch (e) {}
@@ -2047,6 +2055,44 @@
                 return () => window.removeEventListener('r5-location-change', handler);
             }, [weatherLocation]);
 
+            // Other-tab / bfcache weather pick: storage does not fire in the
+            // same document, so also re-read on focus / tab-visible. Overlay
+            // eph.key includes lat — a state update rebuilds the year-band.
+            useEffect(() => {
+                const apply = () => {
+                    let wl = null;
+                    try { wl = JSON.parse(localStorage.getItem('weatherLocation')); } catch (e) {}
+                    if (!wl || typeof wl.lat !== 'number') return;
+                    setWeatherLocation((prev) => {
+                        if (prev
+                            && Math.abs(Number(prev.lat) - wl.lat) < 1e-4
+                            && Math.abs(Number(prev.lon) - wl.lon) < 1e-4) {
+                            const prevAsl = Number(prev.elevation_m != null ? prev.elevation_m : prev.asl) || 0;
+                            const nextAsl = Number(wl.elevation_m != null ? wl.elevation_m : wl.asl) || 0;
+                            if (prevAsl === nextAsl) return prev;
+                        }
+                        return wl;
+                    });
+                };
+                const onStorage = (e) => {
+                    if (e.key !== 'weatherLocation') return;
+                    apply();
+                };
+                const onVis = () => {
+                    if (document.visibilityState === 'visible') apply();
+                };
+                window.addEventListener('storage', onStorage);
+                window.addEventListener('focus', apply);
+                window.addEventListener('pageshow', apply);
+                document.addEventListener('visibilitychange', onVis);
+                return () => {
+                    window.removeEventListener('storage', onStorage);
+                    window.removeEventListener('focus', apply);
+                    window.removeEventListener('pageshow', apply);
+                    document.removeEventListener('visibilitychange', onVis);
+                };
+            }, []);
+
             // Comfort zone and diagnostics loaded from js/psychrometric.js
             // Functions: getEnergyMetrics, buildComfortZonePoly, isInComfortZone,
             //            getZoneDemand, getVavDiagnostic, getAhuDiagnostic
@@ -2074,9 +2120,7 @@
             // Live floor-plan: set ONE window's open % (0–100) → blind_level 0–1 closed.
             // Match by window id when present, else by index so each bar stays independent.
             // Updates shafts immediately and debounces POST /api/save-config.
-            const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct, windowIndex) => {
-                const open = Math.max(0, Math.min(100, Number(openPct) || 0)) / 100;
-                const blind = 1 - open;
+            const patchFloorWindow = useCallback((floorId, windowId, fields, windowIndex) => {
                 setMapConfig(prev => {
                     if (!prev || !Array.isArray(prev.floors)) return prev;
                     let changed = false;
@@ -2090,9 +2134,8 @@
                                 match = i === windowIndex;
                             }
                             if (!match) return w;
-                            if (Math.abs((w.blind_level || 0) - blind) < 1e-6) return w;
                             changed = true;
-                            return Object.assign({}, w, { blind_level: blind });
+                            return Object.assign({}, w, fields || {});
                         });
                         return changed ? Object.assign({}, f, { windows }) : f;
                     });
@@ -2108,12 +2151,17 @@
                             body: JSON.stringify({ map_config: next, image_manifest: {} }),
                         }).then(r => r.json()).then(j => {
                             if (j && (j.success || j.ok || j.persisted)) return;
-                            if (window.toast) window.toast((j && j.error) || 'Blind save needs sign-in / write access.', 'info');
+                            if (window.toast) window.toast((j && j.error) || 'Window save needs sign-in / write access.', 'info');
                         }).catch(() => {});
                     }, 450);
                     return next;
                 });
             }, []);
+
+            const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct, windowIndex) => {
+                const open = Math.max(0, Math.min(100, Number(openPct) || 0)) / 100;
+                patchFloorWindow(floorId, windowId, { blind_level: 1 - open }, windowIndex);
+            }, [patchFloorWindow]);
 
             const ahuMetrics = useMemo(() => {
                 if (!selectedAhuId) return { exchange: 0, absorption: 0 };
@@ -2801,7 +2849,7 @@
                                         browser window for extended displays
                                         (mirrors AHU/VAV modal pattern). */}
                     {/* LEFT SIDEBAR -- extracted to sidebar.js (L.27) */}
-                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex, getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, ahuDriftScores, t })}
+                    {renderSidebar({ sidebarWidth, setSidebarWidth, sidebarFloating, setSidebarFloating, sidebarFloatPos, sidebarFloatSize, sidebarPopoutWin, sidebarPopoutHost, popOutSidebarToWindow, onSidebarResizeMouseDown, onSidebarTitleMouseDown, activeView, setActiveView, theme, ui, darkLevel, setDarkLevel, i18nReady, searchTerm, setSearchTerm, filteredAhuData, selectedAhuId, setSelectedAhuId, setShowFloorPlanForAhu, setShowAhuModalFor, isLockedToSA, setIsLockedToSA, setLockedVavId, showPath, setShowPath, pointVisibility, setPointVisibility, showGivoni, setShowGivoni, showSweetSpot, setShowSweetSpot, sweetSpotRange, setSweetSpotRange, tClipRange, setTClipRange, tempRange, setTempRange, bandClampApplied, setBandClampApplied, bandClampBusy, setBandClampBusy, setBandClampModal, clampSpark, telemetryStatus, pluginHealth, ervSnap, red5DocsIndex: (typeof window !== 'undefined' ? window.red5DocsIndex : null), getEnergyMetrics, getH, setAhuModalSize, setVavModalSize, setFloorPlanModalSize, setShowConfigAuth, setConfigPwInput, setConfigPwError, openCollectorCfg, fetchJSON, toast, ahuSweetSpots, appliedAhuBands, applyAhuBands, applyBusy, showApplyModal, setShowApplyModal, ahuPresetVersion, ahuRollingAvgs, ahuDriftScores, t })}
 
                     {activeView === 'diagnostics' && React.createElement(DiagnosticsConsole)}
                     {activeView === 'dynamics' && (
@@ -2894,7 +2942,7 @@
                         buildingFacingOffset,
                         floorWindowsPanelOpen, setFloorWindowsPanelOpen,
                         selectedFloorWindowId, setSelectedFloorWindowId,
-                        setFloorWindowOpenPct,
+                        setFloorWindowOpenPct, patchFloorWindow,
                         comfortZonePoly,
                         showGivoni, showSweetSpot, sweetSpotRange,
                         theme, safe, getFloorForAhu, getVavDiagnostic, popOutFloorPlanModal, floatPipFloorPlanModal,
@@ -2910,6 +2958,7 @@
                         ahuOuterRef, ahuTypeImages, ccEquipTypes, mapConfig, popOutAhuModal, floatPipAhuModal,
                         setAhuData, setAhuImgDims, setDragStart, setIsAhuModalDragging,
                         setShowAhuModalFor, showAhuModalFor, theme,
+                        buildingLatLon,
                     })}
 
 

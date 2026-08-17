@@ -154,6 +154,7 @@ const floorModalTree = (
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (
                                 <window.ElcSunPathLive
+                                    hostChrome={false}
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
                                     elevation_m={buildingLatLon.elevation_m}
@@ -460,6 +461,9 @@ const floorModalTree = (
                                 />
                             </div>
                         )}
+                        {window.ElcSunPathHostChromeLive && (
+                            <window.ElcSunPathHostChromeLive />
+                        )}
                         {window.ElcDaySelectorLive && (
                             <window.ElcDaySelectorLive
                                 lat={buildingLatLon && buildingLatLon.lat}
@@ -492,6 +496,7 @@ const floorModalTree = (
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (
                                 <window.ElcSunPathLive
+                                    hostChrome={false}
                                     lat={buildingLatLon.lat}
                                     lon={buildingLatLon.lon}
                                     elevation_m={buildingLatLon.elevation_m}
@@ -652,6 +657,9 @@ const floorModalTree = (
                                     timezone={buildingLatLon && buildingLatLon.timezone}
                                 />
                             </div>
+                        )}
+                        {window.ElcSunPathHostChromeLive && (
+                            <window.ElcSunPathHostChromeLive />
                         )}
                         {window.ElcDaySelectorLive && (
                             <window.ElcDaySelectorLive

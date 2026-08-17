@@ -147,10 +147,11 @@ class G36State(BaseModel):
 class MixingState(BaseModel):
     """Mixing-box cross-checks that accompany the MA point.
 
-    Present only when MA could be located at all.  The useful signal depends
-    entirely on ``basis``: with a derived MA the off-line distance is
-    meaningless (it is zero by construction) and the damper comparison is the
-    real check; with a fully measured MA both are available.
+    Present only when MA could be located at all.  ``mat`` / ``damper`` place
+    MA on the OA–RA chord by construction, so off-line distance is not a
+    fault.  ``mat+damper`` keeps measured MAT but takes W from OAD — that
+    point is often visibly off-chord on mild days (OA≈RA) and is a real
+    flag.  ``measured`` (MAT+MAH) exposes both off-chord and damper checks.
     """
     model_config = ConfigDict(extra="allow")
     basis: str = Field(..., description="'measured' | 'mat' | 'mat+damper' | 'damper'")

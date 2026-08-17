@@ -177,8 +177,11 @@ function clientMaMixingFromPoints(ahu) {
     const oa = by.OA, ra = by.RA, ma = by.MA;
     const empty = { flags: [], line_deviation_g_kg: null, damper_mismatch: null, oa_fraction_damper: null, chord_off_fraction: null };
     if (!oa || !ra || !ma) return empty;
-    /* Derived MA is forced onto the chord — geometry alone cannot fault it. */
-    if (ma.derived === true) return empty;
+    /* ``mat`` / ``damper`` force W onto the chord — geometry cannot fault them.
+     * ``mat+damper`` keeps measured MAT but takes W from OAD, so the point is
+     * often visibly off the OA–RA line when OA≈RA (mild-day process mini). */
+    const basis = ma.basis || ((ahu && ahu.mixing && ahu.mixing.basis) || null);
+    if (ma.derived === true && basis !== 'mat+damper') return empty;
 
     const tOa = Number(oa.t), tRa = Number(ra.t), tMa = Number(ma.t);
     const wOa = Number(oa.w), wRa = Number(ra.w), wMa = Number(ma.w);

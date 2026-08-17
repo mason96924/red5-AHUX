@@ -263,11 +263,14 @@ def derive_mixed_air(
         if mismatch > DAMPER_TOL:
             flags.append("damper_mismatch")
 
-    # With both MA channels wired the off-line distance becomes real.
+    # Off-chord is real when T and W do not share one mix fraction:
+    #   measured   — MAT+MAH independent of OA–RA
+    #   mat+damper — MAT measured, W taken from OAD (typical OA≈RA / mild day)
+    # ``mat`` / ``damper`` stay on the chord by construction.
     # Prefer the classical T-lever w residual; when ΔT is too small for f_t,
     # fall back to chord projection (and a T residual vs the humidity lever).
     deviation_gkg = None
-    if basis == "measured":
+    if basis in ("measured", "mat+damper"):
         line_tol = LINE_TOL_GKG
         if f_t is not None:
             w_pred = _clamp01(f_t) * w_oa + (1.0 - _clamp01(f_t)) * w_ra

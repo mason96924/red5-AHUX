@@ -278,13 +278,6 @@
     </table>
   </div>
 
-  <!-- PHASE 3b: Equipment-mapper placement preview (hidden by default; revealed
-       only when a real marker exists in map-config for this AHU) -->
-  <div class="panel" id="mapper-panel" data-testid="ahu-mapper-panel" style="display:none">
-    <h2 data-i18n="floor_plan_placement">Floor-Plan Placement</h2>
-    <div id="mapper-preview" data-testid="ahu-mapper-preview" style="background:#0b0f1a;border:1px solid #1e293b;border-radius:4px;min-height:120px;padding:1rem;color:#64748b;font-size:11px;text-align:center"></div>
-  </div>
-
 </div>
 
 <script>
@@ -690,57 +683,6 @@
     }).join('');
   }
 
-  // ----- Phase 3b: Floor-plan placement preview (hidden until a real marker exists) -----
-  async function fetchMapperPlacement(){
-    var panel = $('mapper-panel');
-    try {
-      var r = await fetch('/api/map-config', {credentials:'include'});
-      var d = await r.json();
-      var floors = d.floors || [];
-      var found = null;
-      for(var fi = 0; fi < floors.length; fi++){
-        var markers = floors[fi].markers || [];
-        for(var mi = 0; mi < markers.length; mi++){
-          if(markers[mi].id === ahuId || markers[mi].name === ahuId){
-            found = { floor: floors[fi], marker: markers[mi] };
-            break;
-          }
-        }
-        if(found) break;
-      }
-      // If no marker exists for this AHU, keep the panel hidden -- the
-      // operator should not see an empty placeholder.  The panel reveals
-      // itself the moment a marker is placed in the Equipment Mapper
-      // (next poll, or a hard refresh).
-      if(!found){
-        panel.style.display = 'none';
-        return;
-      }
-      panel.style.display = '';
-      var fname = found.floor.name || found.floor.id;
-      var x = Math.max(0, Math.min(100, Number(found.marker.x) || 50));
-      var y = Math.max(0, Math.min(100, Number(found.marker.y) || 50));
-      $('mapper-preview').innerHTML =
-        '<div style="text-align:left;color:#cbd5e1;font-size:12px;margin-bottom:.6rem">'
-        + '<b style="color:#34d399">' + fname + '</b> &middot; marker at <span style="font-variant-numeric:tabular-nums">(' + x.toFixed(1) + ', ' + y.toFixed(1) + ')</span>'
-        + ' &middot; <a href="/equipment_mapper.html" style="color:#34d399">open mapper &rarr;</a>'
-        + '</div>'
-        + '<svg viewBox="0 0 100 60" style="width:100%;height:240px;background:#0f172a;border:1px solid #1e293b;border-radius:4px">'
-        + '<defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">'
-        + '<path d="M 10 0 L 0 0 0 10" fill="none" stroke="#1e293b" stroke-width="0.2"/></pattern></defs>'
-        + '<rect width="100" height="60" fill="url(#grid)"/>'
-        + '<circle cx="' + x + '" cy="' + (y * 0.6) + '" r="2.2" fill="#34d399"/>'
-        + '<circle cx="' + x + '" cy="' + (y * 0.6) + '" r="4.5" fill="none" stroke="#34d399" stroke-width="0.4" opacity="0.6"><animate attributeName="r" from="4.5" to="9" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" from="0.6" to="0" dur="2s" repeatCount="indefinite"/></circle>'
-        + '<text x="' + (x + 3) + '" y="' + (y * 0.6 + 1) + '" fill="#34d399" font-size="3" font-family="monospace">' + ahuId + '</text>'
-        + '</svg>';
-    } catch(e){
-      // On error, also stay hidden -- silently fail rather than show a red
-      // error banner for an optional, non-critical panel.
-      panel.style.display = 'none';
-      console.warn('[ahu] mapper placement fetch failed:', e);
-    }
-  }
-
   // ----- time-range picker -----
   function setWindow(min){
     windowMin = min;
@@ -765,14 +707,11 @@
 
   // ----- kickoff -----
   pollLive();          fetchTrend();          fetchModeRibbon();
-  fetchAuditLog();     fetchBandGuide();      fetchMapperPlacement();
+  fetchAuditLog();     fetchBandGuide();
   setInterval(pollLive,        POLL_MS);
   setInterval(fetchTrend,      TREND_REFRESH_MS);
   setInterval(fetchModeRibbon, TREND_REFRESH_MS);
-  // Audit log + mapper refresh on a slower cadence -- they're not in the
-  // critical "is the AHU OK right now" path so 5-min polling is enough.
   setInterval(fetchAuditLog,       300000);
-  setInterval(fetchMapperPlacement, 300000);
 
 })();
 </script>

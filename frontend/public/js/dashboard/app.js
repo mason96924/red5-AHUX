@@ -2055,6 +2055,44 @@
                 return () => window.removeEventListener('r5-location-change', handler);
             }, [weatherLocation]);
 
+            // Other-tab / bfcache weather pick: storage does not fire in the
+            // same document, so also re-read on focus / tab-visible. Overlay
+            // eph.key includes lat — a state update rebuilds the year-band.
+            useEffect(() => {
+                const apply = () => {
+                    let wl = null;
+                    try { wl = JSON.parse(localStorage.getItem('weatherLocation')); } catch (e) {}
+                    if (!wl || typeof wl.lat !== 'number') return;
+                    setWeatherLocation((prev) => {
+                        if (prev
+                            && Math.abs(Number(prev.lat) - wl.lat) < 1e-4
+                            && Math.abs(Number(prev.lon) - wl.lon) < 1e-4) {
+                            const prevAsl = Number(prev.elevation_m != null ? prev.elevation_m : prev.asl) || 0;
+                            const nextAsl = Number(wl.elevation_m != null ? wl.elevation_m : wl.asl) || 0;
+                            if (prevAsl === nextAsl) return prev;
+                        }
+                        return wl;
+                    });
+                };
+                const onStorage = (e) => {
+                    if (e.key !== 'weatherLocation') return;
+                    apply();
+                };
+                const onVis = () => {
+                    if (document.visibilityState === 'visible') apply();
+                };
+                window.addEventListener('storage', onStorage);
+                window.addEventListener('focus', apply);
+                window.addEventListener('pageshow', apply);
+                document.addEventListener('visibilitychange', onVis);
+                return () => {
+                    window.removeEventListener('storage', onStorage);
+                    window.removeEventListener('focus', apply);
+                    window.removeEventListener('pageshow', apply);
+                    document.removeEventListener('visibilitychange', onVis);
+                };
+            }, []);
+
             // Comfort zone and diagnostics loaded from js/psychrometric.js
             // Functions: getEnergyMetrics, buildComfortZonePoly, isInComfortZone,
             //            getZoneDemand, getVavDiagnostic, getAhuDiagnostic

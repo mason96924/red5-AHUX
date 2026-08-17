@@ -1,0 +1,31 @@
+---
+description: Sun-path sky-dome stays on the floor rose; year-band follows lat
+globs: "**/elc-sun-path-overlay.js,**/floor.html,**/equipment_mapper.html"
+alwaysApply: true
+---
+
+# Sun-path floor rose
+
+## Horizon (independent of lat)
+
+Center = NS×WE crossing of **placed N/S/W/E markers only**.
+Never camAz 137/180, never AJM orbit/disk-drag, never `rotate(east,90°)` / `rotate(north,90°)` for altitude (that put zenith on W).
+
+## Year-band (follows site)
+
+Year-band / noon / hours / live sun use **lat/lon/ASL (`elevation_m`)** from settings.
+Sydney `lat<0` → band toward **N marker**. NH → toward **S marker**.
+Do not flip spill / window-glow / VAV azimuth.
+
+## 2.5D isometric
+
+`x = cx+R*(e*ex+n*nx)`, `y = cy+R*(e*ey+n*ny) - R*u*h` with screen-up `(0,-1)`.
+Horizon `u=0` stays on the rose.
+Do not south-lean `-R*u*h*n` (pancake on S).
+Do not page-up that **rotates the rose**.
+
+## Files
+
+- ELC: `archive/Red5-ELC-V3.0/demo/floor.html` + controller `floor.html` (rebuild bundle).
+- AHUX: `frontend/public/js/elc-sun-path-overlay.js` (+ mapper cache-bust + dashboard `build.sh`).
+Keep `data-cache-policy="no-cache"`.

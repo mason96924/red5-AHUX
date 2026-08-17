@@ -357,7 +357,45 @@
             const floorCanvasRef = useRef(null);
             const floorHairVRef = useRef(null);
             const floorHairHRef = useRef(null);
+            const traceRubberRef = useRef(null);
+            const traceLastPtRef = useRef(null);
+            const traceKindRef = useRef(null);
+            const floorMousePctRef = useRef(null);
+            const hideTraceRubber = () => {
+                if (traceRubberRef.current) {
+                    traceRubberRef.current.setAttribute('visibility', 'hidden');
+                }
+            };
+            const updateTraceRubber = () => {
+                const line = traceRubberRef.current;
+                if (!line) return;
+                const last = traceLastPtRef.current;
+                const mouse = floorMousePctRef.current;
+                if (!last || !mouse) {
+                    line.setAttribute('visibility', 'hidden');
+                    return;
+                }
+                const color = traceKindRef.current === 'room' ? '#39ff14'
+                    : traceKindRef.current === 'window' ? '#38bdf8'
+                    : '#94a3b8';
+                line.setAttribute('x1', last.x);
+                line.setAttribute('y1', last.y);
+                line.setAttribute('x2', mouse.x);
+                line.setAttribute('y2', mouse.y);
+                line.setAttribute('stroke', color);
+                line.setAttribute('visibility', 'visible');
+            };
             const updateFloorHair = (e) => {
+                if (floorCanvasRef.current) {
+                    const plan = floorCanvasRef.current.getBoundingClientRect();
+                    if (plan.width >= 1 && plan.height >= 1) {
+                        floorMousePctRef.current = {
+                            x: ((e.clientX - plan.left) / plan.width) * 100,
+                            y: ((e.clientY - plan.top) / plan.height) * 100,
+                        };
+                    }
+                }
+                updateTraceRubber();
                 if (!floorHairVRef.current || !floorHairHRef.current) return;
                 const host = e.currentTarget;
                 const rect = host.getBoundingClientRect();
@@ -370,6 +408,8 @@
                 if (floorHairVRef.current && floorHairVRef.current.parentNode) {
                     floorHairVRef.current.parentNode.style.opacity = '0';
                 }
+                floorMousePctRef.current = null;
+                hideTraceRubber();
             };
             // Image aspect ratio (natural width / height) used by the air-flow
             // segment Snap-Guide overlay to convert width-fraction to %-of-height
@@ -458,16 +498,31 @@
                     }
                 }).catch(() => {});
             }, []);
-            // Cross-tab / cross-page propagation: if Dashboard updates the
-            // weather selection, pick it up here without a reload.
+            // Cross-tab / cross-page / bfcache: Dashboard writes
+            // weatherLocation; storage fires for other tabs, but same-tab
+            // back-nav and tab-visible must re-read or the overlay stays NYC.
             useEffect(() => {
-                const onStorage = (e) => {
-                    if (e.key !== 'weatherLocation') return;
+                const apply = () => {
                     const latlon = readLatLonFromStorage();
                     if (latlon) setBuildingLatLon(latlon);
                 };
+                const onStorage = (e) => {
+                    if (e.key !== 'weatherLocation') return;
+                    apply();
+                };
+                const onVis = () => {
+                    if (document.visibilityState === 'visible') apply();
+                };
                 window.addEventListener('storage', onStorage);
-                return () => window.removeEventListener('storage', onStorage);
+                window.addEventListener('focus', apply);
+                window.addEventListener('pageshow', apply);
+                document.addEventListener('visibilitychange', onVis);
+                return () => {
+                    window.removeEventListener('storage', onStorage);
+                    window.removeEventListener('focus', apply);
+                    window.removeEventListener('pageshow', apply);
+                    document.removeEventListener('visibilitychange', onVis);
+                };
             }, []);
 
             useEffect(() => {
@@ -2216,6 +2271,9 @@
                 setFloorRooms(prev => [...prev, newRoom]);
                 setSelectedRoomId(newRoom.id);
                 setRoomsPanelOpen(true);
+                traceLastPtRef.current = null;
+                traceKindRef.current = null;
+                hideTraceRubber();
                 setRoomMode(null);
                 toast('Room traced — sunlight will stay inside this boundary.');
             };
@@ -2257,6 +2315,9 @@
                     setSelectedWindowId(newWin.id);
                     toast('Traced 2D window — sun spill follows this outline.');
                 }
+                traceLastPtRef.current = null;
+                traceKindRef.current = null;
+                hideTraceRubber();
                 setWindowTraceMode(null);
             };
 
@@ -2273,11 +2334,17 @@
                     name: 'Concrete ' + (n + 1),
                     vertices: pts.map(p => [p.x, p.y]),
                 }]);
+                traceLastPtRef.current = null;
+                traceKindRef.current = null;
+                hideTraceRubber();
                 setObstructionTraceMode(null);
                 toast('Concrete traced — sun spill is blocked through it.');
             };
 
             const clearAllTraceModes = () => {
+                traceLastPtRef.current = null;
+                traceKindRef.current = null;
+                hideTraceRubber();
                 setRoomMode(null);
                 setWindowTraceMode(null);
                 setObstructionTraceMode(null);
@@ -2352,6 +2419,20 @@
                 setNsMode(next);
                 toast('Click ' + next.toUpperCase() + ' on the floor image, then South, West, East. Click N/S/W/E again when done.');
             };
+
+            useEffect(() => {
+                const mode = roomMode || windowTraceMode || obstructionTraceMode;
+                const pts = mode && mode.pts;
+                if (pts && pts.length) {
+                    traceLastPtRef.current = pts[pts.length - 1];
+                    traceKindRef.current = roomMode ? 'room' : windowTraceMode ? 'window' : 'obs';
+                    updateTraceRubber();
+                } else {
+                    traceLastPtRef.current = null;
+                    traceKindRef.current = null;
+                    hideTraceRubber();
+                }
+            }, [roomMode, windowTraceMode, obstructionTraceMode]);
 
             useEffect(() => {
                 const tracing = roomMode || windowTraceMode || obstructionTraceMode || nsMode;
@@ -6184,6 +6265,17 @@
                                                     ))}
                                                 </g>
                                             )}
+                                            <line
+                                                ref={traceRubberRef}
+                                                data-testid="mapper-trace-rubber"
+                                                x1="0" y1="0" x2="0" y2="0"
+                                                fill="none"
+                                                stroke="#39ff14"
+                                                strokeWidth="1"
+                                                vectorEffect="non-scaling-stroke"
+                                                visibility="hidden"
+                                                pointerEvents="none"
+                                            />
                                             {floorWindows.filter(w => w.floorIdx === currentFloorIdx && isTracedWindow(w)).map(w => (
                                                 window.TracedWindowBlindOverlay ? (
                                                     <window.TracedWindowBlindOverlay

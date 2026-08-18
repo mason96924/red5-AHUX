@@ -184,7 +184,7 @@ function AhuPerfSlideTab(props) {
     }, [open]);
     const dark = theme === 'dark';
     const pageUrl = ahuId ? ('/ahu.html?id=' + encodeURIComponent(ahuId)) : '/ahu.html';
-    const embedUrl = pageUrl + (pageUrl.indexOf('?') >= 0 ? '&' : '?') + 'embed=1';
+    const embedUrl = pageUrl + (pageUrl.indexOf('?') >= 0 ? '&' : '?') + 'embed=1&v=modebar3';
     return (
         <div
             data-testid="ahu-perf-drawer"

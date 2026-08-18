@@ -75,11 +75,17 @@
 
   /* ===== mode timeline ribbon ===== */
   .ribbon{height:36px;background:#0b0f1a;border:1px solid #1e293b;border-radius:4px;overflow:hidden;position:relative;display:flex}
-  .ribbon .seg{flex:1 1 0;min-width:0;border-right:1px solid rgba(11,15,26,.45)}
+  /* min-width keeps 1s warm_up / fault ticks visible — without it a 99%
+     occupied window paints as a solid mint slab (looks like the old
+     freezeprotect-only colorForMode bug). */
+  .ribbon .seg{flex:1 1 0;min-width:4px;flex-shrink:0;border-right:1px solid rgba(11,15,26,.45)}
   .ribbon .seg:last-child{border-right:none}
-  .legend{display:flex;gap:.8rem;margin-top:.5rem;font-size:9px;letter-spacing:.15em;color:#64748b;flex-wrap:wrap}
-  .legend span{display:flex;align-items:center;gap:.3rem}
-  .legend i{width:10px;height:10px;display:inline-block;border-radius:2px}
+  .legend{display:flex;gap:1rem;margin-top:.55rem;font-size:10px;letter-spacing:.12em;flex-wrap:wrap;align-items:center}
+  .legend .key{display:flex;align-items:center;gap:.4rem;white-space:nowrap}
+  .legend .swatch{
+    display:block;width:12px;height:12px;min-width:12px;min-height:12px;
+    flex:0 0 12px;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);
+  }
 
   /* ===== loading / empty ===== */
   .loading{padding:1rem;color:#64748b;text-align:center;font-size:11px;letter-spacing:.15em;text-transform:uppercase}
@@ -221,12 +227,12 @@
   <div class="panel">
     <h2 data-i18n="operating_mode_timeline">Operating Mode Timeline · 24h</h2>
     <div class="ribbon" id="mode-ribbon" data-testid="ahu-mode-ribbon"></div>
-    <div class="legend">
-      <span><i style="background:#34d399"></i><span data-i18n="occupied">Occupied</span></span>
-      <span><i style="background:#f59e0b"></i><span data-i18n="warmup_cooldown">Warmup/Cooldown</span></span>
-      <span><i style="background:#64748b"></i><span data-i18n="setback_unoccupied">Setback/Unoccupied</span></span>
-      <span><i style="background:#22d3ee"></i><span data-i18n="freeze_protect">Freeze-Protect</span></span>
-      <span><i style="background:#ef4444"></i><span data-i18n="fault">Fault</span></span>
+    <div class="legend" data-testid="ahu-mode-legend">
+      <span class="key"><span class="swatch" style="background:#34d399"></span><span data-i18n="occupied" style="color:#34d399">Occupied</span></span>
+      <span class="key"><span class="swatch" style="background:#f59e0b"></span><span data-i18n="warmup_cooldown" style="color:#f59e0b">Warmup/Cooldown</span></span>
+      <span class="key"><span class="swatch" style="background:#64748b"></span><span data-i18n="setback_unoccupied" style="color:#94a3b8">Setback/Unoccupied</span></span>
+      <span class="key"><span class="swatch" style="background:#22d3ee"></span><span data-i18n="freeze_protect" style="color:#22d3ee">Freeze-Protect</span></span>
+      <span class="key"><span class="swatch" style="background:#ef4444"></span><span data-i18n="fault" style="color:#ef4444">Fault</span></span>
     </div>
   </div>
 
@@ -576,14 +582,21 @@
         ribbon.innerHTML = '<div class="empty" style="padding:.7rem">No transitions yet · mode = <b style="color:' + colorForMode(d.current_mode) + '">' + (d.current_mode||'—').toUpperCase() + '</b></div>';
         return;
       }
+      var collapsed = [];
+      trans.forEach(function(t){
+        var prev = collapsed[collapsed.length - 1];
+        if(prev && normalizeMode(prev.mode) === normalizeMode(t.mode)) return;
+        collapsed.push(t);
+      });
+      trans = collapsed;
       var nowTs = _toEpoch(d.now) || (Date.now()/1000);
       var firstTs = trans[0].ts, lastTs = nowTs;
       var span = Math.max(1, lastTs - firstTs);
       ribbon.innerHTML = trans.map(function(t, i){
         var next = trans[i+1] ? trans[i+1].ts : lastTs;
-        var pct = ((next - t.ts) / span) * 100;
+        var pct = Math.max(0.4, ((next - t.ts) / span) * 100);
         var modeKey = normalizeMode(t.mode);
-        return '<div class="seg" data-mode="' + modeKey + '" style="flex:' + pct.toFixed(2) + ';background:' + colorForMode(t.mode) + '" title="' + t.mode + ' · ' + new Date(t.ts*1000).toLocaleTimeString() + '"></div>';
+        return '<div class="seg" data-mode="' + modeKey + '" style="flex:' + pct.toFixed(2) + ' 1 4px;background:' + colorForMode(t.mode) + '" title="' + t.mode + ' · ' + new Date(t.ts*1000).toLocaleTimeString() + '"></div>';
       }).join('');
     } catch(e){
       console.warn('[ahu] mode ribbon fetch failed:', e);

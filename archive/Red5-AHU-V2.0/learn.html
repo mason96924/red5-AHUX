@@ -644,6 +644,41 @@
         .train-layer { transition: opacity 180ms ease; }
         .train-layer.is-dim { opacity: 0.16; }
         .train-layer.is-lit { opacity: 1; }
+        .train-dot { cursor: grab; }
+        .train-chart-card svg.is-dragging, .train-chart-card svg.is-dragging .train-dot { cursor: grabbing; }
+        .train-hint {
+            margin: 10px 0 0 0;
+            font-size: 12px;
+            color: var(--text-mute);
+            line-height: 1.45;
+        }
+        .train-ma-status {
+            margin: 10px 0 0 0;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: var(--bg-soft);
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--text-dim);
+        }
+        .train-ma-status strong { color: var(--text); }
+        .train-cat {
+            display: inline-block;
+            font-weight: 800;
+            font-family: ui-monospace, monospace;
+            letter-spacing: 0.04em;
+            margin-right: 6px;
+        }
+        .train-ma-status[data-cat=""] { border-left: 3px solid var(--emerald); }
+        .train-ma-status[data-cat="A"] { border-left: 3px solid #fbbf24; }
+        .train-ma-status[data-cat="B"] { border-left: 3px solid #f97316; }
+        .train-ma-status[data-cat="C"] { border-left: 3px solid #f43f5e; }
+        .train-ma-status[data-cat="D"] { border-left: 3px solid #38bdf8; }
+        .train-ma-status[data-cat="E"],
+        .train-ma-status[data-cat="F"] { border-left: 3px solid #a78bfa; }
+        .train-ma-status[data-cat="G"] { border-left: 3px solid #fb7185; }
+        .train-ma-status[data-cat="H"] { border-left: 3px solid #94a3b8; }
         .outcomes {
             display: grid;
             gap: 8px;
@@ -853,6 +888,8 @@
                 Dashed green = mixing; solid blue = the cooling coil.
                 The <span class="en">violet diagonals</span> are lines of equal total energy: outside air here holds 79 kJ/kg against return air’s 48, so it sits well above RA’s line and costs more to condition — no free cooling today.
             </p>
+            <p class="train-hint">Drag <b>OA</b>, <b>RA</b>, <b>MA</b> or <b>SA</b>. MA must sit on the dashed OA–RA chord — pull it off to raise a fault. Double-click MA to snap back.</p>
+            <div class="train-ma-status" id="read-ma-status" data-testid="read-ma-status" data-cat=""></div>
         </div>
         <aside class="train-aside">
             <div class="train-chips" role="tablist" aria-label="How to read the chart" id="read-steps"></div>
@@ -860,6 +897,7 @@
             <div class="train-nav">
                 <button type="button" id="read-prev" data-testid="read-prev">← Previous</button>
                 <button type="button" id="read-next" data-testid="read-next">Next →</button>
+                <button type="button" id="read-reset" data-testid="read-reset">Reset</button>
             </div>
         </aside>
     </div>
@@ -879,8 +917,13 @@
             </div>
             <svg id="econ-chart" viewBox="0 0 1100 560" data-testid="econ-chart" aria-label="Economizer regions on a psychrometric chart"></svg>
             <p class="train-caption" id="econ-caption">
-                Numbers are total energy in kJ/kg. <b>RA</b> 24 °C / 50% RH = 48 · <b>A</b> 22 °C / 90% RH = 60 · <b>B</b> 28 °C / 10% RH = 34 · <b>OA</b> 33 °C / 18 g/kg = 79 (the outside air from the previous chart).
+                Numbers are total energy in kJ/kg. Drag <b>OA</b> through the wedges — the highlighted outcome follows. <b>RA</b> moves the dry-bulb line and the equal-energy diagonal. <b>MA</b>/<b>SA</b> are the same mixing and coil process as the chart above.
             </p>
+            <p class="train-hint">Same four process dots as “How to read it.” Pull MA off the chord to see the A–H mixed-air fault.</p>
+            <div class="train-ma-status" id="econ-ma-status" data-testid="econ-ma-status" data-cat=""></div>
+            <div class="train-nav" style="margin-top:10px">
+                <button type="button" id="econ-reset" data-testid="econ-reset">Reset points</button>
+            </div>
         </div>
         <aside class="train-aside">
             <div class="outcomes" id="econ-outcomes" data-testid="econ-outcomes"></div>

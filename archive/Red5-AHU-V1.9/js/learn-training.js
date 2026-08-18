@@ -18,26 +18,267 @@
         return (h - 1.006 * t) / (2501 + 1.86 * t);
     }
 
-    // ---------- slide points (published training numbers) ----------
-    const OA = { t: 33, w: 0.018, label: 'OA', color: '#f97316' };
-    const RA = { t: 24, w: getW(24, 50), label: 'RA', color: '#10b981' };
-    const MIX = 0.30;
-    const MA = {
-        t: RA.t * (1 - MIX) + OA.t * MIX,
-        w: RA.w * (1 - MIX) + OA.w * MIX,
-        label: 'MA',
-        color: '#e2e8f0'
+    // MA fault categories A–H — same catalog as dashboard-helpers.js
+    const MA_FAULT_CATALOG = {
+        A: {
+            pattern: 'Off-chord + small damper_mismatch',
+            points: 'Sensor / probe (MAT or MAH)',
+            why: 'Mix fraction matches OAD; moisture does not match T-lever'
+        },
+        B: {
+            pattern: 'Off-chord + large damper_mismatch',
+            points: 'Economizer / damper / leakage / stratification',
+            why: 'Commanded OA% ≠ actual mix fraction'
+        },
+        C: {
+            pattern: 'MAT outside OA–RA range (f < 0 or > 1)',
+            points: 'Sensor bias or stratification',
+            why: 'A mixing box cannot produce MAT hotter or colder than both parents'
+        },
+        D: {
+            pattern: 'Off-chord wetter than mix; OAD ≈ minimum',
+            points: 'Unmeasured moisture / EA path / duct leak',
+            why: 'Extra water mass not explained by OA–RA mix'
+        },
+        E: {
+            pattern: 'Plotted OA ≠ air entering the mixing box',
+            points: 'ERV / HRV',
+            why: 'Wheel moves OA toward RA before mixing'
+        },
+        F: {
+            pattern: 'Off-chord only when wheel ON; gone when OFF',
+            points: 'ERV / HRV',
+            why: 'Controlled A/B confirms transfer, not sensor'
+        },
+        G: {
+            pattern: 'Off-chord mainly at high OAD / economizer high',
+            points: 'Economizer leakage / nonlinear damper / bypass',
+            why: 'Mixing imperfect at extreme positions'
+        },
+        H: {
+            pattern: 'Persistent bias independent of OAD & wheel',
+            points: 'Sensor drift (OA, RA, or MA)',
+            why: 'Not explained by process mode'
+        }
     };
-    const SA = { t: 14, w: 0.0084, label: 'SA', color: '#3b82f6' };
-    const MA_LIE = { t: MA.t + 0.4, w: MA.w + 0.0036, label: 'MA?', color: '#f43f5e' };
+
+    const RED5_MA_LINE_TOL_GKG = 0.4;
+    const RED5_MA_CLOSE_LINE_TOL_GKG = 0.2;
+    const RED5_MA_CHORD_FRAC_TOL = 0.025;
+    const RED5_MA_TEMP_LINE_TOL_C = 0.5;
+    const RED5_MA_MAT_RANGE_TOL_C = 0.3;
+    const RED5_MA_MIN_DT_C = 2.0;
+    const RED5_MA_MIN_DW = 1.0e-4;
+    const RED5_MA_DAMPER_TOL = 0.20;
+
+    function chordWResidualGkg(oa, ra, ma) {
+        const ax = oa.t, ay = oa.w * 1000;
+        const bx = ra.t, by = ra.w * 1000;
+        const cx = ma.t, cy = ma.w * 1000;
+        const abx = bx - ax, aby = by - ay;
+        const ab2 = abx * abx + aby * aby;
+        if (ab2 < 1e-12) return cy - ay;
+        const t = ((cx - ax) * abx + (cy - ay) * aby) / ab2;
+        return cy - (ay + t * aby);
+    }
+
+    function chordOffFraction(oa, ra, ma) {
+        const ax = oa.t, ay = oa.w * 1000;
+        const bx = ra.t, by = ra.w * 1000;
+        const cx = ma.t, cy = ma.w * 1000;
+        const abx = bx - ax, aby = by - ay;
+        const ab2 = abx * abx + aby * aby;
+        if (ab2 < 1e-12) return null;
+        const cross = abx * (cy - ay) - aby * (cx - ax);
+        return Math.abs(cross) / ab2;
+    }
+
+    function projectOnChord(oa, ra, ma) {
+        const ax = oa.t, ay = oa.w;
+        const bx = ra.t, by = ra.w;
+        const abx = bx - ax, aby = by - ay;
+        const ab2 = abx * abx + aby * aby;
+        if (ab2 < 1e-16) return { t: ax, w: ay, f: 0 };
+        const u = ((ma.t - ax) * abx + (ma.w - ay) * aby) / ab2;
+        return { t: ax + u * abx, w: ay + u * aby, f: 1 - u };
+    }
+
+    function classifyMaFault(mixing) {
+        const mx = mixing || {};
+        const flags = Array.isArray(mx.flags) ? mx.flags : [];
+        if (!flags.length) return null;
+        const off = flags.indexOf('off_mixing_line') >= 0;
+        const outside = flags.indexOf('mat_outside_oa_ra') >= 0;
+        const dampMis = flags.indexOf('damper_mismatch') >= 0;
+        const oad = (typeof mx.oa_fraction_damper === 'number') ? mx.oa_fraction_damper : null;
+        const mismatch = (typeof mx.damper_mismatch === 'number') ? mx.damper_mismatch : null;
+        const dev = (typeof mx.line_deviation_g_kg === 'number') ? mx.line_deviation_g_kg : null;
+        if (outside) return 'C';
+        if (off && dampMis) return 'B';
+        if (off && oad != null && oad <= 0.15 && dev != null && dev > 0) return 'D';
+        if (off && oad != null && oad >= 0.70) return 'G';
+        if (off && (mismatch == null || mismatch <= 0.20)) return 'A';
+        if (off) return 'H';
+        if (dampMis) return 'B';
+        return 'H';
+    }
+
+    function mixingFromPoints(oa, ra, ma, commandedOa) {
+        const empty = {
+            flags: [], line_deviation_g_kg: null, damper_mismatch: null,
+            oa_fraction_damper: commandedOa, chord_off_fraction: null, oa_fraction_t: null
+        };
+        const tOa = oa.t, tRa = ra.t, tMa = ma.t;
+        const wOa = oa.w, wRa = ra.w, wMa = ma.w;
+        const flags = [];
+        const tLo = Math.min(tOa, tRa), tHi = Math.max(tOa, tRa);
+        if (tMa < tLo - RED5_MA_MAT_RANGE_TOL_C || tMa > tHi + RED5_MA_MAT_RANGE_TOL_C) {
+            flags.push('mat_outside_oa_ra');
+        }
+        const dT = tOa - tRa;
+        const dW = wOa - wRa;
+        let fT = null, fW = null;
+        if (Math.abs(dT) >= RED5_MA_MIN_DT_C) fT = (tMa - tRa) / dT;
+        if (Math.abs(dW) >= RED5_MA_MIN_DW) fW = (wMa - wRa) / dW;
+        let deviation = null;
+        let lineTol = RED5_MA_LINE_TOL_GKG;
+        const fMeas = fT != null ? fT : fW;
+        if (fT != null) {
+            const f = Math.max(0, Math.min(1, fT));
+            deviation = (wMa - (f * wOa + (1 - f) * wRa)) * 1000;
+        } else {
+            lineTol = RED5_MA_CLOSE_LINE_TOL_GKG;
+            deviation = chordWResidualGkg(oa, ra, ma);
+            if (fW != null) {
+                const f = Math.max(0, Math.min(1, fW));
+                const tPred = f * tOa + (1 - f) * tRa;
+                if (Math.abs(tMa - tPred) > RED5_MA_TEMP_LINE_TOL_C) flags.push('off_mixing_line');
+            }
+        }
+        if (deviation != null && Math.abs(deviation) > lineTol
+            && flags.indexOf('off_mixing_line') < 0) {
+            flags.push('off_mixing_line');
+        }
+        const frac = chordOffFraction(oa, ra, ma);
+        if (frac != null && frac > RED5_MA_CHORD_FRAC_TOL
+            && flags.indexOf('off_mixing_line') < 0) {
+            flags.push('off_mixing_line');
+        }
+        let mismatch = null;
+        if (commandedOa != null && fMeas != null) {
+            mismatch = Math.abs(Math.max(0, Math.min(1, fMeas)) - commandedOa);
+        }
+        if (mismatch != null && mismatch > RED5_MA_DAMPER_TOL) flags.push('damper_mismatch');
+        return {
+            flags, line_deviation_g_kg: deviation, damper_mismatch: mismatch,
+            oa_fraction_damper: commandedOa, chord_off_fraction: frac, oa_fraction_t: fT
+        };
+    }
+
+    const MIX0 = 0.30;
+    const SEED = {
+        oa: { t: 33, w: 0.018 },
+        ra: { t: 24, w: getW(24, 50) },
+        sa: { t: 14, w: 0.0084 }
+    };
     const PT_A = { t: 22, w: getW(22, 90), label: 'A 60', color: '#fb7185' };
     const PT_B = { t: 28, w: getW(28, 10), label: 'B 34', color: '#f97316' };
-    OA.h = getH(OA.t, OA.w);
-    RA.h = getH(RA.t, RA.w);
-    MA.h = getH(MA.t, MA.w);
-    SA.h = getH(SA.t, SA.w);
     PT_A.h = getH(PT_A.t, PT_A.w);
     PT_B.h = getH(PT_B.t, PT_B.w);
+
+    const live = {
+        oa: { t: SEED.oa.t, w: SEED.oa.w, label: 'OA', color: '#f97316' },
+        ra: { t: SEED.ra.t, w: SEED.ra.w, label: 'RA', color: '#10b981' },
+        ma: { t: 0, w: 0, label: 'MA', color: '#e2e8f0' },
+        sa: { t: SEED.sa.t, w: SEED.sa.w, label: 'SA', color: '#3b82f6' },
+        mixFrac: MIX0,
+        maSnapped: true
+    };
+
+    function stampH(p) {
+        p.h = getH(p.t, p.w);
+        return p;
+    }
+
+    function clipPoint(fr, t, w) {
+        const tt = Math.max(fr.T_MIN, Math.min(fr.T_MAX, t));
+        const ww = Math.max(fr.W_MIN, Math.min(fr.W_MAX, Math.min(w, fr.satW(tt))));
+        return { t: tt, w: ww };
+    }
+
+    function placeMaOnMix() {
+        live.ma.t = live.ra.t * (1 - live.mixFrac) + live.oa.t * live.mixFrac;
+        live.ma.w = live.ra.w * (1 - live.mixFrac) + live.oa.w * live.mixFrac;
+        live.maSnapped = true;
+        stampH(live.ma);
+    }
+
+    function resetLive() {
+        live.oa.t = SEED.oa.t;
+        live.oa.w = SEED.oa.w;
+        live.ra.t = SEED.ra.t;
+        live.ra.w = SEED.ra.w;
+        live.sa.t = SEED.sa.t;
+        live.sa.w = SEED.sa.w;
+        live.mixFrac = MIX0;
+        placeMaOnMix();
+        stampH(live.oa);
+        stampH(live.ra);
+        stampH(live.sa);
+    }
+
+    resetLive();
+
+    function liveMixing() {
+        return mixingFromPoints(live.oa, live.ra, live.ma, live.mixFrac);
+    }
+
+    function paintMaStatus(node) {
+        if (!node) return;
+        const mx = liveMixing();
+        const cat = classifyMaFault(mx);
+        const oaPct = Math.round(live.mixFrac * 100);
+        if (!cat) {
+            node.hidden = false;
+            node.dataset.cat = '';
+            node.innerHTML = '<strong>MA on the mixing line</strong> · commanded '
+                + oaPct + '% OA. Drag MA off the dashed chord to raise a fault.';
+            return;
+        }
+        const spec = MA_FAULT_CATALOG[cat];
+        const dev = mx.line_deviation_g_kg;
+        const devTxt = (dev != null && Number.isFinite(dev))
+            ? ' Residual ' + (dev >= 0 ? '+' : '') + dev.toFixed(1) + ' g/kg.'
+            : '';
+        node.hidden = false;
+        node.dataset.cat = cat;
+        node.innerHTML = '<span class="train-cat">MA [' + cat + ']</span> <strong>'
+            + spec.points + '</strong><br>' + spec.pattern + ' — ' + spec.why + '.' + devTxt;
+    }
+
+    let readSync = null;
+    let econSync = null;
+
+    function broadcast() {
+        stampH(live.oa);
+        stampH(live.ra);
+        stampH(live.ma);
+        stampH(live.sa);
+        if (readSync) readSync();
+        if (econSync) econSync();
+        paintMaStatus(document.getElementById('read-ma-status'));
+        paintMaStatus(document.getElementById('econ-ma-status'));
+        const cap = document.getElementById('read-caption');
+        if (cap) {
+            cap.innerHTML = '<b>OA</b> outside air · <b>RA</b> return air · <b>MA</b> the mixture entering the coil · <b>SA</b> supply air delivered to the rooms. '
+                + 'Dashed green = mixing; solid blue = the cooling coil. '
+                + 'The <span class="en">violet diagonals</span> are lines of equal total energy: outside air here holds '
+                + Math.round(live.oa.h) + ' kJ/kg against return air’s ' + Math.round(live.ra.h)
+                + (live.oa.h > live.ra.h + 1
+                    ? ', so it sits above RA’s line and costs more to condition — no free cooling.'
+                    : ', so OA is at or below RA’s energy — economizer territory.');
+        }
+    }
 
     function makeFrame(svg, opts) {
         const W = 1100, H = 560;
@@ -46,6 +287,8 @@
         const W_MIN = 0, W_MAX = opts.wMax;
         const tToX = (t) => PAD.left + ((t - T_MIN) / (T_MAX - T_MIN)) * (W - PAD.left - PAD.right);
         const wToY = (w) => H - PAD.bottom - ((w - W_MIN) / (W_MAX - W_MIN)) * (H - PAD.top - PAD.bottom);
+        const xToT = (x) => T_MIN + ((x - PAD.left) / (W - PAD.left - PAD.right)) * (T_MAX - T_MIN);
+        const yToW = (y) => W_MIN + ((H - PAD.bottom - y) / (H - PAD.top - PAD.bottom)) * (W_MAX - W_MIN);
         const satW = (t) => Math.min(W_MAX, getW(t, 100));
         const xy = (t, w) => `${tToX(t)},${wToY(w)}`;
 
@@ -63,7 +306,6 @@
         }
 
         function satIntersectT(h) {
-            // Left of this T the h-isoline sits above saturation (impossible).
             if (wFromH(T_MAX, h) > getW(T_MAX, 100)) return T_MAX;
             if (wFromH(T_MIN, h) <= getW(T_MIN, 100)) return T_MIN;
             let lo = T_MIN, hi = T_MAX;
@@ -78,11 +320,17 @@
             return pts.map((p) => xy(p[0], p[1])).join(' ');
         }
 
-        function clipToSat(t, w) {
-            return [t, Math.min(w, satW(t))];
+        function clientToTw(evt) {
+            const pt = svg.createSVGPoint();
+            pt.x = evt.clientX;
+            pt.y = evt.clientY;
+            const ctm = svg.getScreenCTM();
+            if (!ctm) return null;
+            const p = pt.matrixTransform(ctm.inverse());
+            return { t: xToT(p.x), w: yToW(p.y) };
         }
 
-        return { svg, W, H, PAD, T_MIN, T_MAX, W_MIN, W_MAX, tToX, wToY, satW, xy, enthalpyPts, satIntersectT, poly, clipToSat };
+        return { svg, W, H, PAD, T_MIN, T_MAX, W_MIN, W_MAX, tToX, wToY, satW, xy, enthalpyPts, satIntersectT, poly, clientToTw };
     }
 
     function drawBase(fr, parent, opts) {
@@ -154,19 +402,122 @@
         }, '100% RH (saturation)'));
     }
 
-    function drawDot(fr, parent, p, extra) {
-        const g = el('g', extra || {});
+    function makeDot(fr, parent, key, p) {
+        const g = el('g', { class: 'train-dot', 'data-pt': key });
         g.appendChild(el('circle', {
+            class: 'train-hit',
+            cx: fr.tToX(p.t), cy: fr.wToY(p.w), r: 16,
+            fill: 'transparent', stroke: 'none'
+        }));
+        g.appendChild(el('circle', {
+            class: 'train-mark',
             cx: fr.tToX(p.t), cy: fr.wToY(p.w), r: 7,
             fill: p.color, stroke: '#0b1220', 'stroke-width': 1.6
         }));
         g.appendChild(el('text', {
+            class: 'train-dot-label',
             x: fr.tToX(p.t) + 10, y: fr.wToY(p.w) - 8,
             fill: p.color, 'font-size': 13, 'font-weight': '800',
             'font-family': 'monospace'
         }, p.label));
         parent.appendChild(g);
         return g;
+    }
+
+    function moveDot(fr, g, p, label) {
+        const x = fr.tToX(p.t), y = fr.wToY(p.w);
+        g.querySelectorAll('circle').forEach((c) => {
+            c.setAttribute('cx', x);
+            c.setAttribute('cy', y);
+        });
+        const mark = g.querySelector('.train-mark');
+        if (mark) {
+            mark.setAttribute('fill', p.color);
+            mark.setAttribute('stroke', live.maSnapped || g.getAttribute('data-pt') !== 'MA' ? '#0b1220' : '#f43f5e');
+            mark.setAttribute('stroke-width', g.getAttribute('data-pt') === 'MA' && !live.maSnapped ? '2.4' : '1.6');
+        }
+        const tx = g.querySelector('.train-dot-label');
+        if (tx) {
+            tx.setAttribute('x', x + 10);
+            tx.setAttribute('y', y - 8);
+            tx.setAttribute('fill', p.color);
+            if (label) tx.textContent = label;
+        }
+    }
+
+    function applyDrag(key, t, w, fr) {
+        const clipped = clipPoint(fr, t, w);
+        const prevMa = { t: live.ma.t, w: live.ma.w };
+        if (key === 'OA' || key === 'RA') {
+            const p = key === 'OA' ? live.oa : live.ra;
+            p.t = clipped.t;
+            p.w = clipped.w;
+            if (live.maSnapped) {
+                placeMaOnMix();
+                live.sa.t += live.ma.t - prevMa.t;
+                live.sa.w += live.ma.w - prevMa.w;
+                const saC = clipPoint(fr, live.sa.t, live.sa.w);
+                live.sa.t = saC.t;
+                live.sa.w = saC.w;
+            }
+        } else if (key === 'SA') {
+            live.sa.t = clipped.t;
+            live.sa.w = clipped.w;
+        } else if (key === 'MA') {
+            live.ma.t = clipped.t;
+            live.ma.w = clipped.w;
+            const proj = projectOnChord(live.oa, live.ra, live.ma);
+            const mx = mixingFromPoints(live.oa, live.ra, live.ma, live.mixFrac);
+            const off = mx.flags.indexOf('off_mixing_line') >= 0
+                || mx.flags.indexOf('mat_outside_oa_ra') >= 0;
+            if (!off) {
+                live.ma.t = proj.t;
+                live.ma.w = proj.w;
+                const dT = live.oa.t - live.ra.t;
+                if (Math.abs(dT) >= RED5_MA_MIN_DT_C) {
+                    live.mixFrac = Math.max(0, Math.min(1, (live.ma.t - live.ra.t) / dT));
+                }
+                live.maSnapped = true;
+            } else {
+                live.maSnapped = false;
+            }
+        }
+        broadcast();
+    }
+
+    function bindDrag(svg, fr, keys) {
+        let dragging = null;
+        svg.addEventListener('pointerdown', (evt) => {
+            const hit = evt.target.closest('[data-pt]');
+            if (!hit) return;
+            const key = hit.getAttribute('data-pt');
+            if (keys.indexOf(key) < 0) return;
+            dragging = key;
+            svg.setPointerCapture(evt.pointerId);
+            svg.classList.add('is-dragging');
+            evt.preventDefault();
+        });
+        svg.addEventListener('pointermove', (evt) => {
+            if (!dragging) return;
+            const tw = fr.clientToTw(evt);
+            if (!tw) return;
+            applyDrag(dragging, tw.t, tw.w, fr);
+        });
+        const end = (evt) => {
+            if (!dragging) return;
+            dragging = null;
+            svg.classList.remove('is-dragging');
+            try { svg.releasePointerCapture(evt.pointerId); } catch (err) { /* already released */ }
+        };
+        svg.addEventListener('pointerup', end);
+        svg.addEventListener('pointercancel', end);
+        svg.addEventListener('dblclick', (evt) => {
+            const hit = evt.target.closest('[data-pt]');
+            if (hit && hit.getAttribute('data-pt') === 'MA') {
+                placeMaOnMix();
+                broadcast();
+            }
+        });
     }
 
     // =====================================================================
@@ -177,7 +528,7 @@
             id: 'all',
             chip: 'All',
             title: 'The whole picture',
-            body: 'Four dots, two process lines, a comfort box and the equal-energy diagonals. Step through the six points to light each piece on its own.',
+            body: 'Four dots, two process lines, a comfort box and the equal-energy diagonals. Drag OA, RA, MA or SA — the mixing line and coil follow. Double-click MA to snap it back onto the chord.',
             layers: ['axes', 'sat', 'enthalpy', 'comfort', 'mix', 'coil', 'points']
         },
         {
@@ -198,14 +549,14 @@
             id: '3',
             chip: '3 · Mixing',
             title: 'Mixing is a straight line',
-            body: 'Outside and return air blend to a point that must land on the line joining them. How far along it sits gives the proportion: a third of the way from RA means a third outside air.',
+            body: 'Outside and return air blend to a point that must land on the line joining them. Drag MA along the dashed chord to change OA%; pull it off the line and the MA fault category lights up.',
             layers: ['mix', 'points']
         },
         {
             id: '4',
             chip: '4 · Coil',
             title: 'A coil pulls down and left',
-            body: 'Left removes temperature (sensible heat); down removes water (latent heat). The slope of MA→SA is the split between them — and that split is what sizing a coil actually means.',
+            body: 'Left removes temperature (sensible heat); down removes water (latent heat). Drag SA to change the slope of MA→SA — that split is what sizing a coil actually means.',
             layers: ['coil', 'points']
         },
         {
@@ -219,7 +570,7 @@
             id: '6',
             chip: '6 · Faults',
             title: 'Faults show up as bad geometry',
-            body: 'If the mixed-air dot does not sit on the line between outside and return air, something is lying — a stuck damper or a drifting sensor. The picture catches what alarm limits miss.',
+            body: 'If mixed air does not sit on the OA–RA chord, Red5 classifies it A–H (sensor, damper, MAT-out-of-range, extra moisture, ERV, high-OAD leak, or drift). Pull MA off the line to see which one you built.',
             layers: ['mix', 'fault', 'points']
         }
     ];
@@ -260,21 +611,6 @@
         root.appendChild(axes);
 
         const enthalpy = el('g', { class: 'train-layer', 'data-layer': 'enthalpy' });
-        [RA.h, OA.h, 64].forEach((h, i) => {
-            const pts = fr.enthalpyPts(h, fr.T_MIN, fr.T_MAX, 0.4);
-            if (pts.length < 2) return;
-            enthalpy.appendChild(el('polyline', {
-                points: fr.poly(pts),
-                fill: 'none', stroke: '#a78bfa',
-                'stroke-width': i === 2 ? 1.2 : 1.6,
-                'stroke-dasharray': '7 5', opacity: i === 2 ? 0.45 : 0.85
-            }));
-        });
-        enthalpy.appendChild(el('text', {
-            x: fr.tToX(18), y: fr.wToY(wFromH(18, RA.h)) - 8,
-            fill: '#c4b5fd', 'font-size': 11, 'font-weight': '700',
-            'font-family': 'monospace'
-        }, 'equal energy (enthalpy)'));
         root.appendChild(enthalpy);
 
         const comfort = el('g', { class: 'train-layer', 'data-layer': 'comfort' });
@@ -294,52 +630,95 @@
         root.appendChild(comfort);
 
         const mix = el('g', { class: 'train-layer', 'data-layer': 'mix' });
-        mix.appendChild(el('line', {
-            x1: fr.tToX(OA.t), y1: fr.wToY(OA.w),
-            x2: fr.tToX(RA.t), y2: fr.wToY(RA.w),
+        const mixLine = el('line', {
             stroke: '#10b981', 'stroke-width': 2.2, 'stroke-dasharray': '7 5'
-        }));
+        });
+        mix.appendChild(mixLine);
         root.appendChild(mix);
 
         const coil = el('g', { class: 'train-layer', 'data-layer': 'coil' });
-        coil.appendChild(el('line', {
-            x1: fr.tToX(MA.t), y1: fr.wToY(MA.w),
-            x2: fr.tToX(SA.t), y2: fr.wToY(SA.w),
-            stroke: '#3b82f6', 'stroke-width': 2.6
-        }));
-        const ang = Math.atan2(fr.wToY(SA.w) - fr.wToY(MA.w), fr.tToX(SA.t) - fr.tToX(MA.t));
-        const ax = fr.tToX(SA.t), ay = fr.wToY(SA.w);
-        coil.appendChild(el('polygon', {
-            points: [
+        const coilLine = el('line', { stroke: '#3b82f6', 'stroke-width': 2.6 });
+        const coilHead = el('polygon', { fill: '#3b82f6' });
+        coil.appendChild(coilLine);
+        coil.appendChild(coilHead);
+        root.appendChild(coil);
+
+        const fault = el('g', { class: 'train-layer', 'data-layer': 'fault' });
+        const drop = el('line', {
+            stroke: '#f43f5e', 'stroke-width': 1.6, 'stroke-dasharray': '3 4'
+        });
+        const dropLab = el('text', {
+            fill: '#fb7185', 'font-size': 10, 'font-weight': '700',
+            'font-family': 'monospace'
+        }, 'off the OA–RA line');
+        fault.appendChild(drop);
+        fault.appendChild(dropLab);
+        root.appendChild(fault);
+
+        const points = el('g', { class: 'train-layer', 'data-layer': 'points' });
+        const dots = {
+            OA: makeDot(fr, points, 'OA', live.oa),
+            RA: makeDot(fr, points, 'RA', live.ra),
+            MA: makeDot(fr, points, 'MA', live.ma),
+            SA: makeDot(fr, points, 'SA', live.sa)
+        };
+        root.appendChild(points);
+
+        function sync() {
+            mixLine.setAttribute('x1', fr.tToX(live.oa.t));
+            mixLine.setAttribute('y1', fr.wToY(live.oa.w));
+            mixLine.setAttribute('x2', fr.tToX(live.ra.t));
+            mixLine.setAttribute('y2', fr.wToY(live.ra.w));
+            coilLine.setAttribute('x1', fr.tToX(live.ma.t));
+            coilLine.setAttribute('y1', fr.wToY(live.ma.w));
+            coilLine.setAttribute('x2', fr.tToX(live.sa.t));
+            coilLine.setAttribute('y2', fr.wToY(live.sa.w));
+            const ang = Math.atan2(fr.wToY(live.sa.w) - fr.wToY(live.ma.w), fr.tToX(live.sa.t) - fr.tToX(live.ma.t));
+            const ax = fr.tToX(live.sa.t), ay = fr.wToY(live.sa.w);
+            coilHead.setAttribute('points', [
                 [ax, ay],
                 [ax - 12 * Math.cos(ang - 0.45), ay - 12 * Math.sin(ang - 0.45)],
                 [ax - 12 * Math.cos(ang + 0.45), ay - 12 * Math.sin(ang + 0.45)]
-            ].map((p) => p.join(',')).join(' '),
-            fill: '#3b82f6'
-        }));
-        root.appendChild(coil);
+            ].map((p) => p.join(',')).join(' '));
 
-        const points = el('g', { class: 'train-layer', 'data-layer': 'points' });
-        drawDot(fr, points, OA);
-        drawDot(fr, points, RA);
-        drawDot(fr, points, MA);
-        drawDot(fr, points, SA);
-        root.appendChild(points);
+            while (enthalpy.firstChild) enthalpy.removeChild(enthalpy.firstChild);
+            [live.ra.h, live.oa.h].forEach((h, i) => {
+                const pts = fr.enthalpyPts(h, fr.T_MIN, fr.T_MAX, 0.4);
+                if (pts.length < 2) return;
+                enthalpy.appendChild(el('polyline', {
+                    points: fr.poly(pts),
+                    fill: 'none', stroke: '#a78bfa',
+                    'stroke-width': 1.6,
+                    'stroke-dasharray': '7 5', opacity: 0.85
+                }));
+            });
+            enthalpy.appendChild(el('text', {
+                x: fr.tToX(Math.min(18, live.ra.t)), y: fr.wToY(wFromH(Math.min(18, live.ra.t), live.ra.h)) - 8,
+                fill: '#c4b5fd', 'font-size': 11, 'font-weight': '700',
+                'font-family': 'monospace'
+            }, 'equal energy (enthalpy)'));
 
-        const fault = el('g', { class: 'train-layer', 'data-layer': 'fault' });
-        fault.appendChild(el('line', {
-            x1: fr.tToX(MA.t), y1: fr.wToY(MA.w),
-            x2: fr.tToX(MA_LIE.t), y2: fr.wToY(MA_LIE.w),
-            stroke: '#f43f5e', 'stroke-width': 1.6, 'stroke-dasharray': '3 4'
-        }));
-        drawDot(fr, fault, MA_LIE);
-        fault.appendChild(el('text', {
-            x: fr.tToX(MA_LIE.t) + 10, y: fr.wToY(MA_LIE.w) + 16,
-            fill: '#fb7185', 'font-size': 10, 'font-weight': '700',
-            'font-family': 'monospace'
-        }, 'off the OA–RA line'));
-        root.appendChild(fault);
+            const proj = projectOnChord(live.oa, live.ra, live.ma);
+            const off = !live.maSnapped;
+            drop.setAttribute('x1', fr.tToX(proj.t));
+            drop.setAttribute('y1', fr.wToY(proj.w));
+            drop.setAttribute('x2', fr.tToX(live.ma.t));
+            drop.setAttribute('y2', fr.wToY(live.ma.w));
+            drop.style.display = off ? '' : 'none';
+            dropLab.setAttribute('x', fr.tToX(live.ma.t) + 10);
+            dropLab.setAttribute('y', fr.wToY(live.ma.w) + 16);
+            dropLab.style.display = off ? '' : 'none';
+            live.ma.color = off ? '#f43f5e' : '#e2e8f0';
+            live.ma.label = off ? 'MA?' : 'MA';
+            moveDot(fr, dots.OA, live.oa, 'OA ' + Math.round(live.oa.h));
+            moveDot(fr, dots.RA, live.ra, 'RA ' + Math.round(live.ra.h));
+            moveDot(fr, dots.MA, live.ma, live.ma.label);
+            moveDot(fr, dots.SA, live.sa, 'SA');
+        }
 
+        bindDrag(svg, fr, ['OA', 'RA', 'MA', 'SA']);
+        readSync = sync;
+        sync();
         return { svg, root };
     }
 
@@ -355,7 +734,7 @@
             const lit = !active || active.indexOf(name) !== -1;
             node.classList.toggle('is-lit', lit);
             node.classList.toggle('is-dim', !lit);
-            if (name === 'fault') node.style.display = lit ? '' : 'none';
+            if (name === 'fault') node.style.display = lit || !live.maSnapped ? '' : 'none';
         });
     }
 
@@ -388,6 +767,8 @@
         });
         document.getElementById('read-prev').addEventListener('click', () => show(idx - 1));
         document.getElementById('read-next').addEventListener('click', () => show(idx + 1));
+        const reset = document.getElementById('read-reset');
+        if (reset) reset.addEventListener('click', () => { resetLive(); broadcast(); });
         show(0);
     }
 
@@ -413,14 +794,14 @@
             id: 'a',
             cls: 'a',
             title: 'A · Cool but muggy',
-            body: 'At 22 °C it is 2° cooler than the return, so a dry-bulb economizer opens — yet it carries 60 kJ/kg against 48. You have just imported latent load for the coil to wring back out.',
+            body: 'Cooler than return on dry-bulb, yet higher enthalpy. A dry-bulb economizer opens and imports latent load for the coil to wring back out.',
             testid: 'outcome-a'
         },
         {
             id: 'b',
             cls: 'b',
             title: 'B · Warm but dry',
-            body: 'At 28 °C dry-bulb keeps it shut, yet 34 kJ/kg is far below the return. Energy says use it — though a dry-bulb high limit still guards this corner when the load is mostly sensible.',
+            body: 'Warmer than return so dry-bulb keeps shut, yet enthalpy is below return. Energy says use it — a dry-bulb high limit still guards this corner when the load is mostly sensible.',
             testid: 'outcome-b'
         },
         {
@@ -432,16 +813,27 @@
         }
     ];
 
+    function oaOutcome() {
+        const cooler = live.oa.t < live.ra.t - 0.3;
+        const lessH = live.oa.h < live.ra.h - 1;
+        const onH = Math.abs(live.oa.h - live.ra.h) <= 1;
+        if (onH) return 'line';
+        if (cooler && lessH) return 'free';
+        if (cooler && !lessH) return 'a';
+        if (!cooler && lessH) return 'b';
+        return 'min';
+    }
+
     function regionPolys(fr) {
-        const tSplit = RA.t;
-        const hSplit = RA.h;
+        const tSplit = live.ra.t;
+        const hSplit = live.ra.h;
         const tSat = fr.satIntersectT(hSplit);
         const step = 0.4;
 
         const free = [];
         free.push([fr.T_MIN, fr.W_MIN]);
         free.push([tSplit, fr.W_MIN]);
-        free.push([tSplit, RA.w]);
+        free.push([tSplit, live.ra.w]);
         fr.enthalpyPts(hSplit, tSplit, Math.max(fr.T_MIN, tSat), step).forEach((p) => free.push(p));
         if (tSat > fr.T_MIN) {
             for (let t = tSat; t >= fr.T_MIN; t -= step) free.push([t, fr.satW(t)]);
@@ -449,10 +841,10 @@
         free.push([fr.T_MIN, fr.W_MIN]);
 
         const a = [];
-        a.push([tSplit, RA.w]);
+        a.push([tSplit, live.ra.w]);
         fr.enthalpyPts(hSplit, tSplit, Math.max(fr.T_MIN, tSat), step).forEach((p) => a.push(p));
         for (let t = Math.max(fr.T_MIN, tSat); t <= tSplit; t += step) a.push([t, fr.satW(t)]);
-        a.push([tSplit, RA.w]);
+        a.push([tSplit, live.ra.w]);
 
         const b = [];
         b.push([tSplit, fr.W_MIN]);
@@ -465,16 +857,11 @@
         b.push([tSplit, fr.W_MIN]);
 
         const min = [];
-        min.push([tSplit, RA.w]);
+        min.push([tSplit, live.ra.w]);
         fr.enthalpyPts(hSplit, tSplit, fr.T_MAX, step).forEach((p) => min.push(p));
-        const lastH = min[min.length - 1];
-        if (lastH && lastH[0] < fr.T_MAX) {
-            min.push([fr.T_MAX, fr.satW(fr.T_MAX)]);
-        } else if (lastH) {
-            min.push([fr.T_MAX, fr.satW(fr.T_MAX)]);
-        }
+        min.push([fr.T_MAX, fr.satW(fr.T_MAX)]);
         for (let t = fr.T_MAX; t >= tSplit; t -= step) min.push([t, fr.satW(t)]);
-        min.push([tSplit, RA.w]);
+        min.push([tSplit, live.ra.w]);
 
         return { free, a, b, min };
     }
@@ -488,33 +875,7 @@
         svg.appendChild(root);
         drawBase(fr, root, { rh: [40, 60, 80, 100] });
 
-        const polys = regionPolys(fr);
         const regions = el('g', { class: 'train-layer', 'data-layer': 'regions' });
-        const fills = {
-            free: { fill: 'rgba(16,185,129,0.22)', stroke: '#10b981', label: 'FREE COOLING', sub: 'both methods agree', lx: 14, ly: 0.003 },
-            a:    { fill: 'rgba(244,63,94,0.20)',  stroke: '#fb7185', label: 'A 60', sub: 'cool but muggy', lx: 16, ly: 0.014 },
-            b:    { fill: 'rgba(249,115,22,0.20)', stroke: '#f97316', label: 'B 34', sub: 'warm but dry', lx: 31, ly: 0.0028 },
-            min:  { fill: 'rgba(100,116,139,0.16)', stroke: '#64748b', label: 'hot & humid', sub: 'minimum OA', lx: 34.5, ly: 0.017 }
-        };
-        ['free', 'a', 'b', 'min'].forEach((key) => {
-            const g = el('g', { class: 'econ-region', 'data-region': key });
-            const spec = fills[key];
-            g.appendChild(el('polygon', {
-                points: fr.poly(polys[key]),
-                fill: spec.fill, stroke: spec.stroke, 'stroke-width': 1.1
-            }));
-            g.appendChild(el('text', {
-                x: fr.tToX(spec.lx), y: fr.wToY(spec.ly),
-                fill: spec.stroke, 'font-size': 12, 'font-weight': '800',
-                'font-family': 'monospace'
-            }, spec.label));
-            g.appendChild(el('text', {
-                x: fr.tToX(spec.lx), y: fr.wToY(spec.ly) + 14,
-                fill: spec.stroke, 'font-size': 10, 'font-weight': '700',
-                'font-family': 'monospace', opacity: 0.85
-            }, spec.sub));
-            regions.appendChild(g);
-        });
         root.appendChild(regions);
 
         const sat = el('g', { class: 'train-layer', 'data-layer': 'sat' });
@@ -529,38 +890,105 @@
         root.appendChild(sat);
 
         const lines = el('g', { class: 'train-layer', 'data-layer': 'lines' });
-        lines.appendChild(el('line', {
-            x1: fr.tToX(RA.t), y1: fr.PAD.top,
-            x2: fr.tToX(RA.t), y2: fr.H - fr.PAD.bottom,
-            stroke: '#cbd5e1', 'stroke-width': 1.8, 'stroke-dasharray': '6 5',
-            'data-line': 'db'
-        }));
-        lines.appendChild(el('text', {
-            x: fr.tToX(RA.t) + 6, y: fr.PAD.top + 14,
-            fill: '#cbd5e1', 'font-size': 11, 'font-weight': '700',
-            'font-family': 'monospace', 'data-line': 'db'
-        }, 'dry-bulb only'));
-        const hPts = fr.enthalpyPts(RA.h, fr.T_MIN, fr.T_MAX, 0.4);
-        lines.appendChild(el('polyline', {
-            points: fr.poly(hPts),
-            fill: 'none', stroke: '#a78bfa', 'stroke-width': 2.4,
-            'data-line': 'h'
-        }));
-        const labT = 17;
-        lines.appendChild(el('text', {
-            x: fr.tToX(labT), y: fr.wToY(wFromH(labT, RA.h)) - 8,
-            fill: '#c4b5fd', 'font-size': 11, 'font-weight': '700',
-            'font-family': 'monospace', 'data-line': 'h'
-        }, 'equal energy as RA'));
         root.appendChild(lines);
 
+        const process = el('g', { class: 'train-layer', 'data-layer': 'process' });
+        const mixLine = el('line', {
+            stroke: '#10b981', 'stroke-width': 2.0, 'stroke-dasharray': '7 5'
+        });
+        const coilLine = el('line', { stroke: '#3b82f6', 'stroke-width': 2.4 });
+        process.appendChild(mixLine);
+        process.appendChild(coilLine);
+        root.appendChild(process);
+
         const points = el('g', { class: 'train-layer', 'data-layer': 'points' });
-        drawDot(fr, points, { t: RA.t, w: RA.w, label: 'RA 48', color: '#10b981' });
-        drawDot(fr, points, { t: PT_A.t, w: PT_A.w, label: 'A 60', color: '#fb7185' });
-        drawDot(fr, points, { t: PT_B.t, w: PT_B.w, label: 'B 34', color: '#f97316' });
-        drawDot(fr, points, { t: OA.t, w: OA.w, label: 'OA 79', color: '#94a3b8' });
+        makeDot(fr, points, 'A', PT_A);
+        makeDot(fr, points, 'B', PT_B);
+        const dots = {
+            RA: makeDot(fr, points, 'RA', live.ra),
+            OA: makeDot(fr, points, 'OA', live.oa),
+            MA: makeDot(fr, points, 'MA', live.ma),
+            SA: makeDot(fr, points, 'SA', live.sa)
+        };
         root.appendChild(points);
 
+        function sync() {
+            while (regions.firstChild) regions.removeChild(regions.firstChild);
+            const polys = regionPolys(fr);
+            const fills = {
+                free: { fill: 'rgba(16,185,129,0.22)', stroke: '#10b981', label: 'FREE COOLING', sub: 'both methods agree', lx: 14, ly: 0.003 },
+                a:    { fill: 'rgba(244,63,94,0.20)',  stroke: '#fb7185', label: 'A 60', sub: 'cool but muggy', lx: 16, ly: 0.014 },
+                b:    { fill: 'rgba(249,115,22,0.20)', stroke: '#f97316', label: 'B 34', sub: 'warm but dry', lx: 31, ly: 0.0028 },
+                min:  { fill: 'rgba(100,116,139,0.16)', stroke: '#64748b', label: 'hot & humid', sub: 'minimum OA', lx: 34.5, ly: 0.017 }
+            };
+            ['free', 'a', 'b', 'min'].forEach((key) => {
+                const g = el('g', { class: 'econ-region', 'data-region': key });
+                const spec = fills[key];
+                g.appendChild(el('polygon', {
+                    points: fr.poly(polys[key]),
+                    fill: spec.fill, stroke: spec.stroke, 'stroke-width': 1.1
+                }));
+                g.appendChild(el('text', {
+                    x: fr.tToX(spec.lx), y: fr.wToY(spec.ly),
+                    fill: spec.stroke, 'font-size': 12, 'font-weight': '800',
+                    'font-family': 'monospace'
+                }, spec.label));
+                g.appendChild(el('text', {
+                    x: fr.tToX(spec.lx), y: fr.wToY(spec.ly) + 14,
+                    fill: spec.stroke, 'font-size': 10, 'font-weight': '700',
+                    'font-family': 'monospace', opacity: 0.85
+                }, spec.sub));
+                g.style.cursor = 'pointer';
+                g.addEventListener('click', () => {
+                    const ev = new CustomEvent('train-outcome', { detail: key });
+                    svg.dispatchEvent(ev);
+                });
+                regions.appendChild(g);
+            });
+
+            while (lines.firstChild) lines.removeChild(lines.firstChild);
+            lines.appendChild(el('line', {
+                x1: fr.tToX(live.ra.t), y1: fr.PAD.top,
+                x2: fr.tToX(live.ra.t), y2: fr.H - fr.PAD.bottom,
+                stroke: '#cbd5e1', 'stroke-width': 1.8, 'stroke-dasharray': '6 5',
+                'data-line': 'db'
+            }));
+            lines.appendChild(el('text', {
+                x: fr.tToX(live.ra.t) + 6, y: fr.PAD.top + 14,
+                fill: '#cbd5e1', 'font-size': 11, 'font-weight': '700',
+                'font-family': 'monospace', 'data-line': 'db'
+            }, 'dry-bulb only'));
+            const hPts = fr.enthalpyPts(live.ra.h, fr.T_MIN, fr.T_MAX, 0.4);
+            lines.appendChild(el('polyline', {
+                points: fr.poly(hPts),
+                fill: 'none', stroke: '#a78bfa', 'stroke-width': 2.4,
+                'data-line': 'h'
+            }));
+            const labT = Math.min(17, live.ra.t - 2);
+            lines.appendChild(el('text', {
+                x: fr.tToX(labT), y: fr.wToY(wFromH(labT, live.ra.h)) - 8,
+                fill: '#c4b5fd', 'font-size': 11, 'font-weight': '700',
+                'font-family': 'monospace', 'data-line': 'h'
+            }, 'equal energy as RA'));
+
+            mixLine.setAttribute('x1', fr.tToX(live.oa.t));
+            mixLine.setAttribute('y1', fr.wToY(live.oa.w));
+            mixLine.setAttribute('x2', fr.tToX(live.ra.t));
+            mixLine.setAttribute('y2', fr.wToY(live.ra.w));
+            coilLine.setAttribute('x1', fr.tToX(live.ma.t));
+            coilLine.setAttribute('y1', fr.wToY(live.ma.w));
+            coilLine.setAttribute('x2', fr.tToX(live.sa.t));
+            coilLine.setAttribute('y2', fr.wToY(live.sa.w));
+            live.ma.color = live.maSnapped ? '#e2e8f0' : '#f43f5e';
+            moveDot(fr, dots.OA, live.oa, 'OA ' + Math.round(live.oa.h));
+            moveDot(fr, dots.RA, live.ra, 'RA ' + Math.round(live.ra.h));
+            moveDot(fr, dots.MA, live.ma, live.maSnapped ? 'MA' : 'MA?');
+            moveDot(fr, dots.SA, live.sa, 'SA');
+        }
+
+        bindDrag(svg, fr, ['OA', 'RA', 'MA', 'SA']);
+        econSync = sync;
+        sync();
         return { svg, fr };
     }
 
@@ -583,7 +1011,7 @@
         });
         svg.querySelectorAll('[data-line]').forEach((node) => {
             const which = node.getAttribute('data-line');
-            const emphasize = method === 'both' || method === which || outcome === 'line' && which === 'h';
+            const emphasize = method === 'both' || method === which || (outcome === 'line' && which === 'h');
             node.setAttribute('opacity', emphasize ? '1' : '0.22');
             if (node.tagName === 'polyline' || node.tagName === 'line') {
                 node.setAttribute('stroke-width', emphasize && which === (method === 'db' ? 'db' : 'h') ? '3' : '2');
@@ -595,7 +1023,7 @@
         const methods = document.getElementById('econ-methods');
         const host = document.getElementById('econ-outcomes');
         if (!methods || !host) return;
-        buildEconChart();
+        const built = buildEconChart();
 
         let method = 'both';
         let outcome = 'free';
@@ -609,6 +1037,13 @@
             });
             paintEcon(method, outcome);
         }
+
+        const prevEcon = econSync;
+        econSync = function () {
+            if (prevEcon) prevEcon();
+            outcome = oaOutcome();
+            render();
+        };
 
         methods.querySelectorAll('button').forEach((b) => {
             b.addEventListener('click', () => {
@@ -632,17 +1067,18 @@
             host.appendChild(card);
         });
 
-        document.getElementById('econ-chart').querySelectorAll('.econ-region').forEach((g) => {
-            g.style.cursor = 'pointer';
-            g.addEventListener('click', () => {
-                outcome = g.getAttribute('data-region');
-                render();
-            });
+        built.svg.addEventListener('train-outcome', (ev) => {
+            outcome = ev.detail;
+            render();
         });
+
+        const reset = document.getElementById('econ-reset');
+        if (reset) reset.addEventListener('click', () => { resetLive(); broadcast(); });
 
         render();
     }
 
     initReadModule();
     initEconModule();
+    broadcast();
 })();

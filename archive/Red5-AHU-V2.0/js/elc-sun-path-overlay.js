@@ -836,7 +836,7 @@
     const da = String(p.da || 1).padStart(2, '0');
     const hh = String(p.h || 0).padStart(2, '0');
     const mm = String(p.mi || 0).padStart(2, '0');
-    return p.y + '-' + mo + '-' + da + '  ' + hh + ':' + mm;
+    return p.y + '-' + mo + '-' + da + ' ' + hh + ':' + mm;
   }
   function stepCivilDate(p, step, dir) {
     let y = p.y, mo = p.mo, da = p.da;
@@ -928,6 +928,56 @@
     armClockTick(timezone, lonDeg);
     ensureClockParts(timezone, lonDeg);
     return clockSnapshot();
+  }
+
+  /* Same climate calendars as Monthly × Sites (psy-3d-engine.js SEASON_*).
+     Location (lat/lon) picks temperate N/S, tropical monsoon, or arid. */
+  const SEASON_COLOR = {
+    winter: '#60a5fa', spring: '#84cc16', summer: '#f97316', fall: '#a16207',
+    ne_monsoon: '#3b82f6', inter1: '#a78bfa', sw_monsoon: '#fb923c', inter2: '#facc15',
+    cool_season: '#60a5fa', transition: '#a78bfa', hot_season: '#dc2626'
+  };
+  const SEASON_CAL = {
+    north_4s: ['winter', 'winter', 'spring', 'spring', 'spring', 'summer', 'summer', 'summer', 'fall', 'fall', 'fall', 'winter'],
+    south_4s: ['summer', 'summer', 'fall', 'fall', 'fall', 'winter', 'winter', 'winter', 'spring', 'spring', 'spring', 'summer'],
+    tropical: ['ne_monsoon', 'ne_monsoon', 'inter1', 'inter1', 'inter1', 'sw_monsoon', 'sw_monsoon', 'sw_monsoon', 'inter2', 'inter2', 'inter2', 'ne_monsoon'],
+    arid: ['cool_season', 'cool_season', 'cool_season', 'transition', 'hot_season', 'hot_season', 'hot_season', 'hot_season', 'hot_season', 'transition', 'cool_season', 'cool_season']
+  };
+  const SEASON_LABEL = {
+    winter: 'Winter', spring: 'Spring', summer: 'Summer', fall: 'Autumn',
+    ne_monsoon: 'NE Monsoon', inter1: 'Inter-Monsoon 1', sw_monsoon: 'SW Monsoon', inter2: 'Inter-Monsoon 2',
+    cool_season: 'Cool', transition: 'Transition', hot_season: 'Hot'
+  };
+  const SEASON_LABEL_SHORT = {
+    winter: 'W', spring: 'Sp', summer: 'Su', fall: 'A',
+    ne_monsoon: 'NEM', inter1: 'Int1', sw_monsoon: 'SWM', inter2: 'Int2',
+    cool_season: 'C', transition: 'Tr', hot_season: 'H'
+  };
+  const CLIMATE_LABEL = {
+    north_4s: 'Temp N', south_4s: 'Temp S', tropical: 'Trop', arid: 'Arid'
+  };
+  const CLIMATE_SEQ = {
+    north_4s: ['winter', 'spring', 'summer', 'fall'],
+    south_4s: ['summer', 'fall', 'winter', 'spring'],
+    tropical: ['ne_monsoon', 'inter1', 'sw_monsoon', 'inter2'],
+    arid: ['cool_season', 'transition', 'hot_season']
+  };
+  function climateTypeFor(lat, lon) {
+    const aLat = Math.abs(Number(lat) || 0);
+    const lonN = Number(lon) || 0;
+    if (aLat < 15) return 'tropical';
+    if (aLat < 35 && aLat >= 20 && lonN >= 20 && lonN <= 60 && (Number(lat) || 0) > 0) return 'arid';
+    return (Number(lat) || 0) > 0 ? 'north_4s' : 'south_4s';
+  }
+  function seasonCalFor(lat, lon) {
+    return SEASON_CAL[climateTypeFor(lat, lon)];
+  }
+  function hexRgba(hex, a) {
+    const h = String(hex || '').replace('#', '');
+    const full = h.length === 3 ? h[0] + h[0] + h[1] + h[1] + h[2] + h[2] : h;
+    const n = parseInt(full, 16);
+    if (!Number.isFinite(n)) return 'rgba(71,85,105,' + a + ')';
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
   }
 
   /* ELC day-length infographic (year plot + twilight bands). */
@@ -1256,17 +1306,42 @@
     const anchor = labelRight ? 'start' : 'end';
     const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const ctype = climateTypeFor(lat, lon);
+    const cal = seasonCalFor(lat, lon);
     const monthMarks = [];
-    for (let m = 1; m < 12; m++) {
-      const md = monthStartDoy(year, m);
-      const mx = dlX(md, days);
-      monthMarks.push(React.createElement('line', {
-        key: 'ml' + m, x1: mx, y1: DL.T, x2: mx, y2: DL.H - DL.B,
-        stroke: 'rgba(160,180,200,0.10)', strokeWidth: 0.6
-      }));
+    const seasonWash = [];
+    const plotTop = DL.T;
+    const plotH = DL.H - DL.T - DL.B;
+    let runStart = 0;
+    for (let m = 1; m <= 12; m++) {
+      if (m === 12 || cal[m] !== cal[m - 1]) {
+        const x0 = dlX(monthStartDoy(year, runStart), days);
+        const x1 = (m === 12) ? dlX(days, days) : dlX(monthStartDoy(year, m), days);
+        const hex = SEASON_COLOR[cal[m - 1]] || '#475569';
+        seasonWash.push(React.createElement('rect', {
+          key: 'sw' + runStart, x: x0, y: plotTop, width: Math.max(0.5, x1 - x0), height: plotH,
+          fill: hexRgba(hex, 0.18), pointerEvents: 'none'
+        }));
+        runStart = m;
+      }
+    }
+    for (let m = 0; m < 12; m++) {
+      if (m > 0) {
+        const mx = dlX(monthStartDoy(year, m), days);
+        monthMarks.push(React.createElement('line', {
+          key: 'ml' + m, x1: mx, y1: DL.T, x2: mx, y2: DL.H - DL.B,
+          stroke: 'rgba(160,180,200,0.10)', strokeWidth: 0.6
+        }));
+      }
+      const x0 = dlX(monthStartDoy(year, m), days);
+      const x1 = (m === 11) ? dlX(days, days) : dlX(monthStartDoy(year, m + 1), days);
+      const isCur = (parts.mo || 0) === m;
       monthMarks.push(React.createElement('text', {
-        key: 'mt' + m, x: mx, y: DL.H - 3, textAnchor: 'middle',
-        fill: '#7a8592', fontSize: 6.5, fontFamily: 'ui-sans-serif,system-ui'
+        key: 'mt' + m, x: (x0 + x1) / 2, y: DL.H - 2.2, textAnchor: 'middle',
+        fill: hexRgba(SEASON_COLOR[cal[m]] || '#7a8592', isCur ? 0.92 : 0.62),
+        fontSize: isCur ? 7.2 : 6.4,
+        fontWeight: isCur ? 700 : 500,
+        fontFamily: 'ui-sans-serif,system-ui'
       }, MONTHS[m]));
     }
     const hourLabs = [0, 6, 12, 18, 23].map(function (h) {
@@ -1339,7 +1414,7 @@
         right: 8,
         bottom: 8,
         zIndex: 50,
-        width: 248,
+        width: 292,
         padding: '4px 4px 3px',
         background: 'rgba(16,20,26,0.88)',
         border: '1px solid ' + LINE,
@@ -1422,14 +1497,15 @@
             cache && React.createElement('path', { d: cache.naut, fill: '#1c3a5c' }),
             cache && React.createElement('path', { d: cache.civil, fill: '#2d5a8a' }),
             cache && React.createElement('path', { d: cache.day, fill: '#8ec8e8' }),
-            hGrid, monthMarks, hourLabs
+            seasonWash, hGrid, monthMarks, hourLabs
           ),
           React.createElement('div', {
             style: {
               position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-              pointerEvents: 'none', zIndex: 1, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', gap: 2, padding: '5px 10px', borderRadius: 8,
-              background: 'rgba(8, 12, 20, 0.68)', boxShadow: '0 1px 8px rgba(0,0,0,0.4)', maxWidth: '86%'
+              pointerEvents: 'none', zIndex: 1, display: 'flex', flexDirection: 'row',
+              alignItems: 'baseline', gap: 7, padding: '3px 8px', borderRadius: 6,
+              background: 'rgba(8, 12, 20, 0.68)', boxShadow: '0 1px 8px rgba(0,0,0,0.4)',
+              whiteSpace: 'nowrap'
             }
           },
             React.createElement('span', {
@@ -1443,7 +1519,7 @@
               'data-testid': 'elc-day-mode',
               style: {
                 fontFamily: MONO, fontSize: 8, letterSpacing: '.08em', textTransform: 'uppercase',
-                color: follow ? '#ffb020' : '#c5cad2'
+                color: follow ? '#ffb020' : '#c5cad2', whiteSpace: 'nowrap'
               }
             }, follow ? 'LIVE' : 'SELECTED')
           ),
@@ -1471,6 +1547,44 @@
             onClick: function () { if (props.onHourDown) props.onHourDown(); }
           }, '▼')
         )
+      ),
+      React.createElement('div', {
+        'data-testid': 'elc-day-season-key',
+        style: {
+          display: 'flex', flexWrap: 'nowrap', alignItems: 'center', gap: '2px 5px',
+          marginTop: 3, padding: '0 2px 1px', lineHeight: 1.15,
+          whiteSpace: 'nowrap', overflow: 'hidden'
+        }
+      },
+        React.createElement('span', {
+          title: ctype === 'north_4s' ? 'Temperate N' : ctype === 'south_4s' ? 'Temperate S'
+            : ctype === 'tropical' ? 'Tropical' : 'Arid',
+          style: {
+            fontFamily: MONO, fontSize: 6.5, fontWeight: 700, letterSpacing: '.04em',
+            color: MUTED, flex: '0 0 auto'
+          }
+        }, CLIMATE_LABEL[ctype] || ''),
+        (CLIMATE_SEQ[ctype] || []).map(function (k) {
+          const hex = SEASON_COLOR[k] || '#64748b';
+          return React.createElement('span', {
+            key: k,
+            style: {
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              fontFamily: MONO, fontSize: 6.5, fontWeight: 600,
+              color: hexRgba(hex, 0.85), letterSpacing: '.02em'
+            }
+          },
+            React.createElement('span', {
+              title: SEASON_LABEL[k] || k,
+              style: {
+                width: 7, height: 7, borderRadius: 1, flex: '0 0 auto',
+                background: hexRgba(hex, 0.22),
+                boxShadow: 'inset 0 0 0 1px ' + hexRgba(hex, 0.7)
+              }
+            }),
+            SEASON_LABEL_SHORT[k] || k
+          );
+        })
       )
     );
   };

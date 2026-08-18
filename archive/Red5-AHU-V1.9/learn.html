@@ -761,6 +761,88 @@
             color: var(--text-dim);
             line-height: 1.5;
         }
+        .ashrae-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin: 0 0 22px;
+        }
+        @media (max-width: 800px) {
+            .ashrae-stats { grid-template-columns: 1fr 1fr; }
+        }
+        .ashrae-stat {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 14px 16px;
+        }
+        .ashrae-stat .v {
+            font-size: 22px;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            color: var(--accent);
+        }
+        .ashrae-stat .l {
+            font-size: 11px;
+            color: var(--text-mute);
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+        .ashrae-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin: 0 0 18px;
+        }
+        .ashrae-table th,
+        .ashrae-table td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--line);
+            vertical-align: top;
+            color: var(--text-dim);
+        }
+        .ashrae-table th {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--text-mute);
+            font-weight: 800;
+        }
+        .ashrae-table td.k {
+            font-weight: 800;
+            color: var(--text);
+            white-space: nowrap;
+        }
+        .ashrae-table tbody tr:nth-child(even) { background: rgba(26, 36, 64, 0.45); }
+        .ashrae-callout {
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin: 0 0 22px;
+            background: var(--bg-card);
+        }
+        .ashrae-callout .t {
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin: 0 0 6px;
+        }
+        .ashrae-callout p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--text-dim);
+            line-height: 1.55;
+        }
+        .ashrae-note {
+            font-size: 12px;
+            color: var(--text-mute);
+            font-style: italic;
+            margin: 0 0 10px;
+        }
 
         /* ---------- FOOTER ---------- */
         footer {
@@ -918,6 +1000,7 @@
     <span class="bt-label">Training</span>
     <a href="#how-to-read" data-testid="jump-how-to-read">How to read it</a>
     <a href="#free-cooling" data-testid="jump-free-cooling">When is outside air free?</a>
+    <a href="#ashrae-refs" data-testid="jump-ashrae-refs">ASHRAE references</a>
 </nav>
 
 <section class="train-section" id="how-to-read" data-testid="how-to-read">
@@ -979,11 +1062,83 @@
     </div>
 </section>
 
+<section class="train-section" id="ashrae-refs" data-testid="ashrae-refs">
+    <p class="train-kick">ASHRAE references</p>
+    <h2>One chart, <span class="em">four rulebooks</span></h2>
+    <p class="train-lead">Comfort, fresh air, energy and sequences all share the same axes. Plot the air once — dry-bulb × moisture — and you can judge every requirement at the same time.</p>
+
+    <div class="ashrae-stats" aria-label="Standards on this chart">
+        <div class="ashrae-stat"><div class="v">55</div><div class="l">Comfort zone drawn on the chart</div></div>
+        <div class="ashrae-stat"><div class="v">62.1</div><div class="l">Fresh-air mixing line (OA–RA–MA)</div></div>
+        <div class="ashrae-stat"><div class="v">90.1</div><div class="l">Enthalpy → free-cooling path</div></div>
+        <div class="ashrae-stat"><div class="v">G36</div><div class="l">Sequences that referee the trade-off</div></div>
+    </div>
+
+    <p class="ashrae-note">What each one is (in one line). Chart math is ASHRAE Handbook of Fundamentals 2021, Chapter 9 — the same getW / getH the Pro View uses.</p>
+    <table class="ashrae-table">
+        <thead>
+            <tr><th>Standard</th><th>Nickname</th><th>Governs</th><th>The core question</th></tr>
+        </thead>
+        <tbody>
+            <tr><td class="k">ASHRAE 55</td><td>Comfort</td><td>Thermal comfort</td><td>Will people <b>feel</b> comfortable?</td></tr>
+            <tr><td class="k">ASHRAE 62.1</td><td>Fresh air</td><td>Ventilation / indoor air quality</td><td>Is there enough <b>outside air</b> to keep air healthy?</td></tr>
+            <tr><td class="k">ASHRAE 90.1</td><td>Energy</td><td>Energy efficiency</td><td>Are we doing it <b>without wasting energy</b>?</td></tr>
+            <tr><td class="k">Guideline 36</td><td>Controls</td><td>Sequences of operation</td><td><b>How</b> do we run the equipment to hit all three?</td></tr>
+        </tbody>
+    </table>
+
+    <div class="ashrae-callout">
+        <div class="t">The key tension</div>
+        <p>55 and 62.1 pull toward <strong>more</strong> conditioning and ventilation; 90.1 pulls toward <strong>less</strong> energy. Guideline 36 is the rulebook that reconciles them — economizer changeover, demand-controlled ventilation, supply-air-temp and duct-static resets, trim-and-respond.</p>
+    </div>
+
+    <p class="ashrae-note">How this page’s psychrometric chart complies with each.</p>
+    <table class="ashrae-table">
+        <thead>
+            <tr><th>Standard</th><th>What this chart shows</th><th>Where it lives on this page</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="k">55 — Comfort</td>
+                <td>The orange ASHRAE 55 box is the acceptable T/RH band (office default 40–60% RH, year-round overlap ≈ 21–27 °C). Plot the room → see if you are inside, and which way you are off.</td>
+                <td>Comfort zone on the Givoni chart; training step 5; building-type RH presets cite Std 55-2020 §5.2.3.</td>
+            </tr>
+            <tr>
+                <td class="k">62.1 — Ventilation</td>
+                <td>MA must sit on the OA–RA mixing line; distance along the line is the outside-air fraction. Closing to minimum OA is the 62.1 ventilation floor. Indoor RH above 65% is the mold-risk band (§5.10).</td>
+                <td>Dashed green mixing line; economizer “minimum OA” wedge; amber mold-risk region; MA off-chord faults A–H.</td>
+            </tr>
+            <tr>
+                <td class="k">90.1 — Energy</td>
+                <td>Violet equal-enthalpy lines show free cooling: when OA enthalpy is below RA, the economizer can meet the load with no mechanical cooling. Differential dry-bulb vs differential enthalpy is §6.4.3.4 — the two methods on the second training chart.</td>
+                <td>“When is outside air free?” Both / dry-bulb / enthalpy toggle; A 60 vs B 34 disagreement wedges.</td>
+            </tr>
+            <tr>
+                <td class="k">G36 — Sequences</td>
+                <td>The chart is visual proof the sequences land the operating point inside the 55 box, on the 62.1 mix line, hugging the 90.1 low-enthalpy path. Occupied / warm-up / setback are G36 modes; MA off-chord is the mixing-box diagnostic those sequences assume is true.</td>
+                <td>Pro View mode ribbon and process mini; training faults A–H; economizer deadband on the energy-neutral line.</td>
+            </tr>
+            <tr>
+                <td class="k">HoF Ch. 9</td>
+                <td>Saturation curve, humidity ratio, enthalpy, wet-bulb and dew point are computed from the same psychrometric relations as the Handbook — not a decorative overlay.</td>
+                <td>Every dot on this page (Givoni chart + both training charts) via <code>psychrometric.js</code>.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="ashrae-callout">
+        <div class="t">In one sentence</div>
+        <p>The psychrometric chart turns four separate rulebooks into a single decision surface — plot where the air <strong>is</strong>, see where it <strong>must be</strong> (55 comfort zone), how it gets there (62.1 mixing and the coil), and whether it does so at minimum energy (90.1 enthalpy) — which is the judgment Guideline 36 automates in software.</p>
+    </div>
+</section>
+
 <footer>
     <div>© <span id="year"></span> Delta Red5 · Built to make psychrometrics make sense. Part of <strong>Red5 Studio</strong>.<br>
     <span style="opacity:0.7; font-size:11px;">Classification per ASHRAE Std 55-2020 (40-60% RH comfort band), ASHRAE Std 62.1-2022 (65% RH max IAQ limit), and ASHRAE Handbook of Fundamentals 2021, Ch. 9. Wet/dry threshold = 50% RH (midpoint of the 40-60 band); warm/cool threshold = 23.5 °C (CZ centroid).</span></div>
     <div>
         <a href="#how-to-read">Training</a>
+        ·
+        <a href="#ashrae-refs">ASHRAE</a>
         ·
         <a href="/dashboard.html" data-testid="pro-view-link">Open the Pro View →</a>
     </div>

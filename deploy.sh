@@ -227,6 +227,25 @@ if [[ "$FRONTEND_DIR/build" -ef "$NGINX_ROOT" ]]; then
 else
     cp -f "$FRONTEND_DIR/build/index.html" "$NGINX_ROOT/index.html"
 fi
+# dcred5-studio.com may use a *different* document root than sites-available/red5
+# (historically ~/red5-studio/frontend/build). Force git ahu.html onto every
+# nginx root that names dcred5-studio.com so the Perf iframe cannot keep the
+# old all-mint colorForMode file after this deploy.
+if [[ "$NGINX_ROOT" == *red5-studio* ]]; then
+    yellow "       ⚠  NGINX_ROOT is a leftover red5-studio tree — ahu.html is copied anyway"
+fi
+AHU_SRC="$FRONTEND_DIR/public/ahu.html"
+if [[ -f "$AHU_SRC" ]]; then
+    cp -f "$AHU_SRC" "$NGINX_ROOT/ahu.html"
+    while IFS= read -r extra_root; do
+        [[ -z "$extra_root" || "$extra_root" == "$NGINX_ROOT" ]] && continue
+        [[ -d "$extra_root" ]] || continue
+        cp -f "$AHU_SRC" "$extra_root/ahu.html"
+        echo "       also wrote ahu.html → $extra_root"
+    done < <(grep -Rsl 'dcred5-studio.com' /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null \
+        | xargs grep -hE '^\s*root\s' 2>/dev/null \
+        | awk '{print $2}' | tr -d ';' | sort -u)
+fi
 echo
 
 # --- 5. backend restart -----------------------------------------------------
@@ -318,6 +337,20 @@ if [[ -f "$NGINX_ROOT/access.html" ]]; then
     fi
 else
     red "       access.html missing in $NGINX_ROOT"
+    PASS=0
+fi
+
+# 7e — ahu.html color-coded mode bar (not the old freezeprotect-only mint gap)
+AHU_CHECK=""
+if curl -fsS -o /tmp/red5-ahu-check.html --max-time 5 "http://127.0.0.1:8001/ahu.html" 2>/dev/null; then
+    AHU_CHECK=/tmp/red5-ahu-check.html
+elif [[ -f "$NGINX_ROOT/ahu.html" ]]; then
+    AHU_CHECK="$NGINX_ROOT/ahu.html"
+fi
+if [[ -n "$AHU_CHECK" ]] && grep -q '#22d3ee' "$AHU_CHECK" && grep -q 'freeze_protection' "$AHU_CHECK"; then
+    echo "       ahu.html     : #22d3ee + freeze_protection ✓ ($AHU_CHECK)"
+else
+    red "       ⚠  ahu.html missing #22d3ee / freeze_protection — mint 24h bar will persist"
     PASS=0
 fi
 

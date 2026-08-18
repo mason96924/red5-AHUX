@@ -32,7 +32,11 @@ _NO_CACHE = {
     "Expires": "0",
 }
 
-_BUILD_STAMP_PAGES = frozenset({"dashboard.html", "equipment_mapper.html"})
+_BUILD_STAMP_PAGES = frozenset({
+    "dashboard.html",
+    "equipment_mapper.html",
+    "ahu.html",
+})
 
 
 def _public_root() -> str:
@@ -41,13 +45,24 @@ def _public_root() -> str:
 
 
 def _resolve_html(filename: str) -> Optional[str]:
+    """Prefer git-tracked ``frontend/public`` over a leftover DATA_ROOT copy.
+
+    Linux AHU (port 8001 / dcred5-studio.com) often has ``/root/data`` for
+    site graphics. A stale ``/root/data/ahu.html`` used to win here, so
+    ``git pull`` of ``frontend/public/ahu.html`` never changed the Perf
+    iframe 24h mode bar (all-mint ``colorForMode``) while AHUX (:8003, no
+    DATA_ROOT HTML shadow) showed the color-coded file immediately.
+    Nginx ``frontend/build`` is a separate shadow — operator pages such as
+    ``ahu.html`` must be proxied to this route, not served from that tree.
+    DATA_ROOT remains the fallback when public does not ship the page.
+    """
+    pub_path = os.path.join(_public_root(), filename)
+    if os.path.isfile(pub_path):
+        return pub_path
     if _fs_available("data"):
         fs_path = os.path.join(_fs_root("data"), filename)
         if os.path.isfile(fs_path):
             return fs_path
-    pub_path = os.path.join(_public_root(), filename)
-    if os.path.isfile(pub_path):
-        return pub_path
     return None
 
 

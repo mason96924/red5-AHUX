@@ -476,6 +476,212 @@
             line-height: 1.55;
         }
 
+        /* ---------- TRAINING MODULES ---------- */
+        .train-jump {
+            max-width: 1180px;
+            margin: 0 auto 28px;
+            padding: 0 32px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .train-jump .bt-label {
+            color: var(--text-mute);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            font-weight: 800;
+            margin-right: 4px;
+        }
+        .train-jump a {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--text-dim);
+            padding: 9px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-decoration: none;
+            border-radius: 999px;
+            transition: all 160ms ease;
+        }
+        .train-jump a:hover {
+            color: var(--text);
+            border-color: var(--text-mute);
+        }
+        .train-section {
+            max-width: 1180px;
+            margin: 0 auto 48px;
+            padding: 0 32px;
+        }
+        .train-kick {
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            font-weight: 800;
+            margin: 0 0 6px 0;
+        }
+        .train-section > h2 {
+            font-size: clamp(22px, 3vw, 34px);
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin: 0 0 6px 0;
+            line-height: 1.15;
+        }
+        .train-section > h2 .em {
+            background: linear-gradient(90deg, #fbbf24 0%, #fb923c 50%, #f43f5e 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+        .train-lead {
+            font-size: 15px;
+            color: var(--text-dim);
+            max-width: 720px;
+            margin: 0 0 18px 0;
+        }
+        .train-grid {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 24px;
+        }
+        @media (max-width: 900px) {
+            .train-grid { grid-template-columns: 1fr; }
+        }
+        .train-chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 18px;
+            overflow: hidden;
+        }
+        .train-chart-card h3 {
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            margin: 0 0 10px 0;
+        }
+        .train-chart-card svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .train-caption {
+            margin: 12px 0 0 0;
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.55;
+        }
+        .train-caption b { color: var(--text); }
+        .train-caption .en { color: #c4b5fd; }
+        .train-aside { align-self: start; }
+        .train-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 0 0 12px 0;
+        }
+        .train-chips button {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--text-dim);
+            padding: 7px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 160ms ease;
+        }
+        .train-chips button:hover {
+            color: var(--text);
+            border-color: var(--text-mute);
+        }
+        .train-chips button[aria-pressed="true"] {
+            background: var(--accent);
+            color: #0b1220;
+            border-color: var(--accent);
+        }
+        .train-lesson {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            padding: 16px 18px;
+        }
+        .train-lesson h3 {
+            margin: 0 0 6px 0;
+            font-size: 15px;
+            font-weight: 800;
+        }
+        .train-lesson p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--text-dim);
+            line-height: 1.55;
+        }
+        .train-nav {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .train-nav button {
+            flex: 1;
+            padding: 8px 10px;
+            background: var(--bg-soft);
+            border: 1px solid var(--line);
+            color: var(--text);
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .train-nav button:hover { border-color: var(--accent); color: var(--accent); }
+        .train-layer { transition: opacity 180ms ease; }
+        .train-layer.is-dim { opacity: 0.16; }
+        .train-layer.is-lit { opacity: 1; }
+        .outcomes {
+            display: grid;
+            gap: 8px;
+        }
+        .outcome {
+            background: var(--bg-card);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--line);
+            border-radius: 8px;
+            padding: 12px 14px;
+            cursor: pointer;
+            text-align: left;
+            color: inherit;
+            font: inherit;
+            width: 100%;
+            transition: box-shadow 140ms ease, border-color 140ms ease;
+        }
+        .outcome:hover { border-color: var(--text-mute); }
+        .outcome[aria-pressed="true"] {
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+        .outcome.free { border-left-color: var(--emerald); }
+        .outcome.min  { border-left-color: #64748b; }
+        .outcome.a    { border-left-color: #fb7185; }
+        .outcome.b    { border-left-color: var(--orange); }
+        .outcome.line { border-left-color: #a78bfa; }
+        .outcome h4 {
+            margin: 0 0 4px 0;
+            font-size: 13px;
+            font-weight: 800;
+        }
+        .outcome p {
+            margin: 0;
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
         /* ---------- FOOTER ---------- */
         footer {
             max-width: 1180px;
@@ -628,10 +834,66 @@
     </div>
 </section>
 
+<nav class="train-jump" aria-label="Psychrometric training" data-testid="train-jump">
+    <span class="bt-label">Training</span>
+    <a href="#how-to-read" data-testid="jump-how-to-read">How to read it</a>
+    <a href="#free-cooling" data-testid="jump-free-cooling">When is outside air free?</a>
+</nav>
+
+<section class="train-section" id="how-to-read" data-testid="how-to-read">
+    <p class="train-kick">How to read it</p>
+    <h2>One dot is the <span class="em">state of the air</span></h2>
+    <p class="train-lead">Step through the six points. Each one lights a different piece of the same chart — the picture the coil, the dampers and the comfort box all share.</p>
+    <div class="train-grid">
+        <div class="train-chart-card">
+            <h3>Psychrometric Chart · Dry-bulb °C ↔ Moisture</h3>
+            <svg id="read-chart" viewBox="0 0 1100 560" data-testid="read-chart" aria-label="Training chart: OA, RA, MA, SA on a psychrometric chart"></svg>
+            <p class="train-caption" id="read-caption">
+                <b>OA</b> outside air · <b>RA</b> return air · <b>MA</b> the mixture entering the coil · <b>SA</b> supply air delivered to the rooms.
+                Dashed green = mixing; solid blue = the cooling coil.
+                The <span class="en">violet diagonals</span> are lines of equal total energy: outside air here holds 79 kJ/kg against return air’s 48, so it sits well above RA’s line and costs more to condition — no free cooling today.
+            </p>
+        </div>
+        <aside class="train-aside">
+            <div class="train-chips" role="tablist" aria-label="How to read the chart" id="read-steps"></div>
+            <article class="train-lesson" id="read-lesson" data-testid="read-lesson"></article>
+            <div class="train-nav">
+                <button type="button" id="read-prev" data-testid="read-prev">← Previous</button>
+                <button type="button" id="read-next" data-testid="read-next">Next →</button>
+            </div>
+        </aside>
+    </div>
+</section>
+
+<section class="train-section" id="free-cooling" data-testid="free-cooling">
+    <p class="train-kick">Worked example</p>
+    <h2>When is outside air <span class="em">free?</span></h2>
+    <p class="train-lead">Two lines, four outcomes. Switch dry-bulb against enthalpy and watch the wedges where they disagree — that is where energy is quietly lost.</p>
+    <div class="train-grid">
+        <div class="train-chart-card">
+            <h3>Economizer · dry-bulb vs equal energy</h3>
+            <div class="train-chips" role="tablist" aria-label="Economizer method" id="econ-methods">
+                <button type="button" data-method="both" aria-pressed="true" data-testid="econ-both">Both methods</button>
+                <button type="button" data-method="db" aria-pressed="false" data-testid="econ-db">Dry-bulb only</button>
+                <button type="button" data-method="h" aria-pressed="false" data-testid="econ-h">Enthalpy</button>
+            </div>
+            <svg id="econ-chart" viewBox="0 0 1100 560" data-testid="econ-chart" aria-label="Economizer regions on a psychrometric chart"></svg>
+            <p class="train-caption" id="econ-caption">
+                Numbers are total energy in kJ/kg. <b>RA</b> 24 °C / 50% RH = 48 · <b>A</b> 22 °C / 90% RH = 60 · <b>B</b> 28 °C / 10% RH = 34 · <b>OA</b> 33 °C / 18 g/kg = 79 (the outside air from the previous chart).
+            </p>
+        </div>
+        <aside class="train-aside">
+            <div class="outcomes" id="econ-outcomes" data-testid="econ-outcomes"></div>
+        </aside>
+    </div>
+</section>
+
 <footer>
     <div>© <span id="year"></span> Delta Red5 · Built to make psychrometrics make sense. Part of <strong>Red5 Studio</strong>.<br>
     <span style="opacity:0.7; font-size:11px;">Classification per ASHRAE Std 55-2020 (40-60% RH comfort band), ASHRAE Std 62.1-2022 (65% RH max IAQ limit), and ASHRAE Handbook of Fundamentals 2021, Ch. 9. Wet/dry threshold = 50% RH (midpoint of the 40-60 band); warm/cool threshold = 23.5 °C (CZ centroid).</span></div>
     <div>
+        <a href="#how-to-read">Training</a>
+        ·
         <a href="/dashboard.html" data-testid="pro-view-link">Open the Pro View →</a>
     </div>
 </footer>
@@ -639,6 +901,7 @@
 <!-- Reuse the same Givoni math that drives the operator dashboard so this
      page and the Pro View never drift apart. -->
 <script src="js/psychrometric.js"></script>
+<script src="js/learn-training.js"></script>
 
 <script>
 (function () {

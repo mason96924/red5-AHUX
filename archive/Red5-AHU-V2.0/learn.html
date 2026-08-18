@@ -1477,24 +1477,19 @@
                 stroke: '#a16207', 'stroke-width': 0.5,
                 'stroke-dasharray': '3 4', opacity: 0.75
             }));
-            // Label deep inside the mold zone where it is widest
-            const labT = Math.min(28, T_MAX - 6);
-            const labRH = 85;
-            const labW = getW(labT, labRH);
-            if (labW <= W_MAX && labT >= T_MIN) {
-                svg.appendChild(el('text', {
-                    x: tToX(labT), y: wToY(labW),
-                    fill: '#a16207', 'font-size': 11, 'font-weight': '800',
-                    'text-anchor': 'middle', 'font-family': 'monospace',
-                    'fill-opacity': 0.85
-                }, 'MOLD RISK · RH > 65%'));
-                svg.appendChild(el('text', {
-                    x: tToX(labT), y: wToY(labW) + 13,
-                    fill: '#a16207', 'font-size': 8, 'font-weight': '700',
-                    'text-anchor': 'middle', 'font-family': 'monospace',
-                    'fill-opacity': 0.65
-                }, 'ASHRAE 62.1-2022 §5.10'));
-            }
+            // Caption in the top-right gutter so the plot stays readable.
+            svg.appendChild(el('text', {
+                x: W - PAD.right - 4, y: PAD.top - 12,
+                fill: '#ca8a04', 'font-size': 10, 'font-weight': '800',
+                'text-anchor': 'end', 'font-family': 'monospace',
+                'fill-opacity': 0.9
+            }, 'MOLD RISK · RH > 65%'));
+            svg.appendChild(el('text', {
+                x: W - PAD.right - 4, y: PAD.top - 2,
+                fill: '#a16207', 'font-size': 7, 'font-weight': '700',
+                'text-anchor': 'end', 'font-family': 'monospace',
+                'fill-opacity': 0.7
+            }, 'ASHRAE 62.1-2022 §5.10'));
         }
 
         // Region region anchors (small ghost labels)

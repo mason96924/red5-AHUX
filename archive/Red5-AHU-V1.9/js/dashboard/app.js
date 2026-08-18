@@ -2420,13 +2420,10 @@
                 const pts = [...bot, ...top.reverse()]
                     .map(p => `${safe(x(p[0]))},${safe(y(p[1]))}`)
                     .join(' ');
-                let labT = Math.min(28, T_MAX - 4);
-                labT = Math.max(T_MIN + 4, labT);
-                const labW = getW(labT, 85);
-                const labOnChart = Number.isFinite(labW)
-                    && labW <= wCeil
-                    && labW >= getW(labT, 65);
                 const halo = theme === 'dark' ? '#0b1220' : '#fff7ed';
+                /* Caption sits in the top-right gutter above the plot so
+                   the amber band can stay unlabeled over COMFORT / NV /
+                   process dots. */
                 return (
                     <g className="pointer-events-none" data-testid="mold-risk-band">
                         <defs>
@@ -2442,24 +2439,20 @@
                                      strokeWidth="0.8"
                                      strokeDasharray="4,3"
                                      opacity="0.85" />
-                            {labOnChart && (
-                                <g>
-                                    <text x={safe(x(labT))} y={safe(y(labW))}
-                                          fill="#ca8a04" fontSize="10" fontWeight="900"
-                                          textAnchor="middle"
-                                          className="uppercase font-black font-mono tracking-widest"
-                                          style={{paintOrder:'stroke', stroke:halo, strokeWidth:'3px', strokeLinejoin:'round'}}>
-                                        MOLD RISK · RH &gt; 65%
-                                    </text>
-                                    <text x={safe(x(labT))} y={safe(y(labW)) + 12}
-                                          fill="#a16207" fontSize="8" fontWeight="700"
-                                          textAnchor="middle" opacity="0.8"
-                                          className="font-mono">
-                                        ASHRAE 62.1-2022 §5.10
-                                    </text>
-                                </g>
-                            )}
                         </g>
+                        <text x={pad.left + gridWidth - 4} y={pad.top - 18}
+                              fill="#ca8a04" fontSize="9" fontWeight="900"
+                              textAnchor="end"
+                              className="uppercase font-black font-mono tracking-widest"
+                              style={{paintOrder:'stroke', stroke:halo, strokeWidth:'2.5px', strokeLinejoin:'round'}}>
+                            MOLD RISK · RH &gt; 65%
+                        </text>
+                        <text x={pad.left + gridWidth - 4} y={pad.top - 6}
+                              fill="#a16207" fontSize="7" fontWeight="700"
+                              textAnchor="end" opacity="0.85"
+                              className="font-mono">
+                            ASHRAE 62.1-2022 §5.10
+                        </text>
                     </g>
                 );
             };

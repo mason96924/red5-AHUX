@@ -2399,6 +2399,71 @@
                 );
             };
 
+            /* ASHRAE 62.1-2022 §5.10 mold-risk band: RH > 65% up to
+               saturation, clipped to the chart window.  Independent of
+               the Givoni overlay so the IAQ limit stays visible when
+               comfort polygons are toggled off.  Same geometry as
+               learn.html (65% RH floor, 100% RH / W_MAX ceiling). */
+            const renderMoldOverlay = () => {
+                const wCeil = W_MAX / 1000;
+                const bot = [];
+                const top = [];
+                for (let tt = T_MIN; tt <= T_MAX; tt += 0.5) {
+                    const w65 = getW(tt, 65);
+                    const w100 = Math.min(wCeil, getW(tt, 100));
+                    if (!Number.isFinite(w65) || !Number.isFinite(w100)) continue;
+                    if (w65 >= w100 || w65 > wCeil) continue;
+                    bot.push([tt, Math.max(0, w65)]);
+                    top.push([tt, w100]);
+                }
+                if (bot.length < 2) return null;
+                const pts = [...bot, ...top.reverse()]
+                    .map(p => `${safe(x(p[0]))},${safe(y(p[1]))}`)
+                    .join(' ');
+                let labT = Math.min(28, T_MAX - 4);
+                labT = Math.max(T_MIN + 4, labT);
+                const labW = getW(labT, 85);
+                const labOnChart = Number.isFinite(labW)
+                    && labW <= wCeil
+                    && labW >= getW(labT, 65);
+                const halo = theme === 'dark' ? '#0b1220' : '#fff7ed';
+                return (
+                    <g className="pointer-events-none" data-testid="mold-risk-band">
+                        <defs>
+                            <clipPath id="mold-risk-clip" clipPathUnits="userSpaceOnUse">
+                                <rect x={pad.left} y={pad.top} width={gridWidth} height={gridHeight} />
+                            </clipPath>
+                        </defs>
+                        <g clipPath="url(#mold-risk-clip)">
+                            <polygon points={pts}
+                                     fill="#ca8a04"
+                                     fillOpacity="0.12"
+                                     stroke="#a16207"
+                                     strokeWidth="0.8"
+                                     strokeDasharray="4,3"
+                                     opacity="0.85" />
+                            {labOnChart && (
+                                <g>
+                                    <text x={safe(x(labT))} y={safe(y(labW))}
+                                          fill="#ca8a04" fontSize="10" fontWeight="900"
+                                          textAnchor="middle"
+                                          className="uppercase font-black font-mono tracking-widest"
+                                          style={{paintOrder:'stroke', stroke:halo, strokeWidth:'3px', strokeLinejoin:'round'}}>
+                                        MOLD RISK · RH &gt; 65%
+                                    </text>
+                                    <text x={safe(x(labT))} y={safe(y(labW)) + 12}
+                                          fill="#a16207" fontSize="8" fontWeight="700"
+                                          textAnchor="middle" opacity="0.8"
+                                          className="font-mono">
+                                        ASHRAE 62.1-2022 §5.10
+                                    </text>
+                                </g>
+                            )}
+                        </g>
+                    </g>
+                );
+            };
+
             const renderGrid = () => {
                 const els = [];
                 for(let t_idx = Math.floor(T_MIN); t_idx <= T_MAX; t_idx++){
@@ -2866,7 +2931,7 @@
                          data-testid="weather3d-view" />
                     <div className="flex flex-col flex-1 overflow-hidden" style={activeView !== 'chart' ? {display:'none'} : {}}>
                     {/* Psychrometric Chart -- extracted to psy-chart-svg.js (L.28) */}
-                    {renderPsyChartSvg({ width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t, vavHubPopupWin, vavHubPopupHost, vavHubFloating, setVavHubFloating, vavHubFloatPos, vavHubFloatSize, popOutVavHub, floatVavHub, onVavHubTitleMouseDown, onVavHubResizeMouseDown })}
+                    {renderPsyChartSvg({ width, height, gridWidth, gridHeight, pad, svgRef, T_MIN, T_MAX, invX, getW, x, y, safe, getH, selectedAhuId, setSelectedAhuId, lockedVavId, setLockedVavId, isLockedToSA, setIsLockedToSA, showPath, setShowPath, pointVisibility, setPointVisibility, cardOffset, setIsCardDragging, setDragStart, setIsVavDragging, vavTableOffset, vavCfm, setVavCfm, setSelectedVavForModal, indicatorPos, isProcessVisible, setIsProcessVisible, setIsDraggingIndicator, vecVis, setVecVis, ahuData, ahuMetrics, comfortZonePoly, sweetSpotRange, showGivoni, showSweetSpot, setShowFloorPlanForAhu, setShowAhuModalFor, weatherFetchStatus, weatherLocation, weatherSaveError, setWeatherSaveError, showWeatherStrip, setShowWeatherStrip, setShowWeatherSettings, forecast, renderGrid, renderGivoniOverlay, renderMoldOverlay, renderVectors, renderIndicatorTooltip, getAhuDiagnostic, getVavDiagnostic, getGivoniTier, MetricBar, LockIcon, theme, ui, t, vavHubPopupWin, vavHubPopupHost, vavHubFloating, setVavHubFloating, vavHubFloatPos, vavHubFloatSize, popOutVavHub, floatVavHub, onVavHubTitleMouseDown, onVavHubResizeMouseDown })}
 
                     
                     {/* YEARLY WEATHER STRIP */}

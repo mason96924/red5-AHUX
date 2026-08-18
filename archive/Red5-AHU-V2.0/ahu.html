@@ -41,12 +41,12 @@
   .kpi .u{font-size:11px;color:#64748b;letter-spacing:.2em;margin-top:.2rem}
   .kpi.mode .v{font-size:18px;color:#34d399;text-transform:uppercase;letter-spacing:.18em}
 
-  /* ===== mode chip colors ===== */
+  /* ===== mode chip colors (must match colorForMode / legend swatches) ===== */
   .mode-occupied{color:#34d399}
-  .mode-warmup,.mode-cooldown{color:#fbbf24}
-  .mode-setback,.mode-setup,.mode-unoccupied{color:#94a3b8}
-  .mode-freezeprotect{color:#60a5fa}
-  .mode-fault{color:#f87171}
+  .mode-warmup,.mode-cooldown,.mode-warm_up,.mode-cool_down,.mode-pre_cooling{color:#f59e0b}
+  .mode-setback,.mode-setup,.mode-unoccupied{color:#64748b}
+  .mode-freezeprotect,.mode-freeze_protect,.mode-freeze_protection{color:#22d3ee}
+  .mode-fault{color:#ef4444}
 
   /* ===== time picker ===== */
   .picker{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center}
@@ -75,11 +75,11 @@
 
   /* ===== mode timeline ribbon ===== */
   .ribbon{height:36px;background:#0b0f1a;border:1px solid #1e293b;border-radius:4px;overflow:hidden;position:relative;display:flex}
-  .ribbon .seg{flex:1;border-right:1px solid #0b0f1a}
+  .ribbon .seg{flex:1 1 0;min-width:0;border-right:1px solid rgba(11,15,26,.45)}
   .ribbon .seg:last-child{border-right:none}
-  .ribbon .legend{display:flex;gap:.8rem;margin-top:.5rem;font-size:9px;letter-spacing:.15em;color:#64748b;flex-wrap:wrap}
-  .ribbon .legend span{display:flex;align-items:center;gap:.3rem}
-  .ribbon .legend i{width:10px;height:10px;display:inline-block;border-radius:2px}
+  .legend{display:flex;gap:.8rem;margin-top:.5rem;font-size:9px;letter-spacing:.15em;color:#64748b;flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:.3rem}
+  .legend i{width:10px;height:10px;display:inline-block;border-radius:2px}
 
   /* ===== loading / empty ===== */
   .loading{padding:1rem;color:#64748b;text-align:center;font-size:11px;letter-spacing:.15em;text-transform:uppercase}
@@ -223,10 +223,10 @@
     <div class="ribbon" id="mode-ribbon" data-testid="ahu-mode-ribbon"></div>
     <div class="legend">
       <span><i style="background:#34d399"></i><span data-i18n="occupied">Occupied</span></span>
-      <span><i style="background:#fbbf24"></i><span data-i18n="warmup_cooldown">Warmup/Cooldown</span></span>
-      <span><i style="background:#94a3b8"></i><span data-i18n="setback_unoccupied">Setback/Unoccupied</span></span>
-      <span><i style="background:#60a5fa"></i><span data-i18n="freeze_protect">Freeze-Protect</span></span>
-      <span><i style="background:#f87171"></i><span data-i18n="fault">Fault</span></span>
+      <span><i style="background:#f59e0b"></i><span data-i18n="warmup_cooldown">Warmup/Cooldown</span></span>
+      <span><i style="background:#64748b"></i><span data-i18n="setback_unoccupied">Setback/Unoccupied</span></span>
+      <span><i style="background:#22d3ee"></i><span data-i18n="freeze_protect">Freeze-Protect</span></span>
+      <span><i style="background:#ef4444"></i><span data-i18n="fault">Fault</span></span>
     </div>
   </div>
 
@@ -305,13 +305,39 @@
   var TREND_REFRESH_MS = 60000;  // 60-second refresh for trend charts (cheaper)
   var lastTrendTs = 0;
 
+  /* Canonical G36 keys + UI aliases. Backend emits occupied / warm_up /
+     cool_down / setback / setup / freeze_protection / unoccupied / pre_cooling.
+     Older UI labels used warmup / freezeprotect without underscores. */
+  var MODE_COLORS = {
+    occupied:          '#34d399',
+    warm_up:           '#f59e0b',
+    warmup:            '#f59e0b',
+    cool_down:         '#f59e0b',
+    cooldown:          '#f59e0b',
+    pre_cooling:       '#f59e0b',
+    precooling:        '#f59e0b',
+    setback:           '#64748b',
+    setup:             '#64748b',
+    unoccupied:        '#64748b',
+    freeze_protection: '#22d3ee',
+    freeze_protect:    '#22d3ee',
+    freezeprotect:     '#22d3ee',
+    freezeprotection:  '#22d3ee',
+    fault:             '#ef4444',
+    unknown:           '#475569'
+  };
+  function normalizeMode(m){
+    return String(m || '').toLowerCase().replace(/[\s-]+/g, '_');
+  }
   function colorForMode(m){
-    if(!m) return '#475569';
-    if(m==='occupied') return '#34d399';
-    if(m==='warmup'||m==='cooldown') return '#fbbf24';
-    if(m==='setback'||m==='setup'||m==='unoccupied') return '#94a3b8';
-    if(m==='freezeprotect') return '#60a5fa';
-    if(m==='fault') return '#f87171';
+    var k = normalizeMode(m);
+    if(!k) return '#475569';
+    if(MODE_COLORS[k]) return MODE_COLORS[k];
+    if(k.indexOf('freeze') === 0) return MODE_COLORS.freeze_protection;
+    if(k.indexOf('warm') === 0) return MODE_COLORS.warm_up;
+    if(k.indexOf('cool') === 0 || k.indexOf('pre_cool') === 0) return MODE_COLORS.cool_down;
+    if(k.indexOf('fault') === 0) return MODE_COLORS.fault;
+    if(k.indexOf('occup') === 0) return MODE_COLORS.occupied;
     return '#64748b';
   }
 
@@ -547,7 +573,7 @@
                                        .filter(function(t){ return t.ts != null; });
       var ribbon = $('mode-ribbon');
       if(!trans.length){
-        ribbon.innerHTML = '<div class="empty" style="padding:.7rem">No transitions yet · mode = <b style="color:#34d399">' + (d.current_mode||'—').toUpperCase() + '</b></div>';
+        ribbon.innerHTML = '<div class="empty" style="padding:.7rem">No transitions yet · mode = <b style="color:' + colorForMode(d.current_mode) + '">' + (d.current_mode||'—').toUpperCase() + '</b></div>';
         return;
       }
       var nowTs = _toEpoch(d.now) || (Date.now()/1000);
@@ -556,7 +582,8 @@
       ribbon.innerHTML = trans.map(function(t, i){
         var next = trans[i+1] ? trans[i+1].ts : lastTs;
         var pct = ((next - t.ts) / span) * 100;
-        return '<div class="seg" style="flex:' + pct.toFixed(2) + ';background:' + colorForMode(t.mode) + '" title="' + t.mode + ' · ' + new Date(t.ts*1000).toLocaleTimeString() + '"></div>';
+        var modeKey = normalizeMode(t.mode);
+        return '<div class="seg" data-mode="' + modeKey + '" style="flex:' + pct.toFixed(2) + ';background:' + colorForMode(t.mode) + '" title="' + t.mode + ' · ' + new Date(t.ts*1000).toLocaleTimeString() + '"></div>';
       }).join('');
     } catch(e){
       console.warn('[ahu] mode ribbon fetch failed:', e);

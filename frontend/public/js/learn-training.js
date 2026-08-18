@@ -256,6 +256,17 @@
             + spec.points + '</strong><br>' + spec.pattern + ' — ' + spec.why + '.' + devTxt;
     }
 
+    function highlightFaultRef(cat) {
+        const host = document.getElementById('read-fault-ref');
+        if (!host) return;
+        host.querySelectorAll('.train-fault-item').forEach((row) => {
+            const on = !!cat && row.dataset.cat === cat;
+            row.classList.toggle('is-live', on);
+            if (on) row.setAttribute('aria-current', 'true');
+            else row.removeAttribute('aria-current');
+        });
+    }
+
     let readSync = null;
     let econSync = null;
 
@@ -268,6 +279,7 @@
         if (econSync) econSync();
         paintMaStatus(document.getElementById('read-ma-status'));
         paintMaStatus(document.getElementById('econ-ma-status'));
+        highlightFaultRef(classifyMaFault(liveMixing()));
         const cap = document.getElementById('read-caption');
         if (cap) {
             cap.innerHTML = '<b>OA</b> outside air · <b>RA</b> return air · <b>MA</b> the mixture entering the coil · <b>SA</b> supply air delivered to the rooms. '
@@ -769,6 +781,19 @@
         document.getElementById('read-next').addEventListener('click', () => show(idx + 1));
         const reset = document.getElementById('read-reset');
         if (reset) reset.addEventListener('click', () => { resetLive(); broadcast(); });
+        const ref = document.getElementById('read-fault-ref');
+        if (ref && !ref.querySelector('.train-fault-item')) {
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach((k) => {
+                const spec = MA_FAULT_CATALOG[k];
+                const row = document.createElement('div');
+                row.className = 'train-fault-item';
+                row.dataset.cat = k;
+                row.innerHTML = '<span class="k">' + k + '</span><span><span class="pts">'
+                    + spec.points + '</span><br><span class="pat">' + spec.pattern
+                    + '</span> — ' + spec.why + '</span>';
+                ref.appendChild(row);
+            });
+        }
         show(0);
     }
 

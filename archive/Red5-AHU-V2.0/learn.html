@@ -679,6 +679,51 @@
         .train-ma-status[data-cat="F"] { border-left: 3px solid #a78bfa; }
         .train-ma-status[data-cat="G"] { border-left: 3px solid #fb7185; }
         .train-ma-status[data-cat="H"] { border-left: 3px solid #94a3b8; }
+        .train-fault-ref {
+            margin-top: 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--bg-card);
+            overflow: hidden;
+        }
+        .train-fault-ref h3 {
+            margin: 0;
+            padding: 10px 12px 8px;
+            font-size: 10px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--text-mute);
+            font-weight: 800;
+        }
+        .train-fault-item {
+            display: grid;
+            grid-template-columns: 28px 1fr;
+            gap: 8px;
+            padding: 8px 12px;
+            border-top: 1px solid var(--line);
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--text-dim);
+        }
+        .train-fault-item .k {
+            font-family: ui-monospace, monospace;
+            font-weight: 800;
+            font-size: 12px;
+            color: var(--text);
+        }
+        .train-fault-item .pts { color: var(--text); font-weight: 700; }
+        .train-fault-item .pat { color: var(--text-mute); }
+        .train-fault-item[data-cat="A"] .k { color: #fbbf24; }
+        .train-fault-item[data-cat="B"] .k { color: #f97316; }
+        .train-fault-item[data-cat="C"] .k { color: #f43f5e; }
+        .train-fault-item[data-cat="D"] .k { color: #38bdf8; }
+        .train-fault-item[data-cat="E"] .k,
+        .train-fault-item[data-cat="F"] .k { color: #a78bfa; }
+        .train-fault-item[data-cat="G"] .k { color: #fb7185; }
+        .train-fault-item[data-cat="H"] .k { color: #94a3b8; }
+        .train-fault-item.is-live {
+            background: rgba(251, 191, 36, 0.10);
+        }
         .outcomes {
             display: grid;
             gap: 8px;
@@ -898,6 +943,9 @@
                 <button type="button" id="read-prev" data-testid="read-prev">← Previous</button>
                 <button type="button" id="read-next" data-testid="read-next">Next →</button>
                 <button type="button" id="read-reset" data-testid="read-reset">Reset</button>
+            </div>
+            <div class="train-fault-ref" id="read-fault-ref" data-testid="read-fault-ref">
+                <h3>MA fault categories</h3>
             </div>
         </aside>
     </div>

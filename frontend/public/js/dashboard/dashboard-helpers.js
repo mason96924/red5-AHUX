@@ -990,7 +990,7 @@ function renderProcessMiniBadge(ctx) {
     const cardBd = '#8a929a';
     const titleC = '#1e293b';
     const axisC = '#1e293b';
-    void theme; /* badge is always light; ignore dashboard dark theme inheritance */
+    void theme; /* palette is always the light sketch; .red5-undim cancels dark DIM */
 
     /* RH-band label near the left edge of the visible band polygon */
     const tBandLabel = tBandLo + Math.min(2.5, (tBandHi - tBandLo) * 0.35);
@@ -1169,7 +1169,7 @@ function renderProcessMiniBadge(ctx) {
     return (
         <div
             data-testid="process-mini-badge"
-            className="absolute z-40 pointer-events-none select-none"
+            className="absolute z-40 pointer-events-none select-none red5-undim"
             style={{
                 right: 0,
                 bottom: 0,
@@ -1179,6 +1179,7 @@ function renderProcessMiniBadge(ctx) {
                 transition: 'transform 0.28s ease',
                 isolation: 'isolate',
                 color: '#0f172a',
+                colorScheme: 'light',
             }}
             onMouseDown={(e) => e.stopPropagation()}
         >

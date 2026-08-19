@@ -309,8 +309,11 @@
            background pixels still doubled-bright → washed out.
            CSS filters compose multiplicatively, so brightness(2.0) *
            brightness(1/2.0) = brightness(1.0).  When --red5-dim is unset
-           (light mode), the calc evaluates to brightness(1) — a no-op. */
-        .red5-graphic-zone { filter: brightness(calc(1 / var(--red5-dim, 1))); }
+           (light mode), the calc evaluates to brightness(1) — a no-op.
+           .red5-undim is the same inverse on the process mini-psychart,
+           which is a light sketch and must not wash out under dark DIM. */
+        .red5-graphic-zone,
+        .red5-undim { filter: brightness(calc(1 / var(--red5-dim, 1))); }
 
         /* ── IFRAME MODAL-ONLY MODE ──
            Activated by ?iframe=1 URL param.  Used by mobile_mockup.html (and
@@ -787,6 +790,6 @@
          Whenever any of those source files changes, re-run the build
          script BEFORE shipping or the dashboard will run stale code.
          The two archive trees (V1.9, V2.0) must mirror this single bundle. -->
-    <script src="/api/assets/dashboard.compiled.js?v=6cfc472fb7"></script>
+    <script src="/api/assets/dashboard.compiled.js?v=827128b8c0"></script>
 </body>
 </html>

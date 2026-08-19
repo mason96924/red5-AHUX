@@ -1142,10 +1142,14 @@ function renderProcessMiniBadge(ctx) {
         );
     };
 
-    /* Screen-pixel MA→SA chevron — same overlay as labels, so zoom cannot blow it up. */
+    /* Screen-pixel MA→SA arrowhead. CSS border triangle: tip = right-center
+       of the 14×10 box. Pin that corner on SA and rotate around it so the
+       tip lands on the SA dot instead of a stubby shark-fin offset. */
     const processArrow = (() => {
         if (!inPlot(sx, sy)) return null;
         const ang = Math.atan2((sy - my) / VH, (sx - mx) / VW) * 180 / Math.PI;
+        const arrLen = 14;
+        const arrHalf = 5;
         return (
             <div
                 data-testid="process-mini-arrow"
@@ -1153,12 +1157,15 @@ function renderProcessMiniBadge(ctx) {
                     position: 'absolute',
                     left: ((sx / VW) * 100) + '%',
                     top: ((sy / VH) * 100) + '%',
-                    transform: 'translate(-50%, -50%) rotate(' + ang + 'deg) translate(-27px, 0)',
                     width: 0,
                     height: 0,
-                    borderTop: '10px solid transparent',
-                    borderBottom: '10px solid transparent',
-                    borderLeft: '20px solid ' + colSA,
+                    marginLeft: -arrLen + 'px',
+                    marginTop: -arrHalf + 'px',
+                    borderTop: arrHalf + 'px solid transparent',
+                    borderBottom: arrHalf + 'px solid transparent',
+                    borderLeft: arrLen + 'px solid ' + colSA,
+                    transformOrigin: 'right center',
+                    transform: 'rotate(' + ang + 'deg)',
                     opacity: dotOp,
                     pointerEvents: 'none',
                 }}

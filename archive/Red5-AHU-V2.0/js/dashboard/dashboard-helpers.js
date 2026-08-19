@@ -1143,13 +1143,14 @@ function renderProcessMiniBadge(ctx) {
     };
 
     /* Screen-pixel MA→SA arrowhead. CSS border triangle: tip = right-center
-       of the 14×10 box. Pin that corner on SA and rotate around it so the
-       tip lands on the SA dot instead of a stubby shark-fin offset. */
+       of the 10×18 box. Pin that corner on SA and rotate around it. 18px
+       tall so the flare reads on the 3.2px shaft; 10px long so it stays a
+       tip on the SA dot instead of a long fin. */
     const processArrow = (() => {
         if (!inPlot(sx, sy)) return null;
         const ang = Math.atan2((sy - my) / VH, (sx - mx) / VW) * 180 / Math.PI;
-        const arrLen = 14;
-        const arrHalf = 5;
+        const arrLen = 10;
+        const arrHalf = 9;
         return (
             <div
                 data-testid="process-mini-arrow"

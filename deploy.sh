@@ -234,18 +234,27 @@ fi
 if [[ "$NGINX_ROOT" == *red5-studio* ]]; then
     yellow "       ⚠  NGINX_ROOT is a leftover red5-studio tree — ahu.html is copied anyway"
 fi
-AHU_SRC="$FRONTEND_DIR/public/ahu.html"
-if [[ -f "$AHU_SRC" ]]; then
-    cp -f "$AHU_SRC" "$NGINX_ROOT/ahu.html"
-    while IFS= read -r extra_root; do
-        [[ -z "$extra_root" || "$extra_root" == "$NGINX_ROOT" ]] && continue
+# Force git UI shells onto every nginx root that names dcred5-studio.com
+# so try_files cannot keep stale ahu.html / dashboard.html / compiled.js.
+NGINX_UI_FILES=(ahu.html dashboard.html dashboard.compiled.js)
+NGINX_EXTRA_ROOTS=()
+while IFS= read -r extra_root; do
+    [[ -z "$extra_root" ]] && continue
+    NGINX_EXTRA_ROOTS+=("$extra_root")
+done < <(grep -Rsl 'dcred5-studio.com' /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null \
+    | xargs grep -hE '^\s*root\s' 2>/dev/null \
+    | awk '{print $2}' | tr -d ';' | sort -u)
+for ui_name in "${NGINX_UI_FILES[@]}"; do
+    UI_SRC="$FRONTEND_DIR/public/$ui_name"
+    [[ -f "$UI_SRC" ]] || continue
+    cp -f "$UI_SRC" "$NGINX_ROOT/$ui_name"
+    for extra_root in "${NGINX_EXTRA_ROOTS[@]}"; do
+        [[ "$extra_root" == "$NGINX_ROOT" ]] && continue
         [[ -d "$extra_root" ]] || continue
-        cp -f "$AHU_SRC" "$extra_root/ahu.html"
-        echo "       also wrote ahu.html → $extra_root"
-    done < <(grep -Rsl 'dcred5-studio.com' /etc/nginx/sites-enabled /etc/nginx/sites-available 2>/dev/null \
-        | xargs grep -hE '^\s*root\s' 2>/dev/null \
-        | awk '{print $2}' | tr -d ';' | sort -u)
-fi
+        cp -f "$UI_SRC" "$extra_root/$ui_name"
+        echo "       also wrote $ui_name → $extra_root"
+    done
+done
 echo
 
 # --- 5. backend restart -----------------------------------------------------

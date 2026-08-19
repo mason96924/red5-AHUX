@@ -3,8 +3,12 @@
 Extracted from `server.py` in Phase L.28 (2026-06-24).  Three handlers:
 
   * `GET /api/assets/{path:path}` -- serves files from the dual-mode
-    resolver: FS root (`/root/data`) -> public tree -> tenant_assets ->
-    zero-pad fallback.  Binary-safe with mimetype guessing.
+    resolver: public tree for git-tracked UI (dashboard.compiled.js,
+    HTML, tailwind CSS), else FS root (`/root/data`) -> public tree ->
+    tenant_assets -> zero-pad fallback.  Binary-safe with mimetype guessing.
+    Site graphics stay DATA_ROOT-first (V1.9 parity).  Git UI must not,
+    or Linux AHU :8001 keeps a stale /root/data/dashboard.compiled.js
+    after git pull while AHUX :8003 (no DATA_ROOT JS shadow) looks current.
   * `GET /assets/{path:path}` -- bare alias; V1.9's Flask backend serves
     images at /assets/<path> and the shared dashboard.html (mirrored
     across V1.9 and V2.0) uses that URL form.  Forwards to the same view.
@@ -55,6 +59,19 @@ def _import_server():
 
 router = APIRouter()
 
+# Git-tracked UI that must beat a leftover /root/data copy after git pull.
+# Keep this list to compiled shells + HTML; photos/configs stay DATA_ROOT-first.
+_GIT_UI_ASSETS = frozenset({
+    "dashboard.compiled.js",
+    "dashboard.tailwind.css",
+    "setup_walk.compiled.js",
+})
+
+
+def _git_ui_beats_data_root(path: str) -> bool:
+    base = os.path.basename((path or "").replace("\\", "/"))
+    return base in _GIT_UI_ASSETS or base.endswith(".html")
+
 
 @router.get("/api/assets/{path:path}")
 async def assets(path: str, request: Request,
@@ -67,8 +84,11 @@ async def assets(path: str, request: Request,
     if path in ("configs/equipment_types.json", "equipment_types.json"):
         return JSONResponse(s._load_json("equipment_types.json"),
                             headers={"Cache-Control": "no-store"})
-    # V1.9 parity: serve from /root/data first when the FS root exists.
-    if _fs_available("data"):
+    # V1.9 parity: site graphics from /root/data first when that FS exists.
+    # Do not let that shadow git UI (dashboard.compiled.js) — AHU :8001
+    # would keep the old undim-less bundle after git pull.
+    if _fs_available("data") and not (
+            _git_ui_beats_data_root(path) and os.path.isfile(full)):
         fs_full = _safe_join(_fs_root("data"), path)
         if fs_full and os.path.isfile(fs_full):
             full = fs_full

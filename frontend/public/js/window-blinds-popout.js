@@ -453,7 +453,18 @@ function FloorWindowsRail(props) {
         : null;
     const floorName = String(floorKey || '').toUpperCase();
     const mods = Array.isArray(smiModules) ? smiModules : [];
-    const smiMod = mods.find((m) => String(m.floor || '').toUpperCase() === floorName) || mods[0] || null;
+    const wiredWins = wins.filter((w) => w.smi_addr != null && w.smi_addr !== '');
+    const smiMod = mods.find((m) => String(m.floor || '').toUpperCase() === floorName) || mods[0] || (wiredWins.length ? {
+        id: wiredWins[0].smi_id != null ? wiredWins[0].smi_id : 1,
+        port: 11,
+    } : null);
+    const driveKey = (w) => {
+        if (!w || w.smi_addr == null || w.smi_addr === '') return '';
+        const id = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
+        if (id == null || id === '') return '';
+        return id + ':' + Number(w.smi_addr);
+    };
+    const driveTag = (w) => (w && w.smi_addr != null && w.smi_addr !== '') ? ('D' + Number(w.smi_addr)) : '';
     const patchWins = (list, fields) => {
         if (!onPatch) return;
         list.forEach((w) => {
@@ -495,13 +506,11 @@ function FloorWindowsRail(props) {
             onPatch(w.id, { smi_id: smiMod.id, smi_addr: i % 16 }, i);
         });
     };
-    const curDrive = (() => {
-        if (targets.length !== 1) return '';
-        const w = targets[0];
-        if (w.smi_addr == null || w.smi_addr === '') return '';
-        const id = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
-        return id + ':' + Number(w.smi_addr);
-    })();
+    const driveKeys = targets.map(driveKey);
+    const uniqueDrives = [];
+    driveKeys.forEach((k) => { if (uniqueDrives.indexOf(k) < 0) uniqueDrives.push(k); });
+    const mixedDrives = uniqueDrives.length > 1;
+    const curDrive = uniqueDrives.length === 1 ? uniqueDrives[0] : '';
     const allOn = wins.length > 0 && wins.every((w, i) => picked.has(w.id != null ? w.id : ('idx-' + i)));
     const nAuto = targets.filter((w) => w.heat_auto).length;
     const btn = 'px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider';
@@ -561,8 +570,10 @@ function FloorWindowsRail(props) {
                         <select data-testid="blinds-rail-smi-drive" value={curDrive} disabled={!wins.length}
                                 className={`flex-1 min-w-0 text-[10px] rounded border px-1 py-0.5 ${dk ? 'bg-slate-900 border-slate-600 text-slate-200' : 'bg-white border-slate-300'}`}
                                 onChange={(e) => wireDrive(e.target.value)}>
-                            {!smiMod && <option value="">No MODULE-SMI on this floor</option>}
-                            {smiMod && <option value="">Not wired</option>}
+                            <option value="">
+                                {!smiMod ? 'No MODULE-SMI on this floor'
+                                    : (mixedDrives ? 'Mixed drives — see list' : 'Not wired')}
+                            </option>
                             {smiMod && Array.from({ length: 16 }, (_, i) => (
                                 <option key={i} value={smiMod.id + ':' + i}>Drive {i} (DD {String(i + 1).padStart(2, '0')})</option>
                             ))}
@@ -570,7 +581,8 @@ function FloorWindowsRail(props) {
                     </div>
                     <div className={`text-[8px] leading-snug ${dk ? 'text-slate-500' : 'text-slate-400'}`}>
                         {smiMod
-                            ? ('Simulated module ' + smiMod.id + ' · pp ' + (smiMod.port || 11) + ' · 16 drives')
+                            ? ('Simulated module ' + smiMod.id + ' · pp ' + (smiMod.port || 11) + ' · 16 drives'
+                                + (wiredWins.length ? (' · ' + wiredWins.length + ' wired') : ''))
                             : 'No simulated MODULE-SMI on this floor. Add one in Floor Plan → SMI setup.'}
                     </div>
                     <button type="button" data-testid="blinds-rail-smi-auto" disabled={!smiMod || !wins.length}
@@ -604,7 +616,7 @@ function FloorWindowsRail(props) {
                             const id = w.id != null ? w.id : ('idx-' + i);
                             const on = picked.has(id) || picked.has(w.id);
                             const label = (w.name && String(w.name).trim()) || ('W' + (i + 1));
-                            const wired = w.smi_addr != null && w.smi_addr !== '';
+                            const dtag = driveTag(w);
                             return (
                                 <label key={id} className={`flex items-center gap-1.5 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${on ? (dk ? 'bg-sky-900/40 text-sky-200' : 'bg-sky-100 text-sky-800') : (dk ? 'text-slate-300' : 'text-slate-700')}`}>
                                     <input type="checkbox" checked={on} onChange={() => {
@@ -613,9 +625,11 @@ function FloorWindowsRail(props) {
                                         setPicked(next);
                                         if (onSelect) onSelect(next.has(id) ? id : null);
                                     }} />
-                                    <span className="truncate flex-1">{label}</span>
+                                    <span className="truncate flex-1">{label}{dtag ? (' ' + dtag) : ''}</span>
                                     <span className={dk ? 'text-slate-500' : 'text-slate-400'}>{openPctOf(w)}%</span>
-                                    {wired ? <span className="text-[8px] text-emerald-400">SMI</span> : null}
+                                    {dtag
+                                        ? <span className="text-[8px] text-emerald-400 shrink-0">{dtag}</span>
+                                        : <span className={`text-[8px] shrink-0 ${dk ? 'text-slate-600' : 'text-slate-400'}`}>—</span>}
                                     {w.heat_auto ? <span className="text-[8px] text-amber-400">A</span> : null}
                                 </label>
                             );

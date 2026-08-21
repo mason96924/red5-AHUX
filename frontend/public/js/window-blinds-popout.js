@@ -161,14 +161,27 @@ function TracedWindowBlindMarks(props) {
     const open = Math.max(0, Math.min(1, Number(props.open)));
     const spec = red5BlindSpecLocal(props.type);
     const cover = 1 - open;
-    const sealed = open < 0.01;
-    if (!sealed && cover < 0.012 && spec.motion !== 'stack' && spec.motion !== 'lift') return null;
     const pad = 0.6;
-    const { sMin, sMax, hMin, hMax, hSpan, sSpan, atSH } = axes;
+    const { sMin, sMax, hMin, hMax, hSpan, sSpan, atSH, minX, maxX, minY, maxY } = axes;
     const n = 10;
-    const lines = [];
-    if (sealed || spec.motion === 'drop') {
-        const f = sealed ? 1 : cover;
+    /* 1 plan-% ≈ 12 CSS px on a typical floor image — matches ELC canvas px. */
+    const PX = 12;
+    const line = (key, x1, y1, x2, y2, swPx, alpha) => (
+        <line key={key} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke="#1e293b" strokeWidth={swPx} strokeLinecap="butt"
+              vectorEffect="non-scaling-stroke"
+              opacity={alpha}/>
+    );
+    if (open < 0.01) {
+        const a = atSH(sMin - pad, hMax + 0.2);
+        const b = atSH(sMax + pad, hMax + 0.2);
+        const c = atSH(sMax + pad, hMin - 0.2);
+        const d = atSH(sMin - pad, hMin - 0.2);
+        return <polygon points={[a, b, c, d].map(p => p[0] + ',' + p[1]).join(' ')}
+                        fill="#1e293b" opacity={0.88}/>;
+    }
+    if (spec.motion === 'drop') {
+        const f = cover;
         if (f <= 0.001) return null;
         const a = atSH(sMin - pad, hMax + 0.2);
         const b = atSH(sMax + pad, hMax + 0.2);
@@ -177,67 +190,56 @@ function TracedWindowBlindMarks(props) {
         return <polygon points={[a, b, c, d].map(p => p[0] + ',' + p[1]).join(' ')}
                         fill="#1e293b" opacity={0.30 + 0.42 * f}/>;
     }
+    const lines = [];
     if (spec.family === 'horizontal' && spec.motion === 'lift') {
         const band = cover * hSpan;
-        if (band < 0.15) return null;
+        if (band * PX < 0.4) return null;
         const pitch = band / n;
-        const sw = Math.max(0.06, Math.min(0.14, pitch * 0.22));
+        const sw = Math.max(1.05, Math.min(4.5, (band * PX) / n * 0.78));
         for (let i = 0; i < n; i++) {
             const hv = hMax - (i + 0.5) * pitch;
             const a = atSH(sMin - pad, hv);
             const b = atSH(sMax + pad, hv);
-            lines.push(
-                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                      opacity={0.48 + cover * 0.38}/>
-            );
+            lines.push(line(i, a[0], a[1], b[0], b[1], sw, 0.48 + cover * 0.38));
         }
         return <g>{lines}</g>;
     }
     if (spec.family === 'horizontal' && spec.motion === 'tilt') {
         const pitch = hSpan / n;
-        const sw = Math.max(0.05, Math.min(0.14, pitch * (0.04 + 0.18 * cover)));
+        const sw = Math.max(1.05, (hSpan * PX / n) * (0.10 + 0.86 * cover));
         for (let i = 0; i < n; i++) {
             const hv = hMax - (i + 0.5) * pitch;
             const a = atSH(sMin - pad, hv);
             const b = atSH(sMax + pad, hv);
-            lines.push(
-                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                      opacity={0.38 + cover * 0.48}/>
-            );
+            lines.push(line(i, a[0], a[1], b[0], b[1], sw, 0.38 + cover * 0.48));
         }
         return <g>{lines}</g>;
     }
+    const x0 = minX, x1 = maxX;
+    const y0 = (minY != null ? minY : 0) - 0.15;
+    const y1 = (maxY != null ? maxY : 100) + 0.15;
+    const spanX = Math.max(0.2, (x1 != null && x0 != null) ? (x1 - x0) : sSpan);
+    const spanPx = spanX * PX;
     if (spec.family === 'vertical' && spec.motion === 'tilt') {
-        const pitch = sSpan / n;
-        const sw = Math.max(0.05, Math.min(0.14, pitch * (0.04 + 0.18 * cover)));
-        for (let i = 0; i < n; i++) {
-            const sv = sMin + (i + 0.5) * pitch;
-            const a = atSH(sv, hMin - 0.2);
-            const b = atSH(sv, hMax + 0.2);
-            lines.push(
-                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                      opacity={0.38 + cover * 0.48}/>
-            );
+        const nV = Math.max(14, Math.round(spanPx / 5.5));
+        const pitch = spanX / nV;
+        const sw = Math.max(0.7, (spanPx / nV) * (0.08 + 0.58 * cover));
+        for (let i = 0; i < nV; i++) {
+            const x = x0 + (i + 0.5) * pitch;
+            lines.push(line(i, x, y0, x, y1, sw, 0.38 + cover * 0.48));
         }
         return <g>{lines}</g>;
     }
-    /* vertical stack — vanes packed toward sMin, opening on sMax */
-    const band = open > 0.97 ? Math.max(0.35, sSpan * 0.045) : cover * sSpan;
-    if (band < 0.12) return null;
-    const pitch = band / n;
-    const sw = Math.max(0.05, Math.min(0.14, pitch * 0.18));
-    for (let i = 0; i < n; i++) {
-        const sv = sMin + (i + 0.5) * pitch;
-        const a = atSH(sv, hMin - 0.2);
-        const b = atSH(sv, hMax + 0.2);
-        lines.push(
-            <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                  stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                  opacity={0.48 + cover * 0.38}/>
-        );
+    /* vertical stack — vanes packed toward minX, opening toward maxX */
+    const bandPx = open > 0.97 ? Math.max(2.2, spanPx * 0.045) : cover * spanPx;
+    if (bandPx < 0.4) return null;
+    const nV = Math.max(14, Math.round(bandPx / 4.5));
+    const band = bandPx / PX;
+    const pitch = band / nV;
+    const sw = Math.max(0.7, (bandPx / nV) * 0.50);
+    for (let i = 0; i < nV; i++) {
+        const x = x0 + (i + 0.5) * pitch;
+        lines.push(line(i, x, y0, x, y1, sw, 0.48 + cover * 0.38));
     }
     return <g>{lines}</g>;
 }

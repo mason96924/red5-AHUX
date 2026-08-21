@@ -69,8 +69,15 @@ _GIT_UI_ASSETS = frozenset({
 
 
 def _git_ui_beats_data_root(path: str) -> bool:
-    base = os.path.basename((path or "").replace("\\", "/"))
-    return base in _GIT_UI_ASSETS or base.endswith(".html")
+    rel = (path or "").replace("\\", "/").lstrip("/")
+    base = os.path.basename(rel)
+    if base in _GIT_UI_ASSETS or base.endswith(".html"):
+        return True
+    # Mapper fetches these as /assets/js/* and /api/assets/js/* — a leftover
+    # /root/data/js copy after git pull would 404/520 the Babel loader.
+    if base.endswith(".js") and (rel.startswith("js/") or rel.startswith("assets/js/")):
+        return True
+    return False
 
 
 @router.get("/api/assets/{path:path}")

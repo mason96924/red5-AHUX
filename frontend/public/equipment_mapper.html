@@ -7446,19 +7446,44 @@
         // Module loader: fetch all external JS modules, concatenate with main code,
         // and compile everything as a single Babel block to share scope.
         (function() {
+            var BUST = 'mapperJs2';
             var jsModules = [
-                '/assets/js/utils.js',
-                '/assets/js/preview-components.js',
-                '/assets/js/schema-config.js',
-                '/assets/js/image-picker.js',
-                '/assets/js/file-browser.js',
-                '/assets/js/sizing-check.js',
-                '/assets/js/blind-types.js?v=vaneSp1',
-                '/assets/js/sun-path.js?v=luxOwn1',
-                '/assets/js/elc-sun-path-overlay.js?v=luxMap1',
-                '/assets/js/window-blinds-popout.js?v=autoCb1',
-                '/assets/js/heat-auto.js?v=autoCb1'
+                'utils.js',
+                'preview-components.js',
+                'schema-config.js',
+                'image-picker.js',
+                'file-browser.js',
+                'sizing-check.js',
+                'blind-types.js',
+                'sun-path.js',
+                'elc-sun-path-overlay.js',
+                'window-blinds-popout.js',
+                'heat-auto.js'
             ];
+            var jsPrefixes = ['/api/assets/js/', '/js/', '/assets/js/'];
+            function loadJs(name) {
+                var lastErr = null;
+                function tryAt(i) {
+                    if (i >= jsPrefixes.length * 2) {
+                        throw lastErr || new Error(name + ' failed to load');
+                    }
+                    var url = jsPrefixes[i % jsPrefixes.length] + name + '?v=' + BUST;
+                    return fetch(url, { cache: 'no-store', credentials: 'same-origin' }).then(function(r) {
+                        if (r.ok) return r.text();
+                        lastErr = new Error(url + ' returned ' + r.status);
+                        if (r.status >= 500 || r.status === 404 || r.status === 403) {
+                            return new Promise(function(res) { setTimeout(res, 180 * (i + 1)); })
+                                .then(function() { return tryAt(i + 1); });
+                        }
+                        throw lastErr;
+                    }).catch(function(err) {
+                        lastErr = err;
+                        return new Promise(function(res) { setTimeout(res, 180 * (i + 1)); })
+                            .then(function() { return tryAt(i + 1); });
+                    });
+                }
+                return tryAt(0);
+            }
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {
                 document.getElementById('root').innerHTML = '<div style="color:red;padding:40px;font-family:monospace;">Error: main-source script tag not found</div>';
@@ -7466,12 +7491,7 @@
             }
             var mainCode = mainSource.textContent;
 
-            Promise.all(jsModules.map(function(url) {
-                return fetch(url).then(function(r) {
-                    if (!r.ok) throw new Error(url + ' returned ' + r.status);
-                    return r.text();
-                });
-            })).then(function(sources) {
+            Promise.all(jsModules.map(loadJs)).then(function(sources) {
                 var combined = sources.join('\n\n') + '\n\n' + mainCode;
                 var script = document.createElement('script');
                 script.type = 'text/babel';

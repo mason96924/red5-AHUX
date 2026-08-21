@@ -123,7 +123,7 @@ function WindowPlanPane(props) {
                 left: `${w.x}%`,
                 top: `${w.y}%`,
                 width: `${len}%`,
-                height: selected && showTrace ? 32 : 16,
+                height: selected && showTrace ? 10 : 7,
                 transform: `translate(-50%, -50%) rotate(${Number(w.angle_deg) || 0}deg)`,
                 cursor: interactive ? (props.cursor || 'pointer') : 'inherit',
                 zIndex: selected ? (props.zSelected || 95) : (props.zIdle || 16),
@@ -132,11 +132,11 @@ function WindowPlanPane(props) {
         >
             <svg viewBox="0 0 100 24" preserveAspectRatio="none"
                  style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
-                <rect x="0.6" y="1" width="98.8" height="22" rx="1.2"
-                      fill={showTrace ? (selected ? '#7dd3fc' : '#38bdf8') : 'rgba(0,0,0,0.01)'}
-                      opacity={showTrace ? (0.38 + 0.42 * open) : 1}
-                      stroke={showTrace ? (selected ? '#fde68a' : 'rgba(186,230,253,0.55)') : 'none'}
-                      strokeWidth={showTrace ? (selected ? 2.2 : 1.2) : 0}/>
+                <rect x="0.6" y="4" width="98.8" height="16" rx="0.6"
+                      fill={showTrace ? 'rgba(56,189,248,0.10)' : 'rgba(0,0,0,0.01)'}
+                      opacity={showTrace ? (0.55 + 0.35 * open) : 1}
+                      stroke={showTrace ? (selected ? 'rgba(150,210,255,0.85)' : 'rgba(56,189,248,0.45)') : 'none'}
+                      strokeWidth={showTrace ? (selected ? 1.1 : 0.7) : 0}/>
                 {(showTrace || open < 0.99) && (
                     <WindowBlindMarks width={100} height={24} open={open} type={type}/>
                 )}
@@ -181,7 +181,7 @@ function TracedWindowBlindMarks(props) {
         const band = cover * hSpan;
         if (band < 0.15) return null;
         const pitch = band / n;
-        const sw = Math.max(0.28, Math.min(1.2, pitch * 0.78));
+        const sw = Math.max(0.06, Math.min(0.14, pitch * 0.22));
         for (let i = 0; i < n; i++) {
             const hv = hMax - (i + 0.5) * pitch;
             const a = atSH(sMin - pad, hv);
@@ -196,7 +196,7 @@ function TracedWindowBlindMarks(props) {
     }
     if (spec.family === 'horizontal' && spec.motion === 'tilt') {
         const pitch = hSpan / n;
-        const sw = Math.max(0.28, pitch * (0.10 + 0.86 * cover));
+        const sw = Math.max(0.05, Math.min(0.14, pitch * (0.04 + 0.18 * cover)));
         for (let i = 0; i < n; i++) {
             const hv = hMax - (i + 0.5) * pitch;
             const a = atSH(sMin - pad, hv);
@@ -211,7 +211,7 @@ function TracedWindowBlindMarks(props) {
     }
     if (spec.family === 'vertical' && spec.motion === 'tilt') {
         const pitch = sSpan / n;
-        const sw = Math.max(0.28, pitch * (0.10 + 0.86 * cover));
+        const sw = Math.max(0.05, Math.min(0.14, pitch * (0.04 + 0.18 * cover)));
         for (let i = 0; i < n; i++) {
             const sv = sMin + (i + 0.5) * pitch;
             const a = atSH(sv, hMin - 0.2);
@@ -228,7 +228,7 @@ function TracedWindowBlindMarks(props) {
     const band = open > 0.97 ? Math.max(0.35, sSpan * 0.045) : cover * sSpan;
     if (band < 0.12) return null;
     const pitch = band / n;
-    const sw = Math.max(0.28, pitch * 0.72);
+    const sw = Math.max(0.05, Math.min(0.14, pitch * 0.18));
     for (let i = 0; i < n; i++) {
         const sv = sMin + (i + 0.5) * pitch;
         const a = atSH(sv, hMin - 0.2);
@@ -260,10 +260,9 @@ function TracedWindowBlindOverlay(props) {
             </clipPath>
             <polygon
                 points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
-                fill={showTrace ? (selected ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)') : 'rgba(0,0,0,0.01)'}
-                stroke={showTrace ? (selected ? '#fbbf24' : '#7dd3fc') : 'none'}
-                strokeWidth={showTrace ? (selected ? 1.25 : 1) : 0}
-                vectorEffect="non-scaling-stroke"
+                fill={showTrace ? (selected ? 'rgba(150,210,255,0.14)' : 'rgba(56,189,248,0.05)') : 'rgba(0,0,0,0.01)'}
+                stroke={showTrace ? (selected ? 'rgba(150,210,255,0.80)' : 'rgba(56,189,248,0.40)') : 'none'}
+                strokeWidth={showTrace ? (selected ? 0.22 : 0.14) : 0}
                 style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: interactive ? 'pointer' : 'inherit' }}
                 onClick={interactive ? props.onClick : undefined}
                 onMouseDown={interactive ? props.onMouseDown : undefined}
@@ -424,9 +423,214 @@ function WindowBlindsPopout(props) {
     );
 }
 
+/** Bottom-right ▤ Windows rail — slide up/down (ELC blinds-rail). */
+function FloorWindowsRail(props) {
+    const React = window.React;
+    const {
+        theme, windows, floorKey, open, onToggleOpen,
+        selectedId, onSelect, onPatch, smiModules,
+    } = props;
+    const dk = theme !== 'light';
+    const wins = Array.isArray(windows) ? windows : [];
+    const [picked, setPicked] = React.useState(() => new Set());
+    React.useEffect(() => {
+        if (selectedId == null || selectedId === '') return;
+        setPicked((prev) => {
+            if (prev.has(selectedId) && prev.size === 1) return prev;
+            return new Set([selectedId]);
+        });
+    }, [selectedId]);
+    const targets = (() => {
+        const sel = wins.filter((w, i) => {
+            const id = w.id != null ? w.id : ('idx-' + i);
+            return picked.has(id) || picked.has(w.id);
+        });
+        return sel.length ? sel : wins;
+    })();
+    const openPctOf = (w) => Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
+    const avgOpen = targets.length
+        ? Math.round(targets.reduce((s, w) => s + openPctOf(w), 0) / targets.length)
+        : null;
+    const floorName = String(floorKey || '').toUpperCase();
+    const mods = Array.isArray(smiModules) ? smiModules : [];
+    const smiMod = mods.find((m) => String(m.floor || '').toUpperCase() === floorName) || mods[0] || null;
+    const patchWins = (list, fields) => {
+        if (!onPatch) return;
+        list.forEach((w) => {
+            const wi = wins.indexOf(w);
+            onPatch(w.id, fields, wi < 0 ? undefined : wi);
+        });
+    };
+    const setOpenPct = (pct) => {
+        const v = Math.max(0, Math.min(100, Number(pct) || 0));
+        patchWins(targets, { blind_level: 1 - v / 100 });
+    };
+    const smiCommand = (command) => {
+        const jobs = targets.filter((w) => w.smi_addr != null && w.smi_addr !== '');
+        if (command === 'Up') setOpenPct(100);
+        else if (command === 'Down') setOpenPct(0);
+        jobs.forEach((w) => {
+            const addr = Number(w.smi_addr);
+            const smiId = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
+            const body = JSON.stringify({ command: command, smi_id: smiId });
+            ['/api/smi/drives/' + addr + '/command', '/smi/drives/' + addr + '/command'].forEach((url) => {
+                try {
+                    fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+                } catch (_) {}
+            });
+        });
+    };
+    const wireDrive = (raw) => {
+        if (!targets.length) return;
+        if (!raw) {
+            patchWins(targets, { smi_id: null, smi_addr: null });
+            return;
+        }
+        const parts = String(raw).split(':');
+        patchWins(targets, { smi_id: parseInt(parts[0], 10), smi_addr: parseInt(parts[1], 10) });
+    };
+    const autoWire = () => {
+        if (!smiMod || !wins.length || !onPatch) return;
+        wins.forEach((w, i) => {
+            onPatch(w.id, { smi_id: smiMod.id, smi_addr: i % 16 }, i);
+        });
+    };
+    const curDrive = (() => {
+        if (targets.length !== 1) return '';
+        const w = targets[0];
+        if (w.smi_addr == null || w.smi_addr === '') return '';
+        const id = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
+        return id + ':' + Number(w.smi_addr);
+    })();
+    const allOn = wins.length > 0 && wins.every((w, i) => picked.has(w.id != null ? w.id : ('idx-' + i)));
+    const nAuto = targets.filter((w) => w.heat_auto).length;
+    const btn = 'px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider';
+    const btnIdle = dk
+        ? ' bg-slate-800 border-slate-600 text-slate-200 hover:border-sky-400'
+        : ' bg-white border-slate-300 text-slate-700 hover:border-sky-500';
+    return (
+        <div
+            data-testid="blinds-rail"
+            className="pointer-events-auto"
+            style={{
+                position: 'absolute', right: 8, bottom: 8, zIndex: 55, width: 268,
+                borderRadius: 6, overflow: 'hidden',
+                background: dk ? 'rgba(16,20,26,0.94)' : 'rgba(248,250,252,0.96)',
+                border: dk ? '1px solid #334155' : '1px solid #cbd5e1',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+        >
+            <button type="button" data-testid="blinds-rail-tab"
+                    aria-expanded={!!open}
+                    onClick={() => { if (onToggleOpen) onToggleOpen(!open); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-left ${dk ? 'hover:bg-slate-800/80' : 'hover:bg-slate-100'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-[0.18em] ${dk ? 'text-sky-300' : 'text-sky-700'}`}>▤ Windows</span>
+                <span className={`text-[10px] ${dk ? 'text-slate-500' : 'text-slate-400'}`} style={{ transform: open ? 'rotate(180deg)' : 'none' }}>▲</span>
+            </button>
+            <div style={{ maxHeight: open ? 420 : 0, overflow: open ? 'auto' : 'hidden', transition: 'max-height .28s ease' }}>
+                <div className="px-3 pb-3 space-y-1.5">
+                    <div className={`text-[9px] ${dk ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {!wins.length ? 'No windows on this floor'
+                            : (picked.size ? (picked.size === 1 ? '1 selected' : picked.size + ' selected') : 'All windows on this floor')}
+                    </div>
+                    <div className="flex gap-1">
+                        <button type="button" data-testid="blinds-rail-up" disabled={!wins.length}
+                                className={btn + btnIdle + ' flex-1'} onClick={() => smiCommand('Up')}>Up</button>
+                        <button type="button" data-testid="blinds-rail-stop" disabled={!wins.length}
+                                className={btn + btnIdle + ' flex-1'} onClick={() => smiCommand('Stop')}>Stop</button>
+                        <button type="button" data-testid="blinds-rail-down" disabled={!wins.length}
+                                className={btn + btnIdle + ' flex-1'} onClick={() => smiCommand('Down')}>Down</button>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button type="button" data-testid="blinds-rail-minus" disabled={!wins.length}
+                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) setOpenPct(avgOpen - 10); }}>−</button>
+                        <input type="range" min="0" max="100" step="1" disabled={!wins.length}
+                               data-testid="blinds-rail-slider"
+                               value={avgOpen == null ? 100 : avgOpen}
+                               className="flex-1 min-w-0 accent-sky-300"
+                               onChange={(e) => setOpenPct(parseInt(e.target.value, 10) || 0)} />
+                        <button type="button" data-testid="blinds-rail-plus" disabled={!wins.length}
+                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) setOpenPct(avgOpen + 10); }}>+</button>
+                        <span className={`font-mono text-[10px] w-8 text-right ${dk ? 'text-slate-400' : 'text-slate-500'}`}>
+                            {avgOpen == null ? '—' : avgOpen + '%'}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className={`text-[8px] uppercase w-8 shrink-0 ${dk ? 'text-slate-500' : 'text-slate-400'}`} title="Bind ticked window to a simulated MODULE-SMI drive">SMI →</span>
+                        <select data-testid="blinds-rail-smi-drive" value={curDrive} disabled={!wins.length}
+                                className={`flex-1 min-w-0 text-[10px] rounded border px-1 py-0.5 ${dk ? 'bg-slate-900 border-slate-600 text-slate-200' : 'bg-white border-slate-300'}`}
+                                onChange={(e) => wireDrive(e.target.value)}>
+                            {!smiMod && <option value="">No MODULE-SMI on this floor</option>}
+                            {smiMod && <option value="">Not wired</option>}
+                            {smiMod && Array.from({ length: 16 }, (_, i) => (
+                                <option key={i} value={smiMod.id + ':' + i}>Drive {i} (DD {String(i + 1).padStart(2, '0')})</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className={`text-[8px] leading-snug ${dk ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {smiMod
+                            ? ('Simulated module ' + smiMod.id + ' · pp ' + (smiMod.port || 11) + ' · 16 drives')
+                            : 'No simulated MODULE-SMI on this floor. Add one in Floor Plan → SMI setup.'}
+                    </div>
+                    <button type="button" data-testid="blinds-rail-smi-auto" disabled={!smiMod || !wins.length}
+                            className={btn + btnIdle + ' w-full'}
+                            onClick={autoWire}>
+                        Auto-wire this floor to SMI drives 0…n
+                    </button>
+                    <div className="flex items-center justify-between">
+                        <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}>
+                            <input type="checkbox" data-testid="blinds-rail-all" disabled={!wins.length} checked={allOn}
+                                   onChange={(e) => {
+                                       if (e.target.checked) {
+                                           setPicked(new Set(wins.map((w, i) => w.id != null ? w.id : ('idx-' + i))));
+                                       } else {
+                                           setPicked(new Set());
+                                           if (onSelect) onSelect(null);
+                                       }
+                                   }} />
+                            All
+                        </label>
+                        <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}
+                               title="Selected windows follow daylight: open until the room is green, close when too bright, close at night">
+                            <input type="checkbox" data-testid="blinds-rail-heat-all" disabled={!wins.length}
+                                   checked={targets.length > 0 && nAuto === targets.length}
+                                   onChange={(e) => patchWins(targets, { heat_auto: !!e.target.checked })} />
+                            Auto
+                        </label>
+                    </div>
+                    <div data-testid="blinds-rail-list" className="max-h-[140px] overflow-y-auto space-y-0.5">
+                        {wins.map((w, i) => {
+                            const id = w.id != null ? w.id : ('idx-' + i);
+                            const on = picked.has(id) || picked.has(w.id);
+                            const label = (w.name && String(w.name).trim()) || ('W' + (i + 1));
+                            const wired = w.smi_addr != null && w.smi_addr !== '';
+                            return (
+                                <label key={id} className={`flex items-center gap-1.5 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${on ? (dk ? 'bg-sky-900/40 text-sky-200' : 'bg-sky-100 text-sky-800') : (dk ? 'text-slate-300' : 'text-slate-700')}`}>
+                                    <input type="checkbox" checked={on} onChange={() => {
+                                        const next = new Set(picked);
+                                        if (next.has(id)) next.delete(id); else next.add(id);
+                                        setPicked(next);
+                                        if (onSelect) onSelect(next.has(id) ? id : null);
+                                    }} />
+                                    <span className="truncate flex-1">{label}</span>
+                                    <span className={dk ? 'text-slate-500' : 'text-slate-400'}>{openPctOf(w)}%</span>
+                                    {wired ? <span className="text-[8px] text-emerald-400">SMI</span> : null}
+                                    {w.heat_auto ? <span className="text-[8px] text-amber-400">A</span> : null}
+                                </label>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 window.WindowBlindTypeSelect = WindowBlindTypeSelect;
 window.WindowBlindPreview = WindowBlindPreview;
 window.WindowBlindMarks = WindowBlindMarks;
 window.WindowPlanPane = WindowPlanPane;
 window.TracedWindowBlindOverlay = TracedWindowBlindOverlay;
 window.WindowBlindsPopout = WindowBlindsPopout;
+window.FloorWindowsRail = FloorWindowsRail;

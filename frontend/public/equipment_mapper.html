@@ -99,7 +99,7 @@
         - Custom sensor groups
         - All Equipment Schema Mapper features
     -->
-    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=d18c35e157">
+    <link rel="stylesheet" href="/api/assets/dashboard.tailwind.css?v=9f493d724d">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
@@ -336,7 +336,8 @@
             const [draggedMarkerType, setDraggedMarkerType] = useState(null); // 'ahu' or 'vav'
             const [selectedMarkerId, setSelectedMarkerId] = useState(null);
             // ELC window creation: Trace Window (2D glass).
-            const [floorWindows, setFloorWindows] = useState([]); // {id,floorIdx,x,y,length,angle_deg,blind_level,blind_type,vertices}
+            const [floorWindows, setFloorWindows] = useState([]); // {id,floorIdx,x,y,...,smi_id,smi_addr,heat_auto}
+            const [smiModules, setSmiModules] = useState([]); // [{id, port, floor, note}] simulated MODULE-SMI
             const [windowTraceMode, setWindowTraceMode] = useState(null); // ELC Trace Window: 2D glass polygon
             const isTracedWindow = (w) => !!(w && Array.isArray(w.vertices) && w.vertices.length >= 3);
             const [selectedWindowId, setSelectedWindowId] = useState(null);
@@ -375,8 +376,8 @@
                     line.setAttribute('visibility', 'hidden');
                     return;
                 }
-                const color = traceKindRef.current === 'room' ? '#39ff14'
-                    : traceKindRef.current === 'window' ? '#38bdf8'
+                const color = traceKindRef.current === 'room' ? 'rgba(56,189,248,0.85)'
+                    : traceKindRef.current === 'window' ? 'rgba(150,210,255,0.85)'
                     : '#94a3b8';
                 line.setAttribute('x1', last.x);
                 line.setAttribute('y1', last.y);
@@ -2985,6 +2986,12 @@
                 const mapConfigData = {
                     version: "1.1",
                     deployment_note: "Floor plan images stored with relative paths under /root/data/",
+                    smi_modules: (smiModules || []).map(m => ({
+                        id: Number(m.id) || 1,
+                        port: Number(m.port) || 11,
+                        floor: m.floor || '',
+                        note: m.note || '',
+                    })),
                     floors: floorPlans.map((floor, idx) => ({
                         id: floor.id,
                         name: floor.name,
@@ -3020,6 +3027,9 @@
                             angle_deg: w.angle_deg,
                             blind_level: w.blind_level || 0,
                             blind_type: w.blind_type || 'roller',
+                            heat_auto: !!w.heat_auto,
+                            ...(w.smi_id != null && w.smi_id !== '' ? { smi_id: Number(w.smi_id) } : {}),
+                            ...(w.smi_addr != null && w.smi_addr !== '' ? { smi_addr: Number(w.smi_addr) } : {}),
                             sill_height_m: w.sill_height_m != null ? w.sill_height_m : 1.0,
                             head_height_m: w.head_height_m != null ? w.head_height_m : 2.2,
                             skew_x: traced ? 0 : (w.skew_x != null ? w.skew_x : 0.42),
@@ -4068,11 +4078,15 @@
                                         blind_type: window.red5NormalizeBlindType
                                             ? window.red5NormalizeBlindType(w.blind_type)
                                             : ((w.blind_type === 'horizontal' || w.blind_type === 'vertical' || w.blind_type === 'horizontal-tilt' || w.blind_type === 'vertical-stack') ? w.blind_type : 'roller'),
+                                        heat_auto: !!w.heat_auto,
+                                        smi_id: w.smi_id != null && w.smi_id !== '' ? Number(w.smi_id) : undefined,
+                                        smi_addr: w.smi_addr != null && w.smi_addr !== '' ? Number(w.smi_addr) : undefined,
                                         ...(verts ? { vertices: verts } : {}),
                                     });
                                 });
                             });
                             setFloorWindows(allWindows);
+                            setSmiModules(Array.isArray(data.smi_modules) ? data.smi_modules : []);
                             const allRooms = [];
                             data.floors.forEach((floor, idx) => {
                                 (floor.rooms || []).forEach((r, ri) => {
@@ -5746,10 +5760,117 @@
                                                                 />
                                                             ) : null}
                                                         </div>
+                                                        <div className="mt-1.5 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                                            <span className="text-[8px] text-slate-500 w-10 shrink-0">SMI</span>
+                                                            <select
+                                                                className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-[9px] text-slate-200"
+                                                                data-testid={`mapper-smi-drive-${w.id}`}
+                                                                value={(w.smi_addr == null || w.smi_addr === '') ? '' : String((w.smi_id != null ? w.smi_id : (smiModules[0] && smiModules[0].id) || 1) + ':' + w.smi_addr)}
+                                                                onChange={(e) => {
+                                                                    const raw = e.target.value;
+                                                                    setFloorWindows(prev => prev.map(x => {
+                                                                        if (x.id !== w.id) return x;
+                                                                        if (!raw) return { ...x, smi_id: undefined, smi_addr: undefined };
+                                                                        const parts = raw.split(':');
+                                                                        return { ...x, smi_id: parseInt(parts[0], 10), smi_addr: parseInt(parts[1], 10) };
+                                                                    }));
+                                                                }}
+                                                            >
+                                                                <option value="">{smiModules.length ? 'Not wired' : 'Add MODULE-SMI below'}</option>
+                                                                {(smiModules.length ? smiModules : []).map(m => (
+                                                                    Array.from({ length: 16 }, (_, di) => (
+                                                                        <option key={m.id + ':' + di} value={m.id + ':' + di}>Mod {m.id} · Drive {di}</option>
+                                                                    ))
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                     </div>
                                                 );
                                             })
                                         )}
+                                    </div>
+                                    )}
+
+                                    {floorPlans.length > 0 && (
+                                    <div className="space-y-2 mt-3 pt-3 border-t border-slate-800 px-2" data-testid="mapper-smi-setup">
+                                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest">SMI setup (simulated)</div>
+                                        <p className="text-[8px] text-slate-500 leading-snug">Software MODULE-SMI on this floor — 16 drives, no hardware. Bind windows above, then Auto-wire.</p>
+                                        {(smiModules.length ? smiModules : [{ id: '', port: 11, floor: (floorPlans[currentFloorIdx] && floorPlans[currentFloorIdx].name) || 'F0', note: '' }]).map((m, mi) => (
+                                            <div key={'smi-'+mi} className="grid grid-cols-4 gap-1 items-center">
+                                                <label className="text-[8px] text-slate-500 col-span-1">ID
+                                                    <input type="number" min="1" className="w-full bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"
+                                                           value={m.id === '' ? '' : m.id}
+                                                           data-testid={`mapper-smi-id-${mi}`}
+                                                           onChange={(e) => {
+                                                               const v = parseInt(e.target.value, 10);
+                                                               setSmiModules(prev => {
+                                                                   const next = (prev && prev.length) ? prev.slice() : [{ id: 1, port: 11, floor: (floorPlans[currentFloorIdx] && floorPlans[currentFloorIdx].name) || 'F0', note: '' }];
+                                                                   next[mi] = Object.assign({}, next[mi] || {}, { id: Number.isFinite(v) ? v : 1 });
+                                                                   return next;
+                                                               });
+                                                           }} />
+                                                </label>
+                                                <label className="text-[8px] text-slate-500 col-span-1">Port
+                                                    <input type="number" min="1" className="w-full bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"
+                                                           value={m.port || 11}
+                                                           data-testid={`mapper-smi-port-${mi}`}
+                                                           onChange={(e) => {
+                                                               const v = parseInt(e.target.value, 10) || 11;
+                                                               setSmiModules(prev => {
+                                                                   const next = (prev && prev.length) ? prev.slice() : [{ id: 1, port: 11, floor: (floorPlans[currentFloorIdx] && floorPlans[currentFloorIdx].name) || 'F0', note: '' }];
+                                                                   next[mi] = Object.assign({}, next[mi] || {}, { port: v });
+                                                                   return next;
+                                                               });
+                                                           }} />
+                                                </label>
+                                                <label className="text-[8px] text-slate-500 col-span-2">Floor
+                                                    <input type="text" className="w-full bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"
+                                                           value={m.floor || ''}
+                                                           data-testid={`mapper-smi-floor-${mi}`}
+                                                           onChange={(e) => {
+                                                               const v = e.target.value;
+                                                               setSmiModules(prev => {
+                                                                   const next = (prev && prev.length) ? prev.slice() : [{ id: 1, port: 11, floor: v, note: '' }];
+                                                                   next[mi] = Object.assign({}, next[mi] || {}, { floor: v });
+                                                                   return next;
+                                                               });
+                                                           }} />
+                                                </label>
+                                            </div>
+                                        ))}
+                                        <button type="button"
+                                                data-testid="mapper-smi-add"
+                                                className="w-full py-1.5 rounded bg-slate-800 border border-slate-600 text-[9px] font-black uppercase text-slate-300 hover:border-sky-400"
+                                                onClick={() => {
+                                                    const used = new Set((smiModules || []).map(x => Number(x.id)));
+                                                    let nid = 1; while (used.has(nid)) nid += 1;
+                                                    setSmiModules(prev => [...(prev || []), {
+                                                        id: nid, port: 10 + nid,
+                                                        floor: (floorPlans[currentFloorIdx] && floorPlans[currentFloorIdx].name) || ('F' + nid),
+                                                        note: '',
+                                                    }]);
+                                                }}>
+                                            + Add MODULE-SMI
+                                        </button>
+                                        <button type="button"
+                                                data-testid="mapper-smi-auto-wire"
+                                                className="w-full py-1.5 rounded bg-slate-800 border border-sky-600/50 text-[9px] font-black uppercase text-sky-300 hover:bg-sky-900/30"
+                                                onClick={() => {
+                                                    const floorName = (floorPlans[currentFloorIdx] && floorPlans[currentFloorIdx].name) || '';
+                                                    let mod = (smiModules || []).find(x => String(x.floor || '').toUpperCase() === String(floorName).toUpperCase()) || (smiModules || [])[0];
+                                                    if (!mod) {
+                                                        mod = { id: 1, port: 11, floor: floorName || 'F0', note: '' };
+                                                        setSmiModules([mod]);
+                                                    }
+                                                    const list = floorWindows.filter(w => w.floorIdx === currentFloorIdx);
+                                                    setFloorWindows(prev => prev.map(w => {
+                                                        if (w.floorIdx !== currentFloorIdx) return w;
+                                                        const i = list.findIndex(x => x.id === w.id);
+                                                        return { ...w, smi_id: mod.id, smi_addr: Math.max(0, i) % 16 };
+                                                    }));
+                                                }}>
+                                            Auto-wire this floor to SMI drives 0…n
+                                        </button>
                                     </div>
                                     )}
                                     
@@ -6185,10 +6306,9 @@
                                                 return (
                                                     <polygon key={r.id}
                                                         points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
-                                                        fill={sel ? 'rgba(57,255,20,0.10)' : 'none'}
-                                                        stroke={sel ? '#b8ff5a' : '#39ff14'}
-                                                        strokeWidth={sel ? 1.25 : 1}
-                                                        vectorEffect="non-scaling-stroke"
+                                                        fill={sel ? 'rgba(250,204,21,0.16)' : 'rgba(56,189,248,0.06)'}
+                                                        stroke={sel ? 'rgba(250,204,21,0.95)' : 'rgba(56,189,248,0.55)'}
+                                                        strokeWidth={sel ? 0.22 : 0.16}
                                                     />
                                                 );
                                             })}
@@ -6198,15 +6318,13 @@
                                                         <polyline
                                                             points={(roomMode.pts || []).map(p => `${p.x},${p.y}`).join(' ')}
                                                             fill="none"
-                                                            stroke="#39ff14"
-                                                            strokeWidth="1"
-                                                            vectorEffect="non-scaling-stroke"
+                                                            stroke="rgba(250,204,21,0.95)"
+                                                            strokeWidth="0.22"
                                                         />
                                                     )}
                                                     {(roomMode.pts || []).map((p, i) => (
-                                                        <circle key={i} cx={p.x} cy={p.y} r={i === 0 ? 0.28 : 0.18}
-                                                                fill={i === 0 ? '#b8ff5a' : '#39ff14'}
-                                                                stroke="#14532d" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                                                        <circle key={i} cx={p.x} cy={p.y} r={i === 0 ? 0.45 : 0.28}
+                                                                fill={i === 0 ? 'rgba(250,204,21,0.95)' : 'rgba(250,204,21,0.7)'} />
                                                     ))}
                                                 </g>
                                             )}
@@ -6215,8 +6333,7 @@
                                                     {(obstructionTraceMode.pts || []).length >= 2 && (
                                                         <polyline
                                                             points={(obstructionTraceMode.pts || []).map(p => `${p.x},${p.y}`).join(' ')}
-                                                            fill="none" stroke="#94a3b8" strokeWidth="1"
-                                                            vectorEffect="non-scaling-stroke" />
+                                                            fill="none" stroke="#94a3b8" strokeWidth="0.16" />
                                                     )}
                                                     {(obstructionTraceMode.pts || []).map((p, i) => (
                                                         <circle key={'ot'+i} cx={p.x} cy={p.y} r={i === 0 ? 0.28 : 0.18}
@@ -6232,8 +6349,7 @@
                                                         points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
                                                         fill="rgba(148,163,184,0.18)"
                                                         stroke="#94a3b8"
-                                                        strokeWidth="1"
-                                                        vectorEffect="non-scaling-stroke"
+                                                        strokeWidth="0.16"
                                                     />
                                                 );
                                             })}
@@ -6242,8 +6358,7 @@
                                                     {(windowTraceMode.pts || []).length >= 2 && (
                                                         <polyline
                                                             points={(windowTraceMode.pts || []).map(p => `${p.x},${p.y}`).join(' ')}
-                                                            fill="none" stroke="#38bdf8" strokeWidth="1"
-                                                            vectorEffect="non-scaling-stroke" />
+                                                            fill="none" stroke="rgba(150,210,255,0.85)" strokeWidth="0.16" />
                                                     )}
                                                     {(windowTraceMode.pts || []).map((p, i) => (
                                                         <circle key={'wt'+i} cx={p.x} cy={p.y} r={i === 0 ? 0.28 : 0.18}
@@ -6256,9 +6371,8 @@
                                                 data-testid="mapper-trace-rubber"
                                                 x1="0" y1="0" x2="0" y2="0"
                                                 fill="none"
-                                                stroke="#39ff14"
-                                                strokeWidth="1"
-                                                vectorEffect="non-scaling-stroke"
+                                                stroke="rgba(56,189,248,0.75)"
+                                                strokeWidth="0.16"
                                                 visibility="hidden"
                                                 pointerEvents="none"
                                             />
@@ -6278,10 +6392,9 @@
                                                 ) : (
                                                 <polygon key={'wv-'+w.id}
                                                     points={w.vertices.map(v => `${v[0]},${v[1]}`).join(' ')}
-                                                    fill={selectedWindowId === w.id ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)'}
-                                                    stroke={selectedWindowId === w.id ? '#fbbf24' : '#7dd3fc'}
-                                                    strokeWidth={selectedWindowId === w.id ? 1.25 : 1}
-                                                    vectorEffect="non-scaling-stroke"
+                                                    fill={selectedWindowId === w.id ? 'rgba(150,210,255,0.14)' : 'rgba(56,189,248,0.05)'}
+                                                    stroke={selectedWindowId === w.id ? 'rgba(150,210,255,0.80)' : 'rgba(56,189,248,0.40)'}
+                                                    strokeWidth={selectedWindowId === w.id ? 0.22 : 0.14}
                                                     style={{ pointerEvents: (windowTraceMode || roomMode || obstructionTraceMode) ? 'none' : 'auto', cursor: 'pointer' }}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -6378,7 +6491,7 @@
                                                         left: `${w.x}%`,
                                                         top: `${w.y}%`,
                                                         width: `${len}%`,
-                                                        height: '12px',
+                                                        height: '7px',
                                                         transform: `translate(-50%, -50%) rotate(${Number(w.angle_deg)||0}deg)`,
                                                         cursor: 'move',
                                                         zIndex: sel ? 95 : 16,
@@ -6387,12 +6500,12 @@
                                                 >
                                                     <div style={{
                                                         position: 'absolute',
-                                                        left: 0, right: 0, top: '3px', bottom: '3px',
-                                                        borderRadius: 2,
-                                                        background: sel ? '#fbbf24' : '#7dd3fc',
+                                                        left: 0, right: 0, top: '1px', bottom: '1px',
+                                                        borderRadius: 1,
+                                                        background: 'rgba(56,189,248,0.18)',
                                                         opacity: 0.55 + 0.4 * open,
-                                                        boxShadow: sel ? '0 0 10px rgba(251,191,36,0.7)' : '0 0 4px rgba(125,211,252,0.35)',
-                                                        border: sel ? '1px solid #fde68a' : '1px solid rgba(186,230,253,0.5)',
+                                                        boxShadow: 'none',
+                                                        border: sel ? '1px solid rgba(150,210,255,0.85)' : '1px solid rgba(56,189,248,0.45)',
                                                     }} />
                                                 </div>
                                             );
@@ -7331,7 +7444,7 @@
                 '/assets/js/blind-types.js?v=jamb1',
                 '/assets/js/sun-path.js?v=jamb1',
                 '/assets/js/elc-sun-path-overlay.js?v=seasonMo6',
-                '/assets/js/window-blinds-popout.js?v=relFocus1'
+                '/assets/js/window-blinds-popout.js?v=winRail1'
             ];
             var mainSource = document.getElementById('main-source');
             if (!mainSource) {

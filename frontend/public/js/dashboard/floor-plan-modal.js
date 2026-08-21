@@ -471,6 +471,23 @@ const floorModalTree = (
                                 lon={buildingLatLon && buildingLatLon.lon}
                             />
                         )}
+                        {window.FloorWindowsRail && (
+                            <window.FloorWindowsRail
+                                theme={theme}
+                                windows={floorData.floor.windows || []}
+                                floorKey={floorData.floor.id || floorData.floor.name || 'floor'}
+                                open={!!floorWindowsPanelOpen}
+                                onToggleOpen={setFloorWindowsPanelOpen}
+                                selectedId={selectedFloorWindowId}
+                                onSelect={setSelectedFloorWindowId}
+                                onPatch={(wid, fields, wi) => {
+                                    if (patchFloorWindow) {
+                                        patchFloorWindow(floorData.floor.id || floorData.floor.name || 'floor', wid, fields, wi);
+                                    }
+                                }}
+                                smiModules={(mapConfig && mapConfig.smi_modules) || []}
+                            />
+                        )}
                         </React.Fragment>
                     );
                 } else {
@@ -666,6 +683,18 @@ const floorModalTree = (
                                 lat={buildingLatLon && buildingLatLon.lat}
                                 timezone={buildingLatLon && buildingLatLon.timezone}
                                 lon={buildingLatLon && buildingLatLon.lon}
+                            />
+                        )}
+                        {window.FloorWindowsRail && (
+                            <window.FloorWindowsRail
+                                theme={theme}
+                                windows={[]}
+                                floorKey="floor"
+                                open={!!floorWindowsPanelOpen}
+                                onToggleOpen={setFloorWindowsPanelOpen}
+                                selectedId={selectedFloorWindowId}
+                                onSelect={setSelectedFloorWindowId}
+                                smiModules={(mapConfig && mapConfig.smi_modules) || []}
                             />
                         )}
                         </div>

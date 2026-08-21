@@ -94,6 +94,8 @@ EXTRA_ALLOWED_NOT_IN_UI = [
     ('js/elc-sun-path-overlay.js',  'ui',     'elc-sun-path-overlay.js',  'Floor-rose sun-path overlay (loaded by equipment_mapper.html)'),
     ('js/blind-types.js',           'ui',     'blind-types.js',           'Window blind type glyphs (loaded by equipment_mapper.html)'),
     ('js/window-blinds-popout.js',  'ui',     'window-blinds-popout.js',  'Window blinds popout (loaded by equipment_mapper.html)'),
+    ('js/heat-auto.js',             'ui',     'heat-auto.js',             'Daylight blind Auto loop (dynamically loaded by equipment_mapper.html, so invisible to the reference scan)'),
+    ('js/learn-training.js',        'ui',     'learn-training.js',        'Training content (loaded by learn.html)'),
     ('js/dashboard/window-graphic-modal.js', 'ui', 'window-graphic-modal.js', 'Window graphic modal (compiled into dashboard.compiled.js)'),
     ('assets/js/sun-path.js',       'ui',     'assets/js/sun-path.js',    'Archive copy referenced by sun_preview.html (/assets/js/sun-path.js)'),
     # IMPORTANT -- deployment-ordering rule.

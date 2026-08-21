@@ -305,7 +305,7 @@
             color: var(--text);
             text-align: right;
         }
-        /* RH-band comparison bar (30 - 70 % scale) shown to the right
+        /* RH-band comparison bar (10 - 90 % scale) shown to the right
            of each Building Type's "RH band" spec value.  Provides a
            visual reference for cross-BT humidity-window comparison. */
         .spec-row.spec-rh { gap: 12px; }
@@ -329,6 +329,8 @@
             border: 1px solid var(--line);
             overflow: hidden;
         }
+        /* Mold-risk shading: scale 10-90, threshold at 65 % RH.
+           65 % maps to (65-10)/(90-10) = 68.75 % across the track. */
         .rh-bar-track::after {
             content: '';
             position: absolute;
@@ -1012,7 +1014,7 @@
         <div>
             <a href="/learn.html" data-testid="back-to-learn-footer">↩ Interactive Chart</a>
             &nbsp;·&nbsp;
-            <a href="javascript:void(0)" data-testid="back-to-xy-detail" onclick="try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){history.length>1?history.back():(location.href='/psy_3d.html#xy');}},150);return false;">↩ Close &amp; return to X-Y Detail</a>
+            <a href="javascript:void(0)" data-testid="close-deepdive-tab" onclick="try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){history.length>1?history.back():(location.href='/dashboard.html');}},150);return false;">↩ Close &amp; return to Pro View</a>
         </div>
     </footer>
 </div>
@@ -1830,8 +1832,12 @@
     const detailSubtitle = document.getElementById('detail-subtitle');
     const detailGrid     = document.getElementById('detail-grid');
 
+    /* Parse an RH-band string like "40 - 60 %" or
+       "8 - 80 %  allowable * 40-60 % recommended" into {min,max}.
+       Returns null if no numeric range can be extracted. */
     function parseRhRange(s) {
         if (!s) return null;
+        // Match first "N - M" (with various dashes / hyphens) -> two ints.
         const m = (s + '').match(/(\d{1,3})\s*[\u2013\u2014\-]\s*(\d{1,3})/);
         if (!m) return null;
         let a = parseInt(m[1], 10), b = parseInt(m[2], 10);
@@ -1840,6 +1846,10 @@
         return { min: a, max: b };
     }
 
+    /* Build a 10-90 % scale bar with the BT's range highlighted.  Out-of-
+       scale values are clamped + flagged with a small amber notch so users
+       can see the actual numeric value in the spec text and understand
+       the bar is truncated. */
     function renderRhBar(rangeStr) {
         const r = parseRhRange(rangeStr);
         if (!r) return '';

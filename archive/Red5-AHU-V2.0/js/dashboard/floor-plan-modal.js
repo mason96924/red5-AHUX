@@ -151,6 +151,9 @@ const floorModalTree = (
                                     rooms={floorData.floor.rooms || []}
                                 />
                             )}
+                            {window.ElcLuxMapOverlayLive && (
+                                <window.ElcLuxMapOverlayLive floor={floorData.floor} />
+                            )}
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (
                                 <window.ElcSunPathLive
@@ -169,7 +172,8 @@ const floorModalTree = (
                                 <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
                                     orientation={floorData.floor.orientation}
-                                    rooms={floorData.floor.rooms || []} />
+                                    rooms={floorData.floor.rooms || []}
+                                    windows={floorData.floor.windows || []} />
                             )}
                             {sunState && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
                                 <window.WindowsSunshaftOverlay
@@ -471,6 +475,23 @@ const floorModalTree = (
                                 lon={buildingLatLon && buildingLatLon.lon}
                             />
                         )}
+                        {window.FloorWindowsRail && (
+                            <window.FloorWindowsRail
+                                theme={theme}
+                                windows={floorData.floor.windows || []}
+                                floorKey={floorData.floor.id || floorData.floor.name || 'floor'}
+                                open={!!floorWindowsPanelOpen}
+                                onToggleOpen={setFloorWindowsPanelOpen}
+                                selectedId={selectedFloorWindowId}
+                                onSelect={setSelectedFloorWindowId}
+                                onPatch={(wid, fields, wi) => {
+                                    if (patchFloorWindow) {
+                                        patchFloorWindow(floorData.floor.id || floorData.floor.name || 'floor', wid, fields, wi);
+                                    }
+                                }}
+                                smiModules={(mapConfig && mapConfig.smi_modules) || []}
+                            />
+                        )}
                         </React.Fragment>
                     );
                 } else {
@@ -492,6 +513,9 @@ const floorModalTree = (
                                     elevation_m={buildingLatLon && buildingLatLon.elevation_m}
                                     timezone={buildingLatLon && buildingLatLon.timezone}
                                 />
+                            )}
+                            {window.ElcLuxMapOverlayLive && (
+                                <window.ElcLuxMapOverlayLive floor={{ rooms: [], windows: [] }} />
                             )}
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (
@@ -666,6 +690,18 @@ const floorModalTree = (
                                 lat={buildingLatLon && buildingLatLon.lat}
                                 timezone={buildingLatLon && buildingLatLon.timezone}
                                 lon={buildingLatLon && buildingLatLon.lon}
+                            />
+                        )}
+                        {window.FloorWindowsRail && (
+                            <window.FloorWindowsRail
+                                theme={theme}
+                                windows={[]}
+                                floorKey="floor"
+                                open={!!floorWindowsPanelOpen}
+                                onToggleOpen={setFloorWindowsPanelOpen}
+                                selectedId={selectedFloorWindowId}
+                                onSelect={setSelectedFloorWindowId}
+                                smiModules={(mapConfig && mapConfig.smi_modules) || []}
                             />
                         )}
                         </div>

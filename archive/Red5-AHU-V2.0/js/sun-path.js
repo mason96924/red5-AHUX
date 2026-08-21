@@ -158,17 +158,70 @@ window.red5RoomForWindow = function(w, rooms){
   var nx = -ty, ny = tx;
   var ix = 50 - cx, iy = 50 - cy;
   if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
-  if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
-  var depths = [0.8, 1.5, 3.0, 5.0];
+    if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
+  var depths = [0.35, 0.7, 1.1, 1.6];
   for (var di = 0; di < depths.length; di++) {
     hit = window.red5FindContainingRoom(cx + nx * depths[di], cy + ny * depths[di], rooms);
     if (hit) return hit;
   }
-  for (di = 0; di < depths.length; di++) {
-    hit = window.red5FindContainingRoom(cx - nx * depths[di], cy - ny * depths[di], rooms);
+  var reverse = [0.35, 0.7];
+  for (di = 0; di < reverse.length; di++) {
+    hit = window.red5FindContainingRoom(cx - nx * reverse[di], cy - ny * reverse[di], rooms);
     if (hit) return hit;
   }
   return null;
+};
+
+/* True when this room has its own glass that the sun actually enters. */
+window.red5RoomAdmitsDirectSun = function(room, windows, sun, opts){
+  opts = opts || {};
+  if (!room || !windows || !windows.length || !sun || !sun.is_day) return false;
+  var rooms = opts.rooms || [];
+  var travel = window.red5PlanSunVectors
+    ? window.red5PlanSunVectors(sun.azimuth, opts.orientation, opts.northOffsetDeg)
+    : null;
+  var lx = travel ? travel.lx : 0;
+  var ly = travel ? travel.ly : 1;
+  function sameRoom(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.id != null && b.id != null && String(a.id) !== '' && String(a.id) === String(b.id)) return true;
+    if (a.name && b.name && a.name === b.name) return true;
+    return false;
+  }
+  for (var i = 0; i < windows.length; i++) {
+    var w = windows[i];
+    var open = 1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0));
+    if (open < 0.01) continue;
+    var winRoom = window.red5RoomForWindow ? window.red5RoomForWindow(w, rooms) : null;
+    if (!sameRoom(winRoom, room)) continue;
+    var cx, cy, tx, ty;
+    var verts = (Array.isArray(w.vertices) && w.vertices.length >= 3) ? w.vertices : null;
+    if (verts) {
+      var bestLen = 0, x1 = 0, y1 = 0, x2 = 0, y2 = 0, k;
+      for (k = 0; k < verts.length; k++) {
+        var a = verts[k], b = verts[(k + 1) % verts.length];
+        var elen = Math.hypot((Number(b[0]) || 0) - (Number(a[0]) || 0), (Number(b[1]) || 0) - (Number(a[1]) || 0));
+        if (elen > bestLen) {
+          bestLen = elen; x1 = Number(a[0]); y1 = Number(a[1]); x2 = Number(b[0]); y2 = Number(b[1]);
+        }
+      }
+      if (!(bestLen > 0.2)) continue;
+      cx = (x1 + x2) / 2; cy = (y1 + y2) / 2;
+      tx = (x2 - x1) / bestLen; ty = (y2 - y1) / bestLen;
+    } else {
+      cx = Number(w.x); cy = Number(w.y);
+      var ang = (Number(w.angle_deg) || 0) * Math.PI / 180;
+      tx = Math.cos(ang); ty = Math.sin(ang);
+    }
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+    var nx = -ty, ny = tx;
+    var ix = 50 - cx, iy = 50 - cy;
+    if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
+    if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
+    if (nx * lx + ny * ly > 0.05) return true;
+  }
+  return false;
 };
 /* Blend from soft amber → bright amber as the score rises.
    Returns a CSS color string used as a ring/halo around the marker.
@@ -804,7 +857,7 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
     var gx0 = (x1 + x2) / 2, gy0 = (y1 + y2) / 2;
     var gx1 = (fx1 + fx2) / 2, gy1 = (fy1 + fy2) / 2;
     var gradId = 'r5-shaft-grad-' + (w.id || i);
-    var clipId = unionId;
+    var clipId = null;
     var room = (rooms.length && window.red5RoomForWindow) ? window.red5RoomForWindow(w, rooms) : null;
     var rVerts = room && (room.vertices || room.points);
     if (rVerts && rVerts.length >= 3) {
@@ -815,6 +868,9 @@ window.WindowsSunshaftOverlay = function WindowsSunshaftOverlay(props){
           <polygon points={pts} />
         </clipPath>
       );
+    } else if (rooms.length) {
+      /* Rooms exist but this glass does not own one — do not flood neighbours. */
+      continue;
     }
     clipDefs.push(
       <linearGradient key={gradId} id={gradId}
@@ -1080,16 +1136,25 @@ window.SunRayOverlay = function SunRayOverlay(props){
   var stopOut = stopMid;
   var gid = 'sunray-grad-' + Math.round(props.sun.azimuth || 0) + '-' + Math.round(gx) + '-' + Math.round(gy) + '-' + Math.round(weatherFactor*100) + '-' + (isLight ? 'l' : 'd');
   var rooms = props.rooms || [];
+  var wins = props.windows || [];
   var clipId = null;
   var clipPolys = [];
+  var rayOpts = {
+    rooms: rooms,
+    orientation: props.orientation,
+    northOffsetDeg: props.northOffsetDeg
+  };
   for (var ri = 0; ri < rooms.length; ri++) {
-    var rv = rooms[ri] && (rooms[ri].vertices || rooms[ri].points);
+    var rr = rooms[ri];
+    var rv = rr && (rr.vertices || rr.points);
     if (!rv || rv.length < 3) continue;
+    if (wins.length && window.red5RoomAdmitsDirectSun && !window.red5RoomAdmitsDirectSun(rr, wins, props.sun, rayOpts)) continue;
     clipPolys.push(
       <polygon key={'sr-'+ri} points={rv.map(function (v) { return Number(v[0]) + ',' + Number(v[1]); }).join(' ')} />
     );
   }
   if (clipPolys.length) clipId = 'sunray-rooms-clip';
+  else if (rooms.length) return null;
   return (
     <svg
       className="absolute inset-0 pointer-events-none"

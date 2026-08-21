@@ -97,6 +97,19 @@ canvas{display:block}
 </head>
 <body>
 <button id="theme-toggle" title="Toggle Dark/Light Mode" onclick="toggleTheme()">☀</button>
+<!-- V2.0: tiny back-to-learn link in top-right (next to theme toggle).
+     Lets users navigate back to /learn.html (Comfort Decoded public site)
+     without having to chain through the dashboard. -->
+<a id="back-to-learn" href="/learn.html" data-testid="psy3d-back-to-learn"
+   title="Back to Comfort Decoded (public site)"
+   style="position:absolute;top:174px;right:12px;z-index:13;
+          background:rgba(15,23,42,.78);border:1px solid rgba(34,211,238,.55);
+          border-radius:999px;padding:5px 11px;font-size:9px;font-weight:800;
+          letter-spacing:.08em;text-transform:uppercase;color:#22d3ee;
+          text-decoration:none;font-family:inherit;backdrop-filter:blur(14px);
+          opacity:.55;transition:opacity .18s, padding .18s, border-radius .18s, background .18s;cursor:pointer;line-height:14px;display:inline-block"
+   onmouseenter="this.style.opacity='1';this.style.background='rgba(15,23,42,.95)';this.style.borderRadius='6px';"
+   onmouseleave="this.style.opacity='.55';this.style.background='rgba(15,23,42,.78)';this.style.borderRadius='999px';">&#8629; Comfort Decoded</a>
 <div id="container">
   <div id="hud" style="position:absolute;top:12px;left:230px;z-index:10;pointer-events:none">
     <h1 style="font-size:13px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#60a5fa" id="hud-title">3D Psychrometric Weather Strip</h1>
@@ -559,10 +572,11 @@ window.fetchData=async function(){
 
   fetchBtn.disabled=true;statusEl.textContent='Fetching from Open-Meteo...';
 
-  /* Try the local Flask backend proxy first (works on V1.9 controller
-     where the browser's direct HTTPS to open-meteo is reset by an ISP
-     middlebox on some Korean home networks).  Fall back to the direct
-     open-meteo URL when no proxy is reachable. */
+  /* Try the local FastAPI backend proxy first (works on Linux PC self-host
+     where the browser's direct HTTPS to open-meteo is blocked / reset by
+     a local middlebox).  Fall back to the direct open-meteo URL when no
+     proxy is reachable (e.g. when this HTML is loaded from a static
+     hosting site without a backend). */
   var directUrl='https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lon+
     '&start_date='+fromD+'&end_date='+toD+
     '&hourly=temperature_2m,relative_humidity_2m&timezone=auto';
@@ -703,35 +717,52 @@ function buildWeatherVis(locName,fromD,toD){
 }
 
 /* ================================================================
-   SA PATH (Supply Air trajectory) — uses shared computeSA_band so
-   the 3D path agrees with the 2D X-Y "OA→SA Lines" view.
+   SA PATH (Supply Air trajectory)
+   Uses the SHARED 10-band OA→SA lookup (computeSA_band) — same as
+   the 2D X-Y "OA→SA Lines" view, so the 3D and 2D representations
+   are guaranteed to agree.  SA T can range ~11–26°C depending on
+   which band each OA point falls into.
    ================================================================ */
 function buildSAPath(){
   while(saGroup.children.length)saGroup.remove(saGroup.children[0]);
   if(weatherData.length<2)return;
+
+  /* SA color (amber matches existing ΔH SA reference) */
   var col=[0.961,0.620,0.043];
-  var sV=[],sC=[],saPts=[];
+  var sV=[],sC=[];
+  var saPts=[];
+
   weatherData.forEach(function(p){
     var sa=window.computeSA_band(p.t,p.rh,p.w);
     var x=t2sx(sa.t),y=frac2sy(p.frac),z=w2sz(sa.w);
-    sV.push(x,y,z);sC.push(col[0],col[1],col[2]);
-    saPts.push({x:x,y:y,z:z});
+    sV.push(x,y,z);
+    sC.push(col[0],col[1],col[2]);
+    saPts.push({x:x,y:y,z:z,t:sa.t,w:sa.w});
   });
+
+  /* SA points + connecting polyline (varies with OA band / season) */
   var ptGeo=new THREE.BufferGeometry();
   ptGeo.setAttribute('position',new THREE.Float32BufferAttribute(sV,3));
   ptGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
   saGroup.add(new THREE.Points(ptGeo,new THREE.PointsMaterial({size:2.4,vertexColors:true,transparent:true,opacity:.9,sizeAttenuation:true,depthWrite:false})));
+
   var lnGeo=new THREE.BufferGeometry();
   lnGeo.setAttribute('position',new THREE.Float32BufferAttribute(sV,3));
   lnGeo.setAttribute('color',new THREE.Float32BufferAttribute(sC,3));
   saGroup.add(new THREE.Line(lnGeo,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85})));
+
+  /* SA badge label floating at top of the path */
   var top=saPts[saPts.length-1];
   var lbl=mkT('SA (10-band)','#f59e0b',13);
-  lbl.position.set(top.x,SY+6,top.z);saGroup.add(lbl);
+  lbl.position.set(top.x,SY+6,top.z);
+  saGroup.add(lbl);
+
+  /* OA→SA connectors at sampled timestamps — visualises the "matching OA" link */
   var stride=Math.max(1,Math.floor(weatherData.length/40));
   var cV=[],cC=[];
   for(var i=0;i<weatherData.length;i+=stride){
-    var p=weatherData[i],sp=saPts[i];
+    var p=weatherData[i];
+    var sp=saPts[i];
     var ox=t2sx(p.t),oz=w2sz(p.w),oy=frac2sy(p.frac);
     cV.push(ox,oy,oz, sp.x,sp.y,sp.z);
     cC.push(col[0],col[1],col[2], col[0],col[1],col[2]);
@@ -1366,7 +1397,7 @@ window.hide2D=function(){
    Bug fixed: standalone page used to read ONLY localStorage which can
    go stale if the operator changed location in another browser/tab.
    Server endpoint is the single source of truth — falls back to
-   localStorage when the API is unreachable.
+   localStorage when the API is unreachable (offline static hosting).
    ================================================================ */
 (function(){
   var PRESETS = [
@@ -1377,6 +1408,7 @@ window.hide2D=function(){
     {code:'DXB', lat:25.20, lon:55.27,  name:'Dubai'},
     {code:'SYD', lat:-33.87,lon:151.21, name:'Sydney'}
   ];
+
   function buildLocSelect(saved){
     var sel = document.getElementById('in-loc-select');
     if (!sel) return;
@@ -1426,6 +1458,8 @@ window.hide2D=function(){
       if (sel.options[i].value === k){ sel.selectedIndex = i; return; }
     }
   }
+  // Pull from API first, then layer localStorage as a fallback for offline
+  // static-hosted deployments where /api/weather-location returns nothing.
   function bootstrap(){
     fetch('/api/weather-location', { credentials:'include' })
       .then(function(r){ return r.ok ? r.json() : null; })
@@ -1448,6 +1482,8 @@ window.hide2D=function(){
         fetchData();
       });
   }
+
+  // Wire dropdown: pick -> set fields + POST + re-fetch.
   document.getElementById('in-loc-select').onchange = function(){
     var opt = this.options[this.selectedIndex];
     if (!opt) return;
@@ -1459,6 +1495,8 @@ window.hide2D=function(){
     document.getElementById('in-lat').value  = loc.lat;
     document.getElementById('in-lon').value  = loc.lon;
     document.getElementById('in-name').value = loc.name;
+    // Persist as the new active location so the dashboard's bottom
+    // weather strip picks the same city on its next poll.
     try {
       fetch('/api/weather-location', {
         method:'POST',
@@ -1470,6 +1508,7 @@ window.hide2D=function(){
     try { localStorage.setItem('weatherLocation', JSON.stringify(loc)); } catch(e){}
     fetchData();
   };
+
   setTimeout(function(){
     bootstrap();
     if(window.location.hash==='#xy'){

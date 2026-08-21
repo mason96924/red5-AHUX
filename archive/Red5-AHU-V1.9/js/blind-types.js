@@ -125,9 +125,9 @@
       return rects;
     }
     if (spec.family === 'vertical' && spec.motion === 'tilt') {
-      n = 10;
+      n = Math.max(14, Math.round(gw / 5.5));
       pitch = gw / n;
-      slat = Math.max(1.1, pitch * (0.10 + 0.86 * cover));
+      slat = Math.max(0.7, pitch * (0.08 + 0.58 * cover));
       for (i = 0; i < n; i++) {
         cx = gx + (i + 0.5) * pitch;
         rects.push({
@@ -140,9 +140,9 @@
     if (spec.family === 'vertical' && spec.motion === 'stack') {
       band = o > 0.97 ? Math.max(3.2, gw * 0.045) : cover * gw;
       if (band < 0.45) return rects;
-      n = 10;
+      n = Math.max(14, Math.round(band / 4.5));
       pitch = band / n;
-      slat = Math.max(1.05, pitch * 0.72);
+      slat = Math.max(0.7, pitch * 0.50);
       for (i = 0; i < n; i++) {
         cx = gx + (i + 0.5) * pitch;
         rects.push({

@@ -2158,6 +2158,33 @@
                 });
             }, []);
 
+            const mapConfigRef = useRef(mapConfig);
+            mapConfigRef.current = mapConfig;
+            const sunStateRef = useRef(sunState);
+            sunStateRef.current = sunState;
+            const patchFloorWindowRef = useRef(patchFloorWindow);
+            patchFloorWindowRef.current = patchFloorWindow;
+            const buildingLatLonRef = useRef(buildingLatLon);
+            buildingLatLonRef.current = buildingLatLon;
+            const buildingFacingOffsetRef = useRef(buildingFacingOffset);
+            buildingFacingOffsetRef.current = buildingFacingOffset;
+            useEffect(() => {
+                if (!window.red5HeatAuto) return undefined;
+                window.red5HeatAuto.bind({
+                    getFloors: () => (mapConfigRef.current && mapConfigRef.current.floors) || [],
+                    getSunState: () => sunStateRef.current,
+                    getLatLon: () => buildingLatLonRef.current,
+                    getNorthOffset: () => buildingFacingOffsetRef.current || 0,
+                    patch: (floorId, windowId, fields, windowIndex) => {
+                        if (patchFloorWindowRef.current) {
+                            patchFloorWindowRef.current(floorId, windowId, fields, windowIndex);
+                        }
+                    },
+                });
+                window.red5HeatAuto.start();
+                return () => { try { window.red5HeatAuto.stop(); } catch (e) {} };
+            }, []);
+
             const setFloorWindowOpenPct = useCallback((floorId, windowId, openPct, windowIndex) => {
                 const open = Math.max(0, Math.min(100, Number(openPct) || 0)) / 100;
                 patchFloorWindow(floorId, windowId, { blind_level: 1 - open }, windowIndex);

@@ -105,11 +105,14 @@
     _scheduleSync();
   }
 
+  /* Auth-driven visibility (dashboard.html dispatches after /api/auth/whoami). */
   window.addEventListener('red5-auth-resolved', function (ev) {
     _authEventSeen = true;
     _setShowAudit(!!(ev && ev.detail && ev.detail.isAdmin));
   });
 
+  /* React mounts dashboard.compiled.js asynchronously; watch for the
+   * standards toolbar row to appear instead of giving up after 1.5 s. */
   try {
     var _toolbarObs = new MutationObserver(function () {
       if (_showAuditBtn) _mountButton();
@@ -117,6 +120,8 @@
     _toolbarObs.observe(document.documentElement, { childList: true, subtree: true });
   } catch (_) {}
 
+  /* Pre-Stage-B controllers: no /api/auth/whoami — show when audit API
+   * exists.  Stage-B controllers: admin-only via event or whoami probe. */
   fetch(API_BASE + '/api/auth/whoami', { credentials: 'include' })
     .then(function (r) {
       if (r.status === 404) {

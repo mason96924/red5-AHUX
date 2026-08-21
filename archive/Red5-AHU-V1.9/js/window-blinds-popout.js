@@ -123,7 +123,7 @@ function WindowPlanPane(props) {
                 left: `${w.x}%`,
                 top: `${w.y}%`,
                 width: `${len}%`,
-                height: selected && showTrace ? 32 : 16,
+                height: selected && showTrace ? 10 : 7,
                 transform: `translate(-50%, -50%) rotate(${Number(w.angle_deg) || 0}deg)`,
                 cursor: interactive ? (props.cursor || 'pointer') : 'inherit',
                 zIndex: selected ? (props.zSelected || 95) : (props.zIdle || 16),
@@ -132,11 +132,11 @@ function WindowPlanPane(props) {
         >
             <svg viewBox="0 0 100 24" preserveAspectRatio="none"
                  style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
-                <rect x="0.6" y="1" width="98.8" height="22" rx="1.2"
-                      fill={showTrace ? (selected ? '#7dd3fc' : '#38bdf8') : 'rgba(0,0,0,0.01)'}
-                      opacity={showTrace ? (0.38 + 0.42 * open) : 1}
-                      stroke={showTrace ? (selected ? '#fde68a' : 'rgba(186,230,253,0.55)') : 'none'}
-                      strokeWidth={showTrace ? (selected ? 2.2 : 1.2) : 0}/>
+                <rect x="0.6" y="4" width="98.8" height="16" rx="0.6"
+                      fill={showTrace ? 'rgba(56,189,248,0.10)' : 'rgba(0,0,0,0.01)'}
+                      opacity={showTrace ? (0.55 + 0.35 * open) : 1}
+                      stroke={showTrace ? (selected ? 'rgba(150,210,255,0.85)' : 'rgba(56,189,248,0.45)') : 'none'}
+                      strokeWidth={showTrace ? (selected ? 1.1 : 0.7) : 0}/>
                 {(showTrace || open < 0.99) && (
                     <WindowBlindMarks width={100} height={24} open={open} type={type}/>
                 )}
@@ -161,14 +161,27 @@ function TracedWindowBlindMarks(props) {
     const open = Math.max(0, Math.min(1, Number(props.open)));
     const spec = red5BlindSpecLocal(props.type);
     const cover = 1 - open;
-    const sealed = open < 0.01;
-    if (!sealed && cover < 0.012 && spec.motion !== 'stack' && spec.motion !== 'lift') return null;
     const pad = 0.6;
-    const { sMin, sMax, hMin, hMax, hSpan, sSpan, atSH } = axes;
+    const { sMin, sMax, hMin, hMax, hSpan, sSpan, atSH, minX, maxX, minY, maxY } = axes;
     const n = 10;
-    const lines = [];
-    if (sealed || spec.motion === 'drop') {
-        const f = sealed ? 1 : cover;
+    /* 1 plan-% ≈ 12 CSS px on a typical floor image — matches ELC canvas px. */
+    const PX = 12;
+    const line = (key, x1, y1, x2, y2, swPx, alpha) => (
+        <line key={key} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke="#1e293b" strokeWidth={swPx} strokeLinecap="butt"
+              vectorEffect="non-scaling-stroke"
+              opacity={alpha}/>
+    );
+    if (open < 0.01) {
+        const a = atSH(sMin - pad, hMax + 0.2);
+        const b = atSH(sMax + pad, hMax + 0.2);
+        const c = atSH(sMax + pad, hMin - 0.2);
+        const d = atSH(sMin - pad, hMin - 0.2);
+        return <polygon points={[a, b, c, d].map(p => p[0] + ',' + p[1]).join(' ')}
+                        fill="#1e293b" opacity={0.88}/>;
+    }
+    if (spec.motion === 'drop') {
+        const f = cover;
         if (f <= 0.001) return null;
         const a = atSH(sMin - pad, hMax + 0.2);
         const b = atSH(sMax + pad, hMax + 0.2);
@@ -177,67 +190,56 @@ function TracedWindowBlindMarks(props) {
         return <polygon points={[a, b, c, d].map(p => p[0] + ',' + p[1]).join(' ')}
                         fill="#1e293b" opacity={0.30 + 0.42 * f}/>;
     }
+    const lines = [];
     if (spec.family === 'horizontal' && spec.motion === 'lift') {
         const band = cover * hSpan;
-        if (band < 0.15) return null;
+        if (band * PX < 0.4) return null;
         const pitch = band / n;
-        const sw = Math.max(0.28, Math.min(1.2, pitch * 0.78));
+        const sw = Math.max(1.05, Math.min(4.5, (band * PX) / n * 0.78));
         for (let i = 0; i < n; i++) {
             const hv = hMax - (i + 0.5) * pitch;
             const a = atSH(sMin - pad, hv);
             const b = atSH(sMax + pad, hv);
-            lines.push(
-                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                      opacity={0.48 + cover * 0.38}/>
-            );
+            lines.push(line(i, a[0], a[1], b[0], b[1], sw, 0.48 + cover * 0.38));
         }
         return <g>{lines}</g>;
     }
     if (spec.family === 'horizontal' && spec.motion === 'tilt') {
         const pitch = hSpan / n;
-        const sw = Math.max(0.28, pitch * (0.10 + 0.86 * cover));
+        const sw = Math.max(1.05, (hSpan * PX / n) * (0.10 + 0.86 * cover));
         for (let i = 0; i < n; i++) {
             const hv = hMax - (i + 0.5) * pitch;
             const a = atSH(sMin - pad, hv);
             const b = atSH(sMax + pad, hv);
-            lines.push(
-                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                      opacity={0.38 + cover * 0.48}/>
-            );
+            lines.push(line(i, a[0], a[1], b[0], b[1], sw, 0.38 + cover * 0.48));
         }
         return <g>{lines}</g>;
     }
+    const x0 = minX, x1 = maxX;
+    const y0 = (minY != null ? minY : 0) - 0.15;
+    const y1 = (maxY != null ? maxY : 100) + 0.15;
+    const spanX = Math.max(0.2, (x1 != null && x0 != null) ? (x1 - x0) : sSpan);
+    const spanPx = spanX * PX;
     if (spec.family === 'vertical' && spec.motion === 'tilt') {
-        const pitch = sSpan / n;
-        const sw = Math.max(0.28, pitch * (0.10 + 0.86 * cover));
-        for (let i = 0; i < n; i++) {
-            const sv = sMin + (i + 0.5) * pitch;
-            const a = atSH(sv, hMin - 0.2);
-            const b = atSH(sv, hMax + 0.2);
-            lines.push(
-                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                      stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                      opacity={0.38 + cover * 0.48}/>
-            );
+        const nV = Math.max(14, Math.round(spanPx / 5.5));
+        const pitch = spanX / nV;
+        const sw = Math.max(0.7, (spanPx / nV) * (0.08 + 0.58 * cover));
+        for (let i = 0; i < nV; i++) {
+            const x = x0 + (i + 0.5) * pitch;
+            lines.push(line(i, x, y0, x, y1, sw, 0.38 + cover * 0.48));
         }
         return <g>{lines}</g>;
     }
-    /* vertical stack — vanes packed toward sMin, opening on sMax */
-    const band = open > 0.97 ? Math.max(0.35, sSpan * 0.045) : cover * sSpan;
-    if (band < 0.12) return null;
-    const pitch = band / n;
-    const sw = Math.max(0.28, pitch * 0.72);
-    for (let i = 0; i < n; i++) {
-        const sv = sMin + (i + 0.5) * pitch;
-        const a = atSH(sv, hMin - 0.2);
-        const b = atSH(sv, hMax + 0.2);
-        lines.push(
-            <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-                  stroke="#1e293b" strokeWidth={sw} strokeLinecap="butt"
-                  opacity={0.48 + cover * 0.38}/>
-        );
+    /* vertical stack — vanes packed toward minX, opening toward maxX */
+    const bandPx = open > 0.97 ? Math.max(2.2, spanPx * 0.045) : cover * spanPx;
+    if (bandPx < 0.4) return null;
+    const nV = Math.max(14, Math.round(bandPx / 4.5));
+    const band = bandPx / PX;
+    const pitch = band / nV;
+    const sw = Math.max(0.7, (bandPx / nV) * 0.50);
+    for (let i = 0; i < nV; i++) {
+        const x = x0 + (i + 0.5) * pitch;
+        lines.push(line(i, x, y0, x, y1, sw, 0.48 + cover * 0.38));
     }
     return <g>{lines}</g>;
 }
@@ -260,10 +262,9 @@ function TracedWindowBlindOverlay(props) {
             </clipPath>
             <polygon
                 points={verts.map(v => `${v[0]},${v[1]}`).join(' ')}
-                fill={showTrace ? (selected ? 'rgba(125,211,252,0.28)' : 'rgba(125,211,252,0.12)') : 'rgba(0,0,0,0.01)'}
-                stroke={showTrace ? (selected ? '#fbbf24' : '#7dd3fc') : 'none'}
-                strokeWidth={showTrace ? (selected ? 1.25 : 1) : 0}
-                vectorEffect="non-scaling-stroke"
+                fill={showTrace ? (selected ? 'rgba(150,210,255,0.14)' : 'rgba(56,189,248,0.05)') : 'rgba(0,0,0,0.01)'}
+                stroke={showTrace ? (selected ? 'rgba(150,210,255,0.80)' : 'rgba(56,189,248,0.40)') : 'none'}
+                strokeWidth={showTrace ? (selected ? 0.22 : 0.14) : 0}
                 style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: interactive ? 'pointer' : 'inherit' }}
                 onClick={interactive ? props.onClick : undefined}
                 onMouseDown={interactive ? props.onMouseDown : undefined}
@@ -424,9 +425,387 @@ function WindowBlindsPopout(props) {
     );
 }
 
+/** ELC MODULE-SMI sim: full 0↔100 travel in 8 s (~12.5 %/s). Stop holds. */
+const SMI_TRAVEL_S = 8;
+const SMI_TICK_MS = 250;
+const _smiMotors = new Map();
+let _smiTickTimer = 0;
+let _smiPatchRef = { fn: null, wins: [] };
+
+function _smiWinKey(w, i) {
+    return w && w.id != null ? String(w.id) : ('idx-' + i);
+}
+
+function _smiClosedOf(w) {
+    return Math.min(1, Math.max(0, Number(w && w.blind_level) || 0));
+}
+
+function _smiEnsureTicker() {
+    if (_smiTickTimer) return;
+    _smiTickTimer = setInterval(function () {
+        const onPatch = _smiPatchRef.fn;
+        const list = _smiPatchRef.wins || [];
+        const speed = 1 / SMI_TRAVEL_S;
+        const dt = SMI_TICK_MS / 1000;
+        let moving = false;
+        list.forEach(function (w, i) {
+            const id = _smiWinKey(w, i);
+            const m = _smiMotors.get(id);
+            if (!m || !m.moving) return;
+            moving = true;
+            const delta = speed * dt;
+            if (Math.abs(m.target - m.closed) <= delta) {
+                m.closed = m.target;
+                m.moving = false;
+            } else if (m.target > m.closed) {
+                m.closed = Math.min(1, m.closed + delta);
+            } else {
+                m.closed = Math.max(0, m.closed - delta);
+            }
+            if (onPatch) onPatch(w.id, { blind_level: m.closed }, i);
+        });
+        if (!moving) {
+            clearInterval(_smiTickTimer);
+            _smiTickTimer = 0;
+        }
+    }, SMI_TICK_MS);
+}
+
+function _smiGotoClosed(wins, targetClosed, onPatch) {
+    if (typeof window !== 'undefined') window._smiGotoClosed = _smiGotoClosed;
+    const t = Math.min(1, Math.max(0, Number(targetClosed)));
+    _smiPatchRef = { fn: onPatch, wins: wins || [] };
+    (wins || []).forEach(function (w, i) {
+        const id = _smiWinKey(w, i);
+        const prev = _smiMotors.get(id);
+        const cur = prev ? prev.closed : _smiClosedOf(w);
+        _smiMotors.set(id, { closed: cur, target: t, moving: Math.abs(t - cur) > 0.008 });
+    });
+    _smiEnsureTicker();
+}
+
+function _smiStopWins(wins, onPatch) {
+    _smiPatchRef = { fn: onPatch, wins: wins || [] };
+    (wins || []).forEach(function (w, i) {
+        const id = _smiWinKey(w, i);
+        const prev = _smiMotors.get(id);
+        const cur = prev ? prev.closed : _smiClosedOf(w);
+        _smiMotors.set(id, { closed: cur, target: cur, moving: false });
+        if (onPatch) onPatch(w.id, { blind_level: cur }, i);
+    });
+}
+
+/** Bottom-right ▤ Windows rail — slide up/down (ELC blinds-rail). */
+function FloorWindowsRail(props) {
+    const React = window.React;
+    const {
+        theme, windows, floorKey, open, onToggleOpen,
+        selectedId, onSelect, onPatch, smiModules,
+    } = props;
+    const dk = theme !== 'light';
+    const wins = Array.isArray(windows) ? windows : [];
+    const [picked, setPicked] = React.useState(() => new Set());
+    React.useEffect(() => {
+        if (selectedId == null || selectedId === '') return;
+        setPicked((prev) => {
+            if (prev.has(selectedId) && prev.size === 1) return prev;
+            return new Set([selectedId]);
+        });
+    }, [selectedId]);
+    const targets = (() => {
+        const sel = wins.filter((w, i) => {
+            const id = w.id != null ? w.id : ('idx-' + i);
+            return picked.has(id) || picked.has(w.id);
+        });
+        return sel.length ? sel : wins;
+    })();
+    const openPctOf = (w) => Math.round((1 - Math.min(1, Math.max(0, Number(w.blind_level) || 0))) * 100);
+    const avgOpen = targets.length
+        ? Math.round(targets.reduce((s, w) => s + openPctOf(w), 0) / targets.length)
+        : null;
+    const floorName = String(floorKey || '').toUpperCase();
+    const mods = Array.isArray(smiModules) ? smiModules : [];
+    const wiredWins = wins.filter((w) => w.smi_addr != null && w.smi_addr !== '');
+    const smiMod = mods.find((m) => String(m.floor || '').toUpperCase() === floorName) || mods[0] || (wiredWins.length ? {
+        id: wiredWins[0].smi_id != null ? wiredWins[0].smi_id : 1,
+        port: 11,
+    } : null);
+    const driveKey = (w) => {
+        if (!w || w.smi_addr == null || w.smi_addr === '') return '';
+        const id = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
+        if (id == null || id === '') return '';
+        return id + ':' + Number(w.smi_addr);
+    };
+    const driveTag = (w) => (w && w.smi_addr != null && w.smi_addr !== '') ? ('D' + Number(w.smi_addr)) : '';
+    const patchWins = (list, fields) => {
+        if (!onPatch) return;
+        list.forEach((w) => {
+            const wi = wins.indexOf(w);
+            onPatch(w.id, fields, wi < 0 ? undefined : wi);
+        });
+    };
+    const patchRef = React.useRef(onPatch);
+    patchRef.current = onPatch;
+    const applyPatch = (wid, fields, wi) => {
+        const fn = patchRef.current;
+        if (fn) fn(wid, fields, wi);
+    };
+    _smiPatchRef.fn = applyPatch;
+    _smiPatchRef.wins = wins;
+    const travelOpenPct = (pct) => {
+        const v = Math.max(0, Math.min(100, Number(pct) || 0));
+        if (window.red5HeatAuto) window.red5HeatAuto.hold(targets);
+        _smiGotoClosed(targets, 1 - v / 100, applyPatch);
+    };
+    const smiCommand = (command) => {
+        if (window.red5HeatAuto) window.red5HeatAuto.hold(targets);
+        if (command === 'Stop') {
+            _smiStopWins(targets, applyPatch);
+        } else if (command === 'Up') {
+            _smiGotoClosed(targets, 0, applyPatch);
+        } else if (command === 'Down') {
+            _smiGotoClosed(targets, 1, applyPatch);
+        }
+        const jobs = targets.filter((w) => w.smi_addr != null && w.smi_addr !== '');
+        jobs.forEach((w) => {
+            const addr = Number(w.smi_addr);
+            const smiId = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
+            const body = JSON.stringify({ command: command, smi_id: smiId });
+            ['/api/smi/drives/' + addr + '/command', '/smi/drives/' + addr + '/command'].forEach((url) => {
+                try {
+                    fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+                } catch (_) {}
+            });
+        });
+    };
+    const [scrubOpen, setScrubOpen] = React.useState(null);
+    const shownOpen = scrubOpen != null ? scrubOpen : avgOpen;
+    const wireDrive = (raw) => {
+        if (!targets.length) return;
+        if (!raw) {
+            patchWins(targets, { smi_id: null, smi_addr: null });
+            return;
+        }
+        const parts = String(raw).split(':');
+        patchWins(targets, { smi_id: parseInt(parts[0], 10), smi_addr: parseInt(parts[1], 10) });
+    };
+    const autoWire = () => {
+        if (!smiMod || !wins.length || !onPatch) return;
+        wins.forEach((w, i) => {
+            onPatch(w.id, { smi_id: smiMod.id, smi_addr: i % 16 }, i);
+        });
+    };
+    const driveKeys = targets.map(driveKey);
+    const uniqueDrives = [];
+    driveKeys.forEach((k) => { if (uniqueDrives.indexOf(k) < 0) uniqueDrives.push(k); });
+    const mixedDrives = uniqueDrives.length > 1;
+    const curDrive = uniqueDrives.length === 1 ? uniqueDrives[0] : '';
+    const allOn = wins.length > 0 && wins.every((w, i) => picked.has(w.id != null ? w.id : ('idx-' + i)));
+    const setAuto = (list, on) => {
+        if (on && window.red5HeatAuto && !window.red5HeatAuto.floorHasRooms(floorKey)) {
+            if (window.toast) window.toast('Trace rooms first so Auto knows which glass feeds which space.', 'info');
+            return;
+        }
+        patchWins(list, { heat_auto: !!on });
+        if (on && window.red5HeatAuto) {
+            if (window.red5HeatAuto.clearHold) window.red5HeatAuto.clearHold(list);
+            window.red5HeatAuto.kick();
+        }
+    };
+    const rowTravel = (w, openPct) => {
+        const v = Math.max(0, Math.min(100, Number(openPct) || 0));
+        if (window.red5HeatAuto) window.red5HeatAuto.hold([w]);
+        _smiGotoClosed([w], 1 - v / 100, function (wid, fields) {
+            applyPatch(wid, fields, wins.indexOf(w));
+        });
+    };
+    const rowCommand = (w, command) => {
+        if (window.red5HeatAuto) window.red5HeatAuto.hold([w]);
+        if (command === 'Up') rowTravel(w, 100);
+        else if (command === 'Down') rowTravel(w, 0);
+        const addr = w.smi_addr;
+        if (addr == null || addr === '') return;
+        const smiId = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
+        const body = JSON.stringify({ command: command, smi_id: smiId });
+        ['/api/smi/drives/' + Number(addr) + '/command', '/smi/drives/' + Number(addr) + '/command'].forEach((url) => {
+            try {
+                fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+            } catch (_) {}
+        });
+    };
+    const nAuto = targets.filter((w) => w.heat_auto).length;
+    const btn = 'px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider';
+    const btnIdle = dk
+        ? ' bg-slate-800 border-slate-600 text-slate-200 hover:border-sky-400'
+        : ' bg-white border-slate-300 text-slate-700 hover:border-sky-500';
+    return (
+        <div
+            data-testid="blinds-rail"
+            className="pointer-events-auto"
+            style={{
+                position: 'absolute', right: 8, bottom: 8, zIndex: 55, width: 300,
+                borderRadius: 6, overflow: 'hidden',
+                background: dk ? 'rgba(16,20,26,0.94)' : 'rgba(248,250,252,0.96)',
+                border: dk ? '1px solid #334155' : '1px solid #cbd5e1',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+        >
+            <button type="button" data-testid="blinds-rail-tab"
+                    aria-expanded={!!open}
+                    onClick={() => { if (onToggleOpen) onToggleOpen(!open); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-left ${dk ? 'hover:bg-slate-800/80' : 'hover:bg-slate-100'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-[0.18em] ${dk ? 'text-sky-300' : 'text-sky-700'}`}>▤ Windows</span>
+                <span className={`text-[10px] ${dk ? 'text-slate-500' : 'text-slate-400'}`} style={{ transform: open ? 'rotate(180deg)' : 'none' }}>▲</span>
+            </button>
+            <div style={{ maxHeight: open ? 420 : 0, overflow: open ? 'auto' : 'hidden', transition: 'max-height .28s ease' }}>
+                <div className="px-3 pb-3 space-y-1.5">
+                    <div className={`text-[9px] ${dk ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {!wins.length ? 'No windows on this floor'
+                            : (picked.size ? (picked.size === 1 ? '1 selected' : picked.size + ' selected') : 'All windows on this floor')}
+                    </div>
+                    <div className="flex gap-1">
+                        <button type="button" data-testid="blinds-rail-up" disabled={!wins.length}
+                                className={btn + btnIdle + ' flex-1'} onClick={() => smiCommand('Up')}>Up</button>
+                        <button type="button" data-testid="blinds-rail-stop" disabled={!wins.length}
+                                className={btn + btnIdle + ' flex-1'} onClick={() => smiCommand('Stop')}>Stop</button>
+                        <button type="button" data-testid="blinds-rail-down" disabled={!wins.length}
+                                className={btn + btnIdle + ' flex-1'} onClick={() => smiCommand('Down')}>Down</button>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button type="button" data-testid="blinds-rail-minus" disabled={!wins.length}
+                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) travelOpenPct(avgOpen - 10); }}>−</button>
+                        <input type="range" min="0" max="100" step="1" disabled={!wins.length}
+                               data-testid="blinds-rail-slider"
+                               value={shownOpen == null ? 100 : shownOpen}
+                               className="flex-1 min-w-0 accent-sky-300"
+                               onPointerDown={() => setScrubOpen(avgOpen == null ? 100 : avgOpen)}
+                               onChange={(e) => setScrubOpen(parseInt(e.target.value, 10) || 0)}
+                               onPointerUp={() => {
+                                   if (scrubOpen != null) travelOpenPct(scrubOpen);
+                                   setScrubOpen(null);
+                               }}
+                               onPointerCancel={() => setScrubOpen(null)} />
+                        <button type="button" data-testid="blinds-rail-plus" disabled={!wins.length}
+                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) travelOpenPct(avgOpen + 10); }}>+</button>
+                        <span className={`font-mono text-[10px] w-8 text-right ${dk ? 'text-slate-400' : 'text-slate-500'}`}>
+                            {shownOpen == null ? '—' : shownOpen + '%'}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className={`text-[8px] uppercase w-8 shrink-0 ${dk ? 'text-slate-500' : 'text-slate-400'}`} title="Bind ticked window to a simulated MODULE-SMI drive">SMI →</span>
+                        <select data-testid="blinds-rail-smi-drive" value={curDrive} disabled={!wins.length}
+                                className={`flex-1 min-w-0 text-[10px] rounded border px-1 py-0.5 ${dk ? 'bg-slate-900 border-slate-600 text-slate-200' : 'bg-white border-slate-300'}`}
+                                onChange={(e) => wireDrive(e.target.value)}>
+                            <option value="">
+                                {!smiMod ? 'No MODULE-SMI on this floor'
+                                    : (mixedDrives ? 'Mixed drives — see list' : 'Not wired')}
+                            </option>
+                            {smiMod && Array.from({ length: 16 }, (_, i) => (
+                                <option key={i} value={smiMod.id + ':' + i}>Drive {i} (DD {String(i + 1).padStart(2, '0')})</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className={`text-[8px] leading-snug ${dk ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {smiMod
+                            ? ('Simulated module ' + smiMod.id + ' · pp ' + (smiMod.port || 11) + ' · 16 drives'
+                                + (wiredWins.length ? (' · ' + wiredWins.length + ' wired') : ''))
+                            : 'No simulated MODULE-SMI on this floor. Add one in Floor Plan → SMI setup.'}
+                    </div>
+                    <button type="button" data-testid="blinds-rail-smi-auto" disabled={!smiMod || !wins.length}
+                            className={btn + btnIdle + ' w-full'}
+                            onClick={autoWire}>
+                        Auto-wire this floor to SMI drives 0…n
+                    </button>
+                    <div className="flex items-center justify-between">
+                        <label className={`flex items-center gap-1.5 text-[10px] uppercase cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}>
+                            <input type="checkbox" data-testid="blinds-rail-all" disabled={!wins.length} checked={allOn}
+                                   style={{ accentColor: '#96d2ff', width: 13, height: 13 }}
+                                   onChange={(e) => {
+                                       if (e.target.checked) {
+                                           setPicked(new Set(wins.map((w, i) => w.id != null ? w.id : ('idx-' + i))));
+                                       } else {
+                                           setPicked(new Set());
+                                           if (onSelect) onSelect(null);
+                                       }
+                                   }} />
+                            All
+                        </label>
+                        <label className={`flex items-center gap-1.5 text-[10px] uppercase cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}
+                               title="Open until the room is green, close when too bright, close at night">
+                            <input type="checkbox" data-testid="blinds-rail-heat-all" disabled={!wins.length}
+                                   checked={targets.length > 0 && nAuto === targets.length}
+                                   style={{ accentColor: '#78c878', width: 13, height: 13 }}
+                                   onChange={(e) => setAuto(targets, !!e.target.checked)} />
+                            Auto
+                        </label>
+                    </div>
+                    <div data-testid="blinds-rail-list" className="max-h-[180px] overflow-y-auto space-y-0.5">
+                        {wins.map((w, i) => {
+                            const id = w.id != null ? w.id : ('idx-' + i);
+                            const on = picked.has(id) || picked.has(w.id);
+                            const label = (w.name && String(w.name).trim()) || ('W' + (i + 1));
+                            const dtag = driveTag(w);
+                            const pct = openPctOf(w);
+                            const togglePick = () => {
+                                const next = new Set(picked);
+                                if (next.has(id)) next.delete(id); else next.add(id);
+                                setPicked(next);
+                                if (onSelect) onSelect(next.has(id) ? id : null);
+                            };
+                            const actBtn = dk
+                                ? 'rounded border bg-slate-800 border-slate-600 text-slate-200'
+                                : 'rounded border bg-white border-slate-300 text-slate-700';
+                            const actSt = { padding: '1px 5px', fontSize: 11, minWidth: 18, lineHeight: 1.25 };
+                            return (
+                                <div key={id}
+                                     data-testid="blinds-rail-row"
+                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${on ? (dk ? 'bg-sky-900/40 text-sky-200 outline outline-1 outline-sky-400/70' : 'bg-sky-100 text-sky-800 outline outline-1 outline-sky-400') : (dk ? 'text-slate-300' : 'text-slate-700')}`}
+                                     onClick={(e) => {
+                                         if (e.target.closest('button, input')) return;
+                                         togglePick();
+                                     }}>
+                                    <input type="checkbox" className="shrink-0" checked={on}
+                                           title="Select for group control"
+                                           style={{ accentColor: '#96d2ff', width: 13, height: 13 }}
+                                           onChange={togglePick} />
+                                    <input type="checkbox" className="shrink-0" checked={!!w.heat_auto}
+                                           title="Auto: open until room is green, close when too bright, close at night"
+                                           style={{ accentColor: '#78c878', width: 13, height: 13 }}
+                                           onChange={(e) => {
+                                               e.stopPropagation();
+                                               setAuto([w], !!e.target.checked);
+                                           }} />
+                                    <span className="truncate flex-1 min-w-0" title={label + (dtag ? (' ' + dtag) : '')}>
+                                        {label}{dtag ? (' ' + dtag) : ''}
+                                    </span>
+                                    <span className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        <button type="button" className={actBtn} style={actSt} title="Up"
+                                                onClick={() => rowCommand(w, 'Up')}>▲</button>
+                                        <button type="button" className={actBtn} style={actSt} title="Down"
+                                                onClick={() => rowCommand(w, 'Down')}>▼</button>
+                                        <button type="button" className={actBtn} style={actSt} title="Close 10%"
+                                                onClick={() => rowTravel(w, pct - 10)}>−</button>
+                                        <span className={`font-mono text-[10px] w-7 text-right ${dk ? 'text-slate-400' : 'text-slate-500'}`}>{pct}%</span>
+                                        <button type="button" className={actBtn} style={actSt} title="Open 10%"
+                                                onClick={() => rowTravel(w, pct + 10)}>+</button>
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 window.WindowBlindTypeSelect = WindowBlindTypeSelect;
 window.WindowBlindPreview = WindowBlindPreview;
 window.WindowBlindMarks = WindowBlindMarks;
 window.WindowPlanPane = WindowPlanPane;
 window.TracedWindowBlindOverlay = TracedWindowBlindOverlay;
 window.WindowBlindsPopout = WindowBlindsPopout;
+window.FloorWindowsRail = FloorWindowsRail;
+window._smiGotoClosed = _smiGotoClosed;
+window._smiStopWins = _smiStopWins;

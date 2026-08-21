@@ -423,6 +423,75 @@ function WindowBlindsPopout(props) {
     );
 }
 
+/** ELC MODULE-SMI sim: full 0↔100 travel in 8 s (~12.5 %/s). Stop holds. */
+const SMI_TRAVEL_S = 8;
+const SMI_TICK_MS = 250;
+const _smiMotors = new Map();
+let _smiTickTimer = 0;
+let _smiPatchRef = { fn: null, wins: [] };
+
+function _smiWinKey(w, i) {
+    return w && w.id != null ? String(w.id) : ('idx-' + i);
+}
+
+function _smiClosedOf(w) {
+    return Math.min(1, Math.max(0, Number(w && w.blind_level) || 0));
+}
+
+function _smiEnsureTicker() {
+    if (_smiTickTimer) return;
+    _smiTickTimer = setInterval(function () {
+        const onPatch = _smiPatchRef.fn;
+        const list = _smiPatchRef.wins || [];
+        const speed = 1 / SMI_TRAVEL_S;
+        const dt = SMI_TICK_MS / 1000;
+        let moving = false;
+        list.forEach(function (w, i) {
+            const id = _smiWinKey(w, i);
+            const m = _smiMotors.get(id);
+            if (!m || !m.moving) return;
+            moving = true;
+            const delta = speed * dt;
+            if (Math.abs(m.target - m.closed) <= delta) {
+                m.closed = m.target;
+                m.moving = false;
+            } else if (m.target > m.closed) {
+                m.closed = Math.min(1, m.closed + delta);
+            } else {
+                m.closed = Math.max(0, m.closed - delta);
+            }
+            if (onPatch) onPatch(w.id, { blind_level: m.closed }, i);
+        });
+        if (!moving) {
+            clearInterval(_smiTickTimer);
+            _smiTickTimer = 0;
+        }
+    }, SMI_TICK_MS);
+}
+
+function _smiGotoClosed(wins, targetClosed, onPatch) {
+    const t = Math.min(1, Math.max(0, Number(targetClosed)));
+    _smiPatchRef = { fn: onPatch, wins: wins || [] };
+    (wins || []).forEach(function (w, i) {
+        const id = _smiWinKey(w, i);
+        const prev = _smiMotors.get(id);
+        const cur = prev ? prev.closed : _smiClosedOf(w);
+        _smiMotors.set(id, { closed: cur, target: t, moving: Math.abs(t - cur) > 0.008 });
+    });
+    _smiEnsureTicker();
+}
+
+function _smiStopWins(wins, onPatch) {
+    _smiPatchRef = { fn: onPatch, wins: wins || [] };
+    (wins || []).forEach(function (w, i) {
+        const id = _smiWinKey(w, i);
+        const prev = _smiMotors.get(id);
+        const cur = prev ? prev.closed : _smiClosedOf(w);
+        _smiMotors.set(id, { closed: cur, target: cur, moving: false });
+        if (onPatch) onPatch(w.id, { blind_level: cur }, i);
+    });
+}
+
 /** Bottom-right ▤ Windows rail — slide up/down (ELC blinds-rail). */
 function FloorWindowsRail(props) {
     const React = window.React;
@@ -472,14 +541,27 @@ function FloorWindowsRail(props) {
             onPatch(w.id, fields, wi < 0 ? undefined : wi);
         });
     };
-    const setOpenPct = (pct) => {
+    const patchRef = React.useRef(onPatch);
+    patchRef.current = onPatch;
+    const applyPatch = (wid, fields, wi) => {
+        const fn = patchRef.current;
+        if (fn) fn(wid, fields, wi);
+    };
+    _smiPatchRef.fn = applyPatch;
+    _smiPatchRef.wins = wins;
+    const travelOpenPct = (pct) => {
         const v = Math.max(0, Math.min(100, Number(pct) || 0));
-        patchWins(targets, { blind_level: 1 - v / 100 });
+        _smiGotoClosed(targets, 1 - v / 100, applyPatch);
     };
     const smiCommand = (command) => {
+        if (command === 'Stop') {
+            _smiStopWins(targets, applyPatch);
+        } else if (command === 'Up') {
+            _smiGotoClosed(targets, 0, applyPatch);
+        } else if (command === 'Down') {
+            _smiGotoClosed(targets, 1, applyPatch);
+        }
         const jobs = targets.filter((w) => w.smi_addr != null && w.smi_addr !== '');
-        if (command === 'Up') setOpenPct(100);
-        else if (command === 'Down') setOpenPct(0);
         jobs.forEach((w) => {
             const addr = Number(w.smi_addr);
             const smiId = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
@@ -491,6 +573,8 @@ function FloorWindowsRail(props) {
             });
         });
     };
+    const [scrubOpen, setScrubOpen] = React.useState(null);
+    const shownOpen = scrubOpen != null ? scrubOpen : avgOpen;
     const wireDrive = (raw) => {
         if (!targets.length) return;
         if (!raw) {
@@ -553,16 +637,22 @@ function FloorWindowsRail(props) {
                     </div>
                     <div className="flex items-center gap-1">
                         <button type="button" data-testid="blinds-rail-minus" disabled={!wins.length}
-                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) setOpenPct(avgOpen - 10); }}>−</button>
+                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) travelOpenPct(avgOpen - 10); }}>−</button>
                         <input type="range" min="0" max="100" step="1" disabled={!wins.length}
                                data-testid="blinds-rail-slider"
-                               value={avgOpen == null ? 100 : avgOpen}
+                               value={shownOpen == null ? 100 : shownOpen}
                                className="flex-1 min-w-0 accent-sky-300"
-                               onChange={(e) => setOpenPct(parseInt(e.target.value, 10) || 0)} />
+                               onPointerDown={() => setScrubOpen(avgOpen == null ? 100 : avgOpen)}
+                               onChange={(e) => setScrubOpen(parseInt(e.target.value, 10) || 0)}
+                               onPointerUp={() => {
+                                   if (scrubOpen != null) travelOpenPct(scrubOpen);
+                                   setScrubOpen(null);
+                               }}
+                               onPointerCancel={() => setScrubOpen(null)} />
                         <button type="button" data-testid="blinds-rail-plus" disabled={!wins.length}
-                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) setOpenPct(avgOpen + 10); }}>+</button>
+                                className={btn + btnIdle} onClick={() => { if (avgOpen != null) travelOpenPct(avgOpen + 10); }}>+</button>
                         <span className={`font-mono text-[10px] w-8 text-right ${dk ? 'text-slate-400' : 'text-slate-500'}`}>
-                            {avgOpen == null ? '—' : avgOpen + '%'}
+                            {shownOpen == null ? '—' : shownOpen + '%'}
                         </span>
                     </div>
                     <div className="flex items-center gap-1.5">

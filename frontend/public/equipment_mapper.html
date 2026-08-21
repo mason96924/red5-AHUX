@@ -5755,33 +5755,8 @@
                                     
                                     {/* ELC Sun Path — painted on the floor image (not a Sun-Dial compass). */}
                                     <div className="mt-3" data-testid="sun-path-launcher">
-                                        {window.ElcSunPathToolbar && (
-                                            <window.ElcSunPathToolbar
-                                                compact={true}
-                                                hideScrubbers={true}
-                                                enabled={sunPathEnabled}
-                                                hour={sunHour}
-                                                doy={sunDoy}
-                                                adj={sunPathAdj}
-                                                followClock={sunFollowClock}
-                                                onToggle={(on) => {
-                                                    if (window.red5ElcSunPath && window.red5ElcSunPath.setEnabled) {
-                                                        window.red5ElcSunPath.setEnabled(on);
-                                                    } else {
-                                                        setSunPathEnabled(!!on);
-                                                    }
-                                                }}
-                                                onNow={() => {
-                                                    if (window.red5ElcSunPath && window.red5ElcSunPath.setClockFollow) {
-                                                        window.red5ElcSunPath.setClockFollow(true, buildingLatLon.timezone, buildingLatLon.lon);
-                                                    }
-                                                    setSunFollowClock(true);
-                                                }}
-                                                onAdj={(a) => setSunPathAdj(a)}
-                                            />
-                                        )}
                                         <p className="text-[7px] text-slate-500 text-center mt-1 px-2">
-                                            N/S of the band follows the N/S markers; W/E follows W/E. ↑↓ changes height.
+                                            Sun path On/Off is on the floor graphic (upper left). N/S of the band follows the N/S markers; W/E follows W/E.
                                         </p>
                                     </div>
                                 </>
@@ -6057,7 +6032,8 @@
                         onMouseLeave={() => { hideFloorHair(); }}
                         onMouseUp={() => {setIsPanning(false); setDraggingTarget(null); setDraggingFloorMarker(null); setDraggingWindowId(null); setDraggingNsKey(null); isDraggingMode.current = null;}}
                     >
-                        <div className="absolute top-4 left-4 z-50 flex gap-2">
+                        <div className="absolute top-4 left-4 z-50 flex flex-col items-start gap-2">
+                        <div className="flex gap-2">
                             <button 
                                 onClick={() => setPanMode(!panMode)} 
                                 className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg backdrop-blur flex items-center gap-2 transition-all ${panMode ? 'bg-emerald-500 text-white border-emerald-400 border-2' : 'bg-slate-900/90 text-slate-400 border border-slate-700 hover:text-white'}`}
@@ -6100,20 +6076,26 @@
                                 </div>
                             )}
                         </div>
-                        <div className="absolute bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+                            {window.ElcSunPathHostChromeLive && (
+                                <window.ElcSunPathHostChromeLive
+                                    style={{ position: 'relative', left: 0, top: 0 }}
+                                />
+                            )}
+                        </div>
+                        <div className="absolute bottom-4 left-4 z-50 pointer-events-auto">
                             {window.ElcDaySelectorLive && (
                                 <window.ElcDaySelectorLive
                                     lat={buildingLatLon.lat}
                                     timezone={buildingLatLon.timezone}
                                     lon={buildingLatLon.lon}
-                                    style={{ position: 'relative', right: 0, bottom: 0 }}
+                                    style={{ position: 'relative', left: 0, bottom: 0 }}
                                 />
                             )}
-                            <div className="flex gap-2">
+                        </div>
+                        <div className="absolute bottom-4 right-4 z-50 flex gap-2">
                             <button onClick={() => setView(p => ({...p, scale: Math.min(10, p.scale + 0.5)}))} className="w-8 h-8 bg-slate-900/90 hover:bg-indigo-600 text-white rounded border border-slate-700 shadow-lg backdrop-blur flex items-center justify-center font-black transition-all">+</button>
                             <button onClick={() => setView(p => ({...p, scale: Math.max(0.2, p.scale - 0.5)}))} className="w-8 h-8 bg-slate-900/90 hover:bg-indigo-600 text-white rounded border border-slate-700 shadow-lg backdrop-blur flex items-center justify-center font-black transition-all">-</button>
                             <button onClick={() => setView({x:0, y:0, scale: 1})} className="px-3 bg-slate-900/90 hover:bg-rose-600 text-white text-[10px] uppercase font-black tracking-widest rounded border border-slate-700 shadow-lg backdrop-blur transition-all">Reset</button>
-                            </div>
                         </div>
                         {activeTarget.type === 'floor_plan' && !panMode && (
                             <div className="mapper-hairline" style={{ opacity: 0 }} data-testid="mapper-hairline-cursor">
@@ -7348,7 +7330,7 @@
                 '/assets/js/sizing-check.js',
                 '/assets/js/blind-types.js?v=jamb1',
                 '/assets/js/sun-path.js?v=jamb1',
-                '/assets/js/elc-sun-path-overlay.js?v=seasonMo5',
+                '/assets/js/elc-sun-path-overlay.js?v=seasonMo6',
                 '/assets/js/window-blinds-popout.js?v=relFocus1'
             ];
             var mainSource = document.getElementById('main-source');

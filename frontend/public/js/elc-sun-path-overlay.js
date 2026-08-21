@@ -1411,7 +1411,7 @@
       onMouseDown: function (e) { e.stopPropagation(); },
       style: Object.assign({
         position: 'absolute',
-        right: 8,
+        left: 8,
         bottom: 8,
         zIndex: 50,
         width: 292,
@@ -1636,7 +1636,7 @@
       onMouseDown: function (e) { e.stopPropagation(); },
       style: Object.assign(
         { maxWidth: 420 },
-        hostPin ? { position: 'absolute', left: 8, bottom: 8, zIndex: 50 } : { position: 'absolute', left: 8, bottom: 8, zIndex: 40 },
+        hostPin ? { position: 'absolute', left: 8, top: 8, zIndex: 50 } : { position: 'absolute', left: 8, top: 8, zIndex: 40 },
         props.style || {}
       )
     },

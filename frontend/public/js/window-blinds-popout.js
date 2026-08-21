@@ -601,6 +601,38 @@ function FloorWindowsRail(props) {
     const mixedDrives = uniqueDrives.length > 1;
     const curDrive = uniqueDrives.length === 1 ? uniqueDrives[0] : '';
     const allOn = wins.length > 0 && wins.every((w, i) => picked.has(w.id != null ? w.id : ('idx-' + i)));
+    const setAuto = (list, on) => {
+        if (on && window.red5HeatAuto && !window.red5HeatAuto.floorHasRooms(floorKey)) {
+            if (window.toast) window.toast('Trace rooms first so Auto knows which glass feeds which space.', 'info');
+            return;
+        }
+        patchWins(list, { heat_auto: !!on });
+        if (on && window.red5HeatAuto) {
+            if (window.red5HeatAuto.clearHold) window.red5HeatAuto.clearHold(list);
+            window.red5HeatAuto.kick();
+        }
+    };
+    const rowTravel = (w, openPct) => {
+        const v = Math.max(0, Math.min(100, Number(openPct) || 0));
+        if (window.red5HeatAuto) window.red5HeatAuto.hold([w]);
+        _smiGotoClosed([w], 1 - v / 100, function (wid, fields) {
+            applyPatch(wid, fields, wins.indexOf(w));
+        });
+    };
+    const rowCommand = (w, command) => {
+        if (window.red5HeatAuto) window.red5HeatAuto.hold([w]);
+        if (command === 'Up') rowTravel(w, 100);
+        else if (command === 'Down') rowTravel(w, 0);
+        const addr = w.smi_addr;
+        if (addr == null || addr === '') return;
+        const smiId = w.smi_id != null ? w.smi_id : (smiMod && smiMod.id);
+        const body = JSON.stringify({ command: command, smi_id: smiId });
+        ['/api/smi/drives/' + Number(addr) + '/command', '/smi/drives/' + Number(addr) + '/command'].forEach((url) => {
+            try {
+                fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+            } catch (_) {}
+        });
+    };
     const nAuto = targets.filter((w) => w.heat_auto).length;
     const btn = 'px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider';
     const btnIdle = dk
@@ -611,7 +643,7 @@ function FloorWindowsRail(props) {
             data-testid="blinds-rail"
             className="pointer-events-auto"
             style={{
-                position: 'absolute', right: 8, bottom: 8, zIndex: 55, width: 268,
+                position: 'absolute', right: 8, bottom: 8, zIndex: 55, width: 300,
                 borderRadius: 6, overflow: 'hidden',
                 background: dk ? 'rgba(16,20,26,0.94)' : 'rgba(248,250,252,0.96)',
                 border: dk ? '1px solid #334155' : '1px solid #cbd5e1',
@@ -686,8 +718,9 @@ function FloorWindowsRail(props) {
                         Auto-wire this floor to SMI drives 0…n
                     </button>
                     <div className="flex items-center justify-between">
-                        <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}>
+                        <label className={`flex items-center gap-1.5 text-[10px] uppercase cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}>
                             <input type="checkbox" data-testid="blinds-rail-all" disabled={!wins.length} checked={allOn}
+                                   style={{ accentColor: '#96d2ff', width: 13, height: 13 }}
                                    onChange={(e) => {
                                        if (e.target.checked) {
                                            setPicked(new Set(wins.map((w, i) => w.id != null ? w.id : ('idx-' + i))));
@@ -698,43 +731,66 @@ function FloorWindowsRail(props) {
                                    }} />
                             All
                         </label>
-                        <label className={`flex items-center gap-1.5 text-[10px] cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}
-                               title="Selected windows follow daylight: open until the room is green, close when too bright, close at night">
+                        <label className={`flex items-center gap-1.5 text-[10px] uppercase cursor-pointer ${dk ? 'text-slate-400' : 'text-slate-600'}`}
+                               title="Open until the room is green, close when too bright, close at night">
                             <input type="checkbox" data-testid="blinds-rail-heat-all" disabled={!wins.length}
                                    checked={targets.length > 0 && nAuto === targets.length}
-                                   onChange={(e) => {
-                                       const on = !!e.target.checked;
-                                       if (on && window.red5HeatAuto && !window.red5HeatAuto.floorHasRooms(floorKey)) {
-                                           if (window.toast) window.toast('Trace rooms first so Auto knows which glass feeds which space.', 'info');
-                                           return;
-                                       }
-                                       patchWins(targets, { heat_auto: on });
-                                       if (on && window.red5HeatAuto) window.red5HeatAuto.kick();
-                                   }} />
+                                   style={{ accentColor: '#78c878', width: 13, height: 13 }}
+                                   onChange={(e) => setAuto(targets, !!e.target.checked)} />
                             Auto
                         </label>
                     </div>
-                    <div data-testid="blinds-rail-list" className="max-h-[140px] overflow-y-auto space-y-0.5">
+                    <div data-testid="blinds-rail-list" className="max-h-[180px] overflow-y-auto space-y-0.5">
                         {wins.map((w, i) => {
                             const id = w.id != null ? w.id : ('idx-' + i);
                             const on = picked.has(id) || picked.has(w.id);
                             const label = (w.name && String(w.name).trim()) || ('W' + (i + 1));
                             const dtag = driveTag(w);
+                            const pct = openPctOf(w);
+                            const togglePick = () => {
+                                const next = new Set(picked);
+                                if (next.has(id)) next.delete(id); else next.add(id);
+                                setPicked(next);
+                                if (onSelect) onSelect(next.has(id) ? id : null);
+                            };
+                            const actBtn = dk
+                                ? 'rounded border bg-slate-800 border-slate-600 text-slate-200'
+                                : 'rounded border bg-white border-slate-300 text-slate-700';
+                            const actSt = { padding: '1px 5px', fontSize: 11, minWidth: 18, lineHeight: 1.25 };
                             return (
-                                <label key={id} className={`flex items-center gap-1.5 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${on ? (dk ? 'bg-sky-900/40 text-sky-200' : 'bg-sky-100 text-sky-800') : (dk ? 'text-slate-300' : 'text-slate-700')}`}>
-                                    <input type="checkbox" checked={on} onChange={() => {
-                                        const next = new Set(picked);
-                                        if (next.has(id)) next.delete(id); else next.add(id);
-                                        setPicked(next);
-                                        if (onSelect) onSelect(next.has(id) ? id : null);
-                                    }} />
-                                    <span className="truncate flex-1">{label}{dtag ? (' ' + dtag) : ''}</span>
-                                    <span className={dk ? 'text-slate-500' : 'text-slate-400'}>{openPctOf(w)}%</span>
-                                    {dtag
-                                        ? <span className="text-[8px] text-emerald-400 shrink-0">{dtag}</span>
-                                        : <span className={`text-[8px] shrink-0 ${dk ? 'text-slate-600' : 'text-slate-400'}`}>—</span>}
-                                    {w.heat_auto ? <span className="text-[8px] text-amber-400">A</span> : null}
-                                </label>
+                                <div key={id}
+                                     data-testid="blinds-rail-row"
+                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded cursor-pointer text-[10px] font-mono ${on ? (dk ? 'bg-sky-900/40 text-sky-200 outline outline-1 outline-sky-400/70' : 'bg-sky-100 text-sky-800 outline outline-1 outline-sky-400') : (dk ? 'text-slate-300' : 'text-slate-700')}`}
+                                     onClick={(e) => {
+                                         if (e.target.closest('button, input')) return;
+                                         togglePick();
+                                     }}>
+                                    <input type="checkbox" className="shrink-0" checked={on}
+                                           title="Select for group control"
+                                           style={{ accentColor: '#96d2ff', width: 13, height: 13 }}
+                                           onChange={togglePick} />
+                                    <input type="checkbox" className="shrink-0" checked={!!w.heat_auto}
+                                           title="Auto: open until room is green, close when too bright, close at night"
+                                           style={{ accentColor: '#78c878', width: 13, height: 13 }}
+                                           onChange={(e) => {
+                                               e.stopPropagation();
+                                               setAuto([w], !!e.target.checked);
+                                           }} />
+                                    <span className="truncate flex-1 min-w-0" title={label + (dtag ? (' ' + dtag) : '')}>
+                                        {label}{dtag ? (' ' + dtag) : ''}
+                                    </span>
+                                    <span className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        <button type="button" className={actBtn} style={actSt} title="Up"
+                                                onClick={() => rowCommand(w, 'Up')}>▲</button>
+                                        <button type="button" className={actBtn} style={actSt} title="Down"
+                                                onClick={() => rowCommand(w, 'Down')}>▼</button>
+                                        <button type="button" className={actBtn} style={actSt} title="Close 10%"
+                                                onClick={() => rowTravel(w, pct - 10)}>−</button>
+                                        <span className={`font-mono text-[10px] w-7 text-right ${dk ? 'text-slate-400' : 'text-slate-500'}`}>{pct}%</span>
+                                        <button type="button" className={actBtn} style={actSt} title="Open 10%"
+                                                onClick={() => rowTravel(w, pct + 10)}>+</button>
+                                    </span>
+                                </div>
                             );
                         })}
                     </div>

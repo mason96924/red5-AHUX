@@ -11,9 +11,9 @@
   var HEAT_DAY_MIN = 8;
   var HEAT_HIGH = 2.0;
   var HEAT_WANT = 1.12;
-  var HEAT_PERIOD_MS = 12000;
+  var HEAT_PERIOD_MS = 8000;
   var HEAT_DWELL_MS = 40000;
-  var HEAT_OPEN_DWELL_MS = 8000;
+  var HEAT_OPEN_DWELL_MS = 4000;
   var HEAT_HOLD_MS = 60000;
   var HEAT_REVERSE_MS = 120000;
   var HEAT_REF_DEPTH = 4;
@@ -41,8 +41,9 @@
   }
 
   function winMemOf(w) {
-    var k = String((w && w.id) || '');
-    if (!k) return {};
+    var k = (w && w.id != null && String(w.id) !== '')
+      ? String(w.id)
+      : ('xy:' + (Number(w && w.x) || 0).toFixed(2) + ',' + (Number(w && w.y) || 0).toFixed(2));
     var s = winMem.get(k);
     if (!s) { s = {}; winMem.set(k, s); }
     return s;
@@ -336,10 +337,9 @@
     var patchOne = function (wid, fields) {
       ctx.patch(floorKey(floor), wid != null ? wid : w.id, fields, wi);
     };
+    patchOne(w.id, { blind_level: closed });
     if (typeof root._smiGotoClosed === 'function') {
       root._smiGotoClosed([w], closed, patchOne);
-    } else {
-      patchOne(w.id, { blind_level: closed });
     }
   }
 
@@ -388,7 +388,11 @@
       if (need.length) slew(floor, need, 0, { night: true });
       return;
     }
-    if (!rooms.length) return;
+    if (!rooms.length) {
+      var dayOpen = auto.filter(function (w) { return openPct(w) < 100; });
+      if (dayOpen.length) slew(floor, dayOpen, 100);
+      return;
+    }
     var byRoom = new Map();
     var orphans = [];
     auto.forEach(function (w) {
@@ -426,6 +430,9 @@
     if (floorNeedsLight && orphans.length) {
       var openOrphans = orphans.filter(function (w) { return openPct(w) < 100; });
       if (openOrphans.length) slew(floor, openOrphans, 100);
+    } else if (!byRoom.size && orphans.length) {
+      var stray = orphans.filter(function (w) { return openPct(w) < 100; });
+      if (stray.length) slew(floor, stray, 100);
     }
   }
 
@@ -446,7 +453,7 @@
 
   function kick() {
     if (kick._t) clearTimeout(kick._t);
-    kick._t = setTimeout(function () { try { tick(); } catch (e) {} }, 400);
+    kick._t = setTimeout(function () { try { tick(); } catch (e) {} }, 80);
   }
 
   function start() {
@@ -465,12 +472,17 @@
     (wins || []).forEach(function (w) { winMemOf(w).holdUntil = until; });
   }
 
+  function clearHold(wins) {
+    (wins || []).forEach(function (w) { winMemOf(w).holdUntil = 0; });
+  }
+
   function floorHasRooms(key) {
     var floors = ctx.getFloors() || [];
     var f = floors.find(function (x) {
       return floorKey(x) === key || x.id === key || x.name === key;
-    }) || floors[0];
-    return !!(f && Array.isArray(f.rooms) && f.rooms.length);
+    });
+    if (f && Array.isArray(f.rooms) && f.rooms.length) return true;
+    return floors.some(function (x) { return Array.isArray(x.rooms) && x.rooms.length; });
   }
 
   root.red5HeatAuto = {
@@ -486,6 +498,7 @@
     stop: stop,
     kick: kick,
     hold: hold,
+    clearHold: clearHold,
     tick: tick,
     floorHasRooms: floorHasRooms,
     roomMinLux: roomMinLux,

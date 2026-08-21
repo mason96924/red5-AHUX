@@ -247,13 +247,12 @@
     if (!(eOut > 1) || !w || !room) return 0;
     var geomN = winInwardNormal(w, rooms);
     if (rooms && rooms.length) {
-      if (geomN.room) {
-        if (!sameRoom(geomN.room, room)) return 0;
-      } else if (root.red5FindContainingRoom) {
-        var hit = root.red5FindContainingRoom(geomN.cx, geomN.cy, rooms)
-          || root.red5FindContainingRoom(geomN.cx + geomN.nx * 1.5, geomN.cy + geomN.ny * 1.5, rooms);
-        if (hit !== room && !sameRoom(hit, room)) return 0;
+      var owner = geomN.room;
+      if (!owner && root.red5FindContainingRoom) {
+        owner = root.red5FindContainingRoom(geomN.cx + geomN.nx * 0.7, geomN.cy + geomN.ny * 0.7, rooms)
+          || root.red5FindContainingRoom(geomN.cx, geomN.cy, rooms);
       }
+      if (!sameRoom(owner, room)) return 0;
     }
     var cover = Math.min(1, Math.max(0, Number(w.blind_level) || 0));
     var open = 1 - cover;
@@ -261,11 +260,15 @@
     var spec = root.red5BlindSpec ? root.red5BlindSpec(w.blind_type) : { motion: 'drop' };
     var tau = open * 0.75;
     if (spec.motion === 'tilt') tau *= 0.88;
-    var geom = 0.12;
+    var into = 0;
     if (sun && sun.isLit) {
-      var into = (-(sun.sx || 0)) * geomN.nx + (-(sun.sy || 0)) * geomN.ny;
-      var direct = Math.max(0, into) * Math.max(0.15, sun.altFactor || 0) * (sun.twilightBoost == null ? 1 : sun.twilightBoost);
-      geom += 0.88 * direct;
+      into = (-(sun.sx || 0)) * geomN.nx + (-(sun.sy || 0)) * geomN.ny;
+    }
+    /* Shade-side glass keeps a small sky residual. Do not let noon
+       outdoor lux paint sun-glow into rooms whose windows do not face the sun. */
+    var geom = 0.04;
+    if (sun && sun.isLit && into > 0.05) {
+      geom += 0.88 * into * Math.max(0.15, sun.altFactor || 0) * (sun.twilightBoost == null ? 1 : sun.twilightBoost);
     }
     geom = Math.min(1.15, geom);
     var aWin = winAperture(w);

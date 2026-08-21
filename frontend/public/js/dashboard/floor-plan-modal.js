@@ -172,7 +172,8 @@ const floorModalTree = (
                                 <window.SunRayOverlay sun={sunState.sun} theme={theme} cloudCover={sunState.cloudCover} ghiWm2={sunState.ghiWm2}
                                     northOffsetDeg={typeof buildingFacingOffset === 'number' ? buildingFacingOffset : 0}
                                     orientation={floorData.floor.orientation}
-                                    rooms={floorData.floor.rooms || []} />
+                                    rooms={floorData.floor.rooms || []}
+                                    windows={floorData.floor.windows || []} />
                             )}
                             {sunState && sunState.sun && window.WindowsSunshaftOverlay && floorData.floor.windows && floorData.floor.windows.length > 0 && (
                                 <window.WindowsSunshaftOverlay

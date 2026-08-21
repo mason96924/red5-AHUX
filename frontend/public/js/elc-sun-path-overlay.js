@@ -1400,6 +1400,7 @@
     const nowStyle = daySelBtnStyle(follow ? { borderColor: '#ffb020', color: '#ffb020' } : null);
     const plotRef = React.useRef(null);
     const dragRef = React.useRef(false);
+    const [open, setOpen] = React.useState(false);
     const scrub = function (ev) {
       const svg = plotRef.current;
       const next = plotEventToParts(svg, ev.clientX, ev.clientY, year);
@@ -1415,16 +1416,52 @@
         bottom: 8,
         zIndex: 50,
         width: 292,
-        padding: '4px 4px 3px',
-        background: 'rgba(16,20,26,0.88)',
+        overflow: 'hidden',
+        background: 'rgba(16,20,26,0.94)',
         border: '1px solid ' + LINE,
-        borderRadius: 5,
+        borderRadius: 6,
+        boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
         backdropFilter: 'blur(4px)',
         userSelect: 'none',
       }, props.style || {})
     },
+      React.createElement('button', {
+        type: 'button',
+        'data-testid': 'elc-day-selector-tab',
+        'aria-expanded': !!open,
+        onClick: function () { setOpen(function (v) { return !v; }); },
+        style: {
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 8, padding: '8px 12px', background: 'transparent', border: 'none',
+          cursor: 'pointer', textAlign: 'left', color: '#7dd3fc'
+        }
+      },
+        React.createElement('span', {
+          style: {
+            fontSize: 10, fontWeight: 900, letterSpacing: '0.18em', textTransform: 'uppercase'
+          }
+        }, 'Day-length'),
+        React.createElement('span', {
+          'data-testid': 'elc-day-hours',
+          style: { fontFamily: MONO, fontSize: 10, fontWeight: 600, color: '#94a3b8', letterSpacing: '0.03em', whiteSpace: 'nowrap', flex: 1, textAlign: 'right' }
+        }, fmtDayLengthDur(dayLengthHours(row))),
+        React.createElement('span', {
+          style: {
+            fontSize: 10, color: '#64748b', transform: open ? 'rotate(180deg)' : 'none',
+            transition: 'transform .2s ease'
+          }
+        }, '▲')
+      ),
       React.createElement('div', {
-        style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4, marginBottom: 2 }
+        style: {
+          maxHeight: open ? 280 : 0,
+          overflow: open ? 'auto' : 'hidden',
+          transition: 'max-height .28s ease'
+        }
+      },
+      React.createElement('div', { style: { padding: '0 8px 8px' } },
+      React.createElement('div', {
+        style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, marginBottom: 4 }
       },
         React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 } },
           React.createElement('button', {
@@ -1453,21 +1490,6 @@
             style: nowStyle,
             onClick: function () { if (props.onNow) props.onNow(); }
           }, 'Now')
-        ),
-        React.createElement('div', {
-          style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, flex: '0 0 auto', pointerEvents: 'none' }
-        },
-          React.createElement('span', {
-            style: {
-              background: '#c5cad2', color: '#2a3038', fontSize: 8, fontWeight: 700,
-              letterSpacing: '.07em', padding: '2px 6px 2px 7px', borderRadius: 2,
-              textTransform: 'uppercase', lineHeight: 1.2
-            }
-          }, 'Day-length ▾'),
-          React.createElement('span', {
-            'data-testid': 'elc-day-hours',
-            style: { fontFamily: MONO, fontSize: 9, fontWeight: 600, color: '#c8d0d8', letterSpacing: '0.03em', whiteSpace: 'nowrap' }
-          }, fmtDayLengthDur(dayLengthHours(row)))
         )
       ),
       React.createElement('div', { style: { display: 'flex', alignItems: 'stretch', gap: 1 } },
@@ -1586,6 +1608,8 @@
           );
         })
       )
+      )
+      )
     );
   };
 
@@ -1653,6 +1677,14 @@
             className: 'px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ' +
               (enabled ? 'bg-amber-500 text-slate-900 border-amber-300' : 'bg-slate-800 text-slate-300 border-slate-600')
           }, enabled ? 'Sun path: On' : 'Sun path: Off'),
+          React.createElement('button', {
+            type: 'button',
+            'data-testid': 'floor-luxmap-toggle',
+            onClick: function () { if (props.onLuxMapToggle) props.onLuxMapToggle(!props.luxMapEnabled); },
+            title: 'Colour each room by daylight vs code-minimum lux',
+            className: 'px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ' +
+              (props.luxMapEnabled ? 'bg-emerald-500 text-slate-900 border-emerald-300' : 'bg-slate-800 text-slate-300 border-slate-600')
+          }, props.luxMapEnabled ? 'Lux map: On' : 'Lux map: Off'),
           enabled && React.createElement('span', { className: 'inline-flex gap-1 flex-wrap items-center' },
             btn('size-', '−', 'Smaller'),
             btn('size+', '+', 'Bigger'),
@@ -1660,6 +1692,26 @@
             !props.operatorAdj && btn('lookD', '↓', 'Flatter vault'),
             btn('reset', 'Reset', 'Reset view')
           )
+        ),
+        props.luxMapEnabled && React.createElement('div', {
+          'data-testid': 'lux-map-legend',
+          className: 'flex items-center gap-2 flex-wrap text-[8px] font-mono text-slate-400'
+        },
+          [['rgba(78,203,113,0.55)', 'OK'], ['rgba(227,179,65,0.55)', '~90%'],
+           ['rgba(236,91,86,0.55)', 'Low'], ['rgba(148,156,168,0.45)', 'No glass']].map(function (row) {
+            return React.createElement('span', {
+              key: row[1],
+              className: 'inline-flex items-center gap-1'
+            },
+              React.createElement('span', {
+                style: {
+                  width: 8, height: 8, borderRadius: 2, background: row[0],
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)'
+                }
+              }),
+              row[1]
+            );
+          })
         ),
         enabled && !props.hideScrubbers && React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement('span', { className: 'text-[8px] text-slate-400 font-black uppercase w-10' }, hhLabel),
@@ -1733,6 +1785,15 @@
     return a;
   }
 
+  let _luxMapOn = (function () {
+    try { return localStorage.getItem('red5.floor.luxMap') === '1'; } catch (_) { return false; }
+  })();
+  function setLuxMapEnabledShared(on) {
+    _luxMapOn = !!on;
+    try { localStorage.setItem('red5.floor.luxMap', _luxMapOn ? '1' : '0'); } catch (_) {}
+    publishSunUi();
+  }
+
   const SUN_UI_EVT = 'r5-elc-sun-ui';
   const _sunUiSubs = new Set();
   let _sunEnabled = (function () {
@@ -1744,7 +1805,7 @@
     return _sunAdjLive;
   }
   function sunUiSnapshot() {
-    return { enabled: _sunEnabled, adj: getSunAdjLive() };
+    return { enabled: _sunEnabled, adj: getSunAdjLive(), luxMap: !!_luxMapOn };
   }
   function publishSunUi() {
     const snap = sunUiSnapshot();
@@ -2195,10 +2256,12 @@
     return global.ElcSunPathHostChrome({
       enabled: ui.enabled,
       adj: ui.adj,
+      luxMapEnabled: ui.luxMap,
       operatorAdj: props && props.operatorAdj,
       style: props && props.style,
       onToggle: setSunPathEnabledShared,
       onAdjStep: applySunAdjShared,
+      onLuxMapToggle: setLuxMapEnabledShared,
     });
   };
 
@@ -2221,6 +2284,8 @@
     setClockParts: setClockParts,
     setClockStep: setClockStep,
     setEnabled: setSunPathEnabledShared,
+    setLuxMap: setLuxMapEnabledShared,
+    luxMapEnabled: function () { return !!_luxMapOn; },
     applyAdj: applySunAdjShared,
     sunUiEvent: SUN_UI_EVT,
     ahuDarkenEvent: AHU_DARKEN_EVT,
@@ -2283,8 +2348,10 @@
       hostPinned: true,
       operatorAdj: true,
       hideScrubbers: true,
+      luxMapEnabled: ui.luxMap,
       onToggle: setSunPathEnabledShared,
       onAdjStep: applySunAdjShared,
+      onLuxMapToggle: setLuxMapEnabledShared,
     });
     const RD = global.ReactDOM;
     const hostChrome = hideChrome ? null : ((hostEl && RD && typeof RD.createPortal === 'function')
@@ -2303,5 +2370,76 @@
       }),
       hostChrome
     );
+  };
+
+  global.ElcLuxMapOverlay = function ElcLuxMapOverlay(props) {
+    const React = global.React;
+    const floor = props.floor || { rooms: props.rooms || [], windows: props.windows || [] };
+    const scored = (global.red5HeatAuto && typeof global.red5HeatAuto.scoreRooms === 'function')
+      ? global.red5HeatAuto.scoreRooms(floor) : [];
+    if (!scored.length) return null;
+    return React.createElement('div', {
+      className: 'absolute inset-0 pointer-events-none',
+      'data-testid': 'lux-map-overlay',
+      style: { zIndex: 12 }
+    },
+      React.createElement('svg', {
+        viewBox: '0 0 100 100',
+        preserveAspectRatio: 'none',
+        style: { position: 'absolute', inset: 0, width: '100%', height: '100%' }
+      },
+        scored.map(function (s, i) {
+          return React.createElement('polygon', {
+            key: (s.id != null ? s.id : i),
+            points: (s.verts || []).map(function (v) { return Number(v[0]) + ',' + Number(v[1]); }).join(' '),
+            fill: s.fill,
+            stroke: 'rgba(255,255,255,0.12)',
+            strokeWidth: 0.12
+          });
+        })
+      ),
+      scored.map(function (s, i) {
+        return React.createElement('div', {
+          key: 'lbl-' + (s.id != null ? s.id : i),
+          style: {
+            position: 'absolute',
+            left: s.cx + '%',
+            top: s.cy + '%',
+            transform: 'translate(-50%, -50%)',
+            background: 'rgba(12,15,19,0.85)',
+            color: '#d8dde4',
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: 10,
+            lineHeight: 1.2,
+            padding: '2px 6px',
+            borderRadius: 3,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none'
+          }
+        }, s.label);
+      })
+    );
+  };
+
+  global.ElcLuxMapOverlayLive = function ElcLuxMapOverlayLive(props) {
+    const React = global.React;
+    const ui = useElcSunUi();
+    const warned = React.useRef(false);
+    React.useEffect(function () {
+      if (!ui.luxMap) { warned.current = false; return; }
+      const rooms = (props.floor && props.floor.rooms) || props.rooms || [];
+      if (rooms.length || warned.current) return;
+      warned.current = true;
+      if (global.toast) global.toast('Trace rooms first so Lux map can colour each space.', 'info');
+    }, [ui.luxMap, props.floor, props.rooms]);
+    if (global.red5HeatAuto && (props.sunState || props.latLon)) {
+      const next = {};
+      if (props.sunState) next.getSunState = function () { return props.sunState; };
+      if (props.latLon) next.getLatLon = function () { return props.latLon; };
+      if (props.northOffset != null) next.getNorthOffset = function () { return props.northOffset; };
+      global.red5HeatAuto.bind(next);
+    }
+    if (!ui.luxMap) return null;
+    return global.ElcLuxMapOverlay(props);
   };
 })(typeof window !== 'undefined' ? window : this);

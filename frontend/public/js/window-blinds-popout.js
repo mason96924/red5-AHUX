@@ -472,6 +472,7 @@ function _smiEnsureTicker() {
 }
 
 function _smiGotoClosed(wins, targetClosed, onPatch) {
+    if (typeof window !== 'undefined') window._smiGotoClosed = _smiGotoClosed;
     const t = Math.min(1, Math.max(0, Number(targetClosed)));
     _smiPatchRef = { fn: onPatch, wins: wins || [] };
     (wins || []).forEach(function (w, i) {
@@ -553,9 +554,11 @@ function FloorWindowsRail(props) {
     _smiPatchRef.wins = wins;
     const travelOpenPct = (pct) => {
         const v = Math.max(0, Math.min(100, Number(pct) || 0));
+        if (window.red5HeatAuto) window.red5HeatAuto.hold(targets);
         _smiGotoClosed(targets, 1 - v / 100, applyPatch);
     };
     const smiCommand = (command) => {
+        if (window.red5HeatAuto) window.red5HeatAuto.hold(targets);
         if (command === 'Stop') {
             _smiStopWins(targets, applyPatch);
         } else if (command === 'Up') {
@@ -699,7 +702,15 @@ function FloorWindowsRail(props) {
                                title="Selected windows follow daylight: open until the room is green, close when too bright, close at night">
                             <input type="checkbox" data-testid="blinds-rail-heat-all" disabled={!wins.length}
                                    checked={targets.length > 0 && nAuto === targets.length}
-                                   onChange={(e) => patchWins(targets, { heat_auto: !!e.target.checked })} />
+                                   onChange={(e) => {
+                                       const on = !!e.target.checked;
+                                       if (on && window.red5HeatAuto && !window.red5HeatAuto.floorHasRooms(floorKey)) {
+                                           if (window.toast) window.toast('Trace rooms first so Auto knows which glass feeds which space.', 'info');
+                                           return;
+                                       }
+                                       patchWins(targets, { heat_auto: on });
+                                       if (on && window.red5HeatAuto) window.red5HeatAuto.kick();
+                                   }} />
                             Auto
                         </label>
                     </div>
@@ -740,3 +751,5 @@ window.WindowPlanPane = WindowPlanPane;
 window.TracedWindowBlindOverlay = TracedWindowBlindOverlay;
 window.WindowBlindsPopout = WindowBlindsPopout;
 window.FloorWindowsRail = FloorWindowsRail;
+window._smiGotoClosed = _smiGotoClosed;
+window._smiStopWins = _smiStopWins;

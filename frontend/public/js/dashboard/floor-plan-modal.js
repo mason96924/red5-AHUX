@@ -151,6 +151,9 @@ const floorModalTree = (
                                     rooms={floorData.floor.rooms || []}
                                 />
                             )}
+                            {window.ElcLuxMapOverlayLive && (
+                                <window.ElcLuxMapOverlayLive floor={floorData.floor} />
+                            )}
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (
                                 <window.ElcSunPathLive
@@ -509,6 +512,9 @@ const floorModalTree = (
                                     elevation_m={buildingLatLon && buildingLatLon.elevation_m}
                                     timezone={buildingLatLon && buildingLatLon.timezone}
                                 />
+                            )}
+                            {window.ElcLuxMapOverlayLive && (
+                                <window.ElcLuxMapOverlayLive floor={{ rooms: [], windows: [] }} />
                             )}
                             {/* ELC Sun Path on the floor image (replaces Sun-Dial compass). */}
                             {window.ElcSunPathLive && (

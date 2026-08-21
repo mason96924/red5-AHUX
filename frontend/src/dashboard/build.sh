@@ -44,6 +44,7 @@ MODULES=(
     "$PUB/js/dashboard/ahu-modal.js"
     "$PUB/js/dashboard/window-graphic-modal.js"
     "$PUB/js/window-blinds-popout.js"
+    "$PUB/js/heat-auto.js"
     "$PUB/js/dashboard/band-clamp-modal.js"
     "$PUB/js/dashboard/weather-settings-modal.js"
     "$PUB/js/dashboard/weather-strip-panel.js"

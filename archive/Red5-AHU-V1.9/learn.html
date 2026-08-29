@@ -48,6 +48,72 @@
             --orange:    #f97316;
             --deep-blue: #1d4ed8;
         }
+        /* Light appearance. The page was dark-only, so besides re-pointing
+           the surface/text ramp we also have to restate the handful of
+           colours that were written for a dark background: amber-400 and
+           the pastel tier labels fail contrast on white. */
+        :root[data-theme="light"] {
+            --bg-deep:   #f8fafc;
+            --bg-card:   #ffffff;
+            --bg-soft:   #eef2f7;
+            --line:      #d8e0ea;
+            --text:      #0f172a;
+            --text-dim:  #475569;
+            --text-mute: #64748b;
+            --accent:    #b45309;
+        }
+        :root[data-theme="light"] .tier-badge[data-tier="A"]   { color: #047857; }
+        :root[data-theme="light"] .tier-badge[data-tier="B"]   { color: #4d7c0f; }
+        :root[data-theme="light"] .tier-badge[data-tier="C+H"] { color: #c2410c; }
+        :root[data-theme="light"] .tier-badge[data-tier="C+D"] { color: #b91c1c; }
+        :root[data-theme="light"] .tier-badge[data-tier="C-H"] { color: #4338ca; }
+        :root[data-theme="light"] .tier-badge[data-tier="C-D"] { color: #1d4ed8; }
+        :root[data-theme="light"] .train-caption .en { color: #6d28d9; }
+        :root[data-theme="light"] .region-card.is-live {
+            box-shadow: 0 0 0 1px rgba(15,23,42,0.18), 0 10px 28px rgba(15,23,42,0.12);
+        }
+        /* Both psychrometric charts set SVG presentation attributes from JS
+           with the dark palette baked in. CSS wins over presentation
+           attributes, so re-point those literals here instead of threading a
+           theme through the chart code. Keep in step with the palette used in
+           the inline chart script and js/learn-training.js. */
+        :root[data-theme="light"] svg [fill="#0d1426"]   { fill: #ffffff; }
+        :root[data-theme="light"] svg [fill="#cbd5e1"]   { fill: #334155; }
+        :root[data-theme="light"] svg [fill="#94a3b8"]   { fill: #475569; }
+        :root[data-theme="light"] svg [fill="#e2e8f0"]   { fill: #0f172a; }
+        :root[data-theme="light"] svg [fill="#c4b5fd"]   { fill: #6d28d9; }
+        :root[data-theme="light"] svg [stroke="#1a2440"] { stroke: #e2e8f0; }
+        :root[data-theme="light"] svg [stroke="#243056"] { stroke: #cbd5e1; }
+        :root[data-theme="light"] svg [stroke="#475569"] { stroke: #94a3b8; }
+        :root[data-theme="light"] svg [stroke="#64748b"] { stroke: #94a3b8; }
+        :root[data-theme="light"] svg [stroke="#cbd5e1"] { stroke: #475569; }
+        .theme-switch {
+            display: inline-flex;
+            margin-left: auto;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            overflow: hidden;
+            background: var(--bg-card);
+        }
+        .theme-switch button {
+            appearance: none;
+            border: 0;
+            background: transparent;
+            color: var(--text-mute);
+            font: inherit;
+            font-size: 11px;
+            letter-spacing: 0.04em;
+            padding: 4px 12px;
+            cursor: pointer;
+            transition: background 160ms ease, color 160ms ease;
+        }
+        .theme-switch button:hover { color: var(--text); }
+        :root[data-theme-pref="light"]  .theme-switch button[data-theme-set="light"],
+        :root[data-theme-pref="dark"]   .theme-switch button[data-theme-set="dark"],
+        :root[data-theme-pref="system"] .theme-switch button[data-theme-set="system"] {
+            background: var(--bg-soft);
+            color: var(--text);
+        }
         * { box-sizing: border-box; }
         html, body {
             margin: 0; padding: 0;
@@ -892,6 +958,55 @@
         }
         footer a:hover { text-decoration: underline; }
     </style>
+<script>
+/* Resolve the appearance before first paint, otherwise a light-mode reader
+   gets a dark flash. red5.themePref holds the three-way choice; red5.theme
+   is the dashboard's own light/dark value and is only read as a seed, never
+   written, so the Darken slider stays authoritative over there. */
+(function () {
+    var KEY = 'red5.themePref';
+    function pref() {
+        try {
+            var p = localStorage.getItem(KEY);
+            if (p === 'light' || p === 'dark' || p === 'system') return p;
+            var legacy = localStorage.getItem('red5.theme');
+            if (legacy === 'light' || legacy === 'dark') return legacy;
+        } catch (e) {}
+        return 'dark';
+    }
+    function resolve(p) {
+        if (p === 'system') {
+            try {
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+            } catch (e) {}
+            return 'dark';
+        }
+        return p === 'light' ? 'light' : 'dark';
+    }
+    function apply(p) {
+        document.documentElement.setAttribute('data-theme', resolve(p));
+        document.documentElement.setAttribute('data-theme-pref', p);
+    }
+    apply(pref());
+    window.red5LearnTheme = {
+        get: pref,
+        set: function (p) {
+            try { localStorage.setItem(KEY, p); } catch (e) {}
+            apply(p);
+            try {
+                document.dispatchEvent(new CustomEvent('red5-theme-changed', { detail: { theme: resolve(p) } }));
+            } catch (e) {}
+        },
+        resolved: function () { return resolve(pref()); }
+    };
+    try {
+        var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)');
+        if (mq && mq.addEventListener) {
+            mq.addEventListener('change', function () { if (pref() === 'system') apply('system'); });
+        }
+    } catch (e) {}
+})();
+</script>
 </head>
 <body>
 
@@ -902,6 +1017,11 @@
         <span class="brand-name">Delta Red5</span>
         <span class="brand-sep">·</span>
         <span class="brand-tag">Comfort Decoded</span>
+        <div class="theme-switch" role="group" aria-label="Appearance">
+            <button type="button" data-theme-set="light"  data-testid="theme-light"  title="Light">Light</button>
+            <button type="button" data-theme-set="dark"   data-testid="theme-dark"   title="Dark">Dark</button>
+            <button type="button" data-theme-set="system" data-testid="theme-system" title="Follow the operating system">System</button>
+        </div>
     </div>
     <h1>Why does your building feel <span class="em">hot, cold, sticky or just right?</span></h1>
     <p class="lead">Every comfortable room sits inside a small box of temperature and humidity. Drag the yellow dot below to see exactly where that box is — and what your building has to do to put the air <em>inside</em> it.</p>
@@ -1789,6 +1909,16 @@
     renderIndicator();
     setAudience('everyone');
     syncAxisHandles();
+})();
+</script>
+<script>
+(function () {
+    var sw = document.querySelector('.theme-switch');
+    if (!sw || !window.red5LearnTheme) return;
+    sw.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('button[data-theme-set]');
+        if (btn) window.red5LearnTheme.set(btn.getAttribute('data-theme-set'));
+    });
 })();
 </script>
 </body>

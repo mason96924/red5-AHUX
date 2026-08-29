@@ -418,8 +418,8 @@
       "kind": "ui",
       "label": "learn.html",
       "desc": "Educational landing page (referenced by dashboard.html back-to-learn link)",
-      "size": 82660,
-      "sha256": "134ca6d7ed24d9b26d82d974ba35df4f175bb979bc8dd4734dbd9bd26fd6c0ef",
+      "size": 88829,
+      "sha256": "ac85c3f5cfdc2f81dceaf21a888628d68fc847dcb71aa21830c1e12cfefebf88",
       "show_in_ui": false,
       "hot_reload": false
     },

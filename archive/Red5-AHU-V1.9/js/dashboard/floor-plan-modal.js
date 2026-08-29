@@ -128,7 +128,27 @@ const floorModalTree = (
             {(() => {
                 const floorData = getFloorForAhu(showFloorPlanForAhu);
                 const API_URL = window.API_BASE_URL || window.location.origin;
-                const activeAhu = ahuData.find(a => a.id === showFloorPlanForAhu);
+                // showFloorPlanForAhu holds a marker *name* when the floor plan
+                // was opened by clicking an AHU on the plan, but an AHU *id*
+                // when opened from the sidebar. AHU records carry no name, so
+                // fall back to whichever AHU owns this floor's VAV markers.
+                const activeAhu = ahuData.find(a => a.id === showFloorPlanForAhu)
+                    || (floorData && ahuData.find(a => (floorData.vavMarkers || [])
+                            .some(m => (a.vavs || []).some(v => v.id === m.name))))
+                    || null;
+
+                // Resolve a marker to its live VAV in any AHU: one floor can
+                // carry terminals from several AHUs, and those must stay
+                // clickable even when another AHU is selected.
+                const findVavOwner = (vavId) => {
+                    const list = Array.isArray(ahuData) ? ahuData : [];
+                    const order = activeAhu ? [activeAhu, ...list.filter(a => a !== activeAhu)] : list;
+                    for (const a of order) {
+                        const hit = (a.vavs || []).find(v => v.id === vavId);
+                        if (hit) return { vav: hit, ahu: a };
+                    }
+                    return null;
+                };
                 
                 if (floorData && floorData.floor.image_path) {
                     // === MAP_CONFIG DRIVEN FLOOR PLAN ===
@@ -368,7 +388,8 @@ const floorModalTree = (
                             
                             {/* Render VAV markers from map_config with live telemetry */}
                             {floorData.vavMarkers.map(marker => {
-                                const liveVav = activeAhu && activeAhu.vavs ? activeAhu.vavs.find(v => v.id === marker.name) : null;
+                                const vavOwner = findVavOwner(marker.name);
+                                const liveVav = vavOwner ? vavOwner.vav : null;
                                 const isLocked = lockedVavId === marker.name;
                                 // Use the SAME Givoni-tier resolver as the VAV list
                                 // (psy-chart-svg.js line ~111).  Single source of
@@ -435,10 +456,10 @@ const floorModalTree = (
                                             className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : (sunRing ? '' : 'border-white')}`}
                                             style={Object.assign({}, dotStyle || {}, (sunRingStyle && !isLocked) ? sunRingStyle : {})}
                                             title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + (sunRing ? ' · sun / blind' : '') + trimSuffix}
-                                            onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
+                                            onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { if (vavOwner.ahu && vavOwner.ahu.id !== selectedAhuId) setSelectedAhuId(vavOwner.ahu.id); setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         ></div>
                                         <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono cursor-pointer transition-colors ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'} ${isLocked ? '!border-cyan-400' : 'group-hover:border-indigo-400'}`}
-                                            onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
+                                            onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { if (vavOwner.ahu && vavOwner.ahu.id !== selectedAhuId) setSelectedAhuId(vavOwner.ahu.id); setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         >
                                             <div className={`${isLocked ? 'text-cyan-400' : 'text-sky-500'} font-black mb-0.5`}>{marker.name}</div>
                                             {liveVav && <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{liveVav.t.toFixed(1)}&deg;C</span><span className="text-slate-500">·</span><span>{liveVav.rh.toFixed(0)}%</span></div>}

@@ -11,6 +11,9 @@ Routes:
   GET  /setup.html
   GET  /learn.html    → Comfort Decoded (Deep Dive crumb; app.py is not
                         auto-deployed so this must live in the plug-in)
+  GET  /mobile             → mobile_mockup.html (canonical share/QR target)
+  GET  /mobile_mockup.html → same file
+  GET  /api/health    → {"ok": true, ...}  liveness probe (V2.0 parity)
   POST /api/config/unlock   → {"ok": true|false}  (server-side master key)
 """
 from __future__ import annotations
@@ -61,6 +64,27 @@ def register(app, ctx):
         """Comfort Decoded — Deep Dive 'Back to interactive chart'. Bootloader
         app.py is not auto-deployed, so this URL must be registered here."""
         return _no_cache(send_from_directory(_DATA_ROOT, 'learn.html'))
+
+    # Older app.py bootloaders already define these two.  Registering a
+    # duplicate raises inside register(), which the discovery loop would
+    # record as FAILED for the WHOLE module -- taking /, /access.html and
+    # /learn.html down with it.  Register only what's actually missing.
+    _rules = {r.rule for r in app.url_map.iter_rules()}
+
+    if '/mobile' not in _rules:
+        @app.route('/mobile')
+        @app.route('/mobile_mockup.html')
+        def serve_mobile_mockup():
+            """Mobile phone view. Reads live data from /api/data and renders
+            the same controller in a phone-first layout.  Both URLs serve the
+            same file; /mobile is the canonical share/QR target."""
+            return _no_cache(send_from_directory(_DATA_ROOT, 'mobile_mockup.html'))
+
+    if '/api/health' not in _rules:
+        @app.route('/api/health')
+        def health_probe():
+            """Liveness probe (V2.0 parity, backend/routes/health.py:92)."""
+            return jsonify({'ok': True, 'version': '1.9.0', 'mode': 'legacy'})
 
     @app.route('/api/config/unlock', methods=['POST'])
     def config_unlock():

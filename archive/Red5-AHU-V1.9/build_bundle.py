@@ -19,12 +19,12 @@ OUT  = os.path.join(HERE, 'red5_bundle.zip')
 
 # Files at zip ROOT (everything that lives next to app.py in source).
 ROOT_FILES = [
-    # Bootloader + core services (loaded by /root/scripts/app.py).
-    # NOTE: app.py is included for completeness, but the controllers
-    # upload pipeline filters it out with reason "Bootloader (app.py)
-    # not auto-deployed".  Keeping it in the zip lets operators inspect
-    # the canonical version.
-    'app.py',
+    # Core services (loaded by /root/scripts/app.py).
+    # The bootloader is deliberately NOT shipped as `app.py`: both
+    # extractors refuse a bundled copy ("Bootloader (app.py) not
+    # auto-deployed"), so it was always inert payload -- and the repo
+    # copy is the variant that hangs the enteliWEB editor on save.  The
+    # paste-ready text ships via RENAMED_ROOT_FILES instead.
     'collector.py',
     'simulator.py',
 
@@ -96,6 +96,16 @@ ROOT_FILES = [
 OPTIONAL_ROOT_FILES = [
     'master_key.txt',
 ]
+
+# Root files shipped into the zip under a different name.
+# app_canonical_c2.py is the text an operator pastes into the enteliWEB
+# app.py object.  The `.txt` suffix matters: the extractor routes any `.py`
+# to /root/data/pgpy/, which is on sys.path, and this file runs app.run()
+# at module level.  As `.txt` it lands in /root/data/ (readable via
+# /assets/) and can never be imported.
+RENAMED_ROOT_FILES = {
+    'app_canonical_c2.py': 'app_canonical_c2.py.txt',
+}
 
 # Subdir trees to include verbatim.
 SUBDIR_TREES = [
@@ -170,6 +180,15 @@ def main():
                 continue
             zf.write(src, arcname=name)
             added.append(name)
+
+        # 1c. Root files renamed on the way into the zip
+        for name, arc in RENAMED_ROOT_FILES.items():
+            src = os.path.join(HERE, name)
+            if not os.path.isfile(src):
+                missing.append(name)
+                continue
+            zf.write(src, arcname=arc)
+            added.append(arc)
 
         # 2. Subdirectory trees
         for sub in SUBDIR_TREES:

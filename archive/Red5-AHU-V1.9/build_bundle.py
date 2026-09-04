@@ -97,15 +97,26 @@ OPTIONAL_ROOT_FILES = [
     'master_key.txt',
 ]
 
-# Root files shipped into the zip under a different name.
-# app_canonical_c2.py is the text an operator pastes into the enteliWEB
-# app.py object.  The `.txt` suffix matters: the extractor routes any `.py`
-# to /root/data/pgpy/, which is on sys.path, and this file runs app.run()
-# at module level.  As `.txt` it lands in /root/data/ (readable via
-# /assets/) and can never be imported.
-RENAMED_ROOT_FILES = {
-    'app_canonical_c2.py': 'app_canonical_c2.py.txt',
-}
+# Root files shipped into the zip under a different name.  One source file may
+# appear more than once, so this is a list of (source, arcname) pairs.
+#
+#  * app_main.py            -> extractor routes .py to /root/data/pgpy/, so this
+#                              lands at /root/data/pgpy/app_main.py.  The
+#                              enteliWEB PG object holds only a one-line
+#                              exec() loader pointing here.  Needed because some
+#                              controllers (e.g. Red5-PLUS-1146) reject a 90 KB
+#                              program with QERR_CODE_NO_SPACE and silently
+#                              truncate the save, while the filesystem has tens
+#                              of MB free.  Discovery globs '*_service.py', so
+#                              app_main.py is never auto-imported.
+#  * app_canonical_c2.py.txt-> lands in /root/data/ (readable via /assets/) as a
+#                              human-readable reference copy.  The .txt suffix
+#                              keeps it out of /root/data/pgpy/ and makes it
+#                              impossible to import by accident.
+RENAMED_ROOT_FILES = [
+    ('app_canonical_c2.py', 'app_main.py'),
+    ('app_canonical_c2.py', 'app_canonical_c2.py.txt'),
+]
 
 # Subdir trees to include verbatim.
 SUBDIR_TREES = [
@@ -182,7 +193,7 @@ def main():
             added.append(name)
 
         # 1c. Root files renamed on the way into the zip
-        for name, arc in RENAMED_ROOT_FILES.items():
+        for name, arc in RENAMED_ROOT_FILES:
             src = os.path.join(HERE, name)
             if not os.path.isfile(src):
                 missing.append(name)

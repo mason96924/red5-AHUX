@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RED5 AHU — Controller Commissioning Guide</title>
+<style>
+  :root {
+    --red:      #b91c1c;
+    --red-lt:   #dc2626;
+    --ink:      #0f172a;
+    --muted:    #64748b;
+    --line:     #e2e8f0;
+    --bg-soft:  #f8fafc;
+    --amber:    #b45309;
+    --amber-bg: #fffbeb;
+    --green:    #15803d;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: #fff;
+    line-height: 1.6;
+    font-size: 14px;
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 48px 40px 64px;
+  }
+
+  code, kbd, pre { font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace; }
+
+  /* ---------- masthead ---------- */
+  header { border-bottom: 3px solid var(--red); padding-bottom: 18px; margin-bottom: 8px; }
+  .brand { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; }
+  .brand .r5 { color: var(--red-lt); font-style: italic; }
+  .brand .sub { color: var(--ink); font-weight: 600; }
+  h1 { font-size: 21px; font-weight: 650; margin-top: 10px; letter-spacing: -0.2px; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .meta strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- intro ---------- */
+  .lede {
+    margin: 26px 0 30px;
+    padding: 16px 18px;
+    background: var(--bg-soft);
+    border-left: 3px solid var(--red);
+    border-radius: 0 6px 6px 0;
+    font-size: 13.5px;
+  }
+
+  h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    font-weight: 700;
+    margin: 34px 0 16px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* ---------- steps ---------- */
+  .step { display: flex; gap: 16px; margin-bottom: 22px; page-break-inside: avoid; }
+  .num {
+    flex: 0 0 30px; height: 30px;
+    background: var(--red); color: #fff;
+    border-radius: 50%;
+    font-size: 14px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 1px;
+  }
+  .body-col { flex: 1; min-width: 0; }
+  .step h3 { font-size: 15px; font-weight: 650; margin-bottom: 4px; }
+  .step p  { font-size: 13.5px; color: #334155; }
+  .step p + p { margin-top: 7px; }
+
+  pre {
+    background: var(--ink); color: #e2e8f0;
+    padding: 12px 14px; border-radius: 6px;
+    font-size: 12px; line-height: 1.55;
+    overflow-x: auto; margin: 9px 0;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  pre .c { color: #94a3b8; }
+  pre .g { color: #86efac; }
+
+  p code, li code, td code {
+    background: #f1f5f9; border: 1px solid var(--line);
+    padding: 1px 5px; border-radius: 3px;
+    font-size: 12.5px; color: #9f1239;
+  }
+
+  .note, .warn {
+    font-size: 12.5px; padding: 10px 13px;
+    border-radius: 5px; margin: 10px 0;
+    page-break-inside: avoid;
+  }
+  .note { background: var(--bg-soft); border-left: 3px solid var(--muted); color: #334155; }
+  .warn { background: var(--amber-bg); border-left: 3px solid var(--amber); color: #713f12; }
+  .note strong, .warn strong { font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); background: var(--bg-soft); }
+  td:first-child { white-space: nowrap; }
+
+  ul { margin: 8px 0 0 20px; font-size: 13.5px; color: #334155; }
+  li { margin-bottom: 5px; }
+
+  footer {
+    margin-top: 40px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-size: 11px; color: var(--muted);
+    display: flex; justify-content: space-between;
+  }
+
+  /* ---------- print ---------- */
+  @page { size: A4; margin: 14mm 15mm; }
+  @media print {
+    body { padding: 0; max-width: none; font-size: 10.5pt; }
+    .brand { font-size: 24pt; }
+    pre { background: #f1f5f9; color: #0f172a; border: 1px solid var(--line); }
+    pre .c { color: #64748b; }
+    pre .g { color: #15803d; }
+    h2 { page-break-after: avoid; }
+    .step, .note, .warn, table { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="r5">RED5</span> <span class="sub">AHU</span></div>
+  <h1>Controller Commissioning Guide</h1>
+  <div class="meta">
+    Embedded Delta controller &nbsp;&middot;&nbsp;
+    Web interface on port <strong>5001</strong>
+  </div>
+</header>
+
+<div class="lede">
+  This guide takes a new controller from factory state to a running RED5 AHU system. Steps
+  1&ndash;10 start the web server, steps 11&ndash;13 install the application, and steps 14&ndash;16
+  start telemetry collection.
+  <br><br>
+  <strong>You never paste a large script into enteliWEB.</strong> Each program object holds a single
+  line that loads the real code from the controller's own storage. This is deliberate &mdash;
+  pasting the full program fails on current hardware, as explained in step&nbsp;8.
+</div>
+
+<div class="note"><strong>What you need before starting:</strong> access to enteliWEB, the
+  controller's IP address, the <code>red5_bundle.zip</code> supplied with your system, and network
+  access to an existing commissioned RED5 controller if you have one.</div>
+
+<div class="warn"><strong>The Debug Console runs one line at a time.</strong> Every command in this
+  guide is written as a single line for that reason. If your text editor or PDF viewer wraps one
+  across several lines when you copy it, re-copy it &mdash; a multi-line paste will be rejected.</div>
+
+<h2>Part A &mdash; Start the web server</h2>
+
+<div class="step">
+  <div class="num">1</div>
+  <div class="body-col">
+    <h3>Install and network the controller</h3>
+    <p>Rack and power the controller, and connect it to the network segment enteliWEB can reach.
+       Note its IP address &mdash; you will need it from step&nbsp;10 onward.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">2</div>
+  <div class="body-col">
+    <h3>Discover the controller in enteliWEB</h3>
+    <p>Run a device discovery and confirm the new controller appears with the expected device
+       instance and name before continuing.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">3</div>
+  <div class="body-col">
+    <h3>Set the controller time</h3>
+    <p>Correct the controller's date, time, and <strong>time zone</strong>.</p>
+    <div class="note"><strong>Do this before anything else.</strong> Telemetry snapshots, band
+      scheduling, and weather history are all stored against timestamps. A controller commissioned on
+      the wrong clock produces trend data that looks corrupted later and is tedious to correct.</div>
+    <div class="warn"><strong>Check the time zone specifically.</strong> Controllers have been found
+      running on UTC while the site was hours ahead. Everything still works, so nothing warns you
+      &mdash; the discrepancy only surfaces later in historical trends.</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">4</div>
+  <div class="body-col">
+    <h3>Enable PG Python on the device</h3>
+    <p>Open the controller's <strong>DEV</strong> (device) object and enable
+       <strong>PG Python</strong>. Python programs cannot be created or run until this is switched
+       on.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">5</div>
+  <div class="body-col">
+    <h3>Create a program object named &ldquo;app&rdquo; in Python mode</h3>
+    <p>Create a new <strong>PG</strong> (Program) object, name it <strong>app</strong>, and set its
+       program mode to <strong>Python</strong> using the <strong>Mode</strong> button in the editor
+       toolbar.</p>
+    <div class="warn"><strong>Program mode is the most common commissioning mistake.</strong> If the
+      mode is not Python, the object still accepts and saves your text, but every attempt to run it
+      fails with <code>Programming Error</code> &mdash; even a single <code>print()</code>
+      statement. See <em>Troubleshooting</em>.</div>
+    <p>Confirm the object was created correctly before continuing. In the Debug Console:</p>
+<pre>import os; print(sorted(os.listdir('/root/scripts')))</pre>
+    <p>You should see <code>['app.py']</code>. An empty list means the program mode is wrong. Fix it
+       now rather than troubleshooting later.</p>
+    <div class="note"><strong>The name matters.</strong> The controller firmware removes any Python
+      file that is not a registered enteliWEB object. Naming the object <code>app</code> is what
+      allows the program to persist.</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">6</div>
+  <div class="body-col">
+    <h3>Install the required modules</h3>
+    <p>Install these two modules, and only these two:</p>
+<pre>pip install flask
+pip install flask_cors</pre>
+    <div class="warn"><strong>Do not install Pillow.</strong> It is not required. The system detects
+      its absence and skips the one optional feature that uses it (image thumbnail resizing). Pillow
+      and its dependencies consume tens of megabytes of the controller's limited storage for no
+      practical benefit.</div>
+    <p>Check available space:</p>
+<pre>import shutil; u=shutil.disk_usage('/root'); print('FREE %.2f MB' % (u.free/1048576))</pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">7</div>
+  <div class="body-col">
+    <h3>Let the installations finish</h3>
+    <p>Allow each <code>pip install</code> to complete before continuing. Starting the program while
+       a module is still installing produces a misleading <code>ImportError</code>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">8</div>
+  <div class="body-col">
+    <h3>Copy the program file onto the controller</h3>
+    <p>The main program is roughly 90&nbsp;KB and <strong>must not be pasted into the program
+       object</strong>. It is copied to the controller's storage instead, where there is no size
+       limit.</p>
+    <p>If you already have a commissioned RED5 controller on the network, the new controller can
+       download the file directly from it. Run this in the Debug Console of the <em>new</em>
+       controller, substituting the working controller's IP address:</p>
+<pre>import urllib.request, os; os.makedirs('/root/data/pgpy', exist_ok=True); urllib.request.urlretrieve('http://&lt;working-controller-ip&gt;:5001/assets/app_canonical_c2.py.txt', '/root/data/pgpy/app_main.py'); print('bytes:', os.path.getsize('/root/data/pgpy/app_main.py'))</pre>
+    <p>You should see <code>bytes: 89565</code>. A smaller number means the download was
+       interrupted &mdash; delete the file and repeat rather than continuing.</p>
+    <div class="note"><strong>Commissioning your first controller?</strong> With no existing
+      controller to copy from, request the program file from your system integrator and make it
+      available over HTTP from any computer on the same network, then use that address in the
+      command above.</div>
+    <div class="warn"><strong>Why the file is not pasted.</strong> On current hardware a paste this
+      large is rejected with <code>QERR_CODE_NO_SPACE</code>, even though the controller has plenty
+      of free storage. The limit applies to how much program text a single object can hold. The
+      object may also keep only the first portion of the text, so the save appears to succeed and
+      then fails when run.</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">9</div>
+  <div class="body-col">
+    <h3>Enter the loader line and run</h3>
+    <p>The complete contents of the <strong>app</strong> program object is this one line:</p>
+<pre>exec(compile(open('/root/data/pgpy/app_main.py').read(), '/root/data/pgpy/app_main.py', 'exec'))</pre>
+    <p>Save &mdash; it should commit immediately, with no loading delay &mdash; then set the object
+       to <strong>Run</strong>.</p>
+    <div class="note"><strong>You will not need to edit this object again.</strong> Future software
+      updates replace the program file in storage; this loader line stays exactly as it is, and
+      updates arrive through the bundle upload in step&nbsp;11.</div>
+    <div class="warn"><strong>This object does not restart automatically.</strong> If the program
+      ever stops, it stays stopped until someone starts it again in enteliWEB. This matters in
+      step&nbsp;12 and after any power interruption.</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">10</div>
+  <div class="body-col">
+    <h3>Check the output window</h3>
+    <p>On a new controller the application is not installed yet, so the program starts in recovery
+       mode and tells you where to go next. Expect output like this:</p>
+<pre><span class="c">[service-discovery] no *_service.py files found in ['/root/data/pgpy', '/root/scripts']</span>
+[bootstrap-fallback] No upload service registered - installing emergency
+bootstrap so the operator can deploy upload_service.py via /update
+
+<span class="g">* Controller Online at: http://&lt;controller-ip&gt;:5001</span>
+<span class="g">* Update page at: http://&lt;controller-ip&gt;:5001/update</span></pre>
+    <p>The last two lines confirm a healthy start. The <code>no *_service.py files found</code>
+       message is expected at this stage and disappears once the application is installed.</p>
+  </div>
+</div>
+
+<h2>Part B &mdash; Install the application</h2>
+
+<div class="step">
+  <div class="num">11</div>
+  <div class="body-col">
+    <h3>Upload the bundle</h3>
+    <p>Browse to <code>http://&lt;controller-ip&gt;:5001/</code>. You are redirected to
+       <code>/update</code> and shown the red <strong>Emergency Bootstrap</strong> page. Upload
+       <code>red5_bundle.zip</code> there.</p>
+    <div class="note"><strong>The password field accepts any entry.</strong> The standard bundle is
+      not encrypted, so the value is never checked &mdash; the form simply will not submit while the
+      field is empty. A real key is required only for encrypted bundles created by the
+      Download/Replicate feature.</div>
+    <p>The upload installs the application, its configuration, and the telemetry collector. Your
+       program object from step&nbsp;9 is protected and cannot be overwritten by an upload.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">12</div>
+  <div class="body-col">
+    <h3>Stop and start the &ldquo;app&rdquo; object</h3>
+    <p>The application loads its components once at startup, so nothing you just uploaded is active
+       yet. Stop the <strong>app</strong> program object in enteliWEB, then start it again.</p>
+    <p>The output window should now show one <code>registered OK</code> line per component, and the
+       <code>bootstrap-fallback</code> message should be gone.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">13</div>
+  <div class="body-col">
+    <h3>Verify the installation</h3>
+    <p>Check these in order, in a browser. All addresses are relative to
+       <code>http://&lt;controller-ip&gt;:5001</code>.</p>
+    <table>
+      <thead><tr><th>Address</th><th>Expected result</th></tr></thead>
+      <tbody>
+        <tr><td><code>/api/services</code></td><td>Every component reports <code>OK</code>. Any <code>FAILED</code> entry includes the reason.</td></tr>
+        <tr><td><code>/api/health</code></td><td><code>{"ok": true, "version": "1.9.0"}</code></td></tr>
+        <tr><td><code>/</code></td><td>The access page, no longer redirecting to <code>/update</code>.</td></tr>
+        <tr><td><code>/dashboard</code></td><td>The dashboard renders.</td></tr>
+        <tr><td><code>/mobile</code></td><td>The phone view renders.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h2>Part C &mdash; Start telemetry collection</h2>
+
+<p style="font-size:13.5px;color:#334155">
+  The collector reads live BACnet points and writes the data the dashboard displays. It requires its
+  own program object: the controller only provides BACnet access to registered enteliWEB objects, so
+  this work cannot run inside the <code>app</code> object. The collector program file was already
+  installed by the bundle in step&nbsp;11 &mdash; you are only creating the object that runs it.
+</p>
+
+<div class="step">
+  <div class="num">14</div>
+  <div class="body-col">
+    <h3>Create a program object named &ldquo;collector&rdquo; in Python mode</h3>
+    <p>Exactly as in step&nbsp;5: create a new <strong>PG</strong> object, name it
+       <strong>collector</strong>, and set its program mode to <strong>Python</strong> with the
+       <strong>Mode</strong> button. Then confirm:</p>
+<pre>import os; print(sorted(os.listdir('/root/scripts')))</pre>
+    <p>You should now see <code>['app.py', 'collector.py']</code>. If <code>collector.py</code> is
+       missing, the program mode is not set to Python and nothing you enter will run.</p>
+    <div class="warn"><strong>Do not try to create this file yourself.</strong> Files placed in the
+      scripts folder by any other means appear to save and are then removed by the controller
+      firmware. Only creating the object in enteliWEB works.</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">15</div>
+  <div class="body-col">
+    <h3>Enter the loader line and run</h3>
+    <p>The complete contents of the <strong>collector</strong> object is this one line:</p>
+<pre>import sys; sys.argv=['collector.py']; exec(compile(open('/root/data/pgpy/collector.py').read(), '/root/data/pgpy/collector.py', 'exec'))</pre>
+    <p>Save, then set the object to <strong>Run</strong>. Expect output like:</p>
+<pre>Red5 Telemetry Collector v1.2 starting...
+Config path: /root/data/configs/collector_config.json
+Mock mode: False
+Telemetry output: /root/data/configs/telemetry.json
+Discovered 0 AHU groups
+Poll interval: 5s</pre>
+    <div class="note"><strong>Enter the line exactly as shown.</strong> Both halves are required: the
+      first prepares the program's start-up options, and omitting it causes an immediate error. Do
+      not add anything to the end &mdash; the collector starts itself.</div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="num">16</div>
+  <div class="body-col">
+    <h3>Confirm data is being collected</h3>
+    <p>Browse to <code>http://&lt;controller-ip&gt;:5001/api/telemetry-status</code>. You are looking
+       for <code>age_seconds</code> below about 10 and <code>stale: false</code>. A large
+       <code>age_seconds</code> value that keeps increasing means the collector is not running.</p>
+    <div class="note"><strong><code>Discovered 0 AHU groups</code> is normal at this point.</strong>
+      It means no equipment has been mapped yet. Use the equipment mapper to define your AHUs and
+      VAVs; live values appear once that is complete. This is configuration, not a fault.</div>
+  </div>
+</div>
+
+<h2>Troubleshooting &mdash; &ldquo;Programming Error&rdquo; every time you run</h2>
+
+<p style="font-size:13.5px;color:#334155">
+  Symptom: the object saves your text without complaint, but running it immediately shows
+  <code>Program_Change : Programming Error</code> and <strong>Halted</strong>.
+</p>
+<p style="font-size:13.5px;color:#334155">
+  Test it by replacing the entire program with one harmless line and running that:
+</p>
+<pre>print('hello')</pre>
+<p style="font-size:13.5px;color:#334155">
+  If even that fails, the object is not set to Python mode. Confirm with:
+</p>
+<pre>import os; print(sorted(os.listdir('/root/scripts')))</pre>
+<p style="font-size:13.5px;color:#334155">
+  A missing entry for your object confirms it. Correct the <strong>Mode</strong> setting rather than
+  changing the program text &mdash; no edit to the code can fix this.
+</p>
+
+<h2>Troubleshooting &mdash; &ldquo;NO_SPACE&rdquo; when saving</h2>
+
+<p style="font-size:13.5px;color:#334155">
+  Symptom: saving a large program raises <code>QERR_CODE_NO_SPACE</code>. This is a limit on how much
+  program text one object can store, not a shortage of controller storage &mdash; it occurs with tens
+  of megabytes free. The object may also keep only part of your text, so the save appears to succeed
+  and then fails when run.
+</p>
+<p style="font-size:13.5px;color:#334155">
+  The solution is the approach used throughout this guide: keep each object to a single loader line
+  and hold the program itself in storage, as in steps&nbsp;8, 9 and 15. To confirm storage is
+  healthy:
+</p>
+<pre>import shutil; u=shutil.disk_usage('/root'); print('total %.1f MB / used %.1f MB / FREE %.2f MB' % (u.total/1048576, u.used/1048576, u.free/1048576))</pre>
+<p style="font-size:13.5px;color:#334155">
+  If space really is low, remove Pillow with <code>pip uninstall -y Pillow</code> &mdash; keep only
+  <code>flask</code> and <code>flask_cors</code>.
+</p>
+
+<h2>Troubleshooting &mdash; &ldquo;Authentication required&rdquo; when uploading</h2>
+
+<p style="font-size:13.5px;color:#334155">
+  This is not the bundle password, which is not checked for standard bundles. It means user
+  authentication has been switched on for this controller. Sign in as <code>admin</code> using the
+  system master key as the password, then retry the upload.
+</p>
+<p style="font-size:13.5px;color:#334155">
+  If you do not have the master key, it is stored on the controller and can be displayed from the
+  Debug Console:
+</p>
+<pre>print(open('/root/data/master_key.txt').read().strip())</pre>
+
+<h2>Commissioning further controllers</h2>
+
+<p style="font-size:13.5px;color:#334155">
+  Once this controller is running it can supply the program file to the next one, so you do not need
+  the original file again. Use this address as the download source in step&nbsp;8:
+</p>
+<pre>http://&lt;this-controller-ip&gt;:5001/assets/app_canonical_c2.py.txt</pre>
+
+<footer>
+  <span>RED5 AHU &mdash; Controller Commissioning Guide</span>
+  <span>Keep this document with the site records</span>
+</footer>
+
+</body>
+</html>

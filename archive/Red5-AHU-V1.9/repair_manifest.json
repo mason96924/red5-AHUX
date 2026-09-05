@@ -148,8 +148,8 @@
       "kind": "plugin",
       "label": "Pages Service",
       "desc": "GET / \u2192 access.html, /access.html, /setup.html, POST /api/config/unlock",
-      "size": 2609,
-      "sha256": "78a9c0a6373e645a9e956741c1fafb537385e508787d865d9a5c9128d600c3d6",
+      "size": 3852,
+      "sha256": "c76b37b7a9340882be16f9d34f18ec51a7671cf9dd1f2eddb678df8ed8a93bcd",
       "show_in_ui": true,
       "hot_reload": false
     },

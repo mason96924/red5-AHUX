@@ -143,6 +143,17 @@ async def ahu_html() -> Response:
     return _serve("ahu.html")
 
 
+# Served by nginx off its static root until that root was removed so no
+# build tree could shadow a git file; nothing here answered for it, so
+# /command-center started 301-ing to a 404.  The short alias is carried
+# too, because AHUX reaches FastAPI directly and never had the nginx
+# redirect that supplied it on dcred5-studio.com.
+@router.get("/command-center", include_in_schema=False)
+@router.get("/command-center.html", include_in_schema=False)
+async def command_center_html() -> Response:
+    return _serve("command-center.html")
+
+
 @router.get("/sun_preview.html", include_in_schema=False)
 async def sun_preview_html() -> Response:
     return _serve("sun_preview.html")

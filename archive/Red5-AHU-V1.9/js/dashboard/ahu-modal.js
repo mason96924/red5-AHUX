@@ -86,10 +86,10 @@ function renderVavTerminalHubPanel(props) {
                     <tbody className="opacity-90">
                         {(currentAhu.vavs || []).map(function (v) {
                             const saH = saP && typeof getH === 'function' ? getH(saP.t, saP.w) : 0;
-                            const diffH = v.h - saH;
+                            const diffH = Number.isFinite(v.h) ? v.h - saH : null;
                             const diag = typeof getVavDiagnostic === 'function' ? getVavDiagnostic(v, saP, comfortZonePoly, activeSweet) : { distSA: 0, totalDemand: 0, demandType: '' };
                             const gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
-                            const gv = typeof getGivoniTier === 'function' ? getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, gvSweet, showGivoni) : { dotFill: '#64748b', tooltip: '' };
+                            const gv = (hasLiveZone(v) && typeof getGivoniTier === 'function') ? getGivoniTier(v.t, v.w, v.rh, comfortZonePoly, gvSweet, showGivoni) : { dotFill: '#64748b', tooltip: '' };
                             const statusStyle = { backgroundColor: gv.dotFill, boxShadow: '0 0 5px ' + gv.dotFill + '80' };
                             return (
                                 <tr key={v.id} className={`rounded-lg transition-colors ${lockedVavId === v.id ? 'bg-indigo-500/30' : (theme === 'dark' ? 'bg-slate-950/40 hover:bg-indigo-500/10' : 'bg-slate-100 hover:bg-indigo-100')}`}>
@@ -97,10 +97,10 @@ function renderVavTerminalHubPanel(props) {
                                         <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={statusStyle}></div>
                                     </td>
                                     <td className="px-2 py-2 text-indigo-500 font-bold cursor-pointer hover:underline transition-colors hover:text-indigo-400" onMouseDown={function (e) { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }} title={(window.t && window.t('view_diagram')) || 'View Diagram'}>{v.id}</td>
-                                    <td className="font-black">{v.t.toFixed(1)}</td>
-                                    <td className="font-black">{v.rh.toFixed(0)}</td>
-                                    <td className="text-pink-500 font-black">{v.h.toFixed(1)}</td>
-                                    <td className={`font-black ${Math.abs(diffH) < 3 ? 'text-emerald-500' : Math.abs(diffH) < 6 ? 'text-blue-500' : 'text-red-400'}`}>{diffH > 0 ? '+' : ''}{diffH.toFixed(1)}</td>
+                                    <td className="font-black">{fmtZone(v.t, 1)}</td>
+                                    <td className="font-black">{fmtZone(v.rh, 0)}</td>
+                                    <td className="text-pink-500 font-black">{fmtZone(v.h, 1)}</td>
+                                    <td className={`font-black ${!Number.isFinite(diffH) ? 'text-slate-500' : Math.abs(diffH) < 3 ? 'text-emerald-500' : Math.abs(diffH) < 6 ? 'text-blue-500' : 'text-red-400'}`}>{!Number.isFinite(diffH) ? '--' : `${diffH > 0 ? '+' : ''}${diffH.toFixed(1)}`}</td>
                                     <td className={`font-black text-[10px] ${diag.distSA < 3 ? 'text-emerald-500' : diag.distSA < 6 ? 'text-slate-400' : 'text-amber-400'}`}>{diag.distSA.toFixed(1)}</td>
                                     <td className={`font-black text-[10px] ${diag.totalDemand === 0 ? 'text-emerald-500' : diag.demandType === 'heating' ? 'text-orange-400' : 'text-cyan-400'}`}>{diag.totalDemand === 0 ? '--' : diag.totalDemand.toFixed(1)}</td>
                                     <td className="text-center"><button type="button" onMouseDown={function (e) { e.stopPropagation(); setLockedVavId(lockedVavId === v.id ? null : v.id); setIsLockedToSA(false); }} className={`p-1.5 rounded-lg border transition-all ${lockedVavId === v.id ? 'bg-emerald-600 border-emerald-400 text-slate-100 shadow-lg' : ui.btnToggle}`}><LockIcon/></button></td>

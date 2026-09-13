@@ -24,6 +24,22 @@
  *     deps via props).
  */
 
+/* In live mode telemetry_service keeps a VAV in the list but leaves `t`/`rh`
+ * (and the `w`/`h` derived from them) null until the collector has polled
+ * that point, so a marker or table row can exist with no readings at all.
+ * Both helpers below keep that state off the render path — reading
+ * .toFixed() straight off a null took the whole floor plan down. */
+
+/** True once the collector has written both zone readings for this VAV. */
+function hasLiveZone(v) {
+    return !!v && Number.isFinite(v.t) && Number.isFinite(v.rh);
+}
+
+/** Reading formatted for display, or an em-dash while the point is unset. */
+function fmtZone(v, digits) {
+    return Number.isFinite(v) ? v.toFixed(digits) : '--';
+}
+
 /* Canonical OA/RA/SA/MA colours for sidebar labels + main psy-chart dots.
  * MA fill/ring are separate: black disc + yellow outer ring on the chart.
  * MA label text uses a darker gold so it stays readable on dark sidebar

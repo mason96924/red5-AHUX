@@ -404,13 +404,13 @@ const floorModalTree = (
                                 // which diverged from the list after the VAV
                                 // table migrated to Givoni tiers in Phase L.35.
                                 const _gvSweet = (showGivoni && showSweetSpot) ? sweetSpotRange : null;
-                                const gv = liveVav ? getGivoniTier(liveVav.t, liveVav.w, liveVav.rh, comfortZonePoly, _gvSweet, showGivoni) : null;
+                                const gv = hasLiveZone(liveVav) ? getGivoniTier(liveVav.t, liveVav.w, liveVav.rh, comfortZonePoly, _gvSweet, showGivoni) : null;
                                 const saP = activeAhu && activeAhu.points ? activeAhu.points[1] : null;
                                 const diag = liveVav ? getVavDiagnostic(liveVav, saP, comfortZonePoly) : null;
                                 const dotStyle = gv
                                     ? { backgroundColor: gv.dotFill, boxShadow: '0 0 12px ' + gv.dotFill + 'cc' }
                                     : null;
-                                const dotColor = !liveVav ? 'bg-slate-500' : '';
+                                const dotColor = !hasLiveZone(liveVav) ? 'bg-slate-500' : '';
 
                                 // Sun-Path → B1-B10 band trim (P0 hook).  Compute once per VAV
                                 // so both the ring tooltip path and the plain-marker path can
@@ -455,14 +455,14 @@ const floorModalTree = (
                                         <div
                                             className={`w-6 h-6 rounded-full border-[3px] cursor-pointer group-hover:scale-125 transition-all duration-300 ${dotColor} ${isLocked ? 'border-cyan-400 scale-125 ring-4 ring-cyan-400/60' : (sunRing ? '' : 'border-white')}`}
                                             style={Object.assign({}, dotStyle || {}, (sunRingStyle && !isLocked) ? sunRingStyle : {})}
-                                            title={(liveVav ? `${marker.name}: ${liveVav.t.toFixed(1)}C ${liveVav.rh.toFixed(0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + (sunRing ? ' · sun / blind' : '') + trimSuffix}
+                                            title={(liveVav ? `${marker.name}: ${fmtZone(liveVav.t, 1)}C ${fmtZone(liveVav.rh, 0)}%RH${gv ? ' — Tier ' + gv.tier + ' (' + gv.label + ')' : ''}` : marker.name) + (sunRing ? ' · sun / blind' : '') + trimSuffix}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { if (vavOwner.ahu && vavOwner.ahu.id !== selectedAhuId) setSelectedAhuId(vavOwner.ahu.id); setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         ></div>
                                         <div className={`mt-2 border px-2.5 py-1.5 rounded text-[10px] min-w-[90px] text-center shadow-lg font-mono cursor-pointer transition-colors ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-300'} ${isLocked ? '!border-cyan-400' : 'group-hover:border-indigo-400'}`}
                                             onMouseDown={(e) => { e.stopPropagation(); if (liveVav) { if (vavOwner.ahu && vavOwner.ahu.id !== selectedAhuId) setSelectedAhuId(vavOwner.ahu.id); setSelectedVavForModal(liveVav); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(liveVav.id); setIsLockedToSA(false); } }}
                                         >
                                             <div className={`${isLocked ? 'text-cyan-400' : 'text-sky-500'} font-black mb-0.5`}>{marker.name}</div>
-                                            {liveVav && <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{liveVav.t.toFixed(1)}&deg;C</span><span className="text-slate-500">·</span><span>{liveVav.rh.toFixed(0)}%</span></div>}
+                                            {liveVav && <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{fmtZone(liveVav.t, 1)}&deg;C</span><span className="text-slate-500">·</span><span>{fmtZone(liveVav.rh, 0)}%</span></div>}
                                             {!liveVav && <div className="text-slate-500">--</div>}
                                             {vavBandTrim && vavBandTrim.sun_trim_c !== 0 && sunRing && (
                                                 <div className={`mt-0.5 text-[8px] tracking-wider ${vavBandTrim.sun_trim_c < 0 ? (theme==='dark' ? 'text-amber-400' : 'text-amber-600') : (theme==='dark' ? 'text-sky-400' : 'text-sky-600')}`}
@@ -686,7 +686,7 @@ const floorModalTree = (
                                                 onMouseDown={(e) => { e.stopPropagation(); setSelectedVavForModal(v); setVavCfm(Math.floor(Math.random() * 300 + 400)); setLockedVavId(v.id); setIsLockedToSA(false); }}
                                             >
                                                 <div className={`${isLocked ? 'text-rose-500' : 'text-sky-500'} font-black mb-0.5`}>{v.id}</div>
-                                                <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{v.t.toFixed(1)}&deg;C</span><span className="text-slate-500">·</span><span>{v.rh.toFixed(0)}%</span></div>
+                                                <div className={`flex justify-center gap-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}><span>{fmtZone(v.t, 1)}&deg;C</span><span className="text-slate-500">·</span><span>{fmtZone(v.rh, 0)}%</span></div>
                                             </div>
                                         </div>
                                     );

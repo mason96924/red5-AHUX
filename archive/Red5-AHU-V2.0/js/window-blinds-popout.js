@@ -633,7 +633,8 @@ function FloorWindowsRail(props) {
             } catch (_) {}
         });
     };
-    const nAuto = targets.filter((w) => w.heat_auto).length;
+    // Auto is opt-out: only an explicit false keeps glass out of the loop.
+    const nAuto = targets.filter((w) => w.heat_auto !== false).length;
     const btn = 'px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider';
     const btnIdle = dk
         ? ' bg-slate-800 border-slate-600 text-slate-200 hover:border-sky-400'
@@ -769,7 +770,7 @@ function FloorWindowsRail(props) {
                                            title="Select for group control"
                                            style={{ accentColor: '#96d2ff', width: 13, height: 13 }}
                                            onChange={togglePick} />
-                                    <input type="checkbox" className="shrink-0" checked={!!w.heat_auto}
+                                    <input type="checkbox" className="shrink-0" checked={w.heat_auto !== false}
                                            title="Auto: open until room is green, close when too bright, close at night"
                                            style={{ accentColor: '#78c878', width: 13, height: 13 }}
                                            onChange={(e) => {

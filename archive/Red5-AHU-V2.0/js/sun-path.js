@@ -138,6 +138,31 @@ window.red5FindContainingRoom = function(x, y, rooms){
   return best;
 };
 
+/* Distance from a point to a room outline, in plan %. null if unusable. */
+window.red5RoomEdgeDistance = function(x, y, room){
+  var V = room && (room.vertices || room.points);
+  if (!V || V.length < 3) return null;
+  var best = Infinity;
+  for (var i = 0, j = V.length - 1; i < V.length; j = i++) {
+    var ax = Number(V[j][0]), ay = Number(V[j][1]);
+    var bx = Number(V[i][0]), by = Number(V[i][1]);
+    var dx = bx - ax, dy = by - ay;
+    var len2 = dx * dx + dy * dy;
+    var t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
+    var d = Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
+    if (d < best) best = d;
+  }
+  return best;
+};
+
+/* How far a room outline may sit from glass and still own it, in plan %
+   of the plate. Windows are drawn on the wall they are cut into, so
+   containment at the centre is a coin flip, and traced plans leave a
+   perimeter strip between the facade and the room outline. red5-elc hit
+   exactly this: eight of nine windows on a floor owned by no room, so
+   Auto had no lux reading to act on and those blinds never moved. */
+window.RED5_ROOM_REACH_PCT = 4;
+
 /* Sample a point just inside the window (toward plan center) to own a room. */
 window.red5RoomForWindow = function(w, rooms){
   if (!w || !rooms || !rooms.length) return null;
@@ -159,17 +184,23 @@ window.red5RoomForWindow = function(w, rooms){
   var ix = 50 - cx, iy = 50 - cy;
   if (ix * ix + iy * iy < 1e-6) { ix = 0; iy = 1; }
     if (nx * ix + ny * iy < 0) { nx = -nx; ny = -ny; }
-  var depths = [0.35, 0.7, 1.1, 1.6];
+  var reach = Number(window.RED5_ROOM_REACH_PCT) || 4;
+  var depths = [0.35, 0.7, 1.1, 1.6, 2.5, reach];
   for (var di = 0; di < depths.length; di++) {
-    hit = window.red5FindContainingRoom(cx + nx * depths[di], cy + ny * depths[di], rooms);
+    hit = window.red5FindContainingRoom(cx + nx * depths[di], cy + ny * depths[di], rooms)
+      || window.red5FindContainingRoom(cx - nx * depths[di], cy - ny * depths[di], rooms);
     if (hit) return hit;
   }
-  var reverse = [0.35, 0.7];
-  for (di = 0; di < reverse.length; di++) {
-    hit = window.red5FindContainingRoom(cx - nx * reverse[di], cy - ny * reverse[di], rooms);
-    if (hit) return hit;
+  /* Nothing contains any probe: the outline is inset past reach of the
+     normal, or the normal points along the wall. Fall back to the nearest
+     outline, so wall-hugging glass still has an owner instead of dropping
+     out of daylight control entirely. */
+  var best = null, bestD = reach;
+  for (var ri = 0; ri < rooms.length; ri++) {
+    var d = window.red5RoomEdgeDistance(cx, cy, rooms[ri]);
+    if (d != null && d < bestD) { bestD = d; best = rooms[ri]; }
   }
-  return null;
+  return best;
 };
 
 /* True when this room has its own glass that the sun actually enters. */

@@ -466,6 +466,23 @@
             // default}` -- so the array check always failed and the sun
             // path was permanently stuck on NYC.
             const NYC = {lat: 40.7128, lon: -74.0060, elevation_m: 0, timezone: ''};
+            // What a room is used for picks the lux band Auto holds it in.
+            // Values must match ROOM_MIN_LUX / ROOM_MAX_LUX in heat-auto.js.
+            const ROOM_TYPE_OPTIONS = [
+                { value: 'office', label: 'Office' },
+                { value: 'screen_work', label: 'Screen work' },
+                { value: 'cad', label: 'CAD / drafting' },
+                { value: 'meeting', label: 'Meeting room' },
+                { value: 'workspace', label: 'Workspace' },
+                { value: 'reception', label: 'Reception' },
+                { value: 'kitchen', label: 'Kitchen' },
+                { value: 'bathroom', label: 'Bathroom' },
+                { value: 'corridor', label: 'Corridor' },
+                { value: 'filing', label: 'Filing' },
+                { value: 'storage', label: 'Storage' },
+                { value: 'warehouse', label: 'Warehouse' },
+                { value: 'other', label: 'Other' },
+            ];
             const locTimezone = (wl) => String((wl && (wl.timezone || wl.tz_id || wl.tz)) || '').trim();
             const readLatLonFromStorage = () => {
                 try {
@@ -2267,6 +2284,8 @@
                     id: 'room_' + Date.now(),
                     floorIdx: currentFloorIdx,
                     name: 'Room ' + (n + 1),
+                    // Room type picks the lux band Auto holds the room in.
+                    type: 'office',
                     vertices: verts,
                 };
                 setFloorRooms(prev => [...prev, newRoom]);
@@ -3027,7 +3046,7 @@
                             angle_deg: w.angle_deg,
                             blind_level: w.blind_level || 0,
                             blind_type: w.blind_type || 'roller',
-                            heat_auto: !!w.heat_auto,
+                            heat_auto: w.heat_auto !== false,
                             ...(w.smi_id != null && w.smi_id !== '' ? { smi_id: Number(w.smi_id) } : {}),
                             ...(w.smi_addr != null && w.smi_addr !== '' ? { smi_addr: Number(w.smi_addr) } : {}),
                             sill_height_m: w.sill_height_m != null ? w.sill_height_m : 1.0,
@@ -3042,6 +3061,15 @@
                         rooms: floorRooms.filter(r => r.floorIdx === idx).map(r => ({
                             id: r.id,
                             name: r.name || 'Room',
+                            // Type selects the comfort band Auto works to;
+                            // min/max are only honoured when lux_override
+                            // says an operator pinned them by hand.
+                            type: r.type || 'office',
+                            ...(r.lux_override ? {
+                                lux_override: true,
+                                min_lux: Number(r.min_lux) || undefined,
+                                max_lux: Number(r.max_lux) || undefined,
+                            } : {}),
                             vertices: (r.vertices || []).map(v => [Number(v[0]), Number(v[1])]).filter(v => Number.isFinite(v[0]) && Number.isFinite(v[1])),
                         })).filter(r => r.vertices.length >= 3),
                         obstructions: floorObstructions.filter(o => o.floorIdx === idx).map(o => ({
@@ -4078,7 +4106,7 @@
                                         blind_type: window.red5NormalizeBlindType
                                             ? window.red5NormalizeBlindType(w.blind_type)
                                             : ((w.blind_type === 'horizontal' || w.blind_type === 'vertical' || w.blind_type === 'horizontal-tilt' || w.blind_type === 'vertical-stack') ? w.blind_type : 'roller'),
-                                        heat_auto: !!w.heat_auto,
+                                        heat_auto: w.heat_auto !== false,
                                         smi_id: w.smi_id != null && w.smi_id !== '' ? Number(w.smi_id) : undefined,
                                         smi_addr: w.smi_addr != null && w.smi_addr !== '' ? Number(w.smi_addr) : undefined,
                                         ...(verts ? { vertices: verts } : {}),
@@ -4098,6 +4126,12 @@
                                         id: r.id || ('room_' + idx + '_' + ri),
                                         floorIdx: idx,
                                         name: r.name || ('Room ' + (allRooms.filter(x => x.floorIdx === idx).length + 1)),
+                                        // Rooms saved before room types existed carry no
+                                        // type; office matches what they were scored as.
+                                        type: r.type || 'office',
+                                        lux_override: !!r.lux_override,
+                                        min_lux: r.min_lux != null ? Number(r.min_lux) : undefined,
+                                        max_lux: r.max_lux != null ? Number(r.max_lux) : undefined,
                                         vertices: verts,
                                     });
                                 });
@@ -5552,19 +5586,72 @@
                                                 <div className="text-[8px] font-black uppercase tracking-widest text-emerald-400/80 px-1">Rooms on this floor</div>
                                                 {floorRooms.filter(r => r.floorIdx === currentFloorIdx).length === 0 ? (
                                                     <div className="text-[9px] text-slate-500 px-1 py-2">No rooms yet — Trace Room around each windowed space so sunlight stays inside.</div>
-                                                ) : floorRooms.filter(r => r.floorIdx === currentFloorIdx).map((r, i) => (
+                                                ) : floorRooms.filter(r => r.floorIdx === currentFloorIdx).map((r, i) => {
+                                                    const band = (window.red5HeatAuto && window.red5HeatAuto.roomLuxBand)
+                                                        ? window.red5HeatAuto.roomLuxBand(r) : null;
+                                                    const patchRoom = (fields) => setFloorRooms(prev =>
+                                                        prev.map(x => x.id === r.id ? { ...x, ...fields } : x));
+                                                    return (
                                                     <div key={r.id}
-                                                         className={`flex items-center gap-2 rounded border px-2 py-1.5 ${selectedRoomId === r.id ? 'border-emerald-400 bg-emerald-950/40' : 'border-slate-700 bg-slate-900/50'}`}
+                                                         className={`rounded border px-2 py-1.5 ${selectedRoomId === r.id ? 'border-emerald-400 bg-emerald-950/40' : 'border-slate-700 bg-slate-900/50'}`}
                                                          onClick={() => setSelectedRoomId(r.id)}>
-                                                        <span className="font-mono text-[10px] text-emerald-300 flex-1 truncate">{r.name || ('Room ' + (i + 1))} · {(r.vertices || []).length} pts</span>
-                                                        <button type="button" className="text-[9px] text-rose-400 hover:text-rose-300 uppercase font-black"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setFloorRooms(prev => prev.filter(x => x.id !== r.id));
-                                                                    if (selectedRoomId === r.id) setSelectedRoomId(null);
-                                                                }}>Del</button>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-mono text-[10px] text-emerald-300 flex-1 truncate">{r.name || ('Room ' + (i + 1))} · {(r.vertices || []).length} pts</span>
+                                                            {band && (
+                                                                <span className="font-mono text-[8px] text-slate-400 shrink-0">{band.min}-{band.max} lx</span>
+                                                            )}
+                                                            <button type="button" className="text-[9px] text-rose-400 hover:text-rose-300 uppercase font-black"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setFloorRooms(prev => prev.filter(x => x.id !== r.id));
+                                                                        if (selectedRoomId === r.id) setSelectedRoomId(null);
+                                                                    }}>Del</button>
+                                                        </div>
+                                                        {selectedRoomId === r.id && (
+                                                            <div className="mt-1.5 space-y-1.5 border-t border-slate-700/70 pt-1.5" onClick={(e) => e.stopPropagation()}>
+                                                                <label className="flex items-center gap-2">
+                                                                    <span className="text-[8px] uppercase tracking-widest text-slate-500 w-10 shrink-0">Use</span>
+                                                                    <select value={r.type || 'office'}
+                                                                            onChange={(e) => patchRoom({ type: e.target.value })}
+                                                                            className="flex-1 bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-[9px] font-mono text-slate-200"
+                                                                            data-testid="mapper-room-type">
+                                                                        {ROOM_TYPE_OPTIONS.map(o => (
+                                                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </label>
+                                                                <label className="flex items-center gap-2">
+                                                                    <input type="checkbox" checked={!!r.lux_override}
+                                                                           onChange={(e) => {
+                                                                               const on = e.target.checked;
+                                                                               patchRoom(on
+                                                                                   ? { lux_override: true,
+                                                                                       min_lux: r.min_lux != null ? r.min_lux : (band ? band.min : 300),
+                                                                                       max_lux: r.max_lux != null ? r.max_lux : (band ? band.max : 600) }
+                                                                                   : { lux_override: false });
+                                                                           }}
+                                                                           data-testid="mapper-room-lux-override" />
+                                                                    <span className="text-[9px] text-slate-400">Pin this room's band by hand</span>
+                                                                </label>
+                                                                {r.lux_override && (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <input type="number" min="1" step="10" value={r.min_lux != null ? r.min_lux : ''}
+                                                                               onChange={(e) => patchRoom({ min_lux: Number(e.target.value) || undefined })}
+                                                                               className="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-[9px] font-mono text-slate-200"
+                                                                               placeholder="min" />
+                                                                        <span className="text-[9px] text-slate-500">to</span>
+                                                                        <input type="number" min="1" step="10" value={r.max_lux != null ? r.max_lux : ''}
+                                                                               onChange={(e) => patchRoom({ max_lux: Number(e.target.value) || undefined })}
+                                                                               className="w-16 bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-[9px] font-mono text-slate-200"
+                                                                               placeholder="max" />
+                                                                        <span className="text-[9px] text-slate-500">lx</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         )}
                                     </div>
@@ -5712,7 +5799,7 @@
                                                    title="Open until the room is green, close when too bright, close at night">
                                                 <input type="checkbox"
                                                        style={{ accentColor: '#78c878', width: 13, height: 13 }}
-                                                       checked={floorWindows.filter(w => w.floorIdx === currentFloorIdx).every(w => w.heat_auto)}
+                                                       checked={floorWindows.filter(w => w.floorIdx === currentFloorIdx).every(w => w.heat_auto !== false)}
                                                        onChange={(e) => {
                                                            const on = !!e.target.checked;
                                                            setFloorWindows(prev => prev.map(x => x.floorIdx === currentFloorIdx ? { ...x, heat_auto: on } : x));
@@ -5745,7 +5832,7 @@
                                                             <label className="flex items-center gap-1 shrink-0 cursor-pointer"
                                                                    title="Auto: open until room is green, close when too bright, close at night"
                                                                    onClick={(e) => e.stopPropagation()}>
-                                                                <input type="checkbox" checked={!!w.heat_auto}
+                                                                <input type="checkbox" checked={w.heat_auto !== false}
                                                                        style={{ accentColor: '#78c878', width: 13, height: 13 }}
                                                                        onChange={(e) => {
                                                                            const on = !!e.target.checked;

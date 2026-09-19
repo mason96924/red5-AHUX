@@ -179,7 +179,7 @@
       "label": "dashboard.html",
       "desc": "Main dashboard shell",
       "size": 44826,
-      "sha256": "1e2a986e43567ca3ccc0857284cc4dc9f2b0ab6757602d1264c0ed563491510a",
+      "sha256": "0666260f1f96c5def5735fd370a11bee2d2abbffdbd26079af1913252ccbd300",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -188,8 +188,8 @@
       "kind": "ui",
       "label": "dashboard.compiled.js",
       "desc": "Compiled React dashboard bundle (loaded by dashboard.html)",
-      "size": 650235,
-      "sha256": "892cde8fe081b82971e81de2138e448559e8219c738022cd011427805760a451",
+      "size": 652167,
+      "sha256": "2db8b71060506cfc833fea2cc560bda9b9255cd6f312dd1db89a0c2eccb13ab9",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -218,8 +218,8 @@
       "kind": "ui",
       "label": "equipment_mapper.html",
       "desc": "Config Tool",
-      "size": 554665,
-      "sha256": "c083f8152472cb9e559cd44cbf80dffeb6366bfc38645e7e1ed8d9f2e3c87e17",
+      "size": 562760,
+      "sha256": "d1d42c47a2f3032e783536a8416bc5734869bb135b69e4cace98cf5208d933c2",
       "show_in_ui": true,
       "hot_reload": false
     },
@@ -488,8 +488,8 @@
       "kind": "ui",
       "label": "sun-path.js",
       "desc": "Sun-path math (loaded by equipment_mapper.html + dashboard)",
-      "size": 76608,
-      "sha256": "ed7fd7a94fa6493b6fffca423682684845bbb6a761377803cb8e301b8b4f0552",
+      "size": 78178,
+      "sha256": "22e1863e4d02a374bd3d788d2b512026e73e0ac121f8a586b95af34722cab8d1",
       "show_in_ui": false,
       "hot_reload": false
     },
@@ -518,8 +518,8 @@
       "kind": "ui",
       "label": "window-blinds-popout.js",
       "desc": "Window blinds popout (loaded by equipment_mapper.html)",
-      "size": 42229,
-      "sha256": "31d45b8b30989086ce4600e8281812e53b42c6c03c8e0c7667189ffe7885edbc",
+      "size": 42323,
+      "sha256": "c3ac00ce9e380ee99a8da9348ef71714742bb65f770204e7a88ea3b476b2221a",
       "show_in_ui": false,
       "hot_reload": false
     },
@@ -528,8 +528,8 @@
       "kind": "ui",
       "label": "heat-auto.js",
       "desc": "Daylight blind Auto loop (dynamically loaded by equipment_mapper.html, so invisible to the reference scan)",
-      "size": 20046,
-      "sha256": "4e53328f9f5551e2afe9d2b7dedb3e0fb9b3fed8b1858739d460c92236cd4f6f",
+      "size": 24999,
+      "sha256": "ee14a4135ac5602567cd55c07e53e9f3a56d81dbf24aef27ac7391c0b68f7967",
       "show_in_ui": false,
       "hot_reload": false
     },

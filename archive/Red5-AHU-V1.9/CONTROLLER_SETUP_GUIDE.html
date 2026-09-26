@@ -251,42 +251,45 @@ pip install flask_cors</pre>
 <div class="step">
   <div class="num">8</div>
   <div class="body-col">
-    <h3>Copy the program file onto the controller</h3>
-    <p>The main program is roughly 90&nbsp;KB and <strong>must not be pasted into the program
-       object</strong>. It is copied to the controller's storage instead, where there is no size
-       limit.</p>
-    <p>If you already have a commissioned RED5 controller on the network, the new controller can
-       download the file directly from it. Run this in the Debug Console of the <em>new</em>
-       controller, substituting the working controller's IP address:</p>
-<pre>import urllib.request, os; os.makedirs('/root/data/pgpy', exist_ok=True); urllib.request.urlretrieve('http://&lt;working-controller-ip&gt;:5001/assets/app_canonical_c2.py.txt', '/root/data/pgpy/app_main.py'); print('bytes:', os.path.getsize('/root/data/pgpy/app_main.py'))</pre>
-    <p>You should see <code>bytes: 89565</code>. A smaller number means the download was
-       interrupted &mdash; delete the file and repeat rather than continuing.</p>
-    <div class="note"><strong>Commissioning your first controller?</strong> With no existing
-      controller to copy from, request the program file from your system integrator and make it
-      available over HTTP from any computer on the same network, then use that address in the
-      command above.</div>
-    <div class="warn"><strong>Why the file is not pasted.</strong> On current hardware a paste this
-      large is rejected with <code>QERR_CODE_NO_SPACE</code>, even though the controller has plenty
-      of free storage. The limit applies to how much program text a single object can hold. The
-      object may also keep only the first portion of the text, so the save appears to succeed and
-      then fails when run.</div>
+    <h3>Enter the loader program and run</h3>
+    <p>The contents of the <strong>app</strong> program object is the whole of
+       <code>app_boot.py</code> &mdash; about 14&nbsp;KB. The main program is roughly 90&nbsp;KB and
+       <strong>must not be pasted into the program object</strong>; the loader fetches it from the
+       controller's storage instead, and installs it for you if it is not there yet.</p>
+    <p>Get the text from an already-commissioned RED5 controller at
+       <code>http://&lt;working-controller-ip&gt;:5001/assets/app_boot.py.txt</code>, or from
+       <code>app_boot.py</code> in the release folder. Paste it in, save &mdash; it should commit
+       immediately, with no loading delay &mdash; then set the object to <strong>Run</strong>.</p>
+    <div class="note"><strong>Commissioning your first controller?</strong> Nothing else is needed:
+      the loader serves an upload page at <code>http://&lt;controller-ip&gt;:5001/</code> and
+      installs the application from the bundle in step&nbsp;11. Previously this step required the
+      program file to be fetched over HTTP from another controller first, which is impossible at a
+      first site.</div>
+    <div class="warn"><strong>If the save is rejected with
+      <code>QERR_CODE_NO_SPACE</code></strong>, paste <code>app_boot.min.py.txt</code> instead
+      (about 9&nbsp;KB &mdash; the same program with the explanatory comments removed). The limit
+      applies to how much program text a single object can hold, not to free storage, and a rejected
+      save may keep only the first portion of the text, so it appears to succeed and then fails when
+      run.</div>
+    <div class="note"><strong>You will not need to edit this object again.</strong> Future software
+      updates replace the program file in storage; this loader stays exactly as it is, and updates
+      arrive through the bundle upload in step&nbsp;11.</div>
+    <div class="warn"><strong>This object does not restart automatically.</strong> If the program
+      ever stops, it stays stopped until someone starts it again in enteliWEB. This matters after any
+      power interruption.</div>
   </div>
 </div>
 
 <div class="step">
   <div class="num">9</div>
   <div class="body-col">
-    <h3>Enter the loader line and run</h3>
-    <p>The complete contents of the <strong>app</strong> program object is this one line:</p>
-<pre>exec(compile(open('/root/data/pgpy/app_main.py').read(), '/root/data/pgpy/app_main.py', 'exec'))</pre>
-    <p>Save &mdash; it should commit immediately, with no loading delay &mdash; then set the object
-       to <strong>Run</strong>.</p>
-    <div class="note"><strong>You will not need to edit this object again.</strong> Future software
-      updates replace the program file in storage; this loader line stays exactly as it is, and
-      updates arrive through the bundle upload in step&nbsp;11.</div>
-    <div class="warn"><strong>This object does not restart automatically.</strong> If the program
-      ever stops, it stays stopped until someone starts it again in enteliWEB. This matters in
-      step&nbsp;12 and after any power interruption.</div>
+    <h3>Optional &mdash; copy the program file from a working controller</h3>
+    <p>Step&nbsp;11 installs it for you, so this is only a shortcut when the site already has a
+       commissioned controller. Run this in the Debug Console of the <em>new</em> controller,
+       substituting the working controller's IP address:</p>
+<pre>import urllib.request, os; os.makedirs('/root/data/pgpy', exist_ok=True); urllib.request.urlretrieve('http://&lt;working-controller-ip&gt;:5001/assets/app_canonical_c2.py.txt', '/root/data/pgpy/app_main.py'); print('bytes:', os.path.getsize('/root/data/pgpy/app_main.py'))</pre>
+    <p>You should see <code>bytes: 89565</code>. A smaller number means the download was
+       interrupted &mdash; delete the file and repeat rather than continuing.</p>
   </div>
 </div>
 
@@ -294,16 +297,17 @@ pip install flask_cors</pre>
   <div class="num">10</div>
   <div class="body-col">
     <h3>Check the output window</h3>
-    <p>On a new controller the application is not installed yet, so the program starts in recovery
-       mode and tells you where to go next. Expect output like this:</p>
-<pre><span class="c">[service-discovery] no *_service.py files found in ['/root/data/pgpy', '/root/scripts']</span>
-[bootstrap-fallback] No upload service registered - installing emergency
-bootstrap so the operator can deploy upload_service.py via /update
-
-<span class="g">* Controller Online at: http://&lt;controller-ip&gt;:5001</span>
-<span class="g">* Update page at: http://&lt;controller-ip&gt;:5001/update</span></pre>
-    <p>The last two lines confirm a healthy start. The <code>no *_service.py files found</code>
-       message is expected at this stage and disappears once the application is installed.</p>
+    <p>On a new controller the application is not installed yet, so the loader says so and opens an
+       upload page. Expect output like this:</p>
+<pre><span class="c">[red5-boot] app_main.py is not on disk yet</span>
+<span class="g">[red5-boot] bootstrap mode on http://0.0.0.0:5001/  (app_main.py is not on disk yet)</span></pre>
+    <p>That second line confirms a healthy start: the controller is listening, and
+       <code>http://&lt;controller-ip&gt;:5001/</code> serves the page you install the application
+       from.</p>
+    <div class="note">If you used the shortcut in step&nbsp;9, you will see the main program's own
+      banner instead (<code>* Controller Online at: ...</code>, plus a
+      <code>[bootstrap-fallback] No upload service registered</code> message that is expected until
+      the application is installed).</div>
   </div>
 </div>
 
@@ -313,26 +317,29 @@ bootstrap so the operator can deploy upload_service.py via /update
   <div class="num">11</div>
   <div class="body-col">
     <h3>Upload the bundle</h3>
-    <p>Browse to <code>http://&lt;controller-ip&gt;:5001/</code>. You are redirected to
-       <code>/update</code> and shown the red <strong>Emergency Bootstrap</strong> page. Upload
-       <code>red5_bundle.zip</code> there.</p>
-    <div class="note"><strong>The password field accepts any entry.</strong> The standard bundle is
-      not encrypted, so the value is never checked &mdash; the form simply will not submit while the
-      field is empty. A real key is required only for encrypted bundles created by the
-      Download/Replicate feature.</div>
-    <p>The upload installs the application, its configuration, and the telemetry collector. Your
-       program object from step&nbsp;9 is protected and cannot be overwritten by an upload.</p>
+    <p>Browse to <code>http://&lt;controller-ip&gt;:5001/</code> and you are shown the
+       <strong>Fresh Controller / Bootstrap Mode</strong> page. Upload
+       <code>red5_bundle.zip</code> there. It installs the application, its configuration, and the
+       telemetry collector, then starts everything by itself and moves you on to the normal update
+       page.</p>
+    <div class="note"><strong>Use the plain bundle here.</strong> An encrypted bundle from the
+      Download/Replicate feature cannot be opened at this stage &mdash; the software that decrypts it
+      is the software being installed &mdash; so upload those through the normal update page once the
+      controller is running. There is no password field on the bootstrap page.</div>
+    <p>Your program object from step&nbsp;8 is protected and cannot be overwritten by an upload.</p>
   </div>
 </div>
 
 <div class="step">
   <div class="num">12</div>
   <div class="body-col">
-    <h3>Stop and start the &ldquo;app&rdquo; object</h3>
-    <p>The application loads its components once at startup, so nothing you just uploaded is active
-       yet. Stop the <strong>app</strong> program object in enteliWEB, then start it again.</p>
-    <p>The output window should now show one <code>registered OK</code> line per component, and the
+    <h3>Check the output window &mdash; and remember this for later updates</h3>
+    <p>The bootstrap page already started the application, so the output window should now show one
+       <code>registered OK</code> line per component and the
        <code>bootstrap-fallback</code> message should be gone.</p>
+    <p><strong>Later updates do need a restart.</strong> The application loads its components once at
+       startup, so after any upload onto a running controller, stop the <strong>app</strong> program
+       object in enteliWEB and start it again.</p>
   </div>
 </div>
 
@@ -440,9 +447,10 @@ Poll interval: 5s</pre>
   and then fails when run.
 </p>
 <p style="font-size:13.5px;color:#334155">
-  The solution is the approach used throughout this guide: keep each object to a single loader line
-  and hold the program itself in storage, as in steps&nbsp;8, 9 and 15. To confirm storage is
-  healthy:
+  The solution is the approach used throughout this guide: each object holds a small loader and the
+  program itself lives in storage, as in steps&nbsp;8 and 15. If the ~14&nbsp;KB loader is still
+  refused, paste <code>app_boot.min.py.txt</code> from the release folder instead &mdash; about
+  9&nbsp;KB, the same program with the explanatory comments removed. To confirm storage is healthy:
 </p>
 <pre>import shutil; u=shutil.disk_usage('/root'); print('total %.1f MB / used %.1f MB / FREE %.2f MB' % (u.total/1048576, u.used/1048576, u.free/1048576))</pre>
 <p style="font-size:13.5px;color:#334155">

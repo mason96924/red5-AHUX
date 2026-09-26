@@ -1347,6 +1347,18 @@ if not _service_paths:
     print('[service-discovery] no *_service.py files found in', _search_dirs)
 
 
+def _is_hidden_member(entry):
+    """True for a zip member with a dot-leading path component.
+
+    Covers .DS_Store, js/.eslintrc.json, and the AppleDouble sidecars that
+    Finder's Compress writes as __MACOSX/._name.  Those keep the real suffix
+    -- splitext('._floor.html') is ('._floor', '.html') -- so the extension
+    allow-list does not stop them, and ._x_service.py would match the
+    '*_service.py' plug-in glob.
+    """
+    return any(part.startswith('.') for part in entry.strip('/').split('/'))
+
+
 # =====================================================================
 # Emergency bootstrap — chicken-and-egg recovery
 # =====================================================================
@@ -1442,7 +1454,7 @@ if '/update' not in _existing_rules and '/api/upload-bundle' not in _existing_ru
             extracted = []
             with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
                 for entry in zf.namelist():
-                    if entry.endswith('/') or '__MACOSX' in entry or entry.startswith('.') or '..' in entry:
+                    if entry.endswith('/') or '..' in entry or _is_hidden_member(entry):
                         continue
                     base = os.path.basename(entry)
                     # Skip dev-only files (matches upload_service skip rules)

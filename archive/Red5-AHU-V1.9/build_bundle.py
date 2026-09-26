@@ -113,9 +113,24 @@ OPTIONAL_ROOT_FILES = [
 #                              human-readable reference copy.  The .txt suffix
 #                              keeps it out of /root/data/pgpy/ and makes it
 #                              impossible to import by accident.
+#  * app_boot.py            -> the text the operator pastes into the `app` PG
+#                              object: it execs pgpy/app_main.py when that
+#                              exists and otherwise serves a bootstrap page
+#                              that accepts this bundle.  Shipped as .txt only
+#                              -- as a root .py the extractor would file it
+#                              under pgpy/, where nothing imports it -- and
+#                              readable over /assets/app_boot.py.txt from a
+#                              controller that is already up, which is how the
+#                              next one gets commissioned.
 RENAMED_ROOT_FILES = [
     ('app_canonical_c2.py', 'app_main.py'),
     ('app_canonical_c2.py', 'app_canonical_c2.py.txt'),
+    ('app_boot.py', 'app_boot.py.txt'),
+]
+
+# Members generated at build time, as (arcname, builder).  See paste_copy().
+GENERATED_MEMBERS = [
+    ('app_boot.min.py.txt', lambda: paste_copy('app_boot.py')),
 ]
 
 # Subdir trees to include verbatim.
@@ -149,6 +164,33 @@ SKIP_EXACT = {
     'configs/image_files_manifest.json',
     'equipment_types.json',
 }
+
+
+def paste_copy(name):
+    """Comment- and docstring-free copy of a file meant to be pasted into an
+    enteliWEB PG object.
+
+    The program-text ceiling on a PG object is not documented anywhere: the
+    ~90 KB bootloader fails with QERR_CLASS_OS::QERR_CODE_NO_SPACE on current
+    hardware, and a save that exceeds the limit can silently keep only the
+    first part of the script.  So ship a smaller copy next to the readable one
+    for any controller that refuses the full text.  ast.unparse is what makes
+    this safe to paste: the result is the same program by construction, not a
+    hand-minified approximation.
+    """
+    import ast
+
+    with open(os.path.join(HERE, name)) as fh:
+        tree = ast.parse(fh.read())
+    holders = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    for node in ast.walk(tree):
+        if not isinstance(node, holders) or len(node.body) < 2:
+            continue
+        first = node.body[0]
+        if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            del node.body[0]
+    return (ast.unparse(tree) + '\n').encode()
 
 
 def should_skip(rel_path):
@@ -200,6 +242,15 @@ def main():
                 continue
             zf.write(src, arcname=arc)
             added.append(arc)
+
+        # 1d. Members generated from a root file (stripped paste copies)
+        for arc, builder in GENERATED_MEMBERS:
+            try:
+                zf.writestr(arc, builder())
+                added.append(arc)
+            except Exception as exc:   # never fail a bundle over a copy
+                print('Could not generate ' + arc + ': ' + str(exc))
+                missing.append(arc)
 
         # 2. Subdirectory trees
         for sub in SUBDIR_TREES:

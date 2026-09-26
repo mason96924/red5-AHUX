@@ -329,6 +329,18 @@ _SITE_CONFIG_PRESERVE = {
 }
 
 
+def _is_hidden_member(entry):
+    """True for a zip member with a dot-leading path component.
+
+    Covers .DS_Store, js/.eslintrc.json, and the AppleDouble sidecars that
+    Finder's Compress writes as __MACOSX/._name.  Those keep the real suffix
+    -- splitext('._floor.html') is ('._floor', '.html') -- so the extension
+    allow-list does not stop them, and ._x_service.py would match the
+    '*_service.py' plug-in glob.
+    """
+    return any(part.startswith('.') for part in entry.strip('/').split('/'))
+
+
 def _estimate_extract_min_bytes(zip_path):
     """Peak *additional* free bytes needed to extract ``zip_path`` while the
     zip itself stays on disk.
@@ -350,7 +362,7 @@ def _estimate_extract_min_bytes(zip_path):
     try:
         with zipfile.ZipFile(zip_path, 'r') as zf:
             for entry in zf.namelist():
-                if entry.endswith('/') or '__MACOSX' in entry or entry.startswith('.'):
+                if entry.endswith('/') or _is_hidden_member(entry):
                     continue
                 if '..' in entry:
                     continue
@@ -647,7 +659,7 @@ def _extract_zip_streaming(zip_path):
     errors = []
     with zipfile.ZipFile(zip_path, 'r') as zf:
         for entry in zf.namelist():
-            if entry.endswith('/') or '__MACOSX' in entry or entry.startswith('.'):
+            if entry.endswith('/') or _is_hidden_member(entry):
                 continue
             if '..' in entry:
                 skipped.append({'file': entry, 'reason': 'Path traversal blocked'})

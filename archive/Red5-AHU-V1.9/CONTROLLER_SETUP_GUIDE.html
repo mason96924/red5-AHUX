@@ -253,7 +253,7 @@ pip install flask_cors</pre>
   <div class="body-col">
     <h3>Enter the loader program and run</h3>
     <p>The contents of the <strong>app</strong> program object is the whole of
-       <code>app_boot.py</code> &mdash; about 14&nbsp;KB. The main program is roughly 90&nbsp;KB and
+       <code>app_boot.py</code> &mdash; about 16&nbsp;KB. The main program is roughly 90&nbsp;KB and
        <strong>must not be pasted into the program object</strong>; the loader fetches it from the
        controller's storage instead, and installs it for you if it is not there yet.</p>
     <p>Get the text from an already-commissioned RED5 controller at
@@ -448,7 +448,7 @@ Poll interval: 5s</pre>
 </p>
 <p style="font-size:13.5px;color:#334155">
   The solution is the approach used throughout this guide: each object holds a small loader and the
-  program itself lives in storage, as in steps&nbsp;8 and 15. If the ~14&nbsp;KB loader is still
+  program itself lives in storage, as in steps&nbsp;8 and 15. If the ~16&nbsp;KB loader is still
   refused, paste <code>app_boot.min.py.txt</code> from the release folder instead &mdash; about
   9&nbsp;KB, the same program with the explanatory comments removed. To confirm storage is healthy:
 </p>

@@ -101,21 +101,31 @@ CONFIG_DIR = None
 TELEMETRY_PATH = None
 COLLECTOR_CONFIG_PATH = None
 
-# NOTE on BACnet writes (architecture, 2026-05-08):
-# This module no longer imports dibt directly. dibt is the Delta Controls
-# native BACnet binding, available ONLY when a script is registered as
-# an enteliWEB "object" and runs in the controllers runtime (where
-# `dibt` is preloaded as a global). Importing it from a Python plug-in
-# auto-loaded into Flask via importlib FAILS on the hardware (raises
-# non-ImportError C-extension faults) and causes the whole telemetry
-# module to silently 404 every endpoint.
+# NOTE on BACnet writes (architecture, 2026-05-08; corrected 2026-09-26):
+# This module no longer imports dibt directly.  dibt is the Delta Controls
+# native BACnet binding, and any Python script created in the controller
+# gets it preloaded into that script's own namespace -- collector.py calls
+# dibt.Read() with no import statement anywhere, which is why that works.
 #
-# Instead, /api/write-point serializes its CSV write request into a
-# queue file (`write_queue.json` under CONFIG_DIR) and returns success
-# immediately. `collector.py` -- which IS an enteliWEB object and DOES
-# have dibt available -- polls that queue file on each cycle and
+# What fails is the `import dibt` STATEMENT: on the hardware it raises a
+# non-ImportError C-extension fault, which took the whole telemetry module
+# down and silently 404'd every endpoint.  simulator.py hit the same fault
+# with a purely defensive import and dropped it the same day.
+#
+# So the limitation is narrower than "plug-ins cannot do BACnet".  app.py is
+# itself a registered object, so the Flask process HAS dibt in its main
+# namespace; a plug-in imported via importlib just has no route to it,
+# because SERVICE_CTX does not forward it.  Forwarding it there would give
+# plug-ins direct reads -- unverified on hardware, so treat as a hypothesis
+# until someone prints `'dibt' in globals()` from the app object.
+#
+# Meanwhile /api/write-point serializes its CSV write request into a queue
+# file (`write_queue.json` under CONFIG_DIR) and returns success
+# immediately.  collector.py polls that queue file on each cycle and
 # executes the writes via dibt.Write().  Result audit goes back into
-# `write_results.json` for /api/write-history to surface.
+# `write_results.json` for /api/write-history to surface.  That indirection
+# is still wanted for writes regardless: it gives an auditable record and
+# keeps a blocking BACnet call out of the request path.
 
 # Write command history (in-memory, last 100)
 _write_history = []

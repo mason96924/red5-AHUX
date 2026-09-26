@@ -77,6 +77,43 @@ def marker_source(marker: Path, text: str) -> str:
 # Boot path 1 -- app_main.py on disk: behave exactly like the one-liner.
 # ---------------------------------------------------------------------
 
+def test_preloaded_globals_reach_the_bootloader(tmp_path):
+    """A Python script created in the controller gets `dibt` preloaded into
+    its namespace, and `import dibt` faults on the hardware -- so the only
+    way app_main.py or a plug-in can reach it is by inheriting it from this
+    object.  The one-line loader passed no globals dict and got that for
+    free; exec'ing into a bare dict silently dropped it, which would have
+    surfaced as BACnet being unreachable from the Flask side only after the
+    stack was pasted onto a real controller."""
+    boot, data_root, _, _ = load_boot(tmp_path)
+    sentinel = object()
+    seen = {}
+    # Stand in for what the enteliWEB runtime puts in this namespace.
+    boot.PRELOADED['dibt'] = sentinel
+    boot.PRELOADED['seen'] = seen
+    write_bootloader(data_root, 'seen["dibt"] = dibt\nseen["name"] = __name__\n')
+
+    boot.run_bootloader(str(data_root / 'pgpy' / 'app_main.py'))
+
+    # The bootloader must be handed the real object, not a copy of it.
+    assert seen['dibt'] is sentinel
+    assert seen['name'] == '__main__'
+
+
+def test_bootloader_cannot_rebind_our_own_names(tmp_path):
+    """PRELOADED is snapshotted before app_boot defines anything, and the
+    exec gets a copy -- so a bootloader that assigns `serve_bootstrap` or
+    `main` cannot break the fallback path it may still need."""
+    boot, data_root, _, _ = load_boot(tmp_path)
+    original = boot.serve_bootstrap
+    write_bootloader(data_root, 'serve_bootstrap = None\nmain = None\n')
+
+    boot.run_bootloader(str(data_root / 'pgpy' / 'app_main.py'))
+
+    assert boot.serve_bootstrap is original
+    assert 'serve_bootstrap' not in boot.PRELOADED
+
+
 def test_execs_bootloader_when_present(tmp_path):
     boot, data_root, _, _ = load_boot(tmp_path)
     marker = tmp_path / 'ran.txt'

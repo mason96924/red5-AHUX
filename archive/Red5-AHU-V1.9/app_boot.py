@@ -45,6 +45,15 @@ import threading
 import traceback
 import zipfile
 
+# Snapshot of this PG object's namespace before we define anything in it.
+# A Python script created in the controller gets `dibt` -- the Delta BACnet
+# binding -- preloaded here, and `import dibt` raises a non-ImportError
+# C-extension fault on the hardware, so a forwarded reference is the only
+# way anything else can reach it.  The old one-line loader exec'd
+# app_main.py in this namespace and inherited it for free; exec'ing into a
+# fresh dict would silently drop it.  See run_bootloader().
+PRELOADED = dict(globals())
+
 DATA_ROOT = os.environ.get('RED5_DATA_ROOT', '/root/data')
 SCRIPTS_ROOT = os.environ.get('RED5_SCRIPTS_ROOT', '/root/scripts')
 PLUGINS_ROOT = os.path.join(DATA_ROOT, 'pgpy')
@@ -96,6 +105,11 @@ def bootloader_path():
 def run_bootloader(path):
     """exec the real bootloader in this process.
 
+    Runs in a copy of PRELOADED, not a bare dict: the bootloader has to see
+    whatever the controller preloaded into this object -- `dibt` above all --
+    exactly as it did under the one-line loader.  A copy, so the bootloader
+    cannot rebind our own names and break the fallback path.
+
     Raises whatever it raises; a clean return means its own app.run() ended.
     """
     log('exec ' + path)
@@ -103,7 +117,9 @@ def run_bootloader(path):
         sys.path.insert(0, SCRIPTS_ROOT)
     with open(path) as fh:
         source = fh.read()
-    exec(compile(source, path, 'exec'), {'__name__': '__main__'})
+    namespace = dict(PRELOADED)
+    namespace['__name__'] = '__main__'
+    exec(compile(source, path, 'exec'), namespace)
 
 
 def is_hidden_member(entry):

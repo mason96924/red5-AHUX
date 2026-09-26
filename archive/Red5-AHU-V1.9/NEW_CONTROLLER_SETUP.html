@@ -148,7 +148,7 @@
   <br><br>
   <strong>You never paste the ~90&nbsp;KB bootloader into enteliWEB.</strong> It fails with
   <code>QERR_CODE_NO_SPACE</code> on current hardware. The <code>app</code> object holds
-  <code>app_boot.py</code> (~14&nbsp;KB) instead: it execs the real bootloader from disk when it is
+  <code>app_boot.py</code> (~16&nbsp;KB) instead: it execs the real bootloader from disk when it is
   there, and serves a bootstrap page that accepts <code>red5_bundle.zip</code> when it is not &mdash;
   which is what makes a blank controller provisionable over HTTP at all. The <code>collector</code>
   object still holds a single line.
@@ -253,7 +253,7 @@ pip install flask_cors</pre>
   <div class="body-col">
     <h3>Paste the guarded loader into &ldquo;app&rdquo;, then Run</h3>
     <p>The contents of the <strong>app</strong> PG object is the whole of
-       <code>app_boot.py</code> &mdash; ~14&nbsp;KB, not the ~90&nbsp;KB bootloader. Take the text
+       <code>app_boot.py</code> &mdash; ~16&nbsp;KB, not the ~90&nbsp;KB bootloader. Take the text
        from either:</p>
     <table>
       <thead><tr><th>Source</th><th>Where</th></tr></thead>
@@ -478,7 +478,7 @@ Poll interval: 5s</pre>
 </p>
 <p style="font-size:13.5px;color:#334155">
   The fix is structural, not a matter of reclaiming space: the object holds a loader and the real
-  code lives on disk, as in steps&nbsp;8 and 15. If ~14&nbsp;KB of <code>app_boot.py</code> is still
+  code lives on disk, as in steps&nbsp;8 and 15. If ~16&nbsp;KB of <code>app_boot.py</code> is still
   refused, paste <code>app_boot.min.py.txt</code> from the bundle (~9&nbsp;KB) &mdash;
   <code>build_bundle.py</code> generates it from the same source with <code>ast.unparse</code>, so it
   is the same program with the comments and docstrings removed. If you still want to confirm the

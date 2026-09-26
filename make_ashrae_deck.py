@@ -2,6 +2,13 @@
 how it satisfies ASHRAE 55 / 62.1 / 90.1 / Guideline 36 (Venn diagram +
 comparison chart), and why it is an essential BMS tool.
 
+55, 62.1 and 90.1 are standards -- enforceable once an authority having
+jurisdiction adopts them -- while Guideline 36 is advisory. The rulebook and
+"how it satisfies each" slides carry a badge per item, plus a legend, so a
+reader never mistakes the guideline for a code obligation.
+Keep this file in step with Red5-AHU-ASHRAE-Overview.html; they are the same
+deck in two formats.
+
 Run:  python3 make_ashrae_deck.py
 Out:  Red5-AHU-ASHRAE-Overview.pptx
 """
@@ -11,6 +18,7 @@ from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.dml import MSO_LINE
 from pptx.oxml.ns import qn
 
 # ---- palette -------------------------------------------------------------
@@ -99,6 +107,22 @@ def accent_header(s, kicker, title, tcolor=INK):
         title, size=30, bold=True, color=tcolor)
 
 
+def badge(s, l, t, kind, w=Inches(1.12), h=Inches(0.28)):
+    """Pill marking a rulebook as an enforceable standard or an advisory
+    guideline — the distinction the deck now makes explicit."""
+    is_std = kind == "Standard"
+    shp = rect(s, l, t, w, h,
+               fill=ACCENT if is_std else WHITE,
+               line=None if is_std else AMBER, line_w=1.25)
+    shp.adjustments[0] = 0.5          # full pill
+    if not is_std:
+        shp.line.dash_style = MSO_LINE.DASH
+    box(s, l, t + Inches(0.02), w, h, kind.upper(), size=8.5, bold=True,
+        color=WHITE if is_std else AMBER, align=PP_ALIGN.CENTER,
+        anchor=MSO_ANCHOR.MIDDLE)
+    return shp
+
+
 def bullet_card(s, l, t, w, h, heading, hcolor, items, hsize=15, isize=13):
     rect(s, l, t, w, h, fill=CARD, line=LINE)
     box(s, l + Inches(0.22), t + Inches(0.18), w - Inches(0.44), Inches(0.5),
@@ -169,22 +193,50 @@ box(s, Inches(1.0), Inches(5.72), Inches(11.4), Inches(0.7),
 s = slide()
 accent_header(s, "The rulebooks", "Four ASHRAE standards, in one line each")
 rows = [
-    ("ASHRAE 55", "Comfort", "Will people feel comfortable?", AMBER),
-    ("ASHRAE 62.1", "Fresh air", "Is there enough outside air to stay healthy?", GREEN),
-    ("ASHRAE 90.1", "Energy", "Are we doing it without wasting energy?", ACCENT),
-    ("Guideline 36", "The referee", "How do we run the equipment to hit all three?", INK),
+    ("ASHRAE 55", "Comfort", "Will people feel comfortable?", AMBER, "Standard",
+     "Mandatory language; usually enforced through a specification or a "
+     "green-building rating"),
+    ("ASHRAE 62.1", "Fresh air", "Is there enough outside air to stay healthy?",
+     GREEN, "Standard",
+     "Widely adopted into building codes — a compliance obligation"),
+    ("ASHRAE 90.1", "Energy", "Are we doing it without wasting energy?", ACCENT,
+     "Standard",
+     "Widely adopted into energy codes — a compliance obligation"),
+    ("Guideline 36", "The referee", "How do we run the equipment to hit all three?",
+     INK, "Guideline",
+     "Advisory best practice — never code; binding only when a spec calls for it"),
 ]
-y = Inches(2.15); rh = Inches(1.02); x0 = Inches(0.7); tot = Inches(11.93)
-for i, (code, nick, q, c) in enumerate(rows):
-    t = y + i * (rh + Inches(0.12))
-    rect(s, x0, t, tot, rh, fill=CARD, line=LINE)
+y = Inches(1.95); rh = Inches(0.95); x0 = Inches(0.7); tot = Inches(11.93)
+for i, (code, nick, q, c, kind, note) in enumerate(rows):
+    t = y + i * (rh + Inches(0.1))
+    guideline = kind == "Guideline"
+    rect(s, x0, t, tot, rh,
+         fill=RGBColor(0xFF, 0xFD, 0xF7) if guideline else CARD,
+         line=RGBColor(0xFD, 0xE6, 0x8A) if guideline else LINE)
     rect(s, x0, t, Inches(2.5), rh, fill=c, line=None)
     box(s, x0 + Inches(0.2), t, Inches(2.1), rh, code, size=18, bold=True,
         color=WHITE, anchor=MSO_ANCHOR.MIDDLE, align=PP_ALIGN.CENTER)
-    box(s, x0 + Inches(2.75), t, Inches(2.2), rh, nick, size=16, bold=True,
+    box(s, x0 + Inches(2.75), t, Inches(1.8), rh, nick, size=16, bold=True,
         color=c, anchor=MSO_ANCHOR.MIDDLE)
-    box(s, x0 + Inches(5.0), t, tot - Inches(5.2), rh, q, size=15.5,
+    box(s, x0 + Inches(4.65), t, Inches(3.8), rh, q, size=14.5,
         color=MUTED, anchor=MSO_ANCHOR.MIDDLE)
+    badge(s, x0 + Inches(8.6), t + Inches(0.17), kind)
+    box(s, x0 + Inches(9.85), t + Inches(0.12), Inches(1.85), rh - Inches(0.24),
+        note, size=9.5, color=FAINT, anchor=MSO_ANCHOR.MIDDLE,
+        line_spacing=1.0)
+# legend: what "standard" and "guideline" actually oblige you to do
+ly = Inches(6.25)
+rect(s, x0, ly, tot, Inches(0.95), fill=CARD, line=LINE)
+rect(s, x0, ly, Inches(0.14), Inches(0.95), fill=ACCENT, line=None, radius=False)
+box(s, x0 + Inches(0.35), ly + Inches(0.1), tot - Inches(0.7), Inches(0.75),
+    "Standard vs guideline.  An ASHRAE standard is written in mandatory "
+    "language and can be adopted by an authority having jurisdiction, at which "
+    "point meeting it is a legal requirement — 90.1 and 62.1 commonly are, "
+    "while 55 is more often imposed by the project specification.  A guideline "
+    "is advisory: Guideline 36 recommends how to sequence the equipment so the "
+    "three standards are met together, and it binds you only when a contract "
+    "names it.", size=11.5, color=MUTED, anchor=MSO_ANCHOR.MIDDLE,
+    line_spacing=1.2)
 
 # =========================================================================
 # 4 — VENN DIAGRAM
@@ -232,11 +284,13 @@ box(s, rx + Inches(0.25), Inches(2.75), rw - Inches(0.5), Inches(2.6),
     "Plot one dot for the air and you can instantly see comfort, fresh-air "
     "mix, and energy — all together.",
     size=13.5, color=MUTED)
-rect(s, rx + Inches(0.0), Inches(5.55), rw, Inches(1.05),
+rect(s, rx + Inches(0.0), Inches(5.4), rw, Inches(1.2),
      fill=RGBColor(0xEC, 0xFD, 0xF5), line=RGBColor(0xA7, 0xF3, 0xD0))
-box(s, rx + Inches(0.25), Inches(5.68), rw - Inches(0.5), Inches(0.9),
+badge(s, rx + Inches(0.25), Inches(5.52), "Guideline")
+box(s, rx + Inches(0.25), Inches(5.88), rw - Inches(0.5), Inches(0.65),
     "Guideline 36 is the referee — the control logic that keeps the dot in "
-    "the sweet spot automatically.", size=12.5, bold=False, color=GREEN)
+    "the sweet spot automatically.",
+    size=12, bold=False, color=GREEN, line_spacing=1.15)
 
 # =========================================================================
 # 5 — HOW ONE CHART ANSWERS ALL FOUR
@@ -245,22 +299,26 @@ s = slide()
 accent_header(s, "How it satisfies each", "One dot on the chart answers every question")
 items = [
     ("55 — Comfort", "The comfort zone is drawn on the chart. Is the dot inside "
-     "the good T/humidity band? If not, which way is it off?", AMBER),
+     "the good T/humidity band? If not, which way is it off?", AMBER, "Standard"),
     ("62.1 — Fresh air", "The mixed-air dot sits on the line between return and "
-     "outside air — its position shows the fresh-air share at a glance.", GREEN),
+     "outside air — its position shows the fresh-air share at a glance.", GREEN,
+     "Standard"),
     ("90.1 — Energy", "Enthalpy lines reveal free cooling: when outside air is "
-     "cooler, the economizer meets the load with no mechanical cooling.", ACCENT),
+     "cooler, the economizer meets the load with no mechanical cooling.", ACCENT,
+     "Standard"),
     ("G36 — Sequences", "Visual proof the automatic sequences land the dot in "
-     "the comfort zone, on the fresh-air line, at the lowest energy path.", INK),
+     "the comfort zone, on the fresh-air line, at the lowest energy path.", INK,
+     "Guideline"),
 ]
 x0 = Inches(0.7); cw = Inches(5.85); ch = Inches(1.9); gx = Inches(0.23); gy = Inches(0.22)
-for i, (h, d, c) in enumerate(items):
+for i, (h, d, c, kind) in enumerate(items):
     col = i % 2; row = i // 2
     l = x0 + col * (cw + gx); t = Inches(2.15) + row * (ch + gy)
     rect(s, l, t, cw, ch, fill=CARD, line=LINE)
     rect(s, l, t, Inches(0.13), ch, fill=c, line=None, radius=False)
     box(s, l + Inches(0.32), t + Inches(0.2), cw - Inches(0.55), Inches(0.5),
         h, size=17, bold=True, color=c)
+    badge(s, l + cw - Inches(1.35), t + Inches(0.22), kind)
     box(s, l + Inches(0.32), t + Inches(0.72), cw - Inches(0.6), ch - Inches(0.85),
         d, size=13.5, color=MUTED)
 box(s, Inches(0.7), Inches(6.55), Inches(11.9), Inches(0.6),
